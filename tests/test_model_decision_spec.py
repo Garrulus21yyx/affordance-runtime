@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.model_policy.spec import (
+from affordance_runtime.model.policy.spec import (
     SCHEMA_VERSION,
     AgentDecisionPayload,
     decision_response_schema,

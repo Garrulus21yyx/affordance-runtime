@@ -8,7 +8,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.composition import compose_target_runtime
     from affordance_runtime.agent.control_feedback import (
         ControlFeedback,
         ControlFeedbackKind,
@@ -44,12 +43,6 @@ if TYPE_CHECKING:
     )
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
-    from affordance_runtime.agent.runtime import (
-        TargetRuntime,
-        TargetRuntimeRunOutcome,
-        TargetRuntimeStartOutcome,
-        TargetRuntimeUserInputOutcome,
-    )
     from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
@@ -68,10 +61,6 @@ if TYPE_CHECKING:
     from affordance_runtime.task.contracts import TaskGoal
 
 _EXPORTS = {
-    "compose_target_runtime": (
-        "affordance_runtime.agent.composition",
-        "compose_target_runtime",
-    ),
     "ControlFeedback": ("affordance_runtime.agent.control_feedback", "ControlFeedback"),
     "ControlFeedbackKind": ("affordance_runtime.agent.control_feedback", "ControlFeedbackKind"),
     "ControlFeedbackSource": ("affordance_runtime.agent.control_feedback", "ControlFeedbackSource"),
@@ -92,13 +81,6 @@ _EXPORTS = {
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
-    "TargetRuntime": ("affordance_runtime.agent.runtime", "TargetRuntime"),
-    "TargetRuntimeRunOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeRunOutcome"),
-    "TargetRuntimeStartOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeStartOutcome"),
-    "TargetRuntimeUserInputOutcome": (
-        "affordance_runtime.agent.runtime",
-        "TargetRuntimeUserInputOutcome",
-    ),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
     "DecisionCapability": (

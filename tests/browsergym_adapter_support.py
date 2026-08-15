@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.surfaces.browsergym.environment import BrowserGymEnvironment
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
@@ -19,8 +21,6 @@ from affordance_runtime.task import (
     TaskBoundary,
     ThinTaskIntake,
 )
-from affordance_runtime.world.action_space import ActionSpaceBuilder
-from affordance_runtime.world.binder import ActionBinder
 
 
 def ax_node(

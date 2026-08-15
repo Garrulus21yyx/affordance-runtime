@@ -10,7 +10,8 @@ from affordance_runtime.immutable import freeze_json
 from affordance_runtime.schema_digest import schema_digest
 
 if TYPE_CHECKING:
-    from affordance_runtime.world.contracts import ActionBinding, AdmittedActionSelection
+    from affordance_runtime.actions.space_contracts import AdmittedActionSelection
+    from affordance_runtime.world.contracts import ActionBinding
 
 
 class DispatchStatus(StrEnum):

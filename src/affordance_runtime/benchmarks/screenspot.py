@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
     VisualGroundingPoint,
     VisualGroundingRequest,

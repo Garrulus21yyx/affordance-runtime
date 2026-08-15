@@ -1,10 +1,16 @@
 import asyncio
 from typing import Any
 
-from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import ActionBinder, ActionSpaceBuilder, build_agent_world_view
+from affordance_runtime.world import (
+    build_agent_world_view,
+)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

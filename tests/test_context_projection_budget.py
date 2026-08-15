@@ -1,6 +1,6 @@
 import pytest
 
-from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.model.context.budgets import BoundedSection, ContextProjectionBudget
 
 
 def test_bounded_section_distinguishes_complete_empty_from_truncated() -> None:

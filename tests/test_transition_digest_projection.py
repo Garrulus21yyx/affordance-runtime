@@ -4,6 +4,9 @@ import json
 
 from test_agent_loop import _task, _world
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import AgentLoopStatus, AskUser, SelectAction
 from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
@@ -39,16 +42,15 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
-from affordance_runtime.model_boundary import ContextBuilder
-from affordance_runtime.model_boundary.context import AgentGroundingIndexView
-from affordance_runtime.model_boundary.transition_digest_projection import (
+from affordance_runtime.model.context import ContextBuilder
+from affordance_runtime.model.context.context import AgentGroundingIndexView
+from affordance_runtime.model.context.transition_digest_projection import (
     project_latest_transition,
 )
-from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_action_catalog
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_policy.policy import _build_request
-from affordance_runtime.world import ActionSpaceBuilder
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
+from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
+from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.policy import _build_request
 from affordance_runtime.world.acquisition import AcquisitionOrigin, AcquisitionStatus
 
 

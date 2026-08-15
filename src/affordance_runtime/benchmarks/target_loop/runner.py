@@ -13,7 +13,7 @@ from affordance_runtime.agent import (
     AgentRunSession,
     AgentSessionStartError,
 )
-from affordance_runtime.agent.composition import compose_target_runtime
+from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import (

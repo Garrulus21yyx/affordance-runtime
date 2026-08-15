@@ -10,10 +10,16 @@ from affordance_runtime import (
     NaturalLanguageTaskRequest,
     TaskBoundary,
 )
-from affordance_runtime.agent import AgentLoopStatus, SelectAction, compose_target_runtime
-from affordance_runtime.browser_thread_session import ThreadBoundBrowserSession
+from affordance_runtime.agent import (
+    AgentLoopStatus,
+    SelectAction,
+)
+from affordance_runtime.app import (
+    compose_target_runtime,
+)
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
+from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
 from affordance_runtime.task import LoopBudget
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 

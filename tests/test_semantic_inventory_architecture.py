@@ -5,7 +5,9 @@ ROOT = Path(__file__).parents[1] / "src" / "affordance_runtime"
 
 def test_inventory_authority_dependency_is_one_way_and_task_agnostic() -> None:
     world_owner = (ROOT / "world" / "semantic_inventory.py").read_text(encoding="utf-8")
-    context_builder = (ROOT / "model_boundary" / "context_builder.py").read_text(encoding="utf-8")
+    context_builder = (ROOT / "model" / "context" / "context_builder.py").read_text(
+        encoding="utf-8"
+    )
     for forbidden in (
         "TaskGoal",
         "ActionSpace",

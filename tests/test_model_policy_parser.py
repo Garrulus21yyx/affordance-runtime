@@ -11,8 +11,8 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
-from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.parser import parse_agent_decision
+from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy.parser import parse_agent_decision
 
 
 @pytest.mark.parametrize(

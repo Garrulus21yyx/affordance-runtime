@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+)
+from affordance_runtime.actions.space_contracts import AdmittedActionSelection
 from affordance_runtime.evaluation.contracts import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -16,13 +21,8 @@ from affordance_runtime.evaluation.contracts import (
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import (
-    AdmittedActionSelection,
     CoverageState,
     WorldObservation,
-)
-from affordance_runtime.world.interaction_capabilities import (
-    INTERACTION_CAPABILITY_REGISTRY,
-    ParameterContractKind,
 )
 from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 

@@ -3,10 +3,11 @@ import json
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
-from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model_policy.serialization import serialize_agent_context
+from affordance_runtime.model.context.context_builder import ContextBuilder
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
+from affordance_runtime.model.policy.serialization import serialize_agent_context
 from affordance_runtime.surfaces.browsergym import projection as projection_module
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
@@ -24,7 +25,6 @@ from affordance_runtime.world import (
     EntityInventoryStatus,
     SemanticInventoryStatus,
 )
-from affordance_runtime.world.action_space import ActionSpaceBuilder
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-world-projection-tests")
 

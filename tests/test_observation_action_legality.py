@@ -1,15 +1,17 @@
 from dataclasses import replace
 
-from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
+from affordance_runtime.actions import (
     ActionBinding,
     ActionRisk,
     ActionSpaceBuilder,
+)
+from affordance_runtime.actions.classification import EffectCategory
+from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.world import (
     CoverageState,
     SemanticTarget,
     WorldObservation,
 )
-from affordance_runtime.world.action_classification import EffectCategory
 
 SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 

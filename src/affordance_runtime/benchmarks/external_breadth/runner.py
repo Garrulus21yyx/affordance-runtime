@@ -48,15 +48,15 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ProductionActionEvaluator
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.model_port_bridge import (
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
-from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
-from affordance_runtime.visual_grounding import VisualGrounderPort, VisualRegionProposerPort
-from affordance_runtime.visual_predicate_classification import VisualPredicateClassifierPort
+from affordance_runtime.model.policy.provider_orchestrator import ProviderCallOrchestrator
+from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
+from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
 
 REQUIRED_METRICS = (
     "observations",

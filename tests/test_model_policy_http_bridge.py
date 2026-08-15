@@ -10,9 +10,9 @@ import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.model_boundary import ModelFailureKind
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
-from affordance_runtime.model_port import ModelConfig, OpenAICompatibleModelPort
+from affordance_runtime.model.context import ModelFailureKind
+from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
+from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 from affordance_runtime.testing import StaticEnvironment
 
 

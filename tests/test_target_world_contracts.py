@@ -3,6 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionBinding,
+    ActionRisk,
+    ActionSpaceBuilder,
+)
+from affordance_runtime.actions.classification import classify_dom_action
 from affordance_runtime.agent.decisions import ProposeDone
 from affordance_runtime.execution.contracts import (
     ActionIntent,
@@ -15,16 +22,11 @@ from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERA
 from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    ActionBinder,
-    ActionBinding,
-    ActionRisk,
-    ActionSpaceBuilder,
     CoverageState,
     SemanticTarget,
     WorldObservation,
     build_agent_world_view,
 )
-from affordance_runtime.world.action_classification import classify_dom_action
 
 
 def _world() -> WorldObservation:

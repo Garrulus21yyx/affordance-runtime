@@ -4,6 +4,7 @@ from dataclasses import fields
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
+from affordance_runtime.actions.binder import BindingError
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -16,7 +17,6 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.task import IntentContext, IntentExcerpt, IntentSourceKind, LoopBudget
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world.binder import BindingError
 
 
 @pytest.mark.parametrize(

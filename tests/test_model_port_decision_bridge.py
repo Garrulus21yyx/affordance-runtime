@@ -6,21 +6,24 @@ from dataclasses import dataclass, field, replace
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.model_boundary.context import AgentImageInput
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.factory import model_policy_from_environment
-from affordance_runtime.model_policy.model_port_bridge import (
+from affordance_runtime.model.context import ContextBuilder, ModelFailure, ModelFailureKind
+from affordance_runtime.model.context.context import AgentImageInput
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy.policy import _build_request
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload
-from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
-from affordance_runtime.model_port import (
+from affordance_runtime.model.policy.policy import _build_request
+from affordance_runtime.model.policy.spec import SCHEMA_VERSION, AgentDecisionPayload
+from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
+from affordance_runtime.model.providers.port import (
     FallbackModelPort,
     ModelCallRecord,
     ModelConfig,
@@ -31,7 +34,6 @@ from affordance_runtime.model_port import (
     StructuredOutputError,
 )
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionSpaceBuilder
 
 
 async def _context():
@@ -333,7 +335,7 @@ def test_request_build_failure_is_internal_not_provider_unavailable(monkeypatch)
         del context
         raise ValueError("serialization bug")
 
-    monkeypatch.setattr("affordance_runtime.model_policy.policy._build_request", fail)
+    monkeypatch.setattr("affordance_runtime.model.policy.policy._build_request", fail)
 
     async def scenario() -> None:
         outcome = await ModelBackedAgentPolicy(object()).decide(await _context())
@@ -345,7 +347,7 @@ def test_request_build_failure_is_internal_not_provider_unavailable(monkeypatch)
 
 def test_environment_factory_forces_zero_retry_and_rejects_fallback(monkeypatch) -> None:
     port = RecordingModelPort()
-    monkeypatch.setattr("affordance_runtime.model_policy.factory.model_port_from_environment", lambda env: port)
+    monkeypatch.setattr("affordance_runtime.model.policy.factory.model_port_from_environment", lambda env: port)
 
     policy = model_policy_from_environment({"LLM_ACTIVE_PROFILE": "local"}, call_timeout_s=20)
 
@@ -355,7 +357,7 @@ def test_environment_factory_forces_zero_retry_and_rejects_fallback(monkeypatch)
     assert policy.port.config.timeout_s <= policy.call_timeout_s
 
     fallback = FallbackModelPort((port,))
-    monkeypatch.setattr("affordance_runtime.model_policy.factory.model_port_from_environment", lambda env: fallback)
+    monkeypatch.setattr("affordance_runtime.model.policy.factory.model_port_from_environment", lambda env: fallback)
     with pytest.raises(ValueError, match="fallback"):
         model_policy_from_environment({"LLM_ACTIVE_PROFILE": "local"})
 

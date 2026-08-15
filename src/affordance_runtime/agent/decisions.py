@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias
 
+from affordance_runtime.actions.relevance import ActionRelevanceRole
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.world.relevance import ActionRelevanceRole
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 _MAX_REASON = 500

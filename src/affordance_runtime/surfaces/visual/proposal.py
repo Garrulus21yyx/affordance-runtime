@@ -6,8 +6,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
-from affordance_runtime.grounding import PerceptionRequirements
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.actions.grounding import PerceptionRequirements
+from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
     VisualGroundingRequest,
     VisualRegion,

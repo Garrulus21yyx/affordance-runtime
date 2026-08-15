@@ -3,21 +3,21 @@ from __future__ import annotations
 import pytest
 
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.budgets import BoundedSection
-from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentDestinationView
-from affordance_runtime.model_policy.grounded_tool_catalog import resolve_grounded_tool_call
-from affordance_runtime.model_policy.grounded_tool_compiler import (
+from affordance_runtime.model.context.budgets import BoundedSection
+from affordance_runtime.model.context.contracts import AgentActionOptionView, AgentDestinationView
+from affordance_runtime.model.policy.grounded_tool_catalog import resolve_grounded_tool_call
+from affordance_runtime.model.policy.grounded_tool_compiler import (
     GroundedToolCompiler,
     SelectorMode,
     recursive_common_semantic_skeleton,
 )
-from affordance_runtime.model_policy.grounded_tool_contracts import (
+from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
     GroundedToolCatalog,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 
 _CONTEXT = "context:" + "a" * 64
 

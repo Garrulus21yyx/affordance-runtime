@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import asyncio
 
+from affordance_runtime.actions.binder import ActionBinder, BindingError
+from affordance_runtime.actions.space_contracts import (
+    ActionOption,
+    AdmittedActionSelection,
+)
 from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
     AttemptOperation,
@@ -49,8 +54,7 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
-from affordance_runtime.world.binder import ActionBinder, BindingError
-from affordance_runtime.world.contracts import ActionOption, AdmittedActionSelection, WorldObservation
+from affordance_runtime.world.contracts import WorldObservation
 
 
 async def execute_cycle(

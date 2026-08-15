@@ -9,7 +9,7 @@ from affordance_runtime.agent.control_feedback import (
     NextDecisionDisposition,
     RecoveryConstraints,
 )
-from affordance_runtime.model_boundary.control_feedback_projection import project_control_feedback
+from affordance_runtime.model.context.control_feedback_projection import project_control_feedback
 
 
 def test_model_projection_is_public_safe_and_omits_internal_digests() -> None:

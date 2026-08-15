@@ -8,8 +8,8 @@ from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
-from affordance_runtime.model_policy.spec import AgentDecisionPayload
-from affordance_runtime.model_port import ModelPort
+from affordance_runtime.model.policy.spec import AgentDecisionPayload
+from affordance_runtime.model.providers.port import ModelPort
 
 from .attempts import run_structured_attempt
 from .classification import classify_policy_capabilities, classify_support

@@ -164,7 +164,9 @@ Runtime 仍验证 schema、引用 currentness、权限与证据，并可返回
 
 ### 2.1 默认旧链路
 
-安装入口由 [`pyproject.toml`](../../pyproject.toml) 指向 `affordance_runtime.cli:main`。根 [`cli.py`](../../src/affordance_runtime/cli.py) 的 `run` 只接受 `pricing/settings/export` 三个 reference scenario，不接受任意自然语言。
+审计时安装入口指向旧的根 `affordance_runtime.cli:main`；该历史命令现已在 T4
+迁入 benchmark-owned [`benchmarks/cli.py`](../../src/affordance_runtime/benchmarks/cli.py)，
+产品入口由 [`pyproject.toml`](../../pyproject.toml) 指向 `affordance_runtime.app.cli:main`。
 
 旧 BrowserGym generalist 路径的完整自然语言链是：
 

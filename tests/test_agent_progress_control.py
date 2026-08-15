@@ -1,5 +1,8 @@
 from dataclasses import replace
 
+from affordance_runtime.actions import (
+    AdmittedActionSelection,
+)
 from affordance_runtime.agent.progress_control import (
     ProgressController,
     SelectionProgressDisposition,
@@ -13,7 +16,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.world import (
-    AdmittedActionSelection,
     CoverageState,
     ObservationConflict,
     ObservationSourceProfile,

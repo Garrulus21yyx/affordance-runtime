@@ -21,11 +21,18 @@ from test_model_policy_admission import (
     _TaskEvaluator as DestinationTaskEvaluator,
 )
 
+from affordance_runtime.actions import (
+    ActionPager,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.model_boundary import ContextBuilder, ContextProjectionBudget
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model.context import ContextBuilder, ContextProjectionBudget
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionPager, ActionSpaceBuilder, ObservationSourceProfile, SurfaceObservation
+from affordance_runtime.world import (
+    ObservationSourceProfile,
+    SurfaceObservation,
+)
 
 
 class FakeWaiter:

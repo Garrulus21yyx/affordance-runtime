@@ -2,18 +2,20 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.agent import SelectAction
-from affordance_runtime.execution import ActionIntent, BoundActionRequest
-from affordance_runtime.risk import RiskPolicy
-from affordance_runtime.schema_digest import schema_digest
-from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
+from affordance_runtime.actions import (
     ActionBinder,
     ActionBinding,
     ActionOption,
     ActionRisk,
     ActionSpaceBuilder,
     AdmittedActionSelection,
+)
+from affordance_runtime.agent import SelectAction
+from affordance_runtime.execution import ActionIntent, BoundActionRequest
+from affordance_runtime.risk import RiskPolicy
+from affordance_runtime.schema_digest import schema_digest
+from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.world import (
     CoverageState,
     SemanticTarget,
     WorldObservation,

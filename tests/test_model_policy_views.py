@@ -1,5 +1,11 @@
 import pytest
 
+from affordance_runtime.actions import (
+    ActionBinding,
+    ActionOption,
+    ActionRisk,
+    ActionSpace,
+)
 from affordance_runtime.agent import (
     Abort,
     AskUser,
@@ -12,7 +18,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.state import Turn
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
-from affordance_runtime.model_boundary import (
+from affordance_runtime.model.context import (
     project_action_space,
     project_parameter_schema_for_model,
     project_task,
@@ -20,10 +26,6 @@ from affordance_runtime.model_boundary import (
 )
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    ActionBinding,
-    ActionOption,
-    ActionRisk,
-    ActionSpace,
     AgentTargetView,
     AgentWorldView,
 )

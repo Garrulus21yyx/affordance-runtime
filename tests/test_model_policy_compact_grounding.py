@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
-from affordance_runtime.model_policy.grounding import (
+from affordance_runtime.model.policy.grounding import (
     MAX_COMPACT_GUIDE_BYTES,
     build_compact_decision_guide,
     serialize_compact_decision_guide,

@@ -1,5 +1,9 @@
 import pytest
 
+from affordance_runtime.actions import (
+    ActionRisk,
+    AdmittedActionSelection,
+)
 from affordance_runtime.confirmation import (
     ConfirmationDecision,
     ConfirmationDecisionKind,
@@ -9,8 +13,6 @@ from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    ActionRisk,
-    AdmittedActionSelection,
     AgentTargetView,
     AgentWorldView,
 )

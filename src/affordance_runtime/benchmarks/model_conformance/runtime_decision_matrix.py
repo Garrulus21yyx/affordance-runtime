@@ -7,6 +7,12 @@ from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
+from affordance_runtime.actions import (
+    ActionPager,
+    ActionSpaceBuilder,
+)
+from affordance_runtime.actions.admission import AdmissionIssue, AdmissionIssueCode
+from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent import (
     Abort,
     AgentLoopStatus,
@@ -23,11 +29,11 @@ from affordance_runtime.agent.attempt_receipt import (
     AttemptOperation,
     AttemptReceipt,
 )
-from affordance_runtime.agent.composition import compose_target_runtime
 from affordance_runtime.agent.control_transition import AdmissionStatus
 from affordance_runtime.agent.decision_control import run_policy_turn
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.support import (
     CurrentFactActionEvaluator,
     SharedTaskEvaluator,
@@ -36,12 +42,14 @@ from affordance_runtime.benchmarks.target_loop.support import (
     shared_task,
     shared_world,
 )
-from affordance_runtime.model_boundary import ContextBuilder
-from affordance_runtime.model_boundary.context import AgentContext
+from affordance_runtime.model.context import ContextBuilder
+from affordance_runtime.model.context.context import AgentContext
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionPager, ActionSpaceBuilder, StateFact, SurfaceObservation
-from affordance_runtime.world.admission_issue import AdmissionIssue, AdmissionIssueCode
-from affordance_runtime.world.contracts import ActionSpace, WorldObservation
+from affordance_runtime.world import (
+    StateFact,
+    SurfaceObservation,
+)
+from affordance_runtime.world.contracts import WorldObservation
 
 from .decision_matrix import DECISION_VARIANTS
 

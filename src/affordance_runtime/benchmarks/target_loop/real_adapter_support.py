@@ -13,19 +13,19 @@ from urllib.parse import quote
 from PIL import Image
 
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
-from affordance_runtime.browser_session import BrowserSession
-from affordance_runtime.browser_thread_session import ThreadBoundBrowserSession
 from affordance_runtime.evaluation import CriterionEvaluationStatus
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.execution import ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.base import SurfaceAdapter
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
+from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
 from affordance_runtime.surfaces.visual import VisualSurfaceAdapter
+from affordance_runtime.surfaces.visual.grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.transport import HttpWotTransport
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 

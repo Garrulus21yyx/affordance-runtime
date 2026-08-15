@@ -9,8 +9,8 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
-from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model_port import ModelPort, OllamaModelPort, model_port_from_environment
+from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
+from affordance_runtime.model.providers.port import ModelPort, OllamaModelPort, model_port_from_environment
 
 from ..matrix_progress import write_json_report
 from ..profile_identity import identity_from_ollama_inventory, ollama_inventory, remote_profile_identity

@@ -4,10 +4,16 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.surfaces.visual import VisualFrame, VisualSurfaceAdapter, VisualViewport
+from affordance_runtime.surfaces.visual.grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
-from affordance_runtime.world import ActionBinder, ActionSpaceBuilder, build_agent_world_view
+from affordance_runtime.world import (
+    build_agent_world_view,
+)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

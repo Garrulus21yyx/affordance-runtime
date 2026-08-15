@@ -11,7 +11,7 @@ from affordance_runtime.benchmarks.target_loop.live_policy import (
     evaluate_live_policy_suite,
     run_live_model_policy_attestation,
 )
-from affordance_runtime.model_policy import ModelMetadata
+from affordance_runtime.model.policy import ModelMetadata
 
 
 def test_live_policy_attestation_is_unavailable_without_opt_in(tmp_path) -> None:

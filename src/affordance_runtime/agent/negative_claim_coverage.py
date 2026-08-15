@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.agent.decisions import Abort, AbortCategory, AgentDecision, ProposeDone
-from affordance_runtime.model_boundary.context import AgentContext
-from affordance_runtime.model_boundary.observation_paging import ObservationTraversalStatus
+from affordance_runtime.model.context.context import AgentContext
+from affordance_runtime.model.context.observation_paging import ObservationTraversalStatus
 from affordance_runtime.world.contracts import CoverageState, EntityInventoryStatus, WorldObservation
 
 

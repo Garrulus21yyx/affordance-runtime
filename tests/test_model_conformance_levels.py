@@ -5,7 +5,7 @@ from affordance_runtime.benchmarks.model_conformance.levels import (
     Level1SelectActionPayload,
     minimal_union_context,
 )
-from affordance_runtime.model_policy.spec import AgentDecisionPayload
+from affordance_runtime.model.policy.spec import AgentDecisionPayload
 
 
 def test_level_zero_schema_is_minimal_and_closed() -> None:

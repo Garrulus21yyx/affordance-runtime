@@ -24,7 +24,7 @@ from affordance_runtime.benchmarks.external_breadth.manifest import (
     build_breadth_manifest,
 )
 from affordance_runtime.benchmarks.external_breadth.registry import load_registry_census
-from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model.policy import model_policy_from_environment
 
 
 def main() -> int:

@@ -13,9 +13,9 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     capability_covered_cases,
     readiness_cohorts,
 )
-from affordance_runtime.model_policy import model_policy_from_environment
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
+from affordance_runtime.model.policy import model_policy_from_environment
+from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 
 def test_perception_ab_selects_only_inventory_v2_capability_covered_cases() -> None:

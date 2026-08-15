@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelConformanceStage
 from affordance_runtime.benchmarks.model_conformance.levels import Level0Payload
 from affordance_runtime.benchmarks.model_conformance.runner import run_structured_attempt
-from affordance_runtime.model_port import ModelCallRecord
+from affordance_runtime.model.providers.port import ModelCallRecord
 
 
 @dataclass

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from affordance_runtime.contracts import (
+from affordance_runtime.actions.contracts import (
     ActionContract,
     ExecutionReceipt,
     RiskLevel,

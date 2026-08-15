@@ -17,7 +17,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricMeasurement,
     TerminalReasonCode,
 )
-from affordance_runtime.model_boundary.failures import ModelFailureKind
+from affordance_runtime.model.context.failures import ModelFailureKind
 
 
 def _result(**changes) -> BenchmarkCaseResult:

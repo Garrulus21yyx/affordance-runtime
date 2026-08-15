@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.model_policy.grounding import MAX_COMPACT_GUIDE_BYTES
+from affordance_runtime.model.policy.grounding import MAX_COMPACT_GUIDE_BYTES
 
 
 @dataclass(frozen=True)

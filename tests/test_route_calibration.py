@@ -2,15 +2,15 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, Surface
-from affordance_runtime.grounding import GroundingSource, PerceptionRequirements, UnifiedAffordance
-from affordance_runtime.route_calibration import (
+from affordance_runtime.actions.contracts import Affordance, AffordanceLease, Observation, Surface
+from affordance_runtime.actions.grounding import GroundingSource, PerceptionRequirements, UnifiedAffordance
+from affordance_runtime.actions.route_calibration import (
     RouteCalibrator,
     RouteOutcome,
     RouteOutcomeStatus,
     RouteScope,
 )
-from affordance_runtime.unified_grounding import (
+from affordance_runtime.actions.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
     UnifiedRoutePlanner,

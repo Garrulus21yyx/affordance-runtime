@@ -8,6 +8,11 @@ import numpy as np
 import pytest
 from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+    verification_contract_for_action,
+)
+from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     RequestObservation,
     SelectAction,
@@ -16,44 +21,44 @@ from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary import ContextBuilder, ModelFailure
-from affordance_runtime.model_boundary.acquisition_projection import ObservationCapabilityView
-from affordance_runtime.model_boundary.action_candidate_projection import close_action_candidates
-from affordance_runtime.model_boundary.budgets import BoundedSection
-from affordance_runtime.model_boundary.context import AgentGroundingEntityView, AgentGroundingIndexView
-from affordance_runtime.model_boundary.contracts import AgentTurnView
-from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model_policy.grounded_tool_catalog import (
+from affordance_runtime.model.context import ContextBuilder, ModelFailure
+from affordance_runtime.model.context.acquisition_projection import ObservationCapabilityView
+from affordance_runtime.model.context.action_candidate_projection import close_action_candidates
+from affordance_runtime.model.context.budgets import BoundedSection
+from affordance_runtime.model.context.context import AgentGroundingEntityView, AgentGroundingIndexView
+from affordance_runtime.model.context.contracts import AgentTurnView
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
+from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model_policy.grounded_tool_compiler import (
+from affordance_runtime.model.policy.grounded_tool_compiler import (
     CompiledGroundedTool,
     CompiledSelectorField,
     PrivateResolutionEntry,
     SelectorMode,
 )
-from affordance_runtime.model_policy.grounded_tool_contracts import (
+from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOL_CALL_ENVELOPE,
     GroundedActionResolution,
     GroundedToolCatalog,
     GroundedToolPhase,
 )
-from affordance_runtime.model_policy.grounded_tool_port_bridge import (
+from affordance_runtime.model.policy.grounded_tool_port_bridge import (
     _TOOL_INTENT_REPAIR_CODES,
     GroundedActionAdapter,
     GroundedToolCommandPayload,
     _command_payload_type,
 )
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_policy.policy import _build_request as _action_request
-from affordance_runtime.model_policy.provider_call_normalizer import (
+from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.policy import _build_request as _action_request
+from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
-from affordance_runtime.model_port import (
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.providers.port import (
     ModelCallRecord,
     ModelConfig,
     ModelImageURLPart,
@@ -71,8 +76,6 @@ from affordance_runtime.task import (
     RiskProfile,
     TaskGoal,
 )
-from affordance_runtime.world import ActionSpaceBuilder, verification_contract_for_action
-from affordance_runtime.world.schema_validation import validate_value_issue
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 

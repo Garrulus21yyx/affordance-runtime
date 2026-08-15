@@ -12,10 +12,10 @@ from target_agent_loop_support import (
 )
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.evaluation import TaskEvaluationStatus
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.surfaces.visual import VisualSurfaceAdapter
-from affordance_runtime.visual_grounding import VisualGroundingPoint, VisualRegion
+from affordance_runtime.surfaces.visual.grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

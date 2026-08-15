@@ -27,5 +27,8 @@ def test_fixed_live_runner_builds_no_provider_before_all_gates(monkeypatch, tmp_
 def test_external_pacing_module_is_absent_from_agent_loop_and_model_policy() -> None:
     from pathlib import Path
 
-    for root in (Path("src/affordance_runtime/agent"), Path("src/affordance_runtime/model_policy")):
+    for root in (
+        Path("src/affordance_runtime/agent"),
+        Path("src/affordance_runtime/model/policy"),
+    ):
         assert all("external_smoke.pacing" not in path.read_text() for path in root.rglob("*.py"))

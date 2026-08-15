@@ -1,3 +1,3 @@
-from affordance_runtime.target_cli import main
+from affordance_runtime.app.cli import main
 
 raise SystemExit(main())

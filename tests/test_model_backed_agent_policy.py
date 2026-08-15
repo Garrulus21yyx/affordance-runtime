@@ -4,6 +4,9 @@ from dataclasses import dataclass, replace
 
 from test_agent_loop import SharedTaskEvaluator, _task, _world
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import (
     Abort,
     AgentLoop,
@@ -12,16 +15,15 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy import (
+from affordance_runtime.model.context import ContextBuilder, ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,
     ResolvedModelDecision,
     serialize_agent_context,
 )
-from affordance_runtime.model_policy.parser import parse_agent_decision
+from affordance_runtime.model.policy.parser import parse_agent_decision
 from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import ActionSpaceBuilder
 
 
 async def _context():

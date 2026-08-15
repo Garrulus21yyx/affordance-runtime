@@ -4,10 +4,10 @@ import pytest
 from target_agent_loop_support import run_immediate, shared_state_task
 from test_surface_symmetry_matrix import profile_environment
 
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.evaluation import TaskEvaluationStatus
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.world.action_space import ActionSpaceBuilder
-from affordance_runtime.world.binder import ActionBinder
 
 
 @pytest.mark.parametrize("profile", ["dom", "visual", "wot"])

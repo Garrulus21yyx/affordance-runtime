@@ -1,6 +1,9 @@
 import asyncio
 from dataclasses import dataclass
 
+from affordance_runtime.actions import (
+    ActionBinding,
+)
 from affordance_runtime.agent import AgentLoopStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -18,7 +21,6 @@ from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
-    ActionBinding,
     CoverageState,
     ObservationCapabilities,
     ObservationSourceProfile,

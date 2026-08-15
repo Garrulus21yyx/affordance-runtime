@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-affordance-runtime = "affordance_runtime.target_cli:main"
-affordance-runtime-benchmark = "affordance_runtime.cli:main"
+affordance-runtime = "affordance_runtime.app.cli:main"
+affordance-runtime-benchmark = "affordance_runtime.benchmarks.cli:main"
 
 [project.optional-dependencies]
 web = [
@@ -48,7 +48,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-affordance_runtime = ["model_policy/prompts/*.yaml"]
+affordance_runtime = ["model/policy/prompts/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

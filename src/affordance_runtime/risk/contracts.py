@@ -8,8 +8,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.actions.space_contracts import (
+    ActionRisk,
+    AdmittedActionSelection,
+)
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.contracts import ActionRisk, AdmittedActionSelection
 
 
 class RiskDecisionKind(StrEnum):

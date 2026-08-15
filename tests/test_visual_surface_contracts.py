@@ -3,11 +3,13 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.visual_grounding import VisualRegion
-from affordance_runtime.world import (
+from affordance_runtime.actions import (
     ActionBinding,
     ActionSpaceBuilder,
+)
+from affordance_runtime.surfaces.visual.grounding import VisualRegion
+from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.world import (
     CoverageState,
     SemanticTarget,
     WorldObservation,

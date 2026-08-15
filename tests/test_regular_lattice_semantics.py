@@ -5,11 +5,14 @@ import random
 import numpy as np
 from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import AgentLoopState
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model_boundary import ContextBuilder
-from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_tool_catalog
+from affordance_runtime.model.context import ContextBuilder
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
+from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
@@ -20,7 +23,6 @@ from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import ActionSpaceBuilder
 from affordance_runtime.world.regular_lattice import (
     LatticeDerivationCode,
     SpatialNode,
@@ -164,7 +166,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     assert set(actor_node["state"]).issuperset(
         {"grid_coordinate", "grid_membership", "grid_coordinate_confidence"}
     )
-    from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+    from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 
     action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     activate = next(spec for spec in action_catalog.specs if spec.name == "activate")

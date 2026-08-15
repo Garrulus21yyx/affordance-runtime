@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.contracts import Observation
+from affordance_runtime.actions.contracts import Observation
 from affordance_runtime.surfaces.visual.som import BoundingBox, SomAdapter, VisualMark, annotate_screenshot
 
 

@@ -123,7 +123,7 @@ Evidence and the remaining producer/consumer inventory are recorded in
 ## Implemented cleanup slice — Target Runtime topology cutover
 
 Status:
-`DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY /
+`DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_READY /
 WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
@@ -134,7 +134,10 @@ are now physically deleted with their workflow-plan, phase, recovery, progress,
 compatibility and historical executable-benchmark consumers. Root DOM, SoM and
 WoT adapter implementations moved to their surface owners; retained reference
 target witnesses use a test-owned HTTP fixture. No import or CLI shim remains.
-T4 is limited to moving surviving live files into final owner packages.
+T4 selectively moved surviving live files into final owner packages. The root
+now contains four bootstrap/cross-cutting modules; `app`, `actions`, `model`,
+DOM and visual surface owners contain the moved implementations, and old paths
+have no shim or fallback. T5 is the fresh-context topology closure review.
 
 The authoritative implementation plan is
 [Target Runtime topology cutover and legacy deletion](plans/2026-08-15-target-runtime-topology-cutover.md).
@@ -259,7 +262,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
 | Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
-| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY` | target façade/CLI/loop wrappers and BrowserGym product-surface ownership cut over atomically; staged Runtime and executable compatibility clusters are physically deleted and guarded by absence/import redlines |
+| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_READY` | target façade/CLI/loop wrappers and BrowserGym product-surface ownership cut over atomically; surviving owners are selectively organized under `app/actions/model/surfaces`, with only four package-root modules and absence/import redlines for displaced paths |
 | Root default switch | `T1_COMPLETE` | target-only product CLI/public API; benchmark commands have a separate entrypoint |
 | Legacy deletion | `T3_COMPLETE` | 179 production paths plus sole-purpose tests/scripts deleted owner-by-owner; retained contracts have target/surface/test owners and no compatibility shim |
 

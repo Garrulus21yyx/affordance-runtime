@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.model_boundary.failures import ModelFailure
-from affordance_runtime.model_policy.parser import parse_agent_decision
-from affordance_runtime.model_port import (
+from affordance_runtime.model.context.failures import ModelFailure
+from affordance_runtime.model.policy.parser import parse_agent_decision
+from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
     ModelPort,

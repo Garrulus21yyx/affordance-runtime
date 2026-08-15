@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from affordance_runtime.provider_preflight import inspect_ollama_gpu, write_ollama_gpu_preflight
+from affordance_runtime.model.providers.preflight import inspect_ollama_gpu, write_ollama_gpu_preflight
 
 
 def _request_with_vram(

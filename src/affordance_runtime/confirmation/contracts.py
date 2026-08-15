@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.execution.contracts import ActionIntent
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.risk.contracts import ConfirmationSubject
-from affordance_runtime.world.contracts import ActionRisk
 
 
 @dataclass(frozen=True)

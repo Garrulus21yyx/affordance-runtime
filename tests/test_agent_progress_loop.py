@@ -2,6 +2,10 @@ import asyncio
 import json
 from dataclasses import FrozenInstanceError
 
+from affordance_runtime.actions import (
+    ActionBinding,
+)
+from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.result import AgentFailureCode
 from affordance_runtime.evaluation import (
@@ -15,7 +19,6 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
-    ActionBinding,
     CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
@@ -23,7 +26,6 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldObservation,
 )
-from affordance_runtime.world.binder import ActionBinder
 
 
 def _world(observation_id: str, value: str) -> WorldObservation:

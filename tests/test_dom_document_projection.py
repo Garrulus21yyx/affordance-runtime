@@ -6,13 +6,16 @@ from typing import Any
 import pytest
 from reference_site_support import pricing_html
 
-from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.evaluation import ProductionActionEvaluator
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_action_evaluation
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter, project_structured_document
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import TaskGoal
-from affordance_runtime.world import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

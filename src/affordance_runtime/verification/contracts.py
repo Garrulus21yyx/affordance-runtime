@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from affordance_runtime.execution_context import ensure_secret_free
+from affordance_runtime.execution.context import ensure_secret_free
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import asyncio
 
-from affordance_runtime.agent import AgentLoopStatus, TargetRuntime
+from affordance_runtime.agent import (
+    AgentLoopStatus,
+)
 from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.app import (
+    TargetRuntime,
+)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import (
     LoopBudget,

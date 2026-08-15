@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
-from affordance_runtime.model_policy.spec import (
+from affordance_runtime.model.policy.spec import (
     AbortPayload,
     AskUserPayload,
     ProposeDonePayload,
@@ -18,7 +18,7 @@ from affordance_runtime.model_policy.spec import (
     SelectActionPayload,
     WaitPayload,
 )
-from affordance_runtime.model_policy.strict_json import strict_json_loads
+from affordance_runtime.model.policy.strict_json import strict_json_loads
 from affordance_runtime.world.source_profile import ObservationAssurance, assurance_satisfies
 
 from .contracts import DecisionKind

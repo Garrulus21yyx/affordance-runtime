@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Protocol, TypeAlias
 
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus
-from affordance_runtime.model_boundary.evaluator_views import SemanticJudgeRequest
-from affordance_runtime.model_boundary.failures import ModelFailure
+from affordance_runtime.model.context.evaluator_views import SemanticJudgeRequest
+from affordance_runtime.model.context.failures import ModelFailure
 
 
 @dataclass(frozen=True)

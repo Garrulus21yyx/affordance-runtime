@@ -5,17 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+)
+from affordance_runtime.actions.classification import EffectCategory
 from affordance_runtime.evaluation.criterion_contracts import CriterionAdjudicator
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.execution.contracts import BoundActionRequest
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.world.action_classification import EffectCategory
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.interaction_capabilities import (
-    INTERACTION_CAPABILITY_REGISTRY,
-    ParameterContractKind,
-)
 from affordance_runtime.world.source_profile import ObservationAssurance
 
 

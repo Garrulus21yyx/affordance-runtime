@@ -1,0 +1,197 @@
+"""Production composition root for the target AgentLoop."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TypeAlias
+
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.binder import ActionBinder
+from affordance_runtime.agent.decision_capability import (
+    DecisionCapability,
+    UnsupportedComposition,
+    UnsupportedCompositionError,
+    normalize_decision_capabilities,
+)
+from affordance_runtime.agent.loop import AgentLoop
+from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
+from affordance_runtime.agent.result import AgentResult
+from affordance_runtime.agent.session import AgentRunSession
+from affordance_runtime.agent.user_input import UserInputResumeOutcome
+from affordance_runtime.agent.waiting import SystemWaitController, WaitController
+from affordance_runtime.model.context.context_builder import ContextBuilder
+from affordance_runtime.risk.policy import RiskPolicy
+from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.task.intake import (
+    NaturalLanguageTaskRequest,
+    ReadyTask,
+    TaskInputRequired,
+    TaskIntake,
+    TaskIntakeOutcome,
+    TaskPolicyRejected,
+    TaskUnsupported,
+    ThinTaskIntake,
+)
+from affordance_runtime.task.intent_context import IntentContext
+from affordance_runtime.world.environment import WorldEnvironment
+
+
+@dataclass(frozen=True)
+class TargetRuntimeStartOutcome:
+    intake: TaskIntakeOutcome
+    session: AgentRunSession | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.intake, ReadyTask) != (self.session is not None):
+            raise ValueError("target runtime start must align intake admission and session")
+
+    @property
+    def started(self) -> bool:
+        return self.session is not None
+
+
+TargetRuntimeUserInputOutcome: TypeAlias = (
+    UserInputResumeOutcome | TaskInputRequired | TaskPolicyRejected | TaskUnsupported
+)
+
+
+@dataclass(frozen=True)
+class TargetRuntimeRunOutcome:
+    """One admitted target session and its first run-until-pause result."""
+
+    intake: TaskIntakeOutcome
+    session: AgentRunSession | None = None
+    result: AgentResult | None = None
+
+    def __post_init__(self) -> None:
+        admitted = isinstance(self.intake, ReadyTask)
+        executable = self.session is not None and self.result is not None
+        if admitted != executable:
+            raise ValueError("target runtime run must align intake, session, and result")
+
+    @property
+    def started(self) -> bool:
+        return self.session is not None
+
+
+@dataclass(frozen=True)
+class TargetRuntime:
+    """Own target-loop construction; adapters and benchmarks only inject ports."""
+
+    decision_ports: AgentDecisionPorts
+    action_evaluator: ActionEvaluator
+    task_evaluator: TaskEvaluator
+    risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
+    intake: TaskIntake = field(default_factory=ThinTaskIntake)
+    action_space_builder: ActionSpaceBuilder = field(default_factory=ActionSpaceBuilder)
+    binder: ActionBinder = field(default_factory=ActionBinder)
+    context_builder: ContextBuilder = field(default_factory=ContextBuilder)
+    wait_controller: WaitController = field(default_factory=SystemWaitController)
+    recent_turn_limit: int = 12
+    required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision_ports, AgentDecisionPorts):
+            raise TypeError("TargetRuntime requires explicit AgentDecisionPorts")
+        if not callable(getattr(self.action_evaluator, "evaluate", None)):
+            raise TypeError("TargetRuntime action evaluator is invalid")
+        if not callable(getattr(self.task_evaluator, "evaluate", None)):
+            raise TypeError("TargetRuntime task evaluator is invalid")
+        if not callable(getattr(self.intake, "compile", None)):
+            raise TypeError("TargetRuntime intake is invalid")
+        if not 1 <= self.recent_turn_limit <= 100:
+            raise ValueError("TargetRuntime recent turn limit is invalid")
+        required = normalize_decision_capabilities(
+            self.required_decisions,
+            field_name="TargetRuntime required_decisions",
+        )
+        object.__setattr__(self, "required_decisions", required)
+        supported = self.decision_ports.supported_decisions
+        missing = required - supported
+        if missing:
+            raise UnsupportedCompositionError(
+                UnsupportedComposition(required, supported, missing)
+            )
+
+    def build_loop(self) -> AgentLoop:
+        return AgentLoop(
+            self.decision_ports,
+            self.action_evaluator,
+            self.task_evaluator,
+            action_space_builder=self.action_space_builder,
+            binder=self.binder,
+            risk_policy=self.risk_policy,
+            context_builder=self.context_builder,
+            wait_controller=self.wait_controller,
+            recent_turn_limit=self.recent_turn_limit,
+        )
+
+    async def start_task(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        intent_context: IntentContext | None = None,
+    ) -> AgentRunSession:
+        return await self.build_loop().start(environment, task, intent_context)
+
+    async def run_task(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        intent_context: IntentContext | None = None,
+    ) -> AgentResult:
+        return await self.build_loop().run(environment, task, intent_context)
+
+    def admit(self, request: NaturalLanguageTaskRequest) -> TaskIntakeOutcome:
+        """Compile stable task authority before allocating a world session."""
+
+        return self.intake.compile(request)
+
+    async def start_request(
+        self,
+        environment: WorldEnvironment,
+        request: NaturalLanguageTaskRequest,
+    ) -> TargetRuntimeStartOutcome:
+        admitted = self.admit(request)
+        if not isinstance(admitted, ReadyTask):
+            return TargetRuntimeStartOutcome(admitted)
+        session = await self.start_task(environment, admitted.task, admitted.intent_context)
+        return TargetRuntimeStartOutcome(admitted, session)
+
+    async def run_request(
+        self,
+        environment: WorldEnvironment,
+        request: NaturalLanguageTaskRequest,
+    ) -> TargetRuntimeRunOutcome:
+        admitted = self.admit(request)
+        if not isinstance(admitted, ReadyTask):
+            return TargetRuntimeRunOutcome(admitted)
+        return await self.run_admitted(environment, admitted)
+
+    async def run_admitted(
+        self,
+        environment: WorldEnvironment,
+        admitted: ReadyTask,
+    ) -> TargetRuntimeRunOutcome:
+        if not isinstance(admitted, ReadyTask):
+            raise TypeError("target runtime admitted run requires ReadyTask")
+        session = await self.start_task(
+            environment,
+            admitted.task,
+            admitted.intent_context,
+        )
+        result = await session.run_until_pause()
+        return TargetRuntimeRunOutcome(admitted, session, result)
+
+    async def submit_user_input(
+        self,
+        session: AgentRunSession,
+        input_request_id: str,
+        request: NaturalLanguageTaskRequest,
+    ) -> TargetRuntimeUserInputOutcome:
+        """Re-admit full task meaning, then resume one matching pending request."""
+
+        admitted = self.intake.compile(request)
+        if not isinstance(admitted, ReadyTask):
+            return admitted
+        return await session.resume_user_input(input_request_id, admitted)

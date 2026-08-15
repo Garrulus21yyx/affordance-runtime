@@ -8,7 +8,7 @@ from affordance_runtime.benchmarks.model_conformance.matrix_runner import run_de
 from affordance_runtime.benchmarks.model_conformance.recurrent_qualification import (
     qualify_recurrent_result,
 )
-from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
+from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
 
 
 def _identity() -> ModelProfileIdentity:

@@ -16,6 +16,9 @@ from affordance_runtime.surfaces.browsergym.environment import (
     BrowserGymEnvironment,
     BrowserGymPort,
 )
+from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
+from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
 from affordance_runtime.task import (
     LoopBudget,
     NaturalLanguageTaskRequest,
@@ -25,9 +28,6 @@ from affordance_runtime.task import (
     TaskGoal,
     ThinTaskIntake,
 )
-from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
-from affordance_runtime.visual_grounding import VisualGrounderPort, VisualRegionProposerPort
-from affordance_runtime.visual_predicate_classification import VisualPredicateClassifierPort
 
 
 @dataclass(frozen=True)

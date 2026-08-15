@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from affordance_runtime.model_policy.schema_identity import decision_schema_digest
+from affordance_runtime.model.policy.schema_identity import decision_schema_digest
 
 from ..contracts import ModelProfileIdentity
 from .reporting import TwoStageSuiteReport

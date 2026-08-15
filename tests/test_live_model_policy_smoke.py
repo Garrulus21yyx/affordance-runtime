@@ -5,7 +5,7 @@ import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model.policy import model_policy_from_environment
 from affordance_runtime.testing import StaticEnvironment
 
 

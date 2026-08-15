@@ -9,6 +9,11 @@ from io import BytesIO
 
 from PIL import Image
 
+from affordance_runtime.actions import (
+    ActionBinding,
+    ActionRisk,
+)
+from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymElementBinding,
 )
@@ -29,8 +34,6 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     BrowserGymTaskStateSnapshot,
 )
 from affordance_runtime.world import (
-    ActionBinding,
-    ActionRisk,
     CoverageState,
     EntityInventoryIssueCode,
     EntityInventoryStatus,
@@ -45,7 +48,6 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldObservation,
 )
-from affordance_runtime.world.interaction_capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.world.regular_lattice import (
     SpatialNode,
     VisibleNumericLabel,

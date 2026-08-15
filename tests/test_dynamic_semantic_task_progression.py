@@ -3,6 +3,10 @@ from dataclasses import dataclass
 
 from target_agent_loop_support import FirstOfferedActionPolicy
 
+from affordance_runtime.actions import (
+    ActionBinding,
+    ActionRisk,
+)
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -15,8 +19,6 @@ from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
-    ActionBinding,
-    ActionRisk,
     CoverageState,
     ObservationSourceProfile,
     SemanticTarget,

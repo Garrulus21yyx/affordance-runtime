@@ -10,26 +10,26 @@ import pytest
 from test_grounded_tools_v2 import _context
 
 from affordance_runtime.agent import Abort
-from affordance_runtime.model_boundary.failures import (
+from affordance_runtime.model.context.failures import (
     ModelFailure,
     ModelFailureKind,
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
-from affordance_runtime.model_policy.contracts import (
+from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,
     ResolvedModelDecision,
 )
-from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_action_catalog
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedActionAdapter
-from affordance_runtime.model_policy.policy import _build_request
-from affordance_runtime.model_policy.provider_orchestrator import (
+from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
+from affordance_runtime.model.policy.grounded_tool_port_bridge import GroundedActionAdapter
+from affordance_runtime.model.policy.policy import _build_request
+from affordance_runtime.model.policy.provider_orchestrator import (
     ProviderAttemptStatus,
     ProviderCallOrchestrator,
     ProviderCallPolicy,
 )
-from affordance_runtime.model_port import ModelConfig, OpenAICompatibleModelPort
+from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 
 
 def _request() -> ModelDecisionRequest:

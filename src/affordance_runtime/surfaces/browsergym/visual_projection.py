@@ -10,6 +10,14 @@ from io import BytesIO
 
 from PIL import Image
 
+from affordance_runtime.actions import (
+    ActionBinding,
+)
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    InteractionCapabilityError,
+)
+from affordance_runtime.actions.classification import classify_surface_action
 from affordance_runtime.surfaces.browsergym.binding import BrowserGymVisualBinding
 from affordance_runtime.surfaces.visual.contracts import (
     VisualFrame,
@@ -17,9 +25,7 @@ from affordance_runtime.surfaces.visual.contracts import (
     VisualViewport,
     project_visual_semantic_state,
 )
-from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
-from affordance_runtime.task import TaskGoal
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
     VisualGroundingRequest,
     VisualProviderFailure,
@@ -29,8 +35,9 @@ from affordance_runtime.visual_grounding import (
     classify_visual_provider_failure,
     point_grounded_visual_regions,
 )
+from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
+from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    ActionBinding,
     CoverageState,
     EntityCorrespondence,
     ObservationGroundingRegion,
@@ -39,11 +46,6 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     SurfaceObservation,
-)
-from affordance_runtime.world.action_classification import classify_surface_action
-from affordance_runtime.world.interaction_capabilities import (
-    INTERACTION_CAPABILITY_REGISTRY,
-    InteractionCapabilityError,
 )
 
 MAX_BROWSERGYM_VISUAL_REGIONS = 16

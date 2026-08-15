@@ -23,7 +23,7 @@ from affordance_runtime.benchmarks.external_breadth.verifier_targeted import (
     validate_targeted_evidence,
     write_targeted_evidence,
 )
-from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model.policy import model_policy_from_environment
 
 
 def main() -> int:

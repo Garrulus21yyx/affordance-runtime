@@ -12,11 +12,13 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
 )
 from affordance_runtime.world import (
-    ActionSpaceBuilder,
     CoverageState,
     SemanticInventoryStatus,
     SemanticInventorySummary,

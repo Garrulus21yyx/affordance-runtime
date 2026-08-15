@@ -5,6 +5,10 @@ import pytest
 from target_agent_loop_support import SharedStateActionEvaluator, SharedStateTaskEvaluator
 from test_visual_surface_adapter import PointGrounder, Proposer, VisualSession
 
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import (
     AgentLoop,
     AgentLoopStatus,
@@ -14,7 +18,6 @@ from affordance_runtime.agent import (
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.surfaces.visual import VisualSurfaceAdapter
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
-from affordance_runtime.world import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

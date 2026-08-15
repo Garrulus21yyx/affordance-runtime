@@ -27,9 +27,9 @@ from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, model_policy_from_environment
-from affordance_runtime.model_policy.contracts import ModelMetadata
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION
+from affordance_runtime.model.policy import ModelBackedAgentPolicy, model_policy_from_environment
+from affordance_runtime.model.policy.contracts import ModelMetadata
+from affordance_runtime.model.policy.spec import SCHEMA_VERSION
 
 LIVE_ATTESTATION_SCHEMA_VERSION = "target-loop-live-model-policy.v1"
 

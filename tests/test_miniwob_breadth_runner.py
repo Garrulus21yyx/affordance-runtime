@@ -35,10 +35,10 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_port import ModelConfig
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
+from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model.providers.port import ModelConfig
 
 
 @pytest.fixture(autouse=True)

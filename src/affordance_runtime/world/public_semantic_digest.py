@@ -6,13 +6,20 @@ import hashlib
 import json
 from collections.abc import Mapping
 
-from affordance_runtime.evaluation.contracts import TaskEvaluation
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.world.action_paging import (
+from affordance_runtime.actions.paging import (
     InternalActionPage,
     canonical_action_query,
 )
-from affordance_runtime.world.contracts import ActionOption, ActionSpace, SemanticTarget, WorldObservation
+from affordance_runtime.actions.space_contracts import (
+    ActionOption,
+    ActionSpace,
+)
+from affordance_runtime.evaluation.contracts import TaskEvaluation
+from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.world.contracts import (
+    SemanticTarget,
+    WorldObservation,
+)
 
 
 def _digest(value: object) -> str:

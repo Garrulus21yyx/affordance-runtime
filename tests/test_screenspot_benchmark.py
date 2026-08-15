@@ -12,7 +12,7 @@ from affordance_runtime.benchmarks.screenspot import (
     run_screenspot_grounder_suite,
     run_screenspot_offline_suite,
 )
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.surfaces.visual.grounding import (
     OpenAICompatibleVisualGrounder,
     OpenAICompatibleVisualRegionProposer,
     VisualGroundingPoint,

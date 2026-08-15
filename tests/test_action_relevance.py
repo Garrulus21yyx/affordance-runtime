@@ -2,13 +2,13 @@ from dataclasses import dataclass
 
 from test_agent_loop import _world
 
-from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
+from affordance_runtime.actions import (
     ActionOption,
     ActionRelevancePolicy,
     ActionRelevanceRole,
     ActionSpaceBuilder,
 )
+from affordance_runtime.task import RiskProfile, TaskGoal
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY /
+Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE / T5_READY /
 WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
 
 ## Goal
@@ -305,7 +305,7 @@ Exit for each cluster:
 
 ### T4 — move the remaining live code into owner packages
 
-Status: `READY`
+Status: `COMPLETE`
 
 Only live files move. Each `git mv` slice updates every production import, test,
 fixture, package export and documentation reference atomically. Avoid a
@@ -328,9 +328,19 @@ Exit:
   legacy or benchmark code;
 - import-boundary tests reflect the physical directory layout.
 
+The selective cutover moved the product façade/composition/CLI to `app/`,
+runtime action-space/capability/admission owners to `actions/`, model context,
+policy, evaluator and provider adapters below `model/`, and proven DOM/visual
+implementations to their surface packages. `ActionOption`,
+`AdmittedActionSelection` and `ActionSpace` now have one physical definition in
+`actions/space_contracts.py`; observed-world contracts no longer define them.
+The package root retains only `__init__.py`, `__main__.py`, `immutable.py` and
+`schema_digest.py`. No compatibility import module was retained. Evidence:
+[T4 owner-package cutover](../evidence/2026-08-15-target-runtime-topology-t4-owner-packages.md).
+
 ### T5 — topology closure
 
-Status: `PENDING_T4`
+Status: `READY`
 
 Run the complete verification below, perform a fresh-context reader/architecture
 review and update implementation status. World-graph A.1 may begin when the

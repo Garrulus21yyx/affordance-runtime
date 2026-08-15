@@ -12,8 +12,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from affordance_runtime.model_port import StructuredModelError, _post_json
-from affordance_runtime.visual_grounding import VisualRegion, VisualRegionProposalRequest
+from affordance_runtime.model.providers.port import StructuredModelError, _post_json
+from affordance_runtime.surfaces.visual.grounding import VisualRegion, VisualRegionProposalRequest
 
 _MAX_SERVER_ELEMENTS = 4_096
 

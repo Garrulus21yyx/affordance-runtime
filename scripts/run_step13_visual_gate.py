@@ -23,16 +23,16 @@ from affordance_runtime.benchmarks.model_protocol import (
     PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
 )
-from affordance_runtime.model_policy import (
+from affordance_runtime.model.policy import (
     model_policy_from_environment,
 )
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.visual_disambiguation import visual_candidate_disambiguator_from_environment
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.surfaces.visual.disambiguation import visual_candidate_disambiguator_from_environment
+from affordance_runtime.surfaces.visual.grounding import (
     configured_visual_region_proposer_from_environment,
     glm_visual_point_grounder_from_environment,
 )
-from affordance_runtime.visual_predicate_classification import (
+from affordance_runtime.surfaces.visual.predicate_classification import (
     visual_predicate_classifier_from_environment,
 )
 

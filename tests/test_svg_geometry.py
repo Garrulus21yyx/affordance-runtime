@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from affordance_runtime.grounding import EvidenceKind, GroundingSource, SvgGroundingPayload
-from affordance_runtime.svg_geometry import SelectiveSvgGeometryObserver, SvgAuthoredExtension
+from affordance_runtime.actions.grounding import EvidenceKind, GroundingSource, SvgGroundingPayload
+from affordance_runtime.surfaces.visual.svg_geometry import SelectiveSvgGeometryObserver, SvgAuthoredExtension
 
 
 def _observer() -> SelectiveSvgGeometryObserver:

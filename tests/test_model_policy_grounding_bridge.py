@@ -3,14 +3,14 @@ import json
 from dataclasses import dataclass, field
 
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.spec import (
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model.policy.spec import (
     SCHEMA_VERSION,
     AgentDecisionPayload,
     decision_response_schema,
 )
-from affordance_runtime.model_port import ModelConfig, ModelMessage
+from affordance_runtime.model.providers.port import ModelConfig, ModelMessage
 
 
 @dataclass

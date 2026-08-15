@@ -28,7 +28,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ProductionActionEvaluator
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
 
 _REQUIRED = (
     "observations", "executions", "turns", "currentness_probes",

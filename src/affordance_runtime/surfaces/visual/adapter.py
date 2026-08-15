@@ -6,6 +6,11 @@ import uuid
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    InteractionCapabilityError,
+)
+from affordance_runtime.actions.classification import classify_surface_action
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.visual.contracts import (
     VisualRegionBinding,
@@ -13,17 +18,16 @@ from affordance_runtime.surfaces.visual.contracts import (
 )
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
 from affordance_runtime.surfaces.visual.execution import dispatch_point_activate, integer_click_point
-from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
-from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
     VisualGroundingRequest,
     VisualRegionProposalRequest,
     VisualRegionProposerPort,
     point_grounded_visual_regions,
 )
+from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
+from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
-from affordance_runtime.world.action_classification import classify_surface_action
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -32,13 +36,9 @@ from affordance_runtime.world.contracts import (
     StateFact,
     SurfaceObservation,
 )
-from affordance_runtime.world.interaction_capabilities import (
-    INTERACTION_CAPABILITY_REGISTRY,
-    InteractionCapabilityError,
-)
 
 if TYPE_CHECKING:
-    from affordance_runtime.browser_session import BrowserSession
+    from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 
 
 @dataclass

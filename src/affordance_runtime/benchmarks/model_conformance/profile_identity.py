@@ -8,9 +8,9 @@ from collections.abc import Mapping, Sequence
 
 from affordance_runtime.agent.decisions import MAX_RESULT_SUMMARY_CHARS
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelProfileIdentity
-from affordance_runtime.model_policy.grounding import grounding_profile_version
-from affordance_runtime.model_policy.prompt import SCHEMA_VERSION
-from affordance_runtime.model_policy.schema_identity import decision_schema_digest
+from affordance_runtime.model.policy.grounding import grounding_profile_version
+from affordance_runtime.model.policy.prompt import SCHEMA_VERSION
+from affordance_runtime.model.policy.schema_identity import decision_schema_digest
 
 PROMPT_VERSION = "p5-m1.1"
 CONTEXT_BUDGET_PROFILE = "default-64k"

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from affordance_runtime.surfaces.browsergym.visual_projection import (
     browsergym_visual_frame,
 )
-from affordance_runtime.visual_disambiguation import (
+from affordance_runtime.surfaces.visual.disambiguation import (
     VisualCandidate,
     VisualCandidateDisambiguationRequest,
     VisualCandidateDisambiguatorPort,

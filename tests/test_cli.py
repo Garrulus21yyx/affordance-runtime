@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from affordance_runtime import cli
+from affordance_runtime.benchmarks import cli
 
 
 def _command_names() -> frozenset[str]:

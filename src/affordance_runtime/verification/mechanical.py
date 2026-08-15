@@ -12,7 +12,7 @@ from time import time
 from typing import Any, Callable, Mapping, Protocol
 from urllib.request import urlopen
 
-from affordance_runtime.contracts import (
+from affordance_runtime.actions.contracts import (
     ActionContract,
     Condition,
     ExecutionReceipt,

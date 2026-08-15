@@ -10,7 +10,7 @@ from affordance_runtime.benchmarks.model_conformance.scenario import build_live_
 from affordance_runtime.benchmarks.model_conformance.two_stage.cases import build_recurrent_cases
 from affordance_runtime.benchmarks.model_conformance.two_stage.contracts import TwoStageRunMode
 from affordance_runtime.benchmarks.model_conformance.two_stage.runner import run_two_stage_matrix
-from affordance_runtime.model_port import OllamaModelPort, OpenAICompatibleModelPort
+from affordance_runtime.model.providers.port import OllamaModelPort, OpenAICompatibleModelPort
 
 
 def _response(request: dict, openai: bool) -> dict:

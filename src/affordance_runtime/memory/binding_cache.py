@@ -10,9 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from time import time
 
-from affordance_runtime.contracts import Observation
-from affordance_runtime.grounding import GroundingCandidate, GroundingSource
-from affordance_runtime.route_calibration import RouteOutcome, RouteOutcomeStatus
+from affordance_runtime.actions.contracts import Observation
+from affordance_runtime.actions.grounding import GroundingCandidate, GroundingSource
+from affordance_runtime.actions.route_calibration import RouteOutcome, RouteOutcomeStatus
 
 
 @dataclass(frozen=True)

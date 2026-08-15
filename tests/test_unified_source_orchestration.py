@@ -8,20 +8,24 @@ from PIL import Image
 from test_agent_loop import ScriptedPolicy, _loop, _world
 from test_agent_loop import _task as shared_task
 
-from affordance_runtime.agent import AgentLoopStatus
-from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget
-from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentActionPageView
-from affordance_runtime.model_boundary.grounding_projection import GroundingProjection
-from affordance_runtime.model_boundary.world_projection import project_model_world
-from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.testing import StaticEnvironment
-from affordance_runtime.world import (
-    AcquisitionStatus,
+from affordance_runtime.actions import (
     ActionBinder,
     ActionBinding,
     ActionRisk,
     ActionSpaceBuilder,
+    RouteSelectionCode,
+    RouteSelector,
+)
+from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
+from affordance_runtime.model.context.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.model.context.contracts import AgentActionOptionView, AgentActionPageView
+from affordance_runtime.model.context.grounding_projection import GroundingProjection
+from affordance_runtime.model.context.world_projection import project_model_world
+from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.testing import StaticEnvironment
+from affordance_runtime.world import (
+    AcquisitionStatus,
     CoverageState,
     EntityCorrespondence,
     ObservationGroundingRegion,
@@ -30,8 +34,6 @@ from affordance_runtime.world import (
     ObservationOrchestrator,
     ObservationRequestKind,
     ObservationSourceProfile,
-    RouteSelectionCode,
-    RouteSelector,
     SemanticTarget,
     SourceAcquisitionStatus,
     StateFact,

@@ -4,9 +4,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from affordance_runtime.world import (
+from affordance_runtime.actions import (
     ActionBinding,
     ActionRisk,
+)
+from affordance_runtime.world import (
     ObservationSourceProfile,
     SemanticTarget,
     SurfaceObservation,

@@ -5,6 +5,11 @@ from dataclasses import replace
 import pytest
 from test_destination_contract import _option
 
+from affordance_runtime.actions import (
+    ActionSpace,
+    ActionSpaceBuilder,
+)
+from affordance_runtime.actions.admission import AdmissionIssueCode
 from affordance_runtime.agent.control_feedback import (
     ContractViolationSnapshot,
     ControlFeedback,
@@ -14,8 +19,6 @@ from affordance_runtime.agent.control_feedback import (
     RecoveryConstraints,
     RelatedDecisionSnapshot,
 )
-from affordance_runtime.world import ActionSpace, ActionSpaceBuilder
-from affordance_runtime.world.admission_issue import AdmissionIssueCode
 
 DIGEST = "a" * 64
 

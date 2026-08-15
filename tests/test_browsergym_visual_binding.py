@@ -6,23 +6,25 @@ from dataclasses import dataclass, field
 import numpy as np
 from browsergym_adapter_support import FakeBrowserGym, open_surface, raw_observation
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import RequestObservation
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model_boundary import ContextBuilder
-from affordance_runtime.model_policy.grounded_tool_catalog import (
+from affordance_runtime.model.context import ContextBuilder
+from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model_policy.tool_contracts import ToolCall
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.surfaces.visual.grounding import (
     VisualGroundingPoint,
     VisualGroundingRequest,
     VisualRegion,
     VisualRegionProposalRequest,
 )
 from affordance_runtime.world import (
-    ActionSpaceBuilder,
     ObservationRequestKind,
     SourceAcquisitionStatus,
     WorldObservationRequest,
@@ -326,7 +328,7 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
                 ),
                 observation_capabilities=environment.observation_capabilities,
             )
-            from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
+            from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 
             catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
             assert "observe_visual" in {item.name for item in catalog.specs}
@@ -335,7 +337,7 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
                 ToolCall("observe_visual", {}),
                 expected_context_id=context.context_id,
             )
-            from affordance_runtime.model_policy.grounded_tool_contracts import (
+            from affordance_runtime.model.policy.grounded_tool_contracts import (
                 GroundedActionResolution,
             )
 

@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass, field
 
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.visual_grounding import VisualRegion
+from affordance_runtime.surfaces.visual.grounding import VisualRegion
 
 _SEMANTIC_STATE_KEYS = frozenset({
     "visible", "enabled", "selected", "checked", "expanded", "value",

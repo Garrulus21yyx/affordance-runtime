@@ -16,17 +16,19 @@ from test_visual_agent_loop_e2e import (
 )
 from test_wot_agent_loop_e2e import shared_state_server
 
+from affordance_runtime.actions import (
+    ActionRisk,
+)
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
-from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import TaskEvaluationStatus
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.surfaces.visual import VisualSurfaceAdapter
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.transport import HttpWotTransport
 from affordance_runtime.task import RiskProfile
-from affordance_runtime.world import ActionRisk
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

@@ -6,7 +6,7 @@ import hashlib
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 
-from affordance_runtime.world.relevance import ActionRelevanceRole
+from affordance_runtime.actions.relevance import ActionRelevanceRole
 
 
 def cursor_fingerprint(

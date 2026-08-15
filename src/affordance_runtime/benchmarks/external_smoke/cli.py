@@ -22,7 +22,7 @@ from affordance_runtime.benchmarks.external_smoke.manifest import (
 )
 from affordance_runtime.benchmarks.external_smoke.reporting import write_preflight_report
 from affordance_runtime.benchmarks.external_smoke.runner import run_external_smoke
-from affordance_runtime.model_policy import model_policy_from_environment
+from affordance_runtime.model.policy import model_policy_from_environment
 
 EXPECTED_INTERNAL_PROFILES = frozenset({
     "internal-core:deterministic",

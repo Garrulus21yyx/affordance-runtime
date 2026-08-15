@@ -7,14 +7,14 @@ from dataclasses import dataclass, field, replace
 from test_model_port_decision_bridge import _context, _zero_retry_config
 
 from affordance_runtime.agent import SelectAction
-from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.policy import _build_request
-from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolResolutionCode
-from affordance_runtime.model_policy.tool_port_bridge import (
+from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy.policy import _build_request
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolResolutionCode
+from affordance_runtime.model.policy.tool_port_bridge import (
     CompactToolCallPayload,
     DynamicToolDecisionAdapter,
 )
-from affordance_runtime.model_port import (
+from affordance_runtime.model.providers.port import (
     ModelCallRecord,
     StructuredOutputError,
     StructuredOutputViolation,

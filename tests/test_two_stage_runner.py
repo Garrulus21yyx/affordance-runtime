@@ -13,7 +13,7 @@ from affordance_runtime.benchmarks.model_conformance.two_stage.contracts import 
     TwoStageRunMode,
 )
 from affordance_runtime.benchmarks.model_conformance.two_stage.runner import run_two_stage_matrix
-from affordance_runtime.model_port import ModelCallRecord, StructuredOutputError
+from affordance_runtime.model.providers.port import ModelCallRecord, StructuredOutputError
 
 
 @dataclass

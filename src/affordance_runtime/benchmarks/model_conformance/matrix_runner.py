@@ -8,13 +8,13 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest
-from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, decision_response_schema
-from affordance_runtime.model_port import ModelConfig, ModelPort, OllamaModelPort
+from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
+from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model.policy.prompt import MODEL_POLICY_INSTRUCTIONS
+from affordance_runtime.model.policy.spec import SCHEMA_VERSION, decision_response_schema
+from affordance_runtime.model.providers.port import ModelConfig, ModelPort, OllamaModelPort
 
 from .contracts import ModelProfileIdentity
 from .critical_cases import build_cross_action_destination_case, build_nonfirst_direct_case

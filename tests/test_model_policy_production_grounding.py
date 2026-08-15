@@ -5,19 +5,19 @@ from pathlib import Path
 
 import pytest
 
-from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest
-from affordance_runtime.model_policy.factory import model_policy_from_environment
-from affordance_runtime.model_policy.grounding import (
+from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.grounding import (
     COMPACT_CONTRACT_PROFILE_VERSION,
     COMPACT_CONTRACT_V2_PROFILE_VERSION,
     FORMAT_ONLY_PROFILE_VERSION,
     DecisionGroundingVariant,
 )
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.schema_identity import decision_schema_digest
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
-from affordance_runtime.model_port import ModelConfig
+from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model.policy.schema_identity import decision_schema_digest
+from affordance_runtime.model.policy.spec import SCHEMA_VERSION, AgentDecisionPayload, decision_response_schema
+from affordance_runtime.model.providers.port import ModelConfig
 
 
 @dataclass
@@ -48,7 +48,7 @@ class Port:
 def _factory(monkeypatch, environment, *, grounding_variant=None):
     port = Port()
     monkeypatch.setattr(
-        "affordance_runtime.model_policy.factory.model_port_from_environment",
+        "affordance_runtime.model.policy.factory.model_port_from_environment",
         lambda env: port,
     )
     policy = model_policy_from_environment(
@@ -124,7 +124,7 @@ def test_schema_digest_is_deterministic_namespaced_and_constraint_sensitive(monk
     schema = decision_response_schema()
     schema["$defs"]["ProposeDonePayload"]["properties"]["result_summary"]["maxLength"] = 1_023
     monkeypatch.setattr(
-        "affordance_runtime.model_policy.spec.decision_response_schema",
+        "affordance_runtime.model.policy.spec.decision_response_schema",
         lambda: schema,
     )
     assert decision_schema_digest() != first
@@ -138,7 +138,7 @@ def test_compact_build_failure_is_internal_and_zero_call(monkeypatch) -> None:
         grounding_variant=DecisionGroundingVariant.COMPACT_CONTRACT,
     )
     monkeypatch.setattr(
-        "affordance_runtime.model_policy.model_port_bridge.build_compact_decision_guide",
+        "affordance_runtime.model.policy.model_port_bridge.build_compact_decision_guide",
         lambda value: (_ for _ in ()).throw(ValueError("private context")),
     )
     request = ModelDecisionRequest(
@@ -163,7 +163,7 @@ def test_compact_v2_build_failure_is_internal_and_zero_call(monkeypatch) -> None
         grounding_variant=DecisionGroundingVariant.COMPACT_CONTRACT_V2,
     )
     monkeypatch.setattr(
-        "affordance_runtime.model_policy.model_port_bridge.build_compact_decision_guide_v2",
+        "affordance_runtime.model.policy.model_port_bridge.build_compact_decision_guide_v2",
         lambda value: (_ for _ in ()).throw(ValueError("private context")),
     )
     request = ModelDecisionRequest(
@@ -196,7 +196,7 @@ def test_provider_schema_and_runtime_keep_summary_limit() -> None:
 
 
 def test_production_policy_does_not_import_two_stage_or_branch_on_identity() -> None:
-    package = Path("src/affordance_runtime/model_policy")
+    package = Path("src/affordance_runtime/model/policy")
     source = "\n".join(path.read_text() for path in package.glob("*.py"))
     assert "benchmarks.model_conformance.two_stage" not in source
     factory_source = (package / "factory.py").read_text()

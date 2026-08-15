@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
@@ -12,12 +13,11 @@ from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
     real_dom_environment,
 )
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.model_boundary.context import AgentContext
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
-from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
-from affordance_runtime.model_policy.serialization import serialize_agent_context
-from affordance_runtime.model_policy.spec import decision_response_schema
-from affordance_runtime.world.action_space import ActionSpaceBuilder
+from affordance_runtime.model.context.context import AgentContext
+from affordance_runtime.model.context.context_builder import ContextBuilder
+from affordance_runtime.model.policy.prompt import MODEL_POLICY_INSTRUCTIONS
+from affordance_runtime.model.policy.serialization import serialize_agent_context
+from affordance_runtime.model.policy.spec import decision_response_schema
 
 from .complexity import measure_model_input_complexity
 from .contracts import ModelInputComplexity

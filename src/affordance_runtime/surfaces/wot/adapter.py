@@ -7,13 +7,15 @@ from dataclasses import dataclass, field
 from time import monotonic, time
 from typing import Any, Callable
 
+from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
+from affordance_runtime.actions.classification import classify_wot_action
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 from affordance_runtime.surfaces.wot.security import SecurityScheme
 from affordance_runtime.surfaces.wot.thing_description import ThingAffordanceModel, WotAdapter
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
-from affordance_runtime.world.action_classification import classify_wot_action
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -22,8 +24,6 @@ from affordance_runtime.world.contracts import (
     StateFact,
     SurfaceObservation,
 )
-from affordance_runtime.world.interaction_capabilities import INTERACTION_CAPABILITY_REGISTRY
-from affordance_runtime.world.schema_validation import validate_value
 
 from .contracts import (
     WotAffordanceBinding,

@@ -6,8 +6,13 @@ from dataclasses import dataclass, field
 from time import time
 from typing import TYPE_CHECKING
 
-from affordance_runtime.effect_authority_contracts import EffectClass, Externality, Reversibility
-from affordance_runtime.effect_operation_policy import semantics_for_operation
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    InteractionCapabilityError,
+)
+from affordance_runtime.actions.classification import classify_dom_action
+from affordance_runtime.actions.effect_authority import EffectClass, Externality, Reversibility
+from affordance_runtime.actions.effect_policy import semantics_for_operation
 from affordance_runtime.execution.contracts import (
     ActionError,
     ActionResult,
@@ -18,7 +23,6 @@ from affordance_runtime.surfaces.dom.document import project_structured_document
 from affordance_runtime.surfaces.dom.interaction_profile import DOM_INTERACTION_CAPABILITIES
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
-from affordance_runtime.world.action_classification import classify_dom_action
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
@@ -27,14 +31,10 @@ from affordance_runtime.world.contracts import (
     StateFact,
     SurfaceObservation,
 )
-from affordance_runtime.world.interaction_capabilities import (
-    INTERACTION_CAPABILITY_REGISTRY,
-    InteractionCapabilityError,
-)
 
 if TYPE_CHECKING:
-    from affordance_runtime.browser_session import BrowserSession
-    from affordance_runtime.contracts import Affordance
+    from affordance_runtime.actions.contracts import Affordance
+    from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 
 
 @dataclass

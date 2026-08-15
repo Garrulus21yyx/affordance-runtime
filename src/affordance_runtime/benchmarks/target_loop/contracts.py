@@ -31,7 +31,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
     TaskOutcomeKind,
 )
-from affordance_runtime.model_boundary.failures import ModelFailureKind
+from affordance_runtime.model.context.failures import ModelFailureKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.contracts import CoverageState

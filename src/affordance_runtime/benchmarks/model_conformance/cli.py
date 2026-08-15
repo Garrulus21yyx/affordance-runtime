@@ -8,7 +8,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from affordance_runtime.model_port import ModelPort, OllamaModelPort, model_port_from_environment
+from affordance_runtime.model.providers.port import ModelPort, OllamaModelPort, model_port_from_environment
 
 from .attestation import attest_results, write_attestation
 from .profile_identity import (

@@ -1,6 +1,6 @@
 """WoT-private interaction support and primitive translators."""
 
-from affordance_runtime.world.interaction_capabilities import (
+from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     AdapterCapabilitySupport,
     AdapterInteractionProfile,

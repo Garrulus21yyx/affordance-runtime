@@ -1,8 +1,8 @@
 from dataclasses import replace
 from time import time
 
-from affordance_runtime.contracts import Observation
-from affordance_runtime.grounding import (
+from affordance_runtime.actions.contracts import Observation
+from affordance_runtime.actions.grounding import (
     DomGroundingPayload,
     GroundingCandidate,
     GroundingSource,
@@ -10,14 +10,14 @@ from affordance_runtime.grounding import (
     RouteScore,
     UnifiedAffordance,
 )
-from affordance_runtime.memory import BindingCache, BindingCacheKey
-from affordance_runtime.route_calibration import (
+from affordance_runtime.actions.route_calibration import (
     RouteOutcome,
     RouteOutcomeStatus,
     RouteScope,
 )
-from affordance_runtime.routing_policy import RouteContext
-from affordance_runtime.unified_grounding import UnifiedRoutePlanner
+from affordance_runtime.actions.routing_policy import RouteContext
+from affordance_runtime.actions.unified_grounding import UnifiedRoutePlanner
+from affordance_runtime.memory import BindingCache, BindingCacheKey
 from affordance_runtime.verification.mechanical import VerificationStatus
 
 

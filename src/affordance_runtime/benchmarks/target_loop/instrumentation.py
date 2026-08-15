@@ -14,9 +14,9 @@ from affordance_runtime.benchmarks.target_loop.metric_registry import require_cu
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.contracts import ModelMetadata
+from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.contracts import ModelMetadata
 from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
 
 

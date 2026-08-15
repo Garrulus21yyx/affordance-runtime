@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from affordance_runtime.reference_target_readiness import (
+from affordance_runtime.benchmarks.target_loop.reference_readiness import (
     REFERENCE_TARGET_READINESS,
     ReferenceTargetBlocker,
     ReferenceTargetCutoverBlockedError,

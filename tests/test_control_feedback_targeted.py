@@ -41,8 +41,8 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkSuiteResult,
     MetricMeasurement,
 )
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.provider_orchestrator import (
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.provider_orchestrator import (
     ProviderCallOrchestrator,
     ProviderCallPolicy,
 )

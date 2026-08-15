@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib import Path
 
-from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolCatalog
+from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
 
 ROOT = Path(__file__).parents[2]
 RUNTIME = ROOT / "src" / "affordance_runtime"
@@ -24,9 +24,9 @@ def test_grounded_catalog_cannot_become_a_second_context_owner() -> None:
 
 def test_grounded_action_path_has_no_mandatory_semantic_updater() -> None:
     governed = (
-        "model_policy/grounded_tool_port_bridge.py",
-        "model_policy/grounded_policy_context.py",
-        "model_policy/prompts/grounded_agent.yaml",
+        "model/policy/grounded_tool_port_bridge.py",
+        "model/policy/grounded_policy_context.py",
+        "model/policy/prompts/grounded_agent.yaml",
     )
     banned = (
         "task_state_updater",

@@ -2,6 +2,11 @@ from dataclasses import replace
 
 from test_agent_loop import _task, _world
 
+from affordance_runtime.actions import (
+    ActionRisk,
+)
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.agent.control_outcome import Continue
 from affordance_runtime.agent.post_action_policy import post_action_result
 from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
@@ -9,9 +14,10 @@ from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStat
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_action_evaluation
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.world import ActionRisk, ObservationSourceProfile, SurfaceObservation
-from affordance_runtime.world.action_space import ActionSpaceBuilder
-from affordance_runtime.world.binder import ActionBinder
+from affordance_runtime.world import (
+    ObservationSourceProfile,
+    SurfaceObservation,
+)
 
 
 def _request(*, risk=ActionRisk.LOW, category="local_reversible"):

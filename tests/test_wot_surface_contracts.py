@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.actions.classification import classify_wot_action
 from affordance_runtime.surfaces.wot.contracts import (
     WotAffordanceBinding,
     WotDeploymentScope,
@@ -11,7 +12,6 @@ from affordance_runtime.surfaces.wot.contracts import (
 )
 from affordance_runtime.surfaces.wot.thing_description import WotAdapter
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world.action_classification import classify_wot_action
 
 
 def _task() -> TaskGoal:

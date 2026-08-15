@@ -8,8 +8,8 @@ from typing import Any, Sequence, TypeVar
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from affordance_runtime.model_capture import PrivateModelCapture
-from affordance_runtime.model_port import (
+from affordance_runtime.model.providers.capture import PrivateModelCapture
+from affordance_runtime.model.providers.port import (
     FallbackModelPort,
     ModelConfig,
     ModelImageURLPart,

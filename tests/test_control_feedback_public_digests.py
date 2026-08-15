@@ -6,10 +6,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 from test_agent_loop import _task, _world
 
+from affordance_runtime.actions import (
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent.control_feedback import current_semantic_scope
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
-from affordance_runtime.world import ActionSpaceBuilder
+from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.world.public_semantic_digest import (
     action_page_request_digest,
     issue_digest,

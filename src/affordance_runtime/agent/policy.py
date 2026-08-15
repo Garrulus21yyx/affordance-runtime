@@ -12,8 +12,8 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
-from affordance_runtime.model_boundary.context import AgentContext
-from affordance_runtime.model_boundary.failures import ModelFailureKind
+from affordance_runtime.model.context.context import AgentContext
+from affordance_runtime.model.context.failures import ModelFailureKind
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
 

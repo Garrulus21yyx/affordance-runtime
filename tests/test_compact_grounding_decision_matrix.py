@@ -16,16 +16,16 @@ from affordance_runtime.benchmarks.model_conformance.decision_matrix import (
 )
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
 from affordance_runtime.benchmarks.model_conformance.stages import attribute_decision_payload
-from affordance_runtime.model_policy.contracts import ModelDecisionRequest
-from affordance_runtime.model_policy.grounding import (
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.model.policy.grounding import (
     MAX_COMPACT_GUIDE_BYTES,
     DecisionGroundingVariant,
     build_compact_decision_guide,
     serialize_compact_decision_guide,
 )
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION, decision_response_schema
-from affordance_runtime.model_port import ModelConfig
+from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model.policy.spec import SCHEMA_VERSION, decision_response_schema
+from affordance_runtime.model.providers.port import ModelConfig
 
 
 @dataclass

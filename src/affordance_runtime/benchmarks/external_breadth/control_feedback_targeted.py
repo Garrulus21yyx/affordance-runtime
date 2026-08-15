@@ -46,7 +46,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import CASE_SCHEMA_VERS
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
 
 TARGETED_CAMPAIGN_ID = "miniwob-control-feedback-25-targeted-seed7-v2"
 TARGETED_PROFILE = "MINIWOB_CONTROL_FEEDBACK_25_TARGETED_RECOVERY"

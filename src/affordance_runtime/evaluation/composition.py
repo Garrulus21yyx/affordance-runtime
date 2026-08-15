@@ -21,8 +21,8 @@ from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionJu
 from affordance_runtime.evaluation.semantic_readiness import SemanticReadiness, assess_semantic_readiness
 from affordance_runtime.evaluation.success_expression import evaluate_success_expression
 from affordance_runtime.evaluation.user_acceptance import UserAcceptanceCriterionEvaluator
-from affordance_runtime.model_boundary.evaluator_views import build_semantic_judge_request
-from affordance_runtime.model_boundary.failures import ModelFailure
+from affordance_runtime.model.context.evaluator_views import build_semantic_judge_request
+from affordance_runtime.model.context.failures import ModelFailure
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 

@@ -4,12 +4,18 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import ActionBinder, ActionSpaceBuilder, build_agent_world_view
+from affordance_runtime.world import (
+    build_agent_world_view,
+)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

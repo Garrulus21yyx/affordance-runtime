@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.paging import canonical_action_query
+from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.attempt_receipt import safe_exception_class
 from affordance_runtime.agent.control_feedback import (
     ControlFeedbackSource,
@@ -55,16 +58,13 @@ from affordance_runtime.agent.user_input import build_user_input_request
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
 from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
+from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     ObservationRequestKind,
     WorldObservationRequest,
 )
-from affordance_runtime.world.action_paging import canonical_action_query
-from affordance_runtime.world.action_space import ActionSpaceBuilder
-from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.public_semantic_digest import (
     action_page_request_digest,
     observation_request_digest,

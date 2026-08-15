@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
+from affordance_runtime.actions.contracts import Affordance, AffordanceLease, RiskLevel, Surface
 from affordance_runtime.immutable import FrozenSequence, freeze_json
 from affordance_runtime.surfaces.wot.security import (
     RateLimit,

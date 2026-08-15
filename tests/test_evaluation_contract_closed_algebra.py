@@ -15,7 +15,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
 
 
 def test_public_evaluation_statuses_require_enum_instances() -> None:

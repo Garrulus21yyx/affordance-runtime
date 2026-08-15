@@ -12,7 +12,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.observation_control import capture_fresh, post_action_observation
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
+from affordance_runtime.model.context.acquisition_projection import project_acquisition_offers
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (

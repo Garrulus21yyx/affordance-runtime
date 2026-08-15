@@ -6,8 +6,8 @@ from typing import ClassVar
 
 from affordance_runtime.benchmarks.model_conformance.contracts import ModelProfileIdentity
 from affordance_runtime.benchmarks.model_conformance.matrix_runner import run_decision_matrix
-from affordance_runtime.model_policy.spec import SCHEMA_VERSION
-from affordance_runtime.model_port import (
+from affordance_runtime.model.policy.spec import SCHEMA_VERSION
+from affordance_runtime.model.providers.port import (
     ModelCallRecord,
     ProviderFailureKind,
     ProviderModelError,

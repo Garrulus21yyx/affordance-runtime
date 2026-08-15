@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from affordance_runtime.model_boundary.budgets import BoundedSection
-from affordance_runtime.model_boundary.context import AgentProgressEventView
+from affordance_runtime.model.context.budgets import BoundedSection
+from affordance_runtime.model.context.context import AgentProgressEventView
 
 _MAX_PROGRESS_EVENTS = 3
 

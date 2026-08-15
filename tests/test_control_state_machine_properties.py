@@ -860,7 +860,7 @@ def test_changed_fresh_risk_material_cannot_reuse_old_subject() -> None:
 
 
 def _selection_for_risk():
-    from affordance_runtime.world.action_space import ActionSpaceBuilder
+    from affordance_runtime.actions.action_space import ActionSpaceBuilder
 
     world = _world("risk", False, "#private")
     option = ActionSpaceBuilder().build(_task(), world).options[0]

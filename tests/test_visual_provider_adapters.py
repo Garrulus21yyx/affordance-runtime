@@ -9,13 +9,13 @@ import pytest
 from PIL import Image
 
 from affordance_runtime.integrations.omniparser import OmniParserHttpRegionProposer
-from affordance_runtime.model_port import StructuredModelError
-from affordance_runtime.visual_disambiguation import (
+from affordance_runtime.model.providers.port import StructuredModelError
+from affordance_runtime.surfaces.visual.disambiguation import (
     OpenAICompatibleVisualCandidateDisambiguator,
     VisualCandidate,
     VisualCandidateDisambiguationRequest,
 )
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.surfaces.visual.grounding import (
     VisualRegionProposalRequest,
     configured_visual_region_proposer_from_environment,
     visual_region_proposer_from_environment,

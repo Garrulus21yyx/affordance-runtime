@@ -5,13 +5,16 @@ import pytest
 from target_agent_loop_support import SharedStateActionEvaluator, SharedStateTaskEvaluator
 from test_wot_surface_adapter import FakeWotTransport, shared_td
 
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
-from affordance_runtime.world import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

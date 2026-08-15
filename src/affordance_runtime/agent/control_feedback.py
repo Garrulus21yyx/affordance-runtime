@@ -21,11 +21,11 @@ from affordance_runtime.world.public_semantic_digest import (
 )
 
 if TYPE_CHECKING:
+    from affordance_runtime.actions.admission import AdmissionIssue
+    from affordance_runtime.actions.paging import InternalActionPage
+    from affordance_runtime.actions.space_contracts import ActionSpace
     from affordance_runtime.agent.decisions import SelectAction
     from affordance_runtime.agent.state import AgentLoopState
-    from affordance_runtime.world.action_paging import InternalActionPage
-    from affordance_runtime.world.admission_issue import AdmissionIssue
-    from affordance_runtime.world.contracts import ActionSpace
 
 
 class ControlFeedbackKind(StrEnum):

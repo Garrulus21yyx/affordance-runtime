@@ -3,6 +3,11 @@ from dataclasses import dataclass, replace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionBinding,
+    ActionRisk,
+)
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
@@ -19,8 +24,6 @@ from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,
-    ActionBinding,
-    ActionRisk,
     CoverageState,
     ObservationAcquisition,
     ObservationCapabilities,
@@ -29,7 +32,6 @@ from affordance_runtime.world import (
     StateFact,
     WorldObservation,
 )
-from affordance_runtime.world.action_space import ActionSpaceBuilder
 
 
 def _world(identity: str, enabled: bool, selector: str, *, risk: ActionRisk = ActionRisk.MEDIUM) -> WorldObservation:

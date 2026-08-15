@@ -8,8 +8,8 @@ from affordance_runtime.benchmarks.model_conformance.decision_matrix import (
     build_seven_decision_cases,
 )
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
-from affordance_runtime.model_policy.factory import model_policy_from_environment
-from affordance_runtime.model_policy.grounding import (
+from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.grounding import (
     COMPACT_CONTRACT_V2_PROFILE_VERSION,
     MAX_COMPACT_GUIDE_BYTES,
     DecisionGroundingVariant,

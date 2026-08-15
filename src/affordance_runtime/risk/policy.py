@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.actions.space_contracts import (
+    ActionRisk,
+    AdmittedActionSelection,
+)
 from affordance_runtime.risk.contracts import ConfirmationSubject, RiskAssessment, RiskDecisionKind
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
-from affordance_runtime.world.contracts import ActionRisk, AdmittedActionSelection
 
 
 @dataclass(frozen=True)

@@ -12,15 +12,17 @@ from target_agent_loop_support import (
 from affordance_runtime.agent import (
     AgentLoop,
     AgentLoopStatus,
+)
+from affordance_runtime.app import (
     compose_target_runtime,
 )
-from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.evaluation import (
     ProductionActionEvaluator,
     ProductionTaskEvaluator,
     TaskEvaluationStatus,
 )
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 

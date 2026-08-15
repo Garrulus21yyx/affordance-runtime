@@ -2,13 +2,15 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionRisk,
+    AdmittedActionSelection,
+)
 from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskAssessment, RiskDecisionKind, RiskPolicy, semantic_subject_id
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    ActionRisk,
-    AdmittedActionSelection,
     AgentTargetView,
     AgentWorldView,
 )

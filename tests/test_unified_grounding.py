@@ -3,9 +3,9 @@ from time import time
 
 import pytest
 
-from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, Surface
-from affordance_runtime.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
-from affordance_runtime.unified_grounding import (
+from affordance_runtime.actions.contracts import Affordance, AffordanceLease, Observation, Surface
+from affordance_runtime.actions.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
+from affordance_runtime.actions.unified_grounding import (
     CandidateDescriptor,
     SemanticEntityResolver,
     UnifiedRoutePlanner,

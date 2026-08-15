@@ -50,7 +50,7 @@ from affordance_runtime.benchmarks.target_loop.manifest import (
 )
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import TaskOutcomeKind
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
 
 TARGETED_CAMPAIGN_ID = "miniwob-verifier-14-targeted-seed7-v1"
 TARGETED_PROFILE = "MINIWOB_VERIFIER_14_TARGETED_DIAGNOSTIC"

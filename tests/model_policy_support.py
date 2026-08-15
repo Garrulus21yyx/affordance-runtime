@@ -2,8 +2,8 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
-from affordance_runtime.model_policy.parser import parse_agent_decision
+from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model.policy.parser import parse_agent_decision
 
 DecisionScript = Callable[[dict[str, object], int], dict[str, object] | str]
 

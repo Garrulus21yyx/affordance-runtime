@@ -1,6 +1,6 @@
 import pytest
 
-from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
+from affordance_runtime.actions.contracts import Affordance, AffordanceLease, RiskLevel, Surface
 from affordance_runtime.surfaces.dom.document_model import (
     AuthoredInteractiveExtension,
     DomAdapter,

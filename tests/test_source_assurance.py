@@ -1,6 +1,6 @@
-from affordance_runtime.model_boundary.acquisition_projection import project_acquisition_offers
-from affordance_runtime.model_boundary.budgets import ContextProjectionBudget
-from affordance_runtime.model_boundary.world_projection import project_model_world
+from affordance_runtime.model.context.acquisition_projection import project_acquisition_offers
+from affordance_runtime.model.context.budgets import ContextProjectionBudget
+from affordance_runtime.model.context.world_projection import project_model_world
 from affordance_runtime.world import (
     AcquisitionCost,
     CoverageState,

@@ -11,9 +11,9 @@ TARGET_CORE = (
     PACKAGE / "evaluation",
     PACKAGE / "risk",
     PACKAGE / "confirmation",
-    PACKAGE / "model_boundary",
-    PACKAGE / "model_policy",
-    PACKAGE / "model_evaluator",
+    PACKAGE / "model" / "context",
+    PACKAGE / "model" / "policy",
+    PACKAGE / "model" / "evaluator",
 )
 FORBIDDEN = {
     "affordance_runtime.contracts",
@@ -24,7 +24,7 @@ FORBIDDEN = {
 }
 POLICY_FORBIDDEN_PREFIXES = (
     "affordance_runtime.executors",
-    "affordance_runtime.grounding",
+    "affordance_runtime.actions.grounding",
     "affordance_runtime.surfaces",
 )
 
@@ -64,7 +64,7 @@ def test_agent_and_surface_dependency_directions_are_one_way() -> None:
     agent_imports = set().union(*(_imports(path) for path in _files(PACKAGE / "agent")))
     surface_imports = set().union(*(_imports(path) for path in _files(PACKAGE / "surfaces")))
 
-    assert "affordance_runtime.browser_session" not in agent_imports
+    assert "affordance_runtime.surfaces.dom.browser_session" not in agent_imports
     assert not any(name.startswith("affordance_runtime.surfaces") for name in agent_imports)
     assert "affordance_runtime.agent.loop" not in surface_imports
 
@@ -75,7 +75,7 @@ def test_risk_and_confirmation_keep_surface_private_dependencies_out() -> None:
 
     assert not any(name.startswith("affordance_runtime.surfaces") for name in risk_imports)
     assert not any(name.startswith("affordance_runtime.surfaces") for name in confirmation_imports)
-    assert "affordance_runtime.browser_session" not in confirmation_imports
+    assert "affordance_runtime.surfaces.dom.browser_session" not in confirmation_imports
 
 
 def test_policy_and_evaluators_do_not_import_concrete_execution_owners() -> None:
@@ -84,48 +84,48 @@ def test_policy_and_evaluators_do_not_import_concrete_execution_owners() -> None
     policy_names = _referenced_names(policy_path)
 
     assert not any(name.startswith(POLICY_FORBIDDEN_PREFIXES) for name in policy_imports)
-    assert "affordance_runtime.world.binder" not in policy_imports
+    assert "affordance_runtime.actions.binder" not in policy_imports
     assert "affordance_runtime.world.orchestrator" not in policy_imports
     assert "ActionSpace" not in policy_names
     assert "Turn" not in policy_names
 
 
 def test_model_boundary_has_no_concrete_surface_execution_or_fixture_dependencies() -> None:
-    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_boundary")))
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model" / "context")))
 
     assert not any(name.startswith("affordance_runtime.surfaces") for name in imports)
     assert not any(name.startswith("affordance_runtime.executors") for name in imports)
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
-    assert "affordance_runtime.world.binder" not in imports
+    assert "affordance_runtime.actions.binder" not in imports
 
 
 def test_model_policy_has_no_surface_binding_execution_or_loop_state_dependencies() -> None:
-    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_policy")))
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model" / "policy")))
     loop_imports = _imports(PACKAGE / "agent" / "loop.py")
 
     assert not any(name.startswith("affordance_runtime.surfaces") for name in imports)
     assert not any(name.startswith("affordance_runtime.executors") for name in imports)
-    assert "affordance_runtime.world.binder" not in imports
+    assert "affordance_runtime.actions.binder" not in imports
     assert "affordance_runtime.agent.state" not in imports
-    assert not any(name.startswith("affordance_runtime.model_policy") for name in loop_imports)
+    assert not any(name.startswith("affordance_runtime.model.policy") for name in loop_imports)
 
 
 def test_model_policy_transport_is_owned_only_by_existing_model_port() -> None:
-    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_policy")))
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model" / "policy")))
     loop_imports = _imports(PACKAGE / "agent" / "loop.py")
 
     assert not any(name == "requests" or name.startswith(("urllib", "httpx")) for name in imports)
-    assert "affordance_runtime.model_policy.model_port_bridge" not in loop_imports
+    assert "affordance_runtime.model.policy.model_port_bridge" not in loop_imports
 
 
 def test_model_evaluator_keeps_transport_and_execution_boundaries() -> None:
-    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model_evaluator")))
+    imports = set().union(*(_imports(path) for path in _files(PACKAGE / "model" / "evaluator")))
     loop_imports = _imports(PACKAGE / "agent" / "loop.py")
 
     assert not any(name.startswith(("urllib", "httpx", "requests", "affordance_runtime.surfaces")) for name in imports)
-    assert "affordance_runtime.world.binder" not in imports
+    assert "affordance_runtime.actions.binder" not in imports
     assert not any(name.startswith("affordance_runtime.executors") for name in imports)
-    assert not any(name.startswith("affordance_runtime.model_evaluator") for name in loop_imports)
+    assert not any(name.startswith("affordance_runtime.model.evaluator") for name in loop_imports)
 
 
 def test_target_core_does_not_import_benchmark_modules_or_behavioral_recorder() -> None:
@@ -157,7 +157,7 @@ def test_agent_loop_injected_collaborator_review_gate_remains_closed() -> None:
 
 def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writes() -> None:
     owner = PACKAGE / "agent" / "control_transition.py"
-    projection = PACKAGE / "model_boundary" / "control_transition_projection.py"
+    projection = PACKAGE / "model" / "context" / "control_transition_projection.py"
     owner_imports = _imports(owner)
     projection_imports = _imports(projection)
 
@@ -165,7 +165,7 @@ def test_control_transition_owner_has_one_way_dependencies_and_unique_state_writ
         name.startswith(
             (
                 "affordance_runtime.benchmarks",
-                "affordance_runtime.model_boundary",
+                "affordance_runtime.model.context",
                 "affordance_runtime.surfaces",
             )
         )
@@ -202,10 +202,10 @@ def test_turn_is_only_a_compatibility_projection_not_a_production_fact_writer() 
 def test_benchmark_case_projection_is_narrow_and_separate_from_model_projection() -> None:
     benchmark = PACKAGE / "benchmarks" / "target_loop" / "case_projection.py"
     runner = PACKAGE / "benchmarks" / "target_loop" / "runner.py"
-    model = PACKAGE / "model_boundary" / "control_transition_projection.py"
+    model = PACKAGE / "model" / "context" / "control_transition_projection.py"
 
     assert not any(
-        name.startswith("affordance_runtime.model_boundary")
+        name.startswith("affordance_runtime.model.context")
         for name in _imports(benchmark)
     )
     assert not any(

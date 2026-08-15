@@ -1,7 +1,7 @@
 from affordance_runtime.benchmarks.model_conformance.profile_identity import (
     identity_from_ollama_inventory,
 )
-from affordance_runtime.model_policy.schema_identity import decision_schema_digest
+from affordance_runtime.model.policy.schema_identity import decision_schema_digest
 
 
 def test_ollama_identity_uses_exact_installed_metadata_without_endpoint() -> None:

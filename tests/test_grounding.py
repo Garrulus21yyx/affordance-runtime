@@ -1,7 +1,7 @@
 import pytest
 
-from affordance_runtime.contracts import Observation
-from affordance_runtime.grounding import (
+from affordance_runtime.actions.contracts import Observation
+from affordance_runtime.actions.grounding import (
     DomGroundingPayload,
     EvidenceKind,
     GroundingCandidate,

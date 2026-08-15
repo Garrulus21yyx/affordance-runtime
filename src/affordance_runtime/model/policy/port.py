@@ -1,0 +1,23 @@
+"""One-call provider-neutral ports for typed model phases."""
+
+from typing import Protocol, TypeVar
+
+from affordance_runtime.agent.decision_capability import DecisionCapability
+from affordance_runtime.model.context.failures import ModelFailure
+from affordance_runtime.model.policy.contracts import (
+    ModelDecisionRequest,
+    ResolvedModelDecision,
+)
+
+ResolvedT_co = TypeVar("ResolvedT_co", bound=ResolvedModelDecision, covariant=True)
+
+
+class StructuredModelPort(Protocol[ResolvedT_co]):
+    async def generate(
+        self, request: ModelDecisionRequest
+    ) -> ResolvedT_co | ModelFailure: ...
+
+
+class StructuredDecisionModelPort(StructuredModelPort[ResolvedModelDecision], Protocol):
+    @property
+    def supported_decisions(self) -> frozenset[DecisionCapability]: ...

@@ -1,8 +1,15 @@
+from affordance_runtime.actions import (
+    ActionRisk,
+    AdmittedActionSelection,
+)
 from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import ActionRisk, AdmittedActionSelection, AgentTargetView, AgentWorldView
+from affordance_runtime.world import (
+    AgentTargetView,
+    AgentWorldView,
+)
 
 
 def _selection() -> AdmittedActionSelection:

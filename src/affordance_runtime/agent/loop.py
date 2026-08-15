@@ -7,6 +7,12 @@ from dataclasses import dataclass, field
 from typing import TypeVar
 
 import affordance_runtime.agent.progress_control as progress_control
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.binder import ActionBinder
+from affordance_runtime.actions.space_contracts import (
+    ActionSpace,
+    AdmittedActionSelection,
+)
 from affordance_runtime.agent.accounting import RunAccounting
 from affordance_runtime.agent.attempt_receipt import (
     AttemptDisposition,
@@ -51,7 +57,7 @@ from affordance_runtime.confirmation.contracts import ConfirmationDecision, Conf
 from affordance_runtime.confirmation.summary import build_confirmation_request
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionIntent
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
+from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.risk.validation import validate_risk_assessment
@@ -64,9 +70,6 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
-from affordance_runtime.world.action_space import ActionSpaceBuilder
-from affordance_runtime.world.binder import ActionBinder
-from affordance_runtime.world.contracts import ActionSpace, AdmittedActionSelection
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.view import build_agent_world_view
 

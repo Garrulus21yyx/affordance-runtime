@@ -5,8 +5,8 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from affordance_runtime.model_policy.tool_contracts import ToolSpec
-from affordance_runtime.model_port import ModelConfig, ModelMessage, OpenAICompatibleModelPort
+from affordance_runtime.model.policy.tool_contracts import ToolSpec
+from affordance_runtime.model.providers.port import ModelConfig, ModelMessage, OpenAICompatibleModelPort
 
 
 def test_openai_compatible_native_tool_transport_requires_one_nonparallel_call() -> None:

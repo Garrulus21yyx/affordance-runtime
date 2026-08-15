@@ -1,6 +1,6 @@
 import pytest
 
-from affordance_runtime.browser_session import BrowserSession
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 
 
 def _png(width: int = 100, height: int = 80) -> bytes:

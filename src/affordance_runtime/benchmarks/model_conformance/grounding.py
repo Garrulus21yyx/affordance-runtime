@@ -10,13 +10,13 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from affordance_runtime.model_policy.grounding import (
+from affordance_runtime.model.policy.grounding import (
     build_compact_decision_guide,
     build_compact_decision_guide_v2,
     serialize_compact_decision_guide,
     serialize_compact_decision_guide_v2,
 )
-from affordance_runtime.model_policy.prompt import MODEL_POLICY_INSTRUCTIONS
+from affordance_runtime.model.policy.prompt import MODEL_POLICY_INSTRUCTIONS
 
 
 class GroundingVariant(StrEnum):

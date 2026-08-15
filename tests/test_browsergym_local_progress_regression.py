@@ -19,12 +19,12 @@ from affordance_runtime.evaluation import (
     ActionEvaluationStatus,
     ProductionActionEvaluator,
 )
-from affordance_runtime.model_policy import (
+from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,
     ResolvedModelDecision,
 )
-from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
+from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_to_decision
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("MINIWOB_URL"),

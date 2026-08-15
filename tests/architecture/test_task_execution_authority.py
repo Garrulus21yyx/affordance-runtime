@@ -29,7 +29,7 @@ def test_workflow_task_plan_owner_is_physically_absent() -> None:
 
 
 def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
-    projection = (RUNTIME / "model_boundary" / "projection.py").read_text(encoding="utf-8")
+    projection = (RUNTIME / "model" / "context" / "projection.py").read_text(encoding="utf-8")
     assert "task_plan_contracts" not in projection
     assert "project_plan" not in projection
     for relative in ("agent/loop.py", "agent/state.py"):
@@ -66,8 +66,8 @@ def test_agent_loop_has_no_staged_objective_or_workflow_plan_state() -> None:
     production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
     assert "AgentSetControlView" not in production
     assert "set_control" not in production
-    assert not (RUNTIME / "model_policy" / "set_objective_catalog.py").exists()
-    assert not (RUNTIME / "model_policy" / "execution_control_catalog.py").exists()
+    assert not (RUNTIME / "model" / "policy" / "set_objective_catalog.py").exists()
+    assert not (RUNTIME / "model" / "policy" / "execution_control_catalog.py").exists()
     assert not (RUNTIME / "task" / "planning_contracts.py").exists()
     for removed in (
         "agent/local_objective_proposal.py",
@@ -115,12 +115,12 @@ def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> No
 
 def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -> None:
     production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
-    policy = (RUNTIME / "model_policy" / "policy.py").read_text(encoding="utf-8")
+    policy = (RUNTIME / "model" / "policy" / "policy.py").read_text(encoding="utf-8")
     adapters = "\n".join(
-        (RUNTIME / "model_policy" / relative).read_text(encoding="utf-8")
+        (RUNTIME / "model" / "policy" / relative).read_text(encoding="utf-8")
         for relative in ("model_port_bridge.py", "tool_port_bridge.py", "grounded_tool_port_bridge.py")
     )
-    spec = (RUNTIME / "model_policy" / "spec.py").read_text(encoding="utf-8")
+    spec = (RUNTIME / "model" / "policy" / "spec.py").read_text(encoding="utf-8")
 
     assert "ResolvedModelDecision" in adapters
     assert "if isinstance(outcome, ResolvedModelDecision)" in policy
@@ -143,7 +143,7 @@ def test_model_policy_has_no_task_semantic_producers() -> None:
     )
     producers = {
         path.relative_to(RUNTIME).as_posix()
-        for path in (RUNTIME / "model_policy").rglob("*.py")
+        for path in (RUNTIME / "model" / "policy").rglob("*.py")
         if any(marker in path.read_text(encoding="utf-8") for marker in markers)
     }
     assert producers == set()
@@ -157,7 +157,7 @@ def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
     assert "EstablishLocalObjective" not in source
     assert "LocalObjective" not in source
 
-    catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
+    catalog = (RUNTIME / "model" / "policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
     assert "GroundedToolPhase.ACTION_SELECTION" in catalog
     assert "OBJECTIVE_PROPOSAL" not in catalog
     assert "propose_local_objective" not in catalog
@@ -165,9 +165,9 @@ def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
 
 
 def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -> None:
-    builder = (RUNTIME / "model_boundary" / "context_builder.py").read_text(encoding="utf-8")
-    catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
-    binder = (RUNTIME / "model_policy" / "grounded_policy_context.py").read_text(encoding="utf-8")
+    builder = (RUNTIME / "model" / "context" / "context_builder.py").read_text(encoding="utf-8")
+    catalog = (RUNTIME / "model" / "policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
+    binder = (RUNTIME / "model" / "policy" / "grounded_policy_context.py").read_text(encoding="utf-8")
 
     assert "close_action_candidates(actions, grounding.index, context_id=identity.context_id)" in builder
     assert "GroundedToolCompiler().compile(" in catalog
@@ -181,9 +181,9 @@ def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -
 def test_latest_transition_has_one_root_owned_projection_chain() -> None:
     transition = (RUNTIME / "agent" / "control_transition.py").read_text(encoding="utf-8")
     reducer = (RUNTIME / "agent" / "control_reducer.py").read_text(encoding="utf-8")
-    builder = (RUNTIME / "model_boundary" / "context_builder.py").read_text(encoding="utf-8")
+    builder = (RUNTIME / "model" / "context" / "context_builder.py").read_text(encoding="utf-8")
     projection = (
-        RUNTIME / "model_boundary" / "transition_digest_projection.py"
+        RUNTIME / "model" / "context" / "transition_digest_projection.py"
     ).read_text(encoding="utf-8")
 
     assert "class ControlTransition:" in transition

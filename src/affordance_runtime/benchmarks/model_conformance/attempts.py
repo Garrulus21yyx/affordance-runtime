@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from affordance_runtime.model_port import (
+from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
     ModelPort,

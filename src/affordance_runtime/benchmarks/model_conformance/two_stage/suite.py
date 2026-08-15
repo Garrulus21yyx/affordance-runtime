@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
+from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
 
 from ..contracts import ModelProfileIdentity
 from ..matrix_progress import write_json_report

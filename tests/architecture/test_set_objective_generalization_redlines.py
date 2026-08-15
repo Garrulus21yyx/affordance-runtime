@@ -42,7 +42,7 @@ def test_removed_witness_compilers_and_task_relative_projection_stay_absent() ->
 
 
 def test_catalog_set_directive_uses_explicit_mode_not_empty_set_truthiness() -> None:
-    tree = ast.parse(_source("model_policy/grounded_tool_catalog.py"))
+    tree = ast.parse(_source("model/policy/grounded_tool_catalog.py"))
     suspicious = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.If):

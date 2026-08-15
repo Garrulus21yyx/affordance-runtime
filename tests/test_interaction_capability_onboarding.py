@@ -6,19 +6,34 @@ from pathlib import Path
 
 import pytest
 
-from affordance_runtime.model_boundary.projection import project_action_space
-from affordance_runtime.model_policy.grounded_tool_catalog import resolve_grounded_tool_call
-from affordance_runtime.model_policy.grounded_tool_compiler import GroundedToolCompiler
-from affordance_runtime.model_policy.grounded_tool_contracts import (
+from affordance_runtime.actions import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ActionBinding,
+    ActionSpaceBuilder,
+)
+from affordance_runtime.actions.capabilities import (
+    AdapterCapabilitySupport,
+    AdapterInteractionProfile,
+    CapabilityComposer,
+    InteractionCapabilityError,
+    InteractionCapabilityIssueCode,
+    InteractionSubjectKind,
+    PrimitiveTranslator,
+    VerificationContract,
+)
+from affordance_runtime.model.context.projection import project_action_space
+from affordance_runtime.model.policy.grounded_tool_catalog import resolve_grounded_tool_call
+from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
+from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
     GroundedToolCatalog,
 )
-from affordance_runtime.model_policy.provider_call_normalizer import (
+from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_INTERACTION_CAPABILITIES,
     BROWSERGYM_INTERACTION_PROFILE,
@@ -37,24 +52,11 @@ from affordance_runtime.surfaces.wot.interaction_profile import (
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    INTERACTION_CAPABILITY_REGISTRY,
-    ActionBinding,
-    ActionSpaceBuilder,
     CoverageState,
     SemanticTarget,
     StateFact,
     WorldObservation,
     build_agent_world_view,
-)
-from affordance_runtime.world.interaction_capabilities import (
-    AdapterCapabilitySupport,
-    AdapterInteractionProfile,
-    CapabilityComposer,
-    InteractionCapabilityError,
-    InteractionCapabilityIssueCode,
-    InteractionSubjectKind,
-    PrimitiveTranslator,
-    VerificationContract,
 )
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -306,7 +308,10 @@ def test_tool_compilation_cannot_delete_actor_world_nodes_or_facts() -> None:
 
 
 def test_normalizer_import_boundary_and_deleted_owners_are_unreachable() -> None:
-    normalizer_path = _ROOT / "src/affordance_runtime/model_policy/provider_call_normalizer.py"
+    normalizer_path = (
+        _ROOT
+        / "src/affordance_runtime/model/policy/provider_call_normalizer.py"
+    )
     tree = ast.parse(normalizer_path.read_text())
     imports = {
         node.module

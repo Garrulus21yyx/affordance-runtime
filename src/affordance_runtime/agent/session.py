@@ -27,11 +27,11 @@ from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.environment import WorldEnvironment
 
 if TYPE_CHECKING:
+    from affordance_runtime.actions.paging import InternalActionPage
+    from affordance_runtime.actions.space_contracts import ActionSpace
     from affordance_runtime.agent.control_transition import ControlContinuationScope
     from affordance_runtime.agent.loop import AgentLoop
-    from affordance_runtime.model_boundary.context import AgentContext
-    from affordance_runtime.world.action_paging import InternalActionPage
-    from affordance_runtime.world.contracts import ActionSpace
+    from affordance_runtime.model.context.context import AgentContext
 
 
 @dataclass

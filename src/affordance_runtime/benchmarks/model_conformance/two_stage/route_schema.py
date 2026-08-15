@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from affordance_runtime.model_policy.grounding import (
+from affordance_runtime.model.policy.grounding import (
     build_compact_decision_guide_v2,
     serialize_compact_decision_guide_v2,
 )
-from affordance_runtime.model_policy.strict_json import strict_json_loads
+from affordance_runtime.model.policy.strict_json import strict_json_loads
 
 from .contracts import DecisionKind, DecisionKindRoute
 

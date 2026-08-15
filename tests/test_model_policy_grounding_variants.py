@@ -7,7 +7,7 @@ from affordance_runtime.benchmarks.model_conformance.grounding import (
     context_bound_schema,
 )
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
-from affordance_runtime.model_policy.spec import decision_response_schema
+from affordance_runtime.model.policy.spec import decision_response_schema
 
 
 def test_grounding_variants_keep_current_ids_in_user_data() -> None:

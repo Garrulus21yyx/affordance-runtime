@@ -7,9 +7,9 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _
 from test_dynamic_tool_bridge import _CompactPort
 
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
-from affordance_runtime.model_port import ModelConfig
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
+from affordance_runtime.model.providers.port import ModelConfig
 from affordance_runtime.testing import StaticEnvironment
 
 

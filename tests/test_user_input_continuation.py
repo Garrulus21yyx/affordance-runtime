@@ -11,7 +11,6 @@ from affordance_runtime.agent import (
     Abort,
     AgentLoopStatus,
     AskUser,
-    TargetRuntime,
     UserInputResumed,
     UserInputResumeRejected,
     UserInputResumeRejectionCode,
@@ -21,6 +20,9 @@ from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.user_input import (
     build_user_input_request,
     user_input_revision_rejection,
+)
+from affordance_runtime.app import (
+    TargetRuntime,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import (

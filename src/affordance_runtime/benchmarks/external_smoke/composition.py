@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from affordance_runtime.benchmarks.external_smoke.case_environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
 from affordance_runtime.evaluation import ProductionActionEvaluator
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
-from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
+from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_to_decision
 
 
 @dataclass

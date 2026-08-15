@@ -9,7 +9,7 @@ from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.evaluation.validation import validate_task_evaluation
-from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
+from affordance_runtime.model.context import ModelFailure, ModelFailureKind
 from affordance_runtime.task import EvaluationSpec, TaskGoal
 from affordance_runtime.world import (
     CoverageState,

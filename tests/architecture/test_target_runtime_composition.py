@@ -28,11 +28,11 @@ def test_target_benchmark_uses_production_runtime_composition_root() -> None:
     assert "AgentEpisodeRunner(" not in source
     assert "affordance_runtime.agent.loop" not in _imports(runner)
     assert "affordance_runtime.agent.episode_runner" not in _imports(runner)
-    assert "affordance_runtime.agent.composition" in _imports(runner)
+    assert "affordance_runtime.app.composition" in _imports(runner)
 
 
 def test_target_composition_owner_has_no_benchmark_dependency() -> None:
-    composition = RUNTIME / "agent" / "composition.py"
+    composition = RUNTIME / "app" / "composition.py"
 
     assert not any(
         name.startswith("affordance_runtime.benchmarks")
@@ -41,7 +41,7 @@ def test_target_composition_owner_has_no_benchmark_dependency() -> None:
 
 
 def test_target_runtime_owns_lifecycle_without_legacy_coordinator_or_runner() -> None:
-    runtime = RUNTIME / "agent" / "runtime.py"
+    runtime = RUNTIME / "app" / "runtime.py"
     imports = _imports(runtime)
 
     assert "affordance_runtime.agent.loop" in imports
@@ -71,7 +71,7 @@ def test_http_fact_surface_is_product_owned_and_has_no_fixture_or_benchmark_orac
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
     assert "affordance_runtime.fixtures" not in imports
     assert "affordance_runtime.reference_scenarios" not in imports
-    assert "affordance_runtime.reference_target_readiness" not in imports
+    assert "affordance_runtime.benchmarks.target_loop.reference_readiness" not in imports
 
 
 def test_dom_document_projection_is_product_owned_and_has_no_reference_oracle() -> None:
@@ -85,14 +85,15 @@ def test_dom_document_projection_is_product_owned_and_has_no_reference_oracle() 
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in imports)
     assert "affordance_runtime.fixtures" not in imports
     assert "affordance_runtime.reference_scenarios" not in imports
-    assert "affordance_runtime.reference_target_readiness" not in imports
+    assert "affordance_runtime.benchmarks.target_loop.reference_readiness" not in imports
 
 
 def test_target_product_entry_has_no_legacy_or_benchmark_dependency() -> None:
     for relative in (
-        "browser_thread_session.py",
-        "target_composition.py",
-        "target_cli.py",
+        "app/runtime.py",
+        "app/composition.py",
+        "app/cli.py",
+        "surfaces/dom/thread_session.py",
     ):
         imports = _imports(RUNTIME / relative)
         assert not any(
@@ -105,9 +106,9 @@ def test_target_product_entry_has_no_legacy_or_benchmark_dependency() -> None:
 
 
 def test_reference_cutover_readiness_cannot_enter_runtime_or_model_policy() -> None:
-    forbidden_import = "affordance_runtime.reference_target_readiness"
+    forbidden_import = "affordance_runtime.benchmarks.target_loop.reference_readiness"
     violations = []
-    for directory in (RUNTIME / "agent", RUNTIME / "model_policy", RUNTIME / "world"):
+    for directory in (RUNTIME / "agent", RUNTIME / "model" / "policy", RUNTIME / "world"):
         for path in sorted(directory.rglob("*.py")):
             if forbidden_import in _imports(path):
                 violations.append(str(path.relative_to(ROOT)))
@@ -117,6 +118,10 @@ def test_reference_cutover_readiness_cannot_enter_runtime_or_model_policy() -> N
 def test_pass_through_target_wrappers_are_physically_deleted() -> None:
     assert not (RUNTIME / "target_runtime_client.py").exists()
     assert not (RUNTIME / "agent" / "episode_runner.py").exists()
+    assert not (RUNTIME / "agent" / "runtime.py").exists()
+    assert not (RUNTIME / "agent" / "composition.py").exists()
+    assert not (RUNTIME / "target_cli.py").exists()
+    assert not (RUNTIME / "target_composition.py").exists()
     facade = (RUNTIME / "agent" / "__init__.py").read_text(encoding="utf-8")
     root = (RUNTIME / "__init__.py").read_text(encoding="utf-8")
     assert "AgentEpisodeRunner" not in facade
@@ -152,13 +157,13 @@ def test_root_public_api_exports_only_target_lifecycle_contracts() -> None:
 
 def test_installed_product_and_benchmark_commands_have_separate_entrypoints() -> None:
     project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'affordance-runtime = "affordance_runtime.target_cli:main"' in project
-    assert 'affordance-runtime-benchmark = "affordance_runtime.cli:main"' in project
+    assert 'affordance-runtime = "affordance_runtime.app.cli:main"' in project
+    assert 'affordance-runtime-benchmark = "affordance_runtime.benchmarks.cli:main"' in project
     assert (RUNTIME / "__main__.py").read_text(encoding="utf-8").strip() == (
-        "from affordance_runtime.target_cli import main\n\nraise SystemExit(main())"
+        "from affordance_runtime.app.cli import main\n\nraise SystemExit(main())"
     )
-    product_cli = (RUNTIME / "target_cli.py").read_text(encoding="utf-8")
-    benchmark_cli = (RUNTIME / "cli.py").read_text(encoding="utf-8")
+    product_cli = (RUNTIME / "app" / "cli.py").read_text(encoding="utf-8")
+    benchmark_cli = (RUNTIME / "benchmarks" / "cli.py").read_text(encoding="utf-8")
     assert 'subcommands.add_parser(\n        "run"' in product_cli
     assert "target-run" not in product_cli
     assert 'subcommands.add_parser("run"' not in benchmark_cli
@@ -179,7 +184,7 @@ def test_all_benchmark_modules_use_product_target_composition_owner() -> None:
 
 def test_product_composition_is_only_source_target_runtime_constructor() -> None:
     violations = []
-    composition = RUNTIME / "agent" / "composition.py"
+    composition = RUNTIME / "app" / "composition.py"
     for path in sorted(RUNTIME.rglob("*.py")):
         if path == composition:
             continue
@@ -224,7 +229,7 @@ def test_target_intake_does_not_import_workflow_or_gui_execution_authority() -> 
         "affordance_runtime.task_plan_contracts",
         "affordance_runtime.state_kernel",
         "affordance_runtime.runtime_committer",
-        "affordance_runtime.world.binder",
+        "affordance_runtime.actions.binder",
     })
 
 

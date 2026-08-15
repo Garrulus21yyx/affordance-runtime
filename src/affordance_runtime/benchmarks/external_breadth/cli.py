@@ -27,9 +27,9 @@ from affordance_runtime.benchmarks.external_breadth.reporting import write_campa
 from affordance_runtime.benchmarks.external_breadth.runner import run_breadth_campaign
 from affordance_runtime.benchmarks.external_breadth.selection import selection_key
 from affordance_runtime.benchmarks.external_smoke.adapter_reporting import _atomic_json
-from affordance_runtime.model_policy import model_policy_from_environment
-from affordance_runtime.model_policy.model_port_bridge import ModelPortDecisionAdapter
-from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
+from affordance_runtime.model.policy import model_policy_from_environment
+from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
+from affordance_runtime.model.policy.provider_orchestrator import ProviderCallOrchestrator
 
 
 def main() -> int:

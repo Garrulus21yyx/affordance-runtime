@@ -3,6 +3,10 @@ from dataclasses import dataclass, replace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionBinding,
+    ActionRisk,
+)
 from affordance_runtime.agent import (
     Abort,
     AgentFailureCode,
@@ -34,8 +38,6 @@ from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
     AcquisitionOrigin,
-    ActionBinding,
-    ActionRisk,
     CoverageState,
     ObservationRequestKind,
     ObservationSourceProfile,

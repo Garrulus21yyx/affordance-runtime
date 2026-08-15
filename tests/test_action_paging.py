@@ -4,6 +4,14 @@ from dataclasses import dataclass, replace
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _world
 
+from affordance_runtime.actions import (
+    ActionOption,
+    ActionPager,
+    ActionRelevanceRole,
+    ActionRisk,
+    ActionSpace,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import (
     Abort,
     AgentLoop,
@@ -12,16 +20,10 @@ from affordance_runtime.agent import (
     SelectAction,
 )
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
+from affordance_runtime.model.context.context_builder import ContextBuilder
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
-    ActionOption,
-    ActionPager,
-    ActionRelevanceRole,
-    ActionRisk,
-    ActionSpace,
-    ActionSpaceBuilder,
     SemanticTarget,
 )
 

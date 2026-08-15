@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from affordance_runtime.actions import (
+    ActionBinding,
+    ActionRisk,
+)
 from affordance_runtime.agent import Abort, RequestActionPage, SelectAction
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.evaluation import (
@@ -15,15 +19,13 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
-from affordance_runtime.model_policy.spec import AgentDecisionPayload, payload_to_decision
+from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_to_decision
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.testing import StaticEnvironment
 from affordance_runtime.world import (
-    ActionBinding,
-    ActionRisk,
     CoverageState,
     ObservationSourceProfile,
     SemanticTarget,

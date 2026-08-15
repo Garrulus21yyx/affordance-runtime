@@ -8,7 +8,14 @@ from affordance_runtime import (
     TargetRuntimeRunOutcome,
     TaskBoundary,
 )
-from affordance_runtime.agent import AgentLoopStatus, AskUser, UserInputResumed, compose_target_runtime
+from affordance_runtime.agent import (
+    AgentLoopStatus,
+    AskUser,
+    UserInputResumed,
+)
+from affordance_runtime.app import (
+    compose_target_runtime,
+)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.task import ReadyTask, RiskProfile, TaskInputRequired
 from affordance_runtime.testing import StaticEnvironment

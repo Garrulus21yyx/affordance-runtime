@@ -62,9 +62,8 @@ from affordance_runtime.surfaces.browsergym.visual_projection import (
     project_browsergym_visual_source,
 )
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
-from affordance_runtime.task import TaskGoal
-from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
-from affordance_runtime.visual_grounding import (
+from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
     VisualProviderFailure,
     VisualProviderFailureCode,
@@ -72,7 +71,8 @@ from affordance_runtime.visual_grounding import (
     VisualRegionProposerPort,
     classify_visual_provider_failure,
 )
-from affordance_runtime.visual_predicate_classification import VisualPredicateClassifierPort
+from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
+from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     AcquisitionOrigin,
     AcquisitionStatus,

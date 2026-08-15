@@ -44,7 +44,7 @@ from affordance_runtime.benchmarks.target_loop.support import (
     stale_environment,
 )
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
 
 
 def build_manifest(suite_id: str, profile_id: str, seed: int):

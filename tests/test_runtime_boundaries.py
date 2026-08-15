@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from affordance_runtime.contracts import ExecutionReceipt, Observation, VerifierSpec
+from affordance_runtime.actions.contracts import ExecutionReceipt, Observation, VerifierSpec
 from affordance_runtime.verification.mechanical import VerifierLadder
 
 

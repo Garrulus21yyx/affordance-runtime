@@ -7,14 +7,14 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
-from affordance_runtime.model_boundary.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.spec import (
+from affordance_runtime.actions.schema_validation import reject_private_parameter_values
+from affordance_runtime.model.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy.spec import (
     AbortPayload,
     AgentDecisionPayload,
     SelectActionPayload,
 )
-from affordance_runtime.model_policy.strict_json import StrictJsonError, strict_json_loads
-from affordance_runtime.world.schema_validation import reject_private_parameter_values
+from affordance_runtime.model.policy.strict_json import StrictJsonError, strict_json_loads
 
 from .contracts import DestinationFailureShape, ModelConformanceStage
 

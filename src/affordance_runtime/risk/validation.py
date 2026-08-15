@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from affordance_runtime.actions.space_contracts import (
+    ActionRisk,
+    AdmittedActionSelection,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.task.contracts import RiskProfile, TaskGoal
-from affordance_runtime.world.contracts import ActionRisk, AdmittedActionSelection
 
 
 def validate_risk_assessment(

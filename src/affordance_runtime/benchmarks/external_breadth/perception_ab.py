@@ -35,14 +35,14 @@ from affordance_runtime.benchmarks.external_smoke.pacing import FixedPacingState
 from affordance_runtime.benchmarks.target_loop.case_projection import public_case_evidence
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
-from affordance_runtime.model_policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.grounded_tool_port_bridge import GroundedActionAdapter
-from affordance_runtime.model_policy.model_port_bridge import (
+from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.grounded_tool_port_bridge import GroundedActionAdapter
+from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy.provider_orchestrator import ProviderCallOrchestrator
-from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
+from affordance_runtime.model.policy.provider_orchestrator import ProviderCallOrchestrator
+from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
 PROFILE_ID = "MINIWOB_CAPABILITY_COVERED_PERCEPTION_AB"

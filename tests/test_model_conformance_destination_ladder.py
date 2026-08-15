@@ -8,7 +8,7 @@ from affordance_runtime.benchmarks.model_conformance.destination_ladder import (
 )
 from affordance_runtime.benchmarks.model_conformance.runner import run_profile
 from affordance_runtime.benchmarks.model_conformance.scenario import build_live_dom_scenario
-from affordance_runtime.model_port import ModelCallRecord
+from affordance_runtime.model.providers.port import ModelCallRecord
 
 
 def _identity() -> ModelProfileIdentity:

@@ -5,8 +5,10 @@ from dataclasses import replace
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.actions import (
+    ActionRisk,
+)
 from affordance_runtime.risk.contracts import ConfirmationSubject
-from affordance_runtime.world import ActionRisk
 
 
 def _subject() -> ConfirmationSubject:

@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from affordance_runtime.model_boundary import ModelFailure, ModelFailureKind
-from affordance_runtime.model_policy.parser import parse_agent_decision
-from affordance_runtime.model_policy.strict_json import MAX_JSON_DEPTH, strict_json_loads
+from affordance_runtime.model.context import ModelFailure, ModelFailureKind
+from affordance_runtime.model.policy.parser import parse_agent_decision
+from affordance_runtime.model.policy.strict_json import MAX_JSON_DEPTH, strict_json_loads
 
 
 def _selection(parameters: str = "{}") -> str:
@@ -56,7 +56,7 @@ def test_recursion_error_is_classified_as_invalid_response(monkeypatch) -> None:
         del args, kwargs
         raise RecursionError
 
-    monkeypatch.setattr("affordance_runtime.model_policy.strict_json.json.loads", fail)
+    monkeypatch.setattr("affordance_runtime.model.policy.strict_json.json.loads", fail)
 
     parsed = parse_agent_decision(_selection(), "context:1")
 

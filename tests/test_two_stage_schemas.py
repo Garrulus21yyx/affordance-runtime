@@ -12,8 +12,8 @@ from affordance_runtime.benchmarks.model_conformance.two_stage.payload_schema im
 )
 from affordance_runtime.benchmarks.model_conformance.two_stage.route_schema import build_route_schema
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model_boundary.failures import ModelFailure
-from affordance_runtime.model_policy.parser import parse_agent_decision
+from affordance_runtime.model.context.failures import ModelFailure
+from affordance_runtime.model.policy.parser import parse_agent_decision
 
 
 def _cases():

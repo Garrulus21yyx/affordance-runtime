@@ -3,8 +3,8 @@ from pathlib import Path
 EXTERNAL = Path("src/affordance_runtime/benchmarks/external_smoke")
 TARGET_CORE = (
     Path("src/affordance_runtime/agent"),
-    Path("src/affordance_runtime/model_boundary"),
-    Path("src/affordance_runtime/model_policy"),
+    Path("src/affordance_runtime/model/context"),
+    Path("src/affordance_runtime/model/policy"),
     Path("src/affordance_runtime/evaluation"),
     Path("src/affordance_runtime/surfaces"),
 )

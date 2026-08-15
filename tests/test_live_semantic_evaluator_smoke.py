@@ -5,8 +5,8 @@ import pytest
 
 from affordance_runtime.evaluation import TaskEvaluationStatus
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.model_evaluator import ModelPortSemanticCriterionJudge
-from affordance_runtime.model_port import FallbackModelPort, ModelConfig, model_port_from_environment
+from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
+from affordance_runtime.model.providers.port import FallbackModelPort, ModelConfig, model_port_from_environment
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     CoverageState,

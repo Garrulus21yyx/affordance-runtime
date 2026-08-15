@@ -18,7 +18,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     TerminalReasonCode,
 )
 from affordance_runtime.evaluation import TaskOutcomeKind
-from affordance_runtime.model_boundary.failures import ModelFailureKind
+from affordance_runtime.model.context.failures import ModelFailureKind
 
 
 @dataclass(frozen=True)

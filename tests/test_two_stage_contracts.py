@@ -6,7 +6,7 @@ from affordance_runtime.benchmarks.model_conformance.two_stage.contracts import 
     StageCallCounts,
     TwoStageDecisionIdentity,
 )
-from affordance_runtime.model_policy.spec import decision_response_schema
+from affordance_runtime.model.policy.spec import decision_response_schema
 
 
 def test_decision_kind_values_equal_canonical_discriminators() -> None:

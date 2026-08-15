@@ -2,6 +2,12 @@ from dataclasses import asdict, replace
 
 import pytest
 
+from affordance_runtime.actions import (
+    ActionOption,
+    ActionRisk,
+    ActionSpace,
+    ActionSpaceBuilder,
+)
 from affordance_runtime.agent import Wait
 from affordance_runtime.agent.control_transition import ControlTransitionScope
 from affordance_runtime.agent.state import AgentLoopState
@@ -12,15 +18,11 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget, serialized_size
-from affordance_runtime.model_boundary.context_builder import ContextBuilder
-from affordance_runtime.model_boundary.world_projection import project_model_world
+from affordance_runtime.model.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.model.context.context_builder import ContextBuilder
+from affordance_runtime.model.context.world_projection import project_model_world
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
-    ActionOption,
-    ActionRisk,
-    ActionSpace,
-    ActionSpaceBuilder,
     CoverageState,
     ObservationConflict,
     ObservationSourceProfile,

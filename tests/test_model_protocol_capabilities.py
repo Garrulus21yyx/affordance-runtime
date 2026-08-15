@@ -12,17 +12,19 @@ from affordance_runtime.agent import (
     STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
     TOOL_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
-    TargetRuntime,
     UnsupportedCompositionError,
 )
 from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.app import (
+    TargetRuntime,
+)
 from affordance_runtime.benchmarks.model_protocol import (
     PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
     PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
 )
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
-from affordance_runtime.model_policy import (
+from affordance_runtime.model.policy import (
     DYNAMIC_TOOLS_PROTOCOL,
     GROUNDED_TOOLS_PROTOCOL,
     STRUCTURED_PACKAGE_PROTOCOL,
@@ -31,9 +33,9 @@ from affordance_runtime.model_policy import (
     ModelBackedAgentPolicy,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy import factory as model_policy_factory
-from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_port import ModelConfig
+from affordance_runtime.model.policy import factory as model_policy_factory
+from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.providers.port import ModelConfig
 
 
 @dataclass

@@ -7,21 +7,23 @@ from urllib.parse import quote
 import pytest
 from target_agent_loop_support import FirstOfferedActionPolicy
 
-from affordance_runtime import target_cli as product_cli
 from affordance_runtime.agent import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
-    compose_target_runtime,
 )
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
-from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
-from affordance_runtime.target_cli import (
+from affordance_runtime.app import cli as product_cli
+from affordance_runtime.app import (
+    compose_target_runtime,
+)
+from affordance_runtime.app.cli import (
     build_parser,
     load_target_request,
     run_target_request,
     task_boundary_from_mapping,
 )
-from affordance_runtime.target_composition import compose_target_runtime_from_environment
+from affordance_runtime.app.composition import compose_target_runtime_from_environment
+from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
+from affordance_runtime.model.policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.task import RiskProfile, TaskUnsupported, ThinTaskIntake
 
 
@@ -107,7 +109,7 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
         return Policy()
 
     monkeypatch.setattr(
-        "affordance_runtime.target_composition.model_policy_from_environment",
+        "affordance_runtime.app.composition.model_policy_from_environment",
         fake_policy,
     )
 
@@ -137,7 +139,7 @@ def test_product_cli_routes_only_the_target_run_contract(monkeypatch, tmp_path: 
         captured["instruction"] = args.instruction
         return {"status": "done"}
 
-    monkeypatch.setattr("affordance_runtime.target_cli.run_target_command", fake_run)
+    monkeypatch.setattr("affordance_runtime.app.cli.run_target_command", fake_run)
 
     exit_code = product_cli.main([
         "run",

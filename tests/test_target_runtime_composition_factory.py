@@ -5,7 +5,12 @@ from affordance_runtime import (
     TargetRuntime,
     TargetRuntimeStartOutcome,
 )
-from affordance_runtime.agent import TOOL_ACTION_DECISION_CAPABILITIES, compose_target_runtime
+from affordance_runtime.agent import (
+    TOOL_ACTION_DECISION_CAPABILITIES,
+)
+from affordance_runtime.app import (
+    compose_target_runtime,
+)
 
 
 class _Policy:
