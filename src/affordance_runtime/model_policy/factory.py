@@ -10,19 +10,14 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
-    GroundedObjectiveAdapter,
 )
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy.objective_policy import ModelBackedLocalObjectiveProposer
 from affordance_runtime.model_policy.policy import ModelBackedAgentPolicy
-from affordance_runtime.model_policy.port import (
-    StructuredDecisionModelPort,
-    StructuredObjectiveModelPort,
-)
+from affordance_runtime.model_policy.port import StructuredDecisionModelPort
 from affordance_runtime.model_policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model_policy.provider_orchestrator import (
     ProviderCallOrchestrator,
@@ -118,42 +113,6 @@ def model_policy_from_environment(
         ProviderCallPolicy(total_elapsed_deadline_s=orchestrator_deadline),
     )
     return ModelBackedAgentPolicy(
-        orchestrator,
-        call_timeout_s=call_timeout_s,
-    )
-
-
-def local_objective_proposer_from_environment(
-    environment: Mapping[str, str] | None = None,
-    *,
-    call_timeout_s: float = 90.0,
-) -> ModelBackedLocalObjectiveProposer:
-    """Compose the explicit post-observation semantic proposal phase."""
-
-    env = os.environ if environment is None else environment
-    if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
-        raise ValueError("objective proposal profile forbids provider fallback")
-    port = model_port_from_environment(environment)
-    if isinstance(port, FallbackModelPort):
-        raise ValueError("objective proposal profile forbids provider fallback")
-    orchestrator_deadline = max(0.001, call_timeout_s - min(1.0, call_timeout_s * 0.05))
-    transport_timeout = min(30.0, max(0.001, orchestrator_deadline / 3))
-    adapter: StructuredObjectiveModelPort = GroundedObjectiveAdapter(
-        port,
-        ModelConfig(
-            timeout_s=transport_timeout,
-            rate_limit_retries=0,
-            transient_retries=0,
-            provider_circuit_break_s=0.0,
-            prompt_version="local-objective-proposal-v2",
-        ),
-        perception_profile=DecisionPerceptionProfile.SCREENSHOT_AX,
-    )
-    orchestrator = ProviderCallOrchestrator(
-        (adapter,),
-        ProviderCallPolicy(total_elapsed_deadline_s=orchestrator_deadline),
-    )
-    return ModelBackedLocalObjectiveProposer(
         orchestrator,
         call_timeout_s=call_timeout_s,
     )

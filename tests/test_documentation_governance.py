@@ -252,7 +252,7 @@ def test_target_contract_keeps_one_observation_grounded_authority_chain() -> Non
 
     for marker in (
         "No exact GUI target identity is required before `WorldObservation`",
-        "Dormant LocalObjective branch",
+        "Deleted LocalObjective branch",
         "one typed AgentDecision",
         "private bind",
         "execute once",

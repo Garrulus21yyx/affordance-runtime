@@ -2,7 +2,6 @@ from time import time
 
 import pytest
 
-from affordance_runtime.adapters.dom import DomAdapter
 from affordance_runtime.browser_session import BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.grounding import (
@@ -19,6 +18,7 @@ from affordance_runtime.source_assertions import (
     SourceAssertionArbiter,
     SourceAssertionOrchestrator,
 )
+from affordance_runtime.surfaces.dom.document_model import DomAdapter
 from affordance_runtime.unified_grounding import UnifiedRoutePlanner
 
 

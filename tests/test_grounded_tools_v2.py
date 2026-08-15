@@ -12,13 +12,6 @@ from affordance_runtime.agent import (
     RequestObservation,
     SelectAction,
 )
-from affordance_runtime.agent.local_objective_proposal import (
-    LocalObjectiveNeedsInput,
-    LocalObjectiveNotRequired,
-    LocalObjectiveProposal,
-    LocalObjectiveUnsupported,
-    LocalObjectiveUnsupportedReason,
-)
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
@@ -29,7 +22,6 @@ from affordance_runtime.model_boundary.action_candidate_projection import close_
 from affordance_runtime.model_boundary.budgets import BoundedSection
 from affordance_runtime.model_boundary.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.model_boundary.contracts import AgentTurnView
-from affordance_runtime.model_policy.contracts import ResolvedLocalObjectiveOutcome
 from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
@@ -50,13 +42,10 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     _TOOL_INTENT_REPAIR_CODES,
     GroundedActionAdapter,
-    GroundedObjectiveAdapter,
-    GroundedObjectiveCommandPayload,
     GroundedToolCommandPayload,
     _command_payload_type,
 )
 from affordance_runtime.model_policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model_policy.objective_policy import _build_request as _objective_request
 from affordance_runtime.model_policy.policy import _build_request as _action_request
 from affordance_runtime.model_policy.provider_call_normalizer import (
     ProviderCallNormalizer,
@@ -79,45 +68,13 @@ from affordance_runtime.surfaces.browsergym.entity_identity import BrowserGymEnt
 from affordance_runtime.surfaces.browsergym.projection import project_browsergym_observation
 from affordance_runtime.surfaces.browsergym.semantics import PRIVATE_CONTROL_PROPERTIES_KEY
 from affordance_runtime.task import (
-    ActionTemplate,
-    FactEquals,
     RiskProfile,
-    ScopeExtent,
-    ScopeSpec,
-    SetObjective,
-    SetQuantifier,
     TaskGoal,
 )
-from affordance_runtime.task.local_objective import establish_local_objective
 from affordance_runtime.world import ActionSpaceBuilder, verification_contract_for_action
 from affordance_runtime.world.schema_validation import validate_value_issue
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
-
-
-@dataclass
-class _ObjectivePort:
-    provider: str = "zhipu"
-    model: str = "glm-4.1v-thinking-flashx"
-    endpoint_class: str = "fixture"
-    supports_multimodal: bool = True
-    last_call: ModelCallRecord | None = None
-    last_output_schema: type | None = None
-
-    async def generate_structured(self, messages, output_schema, config):
-        del messages
-        self.last_output_schema = output_schema
-        self.last_call = ModelCallRecord(
-            provider=self.provider,
-            model=self.model,
-            endpoint_class=self.endpoint_class,
-            prompt_version=config.prompt_version,
-            schema_name=output_schema.__name__,
-            schema_version="grounded_tools.v2",
-            latency_ms=1,
-            response_id="response:objective",
-        )
-        return output_schema.model_validate({"name": "local_objective_not_required", "arguments": {}})
 
 
 @dataclass
@@ -146,7 +103,7 @@ class _ActionPort:
         return output_schema.model_validate({"name": "activate", "arguments": {}})
 
 
-def _context(*, local_objective=None):
+def _context():
     raw = raw_observation(
         ax_node("username", "textbox", ""),
         ax_node("password", "textbox", ""),
@@ -177,12 +134,6 @@ def _context(*, local_objective=None):
         risk_profile=RiskProfile.LOW,
     )
     state = AgentLoopState(projection.world, remaining_turns=5)
-    if local_objective is not None:
-        state.local_objective_state = establish_local_objective(
-            local_objective,
-            projection.world,
-            enumerator=state.scope_enumerator,
-        )
     return ContextBuilder().build(
         task,
         state,
@@ -330,28 +281,6 @@ def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state
     assert len(selected["false_member_refs"]) == 1
     assert set(selected["true_member_refs"] + selected["false_member_refs"]) == set(blue["member_refs"])
     assert section["truncated"] is False
-
-
-def test_objective_context_does_not_expose_action_selection_candidates() -> None:
-    context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-    messages = GroundedPolicyContextBinder().objective_messages(
-        context,
-        catalog.specs,
-        _objective_request(context),
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
-        include_tool_menu=True,
-    )
-    content = messages[1].content
-    assert isinstance(content, str)
-    public = json.loads(content)
-
-    assert "actions" not in public
-    assert all(set(item) == {"name", "description", "input_schema"} for item in public["tools"])
-    nodes = [node for document in public["world"]["documents"] for node in document["roots"]]
-    assert {item["ref"] for item in nodes} == {item.ref for item in context.grounding.entities}
-    assert not {"activate", "type_text", "select_option", "read"}.intersection(item["name"] for item in public["tools"])
 
 
 def test_structure_first_grounded_action_starts_from_public_structure_without_image() -> None:
@@ -1225,44 +1154,6 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
     assert "No current visual source is present" in descriptions["observe_visual"]
 
 
-def test_schema_equivalent_actions_resolve_privately_to_current_action_ids() -> None:
-    context = _context(
-        local_objective=SetObjective(
-            "set-objective:type-password",
-            ScopeSpec("scope:viewport", "current-viewport", ScopeExtent.CURRENT_VIEWPORT),
-            FactEquals("identity.label", "Password"),
-            SetQuantifier.EXACTLY_ONE,
-            ActionTemplate("type_text", parameters={"text": "UV"}),
-        )
-    )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    assert {item.name for item in catalog.specs} == {"type_text"}
-    type_text = catalog.specs[0]
-    assert to_json_compatible(type_text.input_schema) == {
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-        },
-        "required": ["text"],
-        "additionalProperties": False,
-    }
-    outcome = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            "type_text",
-            {
-                "text": "UV",
-            },
-        ),
-        expected_context_id=context.context_id,
-    )
-    assert isinstance(outcome, GroundedActionResolution)
-    decision = outcome.decision
-    assert isinstance(decision, SelectAction)
-    assert decision.parameters == {"text": "UV"}
-    assert decision.action_id.startswith("action:")
-
-
 def test_single_target_action_is_a_private_constant() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
@@ -1276,113 +1167,6 @@ def test_single_target_action_is_a_private_constant() -> None:
     }
     outcome = resolve_grounded_tool_call(catalog, ToolCall("activate", {}), expected_context_id=context.context_id)
     assert isinstance(outcome, GroundedActionResolution)
-
-
-def test_objective_catalog_has_closed_outcomes_and_a_stable_command_envelope() -> None:
-    catalog = compile_grounded_tool_catalog(_context(), GroundedToolPhase.OBJECTIVE_PROPOSAL)
-    assert [item.name for item in catalog.specs] == [
-        "propose_local_objective",
-        "local_objective_not_required",
-        "local_objective_needs_input",
-        "local_objective_unsupported",
-    ]
-    assert set(GroundedToolCommandPayload.model_json_schema()["properties"]) == {"name", "arguments"}
-    assert "memory" not in GroundedToolCommandPayload.model_json_schema()["properties"]
-    assert set(GroundedObjectiveCommandPayload.model_json_schema()["properties"]) == {
-        "name",
-        "arguments",
-    }
-    assert all(item.name not in {"click", "fill", "select"} for item in catalog.specs)
-
-
-def test_objective_nonproposal_tools_resolve_to_typed_outcomes() -> None:
-    context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-
-    not_required = resolve_grounded_tool_call(
-        catalog,
-        ToolCall("local_objective_not_required", {}),
-        expected_context_id=context.context_id,
-    )
-    needs_input = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            "local_objective_needs_input",
-            {"value": {"question": "Which account?", "requested_fields": ["account"]}},
-        ),
-        expected_context_id=context.context_id,
-    )
-    unsupported = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            "local_objective_unsupported",
-            {
-                "value": {
-                    "reason_code": "task_semantics_unsupported",
-                    "reason": "task cannot be expressed as a supported objective",
-                }
-            },
-        ),
-        expected_context_id=context.context_id,
-    )
-
-    assert isinstance(not_required, LocalObjectiveNotRequired)
-    assert isinstance(needs_input, LocalObjectiveNeedsInput)
-    assert needs_input.requested_fields == ("account",)
-    assert isinstance(unsupported, LocalObjectiveUnsupported)
-    assert unsupported.reason_code is LocalObjectiveUnsupportedReason.TASK_SEMANTICS_UNSUPPORTED
-
-
-def test_grounded_objective_adapter_returns_only_objective_envelopes() -> None:
-    context = _context()
-    port = _ObjectivePort()
-    adapter = GroundedObjectiveAdapter(
-        port,
-        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
-    )
-
-    outcome = asyncio.run(adapter.generate(_objective_request(context)))
-
-    assert isinstance(outcome, ResolvedLocalObjectiveOutcome)
-    assert isinstance(outcome.outcome, LocalObjectiveNotRequired)
-    assert port.last_output_schema is not None
-    assert set(port.last_output_schema.model_json_schema()["properties"]) == {
-        "name",
-        "arguments",
-    }
-
-
-def test_grounded_schema_retry_returns_the_safe_field_violation_to_the_model() -> None:
-    class RepairPort(_ObjectivePort):
-        calls: int = 0
-        repair_messages: tuple = ()
-
-        async def generate_structured(self, messages, output_schema, config):
-            self.calls += 1
-            if self.calls == 1:
-                raise StructuredOutputError(
-                    "private provider response",
-                    violations=(StructuredOutputViolation("target", "value_error"),),
-                )
-            self.repair_messages = tuple(messages)
-            return await super().generate_structured(messages, output_schema, config)
-
-    context = _context()
-    port = RepairPort()
-    adapter = GroundedObjectiveAdapter(
-        port,
-        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
-    )
-
-    outcome = asyncio.run(adapter.generate(_objective_request(context)))
-
-    assert isinstance(outcome, ResolvedLocalObjectiveOutcome)
-    assert port.calls == 2
-    repair_system = port.repair_messages[0].content
-    assert isinstance(repair_system, str)
-    assert '"field_path":"target"' in repair_system
-    assert '"code":"value_error"' in repair_system
-    assert "private provider response" not in repair_system
 
 
 def test_action_schema_retry_repairs_the_same_model_decision() -> None:
@@ -1467,41 +1251,6 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repa
     )
     assert trace["structured_output_repair_attempted"] is True
     assert trace["structured_output_repair_failed"] is True
-
-
-def test_local_objective_tool_carries_semantics_without_pre_observation_target_identity() -> None:
-    context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-    decision = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            "propose_local_objective",
-            {
-                "value": {
-                    "kind": "set",
-                    "predicate": {
-                        "any_of": [
-                            {
-                                "all_of": [
-                                    {
-                                        "kind": "fact_equals",
-                                        "field_name": "grid_coordinate",
-                                        "expected": {"x": 1, "y": -2},
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    "quantifier": "exactly_one",
-                    "semantic_action": "activate",
-                }
-            },
-        ),
-        expected_context_id=context.context_id,
-    )
-
-    assert isinstance(decision, LocalObjectiveProposal)
-    assert decision.objective.scope.root_entity_id == "current-viewport"
 
 
 def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:

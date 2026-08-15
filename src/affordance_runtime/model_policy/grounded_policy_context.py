@@ -32,10 +32,9 @@ from affordance_runtime.model_port import ModelImageURLPart, ModelMessage, Model
 class GroundedAgentPrompts:
     version: str
     actor: str
-    objective_proposer: str
 
     def __post_init__(self) -> None:
-        if not self.version or any(not value.strip() for value in (self.actor, self.objective_proposer)):
+        if not self.version or not self.actor.strip():
             raise ValueError("grounded-agent prompt bundle is incomplete")
 
 
@@ -43,12 +42,11 @@ class GroundedAgentPrompts:
 def load_grounded_agent_prompts() -> GroundedAgentPrompts:
     resource = files("affordance_runtime.model_policy").joinpath("prompts/grounded_agent.yaml")
     raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
-    if not isinstance(raw, Mapping) or set(raw) != {"version", "actor", "objective_proposer"}:
+    if not isinstance(raw, Mapping) or set(raw) != {"version", "actor"}:
         raise ValueError("grounded-agent prompt bundle has an invalid shape")
     return GroundedAgentPrompts(
         str(raw["version"]),
         str(raw["actor"]),
-        str(raw["objective_proposer"]),
     )
 
 
@@ -69,33 +67,15 @@ class GroundedPolicyContextBinder:
         include_tool_menu: bool,
     ) -> tuple[ModelMessage, ...]:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        public = self._public_context(context, include_images, action_selection=True)
+        public = self._public_context(context, include_images)
         if include_tool_menu:
             public["tools"] = _tool_menu(tools)
         return self._messages(self.prompts.actor, public, request, include_images)
-
-    def objective_messages(
-        self,
-        context: AgentContext,
-        tools: tuple[ToolSpec, ...],
-        request: ModelDecisionRequest,
-        *,
-        supports_multimodal: bool,
-        perception_profile: DecisionPerceptionProfile,
-        include_tool_menu: bool,
-    ) -> tuple[ModelMessage, ...]:
-        include_images = self._include_images(request, supports_multimodal, perception_profile)
-        public = self._public_context(context, include_images, action_selection=False)
-        if include_tool_menu:
-            public["tools"] = _tool_menu(tools)
-        return self._messages(self.prompts.objective_proposer, public, request, include_images)
 
     @staticmethod
     def _public_context(
         context: AgentContext,
         include_images: bool,
-        *,
-        action_selection: bool,
     ) -> dict[str, object]:
         refs = dict(context.grounding.target_refs)
         evidence_refs = _evidence_refs(context)
@@ -111,22 +91,6 @@ class GroundedPolicyContextBinder:
             "history": _section(context.history, lambda item: _turn(item, refs)),
             "control_feedback": _control_feedback(context, refs),
         }
-        if not action_selection:
-            public.update(
-                {
-                    "intent": {
-                        "excerpts": _section(
-                            context.intent.excerpts,
-                            lambda item: {"text": item.text, "source_kind": item.source_kind},
-                        ),
-                        "authority": context.intent.authority,
-                    },
-                    "pending": to_json_compatible(context.pending),
-                    "budgets": to_json_compatible(context.budgets),
-                    "decision_mode": context.decision_mode.value,
-                    "context_id": context.context_id,
-                }
-            )
         return public
 
     @staticmethod
@@ -225,7 +189,6 @@ def _progress(
                 "strategy_transition_required": item.strategy_transition_required,
             },
         ),
-        "local_objective_open": progress.local_objective_open,
         "truncated": progress.truncated,
     }
 

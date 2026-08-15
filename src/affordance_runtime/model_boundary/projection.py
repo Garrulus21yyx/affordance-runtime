@@ -11,10 +11,7 @@ from affordance_runtime.model_boundary.contracts import (
     AgentActionOptionView,
     AgentActionSpaceView,
     AgentDestinationView,
-    AgentMilestoneView,
-    AgentPlanView,
 )
-from affordance_runtime.task_plan_contracts import TaskPlan
 from affordance_runtime.world.action_paging import InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
 from affordance_runtime.world.interaction_capabilities import INTERACTION_CAPABILITY_REGISTRY
@@ -151,23 +148,6 @@ def project_turns(turns: tuple[Turn, ...]) -> tuple[AgentTurnView, ...]:
     )
 
     return project(turns)
-
-
-def project_plan(plan: TaskPlan | None) -> AgentPlanView | None:
-    if plan is None:
-        return None
-    return AgentPlanView(
-        tuple(
-            AgentMilestoneView(
-                item.step_id,
-                item.objective,
-                completion_criteria=project_public_value(
-                    tuple(item.completion_criteria),
-                ),
-            )
-            for item in plan.steps
-        )
-    )
 
 
 def project_public_value(value: Any, depth: int = 0) -> Any:

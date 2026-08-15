@@ -16,7 +16,6 @@ from threading import RLock
 from typing import Any, Mapping, Protocol, cast
 from urllib.parse import urlsplit
 
-from affordance_runtime.adapters.dom import DomAdapter, PageAffordanceModel
 from affordance_runtime.contracts import Affordance, AffordanceLease, Observation, RiskLevel, Surface
 from affordance_runtime.execution_context import CoordinateBinding, LiveSurfaceBinding
 from affordance_runtime.grounding import (
@@ -31,8 +30,9 @@ from affordance_runtime.grounding import (
     UnifiedAffordance,
 )
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.perception import PerceptionOrchestratorPort
+from affordance_runtime.surfaces.dom.document_model import DomAdapter, PageAffordanceModel
 from affordance_runtime.surfaces.visual.contracts import VisualFrame, VisualViewport
+from affordance_runtime.surfaces.visual.proposal import PerceptionOrchestratorPort
 from affordance_runtime.svg_geometry import (
     SelectiveSvgGeometryObserver,
     SvgGeometryObservation,

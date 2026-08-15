@@ -184,8 +184,6 @@ class AgentRunSession:
         state.clear_pending_question()
         state.task_revision = revision
         state.current_task_evaluation = None
-        state.local_objective_state = None
-        state.local_objective_not_required_revision = 0
         state.recent_progress_events = ()
         state.progress_revision += 1
         state.pending_control_feedback = None
@@ -193,7 +191,6 @@ class AgentRunSession:
         state.consumed_control_issue_digests = ()
         state.seen_action_page_result_digests = ()
         state.observation_cursor = ""
-        state.visual_evidence_attempt_keys = ()
         state.remaining_turns = min(state.remaining_turns, self.task.loop_budget.max_turns)
         self.current_context_snapshot = None
         self.consumed_context_id = ""

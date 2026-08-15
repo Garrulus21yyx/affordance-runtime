@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from affordance_runtime.adapters.wot import WotAdapter
+from affordance_runtime.surfaces.wot.thing_description import WotAdapter
 from affordance_runtime.testing.failure_injection import FAILURE_CATALOGUE, failure_spec
 
 ROOT = Path(__file__).resolve().parents[1]

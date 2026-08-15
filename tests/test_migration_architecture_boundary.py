@@ -6,7 +6,6 @@ NEW_CORE = (
     ROOT / "src" / "affordance_runtime" / "agent",
     ROOT / "src" / "affordance_runtime" / "execution",
     ROOT / "src" / "affordance_runtime" / "memory",
-    ROOT / "src" / "affordance_runtime" / "environment_port.py",
     ROOT / "src" / "affordance_runtime" / "routing_policy.py",
 )
 FORBIDDEN_MODULES = {

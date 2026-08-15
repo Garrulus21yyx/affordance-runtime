@@ -26,10 +26,10 @@ acquire–decide–execute/acquire–evaluate loop. Adapters declare independent
 post-action acquisition capabilities separately from evidence/source assurance;
 unsupported and failed acquisition stay typed. AgentLoopState remains current
 run-control authority, while a bounded decision-scoped ControlTransition records
-what just happened without becoming a durable ledger or replay authority. One
-`local_objective_state` owns observation-grounded sequence, set, or aggregate
-execution relevance; it is established only after observation and never owns
-task legality or private bindings. Schemas and invariants remain solely in the
+what just happened without becoming a durable ledger or replay authority. The
+ordinary loop has one model reasoning phase, `AgentPolicy.decide`; the deleted
+LocalObjective proposal/reducer experiment is not a dormant extension path.
+Schemas and invariants remain solely in the
 authority map and scoped normative contracts linked above.
 
 TaskSpec/ActionContract/StateKernel/RuntimeCommitter documents describe the

@@ -3,18 +3,6 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from affordance_runtime.agent.local_objective_proposal import (
-    LocalObjectiveNeedsInput,
-    LocalObjectiveNotRequired,
-    LocalObjectiveProposal,
-    LocalObjectiveUnsupported,
-)
-from affordance_runtime.model_policy.objective_spec import (
-    LocalObjectiveProposalResponse,
-    local_objective_response_schema,
-    payload_to_local_objective_outcome,
-    payload_to_local_objective_proposal,
-)
 from affordance_runtime.model_policy.spec import (
     SCHEMA_VERSION,
     AgentDecisionPayload,
@@ -103,66 +91,3 @@ def test_direct_decision_boundary_rejects_non_json_sequence_coercion() -> None:
                 "destination_id": "",
             }
         )
-
-
-def test_local_objective_payload_uses_semantics_instead_of_runtime_target_identity() -> None:
-    payload = LocalObjectiveProposalResponse.model_validate(
-        {
-            "type": "local_objective_proposal",
-            "context_id": "context:1",
-            "objective": {
-                "kind": "set",
-                "predicate": {"any_of": [{"all_of": [{
-                    "kind": "fact_equals", "field_name": "grid_coordinate",
-                    "expected": {"x": 1, "y": -2},
-                }]}]},
-                "quantifier": "exactly_one",
-                "semantic_action": "activate",
-            },
-        }
-    )
-    decision = payload_to_local_objective_proposal(payload, "context:1")
-
-    assert isinstance(decision, LocalObjectiveProposal)
-    assert decision.objective.objective_id.startswith("set-objective:")
-    encoded = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
-    assert "target_id" not in encoded and "action_id" not in encoded and "binding_id" not in encoded
-    objective_schema = local_objective_response_schema()["$defs"]["SetLocalObjectivePayload"]
-    assert not set(objective_schema["properties"]).intersection(
-        {"objective_id", "scope_id", "scope_root", "target_id", "action_id", "binding_id"}
-    )
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected_type"),
-    (
-        (
-            {"type": "local_objective_not_required", "context_id": "context:1"},
-            LocalObjectiveNotRequired,
-        ),
-        (
-            {
-                "type": "local_objective_needs_input",
-                "context_id": "context:1",
-                "question": "Which account?",
-                "requested_fields": ["account"],
-            },
-            LocalObjectiveNeedsInput,
-        ),
-        (
-            {
-                "type": "local_objective_unsupported",
-                "context_id": "context:1",
-                "reason_code": "no_resolvable_objective",
-                "reason": "no supported semantic objective can represent this task",
-            },
-            LocalObjectiveUnsupported,
-        ),
-    ),
-)
-def test_local_objective_nonproposal_payloads_are_typed(raw, expected_type) -> None:
-    payload = LocalObjectiveProposalResponse.model_validate(raw)
-
-    outcome = payload_to_local_objective_outcome(payload, "context:1")
-
-    assert isinstance(outcome, expected_type)

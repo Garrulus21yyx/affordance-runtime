@@ -3,13 +3,9 @@
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,
-    ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
 )
-from affordance_runtime.model_policy.factory import (
-    local_objective_proposer_from_environment,
-    model_policy_from_environment,
-)
+from affordance_runtime.model_policy.factory import model_policy_from_environment
 from affordance_runtime.model_policy.grounded_tool_compiler import (
     CompiledGroundedTool,
     ConcreteActionCandidateRow,
@@ -19,15 +15,12 @@ from affordance_runtime.model_policy.grounded_tool_compiler import (
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.model_policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
-    GroundedObjectiveAdapter,
-    GroundedToolDecisionAdapter,
 )
 from affordance_runtime.model_policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
     ModelPortDecisionAdapter,
 )
-from affordance_runtime.model_policy.objective_policy import ModelBackedLocalObjectiveProposer
 from affordance_runtime.model_policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model_policy.provider_orchestrator import (
@@ -42,23 +35,18 @@ from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecision
 
 __all__ = [
     "ModelBackedAgentPolicy",
-    "ModelBackedLocalObjectiveProposer",
     "ModelPortDecisionAdapter",
     "DecisionPerceptionProfile",
     "ModelDecisionRequest",
     "ModelMetadata",
     "ResolvedModelDecision",
-    "ResolvedLocalObjectiveOutcome",
     "model_policy_from_environment",
-    "local_objective_proposer_from_environment",
     "GROUNDED_TOOLS_PROTOCOL",
     "GroundedToolCompiler",
     "ConcreteActionCandidateRow",
     "CompiledGroundedTool",
     "SelectorMode",
     "GroundedActionAdapter",
-    "GroundedObjectiveAdapter",
-    "GroundedToolDecisionAdapter",
     "ProviderAttemptReceipt",
     "ProviderAttemptStatus",
     "ProviderCallOrchestrator",

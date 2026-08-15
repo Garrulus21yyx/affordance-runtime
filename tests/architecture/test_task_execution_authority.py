@@ -20,23 +20,25 @@ def _class_owners(name: str) -> tuple[str, ...]:
     return tuple(owners)
 
 
-def test_task_plan_has_exactly_one_production_owner() -> None:
-    assert _class_owners("TaskPlan") == ("task_plan_contracts.py",)
+def test_workflow_task_plan_owner_is_physically_absent() -> None:
+    assert _class_owners("TaskPlan") == ()
     assert _class_owners("TaskProgram") == ()
     assert _class_owners("Milestone") == ()
+    assert not (RUNTIME / "task_plan_contracts.py").exists()
     assert not (RUNTIME / "task" / "task_program.py").exists()
 
 
 def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
     projection = (RUNTIME / "model_boundary" / "projection.py").read_text(encoding="utf-8")
-    assert "from affordance_runtime.task_plan_contracts import TaskPlan" in projection
+    assert "task_plan_contracts" not in projection
+    assert "project_plan" not in projection
     for relative in ("agent/loop.py", "agent/state.py"):
         source = (RUNTIME / relative).read_text(encoding="utf-8")
         assert "task_plan_contracts" not in source
         assert "TaskPlan" not in source
 
 
-def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> None:
+def test_agent_loop_has_no_staged_objective_or_workflow_plan_state() -> None:
     source = "\n".join(
         (RUNTIME / relative).read_text(encoding="utf-8")
         for relative in ("agent/loop.py", "agent/state.py")
@@ -54,6 +56,9 @@ def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> No
         "active_set_objective",
         "active_objective_sequence",
         "active_aggregate_objective",
+        "local_objective_state",
+        "scope_enumerator",
+        "objective_proposer",
     ):
         assert duplicate not in "\n".join(
             path.read_text(encoding="utf-8") for path in _python_sources()
@@ -64,9 +69,20 @@ def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> No
     assert not (RUNTIME / "model_policy" / "set_objective_catalog.py").exists()
     assert not (RUNTIME / "model_policy" / "execution_control_catalog.py").exists()
     assert not (RUNTIME / "task" / "planning_contracts.py").exists()
-    state_source = (RUNTIME / "agent" / "state.py").read_text(encoding="utf-8")
-    assert state_source.count("local_objective_state:") == 1
-    assert "refresh_local_objective(" in state_source
+    for removed in (
+        "agent/local_objective_proposal.py",
+        "agent/local_objective_evidence.py",
+        "model_policy/objective_policy.py",
+        "model_policy/objective_spec.py",
+        "task/local_objective.py",
+        "task/set_objective.py",
+        "task/set_objective_state.py",
+        "task/objective_sequence.py",
+        "task/aggregate_objective.py",
+        "task/scope_enumerator.py",
+        "task/selector_resolution.py",
+    ):
+        assert not (RUNTIME / removed).exists()
 
 
 def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> None:
@@ -97,7 +113,7 @@ def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> No
         assert not (RUNTIME / removed).exists()
 
 
-def test_model_decision_is_parsed_once_and_objectives_have_no_reverse_wire_projection() -> None:
+def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -> None:
     production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
     policy = (RUNTIME / "model_policy" / "policy.py").read_text(encoding="utf-8")
     adapters = "\n".join(
@@ -105,17 +121,14 @@ def test_model_decision_is_parsed_once_and_objectives_have_no_reverse_wire_proje
         for relative in ("model_port_bridge.py", "tool_port_bridge.py", "grounded_tool_port_bridge.py")
     )
     spec = (RUNTIME / "model_policy" / "spec.py").read_text(encoding="utf-8")
-    objective_spec = (RUNTIME / "model_policy" / "objective_spec.py").read_text(encoding="utf-8")
-    predicate = (RUNTIME / "task" / "predicate_transport.py").read_text(encoding="utf-8")
 
     assert "ResolvedModelDecision" in adapters
     assert "if isinstance(outcome, ResolvedModelDecision)" in policy
     assert "ModelDecisionResponse" not in production
     assert "parse_agent_decision" not in policy
-    assert "local_objective_to_payload" not in spec
     assert "LocalObjective" not in spec
-    assert "LocalObjectiveProposal" in objective_spec
-    assert "predicate_to_transport" not in predicate
+    assert "LocalObjective" not in production
+    assert "OBJECTIVE_PROPOSAL" not in production
 
 
 def test_model_policy_has_no_task_semantic_producers() -> None:
@@ -145,9 +158,9 @@ def test_agent_decisions_cannot_install_task_execution_semantics() -> None:
     assert "LocalObjective" not in source
 
     catalog = (RUNTIME / "model_policy" / "grounded_tool_catalog.py").read_text(encoding="utf-8")
-    assert "GroundedToolPhase.OBJECTIVE_PROPOSAL" in catalog
     assert "GroundedToolPhase.ACTION_SELECTION" in catalog
-    assert "propose_local_objective" in catalog
+    assert "OBJECTIVE_PROPOSAL" not in catalog
+    assert "propose_local_objective" not in catalog
     assert "establish_local_objective" not in catalog
 
 

@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY`
+Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY`
 
 ## Scope and method
 
@@ -573,6 +573,10 @@ until the split and its conformance tests are atomic.
 
 T2 completed that exact split. The implementation and deletion record is
 [Target Runtime topology T2 — BrowserGym surface cutover](2026-08-15-target-runtime-topology-t2-surface-cutover.md).
+
+T3 then consumed this inventory owner-by-owner. Its exact absence manifest,
+retained-owner decisions and verification record are in
+[Target Runtime topology T3 — legacy owner deletion](2026-08-15-target-runtime-topology-t3-legacy-deletion.md).
 
 This inventory does not admit new interaction actions, StateFact closure or
 effect-authority closure. The known broad `activate` structural-delta evaluator

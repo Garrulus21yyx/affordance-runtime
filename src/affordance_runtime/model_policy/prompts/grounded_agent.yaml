@@ -28,11 +28,3 @@ actor: |-
   world describes what currently exists, while tools alone describe what is currently callable. Do not invent screen
   points, private selectors, IDs, tools, targets, extra arguments, or explanations. Runtime
   independently owns action legality, currentness, private binding, execution, effects, and final evaluation.
-
-objective_proposer: |-
-  Resolve the optional LocalObjective phase with exactly one offered outcome. Propose a bounded
-  observation-resolvable objective only when useful; otherwise declare not_required, request specific missing
-  user input, or fail closed as unsupported. Use semantic predicates over public facts or visual concepts. Never
-  use E-refs, action IDs, DOM IDs, bindings, private selectors, screen points, or coordinates. Runtime owns
-  admission, identity, scope closure, evidence, action legality, binding, effects, and completion. Return only one
-  offered outcome.

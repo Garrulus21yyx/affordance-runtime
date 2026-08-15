@@ -28,13 +28,11 @@ from affordance_runtime.agent.control_transition import (
 )
 from affordance_runtime.agent.decision_control import (
     ensure_current_action_page,
-    run_objective_proposal_turn,
     run_policy_turn,
 )
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
 from affordance_runtime.agent.execution_cycle import execute_cycle
-from affordance_runtime.agent.local_objective_evidence import resolve_visual_local_objective_evidence
 from affordance_runtime.agent.observation_control import capture_for_session
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, AgentPolicy, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult, project_result
@@ -59,8 +57,6 @@ from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.risk.validation import validate_risk_assessment
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intent_context import IntentContext
-from affordance_runtime.task.local_objective import local_objective_complete
-from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     AcquisitionStatus,
@@ -75,15 +71,6 @@ from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.view import build_agent_world_view
 
 _DirectiveT = TypeVar("_DirectiveT", bound=LoopDirective)
-
-
-def _environment_scope_enumerator(environment: WorldEnvironment) -> ScopeEnumeratorPort:
-    """Use the observation owner's scope implementation, with snapshot-only fallback."""
-
-    candidate = getattr(environment, "scope_enumerator", None)
-    if candidate is not None and callable(getattr(candidate, "enumerate", None)):
-        return candidate
-    return SnapshotScopeEnumerator()
 
 
 @dataclass
@@ -180,7 +167,6 @@ class AgentLoop:
             task_revision=task.revision,
             remaining_turns=task.loop_budget.max_turns,
             recent_turn_limit=self.recent_turn_limit,
-            scope_enumerator=_environment_scope_enumerator(environment),
         )
         session = AgentRunSession(
             self,
@@ -281,20 +267,6 @@ class AgentLoop:
             )
             if session.approved_confirmation is not None:
                 outcome = await self._execute_confirmed(session, action_space, task_evaluation)
-            elif (
-                self._ports.local_objective_proposer is not None
-                and local_objective_complete(state.local_objective_state)
-                and state.local_objective_not_required_revision != state.task_revision
-            ):
-                outcome = await run_objective_proposal_turn(
-                    session,
-                    action_space,
-                    task_evaluation,
-                    self._ports.local_objective_proposer,
-                    self.context_builder,
-                )
-            elif await resolve_visual_local_objective_evidence(session):
-                continue
             else:
                 outcome = await run_policy_turn(
                     session,

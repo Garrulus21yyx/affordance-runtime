@@ -68,7 +68,7 @@ normative:
   - role: benchmark_boundary
     path: docs/benchmark-governance-boundary.md
     lifecycle: current
-  - role: task_intake_and_local_objective_contract
+  - role: task_intake_and_decision_contract
     path: docs/task-intake-and-planner.md
     lifecycle: current
   - role: perception_acquisition_and_bounded_loop_recovery_contract

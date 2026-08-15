@@ -1,7 +1,7 @@
 """Pure WoT TD and affordance identity comparison."""
 
-from affordance_runtime.adapters.wot import ThingAffordanceModel
 from affordance_runtime.surfaces.wot.contracts import WotAffordanceBinding
+from affordance_runtime.surfaces.wot.thing_description import ThingAffordanceModel
 
 
 def wot_affordance_is_current(

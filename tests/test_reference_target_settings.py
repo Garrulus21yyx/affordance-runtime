@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import dataclass
 from threading import Thread
 
+from reference_site_support import create_reference_server
+
 from affordance_runtime import (
     NaturalLanguageTaskRequest,
     TaskBoundary,
@@ -12,7 +14,6 @@ from affordance_runtime.agent import AgentLoopStatus, RequestObservation, Select
 from affordance_runtime.browser_thread_session import ThreadBoundBrowserSession
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
-from affordance_runtime.fixtures import create_fixture_server
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.http_json import (
     HttpJsonAuthority,
@@ -66,7 +67,7 @@ def _request() -> NaturalLanguageTaskRequest:
 
 
 def test_target_settings_confirms_action_then_completes_from_unified_authoritative_world() -> None:
-    server = create_fixture_server(port=0)
+    server = create_reference_server()
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_address[1]}"

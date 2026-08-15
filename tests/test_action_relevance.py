@@ -19,7 +19,7 @@ class _Objective:
     enabling_action_hints: tuple[str, ...] = ()
 
 
-def test_local_objective_classifies_without_changing_action_space_membership() -> None:
+def test_relevance_hint_classifies_without_changing_action_space_membership() -> None:
     task = TaskGoal(
         "enable",
         "Enable shared state",

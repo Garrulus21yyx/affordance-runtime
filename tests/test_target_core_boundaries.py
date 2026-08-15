@@ -6,7 +6,6 @@ PACKAGE = ROOT / "src" / "affordance_runtime"
 TARGET_CORE = (
     PACKAGE / "agent",
     PACKAGE / "task" / "contracts.py",
-    PACKAGE / "task" / "local_objective.py",
     PACKAGE / "world",
     PACKAGE / "execution" / "contracts.py",
     PACKAGE / "evaluation",

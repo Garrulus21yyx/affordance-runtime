@@ -34,7 +34,7 @@ def test_public_target_composition_factory_builds_the_runtime_contract() -> None
 
     assert isinstance(runtime, TargetRuntime)
     assert runtime.required_decisions == TOOL_ACTION_DECISION_CAPABILITIES
-    assert runtime.decision_ports.local_objective_proposer is None
+    assert tuple(runtime.decision_ports.__dataclass_fields__) == ("action_policy",)
 
 
 def test_root_package_exports_target_natural_language_start_contracts() -> None:

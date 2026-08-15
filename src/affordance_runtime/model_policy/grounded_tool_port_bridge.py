@@ -22,7 +22,6 @@ from affordance_runtime.model_boundary.failures import (
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
     ModelMetadata,
-    ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.grounded_policy_context import (
@@ -30,9 +29,7 @@ from affordance_runtime.model_policy.grounded_policy_context import (
 )
 from affordance_runtime.model_policy.grounded_tool_catalog import (
     compile_grounded_action_catalog,
-    compile_grounded_objective_catalog,
     resolve_grounded_action_call,
-    resolve_grounded_objective_call,
 )
 from affordance_runtime.model_policy.grounded_tool_compiler import CompiledGroundedTool
 from affordance_runtime.model_policy.grounded_tool_contracts import (
@@ -46,7 +43,6 @@ from affordance_runtime.model_policy.model_port_bridge import (
     DecisionPerceptionProfile,
     perception_uses_images,
 )
-from affordance_runtime.model_policy.objective_spec import OBJECTIVE_SCHEMA_VERSION
 from affordance_runtime.model_policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallIssueCode,
@@ -101,10 +97,6 @@ class _GroundedCommandPayloadBase(BaseModel):
 
 class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     """Compact action-selection command; retained as the public compatibility name."""
-
-
-class GroundedObjectiveCommandPayload(_GroundedCommandPayloadBase):
-    """Compact objective-proposal command with no action-selection fields."""
 
 
 _TOOL_INTENT_REPAIR_CODES = frozenset(
@@ -596,82 +588,6 @@ class GroundedActionAdapter(_GroundedAdapterBase):
             resolution.decision,
             metadata,
         )
-
-
-@dataclass(frozen=True)
-class GroundedObjectiveAdapter(_GroundedAdapterBase):
-    @property
-    def compatibility_key(self) -> str:
-        return ":".join(
-            (
-                GROUNDED_TOOLS_PROTOCOL,
-                "objective_proposal",
-                self.perception_profile.value,
-                self.transport_kind.value,
-                GROUNDED_TOOL_CALL_ENVELOPE,
-            )
-        )
-
-    async def generate(
-        self,
-        request: ModelDecisionRequest,
-    ) -> ResolvedLocalObjectiveOutcome | ModelFailure:
-        self._reset_diagnostics()
-        try:
-            catalog = self._compile_catalog(
-                request,
-                OBJECTIVE_SCHEMA_VERSION,
-                compile_grounded_objective_catalog,
-            )
-            context = request.agent_context
-            if context is None:
-                raise ValueError("grounded objective requires one canonical AgentContext")
-            messages = self.context_binder.objective_messages(
-                context,
-                catalog.specs,
-                request,
-                supports_multimodal=self.port.supports_multimodal,
-                perception_profile=self.perception_profile,
-                include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
-            )
-            outcome, metadata = await self._resolve_catalog(
-                request,
-                catalog,
-                messages,
-                resolve_grounded_objective_call,
-                GroundedObjectiveCommandPayload,
-            )
-        except (
-            GroundedToolResolutionError,
-            ProviderModelError,
-            StructuredModelError,
-            TypeError,
-            ValueError,
-        ) as exc:
-            return self._failure_from_exception(exc)
-        from affordance_runtime.agent.local_objective_proposal import (
-            LocalObjectiveNeedsInput,
-            LocalObjectiveNotRequired,
-            LocalObjectiveProposal,
-            LocalObjectiveUnsupported,
-        )
-
-        if not isinstance(
-            outcome,
-            (
-                LocalObjectiveProposal,
-                LocalObjectiveNotRequired,
-                LocalObjectiveNeedsInput,
-                LocalObjectiveUnsupported,
-            ),
-        ):
-            return _failure(ModelFailureKind.INTERNAL_ERROR, "objective adapter resolved an action")
-        return ResolvedLocalObjectiveOutcome(outcome, metadata)
-
-
-# Temporary name compatibility. The old name now denotes action selection only;
-# it has no phase field and cannot be cast into an objective port.
-GroundedToolDecisionAdapter = GroundedActionAdapter
 
 
 def _command_payload_type(

@@ -21,12 +21,11 @@ from affordance_runtime.model_boundary.failures import (
 )
 from affordance_runtime.model_policy.contracts import (
     ModelDecisionRequest,
-    ResolvedLocalObjectiveOutcome,
     ResolvedModelDecision,
 )
 from affordance_runtime.model_policy.port import StructuredModelPort
 
-ResolvedT = TypeVar("ResolvedT", ResolvedModelDecision, ResolvedLocalObjectiveOutcome)
+ResolvedT = TypeVar("ResolvedT", bound=ResolvedModelDecision)
 
 
 class ProviderAttemptStatus(StrEnum):

@@ -1,5 +1,4 @@
 """Immutable request and response contracts for one structured model decision."""
-
 from __future__ import annotations
 
 import json
@@ -9,7 +8,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.agent.local_objective_proposal import LocalObjectiveResolvedOutcome
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model_boundary.context import AgentImageInput
 
@@ -128,28 +126,3 @@ class ResolvedModelDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("resolved model outcome requires one typed AgentDecision")
-
-
-@dataclass(frozen=True)
-class ResolvedLocalObjectiveOutcome:
-    outcome: LocalObjectiveResolvedOutcome
-    metadata: ModelMetadata = field(default_factory=ModelMetadata)
-
-    def __post_init__(self) -> None:
-        from affordance_runtime.agent.local_objective_proposal import (
-            LocalObjectiveNeedsInput,
-            LocalObjectiveNotRequired,
-            LocalObjectiveProposal,
-            LocalObjectiveUnsupported,
-        )
-
-        if not isinstance(
-            self.outcome,
-            (
-                LocalObjectiveProposal,
-                LocalObjectiveNotRequired,
-                LocalObjectiveNeedsInput,
-                LocalObjectiveUnsupported,
-            ),
-        ):
-            raise TypeError("resolved objective outcome requires one typed objective result")

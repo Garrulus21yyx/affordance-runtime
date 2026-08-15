@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
-from affordance_runtime.adapters.som import BoundingBox, VisualMark, annotate_screenshot
+from affordance_runtime.model_boundary.visual_annotation import BoundingBox, VisualMark, annotate_screenshot
 from affordance_runtime.model_port import StructuredModelError, _post_json, _structured_json_content
 from affordance_runtime.visual_grounding import _first_json_object, _visual_profile_config
 from affordance_runtime.world.vision_escalation import VisionEvidenceNeed

@@ -1,11 +1,11 @@
 import pytest
 
-from affordance_runtime.adapters.dom import (
+from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
+from affordance_runtime.surfaces.dom.document_model import (
     AuthoredInteractiveExtension,
     DomAdapter,
     PageAffordanceModel,
 )
-from affordance_runtime.contracts import Affordance, AffordanceLease, RiskLevel, Surface
 
 _AUTHORED_EXTENSION = AuthoredInteractiveExtension(
     marker_attribute="data-runtime-interactive",

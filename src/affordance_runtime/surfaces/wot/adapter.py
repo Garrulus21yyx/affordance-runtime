@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 from time import monotonic, time
 from typing import Any, Callable
 
-from affordance_runtime.adapters.wot import ThingAffordanceModel, WotAdapter
-from affordance_runtime.adapters.wot_security import SecurityScheme
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
+from affordance_runtime.surfaces.wot.security import SecurityScheme
+from affordance_runtime.surfaces.wot.thing_description import ThingAffordanceModel, WotAdapter
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationOffer
 from affordance_runtime.world.action_classification import classify_wot_action

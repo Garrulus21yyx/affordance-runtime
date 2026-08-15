@@ -1,7 +1,7 @@
 import pytest
 
-from affordance_runtime.adapters.wot import WotAdapter
-from affordance_runtime.adapters.wot_security import build_auth, parse_rate_limit
+from affordance_runtime.surfaces.wot.security import build_auth, parse_rate_limit
+from affordance_runtime.surfaces.wot.thing_description import WotAdapter
 
 
 def _runtime_td() -> dict[str, object]:

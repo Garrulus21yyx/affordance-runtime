@@ -10,13 +10,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-from affordance_runtime.adapters.wot_security import SecurityScheme, build_auth
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.surfaces.wot.contracts import (
     WotAffordanceBinding,
     WotTransportResult,
     WotTransportStatus,
 )
+from affordance_runtime.surfaces.wot.security import SecurityScheme, build_auth
 
 
 class CredentialResolver(Protocol):

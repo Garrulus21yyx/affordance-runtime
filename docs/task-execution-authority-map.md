@@ -1,7 +1,7 @@
 # Target AgentLoop Authority Map
 
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
-> **Updated:** 2026-08-14
+> **Updated:** 2026-08-15
 > **Scope:** target GUI AgentLoop only
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 
@@ -36,8 +36,8 @@ UserRequest
 ```
 
 `TaskSpec`, `TaskPlan`, `TaskPlanAuthority`, `StateKernel`, and `Coordinator`
-remain the canonical contracts and owners for the separate transactional
-workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
+are historical names for the deleted transactional workflow runtime. They are
+not an ingress, compatibility layer, or hidden capability of `AgentLoop`.
 
 ## Authority and lifecycle owners
 
@@ -49,7 +49,7 @@ workflow runtime. They are not an ingress or hidden capability of `AgentLoop`.
 | observed world | `WorldEnvironment` | current environment | `WorldObservation`, including source-owned structural documents and media | task semantics, action authority |
 | BrowserGym structural representation | BrowserGym `SurfaceAdapter` | bounded current AX tree + rendering | semantic targets plus a separate bounded structure document with explicit target links | bindings for structure-only nodes, Actor formatting |
 | raw screenshot acquisition | BrowserGym environment | current captured viewport | independently selectable visual source containing media only | semantic interpretation, bindings, actions |
-| legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, dormant LocalObjective code |
+| legal actions | `ActionSpaceBuilder` | `TaskGoal + WorldObservation` | current internal `ActionSpace` | model, benchmark, deleted workflow/LocalObjective code |
 | public action candidates | `ContextBuilder` | current action page + public grounded targets | referentially closed `AgentContext.actions` options | legality, private binding, durable identity, screen coordinates |
 | concrete action rows and flat tools | `GroundedToolCompiler` | complete closed action candidates | shared semantic skeleton, minimal exact public ToolSpec, private resolution table | world lookup, legality, provider grouping, fuzzy matching |
 | Actor epistemic projection | `ContextBuilder` + `ActorWorldSnapshot` | bounded current public source structure, semantic targets, facts, evidence, coverage and media | one disposable structure-preserving Actor world | legality, candidate derivation, binding, retained state |
@@ -178,17 +178,16 @@ that separation without training a new grounding model: the general model
 selects a public semantic difference, and Runtime resolves the exact current
 entity and executor route.
 
-## Dormant LocalObjective branch
+## Deleted LocalObjective branch
 
-`LocalObjectiveProposalPort`, its objective model transport, and the
-`local_objective_state` reducer still exist in source as a dormant branch.
-Since `f73128f`, `compose_target_runtime()` and the target benchmark composition
-cannot configure that port: the ordinary target loop has one reasoning phase,
-`AgentPolicy.decide`. The residual branch is not a current capability,
-extension point, or alternate authority path and is pending physical deletion.
+`LocalObjectiveProposalPort`, its objective model transport, the
+`local_objective_state` reducer, and the surrounding workflow plan/runtime
+owners are physically absent after T3. The ordinary target loop has one
+reasoning phase, `AgentPolicy.decide`; there is no dormant extension point,
+compatibility import, or alternate authority path.
 
-This distinction records why the code exists without putting it back into the
-normative chain. Earlier set/sequence/aggregate work attempted to make a
+This deletion records why the experiment is not part of the normative chain.
+Earlier set/sequence/aggregate work attempted to make a
 model-authored LocalObjective a separate pre-action phase. Live evidence showed
 that the phase duplicated planning, exposed a large Runtime execution DSL to
 the model, and could stop action selection before the GUI was used. The useful

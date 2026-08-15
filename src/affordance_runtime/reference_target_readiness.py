@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
-from affordance_runtime.reference_scenarios import ReferenceScenario
+ReferenceScenario = Literal["pricing", "settings", "export"]
 
 
 class ReferenceTargetBlocker(StrEnum):

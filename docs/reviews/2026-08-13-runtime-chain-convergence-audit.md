@@ -187,7 +187,7 @@ BrowserGym reset.goal
 → RunResult / benchmark projection
 ```
 
-本地 CLI 更窄：scenario 已经预先决定 TaskSpec、effect、success 和 planner，`run_scenario` 再组装 `RunCoordinator`。公共 [`RuntimeClient`](../../src/affordance_runtime/runtime_client.py) 也只封装 `RunCoordinator`。根 [`__init__.py`](../../src/affordance_runtime/__init__.py) 导出的稳定 API 仍是 `RunRequest/RuntimeClient/ActionContract` 等旧合同。
+本地 CLI 更窄：scenario 已经预先决定 TaskSpec、effect、success 和 planner，`run_scenario` 再组装 `RunCoordinator`。当时的 `runtime_client.py` 也只封装 `RunCoordinator`。这些 owner 已在 T3 物理删除；根 [`__init__.py`](../../src/affordance_runtime/__init__.py) 当前只导出 target façade 合同。
 
 ### 2.2 非默认 target 链路
 

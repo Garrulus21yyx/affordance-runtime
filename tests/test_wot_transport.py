@@ -1,8 +1,8 @@
 import json
 from dataclasses import replace
 
-from affordance_runtime.adapters.wot_security import SecurityScheme
 from affordance_runtime.surfaces.wot.contracts import WotAffordanceBinding, WotTransportStatus
+from affordance_runtime.surfaces.wot.security import SecurityScheme
 from affordance_runtime.surfaces.wot.transport import HttpWotTransport, MappingCredentialResolver
 
 

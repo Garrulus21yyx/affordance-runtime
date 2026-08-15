@@ -3,7 +3,6 @@ from typing import Any
 
 import pytest
 
-from affordance_runtime.adapters.dom import PageAffordanceModel
 from affordance_runtime.browser_session import BrowserSession, BrowserSnapshot
 from affordance_runtime.contracts import Observation
 from affordance_runtime.execution_context import ExecutionContextRequirementRef, issue_surface_binding
@@ -14,7 +13,8 @@ from affordance_runtime.grounding import (
     PerceptionRequirements,
     VisualGroundingPayload,
 )
-from affordance_runtime.perception import GenericPerceptionOrchestrator
+from affordance_runtime.surfaces.dom.document_model import PageAffordanceModel
+from affordance_runtime.surfaces.visual.proposal import GenericPerceptionOrchestrator
 from affordance_runtime.visual_grounding import VisualRegion
 
 

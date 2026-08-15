@@ -25,8 +25,6 @@ if TYPE_CHECKING:
         AgentActionSpaceView,
         AgentDestinationView,
         AgentMaterialBindingView,
-        AgentMilestoneView,
-        AgentPlanView,
         AgentSuccessCriterionView,
         AgentTaskView,
         AgentTurnView,
@@ -47,7 +45,6 @@ if TYPE_CHECKING:
         project_action_page,
         project_action_space,
         project_parameter_schema_for_model,
-        project_plan,
         project_turns,
     )
     from affordance_runtime.model_boundary.source_projection import (
@@ -72,9 +69,7 @@ _EXPORTS = {
     "AgentContext": ("affordance_runtime.model_boundary.context", "AgentContext"),
     "AgentDestinationView": ("affordance_runtime.model_boundary.contracts", "AgentDestinationView"),
     "AgentMaterialBindingView": ("affordance_runtime.model_boundary.contracts", "AgentMaterialBindingView"),
-    "AgentMilestoneView": ("affordance_runtime.model_boundary.contracts", "AgentMilestoneView"),
     "AgentPendingView": ("affordance_runtime.model_boundary.context", "AgentPendingView"),
-    "AgentPlanView": ("affordance_runtime.model_boundary.contracts", "AgentPlanView"),
     "AgentProgressView": ("affordance_runtime.model_boundary.context", "AgentProgressView"),
     "AgentSuccessCriterionView": ("affordance_runtime.model_boundary.contracts", "AgentSuccessCriterionView"),
     "AgentTaskView": ("affordance_runtime.model_boundary.contracts", "AgentTaskView"),
@@ -117,7 +112,6 @@ _EXPORTS = {
         "affordance_runtime.model_boundary.projection",
         "project_parameter_schema_for_model",
     ),
-    "project_plan": ("affordance_runtime.model_boundary.projection", "project_plan"),
     "project_task": ("affordance_runtime.model_boundary.task_projection", "project_task"),
     "project_latest_transition": (
         "affordance_runtime.model_boundary.transition_digest_projection",

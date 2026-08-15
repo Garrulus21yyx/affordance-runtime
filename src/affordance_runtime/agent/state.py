@@ -13,12 +13,6 @@ from affordance_runtime.agent.user_input import UserInputContinuation, UserInput
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.execution.contracts import BoundActionRequest
-from affordance_runtime.task.local_objective import (
-    LocalObjectiveState,
-    local_objective_observation_id,
-    refresh_local_objective,
-)
-from affordance_runtime.task.scope_enumerator import ScopeEnumeratorPort, SnapshotScopeEnumerator
 from affordance_runtime.world.contracts import WorldObservation
 
 MAX_SEEN_ACTION_PAGE_RESULTS = 64
@@ -50,9 +44,6 @@ class AgentLoopState:
     control_transition_kind_counts: dict[str, int] = field(default_factory=dict)
     continued_control_root_ids: tuple[str, ...] = ()
     control_terminal_status: AgentLoopStatus | None = None
-    local_objective_state: LocalObjectiveState | None = None
-    local_objective_not_required_revision: int = 0
-    scope_enumerator: ScopeEnumeratorPort = field(default_factory=SnapshotScopeEnumerator, repr=False)
     task_revision: int = 1
     progress_revision: int = 0
     pending_revision: int = 0
@@ -80,7 +71,6 @@ class AgentLoopState:
     control_repetition_total_count: int = 0
     control_issue_consumption_total_count: int = 0
     observation_cursor: str = ""
-    visual_evidence_attempt_keys: tuple[str, ...] = ()
 
     @property
     def recent_turns(self) -> tuple[Turn, ...]:
@@ -101,19 +91,6 @@ class AgentLoopState:
         if not isinstance(reduced, ControlAccepted):
             raise ControlReductionError(reduced)
         self._install_control_reducer_state(reduced.state)
-        local = self.local_objective_state
-        if local is not None and transition.after_observation_id != local_objective_observation_id(local):
-            action = transition.action_evaluation
-            intent = transition.intent
-            self.local_objective_state = refresh_local_objective(
-                local,
-                self.current_observation,
-                acted_entity_id=intent.target_id if intent is not None else "",
-                semantic_action=intent.semantic_action if intent is not None else "",
-                action_status=action.status if action is not None else None,
-                effect_evidence_refs=action.evidence_refs if action is not None else (),
-                enumerator=self.scope_enumerator,
-            )
         self.progress_revision += 1
 
     def _apply_control_continuation(self, continuation: ControlContinuation) -> None:

@@ -12,8 +12,8 @@ from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 
 if TYPE_CHECKING:
-    from affordance_runtime.adapters.wot import ThingAffordanceModel
     from affordance_runtime.contracts import Affordance
+    from affordance_runtime.surfaces.wot.thing_description import ThingAffordanceModel
 
 
 class WotDeploymentScope(StrEnum):

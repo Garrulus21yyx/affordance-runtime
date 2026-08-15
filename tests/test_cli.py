@@ -1,27 +1,45 @@
 from __future__ import annotations
 
-from pathlib import Path
-from types import SimpleNamespace
+import argparse
 
 from affordance_runtime import cli
 
 
-def test_benchmark_acceptance_failure_can_be_recorded_without_promotion_exit(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    report = SimpleNamespace(
-        suite_version="local-saas-v2",
-        runs=[object()],
-        acceptance_errors=["full_runtime task_success_rate=0.6667 violates min threshold 1.0000"],
+def _command_names() -> frozenset[str]:
+    action = next(
+        item
+        for item in cli.build_parser()._actions
+        if isinstance(item, argparse._SubParsersAction)
     )
+    return frozenset(action.choices)
 
-    def fake_run_local_benchmark(*args, **kwargs):  # type: ignore[no-untyped-def]
-        del args, kwargs
-        return report, {"json": tmp_path / "benchmark-report.json"}
 
-    monkeypatch.setattr(cli, "run_local_benchmark", fake_run_local_benchmark)
+def test_benchmark_cli_exposes_only_retained_independent_commands() -> None:
+    assert _command_names() == {
+        "benchmark-screenspot",
+        "benchmark-screenspot-grounder",
+        "benchmark-workarena-preflight",
+        "prepare-webarena-verified-subset",
+        "evaluate-webarena-verified",
+        "prepare-wasp-subset",
+        "provider-preflight-ollama",
+    }
 
-    assert cli.main(["benchmark", "--output", str(tmp_path)]) == 1
-    assert cli.main(["benchmark", "--output", str(tmp_path), "--allow-acceptance-fail"]) == 0
 
+def test_deleted_runtime_benchmark_commands_are_unparseable() -> None:
+    for command in (
+        "serve-fixture",
+        "baseline",
+        "benchmark",
+        "benchmark-task-planning",
+        "benchmark-adaptive-routing",
+        "benchmark-browsergym",
+        "benchmark-browsergym-generalist",
+        "evolve",
+    ):
+        try:
+            cli.build_parser().parse_args([command])
+        except SystemExit as exc:
+            assert exc.code == 2
+        else:  # pragma: no cover - parser must fail closed
+            raise AssertionError(f"deleted command remains parseable: {command}")

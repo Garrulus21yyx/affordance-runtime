@@ -15,7 +15,6 @@ MAX_GROUNDED_WORKSPACE_BYTES = 64 * 1024
 
 
 class GroundedToolPhase(StrEnum):
-    OBJECTIVE_PROPOSAL = "objective_proposal"
     ACTION_SELECTION = "action_selection"
 
 

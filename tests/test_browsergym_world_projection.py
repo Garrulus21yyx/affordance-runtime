@@ -204,7 +204,6 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
     public = GroundedPolicyContextBinder._public_context(
         context,
         False,
-        action_selection=True,
     )
     roots = public["world"]["documents"][0]["roots"]
     panel = next(item for item in roots if item["label"] == "Products")

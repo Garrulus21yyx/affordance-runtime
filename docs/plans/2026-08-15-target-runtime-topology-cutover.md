@@ -2,8 +2,8 @@
 
 Date: 2026-08-15
 
-Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY / WAVE_A_ADMITTED /
-BLOCKS_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
+Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY /
+WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
 
 ## Goal
 
@@ -275,7 +275,7 @@ Exit:
 
 ### T3 — delete legacy orchestration clusters
 
-Status: `READY`
+Status: `COMPLETE`
 
 Delete owner-by-owner, with all imports/tests/fixtures removed or migrated in
 the same commit. Candidate clusters include:
@@ -305,7 +305,7 @@ Exit for each cluster:
 
 ### T4 — move the remaining live code into owner packages
 
-Status: `PENDING_T3`
+Status: `READY`
 
 Only live files move. Each `git mv` slice updates every production import, test,
 fixture, package export and documentation reference atomically. Avoid a

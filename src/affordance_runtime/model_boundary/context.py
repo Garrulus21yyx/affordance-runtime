@@ -96,7 +96,6 @@ class AgentProgressView:
     unresolved_criteria: BoundedSection[str]
     unresolved_outputs: BoundedSection[str]
     events: BoundedSection[AgentProgressEventView]
-    local_objective_open: bool = False
     truncated: bool = False
 
 

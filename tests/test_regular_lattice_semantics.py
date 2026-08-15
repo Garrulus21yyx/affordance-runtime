@@ -28,13 +28,6 @@ from affordance_runtime.world.regular_lattice import (
     derive_regular_lattice,
 )
 
-_OBJECTIVE_OUTCOME_TOOLS = [
-    "propose_local_objective",
-    "local_objective_not_required",
-    "local_objective_needs_input",
-    "local_objective_unsupported",
-]
-
 
 def _nodes(group: str = "grid") -> tuple[SpatialNode, ...]:
     return tuple(
@@ -154,7 +147,6 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     public = GroundedPolicyContextBinder._public_context(
         context,
         False,
-        action_selection=True,
     )
     pending = [
         node
@@ -180,74 +172,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     assert "(1,-2)" in target_values
     assert candidate.target_ref not in target_values
 
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-
     assert target.target_id in dict(context.grounding.target_refs)
-    assert [spec.name for spec in catalog.specs] == _OBJECTIVE_OUTCOME_TOOLS
-
-
-def test_exact_lattice_relation_is_available_before_model_target_selection() -> None:
-    raw = _raw_grid()
-    raw.pop("screenshot")
-    projection = _projection(raw)
-    task = TaskGoal(
-        "task:grid-dom-only",
-        raw["goal"],
-        allowed_effects=("external_ui_interaction",),
-        risk_profile=RiskProfile.LOW,
-    )
-    action_space = ActionSpaceBuilder().build(task, projection.world)
-    context = ContextBuilder().build(
-        task,
-        AgentLoopState(projection.world, remaining_turns=5),
-        action_space,
-        TaskEvaluation(
-            task.task_id,
-            projection.world.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-    )
-
-    from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
-
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-
-    assert [spec.name for spec in catalog.specs] == _OBJECTIVE_OUTCOME_TOOLS
-
-
-def test_action_catalog_never_reconstructs_grid_objective_from_projection() -> None:
-    raw = _raw_grid()
-    projection = _projection(raw)
-    task = TaskGoal(
-        "task:grid-mandatory-ingress",
-        raw["goal"],
-        allowed_effects=("external_ui_interaction",),
-        risk_profile=RiskProfile.LOW,
-    )
-    action_space = ActionSpaceBuilder().build(task, projection.world)
-    state = AgentLoopState(
-        projection.world,
-        remaining_turns=5,
-    )
-    context = ContextBuilder().build(
-        task,
-        state,
-        action_space,
-        TaskEvaluation(
-            task.task_id,
-            projection.world.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-    )
-
-    from affordance_runtime.model_policy.grounded_tool_contracts import GroundedToolPhase
-
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-
-    assert not any(spec.name == "click" for spec in catalog.specs)
-    assert [spec.name for spec in catalog.specs] == _OBJECTIVE_OUTCOME_TOOLS
 
 
 def _raw_grid():

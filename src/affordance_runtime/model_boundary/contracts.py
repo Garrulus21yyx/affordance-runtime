@@ -1,5 +1,4 @@
 """Immutable surface-neutral values exposed across the model boundary."""
-
 from __future__ import annotations
 
 import re
@@ -186,23 +185,3 @@ class AgentTurnView:
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_parameters", freeze_json(self.public_parameters))
         object.__setattr__(self, "semantic_summary", freeze_json(self.semantic_summary))
-
-
-@dataclass(frozen=True)
-class AgentMilestoneView:
-    milestone_id: str
-    objective: str
-    dependency_ids: tuple[str, ...] = ()
-    completion_criteria: Mapping[str, object] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "dependency_ids", tuple(self.dependency_ids))
-        object.__setattr__(self, "completion_criteria", freeze_json(self.completion_criteria))
-
-
-@dataclass(frozen=True)
-class AgentPlanView:
-    milestones: tuple[AgentMilestoneView, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "milestones", tuple(self.milestones))

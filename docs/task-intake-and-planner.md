@@ -1,7 +1,7 @@
-# Target AgentLoop Intake and Local Objective Contract
+# Target AgentLoop Intake and Decision Contract
 
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
-> **Updated:** 2026-08-13
+> **Updated:** 2026-08-15
 > **Authority:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 
 ## Boundary
@@ -20,35 +20,23 @@ No intake field may contain a DOM ID, Runtime entity ID, E-ref, action ID,
 coordinate, selector, binding, or exact GUI target. Those identities do not
 exist until the environment returns a `WorldObservation`.
 
-The repository's workflow `TaskSpecAuthority`, `TaskPlanAuthority`, and
-`TaskPlan<StepSpec>` remain owned by the separate Coordinator runtime. They are
+The former workflow `TaskSpecAuthority`, `TaskPlanAuthority`,
+`TaskPlan<StepSpec>`, and Coordinator runtime are physically deleted. They are
 not a hidden preparer, ingress, or planning layer for `AgentLoop`.
 
 ## Observation-grounded execution semantics
 
-After an observation and current ActionSpace exist, the explicit
-`LocalObjectiveProposalPort` may return one authority-free bounded semantic
-proposal:
-
-- sequence: future-resolvable semantic selectors and action templates;
-- set: scope, predicate, quantifier, and member action template;
-- aggregate: source scope/predicate/extractor/operator and destination selector.
-
-All variants share one `local_objective_state` owner. Runtime validates the
-proposal against the exact post-observation context, assigns objective/scope/
-step identities, and resolves current entities from current evidence. A
-LocalObjective narrows relevance and tracks obligations; it never expands
-TaskGoal legality, risk permission, or ActionSpace authority.
-
-This proposal phase is not part of `AgentPolicy` and is not projected as an
-action tool. The recurrent Agent interface contains only current action/control
-decisions. Predicate, scope, quantifier, aggregate, and future-resolvable
-selector schemas stop at the proposal adapter and cannot couple to E-ref action
-tools.
+After an observation and current ActionSpace exist, `AgentPolicy.decide`
+receives the bounded public world plus the complete current action/control
+menu. It emits one typed decision; Runtime then performs exact resolution,
+admission, currentness and dispatch. The LocalObjective proposal, transport and
+set/sequence/aggregate reducer experiment was physically deleted in T3 rather
+than retained as a second planning or action-authority path.
 
 Every fresh observation invalidates prior entity/action/binding resolution.
-The LocalObjective semantic value may persist, but its reducer must re-enumerate
-the scope, re-evaluate evidence, and re-authorize current ActionSpace members.
+Longer-horizon reasoning remains model work over bounded task, world, progress,
+transition and history views; it cannot install a private execution DSL or
+expand current ActionSpace authority.
 
 ## Evidence
 
@@ -62,12 +50,10 @@ when a DOM identity exists, or certify task completion.
 
 ## Completion
 
-Action dispatch, action effect, LocalObjective completion, and TaskGoal
-completion are separate outcomes:
+Action dispatch, action effect, and TaskGoal completion are separate outcomes:
 
 - the executor owns dispatch truth;
 - `ActionEvaluator` owns item/effect confirmation;
-- the LocalObjective reducer owns sequence/set/aggregate obligation state;
 - `TaskEvaluator` owns terminal task truth.
 
 Model narration, tool-call success, disappearance of an element, or benchmark
@@ -105,7 +91,7 @@ unchanged.
 
 An admitted revision updates the environment's task-relative authority without
 resetting the physical GUI, consumes the AskUser root exactly once, and
-invalidates the old task evaluation, LocalObjective, context, ActionSpace,
+invalidates the old task evaluation, context, ActionSpace,
 action page, feedback epoch, and progress projection. Physical observation and
 execution accounting remain monotonic. Wrong pending identity, duplicate
 submission, cross-task replacement, non-consecutive revision, terminal

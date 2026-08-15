@@ -28,8 +28,6 @@ from affordance_runtime.model_policy import (
     STRUCTURED_PACKAGE_PROTOCOL,
     DynamicToolDecisionAdapter,
     GroundedActionAdapter,
-    GroundedObjectiveAdapter,
-    GroundedToolDecisionAdapter,
     ModelBackedAgentPolicy,
     ModelPortDecisionAdapter,
 )
@@ -77,26 +75,14 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
     assert grounded.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
-    assert GroundedToolDecisionAdapter is GroundedActionAdapter
 
 
-def test_objective_phase_does_not_claim_action_decision_capabilities() -> None:
-    adapter = GroundedObjectiveAdapter(
-        _Transport(),
-        _config(),
-    )
-
-    assert not hasattr(adapter, "supported_decisions")
-
-
-def test_grounded_action_and_objective_adapters_are_distinct_static_types() -> None:
-    assert GroundedActionAdapter is not GroundedObjectiveAdapter
+def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
     assert "phase" not in {item.name for item in fields(GroundedActionAdapter)}
-    assert "phase" not in {item.name for item in fields(GroundedObjectiveAdapter)}
     factory_source = inspect.getsource(model_policy_factory)
     assert "cast(" not in factory_source
     assert "GroundedActionAdapter(" in factory_source
-    assert "GroundedObjectiveAdapter(" in factory_source
+    assert "GroundedObjectiveAdapter" not in factory_source
 
 
 def test_model_policy_preserves_adapter_capabilities() -> None:

@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, replace
 
-from affordance_runtime.adapters.som import BoundingBox, VisualMark, annotate_screenshot
 from affordance_runtime.model_boundary.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
     AgentImageInput,
+)
+from affordance_runtime.model_boundary.visual_annotation import (
+    BoundingBox,
+    VisualMark,
+    annotate_screenshot,
 )
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref

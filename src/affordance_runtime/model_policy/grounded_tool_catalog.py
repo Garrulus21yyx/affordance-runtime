@@ -1,9 +1,4 @@
-"""Disposable grounded action and LocalObjective proposal catalog.
-
-Action tools are a one-way projection of current Runtime authority.  The sole
-LocalObjective tool accepts a typed semantic proposal; it never reconstructs
-authority from E-refs, action tools, or projected world data.
-"""
+"""Disposable grounded action catalog projected from current Runtime authority."""
 
 from __future__ import annotations
 
@@ -12,20 +7,10 @@ import json
 from dataclasses import dataclass, replace
 from typing import Mapping
 
-from pydantic import TypeAdapter, ValidationError
-
 from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
-)
-from affordance_runtime.agent.local_objective_proposal import (
-    LocalObjectiveNeedsInput,
-    LocalObjectiveNotRequired,
-    LocalObjectiveProposal,
-    LocalObjectiveResolvedOutcome,
-    LocalObjectiveUnsupported,
-    LocalObjectiveUnsupportedReason,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model_boundary.context import AgentContext
@@ -41,10 +26,6 @@ from affordance_runtime.model_policy.grounded_tool_contracts import (
     GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
-)
-from affordance_runtime.model_policy.objective_spec import (
-    LocalObjectiveSpecPayload,
-    local_objective_from_payload,
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.schema_validation import validate_value
@@ -64,100 +45,14 @@ class _ObserveBinding:
     assurance: str
 
 
-@dataclass(frozen=True)
-class _LocalObjectiveBinding:
-    pass
-
-
-@dataclass(frozen=True)
-class _ObjectiveNotRequiredBinding:
-    pass
-
-
-@dataclass(frozen=True)
-class _ObjectiveNeedsInputBinding:
-    pass
-
-
-@dataclass(frozen=True)
-class _ObjectiveUnsupportedBinding:
-    pass
-
-
 def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
 ) -> GroundedToolCatalog:
-    objective_open = context.progress.local_objective_open
-    if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL and objective_open:
+    if phase is not GroundedToolPhase.ACTION_SELECTION:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     specs: list[ToolSpec] = []
     bindings: list[object] = []
-    if phase is GroundedToolPhase.OBJECTIVE_PROPOSAL:
-        specs.extend(
-            (
-                ToolSpec(
-                    "propose_local_objective",
-                    "Propose one current/future observation-resolvable sequence, quantified set, or aggregate objective. "
-                    "Use semantic predicates only. Runtime assigns objective/scope/step IDs; never put E-refs, DOM IDs, "
-                    "screen points, private selectors, or bindings here.",
-                    _object_schema({"value": _local_objective_schema()}, ("value",)),
-                ),
-                ToolSpec(
-                    "local_objective_not_required",
-                    "Declare that this task revision does not need a rolling LocalObjective before action selection.",
-                    _object_schema({}),
-                ),
-                ToolSpec(
-                    "local_objective_needs_input",
-                    "Request bounded missing user input before a LocalObjective can be proposed.",
-                    _object_schema(
-                        {
-                            "value": _object_schema(
-                                {
-                                    "question": {"type": "string", "minLength": 1, "maxLength": 1_000},
-                                    "requested_fields": {
-                                        "type": "array",
-                                        "items": {"type": "string", "minLength": 1, "maxLength": 120},
-                                        "maxItems": 32,
-                                        "uniqueItems": True,
-                                    },
-                                },
-                                ("question", "requested_fields"),
-                            )
-                        },
-                        ("value",),
-                    ),
-                ),
-                ToolSpec(
-                    "local_objective_unsupported",
-                    "Fail closed when no supported observation-resolvable objective can represent the task.",
-                    _object_schema(
-                        {
-                            "value": _object_schema(
-                                {
-                                    "reason_code": {
-                                        "type": "string",
-                                        "enum": [item.value for item in LocalObjectiveUnsupportedReason],
-                                    },
-                                    "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-                                },
-                                ("reason_code", "reason"),
-                            )
-                        },
-                        ("value",),
-                    ),
-                ),
-            )
-        )
-        bindings.extend(
-            (
-                _LocalObjectiveBinding(),
-                _ObjectiveNotRequiredBinding(),
-                _ObjectiveNeedsInputBinding(),
-                _ObjectiveUnsupportedBinding(),
-            )
-        )
     if phase is GroundedToolPhase.ACTION_SELECTION:
         seen_modalities: set[str] = set()
         for capability in context.world.observation_capabilities:
@@ -241,17 +136,13 @@ def compile_grounded_action_catalog(context: AgentContext) -> GroundedToolCatalo
     return compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
 
-def compile_grounded_objective_catalog(context: AgentContext) -> GroundedToolCatalog:
-    return compile_grounded_tool_catalog(context, GroundedToolPhase.OBJECTIVE_PROPOSAL)
-
-
 def resolve_grounded_tool_call(
     catalog: GroundedToolCatalog,
     call: ToolCall,
     *,
     expected_context_id: str,
     expected_catalog_id: str | None = None,
-) -> GroundedActionResolution | LocalObjectiveResolvedOutcome:
+) -> GroundedActionResolution:
     if catalog.context_id != expected_context_id or (
         expected_catalog_id is not None and catalog.catalog_id != expected_catalog_id
     ):
@@ -262,49 +153,6 @@ def resolve_grounded_tool_call(
         raise GroundedToolResolutionError(GroundedToolResolutionCode.UNKNOWN_OPERATION) from exc
     spec = catalog.specs[index]
     binding = catalog.bindings[index]
-    if isinstance(binding, _LocalObjectiveBinding):
-        try:
-            if set(call.arguments) != {"value"}:
-                raise ValueError("local objective tool requires exactly one value")
-            payload: LocalObjectiveSpecPayload = TypeAdapter(LocalObjectiveSpecPayload).validate_python(
-                to_json_compatible(call.arguments["value"])
-            )
-            objective = local_objective_from_payload(payload)
-        except (KeyError, TypeError, ValueError, ValidationError) as exc:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-        return LocalObjectiveProposal(expected_context_id, objective)
-    if isinstance(binding, _ObjectiveNotRequiredBinding):
-        if call.arguments:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        return LocalObjectiveNotRequired(
-            expected_context_id,
-        )
-    if isinstance(binding, _ObjectiveNeedsInputBinding):
-        try:
-            validate_value(call.arguments, spec.input_schema, path="command")
-            value = call.arguments["value"]
-            if not isinstance(value, Mapping):
-                raise TypeError
-            return LocalObjectiveNeedsInput(
-                expected_context_id,
-                str(value["question"]),
-                tuple(value["requested_fields"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-    if isinstance(binding, _ObjectiveUnsupportedBinding):
-        try:
-            validate_value(call.arguments, spec.input_schema, path="command")
-            value = call.arguments["value"]
-            if not isinstance(value, Mapping):
-                raise TypeError
-            return LocalObjectiveUnsupported(
-                expected_context_id,
-                LocalObjectiveUnsupportedReason(str(value["reason_code"])),
-                str(value["reason"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
     try:
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
@@ -362,30 +210,8 @@ def resolve_grounded_action_call(
     return outcome
 
 
-def resolve_grounded_objective_call(
-    catalog: GroundedToolCatalog,
-    call: ToolCall,
-    *,
-    expected_context_id: str,
-    expected_catalog_id: str | None = None,
-) -> LocalObjectiveResolvedOutcome:
-    outcome = resolve_grounded_tool_call(
-        catalog,
-        call,
-        expected_context_id=expected_context_id,
-        expected_catalog_id=expected_catalog_id,
-    )
-    if isinstance(outcome, GroundedActionResolution):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    return outcome
-
-
 def _object_schema(properties: Mapping[str, object], required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
-
-
-def _local_objective_schema() -> dict[str, object]:
-    return TypeAdapter(LocalObjectiveSpecPayload).json_schema()
 
 
 def _observation_tool_description(context: AgentContext, capability) -> str:

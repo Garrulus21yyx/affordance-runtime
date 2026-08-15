@@ -1,7 +1,7 @@
 # Current Implementation Plan
 
 > **Lifecycle:** CURRENT ACTIVE QUEUE
-> **Updated:** 2026-08-14
+> **Updated:** 2026-08-15
 > **Start baseline:** `codex/migrate-world-interaction-capabilities@792d327112cd72f3cb5c9bd02c273c80f626f349`
 > **Active target-cutover baseline:** `311e094`
 > **Review evidence:** none; Implementation Status owns any reviewed closure SHA
@@ -120,18 +120,21 @@ state or new action binding may build on that boundary.
 Evidence and the remaining producer/consumer inventory are recorded in
 [Wave-A consumer inventory](evidence/2026-08-14-interaction-capability-wave-a-consumer-inventory.md).
 
-## Blocking cleanup slice — Target Runtime topology cutover
+## Implemented cleanup slice — Target Runtime topology cutover
 
 Status:
-`DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY / WAVE_A_ADMITTED /
-BEFORE_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
+`DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY /
+WAVE_A_ADMITTED / WORLD_GRAPH_A.1_MINIMUM_TOPOLOGY_GATE_MET`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
 admission, MiniWoB task-state interpretation, runners and reporting in the
 benchmark namespace. The staged Runtime/Coordinator generation and its tests
-remain physically present pending T3 owner-by-owner deletion; most source/tests
-also remain flat at package roots.
+are now physically deleted with their workflow-plan, phase, recovery, progress,
+compatibility and historical executable-benchmark consumers. Root DOM, SoM and
+WoT adapter implementations moved to their surface owners; retained reference
+target witnesses use a test-owned HTTP fixture. No import or CLI shim remains.
+T4 is limited to moving surviving live files into final owner packages.
 
 The authoritative implementation plan is
 [Target Runtime topology cutover and legacy deletion](plans/2026-08-15-target-runtime-topology-cutover.md).
@@ -154,7 +157,9 @@ package root and 153 under benchmarks; tests contain 342 Python files, 337 at
 the tests root. A bounded import scan finds 49 test files coupled to selected
 legacy runtime/planning/recovery families and 151 coupled to target
 agent/world/model/surface families. These counts trigger the inventory; they do
-not authorize bulk deletion.
+not authorize bulk deletion. After T3, 331 production Python files remain,
+including 30 at package root and 111 under benchmarks; 179 deleted production
+paths are sealed by the architecture manifest.
 
 Tests are first-class migration consumers. Every production slice must classify
 its tests as `KEEP_MOVE`, `REWRITE`, or `DELETE_WITH_OWNER`, migrate or delete
@@ -245,7 +250,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 
 | Slice | Status | Files / verification |
 |---|---|---|
-| Model protocol convergence | `ACTION_PROTOCOL_DONE / OBJECTIVE_MODEL_PHASE_WITHDRAWN_FROM_TARGET` | `grounded_tools.v2` is the benchmark action protocol and supported decisions are explicit. Schema repair returns bounded field errors. The failed live objective diagnostic and owner audit show that the Runtime execution DSL must not be the target agent's planning language; target product/benchmark composition can no longer configure that second model phase. Dormant objective transport remains pending physical deletion. |
+| Model protocol convergence | `ACTION_PROTOCOL_DONE / OBJECTIVE_MODEL_PHASE_DELETED` | `grounded_tools.v2` is the benchmark action protocol and supported decisions are explicit. Schema repair returns bounded field errors. The failed live objective diagnostic and owner audit showed that the Runtime execution DSL must not be the target agent's planning language; T3 deleted the dormant objective/workflow transport and its tests. |
 | Product target façade/composition | `T1_COMPLETE` | `TargetRuntime` owns intake/start/run/user-input re-admission, `AgentLoop` owns the loop and `AgentRunSession` owns continuation; pass-through client/episode owners deleted |
 | Product evaluation/DOM evidence | `REOPENED_SPECIALIZATION_AUDIT` | evaluator is product-owned, but arbitrary world-fact/screenshot change currently confirms any activation; replace correlation with explicit effect obligations or semantic verifier evidence |
 | Product CLI/public API | `T1_COMPLETE` | installed `affordance-runtime run`, module entrypoint and root exports are target-only; benchmark commands use `affordance-runtime-benchmark`; legacy product `run` is not exposed |
@@ -254,9 +259,9 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
 | Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
-| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY` | target façade/CLI/loop wrappers and BrowserGym product-surface ownership cut over atomically; staged Runtime physical deletion remains per the [topology plan](plans/2026-08-15-target-runtime-topology-cutover.md) |
+| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY` | target façade/CLI/loop wrappers and BrowserGym product-surface ownership cut over atomically; staged Runtime and executable compatibility clusters are physically deleted and guarded by absence/import redlines |
 | Root default switch | `T1_COMPLETE` | target-only product CLI/public API; benchmark commands have a separate entrypoint |
-| Legacy deletion | pending in topology T2/T3 | delete owner-by-owner with active benchmark migration, target-owned invariant tests and no compatibility shims |
+| Legacy deletion | `T3_COMPLETE` | 179 production paths plus sole-purpose tests/scripts deleted owner-by-owner; retained contracts have target/surface/test owners and no compatibility shim |
 
 World invariant for every pending slice:
 
@@ -351,7 +356,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.6-E action-candidate closure | `EXISTING_ACTION_FLAT_SEMANTIC_COMPILER_IMPLEMENTED_LOCALLY / FULL_VERIFIED_2509_PASS_27_SKIP / HISTORICAL_FOCUSED_GRID_LIVE_PASS / FRESH_LIVE_PENDING` | `ContextBuilder` now closes complete target/destination candidates without computing selectors. `GroundedToolCompiler` alone expands real destination rows, factors shared semantics, selects deterministic minimal Cartesian-safe facets, compiles generic business schemas and retains the exact private lookup table. The binder no longer emits `actions.groups`; exact resolution does not rejoin world state. BrowserGym model/Runtime actions are canonical while primitives stay private. Full local quality gates pass. The historical clean `b6e0546` single grid witness predates this working tree and does not replace fresh live validation. |
 | P5-M4.6-F latest-transition projection | `IMPLEMENTED_LOCALLY / FULL_VERIFIED_2489_PASS_24_SKIP / LIVE_EXERCISED_NOT_ISOLATED` | `AgentContext.last_transition` is a deterministic bounded projection of the latest canonical `ControlTransition`. P0 exposes typed previous decision, execution outcome, effect assessment and criterion/output/task-status transitions. The root captures the matching before evaluation; the existing continuation reducer replaces that same immutable root once. The latest item is removed from older history. No provider call, memory updater, parallel Runtime digest store, world graph diff or ActionSpace diff is present. |
 | P5-M4.7 supported-subset multi-seed | `NOT_STARTED / BLOCKED_BY_M4_6_GATES` | thresholds and seed set must be frozen before execution |
-| P5-E | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE` | Owner audit found that model-authored LocalObjective gives a large Runtime DSL execution authority and duplicates planning. Target product/benchmark composition no longer exposes the proposer/requirement. Existing action AgentPolicy remains the only target reasoning phase; dormant AgentLoop/model-objective code is the next deletion slice. |
+| P5-E | `DELETED_WITH_LEGACY_RUNTIME_T3` | Owner audit found that model-authored LocalObjective gave a large Runtime DSL execution authority and duplicated planning. T3 physically deleted the dormant workflow/objective/planning branch; existing action AgentPolicy remains the only target reasoning phase. |
 | ActionBatch integration | `NOT_STARTED` | isolated legacy-contract helper remains only |
 | default cutover/deletion | `IN_PROGRESS / TARGET ENTRY NON_DEFAULT` | explicit target CLI/client and readiness gate exist; reference capability remediation, held-out benchmark, root switch, and physical deletion remain open |
 
@@ -397,13 +402,11 @@ M4.6-D bounded control feedback remains implemented-not-verified. M4.6-E is
 semantic breadth, stable identity, retained inventory, paging and
 negative-claim traversal safety exist. The current-SHA 15-pair A/B archive is
 valid but its comparison is provider-contaminated, so no screenshot gain is
-claimed. P5-E is `REOPENED / TARGET_COMPOSITION_DEWIRED /
-DORMANT_BRANCH_PENDING_DELETE`: the previously unified sequence/set/aggregate
+claimed. P5-E is now `DELETED_WITH_LEGACY_RUNTIME_T3`: the previously unified sequence/set/aggregate
 objective phase was removed from target product and benchmark composition at
 `f73128f` because it duplicated planning and could prevent ordinary action
-selection. The displaced frontier/hypothesis path is deleted; the residual
-objective proposer/transport/reducer source branch still awaits physical
-deletion.
+selection. The displaced frontier/hypothesis and residual
+objective proposer/transport/reducer source branches are physically deleted.
 
 The current Phase-4 increment retains point grounders only as explicit
 benchmark/legacy-compatibility arms; the BrowserGym target loop neither
@@ -520,9 +523,10 @@ strong-provider, rollback, and exact-head CI evidence.
 ## P5-M4 closure
 
 The current mainline owner is the existing target loop. The pinned BrowserGym
-adapter now owns lifecycle/projection/private binding/execution/mechanical
-verification under `benchmarks/external_smoke`, while AgentLoop, parser,
-Runtime admission, target core, and default Coordinator remain unchanged. Real
+adapter then owned lifecycle/projection/private binding/execution/mechanical
+verification under `benchmarks/external_smoke`, while AgentLoop, parser and
+target core remained unchanged in that historical slice. T2 subsequently moved
+reusable mechanics to `surfaces/browsergym`, and T3 deleted Coordinator. Real
 fixed-task adapter conformance is closed at 3/3. Run evidence is represented by
 exact revision/profile artifacts rather than a durable status
 literal in this plan. The historical fixed smoke failed at `cd49b8e`; later

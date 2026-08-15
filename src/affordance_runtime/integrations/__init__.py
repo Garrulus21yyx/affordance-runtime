@@ -1,21 +1,3 @@
-"""Task-level integrations that preserve runtime execution authority."""
+"""Integration namespace reserved for target-runtime adapters."""
 
-from affordance_runtime.integrations.task_api import (
-    ApprovalGrant,
-    PendingApprovalRequest,
-    RunView,
-    TaskExecution,
-    TaskRequest,
-    TaskRuntimeService,
-    TaskToolAdapter,
-)
-
-__all__ = [
-    "ApprovalGrant",
-    "PendingApprovalRequest",
-    "RunView",
-    "TaskExecution",
-    "TaskRequest",
-    "TaskRuntimeService",
-    "TaskToolAdapter",
-]
+__all__: list[str] = []

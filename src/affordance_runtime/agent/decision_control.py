@@ -36,13 +36,6 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
-from affordance_runtime.agent.local_objective_proposal import (
-    LocalObjectiveNeedsInput,
-    LocalObjectiveNotRequired,
-    LocalObjectiveProposal,
-    LocalObjectiveProposalPort,
-    LocalObjectiveUnsupported,
-)
 from affordance_runtime.agent.negative_claim_coverage import (
     NegativeClaimCoverageDisposition,
     NegativeClaimCoverageGate,
@@ -64,12 +57,6 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluati
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.task.contracts import criterion_id
-from affordance_runtime.task.local_objective import (
-    establish_local_objective,
-    local_objective_action_parameters,
-    local_objective_allowed_action_ids,
-    local_objective_complete,
-)
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     ObservationRequestKind,
@@ -256,105 +243,6 @@ async def run_policy_turn(
     return routed
 
 
-async def run_objective_proposal_turn(
-    session: AgentRunSession,
-    action_space: ActionSpace,
-    task_evaluation: TaskEvaluation,
-    proposer: LocalObjectiveProposalPort,
-    context_builder: ContextBuilder,
-) -> LoopDirective:
-    """Admit one authority-free post-observation proposal outside AgentPolicy."""
-
-    task, state = session.task, session.state
-    context = context_builder.build(
-        task,
-        state,
-        action_space,
-        task_evaluation,
-        session.intent_context,
-        session.current_action_page,
-        observation_count=session.observation_count,
-        waited_ms=session.waited_ms,
-        context_generation=session.next_context_generation(),
-        observation_capabilities=session.environment.observation_capabilities,
-    )
-    session.current_context_snapshot = context
-    state.consume_control_feedback_for_policy()
-    try:
-        outcome = await proposer.propose(context)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        session.pending_runtime_failure = RuntimeFailure(
-            FailureStage.POLICY,
-            FailureKind.CALL_FAILED,
-            "objective_proposal_call_failed",
-            exception_class=safe_exception_class(exc),
-        )
-        raise
-    state.remaining_turns -= 1
-    if isinstance(outcome, PolicyFailure):
-        return Terminate(
-            AgentLoopStatus.FAILED,
-            f"objective_proposal_{outcome.kind}",
-            outcome.reason,
-            policy_failure=outcome,
-        )
-    if outcome.context_id != context.context_id or session.consumed_context_id == context.context_id:
-        return Continue("stale_objective_proposal")
-    session.consumed_context_id = context.context_id
-    if isinstance(outcome, LocalObjectiveNotRequired):
-        state.local_objective_not_required_revision = state.task_revision
-        state.progress_revision += 1
-        return Continue("local_objective_not_required")
-    if isinstance(outcome, LocalObjectiveNeedsInput):
-        decision = AskUser(
-            context.context_id,
-            outcome.question,
-            outcome.requested_fields,
-        )
-        scope = ControlTransitionScope(state, decision)
-        scope.set_reason("objective_input_requested")
-        state.set_pending_question(outcome.question)
-        routed = Pause(
-            AgentLoopStatus.WAITING_USER,
-            "objective_input_requested",
-            outcome.question,
-        )
-        transition = scope.finalize(state, routed)
-        state.set_pending_user_request(
-            build_user_input_request(
-                task_id=session.task.task_id,
-                task_revision=state.task_revision,
-                context_id=context.context_id,
-                source_transition_id=transition.transition_id,
-                question=outcome.question,
-                requested_fields=outcome.requested_fields,
-            )
-        )
-        return routed
-    if isinstance(outcome, LocalObjectiveUnsupported):
-        return Terminate(
-            AgentLoopStatus.BLOCKED,
-            f"objective_{outcome.reason_code.value}",
-            outcome.reason,
-        )
-    if not isinstance(outcome, LocalObjectiveProposal):
-        return Terminate(
-            AgentLoopStatus.FAILED,
-            "invalid_objective_proposal_outcome",
-        )
-    if not local_objective_complete(state.local_objective_state):
-        return Continue("local_objective_already_active")
-    state.local_objective_state = establish_local_objective(
-        outcome.objective,
-        state.current_observation,
-        enumerator=state.scope_enumerator,
-    )
-    state.progress_revision += 1
-    return Continue("local_objective_established")
-
-
 async def _route_decision(
     session,
     action_space,
@@ -403,16 +291,6 @@ async def _route_decision(
             reason,
             "an authoritative observation is required before another effectful action",
         )
-    execution = state.local_objective_state
-    if execution is not None and not local_objective_complete(execution):
-        allowed = local_objective_allowed_action_ids(execution, action_space)
-        parameters = local_objective_action_parameters(execution)
-        if decision.action_id not in allowed or dict(decision.parameters) != dict(parameters):
-            reason = "action_not_authorized_by_local_objective"
-            scope.record_admission(AdmissionStatus.REJECTED, reason)
-            scope.record_decision_result(reason)
-            scope.set_reason(reason)
-            return Terminate(AgentLoopStatus.BLOCKED, reason)
     page = session.current_action_page or context_builder.page(action_space, state)
     issue = page.selection_issue(decision.action_id, decision.destination_id)
     if issue is not None:

@@ -42,11 +42,6 @@ from affordance_runtime.model_boundary.transition_digest_projection import proje
 from affordance_runtime.model_boundary.world_projection import fit_model_world, project_model_world
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
-from affordance_runtime.task.local_objective import (
-    local_objective_allowed_action_ids,
-    local_objective_authority_digest,
-    local_objective_complete,
-)
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.action_paging import ActionPager, InternalActionPage
 from affordance_runtime.world.contracts import ActionSpace
@@ -82,7 +77,7 @@ class ContextBuilder:
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
         if page.objective_digest != default_page.objective_digest:
-            raise ValueError("action page relevance belongs to a previous LocalObjective")
+            raise ValueError("action page relevance belongs to a previous context")
         projected_actions = project_action_page(
             action_space,
             page,
@@ -189,12 +184,6 @@ class ContextBuilder:
         cursor: str = "",
     ) -> InternalActionPage:
         labels = {item.target_id: item.label for item in state.current_observation.targets}
-        local = state.local_objective_state
-        allowed_action_ids = (
-            local_objective_allowed_action_ids(local, action_space)
-            if local is not None and not local_objective_complete(local)
-            else None
-        )
         return self.pager.page(
             action_space,
             None,
@@ -213,8 +202,6 @@ class ContextBuilder:
             ),
             max_destinations_per_option=self.budget.max_destinations_per_option,
             max_targets=self.budget.observation_pinned_capacity,
-            allowed_action_ids=allowed_action_ids,
-            authority_digest=local_objective_authority_digest(local, action_space),
         )
 
     def execution_page(
@@ -303,10 +290,6 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved_outputs) > max_unresolved,
         ),
         events=project_progress_events(state),
-        local_objective_open=(
-            state.local_objective_state is not None
-            and not local_objective_complete(state.local_objective_state)
-        ),
         truncated=(
             len(unresolved) > max_unresolved
             or len(unresolved_outputs) > max_unresolved

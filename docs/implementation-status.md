@@ -1,7 +1,7 @@
 # Implementation Status
 
 > **Lifecycle:** CURRENT IMPLEMENTATION TRUTH
-> **Updated:** 2026-08-14
+> **Updated:** 2026-08-15
 > **Current reviewed M4.5-B closure SHA:** `NONE`
 > **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 
@@ -14,22 +14,19 @@ cutover unless stated explicitly.
 ## Current truth
 
 The old transactional `Coordinator → RuntimeDelta → RuntimeCommitter →
-StateKernel` path remains the current product baseline/default. It is frozen
-against new product capability but has not been deleted.
+StateKernel` product path is physically deleted. The product/module entrypoint
+and root public façade terminate at `TargetRuntime -> AgentLoop ->
+AgentRunSession`; benchmark-only commands have a separate entrypoint.
 
-The target GUI `AgentLoop` and transactional workflow runtime are now explicitly
-separate. AgentLoop starts from `TaskGoal + IntentContext`, observes before any
+The target GUI `AgentLoop` starts from `TaskGoal + IntentContext`, observes before any
 page target identity exists, and uses the current `WorldObservation ->
 ActionSpace -> AgentContext -> AgentDecision` chain. The incorrectly imported
 `LLMIntentCompiler -> TaskSpec -> StrictTaskPlanner -> TaskPlan` start path,
 hidden policy preparer capability, semantic-control mode, AgentLoop TaskProgress,
-and execution-control projection were deleted. Canonical TaskSpec/TaskPlan remain
-owned by the separate Coordinator workflow runtime. A later
-set/sequence/aggregate experiment introduced one post-observation
-`LocalObjectiveProposalPort`, but `f73128f` removed it from target product and
-benchmark composition after the phase was found to duplicate planning and stop
-action selection before GUI use. Its source branch remains dormant pending
-physical deletion. The recurrent Agent decision/tool schema is
+and execution-control projection are deleted. T3 also deleted the separate
+workflow TaskSpec/TaskPlan/Coordinator owners and the dormant
+`LocalObjectiveProposalPort` source branch after it was found to duplicate
+planning and stop action selection before GUI use. The recurrent Agent decision/tool schema is
 action/control-only, and the ordinary target loop has one model reasoning
 phase. Fresh live benchmark revalidation remains open.
 
@@ -41,7 +38,7 @@ budgets and control feedback once, alongside current public tools. The catalog
 owns only tool schemas and opaque Runtime bindings. Grounded adapters receive
 the typed context directly; legacy serialized context is produced only for
 legacy adapters that declare they require it. Focused tests, the full
-`2534 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
+`1589 passed, 27 skipped` suite, Ruff and mypy pass. This implementation has not
 received a fresh live benchmark run.
 
 The current working tree implements the first shared interaction-onboarding
@@ -127,7 +124,7 @@ parallel fusion-result provenance authority will be removed. BrowserGym/
 Playwright and future established
 platform accessibility/OCR providers remain the source engines; no parallel
 fusion pipeline, parser, detector, graph store or automation framework is
-authorized. Current `2534 passed, 27 skipped` evidence does not cover these new
+authorized. Current `1589 passed, 27 skipped` evidence does not cover these new
 multi-source properties.
 
 A.1 closes canonical identity and Actor entity-node duplication. It does not
@@ -136,7 +133,7 @@ canonical claim/evidence migration remains Step 15 and may not be simulated by
 a temporary Actor-only dedup path.
 
 Focused compiler/grounded-tool, BrowserGym world/vision, acquisition, lattice,
-legacy serialization and model-policy tests pass; full `2534 passed, 27 skipped`,
+legacy serialization and model-policy tests pass; full `1589 passed, 27 skipped`,
 Ruff, and mypy pass locally. No fresh live benchmark was run; the historical
 clean `b6e0546` grid witness remains prior evidence and does not attest this
 working tree or replace the pending five-case gate.
@@ -218,11 +215,11 @@ The target path now has:
 | TaskGoal / EvaluationSpec | `INTEGRATED_NON_DEFAULT` |
 | target thin intake / composition | `INTEGRATED_NON_DEFAULT`; closed intake outcomes and one `TargetRuntime` composition root are used by target/model-conformance benchmarks |
 | AskUser task-revision continuation | `INTEGRATED_NON_DEFAULT / OFFLINE_VERIFIED`; typed pending identity, full re-intake, exact +1 revision, environment no-reset update, one-shot control continuation, and stale projection invalidation |
-| canonical TaskPlan / StepSpec contracts | `IMPLEMENTED / COORDINATOR_ONLY`; explicitly not an AgentLoop ingress |
+| canonical workflow TaskPlan / StepSpec contracts | `DELETED_WITH_LEGACY_RUNTIME_T3`; no AgentLoop ingress or compatibility projection remains |
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | Wave-A InteractionCapability owner spine | `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE / WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED / VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`; old vocabulary/canonicalizer/embedded-normalizer owners deleted; five not-yet-produced actions remain semantic-only |
-| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY / WAVE_A_ADMITTED`; target-only root API/product CLI and sole `TargetRuntime -> AgentLoop -> AgentRunSession` lifecycle implemented; reusable BrowserGym mechanics now have one `surfaces/browsergym` owner while MiniWoB admission/verifier policy remains benchmark-owned; 504 production files remain, including 149 at package root and 138 under benchmarks; staged Runtime deletion remains per the [topology plan](plans/2026-08-15-target-runtime-topology-cutover.md) |
+| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_READY / WAVE_A_ADMITTED`; target-only root API/product CLI and sole `TargetRuntime -> AgentLoop -> AgentRunSession` lifecycle implemented; reusable BrowserGym mechanics have one `surfaces/browsergym` owner while MiniWoB admission/verifier policy remains benchmark-owned; 331 production Python files remain, including 30 at package root and 111 under benchmarks; 179 deleted paths are guarded by physical-absence/import redlines |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
@@ -242,7 +239,7 @@ The target path now has:
 | P5-M0.1.1 one-shot context epoch | `CLOSED`; monotonic per-session policy generation, stale/page-cycle/replay zero-call |
 | ContextIdentity | `CLOSED`; task/observation/action-space/page/progress/pending/generation digest |
 | IntentContextView | `CLOSED_FOR_BOUNDED_CONTEXT_ONLY`; always `context_only`, never TaskGoal authority |
-| LocalObjective rolling execution | `REOPENED / TARGET_COMPOSITION_DEWIRED / DORMANT_BRANCH_PENDING_DELETE`; not a current target capability or extension point |
+| LocalObjective rolling execution | `DELETED_WITH_LEGACY_RUNTIME_T3`; not a current target capability or extension point |
 | action paging | `CLOSED_FOR_DETERMINISTIC_CURSOR_PAGER`; traversable Runtime-issued cursor; only current-page IDs admitted |
 | source assurance summaries | `CLOSED_FOR_DOM_VISUAL_WOT_PROFILES`; quality metadata grants no action authority |
 | criterion adjudicators | `CLOSED_FOR_DECLARED_MINIMUM`; mechanical, semantic, explicit-user and hybrid |
@@ -474,7 +471,8 @@ Mistral `mistral-medium-3-5` passed a fresh Level-4 call under format-only and
 one under compact grounding, so its narrow no-regression gate remains green
 without claiming stable support. Compact grounding is supported for the two
 exact local profiles but is not the production default. Parser, Runtime
-admission, external benchmark status and the default Coordinator path are unchanged.
+admission and external benchmark status were unchanged in that historical
+provider slice; the Coordinator path was subsequently deleted in T3.
 
 P5-M3.5 freezes `compact-contract.v1` as an explicit
 `PRODUCTION_SUPPORTED_ACTION_SELECTION_PROFILE`. `model_policy_from_environment()` admits
@@ -538,7 +536,8 @@ observations, one execution and one provider attempt, with zero retry/fallback
 or safety violations. External preflight is admitted. Formal fixed-smoke
 execution status is not hard-coded in source: it is determined by the protected
 exact-head GitHub Actions run and its `browsergym-fixed-external-smoke`
-artifact. The old Coordinator product path is unchanged.
+artifact. The Coordinator product path referenced by that historical evidence
+was subsequently deleted in T3.
 
 ## P5-M4.2 local verified-progress status
 
@@ -872,16 +871,14 @@ are reused or outsourced behind typed ports. Runtime continues to own current
 epoch, ActionSpace/ref resolution, admission, dispatch truth/no-replay,
 risk/confirmation, evidence validation and task disposition.
 
-P5-E is `REOPENED / TARGET_COMPOSITION_DEWIRED /
-DORMANT_BRANCH_PENDING_DELETE`. Sequence, set and aggregate semantics previously
+P5-E is `DELETED_WITH_LEGACY_RUNTIME_T3`. Sequence, set and aggregate semantics previously
 entered through one explicit `LocalObjectiveProposalPort` after observation,
-but target product and benchmark composition no longer expose that phase.
+but target product and benchmark composition no longer expose that phase and
+T3 physically deleted its source, transport, reducer and compatibility tests.
 `AgentDecision` and recurrent action tools contain no objective constructor;
 their schema module imports no predicate/scope/aggregate contracts. The old
 TaskFrontier, VerifiedTaskState, RequirementHypothesis and objective-operation
-package are deleted. Residual objective proposal/transport/reducer code still
-requires physical deletion; focused and full-suite verification do not
-constitute fresh live benchmark closure.
+package are deleted. This topology deletion is not fresh live benchmark closure.
 
 ## Control-transition and long-horizon gap status
 

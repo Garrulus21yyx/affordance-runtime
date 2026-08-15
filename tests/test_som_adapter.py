@@ -3,8 +3,8 @@ from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.adapters.som import BoundingBox, SomAdapter, VisualMark, annotate_screenshot
 from affordance_runtime.contracts import Observation
+from affordance_runtime.surfaces.visual.som import BoundingBox, SomAdapter, VisualMark, annotate_screenshot
 
 
 def _affordances(*, snapshot_id: str = "snap-1"):
