@@ -204,6 +204,8 @@ def _turn(item: AgentTurnView, refs: Mapping[str, str]) -> dict[str, object]:
         "task": item.task_evaluation_status,
         "reason": item.reason,
     }
+    if item.destination_id:
+        result["destination"] = _subject(item.destination_id, refs, unknown="")
     if item.semantic_summary:
         result["decision_details"] = _replace_target_refs(
             project_public_value(item.semantic_summary), refs

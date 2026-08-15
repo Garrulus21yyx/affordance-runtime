@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.projection import project_public_value
@@ -14,8 +15,12 @@ from affordance_runtime.agent.decisions import (
     ProposeDone,
     RequestActionPage,
     RequestObservation,
+    SelectAction,
     Wait,
 )
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.run_state import StepResult
 
 _MAX_STRING = 240
 
@@ -24,6 +29,27 @@ def project_control_transitions(
     transitions: tuple[ControlTransition, ...],
 ) -> tuple[AgentTurnView, ...]:
     return tuple(_project_transition(item) for item in transitions[-12:])
+
+
+def project_select_action_step(result: StepResult) -> AgentTurnView:
+    """Project one simplified-core action result without exposing its binding."""
+
+    if not isinstance(result.decision, SelectAction) or result.execution is None:
+        raise ValueError("select-action history requires one executed action")
+    intent = result.execution.request.intent
+    action = result.action_evaluation
+    return AgentTurnView(
+        "selectaction",
+        intent.semantic_action,
+        intent.target_id,
+        intent.destination_id,
+        project_public_value(intent.parameters),
+        str(result.execution.result.dispatch_status),
+        str(action.status) if action is not None else "",
+        str(result.task_evaluation.status),
+        action.reason if action is not None else result.feedback,
+        {"feedback_code": result.feedback},
+    )
 
 
 def _project_transition(transition: ControlTransition) -> AgentTurnView:

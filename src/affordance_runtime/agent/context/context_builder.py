@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from affordance_runtime.actions.paging import ActionPager, InternalActionPage
 from affordance_runtime.actions.space_contracts import ActionSpace
@@ -45,10 +45,61 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import ObservationCapabilities
+from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.view import build_agent_world_view
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.state import AgentLoopState
+    from affordance_runtime.agent.control_feedback import ControlFeedback
+    from affordance_runtime.agent.control_transition import ControlTransition
+    from affordance_runtime.agent.progress_control import ProgressEvent
+    from affordance_runtime.confirmation.contracts import ConfirmationRequest
+    from affordance_runtime.execution.contracts import BoundActionRequest
+
+
+class ContextStateView(Protocol):
+    """Read-only state required to project one disposable model context."""
+
+    @property
+    def current_observation(self) -> WorldObservation: ...
+
+    @property
+    def recent_control_transitions(self) -> tuple[ControlTransition, ...]: ...
+
+    @property
+    def control_transition_total_count(self) -> int: ...
+
+    @property
+    def remaining_turns(self) -> int: ...
+
+    @property
+    def task_revision(self) -> int: ...
+
+    @property
+    def progress_revision(self) -> int: ...
+
+    @property
+    def pending_revision(self) -> int: ...
+
+    @property
+    def observation_cursor(self) -> str: ...
+
+    @property
+    def pending_user_question(self) -> str: ...
+
+    @property
+    def pending_confirmation(self) -> ConfirmationRequest | None: ...
+
+    @property
+    def pending_unknown_request(self) -> BoundActionRequest | None: ...
+
+    @property
+    def pending_control_feedback(self) -> ControlFeedback | None: ...
+
+    @property
+    def recent_progress_events(self) -> tuple[ProgressEvent, ...]: ...
+
+    @property
+    def progress_event_total_count(self) -> int: ...
 
 _PINNED_ACTION_WORLD_RESERVE_BYTES = 4_096
 
@@ -62,7 +113,7 @@ class ContextBuilder:
     def build(
         self,
         task: TaskGoal,
-        state: AgentLoopState,
+        state: ContextStateView,
         action_space: ActionSpace,
         task_evaluation: TaskEvaluation,
         intent_context: IntentContext | None = None,
@@ -176,7 +227,7 @@ class ContextBuilder:
     def page(
         self,
         action_space: ActionSpace,
-        state: AgentLoopState,
+        state: ContextStateView,
         *,
         query: str = "",
         target_id: str = "",
@@ -207,7 +258,7 @@ class ContextBuilder:
     def execution_page(
         self,
         action_space: ActionSpace,
-        state: AgentLoopState,
+        state: ContextStateView,
         action_id: str,
         destination_id: str = "",
     ) -> InternalActionPage:
@@ -298,7 +349,7 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
     )
 
 
-def _pending_view(state: AgentLoopState) -> AgentPendingView:
+def _pending_view(state: ContextStateView) -> AgentPendingView:
     confirmation = ""
     if state.pending_confirmation is not None:
         confirmation = "confirmation required for current semantic action"

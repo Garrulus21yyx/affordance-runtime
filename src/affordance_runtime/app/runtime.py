@@ -8,6 +8,7 @@ from typing import TypeAlias
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     UnsupportedComposition,
@@ -17,6 +18,7 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.loop import AgentLoop
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult
+from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.session import AgentRunSession
 from affordance_runtime.agent.user_input import UserInputResumeOutcome
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
@@ -125,6 +127,29 @@ class TargetRuntime:
             wait_controller=self.wait_controller,
             recent_turn_limit=self.recent_turn_limit,
         )
+
+    def build_core_loop(self) -> CoreAgentLoop:
+        """Build the small migration target from the same production boundaries."""
+
+        return CoreAgentLoop(
+            self.decision_ports,
+            self.action_evaluator,
+            self.task_evaluator,
+            action_space_builder=self.action_space_builder,
+            binder=self.binder,
+            risk_policy=self.risk_policy,
+            context_builder=self.context_builder,
+        )
+
+    async def run_core_task(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        intent_context: IntentContext | None = None,
+    ) -> RunState:
+        """Run the migration scaffold; it stops at every unclosed boundary."""
+
+        return await self.build_core_loop().run(environment, task, intent_context)
 
     async def start_task(
         self,

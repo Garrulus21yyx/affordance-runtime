@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         PendingKind,
         ProgressDelta,
     )
+    from affordance_runtime.agent.core_loop import CoreAgentLoop, CoreLoopStartError
     from affordance_runtime.agent.decision_capability import (
         ALL_DECISION_CAPABILITIES,
         GROUNDED_ACTION_DECISION_CAPABILITIES,
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     )
     from affordance_runtime.agent.loop import AgentLoop
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
+    from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
     from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
@@ -71,8 +73,13 @@ _EXPORTS = {
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
+    "CoreAgentLoop": ("affordance_runtime.agent.core_loop", "CoreAgentLoop"),
+    "CoreLoopStartError": ("affordance_runtime.agent.core_loop", "CoreLoopStartError"),
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
+    "RunState": ("affordance_runtime.agent.run_state", "RunState"),
+    "RunStatus": ("affordance_runtime.agent.run_state", "RunStatus"),
+    "StepResult": ("affordance_runtime.agent.run_state", "StepResult"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
     "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
