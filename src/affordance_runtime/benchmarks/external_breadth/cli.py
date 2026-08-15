@@ -28,7 +28,6 @@ from affordance_runtime.benchmarks.external_breadth.runner import run_breadth_ca
 from affordance_runtime.benchmarks.external_breadth.selection import selection_key
 from affordance_runtime.benchmarks.external_smoke.adapter_reporting import _atomic_json
 from affordance_runtime.model.policy import model_policy_from_environment
-from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
 
 
 def main() -> int:
@@ -143,9 +142,10 @@ def _configuration_errors(manifest, *, provider_recovery: bool = False) -> list[
     try:
         policy = model_policy_from_environment()
         composed = policy.port
-        if not isinstance(composed, ModelPortDecisionAdapter):
-            errors.append("model policy does not use the admitted one-attempt bridge")
-        elif composed.config.rate_limit_retries or composed.config.transient_retries:
+        config = getattr(composed, "config", None)
+        if config is None:
+            errors.append("model policy does not expose the admitted one-attempt configuration")
+        elif config.rate_limit_retries or config.transient_retries:
             errors.append("model transport retry count is nonzero")
     except (AttributeError, ValueError):
         errors.append("Mistral model policy composition is unavailable")

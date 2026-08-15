@@ -32,7 +32,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.observation_needs import ObservationPurpose
 
 

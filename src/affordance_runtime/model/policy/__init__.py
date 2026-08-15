@@ -14,20 +14,14 @@ from affordance_runtime.model.policy.grounded_tool_compiler import (
 )
 from affordance_runtime.model.policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
-    GroundedActionAdapter,
+    CompactJsonDecisionPort,
 )
-from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model.policy.model_port_bridge import (
-    DecisionPerceptionProfile,
-    ModelPortDecisionAdapter,
-)
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model.policy.serialization import serialize_agent_context
 
 __all__ = [
     "ModelBackedAgentPolicy",
-    "ModelPortDecisionAdapter",
     "DecisionPerceptionProfile",
     "ModelDecisionRequest",
     "ModelMetadata",
@@ -38,8 +32,6 @@ __all__ = [
     "ConcreteActionCandidateRow",
     "CompiledGroundedTool",
     "SelectorMode",
-    "GroundedActionAdapter",
-    "DecisionGroundingVariant",
+    "CompactJsonDecisionPort",
     "serialize_agent_context",
-    "STRUCTURED_PACKAGE_PROTOCOL",
 ]

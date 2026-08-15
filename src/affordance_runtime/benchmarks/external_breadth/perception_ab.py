@@ -36,11 +36,8 @@ from affordance_runtime.benchmarks.target_loop.case_projection import public_cas
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.grounded_tool_port_bridge import GroundedActionAdapter
-from affordance_runtime.model.policy.model_port_bridge import (
-    DecisionPerceptionProfile,
-    ModelPortDecisionAdapter,
-)
+from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
 PROFILE_ID = "MINIWOB_CAPABILITY_COVERED_PERCEPTION_AB"
@@ -192,14 +189,7 @@ async def _run_arm(
     )
     target = replace(
         target,
-        profile_id=(
-            (
-                "grounded-tools-v2"
-                if isinstance(adapter, GroundedActionAdapter)
-                else "structured-package-v2"
-            )
-            + f"-{perception_profile.value}"
-        ),
+        profile_id=f"grounded-tools-v2-{perception_profile.value}",
     )
     case_completed = None
     completed_case_ids: list[str] = []
@@ -426,13 +416,10 @@ def _adapter(
     policy: ModelBackedAgentPolicy,
     *,
     require_frozen_mistral: bool = True,
-) -> ModelPortDecisionAdapter | GroundedActionAdapter:
+) -> CompactJsonDecisionPort:
     adapter = policy.port
-    if not isinstance(
-        adapter,
-        ModelPortDecisionAdapter | GroundedActionAdapter,
-    ):
-        raise TypeError("perception A/B requires the canonical model bridge")
+    if not isinstance(adapter, CompactJsonDecisionPort):
+        raise TypeError("perception A/B requires the compact 4.1V decision adapter")
     if require_frozen_mistral and (
         getattr(adapter.port, "provider", "") != "mistral"
         or getattr(adapter.port, "model", "") != "mistral-medium-3-5"

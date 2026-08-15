@@ -49,10 +49,7 @@ from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest a
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ProductionActionEvaluator
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.model_port_bridge import (
-    DecisionPerceptionProfile,
-    ModelPortDecisionAdapter,
-)
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
 from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
@@ -579,15 +576,15 @@ def _validate_formal_policy(
     if provider_recovery:
         raise ValueError("provider recovery orchestration is outside the simplified Runtime")
     adapter = composed
-    if not isinstance(adapter, ModelPortDecisionAdapter):
-        raise TypeError("formal breadth campaign requires the one-attempt model bridge")
     provider = getattr(adapter.port, "provider", "")
     model = getattr(adapter.port, "model", "")
-    identity = provider, model, adapter.grounding_profile_version
+    identity = provider, model, getattr(adapter, "grounding_profile_version", "")
+    config = getattr(adapter, "config", None)
     if (
         identity != ("mistral", manifest.model_profile, manifest.grounding_profile)
-        or adapter.config.rate_limit_retries != 0
-        or adapter.config.transient_retries != 0
+        or config is None
+        or config.rate_limit_retries != 0
+        or config.transient_retries != 0
     ):
         raise ValueError("formal breadth policy identity is not the frozen profile")
     return identity

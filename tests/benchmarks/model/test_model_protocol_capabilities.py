@@ -9,7 +9,6 @@ import pytest
 from affordance_runtime.agent import (
     ALL_DECISION_CAPABILITIES,
     GROUNDED_ACTION_DECISION_CAPABILITIES,
-    STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
     TOOL_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
     UnsupportedCompositionError,
@@ -26,13 +25,11 @@ from affordance_runtime.benchmarks.model_protocol import (
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
 from affordance_runtime.model.policy import (
     GROUNDED_TOOLS_PROTOCOL,
-    STRUCTURED_PACKAGE_PROTOCOL,
-    GroundedActionAdapter,
+    CompactJsonDecisionPort,
     ModelBackedAgentPolicy,
-    ModelPortDecisionAdapter,
 )
 from affordance_runtime.model.policy import factory as model_policy_factory
-from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.providers.port import ModelConfig
 
 
@@ -64,26 +61,23 @@ def _config() -> ModelConfig:
 
 
 def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
-    structured = ModelPortDecisionAdapter(_Transport(), _config())
-    grounded = GroundedActionAdapter(_Transport(), _config())
+    grounded = CompactJsonDecisionPort(_Transport(), _config())
 
-    assert structured.interaction_protocol == STRUCTURED_PACKAGE_PROTOCOL
-    assert structured.supported_decisions == STRUCTURED_PACKAGE_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
     assert DecisionCapability.PROPOSE_DONE not in grounded.supported_decisions
 
 
 def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
-    assert "phase" not in {item.name for item in fields(GroundedActionAdapter)}
+    assert "phase" not in {item.name for item in fields(CompactJsonDecisionPort)}
     factory_source = inspect.getsource(model_policy_factory)
     assert "cast(" not in factory_source
-    assert "GroundedActionAdapter(" in factory_source
+    assert "CompactJsonDecisionPort(" in factory_source
     assert "GroundedObjectiveAdapter" not in factory_source
 
 
 def test_model_policy_preserves_adapter_capabilities() -> None:
-    adapter = GroundedActionAdapter(_Transport(), _config())
+    adapter = CompactJsonDecisionPort(_Transport(), _config())
 
     assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
 

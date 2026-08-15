@@ -6,7 +6,7 @@ import pytest
 from affordance_runtime.evaluation import TaskEvaluationStatus
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
-from affordance_runtime.model.providers.port import FallbackModelPort, ModelConfig, model_port_from_environment
+from affordance_runtime.model.providers.port import ModelConfig, model_port_from_environment
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
@@ -24,7 +24,6 @@ pytestmark = pytest.mark.skipif(
 
 def test_opt_in_live_semantic_evaluator_is_one_attempt_and_side_effect_free() -> None:
     port = model_port_from_environment()
-    assert not isinstance(port, FallbackModelPort)
     config = ModelConfig(
         timeout_s=60, rate_limit_retries=0, transient_retries=0,
         prompt_version="p5-m2-live-semantic-smoke",

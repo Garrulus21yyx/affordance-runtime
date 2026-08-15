@@ -15,7 +15,6 @@ from affordance_runtime.agent.context.failures import ModelFailure, ModelFailure
 from affordance_runtime.evaluation.semantic_contracts import SemanticJudgeOutcome
 from affordance_runtime.model.evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model.providers.port import (
-    FallbackModelPort,
     ModelCallRecord,
     ModelConfig,
     ModelMessage,
@@ -43,8 +42,6 @@ class ModelPortSemanticCriterionJudge:
     last_metadata: ModelCallRecord | None = field(default=None, init=False, compare=False)
 
     def __post_init__(self) -> None:
-        if isinstance(self.port, FallbackModelPort):
-            raise ValueError("semantic judge forbids provider fallback")
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("semantic judge requires a zero retry configuration")
         if not 0 < self.config.timeout_s < self.call_timeout_s <= 300:

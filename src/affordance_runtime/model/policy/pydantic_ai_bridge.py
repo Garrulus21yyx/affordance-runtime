@@ -40,13 +40,13 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 
 
 @dataclass(frozen=True)

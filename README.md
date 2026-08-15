@@ -103,5 +103,5 @@ semantic-action, tool, execution, and evaluation boundaries and uses one `CoreAg
 `StepResult` per turn, one stable GUI-agent prompt, and one compact model projection. The public Runtime, CLI, and
 target benchmark harness all use this core. The former control reducer, transition, feedback, session, and legacy-loop
 modules have been removed. PydanticAI owns standard native tool transport, while 4.1V keeps one bounded compact wire
-adapter. The redundant provider retry orchestrator is deleted; pruning the remaining superseded transport code and
-running paired live benchmarks are the next gates.
+adapter. Superseded structured-package, native-tool, automatic-fallback, and model-conformance paths are deleted;
+running paired live benchmarks is the next gate.

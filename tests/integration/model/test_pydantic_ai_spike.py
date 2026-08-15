@@ -21,7 +21,7 @@ from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import EvaluatedOutput
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.model.policy.factory import model_policy_from_environment
-from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationResult,
@@ -31,7 +31,7 @@ from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
     zhipu_pydantic_ai_policy_from_environment,
 )
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 from tests.support.agent.core_loop_support import (
     SharedActionEvaluator,
     SharedTaskEvaluator,

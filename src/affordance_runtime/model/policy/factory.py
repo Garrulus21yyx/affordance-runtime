@@ -9,14 +9,14 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
 )
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
-    GroundedActionAdapter,
+    CompactJsonDecisionPort,
 )
-from affordance_runtime.model.policy.model_port_bridge import (
+from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
-from affordance_runtime.model.providers.port import FallbackModelPort, ModelConfig, model_port_from_environment
+from affordance_runtime.model.providers.port import ModelConfig, model_port_from_environment
 
 
 def model_policy_from_environment(
@@ -39,11 +39,9 @@ def model_policy_from_environment(
             call_timeout_s=call_timeout_s,
             perception_profile=perception_profile,
         )
-    if model_adapter not in {"compact-json", "legacy"}:
+    if model_adapter != "compact-json":
         raise ValueError(f"unsupported LLM_MODEL_ADAPTER: {model_adapter}")
     port = model_port_from_environment(environment)
-    if isinstance(port, FallbackModelPort):
-        raise ValueError("model policy profile forbids provider fallback")
     configured_perception = perception_profile
     if configured_perception is None:
         configured_perception = env.get(
@@ -66,7 +64,7 @@ def model_policy_from_environment(
     if configured_protocol != GROUNDED_TOOLS_PROTOCOL:
         raise ValueError("grounded_tools.v2 is the only product interaction protocol")
     adapter: StructuredDecisionModelPort
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         config,
         perception_profile=selected_perception,

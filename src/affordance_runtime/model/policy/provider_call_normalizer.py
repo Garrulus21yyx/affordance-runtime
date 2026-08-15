@@ -10,7 +10,7 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy.grounded_tool_compiler import CompiledGroundedTool
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 
 
 class ToolCallReconciliationStatus(StrEnum):

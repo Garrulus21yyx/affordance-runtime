@@ -7,7 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.support import shared_environment
-from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
+from affordance_runtime.model.policy import CompactJsonDecisionPort, ModelBackedAgentPolicy
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 
 
@@ -25,14 +26,8 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                 owner.http_requests += 1
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 context = json.loads(body["messages"][1]["content"])
-                option = context["actions"]["options"][0]
-                decision = {
-                    "type": "select_action",
-                    "context_id": context["context_id"],
-                    "action_id": option["action_id"],
-                    "parameters": {},
-                    "destination_id": "",
-                }
+                option = context["tools"][0]
+                decision = {"name": option["name"], "arguments": {}}
                 payload = json.dumps(
                     {
                         "id": "response:m3-http-policy",
@@ -75,11 +70,11 @@ def local_http_policy_environment(surface: str) -> ModelPolicyHttpEnvironment:
 def local_http_policy(environment: ModelPolicyHttpEnvironment) -> ModelBackedAgentPolicy:
     assert environment.server is not None
     transport = OpenAICompatibleModelPort(
-        f"http://127.0.0.1:{environment.server.server_port}",
-        "fixture-key",
-        "fixture-model",
-        "local-http-fixture",
-        "local-fixture",
+        base_url=f"http://127.0.0.1:{environment.server.server_port}",
+        api_key="fixture-key",
+        model="glm-4.1v-thinking-flashx",
+        provider="zhipu",
+        endpoint_class="local-http-fixture",
     )
     config = ModelConfig(
         timeout_s=1.0,
@@ -87,4 +82,11 @@ def local_http_policy(environment: ModelPolicyHttpEnvironment) -> ModelBackedAge
         transient_retries=0,
         prompt_version="p5-m3-http-policy",
     )
-    return ModelBackedAgentPolicy(ModelPortDecisionAdapter(transport, config), call_timeout_s=2.0)
+    return ModelBackedAgentPolicy(
+        CompactJsonDecisionPort(
+            transport,
+            config,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        ),
+        call_timeout_s=2.0,
+    )

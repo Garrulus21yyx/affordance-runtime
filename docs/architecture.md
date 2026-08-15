@@ -242,8 +242,12 @@ validation:
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
 | 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
 | 8. Select model transport by actual wire capability | done | native tools use `pydantic-ai`; 4.1V uses `compact-json`; both pass the same real click-button Runtime witness and `propose_done` is not model-visible |
-| 9. Delete the superseded custom model transport cluster | in progress | the retry orchestrator is deleted; no production caller remains on superseded HTTP, structured bridge, or duplicate normalization code |
+| 9. Delete the superseded policy transport paths | in progress | retain one compact 4.1V adapter and shared visual inference only; remove the old structured-package/native-tool policy paths and their concrete benchmark coupling |
 | 10. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
+
+Phase 9 ends with the full test gate plus the frozen five-case visual witness (`miniwob-60-05`, `34`, `42`, `49`,
+and `60`) running through 4.1V and `CoreAgentLoop`; that witness precedes the paired cohort and cannot change product
+semantics.
 
 Any follow-up fixes must preserve this boundary and be justified by a shared invariant or benchmark evidence.
 

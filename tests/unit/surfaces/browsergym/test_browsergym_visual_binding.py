@@ -15,7 +15,7 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.surfaces.visual.grounding import (
     VisualGroundingPoint,
     VisualGroundingRequest,

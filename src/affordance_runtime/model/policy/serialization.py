@@ -20,12 +20,9 @@ def serialize_agent_context(
     if not isinstance(payload, dict):
         raise TypeError("AgentContext serialization requires an object")
     payload.pop("image_inputs", None)
-    # Grounding aliases are an alternate protocol-specific allowlist projection.
-    # Legacy structured-package serialization remains byte-for-byte independent
-    # of that private resolver/index surface.
+    # Grounding aliases and the richer actor snapshot are private compiler inputs;
+    # the compact decision context carries neither duplicate projection.
     payload.pop("grounding", None)
-    # ActorWorldSnapshot belongs to the grounded flat-tool protocol. The legacy
-    # structured-package protocol keeps its existing ModelWorldView contract.
     payload.pop("actor_world", None)
     serialized = json.dumps(
         payload,

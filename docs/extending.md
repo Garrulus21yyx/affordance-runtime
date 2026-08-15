@@ -59,7 +59,7 @@ Only add a narrow compatibility adapter when a required model has live evidence 
 calls. That adapter may translate one compact JSON decision into the same current semantic call, but it must not
 become another provider framework or duplicate the Runtime loop. `LLM_MODEL_ADAPTER=pydantic-ai` selects native tool
 transport; `LLM_MODEL_ADAPTER=compact-json` selects the bounded compatibility path currently required by
-`glm-4.1v-thinking-flashx`. The old `legacy` spelling is accepted only during migration.
+`glm-4.1v-thinking-flashx`.
 
 Do not create a provider-specific system prompt. Every provider receives the one stable prompt in Architecture; only
 wire encoding, image representation, strict-schema support, and tool-call transport vary. Native-tool providers receive

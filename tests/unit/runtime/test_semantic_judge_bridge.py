@@ -11,7 +11,7 @@ from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionPr
 from affordance_runtime.model.evaluator.bridge import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model.policy.strict_json import StrictJsonError
-from affordance_runtime.model.providers.port import FallbackModelPort, ModelCallRecord, ModelConfig, ModelMessage
+from affordance_runtime.model.providers.port import ModelCallRecord, ModelConfig, ModelMessage
 from tests.unit.task.test_production_task_evaluator import _semantic_task, _world
 
 
@@ -61,12 +61,10 @@ def test_semantic_judge_bridge_uses_existing_model_port_once_and_cannot_return_t
     assert isinstance(outcome, tuple) and isinstance(outcome[0], SemanticCriterionProposal)
 
 
-def test_semantic_judge_bridge_rejects_retry_fallback_and_bad_deadline() -> None:
+def test_semantic_judge_bridge_rejects_retry_and_bad_deadline() -> None:
     port = RecordingPort({"proposals": []})
     with pytest.raises(ValueError, match="zero retry"):
         ModelPortSemanticCriterionJudge(port, ModelConfig(rate_limit_retries=1, transient_retries=0))
-    with pytest.raises(ValueError, match="fallback"):
-        ModelPortSemanticCriterionJudge(FallbackModelPort((port,)), ModelConfig(rate_limit_retries=0, transient_retries=0))
     with pytest.raises(ValueError, match="timeout"):
         ModelPortSemanticCriterionJudge(port, ModelConfig(timeout_s=2, rate_limit_retries=0, transient_retries=0), call_timeout_s=2)
 

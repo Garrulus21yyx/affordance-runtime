@@ -20,13 +20,12 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     write_provider_cohort_arm,
 )
 from affordance_runtime.benchmarks.model_protocol import (
-    PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
 )
 from affordance_runtime.model.policy import (
     model_policy_from_environment,
 )
-from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.surfaces.visual.disambiguation import visual_candidate_disambiguator_from_environment
 from affordance_runtime.surfaces.visual.grounding import (
     configured_visual_region_proposer_from_environment,
@@ -79,7 +78,6 @@ def main() -> int:
     policy = model_policy_from_environment(
         call_timeout_s=90,
         perception_profile=PRIMARY_BENCHMARK_PERCEPTION_PROFILE,
-        interaction_protocol=PRIMARY_BENCHMARK_ACTION_PROTOCOL,
     )
     outcome = asyncio.run(run_provider_cohort_arm(
         manifest,

@@ -16,7 +16,7 @@ from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_tool_contracts import MAX_GROUNDED_WORKSPACE_BYTES
-from affordance_runtime.model.policy.model_port_bridge import (
+from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
     perception_uses_images,
 )
@@ -24,8 +24,8 @@ from affordance_runtime.model.policy.prompt import (
     MODEL_POLICY_INSTRUCTIONS,
     MODEL_POLICY_PROMPT_VERSION,
 )
+from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
-from affordance_runtime.model.providers.tool_transport_contracts import ToolSpec
 
 
 @dataclass(frozen=True)

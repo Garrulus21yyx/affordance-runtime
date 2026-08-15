@@ -47,17 +47,18 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
     _TOOL_INTENT_REPAIR_CODES,
-    GroundedActionAdapter,
+    CompactJsonDecisionPort,
     GroundedToolCommandPayload,
     _command_payload_type,
 )
-from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import _build_request as _action_request
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelCallRecord,
     ModelConfig,
@@ -67,7 +68,6 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputError,
     StructuredOutputViolation,
 )
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.backend import _effective_visibility
 from affordance_runtime.surfaces.browsergym.entity_identity import BrowserGymEntityIdentityMap
@@ -293,7 +293,7 @@ def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state
 def test_structure_first_grounded_action_starts_from_public_structure_without_image() -> None:
     context = _context()
     port = _ActionPort(supports_multimodal=False)
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -337,7 +337,7 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
         world=replace(context.world, sources=(*context.world.sources, visual_source)),
     )
     port = _ActionPort()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -358,43 +358,27 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
     assert trace["selected_grounding"]["marked"] is True
 
 
-def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_schema() -> None:
+def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
     @dataclass
-    class NativeRepairPort:
+    class CompactRepairPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = True
         last_call: ModelCallRecord | None = None
         calls: int = 0
         repair_messages: tuple = ()
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del config, require_one
+        async def generate_structured(self, messages, output_schema, config):
+            del config
             self.calls += 1
             if self.calls == 1:
-                return (ToolCall("request_evidence", {"target": "E1"}),)
+                return GroundedToolCommandPayload(name="request_evidence", arguments={"target": "E1"})
             self.repair_messages = tuple(messages)
-            assert len(tools) == 1
-            assert tools[0].name == "request_evidence"
-            assert to_json_compatible(tools[0].input_schema) == {
-                "type": "object",
-                "properties": {
-                    "purpose": {"type": "string", "enum": ["entity_discovery"]},
-                    "subject": {
-                        "type": "string", "enum": ["current_world", "E1", "E2", "E3"],
-                    },
-                    "property": {
-                        "type": "string",
-                        "enum": ["color", "icon", "visual_state", "appearance"],
-                    },
-                },
-                "required": ["purpose", "subject"],
-                "additionalProperties": False,
-            }
-            return (ToolCall("request_evidence", {
-                "purpose": "entity_discovery", "subject": "current_world",
-            }),)
+            return output_schema.model_validate({
+                "name": "request_evidence",
+                "arguments": {"purpose": "entity_discovery", "subject": "current_world"},
+            })
 
     context = _context()
     context = replace(
@@ -407,8 +391,8 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
             ),
         ),
     )
-    port = NativeRepairPort()
-    adapter = GroundedActionAdapter(
+    port = CompactRepairPort()
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -438,31 +422,26 @@ def test_native_argument_repair_keeps_the_selected_observation_tool_and_exact_sc
     assert '"field_paths":["parameters.purpose"]' in repair_system
 
 
-def test_native_transport_carries_unified_world_and_tools_once() -> None:
+def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     @dataclass
-    class NativePort:
+    class CompactPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = True
         last_call: ModelCallRecord | None = None
         messages: tuple = ()
-        tools: tuple[ToolSpec, ...] = ()
+        output_schema: object = None
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del config, require_one
+        async def generate_structured(self, messages, output_schema, config):
+            del config
             self.messages = tuple(messages)
-            self.tools = tuple(tools)
-            return (
-                ToolCall(
-                    "activate",
-                    {},
-                ),
-            )
+            self.output_schema = output_schema
+            return output_schema.model_validate({"name": "activate", "arguments": {}})
 
     context = _context()
-    port = NativePort()
-    adapter = GroundedActionAdapter(
+    port = CompactPort()
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -474,46 +453,46 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "progress", "recent_steps"}
-    assert {item.name.split("_")[0] for item in port.tools} == {
+    assert set(public) == {"task", "observation", "progress", "recent_steps", "tools"}
+    assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
         "ask",
         "wait",
         "abort",
     }
-    assert all("E1(" not in item.description for item in port.tools)
+    assert all("E1(" not in item["description"] for item in public["tools"])
     assert all(
-        "shared public semantics" in item.description
-        for item in port.tools
-        if item.name not in {"ask_user", "wait", "abort"}
+        "shared public semantics" in item["description"]
+        for item in public["tools"]
+        if item["name"] not in {"ask_user", "wait", "abort"}
     )
-    assert all("memory" not in item.input_schema["properties"] for item in port.tools)
-    assert tuple(public) == ("task", "observation", "progress", "recent_steps")
+    assert all("memory" not in item["input_schema"]["properties"] for item in public["tools"])
+    assert tuple(public) == ("task", "observation", "progress", "recent_steps", "tools")
 
 
 def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
     @dataclass
     class ToolIntentRepairPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = False
         last_call: ModelCallRecord | None = None
         calls: int = 0
         repair_messages: tuple = ()
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del tools, config, require_one
+        async def generate_structured(self, messages, output_schema, config):
+            del output_schema, config
             self.calls += 1
             if self.calls == 1:
-                return (ToolCall("click", {}),)
+                return GroundedToolCommandPayload(name="click", arguments={})
             self.repair_messages = tuple(messages)
-            return (ToolCall("activate", {}),)
+            return GroundedToolCommandPayload(name="activate", arguments={})
 
     context = _context()
     port = ToolIntentRepairPort()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -548,20 +527,20 @@ def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> 
     @dataclass
     class FailedToolIntentRepairPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = False
         last_call: ModelCallRecord | None = None
         calls: int = 0
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del messages, tools, config, require_one
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
             self.calls += 1
-            return (ToolCall("click", {}),)
+            return GroundedToolCommandPayload(name="click", arguments={})
 
     context = _context()
     port = FailedToolIntentRepairPort()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -806,16 +785,19 @@ def test_routing_normalization_telemetry_retains_original_and_normalized_operati
     @dataclass
     class TelemetryPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = False
         last_call: ModelCallRecord | None = None
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del messages, tools, config, require_one
-            return (ToolCall("activate_submit", {"grounding_ref": "E10"}),)
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
+            return GroundedToolCommandPayload(
+                name="activate_submit",
+                arguments={"grounding_ref": "E10"},
+            )
 
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         TelemetryPort(),
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
     )
@@ -1021,27 +1003,27 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
     assert outcome.decision.action_id == actions.options[1].action_id
 
 
-def test_invalid_native_semantic_choice_is_not_repaired_as_argument_format() -> None:
+def test_invalid_compact_semantic_choice_is_not_repaired_as_argument_format() -> None:
     @dataclass
     class InvalidTargetPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = False
         last_call: ModelCallRecord | None = None
         calls: int = 0
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del messages, tools, config, require_one
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
             self.calls += 1
-            return (ToolCall("activate", {"ordinal": 99}),)
+            return GroundedToolCommandPayload(name="activate", arguments={"ordinal": 99})
 
     context = _selector_context(
         operation="activate",
         schema={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
     )
     port = InvalidTargetPort()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -1055,24 +1037,25 @@ def test_invalid_native_semantic_choice_is_not_repaired_as_argument_format() -> 
     assert adapter.last_argument_violation_paths == ("parameters.ordinal",)
 
 
-def test_native_business_argument_repair_cannot_change_a_valid_semantic_choice() -> None:
+def test_compact_business_argument_repair_cannot_change_a_valid_semantic_choice() -> None:
     @dataclass
     class DriftingRepairPort:
         provider: str = "zhipu"
-        model: str = "glm-4.6v"
+        model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = False
         last_call: ModelCallRecord | None = None
         calls: int = 0
-        repair_tools: tuple[ToolSpec, ...] = ()
 
-        async def generate_tool_calls(self, messages, tools, config, *, require_one):
-            del messages, config, require_one
+        async def generate_structured(self, messages, output_schema, config):
+            del messages, output_schema, config
             self.calls += 1
             if self.calls == 1:
-                return (ToolCall("type_text", {"ordinal": 2}),)
-            self.repair_tools = tuple(tools)
-            return (ToolCall("type_text", {"ordinal": 1, "text": "secret"}),)
+                return GroundedToolCommandPayload(name="type_text", arguments={"ordinal": 2})
+            return GroundedToolCommandPayload(
+                name="type_text",
+                arguments={"ordinal": 1, "text": "secret"},
+            )
 
     context = _selector_context(
         operation="type_text",
@@ -1084,7 +1067,7 @@ def test_native_business_argument_repair_cannot_change_a_valid_semantic_choice()
         },
     )
     port = DriftingRepairPort()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -1096,8 +1079,6 @@ def test_native_business_argument_repair_cannot_change_a_valid_semantic_choice()
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
     assert adapter.last_argument_violation_paths == ("parameters.text",)
-    selector_schema = port.repair_tools[0].input_schema["properties"]["ordinal"]
-    assert selector_schema["enum"] == (2,)
 
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
@@ -1286,7 +1267,7 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
 
     context = _context()
     port = RepairPort()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
@@ -1323,7 +1304,7 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repa
             )
 
     context = _context()
-    adapter = GroundedActionAdapter(
+    adapter = CompactJsonDecisionPort(
         FailingRepairPort(),
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,

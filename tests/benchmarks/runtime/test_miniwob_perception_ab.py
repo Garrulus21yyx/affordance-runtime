@@ -14,7 +14,7 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     readiness_cohorts,
 )
 from affordance_runtime.model.policy import model_policy_from_environment
-from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 
 
 def test_perception_ab_selects_only_inventory_v2_capability_covered_cases() -> None:
@@ -89,7 +89,8 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
         "LLM_ACTIVE_PROFILE": "zhipu",
         "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
         "LLM_ZHIPU_API_KEY": "fixture",
-        "LLM_ZHIPU_MODEL": "glm-4.6v-flash",
+        "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+        "LLM_MODEL_ADAPTER": "compact-json",
         "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
     }
     policy = model_policy_from_environment(environment)

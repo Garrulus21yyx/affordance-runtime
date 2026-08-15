@@ -1,4 +1,4 @@
-"""Grounded-tools v2 model bridge with one allowlisted workspace projection."""
+"""Bounded compact-JSON adapter for models without native tool calls."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model.policy.model_port_bridge import (
+from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
     perception_uses_images,
 )
@@ -53,8 +53,8 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 )
 from affordance_runtime.model.policy.spec import SCHEMA_VERSION
 from affordance_runtime.model.policy.strict_json import validate_json_tree
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
-    FallbackModelPort,
     ModelConfig,
     ModelMessage,
     ModelPort,
@@ -65,8 +65,6 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputViolation,
     structured_output_repair_contract,
 )
-from affordance_runtime.model.providers.tool_transport import tool_transport_for_model
-from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec, ToolTransportKind
 
 
 class _GroundedCommandPayloadBase(BaseModel):
@@ -111,7 +109,7 @@ _TOOL_INTENT_REPAIR_CODES = frozenset(
 
 
 @dataclass(frozen=True)
-class _GroundedAdapterBase:
+class CompactJsonDecisionPort:
     port: ModelPort
     config: ModelConfig
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
@@ -141,16 +139,13 @@ class _GroundedAdapterBase:
         init=False,
         compare=False,
     )
-    transport_kind: ToolTransportKind = field(init=False)
-
     def __post_init__(self) -> None:
-        if isinstance(self.port, FallbackModelPort):
-            raise ValueError("grounded-tools bridge does not admit provider fallback")
         if self.config.rate_limit_retries or self.config.transient_retries:
             raise ValueError("grounded-tools bridge requires a one-attempt transport")
         profile = DecisionPerceptionProfile(self.perception_profile)
         object.__setattr__(self, "perception_profile", profile)
-        object.__setattr__(self, "transport_kind", tool_transport_for_model(self.port.provider, self.port.model))
+        if self.port.provider.casefold() != "zhipu" or self.port.model.casefold() != "glm-4.1v-thinking-flashx":
+            raise ValueError("compact JSON decision transport is admitted only for glm-4.1v-thinking-flashx")
         if not isinstance(self.context_binder, GroundedPolicyContextBinder):
             raise TypeError("grounded adapter requires one typed context binder")
 
@@ -340,7 +335,6 @@ class _GroundedAdapterBase:
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
         return decision, _metadata(
             self.port,
-            self.transport_kind,
             self.perception_profile,
             include_record=True,
             prompt_version=self.context_binder.prompts.version,
@@ -396,53 +390,27 @@ class _GroundedAdapterBase:
         aliases=(),
         payload_base: type[_GroundedCommandPayloadBase] = GroundedToolCommandPayload,
     ) -> tuple[ToolCall, ...]:
-        if self.transport_kind is ToolTransportKind.COMPACT_JSON:
-            payload_type = _command_payload_type(specs, aliases, payload_base)
-            try:
-                payload = await self._generate_structured(messages, payload_type)
-            except StructuredOutputError as exc:
-                object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
-                self._record_structured_output(exc, repair_attempted=True)
-                try:
-                    payload = await self._generate_structured(
-                        _format_repair_messages(messages, exc),
-                        payload_type,
-                    )
-                except StructuredOutputError as repair_exc:
-                    self._record_structured_output(repair_exc, repair_failed=True)
-                    raise
-            alias_map = dict(aliases)
-            operation_name = alias_map.get(payload.name, payload.name)
-            spec = next((item for item in specs if item.name == operation_name), None)
-            if spec is None and len(specs) == 1:
-                spec = specs[0]
-            operation = spec.name if spec is not None else payload.name
-            return (ToolCall(operation, payload.command_arguments(spec)),)
-        generate = getattr(self.port, "generate_tool_calls", None)
-        if generate is None:
-            raise ValueError("model port does not implement admitted native tool calls")
+        payload_type = _command_payload_type(specs, aliases, payload_base)
         try:
-            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
-            return await generate(
-                messages,
-                specs,
-                self.config,
-                require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
-            )
+            payload = await self._generate_structured(messages, payload_type)
         except StructuredOutputError as exc:
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
-            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             self._record_structured_output(exc, repair_attempted=True)
             try:
-                return await generate(
+                payload = await self._generate_structured(
                     _format_repair_messages(messages, exc),
-                    specs,
-                    self.config,
-                    require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
+                    payload_type,
                 )
             except StructuredOutputError as repair_exc:
                 self._record_structured_output(repair_exc, repair_failed=True)
                 raise
+        alias_map = dict(aliases)
+        operation_name = alias_map.get(payload.name, payload.name)
+        spec = next((item for item in specs if item.name == operation_name), None)
+        if spec is None and len(specs) == 1:
+            spec = specs[0]
+        operation = spec.name if spec is not None else payload.name
+        return (ToolCall(operation, payload.command_arguments(spec)),)
 
     def _record_structured_output(
         self,
@@ -475,26 +443,9 @@ class _GroundedAdapterBase:
     ) -> ToolCall:
         repair_spec = _selector_fixed_repair_spec(spec, original_call, binding)
         repair_messages = _argument_repair_messages(messages, repair_spec, issue)
-        if self.transport_kind is not ToolTransportKind.COMPACT_JSON:
-            generate = getattr(self.port, "generate_tool_calls", None)
-            if generate is None:
-                raise ValueError("model port does not implement admitted native tool calls")
-            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
-            calls = await generate(
-                repair_messages,
-                (repair_spec,),
-                self.config,
-                require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
-            )
-            if not calls:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
-            if len(calls) != 1:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
-            repaired = calls[0]
-        else:
-            payload_type = _command_payload_type((repair_spec,), payload_base=payload_base)
-            payload = await self._generate_structured(repair_messages, payload_type)
-            repaired = ToolCall(payload.name, payload.command_arguments(repair_spec))
+        payload_type = _command_payload_type((repair_spec,), payload_base=payload_base)
+        payload = await self._generate_structured(repair_messages, payload_type)
+        repaired = ToolCall(payload.name, payload.command_arguments(repair_spec))
         if _selector_changed(original_call, repaired, binding):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return repaired
@@ -513,29 +464,11 @@ class _GroundedAdapterBase:
             original_call,
             reconciliation,
         )
-        if self.transport_kind is ToolTransportKind.COMPACT_JSON:
-            payload_type = _command_payload_type(specs, payload_base=payload_base)
-            payload = await self._generate_structured(repair_messages, payload_type)
-            return ToolCall(payload.name, payload.command_arguments())
-        generate = getattr(self.port, "generate_tool_calls", None)
-        if generate is None:
-            raise ValueError("model port does not implement admitted native tool calls")
-        object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
-        calls = await generate(
-            repair_messages,
-            specs,
-            self.config,
-            require_one=self.transport_kind is ToolTransportKind.NATIVE_REQUIRED_ONE,
-        )
-        if not calls:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
-        if len(calls) != 1:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS)
-        return calls[0]
+        payload_type = _command_payload_type(specs, payload_base=payload_base)
+        payload = await self._generate_structured(repair_messages, payload_type)
+        return ToolCall(payload.name, payload.command_arguments())
 
 
-@dataclass(frozen=True)
-class GroundedActionAdapter(_GroundedAdapterBase):
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
         return GROUNDED_ACTION_DECISION_CAPABILITIES
@@ -547,7 +480,7 @@ class GroundedActionAdapter(_GroundedAdapterBase):
                 GROUNDED_TOOLS_PROTOCOL,
                 "action_selection",
                 self.perception_profile.value,
-                self.transport_kind.value,
+                "compact_json",
                 GROUNDED_TOOL_CALL_ENVELOPE,
             )
         )
@@ -568,7 +501,7 @@ class GroundedActionAdapter(_GroundedAdapterBase):
                 request,
                 supports_multimodal=self.port.supports_multimodal,
                 perception_profile=self.perception_profile,
-                include_tool_menu=self.transport_kind is ToolTransportKind.COMPACT_JSON,
+                include_tool_menu=True,
             )
             resolution, metadata = await self._resolve_catalog(
                 request,
@@ -793,7 +726,6 @@ def _tool_intent_repair_messages(
 
 def _metadata(
     port,
-    transport_kind,
     perception_profile,
     *,
     include_record=True,
@@ -814,7 +746,7 @@ def _metadata(
         perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",
         grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
-        decision_schema_digest=transport_kind.value,
+        decision_schema_digest="compact_json",
     )
 
 

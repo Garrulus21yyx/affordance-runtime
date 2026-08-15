@@ -200,90 +200,6 @@ class ModelPort(Protocol):
 
 
 @dataclass
-class FallbackModelPort:
-    """Try provider-neutral model ports in order without leaking provider payloads."""
-
-    ports: tuple[ModelPort, ...]
-    provider: str = field(default="fallback", init=False)
-    model: str = field(default="ordered-profiles", init=False)
-    endpoint_class: str = field(default="mixed", init=False)
-    last_call: ModelCallRecord | None = field(default=None, init=False)
-    failures: tuple[str, ...] = field(default=(), init=False)
-    failure_details: tuple[str, ...] = field(default=(), init=False)
-    active_port_index: int = field(default=0, init=False)
-
-    def __post_init__(self) -> None:
-        if not self.ports:
-            raise ValueError("FallbackModelPort requires at least one model port")
-
-    @property
-    def supports_multimodal(self) -> bool:
-        return all(getattr(port, "supports_multimodal", False) for port in self.ports)
-
-    @property
-    def active_profile_ref(self) -> str:
-        """Return the currently preferred non-secret provider/model identity."""
-
-        port = self.ports[self.active_port_index]
-        return f"{port.provider}:{port.model}"
-
-    @property
-    def next_profile_ref(self) -> str:
-        """Return the next configured profile without changing selection."""
-
-        if len(self.ports) < 2:
-            return ""
-        port = self.ports[(self.active_port_index + 1) % len(self.ports)]
-        return f"{port.provider}:{port.model}"
-
-    def switch_to_next_profile(self) -> tuple[str, str] | None:
-        """Select a different configured provider for later calls, if one exists."""
-
-        if len(self.ports) < 2:
-            return None
-        before = self.active_profile_ref
-        self.active_port_index = (self.active_port_index + 1) % len(self.ports)
-        return before, self.active_profile_ref
-
-    async def generate_structured(
-        self,
-        messages: Sequence[ModelMessage],
-        output_schema: type[T],
-        config: ModelConfig,
-    ) -> T:
-        failures: list[str] = []
-        failure_details: list[str] = []
-        output_failure_count = 0
-        output_violations: tuple[StructuredOutputViolation, ...] = ()
-        for offset in range(len(self.ports)):
-            port_index = (self.active_port_index + offset) % len(self.ports)
-            port = self.ports[port_index]
-            try:
-                value = await port.generate_structured(messages, output_schema, config)
-            except StructuredModelError as exc:
-                failures.append(f"{port.provider}:{type(exc).__name__}")
-                failure_details.append(f"{port.provider}:{_safe_failure_detail(exc)}")
-                output_failure_count += isinstance(exc, StructuredOutputError)
-                if isinstance(exc, StructuredOutputError) and not output_violations:
-                    output_violations = exc.violations
-                continue
-            self.last_call = port.last_call
-            self.failures = tuple(failures)
-            self.failure_details = tuple(failure_details)
-            self.active_port_index = port_index
-            return value
-        self.last_call = None
-        self.failures = tuple(failures)
-        self.failure_details = tuple(failure_details)
-        if output_failure_count == len(self.ports):
-            raise StructuredOutputError(
-                "all configured model profiles returned invalid structured output",
-                violations=output_violations,
-            )
-        raise StructuredModelError("all configured model profiles failed")
-
-
-@dataclass
 class OpenAICompatibleModelPort:
     base_url: str
     api_key: str = field(repr=False)
@@ -305,151 +221,6 @@ class OpenAICompatibleModelPort:
         config: ModelConfig,
     ) -> T:
         return await asyncio.to_thread(self._generate, messages, output_schema, config)
-
-    async def generate_tool_calls(
-        self,
-        messages: Sequence[ModelMessage],
-        tools: Sequence[object],
-        config: ModelConfig,
-        *,
-        require_one: bool,
-    ) -> tuple[object, ...]:
-        return await asyncio.to_thread(
-            self._generate_tool_calls,
-            messages,
-            tools,
-            config,
-            require_one,
-        )
-
-    def _generate_tool_calls(
-        self,
-        messages: Sequence[ModelMessage],
-        tools: Sequence[object],
-        config: ModelConfig,
-        require_one: bool,
-    ) -> tuple[object, ...]:
-        from affordance_runtime.immutable import to_json_compatible
-        from affordance_runtime.model.policy.strict_json import strict_json_loads
-        from affordance_runtime.model.providers.tool_transport_contracts import (
-            NATIVE_TOOL_CALLS_TRANSPORT,
-            ToolCall,
-        )
-
-        serialized_messages = _serialize_openai_compatible_messages(
-            messages,
-            nested_image_url=self.provider == "zhipu",
-        )
-        serialized_tools = []
-        for tool in tools:
-            name = getattr(tool, "name", "")
-            description = getattr(tool, "description", "")
-            schema = getattr(tool, "input_schema", None)
-            if not isinstance(name, str) or not isinstance(description, str) or schema is None:
-                raise TypeError("native tool transport requires typed ToolSpec values")
-            serialized_tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": description,
-                        "parameters": to_json_compatible(schema),
-                    },
-                }
-            )
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": serialized_messages,
-            "tools": serialized_tools,
-            "tool_choice": "any" if require_one else "auto",
-            "parallel_tool_calls": False,
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-        }
-        if self.thinking_mode is not None:
-            body["thinking"] = {"type": self.thinking_mode}
-        if config.seed is not None:
-            body["seed"] = config.seed
-        _raise_if_model_circuit_open(self)
-        started = perf_counter()
-        try:
-            response, rate_limit_retry_count, transient_retry_count = _post_json(
-                f"{self.base_url.rstrip('/')}/chat/completions",
-                body,
-                timeout_s=config.timeout_s,
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                rate_limit_retries=config.rate_limit_retries,
-                rate_limit_backoff_s=config.rate_limit_backoff_s,
-                max_provider_retry_delay_s=config.max_provider_retry_delay_s,
-                transient_retries=config.transient_retries,
-                transient_backoff_s=config.transient_backoff_s,
-            )
-        except ProviderModelError as exc:
-            self._capture_tool(serialized_messages, "provider_failure", serialized_tools, error=exc.kind.value)
-            _trip_model_circuit(self, exc, config)
-            raise
-        latency_ms = round((perf_counter() - started) * 1_000, 3)
-        try:
-            message = response["choices"][0]["message"]
-            raw_calls = message.get("tool_calls") or ()
-            if not isinstance(raw_calls, list):
-                raise TypeError("tool_calls must be a list")
-            calls = []
-            for raw in raw_calls:
-                function = raw.get("function") if isinstance(raw, dict) else None
-                call_id = raw.get("id") if isinstance(raw, dict) else None
-                if (
-                    not isinstance(function, dict)
-                    or not isinstance(function.get("name"), str)
-                    or not isinstance(call_id, str)
-                    or not call_id
-                ):
-                    raise TypeError("tool call function is malformed")
-                raw_arguments = function.get("arguments", "")
-                arguments = strict_json_loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
-                if not isinstance(arguments, Mapping):
-                    raise TypeError("tool call arguments must be an object")
-                calls.append(ToolCall(function["name"], arguments, call_id))
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            violations = _schema_failure_violations(exc)
-            self._capture_tool(
-                serialized_messages,
-                "schema_error",
-                serialized_tools,
-                response_content=response,
-                response_id=str(response.get("id") or ""),
-                error=_schema_failure_summary(exc),
-            )
-            raise StructuredOutputError(
-                "native tool-call response is invalid",
-                violations=violations,
-            ) from exc
-        usage = response.get("usage") or {}
-        prompt_tokens = int(usage.get("prompt_tokens") or 0)
-        completion_tokens = int(usage.get("completion_tokens") or 0)
-        self.last_call = ModelCallRecord(
-            provider=self.provider,
-            model=self.model,
-            endpoint_class=self.endpoint_class,
-            prompt_version=config.prompt_version,
-            schema_name=NATIVE_TOOL_CALLS_TRANSPORT,
-            schema_version=NATIVE_TOOL_CALLS_TRANSPORT,
-            latency_ms=latency_ms,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=int(usage.get("total_tokens") or prompt_tokens + completion_tokens),
-            response_id=str(response.get("id") or ""),
-            rate_limit_retry_count=rate_limit_retry_count,
-            transient_retry_count=transient_retry_count,
-        )
-        self._capture_tool(
-            serialized_messages,
-            "accepted",
-            serialized_tools,
-            response_content=response,
-            response_id=str(response.get("id") or ""),
-        )
-        return tuple(calls)
 
     def _generate(
         self,
@@ -576,29 +347,6 @@ class OpenAICompatibleModelPort:
                 response_id=response_id,
                 error=error,
             )
-
-    def _capture_tool(
-        self,
-        messages: Sequence[ModelMessage | Mapping[str, Any]],
-        status: str,
-        tools: Sequence[Mapping[str, Any]],
-        *,
-        response_content: object | None = None,
-        response_id: str = "",
-        error: str = "",
-    ) -> None:
-        if self.private_capture is not None:
-            self.private_capture.record(
-                provider=self.provider,
-                model=self.model,
-                schema_name="native_tool_calls.v1",
-                messages=messages,
-                status=status,
-                response_content={"tools": tools, "response": response_content},
-                response_id=response_id,
-                error=error,
-            )
-
 
 @dataclass
 class OllamaModelPort:
@@ -822,7 +570,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             private_capture=private_capture,
         )
     if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
-        return FallbackModelPort((remote, _local_model_port(env, private_capture)))
+        raise ValueError("automatic model profile fallback is not supported")
     return remote
 
 
@@ -860,21 +608,6 @@ def _required_env(env: Mapping[str, str], name: str) -> str:
 
 def _env_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _safe_failure_detail(error: StructuredModelError) -> str:
-    """Retain only known transport/schema classes; never relay provider text."""
-
-    detail = str(error)
-    safe_prefixes = (
-        "provider failure: ",
-        "model endpoint returned HTTP ",
-        "model endpoint unavailable",
-        "model endpoint returned invalid JSON",
-        "model endpoint returned a non-object response",
-        "structured response failed ",
-    )
-    return detail[:200] if detail.startswith(safe_prefixes) else type(error).__name__
 
 
 def _structured_json_content(

@@ -3,14 +3,13 @@ import json
 import stat
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Sequence, TypeVar
+from typing import Any, TypeVar
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
 from affordance_runtime.model.providers.capture import PrivateModelCapture
 from affordance_runtime.model.providers.port import (
-    FallbackModelPort,
     ModelConfig,
     ModelImageURLPart,
     ModelMessage,
@@ -530,25 +529,17 @@ def test_structured_schema_failure_has_no_response_value() -> None:
     assert '"value": 7' not in detail
 
 
-def test_environment_factory_selects_remote_with_local_fallback_without_exposing_keys() -> None:
-    port = model_port_from_environment(
-        {
-            "LLM_ACTIVE_PROFILE": "mistral",
-            "LLM_PROFILE_FALLBACK_TO_LOCAL": "true",
-            "LLM_MISTRAL_BASE_URL": "https://mistral.invalid/v1",
-            "LLM_MISTRAL_API_KEY": "remote-secret",
-            "LLM_MISTRAL_MODEL": "mistral-test",
-            "LLM_LOCAL_PROVIDER": "openai_compatible",
-            "LLM_LOCAL_BASE_URL": "http://127.0.0.1:11434/v1",
-            "LLM_LOCAL_API_KEY": "local-secret",
-            "LLM_LOCAL_MODEL_ID": "qwen-test",
-        }
-    )
-
-    assert isinstance(port, FallbackModelPort)
-    assert [item.provider for item in port.ports] == ["mistral", "ollama-openai-compatible"]
-    assert "remote-secret" not in repr(port)
-    assert "local-secret" not in repr(port)
+def test_environment_factory_rejects_automatic_profile_fallback() -> None:
+    with pytest.raises(ValueError, match="fallback"):
+        model_port_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "mistral",
+                "LLM_PROFILE_FALLBACK_TO_LOCAL": "true",
+                "LLM_MISTRAL_BASE_URL": "https://mistral.invalid/v1",
+                "LLM_MISTRAL_API_KEY": "remote-secret",
+                "LLM_MISTRAL_MODEL": "mistral-test",
+            }
+        )
 
 
 def test_environment_factory_selects_gemini_profile_without_exposing_key() -> None:
@@ -680,43 +671,3 @@ def test_zhipu_visual_profile_uses_prompt_schema_without_text_only_response_form
     assert request["messages"][1]["content"][1]["image_url"] == {"url": "data:image/png;base64,iVBORw0KGgo="}
     capture = json.loads((tmp_path / "zhipu-private/model-exchanges.jsonl").read_text())
     assert capture["request_messages"] == request["messages"]
-
-
-class _FailedPort:
-    provider = "failed"
-    model = "failed"
-    endpoint_class = "test"
-    last_call: Any = None
-
-    async def generate_structured(
-        self,
-        messages: Sequence[ModelMessage],
-        output_schema: type[T],
-        config: ModelConfig,
-    ) -> T:
-        del messages, output_schema, config
-        raise StructuredModelError("secret-bearing provider response")
-
-
-class _WorkingPort(_FailedPort):
-    provider = "working"
-
-    async def generate_structured(
-        self,
-        messages: Sequence[ModelMessage],
-        output_schema: type[T],
-        config: ModelConfig,
-    ) -> T:
-        del messages, config
-        self.last_call = None
-        return output_schema.model_validate({"value": "fallback"})
-
-
-def test_fallback_model_port_uses_next_profile_and_sanitizes_failure() -> None:
-    port = FallbackModelPort((_FailedPort(), _WorkingPort()))
-
-    result = asyncio.run(port.generate_structured([], Answer, ModelConfig()))
-
-    assert result.value == "fallback"
-    assert port.failures == ("failed:StructuredModelError",)
-    assert port.failure_details == ("failed:StructuredModelError",)

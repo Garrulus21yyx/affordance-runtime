@@ -1,24 +1,16 @@
-"""Provider-neutral contracts for bounded model tool-call transport."""
+"""Provider-independent model-visible tool contracts."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Mapping
 
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy.strict_json import validate_json_tree
 
-NATIVE_TOOL_CALLS_TRANSPORT = "native_tool_calls.v1"
 _TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
-
-
-class ToolTransportKind(StrEnum):
-    COMPACT_JSON = "compact_json"
-    NATIVE_REQUIRED_ONE = "native_required_one"
-    NATIVE_AUTO = "native_auto"
 
 
 @dataclass(frozen=True)

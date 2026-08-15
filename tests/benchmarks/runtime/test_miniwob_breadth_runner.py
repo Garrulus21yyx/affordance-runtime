@@ -36,8 +36,6 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
-from affordance_runtime.model.policy.model_port_bridge import ModelPortDecisionAdapter
 from affordance_runtime.model.providers.port import ModelConfig
 
 
@@ -393,10 +391,11 @@ def _policy() -> ModelBackedAgentPolicy:
         endpoint_class="test",
         last_call=None,
     )
-    adapter = ModelPortDecisionAdapter(
-        port,
-        ModelConfig(timeout_s=30.0, rate_limit_retries=0, transient_retries=0),
-        DecisionGroundingVariant.FORMAT_ONLY,
+    adapter = SimpleNamespace(
+        port=port,
+        config=ModelConfig(timeout_s=30.0, rate_limit_retries=0, transient_retries=0),
+        grounding_profile_version="format-only.v1",
+        supported_decisions=frozenset(),
     )
     return ModelBackedAgentPolicy(adapter)
 
