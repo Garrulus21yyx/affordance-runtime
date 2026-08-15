@@ -1,6 +1,6 @@
 """Privacy-safe projection of typed Runtime terminal reasons."""
 
-from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, RunStatus
 from affordance_runtime.benchmarks.target_loop.contracts import (
     TerminalReasonCode,
     terminal_reason_from_facts,
@@ -8,7 +8,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 
 
 def project_terminal_reason_code(
-    status: AgentLoopStatus,
+    status: RunStatus,
     reason_code: str,
     failure_code: AgentFailureCode | None = None,
 ) -> TerminalReasonCode | None:

@@ -1,4 +1,4 @@
-"""Unified world port consumed by the target AgentLoop."""
+"""Unified world port consumed by CoreAgentLoop."""
 
 from typing import Protocol
 

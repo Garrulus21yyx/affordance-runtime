@@ -12,7 +12,6 @@ from affordance_runtime.model.policy.grounding_v2 import (
     COMPACT_CONTRACT_V2_PROFILE_VERSION,
     MAX_COMPACT_GUIDE_BYTES,
     CompactActionDomain,
-    CompactBudgetDomain,
     CompactCompletionDomain,
     CompactDecisionContract,
     CompactDecisionGuideV2,
@@ -32,7 +31,7 @@ _DECISION_TYPES = (
 __all__ = [
     "COMPACT_CONTRACT_PROFILE_VERSION", "COMPACT_CONTRACT_V2_PROFILE_VERSION",
     "FORMAT_ONLY_PROFILE_VERSION", "MAX_COMPACT_GUIDE_BYTES", "CompactActionDomain",
-    "CompactActionGuide", "CompactBudgetDomain", "CompactCompletionDomain",
+    "CompactActionGuide", "CompactCompletionDomain",
     "CompactDecisionContract", "CompactDecisionGuide", "CompactDecisionGuideV2",
     "CompactObservationDomain", "CompactPagingDomain", "DecisionGroundingVariant",
     "build_compact_decision_guide", "build_compact_decision_guide_v2",

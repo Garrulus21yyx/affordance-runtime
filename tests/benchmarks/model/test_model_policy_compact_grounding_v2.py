@@ -79,8 +79,10 @@ def test_v2_projects_observation_page_completion_wait_and_abort_domains() -> Non
     assert guide.completion_domain.evidence_refs
     assert guide.completion_domain.runtime_revalidation
     assert guide.completion_domain.summary_max_chars == 1_024
-    assert guide.budget_domain.remaining_wait_ms == 120_000
-    assert guide.budget_domain.per_decision_max_wait_ms == 60_000
+    encoded = serialize_compact_decision_guide_v2(guide)
+    assert "budget" not in encoded
+    wait = next(item for item in guide.decision_contracts if item.decision_type == "wait")
+    assert wait.currently_usable
     abort = next(item for item in guide.decision_contracts if item.decision_type == "abort")
     assert "internal" not in abort.field_domains["category"]
 

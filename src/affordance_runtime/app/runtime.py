@@ -1,9 +1,8 @@
-"""Production composition root for the target AgentLoop."""
+"""Production composition root for the single core GUI-agent loop."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TypeAlias
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
@@ -15,70 +14,40 @@ from affordance_runtime.agent.decision_capability import (
     UnsupportedCompositionError,
     normalize_decision_capabilities,
 )
-from affordance_runtime.agent.loop import AgentLoop
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
-from affordance_runtime.agent.result import AgentResult
 from affordance_runtime.agent.run_state import RunState
-from affordance_runtime.agent.session import AgentRunSession
-from affordance_runtime.agent.user_input import UserInputResumeOutcome
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
     NaturalLanguageTaskRequest,
     ReadyTask,
-    TaskInputRequired,
     TaskIntake,
     TaskIntakeOutcome,
-    TaskPolicyRejected,
-    TaskUnsupported,
     ThinTaskIntake,
 )
-from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.environment import WorldEnvironment
 
 
 @dataclass(frozen=True)
-class TargetRuntimeStartOutcome:
-    intake: TaskIntakeOutcome
-    session: AgentRunSession | None = None
-
-    def __post_init__(self) -> None:
-        if isinstance(self.intake, ReadyTask) != (self.session is not None):
-            raise ValueError("target runtime start must align intake admission and session")
-
-    @property
-    def started(self) -> bool:
-        return self.session is not None
-
-
-TargetRuntimeUserInputOutcome: TypeAlias = (
-    UserInputResumeOutcome | TaskInputRequired | TaskPolicyRejected | TaskUnsupported
-)
-
-
-@dataclass(frozen=True)
 class TargetRuntimeRunOutcome:
-    """One admitted target session and its first run-until-pause result."""
+    """One intake outcome and, when admitted, its authoritative run state."""
 
     intake: TaskIntakeOutcome
-    session: AgentRunSession | None = None
-    result: AgentResult | None = None
+    state: RunState | None = None
 
     def __post_init__(self) -> None:
-        admitted = isinstance(self.intake, ReadyTask)
-        executable = self.session is not None and self.result is not None
-        if admitted != executable:
-            raise ValueError("target runtime run must align intake, session, and result")
+        if isinstance(self.intake, ReadyTask) != (self.state is not None):
+            raise ValueError("target runtime run must align intake and state")
 
     @property
     def started(self) -> bool:
-        return self.session is not None
+        return self.state is not None
 
 
 @dataclass(frozen=True)
 class TargetRuntime:
-    """Own target-loop construction; adapters and benchmarks only inject ports."""
+    """Own the only product loop; adapters and benchmarks inject ports."""
 
     decision_ports: AgentDecisionPorts
     action_evaluator: ActionEvaluator
@@ -89,7 +58,6 @@ class TargetRuntime:
     binder: ActionBinder = field(default_factory=ActionBinder)
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
-    recent_turn_limit: int = 12
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
@@ -101,8 +69,6 @@ class TargetRuntime:
             raise TypeError("TargetRuntime task evaluator is invalid")
         if not callable(getattr(self.intake, "compile", None)):
             raise TypeError("TargetRuntime intake is invalid")
-        if not 1 <= self.recent_turn_limit <= 100:
-            raise ValueError("TargetRuntime recent turn limit is invalid")
         required = normalize_decision_capabilities(
             self.required_decisions,
             field_name="TargetRuntime required_decisions",
@@ -115,22 +81,7 @@ class TargetRuntime:
                 UnsupportedComposition(required, supported, missing)
             )
 
-    def build_loop(self) -> AgentLoop:
-        return AgentLoop(
-            self.decision_ports,
-            self.action_evaluator,
-            self.task_evaluator,
-            action_space_builder=self.action_space_builder,
-            binder=self.binder,
-            risk_policy=self.risk_policy,
-            context_builder=self.context_builder,
-            wait_controller=self.wait_controller,
-            recent_turn_limit=self.recent_turn_limit,
-        )
-
-    def build_core_loop(self) -> CoreAgentLoop:
-        """Build the small migration target from the same production boundaries."""
-
+    def build_loop(self) -> CoreAgentLoop:
         return CoreAgentLoop(
             self.decision_ports,
             self.action_evaluator,
@@ -142,99 +93,55 @@ class TargetRuntime:
             wait_controller=self.wait_controller,
         )
 
-    async def run_core_task(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        intent_context: IntentContext | None = None,
-    ) -> RunState:
-        """Run the migration scaffold; it stops at every unclosed boundary."""
-
-        return await self.build_core_loop().run(environment, task, intent_context)
-
-    async def initialize_core_task(
+    async def run_task(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
     ) -> RunState:
-        return await self.build_core_loop().initialize(environment, task)
+        return await self.build_loop().run(environment, task)
 
-    async def continue_core_task(
+    async def initialize_task(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
-        state: RunState,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
-        return await self.build_core_loop().continue_run(
-            environment,
-            task,
-            state,
-            intent_context,
-        )
+        return await self.build_loop().initialize(environment, task)
 
-    async def resume_core_user(
+    async def continue_task(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
-        return await self.build_core_loop().resume_user(
-            environment,
-            task,
-            state,
-            intent_context,
-        )
+        return await self.build_loop().continue_run(environment, task, state)
 
-    async def resume_core_confirmation(
+    async def resume_user(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        return await self.build_loop().resume_user(environment, task, state)
+
+    async def resume_confirmation(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
         *,
         approved: bool,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
-        return await self.build_core_loop().resume_confirmation(
+        return await self.build_loop().resume_confirmation(
             environment,
             task,
             state,
             approved=approved,
-            intent_context=intent_context,
         )
-
-    async def start_task(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        intent_context: IntentContext | None = None,
-    ) -> AgentRunSession:
-        return await self.build_loop().start(environment, task, intent_context)
-
-    async def run_task(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        intent_context: IntentContext | None = None,
-    ) -> AgentResult:
-        return await self.build_loop().run(environment, task, intent_context)
 
     def admit(self, request: NaturalLanguageTaskRequest) -> TaskIntakeOutcome:
         """Compile stable task authority before allocating a world session."""
 
         return self.intake.compile(request)
-
-    async def start_request(
-        self,
-        environment: WorldEnvironment,
-        request: NaturalLanguageTaskRequest,
-    ) -> TargetRuntimeStartOutcome:
-        admitted = self.admit(request)
-        if not isinstance(admitted, ReadyTask):
-            return TargetRuntimeStartOutcome(admitted)
-        session = await self.start_task(environment, admitted.task, admitted.intent_context)
-        return TargetRuntimeStartOutcome(admitted, session)
 
     async def run_request(
         self,
@@ -253,23 +160,26 @@ class TargetRuntime:
     ) -> TargetRuntimeRunOutcome:
         if not isinstance(admitted, ReadyTask):
             raise TypeError("target runtime admitted run requires ReadyTask")
-        session = await self.start_task(
+        state = await self.run_task(
             environment,
             admitted.task,
-            admitted.intent_context,
         )
-        result = await session.run_until_pause()
-        return TargetRuntimeRunOutcome(admitted, session, result)
+        return TargetRuntimeRunOutcome(admitted, state)
 
-    async def submit_user_input(
+    async def resume_request(
         self,
-        session: AgentRunSession,
-        input_request_id: str,
+        environment: WorldEnvironment,
+        state: RunState,
         request: NaturalLanguageTaskRequest,
-    ) -> TargetRuntimeUserInputOutcome:
-        """Re-admit full task meaning, then resume one matching pending request."""
+    ) -> TargetRuntimeRunOutcome:
+        """Re-admit one consecutive task revision and continue a waiting run."""
 
         admitted = self.intake.compile(request)
         if not isinstance(admitted, ReadyTask):
-            return admitted
-        return await session.resume_user_input(input_request_id, admitted)
+            return TargetRuntimeRunOutcome(admitted)
+        resumed = await self.resume_user(
+            environment,
+            admitted.task,
+            state,
+        )
+        return TargetRuntimeRunOutcome(admitted, resumed)

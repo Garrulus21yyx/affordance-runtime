@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, RunStatus
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
@@ -124,7 +124,7 @@ def terminal_reason_from_facts(
         return TerminalReasonCode.NO_PROGRESS_REPETITION
     if agent_failure_code == AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION.value:
         return TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION
-    if status != AgentLoopStatus.BLOCKED.value:
+    if status != RunStatus.BLOCKED.value:
         return None
     return _BLOCKED_TERMINAL_REASONS.get(
         runtime_reason_code,
@@ -315,7 +315,7 @@ class BenchmarkCase:
     task_factory: Callable[[], TaskGoal]
     environment_factory: Callable[[BenchmarkInstrumentation], WorldEnvironment]
     composition_factory: Callable[[BenchmarkInstrumentation], BenchmarkComposition]
-    expected_terminal_statuses: tuple[AgentLoopStatus, ...]
+    expected_terminal_statuses: tuple[RunStatus, ...]
     timeout_s: float
     seed: int
     required_measurements: tuple[str, ...]
@@ -455,7 +455,7 @@ class BenchmarkCaseResult:
             raise TypeError("benchmark case text fields must be bounded strings")
         if (
             not self.case_id
-            or self.status not in {str(item) for item in AgentLoopStatus if item is not AgentLoopStatus.RUNNING}
+            or self.status not in {str(item) for item in RunStatus if item is not RunStatus.RUNNING}
             or self.termination_origin not in {"", "runtime", "component", "cleanup", "harness_watchdog"}
             or type(self.execution_completed) is not bool
             or isinstance(self.latency_ms, bool)
@@ -486,14 +486,14 @@ class BenchmarkCaseResult:
         if self.pending_kind not in {"", "unknown_effect", "user_question", "confirmation"}:
             raise ValueError("benchmark pending kind is outside the closed vocabulary")
         expected_pending_status = {
-            "unknown_effect": AgentLoopStatus.WAITING_USER.value,
-            "user_question": AgentLoopStatus.WAITING_USER.value,
-            "confirmation": AgentLoopStatus.WAITING_CONFIRMATION.value,
+            "unknown_effect": RunStatus.WAITING_USER.value,
+            "user_question": RunStatus.WAITING_USER.value,
+            "confirmation": RunStatus.WAITING_CONFIRMATION.value,
         }.get(self.pending_kind)
         if expected_pending_status is not None and self.status != expected_pending_status:
             raise ValueError("benchmark pending kind contradicts terminal status")
-        if (self.status == AgentLoopStatus.WAITING_CONFIRMATION and self.pending_kind != "confirmation") or (
-            self.status == AgentLoopStatus.WAITING_USER
+        if (self.status == RunStatus.WAITING_CONFIRMATION and self.pending_kind != "confirmation") or (
+            self.status == RunStatus.WAITING_USER
             and not self.pending_kind
             and self.latest_task_status != TaskEvaluationStatus.UNKNOWN
         ):
@@ -538,11 +538,11 @@ class BenchmarkCaseResult:
             raise TypeError("benchmark measurements must be typed")
         if not isinstance(self.failure_facts, FailureFacts):
             raise TypeError("benchmark failure facts must be typed")
-        blocked = self.status == str(AgentLoopStatus.BLOCKED)
+        blocked = self.status == str(RunStatus.BLOCKED)
         task_terminal = self.failure_facts.task_outcome_kind == TaskOutcomeKind.TERMINAL_FAILURE.value
         if blocked and self.terminal_reason_code is None and not task_terminal:
             raise ValueError("blocked case result requires a terminal reason code")
-        no_progress = self.status == str(AgentLoopStatus.FAILED) and self.terminal_reason_code in {
+        no_progress = self.status == str(RunStatus.FAILED) and self.terminal_reason_code in {
             TerminalReasonCode.NO_PROGRESS_REPETITION,
             TerminalReasonCode.NO_PROGRESS_CONTROL_REPETITION,
         }
@@ -573,9 +573,9 @@ class BenchmarkCaseResult:
         if facts.task_outcome_kind:
             task_kind = TaskOutcomeKind(facts.task_outcome_kind)
             expected_status = {
-                TaskOutcomeKind.TERMINAL_SUCCESS: AgentLoopStatus.DONE.value,
-                TaskOutcomeKind.TERMINAL_FAILURE: AgentLoopStatus.BLOCKED.value,
-                TaskOutcomeKind.VERIFIER_UNAVAILABLE: AgentLoopStatus.WAITING_USER.value,
+                TaskOutcomeKind.TERMINAL_SUCCESS: RunStatus.DONE.value,
+                TaskOutcomeKind.TERMINAL_FAILURE: RunStatus.BLOCKED.value,
+                TaskOutcomeKind.VERIFIER_UNAVAILABLE: RunStatus.WAITING_USER.value,
             }.get(task_kind)
             if expected_status is not None and self.status != expected_status:
                 raise ValueError("canonical task outcome contradicts case status")
@@ -636,7 +636,7 @@ class BenchmarkCaseResult:
             )
         )
         if (
-            self.status == str(AgentLoopStatus.DONE)
+            self.status == str(RunStatus.DONE)
             and official is not None
             and official.measured
             and official.value == 1
@@ -650,7 +650,7 @@ class BenchmarkCaseResult:
         ):
             raise ValueError("successful benchmark evidence cannot carry failure facts")
         if (
-            self.status == str(AgentLoopStatus.DONE)
+            self.status == str(RunStatus.DONE)
             and official is not None
             and official.measured
             and official.value == 1

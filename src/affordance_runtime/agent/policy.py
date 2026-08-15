@@ -44,7 +44,7 @@ class AgentPolicy(Protocol):
 
 @dataclass(frozen=True)
 class AgentDecisionPorts:
-    """Explicit model-facing phase composition for one AgentLoop."""
+    """Explicit model-facing phase composition for CoreAgentLoop."""
 
     action_policy: AgentPolicy
 

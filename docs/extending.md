@@ -1,6 +1,7 @@
 # Extending
 
-Extensions attach to an existing owner. They must not add another loop, world, action authority, or benchmark oracle.
+Extensions attach to an existing owner. `CoreAgentLoop` is the only run-control engine; extensions must not add
+another loop, world, action authority, compatibility facade, or benchmark oracle.
 
 ## Add a source adapter
 

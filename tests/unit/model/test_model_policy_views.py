@@ -19,7 +19,7 @@ from affordance_runtime.agent.context import (
     project_parameter_schema_for_model,
     project_task,
 )
-from affordance_runtime.agent.context.control_transition_projection import project_decision_summary
+from affordance_runtime.agent.context.step_projection import project_decision_summary
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AgentTargetView,
@@ -281,7 +281,7 @@ def test_parameter_schema_projection_rejects_unsupported_or_malformed_shapes(sch
     ),
 )
 def test_non_action_turn_projection_has_bounded_semantic_summary(decision, expected: str) -> None:
-    summary = project_decision_summary(decision, "page_changed")
+    summary = project_decision_summary(decision)
     assert expected in summary
     representation = repr(summary)
     assert "context:1" not in representation

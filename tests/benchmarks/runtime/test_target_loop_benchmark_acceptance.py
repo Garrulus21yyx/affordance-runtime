@@ -1,4 +1,4 @@
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, safe_rate
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkCaseResult, MetricMeasurement
 
@@ -17,13 +17,13 @@ def _result(**changes):
         for name, value in metric_values.items() if isinstance(value, (int, float))
     }
     return BenchmarkCaseResult(
-        case_id="case", status=str(AgentLoopStatus.DONE), execution_completed=True,
+        case_id="case", status=str(RunStatus.DONE), execution_completed=True,
         failure_reason="", latency_ms=1.0, measurements=measurements,
     )
 
 
 def test_acceptance_fails_closed_for_safety_violation_or_missing_metric() -> None:
-    assert accept_case(_result(), (AgentLoopStatus.DONE,), ("executions",)).accepted
-    assert not accept_case(_result(forbidden_effect_attempts=1), (AgentLoopStatus.DONE,), ()).accepted
-    assert not accept_case(_result(), (AgentLoopStatus.DONE,), ("not_measured",)).accepted
+    assert accept_case(_result(), (RunStatus.DONE,), ("executions",)).accepted
+    assert not accept_case(_result(forbidden_effect_attempts=1), (RunStatus.DONE,), ()).accepted
+    assert not accept_case(_result(), (RunStatus.DONE,), ("not_measured",)).accepted
     assert safe_rate(MetricMeasurement(0, True, opportunities=0)) is None

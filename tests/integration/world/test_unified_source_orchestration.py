@@ -61,7 +61,7 @@ from affordance_runtime.world import (
     selected_observation_requests,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
-from tests.integration.agent.test_agent_loop import _world
+from tests.support.agent.core_loop_support import _world
 from tests.support.observation_acquisition import acquired_acquisition
 
 

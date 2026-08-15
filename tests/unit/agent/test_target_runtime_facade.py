@@ -9,9 +9,8 @@ from affordance_runtime import (
     TaskBoundary,
 )
 from affordance_runtime.agent import (
-    AgentLoopStatus,
     AskUser,
-    UserInputResumed,
+    RunStatus,
 )
 from affordance_runtime.app import (
     compose_target_runtime,
@@ -77,23 +76,22 @@ def test_target_runtime_runs_natural_language_request_and_resumes_input() -> Non
     async def scenario() -> None:
         policy = AskForAccountPolicy()
         runtime = _runtime(policy)
-        outcome = await runtime.run_request(ScriptedEnvironment(initial_observation=_world()), _request())
+        environment = ScriptedEnvironment(initial_observation=_world())
+        outcome = await runtime.run_request(environment, _request())
 
         assert isinstance(outcome, TargetRuntimeRunOutcome)
         assert isinstance(outcome.intake, ReadyTask)
-        assert outcome.session is not None
-        assert outcome.result is not None
-        assert outcome.result.status is AgentLoopStatus.WAITING_USER
-        assert outcome.result.user_input_request is not None
+        assert outcome.state is not None
+        assert outcome.state.status is RunStatus.WAITING_USER
 
-        resumed = await runtime.submit_user_input(
-            outcome.session,
-            outcome.result.user_input_request.input_request_id,
+        resumed = await runtime.resume_request(
+            environment,
+            outcome.state,
             _request(revision=2, account="primary"),
         )
 
-        assert isinstance(resumed, UserInputResumed)
-        assert resumed.result.status is AgentLoopStatus.DONE
+        assert resumed.state is not None
+        assert resumed.state.status is RunStatus.DONE
         assert policy.calls == 1
 
     asyncio.run(scenario())
@@ -122,8 +120,7 @@ def test_target_runtime_preserves_nonready_intake_without_environment_access() -
 
     assert isinstance(outcome.intake, TaskInputRequired)
     assert not outcome.started
-    assert outcome.session is None
-    assert outcome.result is None
+    assert outcome.state is None
     assert environment.reset_calls == 0
 
 
@@ -136,8 +133,8 @@ def test_target_runtime_runs_one_pre_admitted_request_without_recompiling() -> N
 
         outcome = await runtime.run_admitted(ScriptedEnvironment(initial_observation=_world()), admitted)
 
-        assert outcome.result is not None
-        assert outcome.result.status is AgentLoopStatus.DONE
+        assert outcome.state is not None
+        assert outcome.state.status is RunStatus.DONE
         assert policy.calls == 0
 
     asyncio.run(scenario())

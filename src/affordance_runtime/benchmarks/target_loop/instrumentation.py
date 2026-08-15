@@ -147,27 +147,12 @@ class CountingPolicy:
 
 
 def _policy_trace_event(call: int, context, outcome, policy, *, exception: str = ""):
-    feedback = context.control_feedback
     event: dict[str, object] = {
         "policy_call": call,
         "context_id": context.context_id,
-        "decision_mode": str(context.decision_mode),
         "visible_action_count": len(context.actions.options),
         "selected_source_modalities": tuple(source.modality for source in context.world.sources),
-        "feedback": (
-            {
-                "kind": feedback.kind,
-                "source": feedback.source,
-                "code": feedback.code,
-                "strategy_transition_required": feedback.strategy_transition_required,
-                "strategy_change_required": (
-                    feedback.recovery.strategy_change_required if feedback.recovery is not None else False
-                ),
-                "must_change_fields": (feedback.recovery.must_change_fields if feedback.recovery is not None else ()),
-            }
-            if feedback is not None
-            else None
-        ),
+        "recent_step_count": len(context.recent_steps.items),
         "provider_attempts": tuple(
             {
                 "attempt_number": item.attempt_number,
@@ -313,62 +298,6 @@ def _decision_trace(decision):
         if item not in (None, ""):
             value[name] = item.value if hasattr(item, "value") else item
     return value
-
-
-def finalize_policy_trace(instrumentation: BenchmarkInstrumentation, result) -> None:
-    """Join harness policy exchanges to typed Runtime transitions without changing authority."""
-
-    transitions = {item.decision.context_id: item for item in getattr(result, "control_transitions", ())}
-    finalized: list[dict[str, object]] = []
-    for raw in instrumentation.policy_trace:
-        item = dict(raw)
-        transition = transitions.get(str(item.get("context_id") or ""))
-        if transition is not None:
-            item["runtime_transition"] = _runtime_transition_trace(transition)
-        finalized.append(item)
-    instrumentation.policy_trace = finalized
-
-
-def _runtime_transition_trace(transition):
-    feedback = transition.control_feedback
-    intent = transition.intent
-    action = transition.action_evaluation
-    task = transition.task_evaluation
-    return {
-        "transition_id": transition.transition_id,
-        "sequence": transition.sequence,
-        "admission_status": (transition.admission.status.value if transition.admission is not None else ""),
-        "admission_reason_code": (transition.admission.reason_code if transition.admission is not None else ""),
-        "dispatch_status": (transition.execution.result.dispatch_status.value if transition.execution is not None else ""),
-        "semantic_action": intent.semantic_action if intent is not None else "",
-        "target_id": intent.target_id if intent is not None else "",
-        "destination_id": intent.destination_id if intent is not None else "",
-        "action_evaluation_status": action.status.value if action is not None else "",
-        "action_evidence_fields": (tuple(sorted(str(name) for name in action.evidence)) if action is not None else ()),
-        "action_evidence": (to_json_compatible(action.evidence) if action is not None else {}),
-        "task_evaluation_status": task.status.value if task is not None else "",
-        "task_outcome_kind": (task.outcome.kind.value if task is not None and task.outcome is not None else ""),
-        "task_outcome_code": (task.outcome.code if task is not None and task.outcome is not None else ""),
-        "resulting_status": str(transition.resulting_status or ""),
-        "reason_code": transition.reason_code,
-        "feedback": _runtime_feedback_trace(feedback),
-    }
-
-
-def _runtime_feedback_trace(feedback):
-    if feedback is None:
-        return None
-    return {
-        "kind": feedback.kind.value,
-        "source": feedback.source.value,
-        "code": feedback.code,
-        "violation_owner": (feedback.violation.contract_owner if feedback.violation is not None else ""),
-        "violation_code": feedback.violation.code if feedback.violation is not None else "",
-        "retry_allowed": (feedback.recovery.retry_allowed if feedback.recovery is not None else False),
-        "strategy_change_required": (
-            feedback.recovery.strategy_change_required if feedback.recovery is not None else False
-        ),
-    }
 
 
 @dataclass

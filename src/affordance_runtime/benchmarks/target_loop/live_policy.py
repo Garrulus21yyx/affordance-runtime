@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.external_smoke.pacing import PacedAgentPolicy
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCase,
@@ -113,7 +113,7 @@ async def run_live_model_policy_attestation(
         lambda _metrics: BenchmarkComposition(
             policy, CurrentFactActionEvaluator(), ProductionTaskEvaluator(),
         ),
-        (AgentLoopStatus.DONE,), 120.0, 7,
+        (RunStatus.DONE,), 120.0, 7,
         ("observations", "executions", "policy_calls", "provider_attempts"),
         tuple(
             MetricExpectation(name, MetricExpectationOperator.EQ, value)
@@ -176,7 +176,7 @@ def evaluate_live_policy_suite(
     )
     if any(retries):
         errors.append("live policy profile used a provider retry")
-    accepted = not errors and case.status == str(AgentLoopStatus.DONE)
+    accepted = not errors and case.status == str(RunStatus.DONE)
     return LiveModelPolicyAttestation(
         LIVE_ATTESTATION_SCHEMA_VERSION, sha, False,
         LiveModelPolicyStatus.ATTESTED if accepted else LiveModelPolicyStatus.FAILED,

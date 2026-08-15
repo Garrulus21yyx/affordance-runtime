@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, RunStatus
+from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
-from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -28,13 +28,12 @@ def _snapshot(
 def _result(reason: str, *, message: str = "display only"):
     del message
     return SimpleNamespace(
-        status=AgentLoopStatus.FAILED,
+        status=RunStatus.FAILED,
         sent_unknown_count=0,
         observation_count=2,
         execution_count=1,
         currentness_probe_count=3,
-        control_transition_total_count=1,
-        control_transition_kind_counts=(("SelectAction", 1),),
+        step_count=1,
         reason_code=reason,
         failure_code=None,
         policy_failure=None,
@@ -101,7 +100,7 @@ def test_repeated_no_progress_event_is_in_the_benchmark_vocabulary() -> None:
 
 def test_success_reason_does_not_become_a_failure_code() -> None:
     result = _result("task_complete")
-    result.status = AgentLoopStatus.DONE
+    result.status = RunStatus.DONE
     result.runtime_failure = None
     projected = project_case_result(
         "case", result, BenchmarkInstrumentation(), 1.0, ""
@@ -192,7 +191,6 @@ def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
     for name, expected in {
         "valid_tool_call_count": 2,
         "tool_argument_repair_count": 1,
-        "admitted_decision_count": 0,
         "zero_tool_call_count": 1,
         "multiple_tool_call_count": 1,
         "unknown_tool_call_count": 1,
@@ -259,7 +257,7 @@ def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
         "cleanup_exception", RuntimeError("private cleanup detail")
     )
     result = _result("task_complete")
-    result.status = AgentLoopStatus.DONE
+    result.status = RunStatus.DONE
     result.runtime_failure = None
     projected = project_case_result(
         "case", result, instrumentation, 1.0, "cleanup failed"

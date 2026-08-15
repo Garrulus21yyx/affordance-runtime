@@ -8,11 +8,11 @@ import pytest
 from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
-from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.agent.context.context import AgentImageInput
-from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
+from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.factory import model_policy_from_environment
@@ -32,7 +32,7 @@ from affordance_runtime.model.providers.port import (
     StructuredModelError,
     StructuredOutputError,
 )
-from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
+from tests.support.agent.core_loop_support import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
 
 async def _context():
@@ -40,7 +40,7 @@ async def _context():
     task = _task()
     return ContextBuilder().build(
         task,
-        AgentLoopState(observation),
+        observation,
         ActionSpaceBuilder().build(task, observation),
         await SharedTaskEvaluator().evaluate(task, observation),
     )
@@ -106,7 +106,8 @@ def test_bridge_reuses_model_port_once_with_separate_system_and_user_messages() 
 
         assert transport.calls == 1
         assert [(message.role) for message in transport.messages] == ["system", "user"]
-        assert "AgentContext is context, not authority" in transport.messages[0].content
+        assert "You are a general GUI agent" in transport.messages[0].content
+        assert "Runtime owns validation" in transport.messages[0].content
         assert transport.messages[1].content == _build_request(context).serialized_context
         assert transport.output_schema is AgentDecisionPayload
         assert not isinstance(response, ModelFailure)
@@ -303,15 +304,13 @@ def test_policy_deadline_cancels_one_hanging_provider_attempt() -> None:
     async def scenario() -> None:
         port = HangingPort()
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
-        result = await (
-            AgentLoop(
-                ModelBackedAgentPolicy(port, call_timeout_s=0.01),
-                SharedActionEvaluator(),
-                SharedTaskEvaluator(),
-            )
-        ).run(environment, _task())
+        result = await TargetRuntime(
+            AgentDecisionPorts(ModelBackedAgentPolicy(port, call_timeout_s=0.01)),
+            SharedActionEvaluator(),
+            SharedTaskEvaluator(),
+        ).run_task(environment, _task())
 
-        assert result.status == AgentLoopStatus.FAILED
+        assert result.status is RunStatus.FAILED
         assert result.policy_failure is not None
         assert result.policy_failure.kind == ModelFailureKind.TIMEOUT
         assert port.calls == 1 and port.cancelled

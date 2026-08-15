@@ -121,9 +121,9 @@ def test_owner_packages_do_not_import_benchmark_authority() -> None:
             ), path
 
 
-def test_app_runtime_delegates_episode_control_to_agent_loop() -> None:
+def test_app_runtime_delegates_episode_control_to_core_loop() -> None:
     imports = _imports(RUNTIME / "app" / "runtime.py")
-    assert "affordance_runtime.agent.loop" in imports
+    assert "affordance_runtime.agent.core_loop" in imports
     assert "affordance_runtime.model.policy" not in imports
     assert not any(name.startswith("affordance_runtime.surfaces") for name in imports)
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from affordance_runtime.actions import (
     ActionBinding,
 )
-from affordance_runtime.agent import AgentLoopStatus, SelectAction
+from affordance_runtime.agent import RunStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -76,7 +76,7 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
                 initial_observation=fused_world(identity, surface="static"),
             ),
             lambda _metrics: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
-            (AgentLoopStatus.BLOCKED,),
+            (RunStatus.BLOCKED,),
             2.0,
             7,
             ("observations",),
@@ -189,7 +189,7 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
             results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         ),
         lambda _metrics: BenchmarkComposition(policy, ActionEvaluator(), IncompleteEvaluator()),
-        (AgentLoopStatus.FAILED,),
+        (RunStatus.FAILED,),
         0.05,
         7,
         ("observations", "executions", "turns"),
@@ -243,7 +243,7 @@ def test_component_timeout_error_is_not_classified_as_watchdog() -> None:
         lambda: TaskGoal("t", "t"),
         lambda _metrics: ScriptedEnvironment(initial_observation=_action_world("observation:one")),
         lambda _metrics: BenchmarkComposition(RaisingPolicy(), ActionEvaluator(), IncompleteEvaluator()),
-        (AgentLoopStatus.FAILED,),
+        (RunStatus.FAILED,),
         2.0,
         7,
         ("observations",),
@@ -307,7 +307,7 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
             ActionEvaluator(),
             IncompleteEvaluator(),
         ),
-        (AgentLoopStatus.WAITING_USER,),
+        (RunStatus.WAITING_USER,),
         2.0,
         7,
         ("observations", "executions", "turns"),

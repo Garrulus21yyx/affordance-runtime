@@ -12,8 +12,8 @@ from pathlib import Path
 
 ATTESTATION_SCHEMA_VERSION = "target-loop-full-validation.v1"
 REQUIRED_CHECKS = (
-    "ruff", "mypy", "diff_check", "compose_config", "legacy_runxfail",
-    "target_boundaries", "docs_governance",
+    "ruff", "mypy", "diff_check", "compose_config", "target_boundaries",
+    "docs_governance",
 )
 
 
@@ -32,7 +32,6 @@ class FullValidationAttestation:
     mypy_passed: bool
     diff_check_passed: bool
     compose_config_passed: bool
-    legacy_runxfail_passed: bool
     target_boundaries_passed: bool
     docs_governance_passed: bool
     accepted: bool
@@ -69,8 +68,8 @@ def create_full_validation_attestation(
     result = FullValidationAttestation(
         ATTESTATION_SCHEMA_VERSION, sha, dirty, collected, passed, skipped, failed,
         digest, pytest_ok, checks["ruff"], checks["mypy"], checks["diff_check"],
-        checks["compose_config"], checks["legacy_runxfail"],
-        checks["target_boundaries"], checks["docs_governance"], not errors, tuple(errors),
+        checks["compose_config"], checks["target_boundaries"],
+        checks["docs_governance"], not errors, tuple(errors),
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(asdict(result), sort_keys=True, indent=2) + "\n", encoding="utf-8")

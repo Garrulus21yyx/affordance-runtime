@@ -1,12 +1,12 @@
-"""Benchmark-only projection from typed Runtime and fixed-size session facts."""
+"""Benchmark-only projection from typed Runtime and a bounded episode snapshot."""
 
 from __future__ import annotations
 
 import re
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
+from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.session_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.case_evidence_codec import (
     decode_public_case_evidence,
     public_case_evidence,
@@ -124,7 +124,7 @@ def project_case_result(
         task_outcome_kind,
         task_outcome_code,
     )
-    status = str(result.status) if result else str(AgentLoopStatus.FAILED)
+    status = str(result.status) if result else str(RunStatus.FAILED)
     legacy = project_legacy_case_fields(status, facts)
     return BenchmarkCaseResult(
         case_id=case_id,
@@ -192,7 +192,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         else snapshot.currentness_probe_count
         if snapshot
         else 0,
-        "turns": getattr(result, "control_transition_total_count", getattr(result, "step_count", 0))
+        "turns": getattr(result, "step_count", 0)
         if result
         else snapshot.completed_turn_count
         if snapshot
@@ -201,11 +201,6 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "policy_schema_repair_count": state.policy_schema_repair_count,
         "tool_argument_repair_count": state.tool_argument_repair_count,
         "valid_tool_call_count": state.valid_tool_call_count,
-        "admitted_decision_count": sum(
-            1
-            for transition in tuple(getattr(result, "control_transitions", ()))
-            if transition.admission is not None and transition.admission.status.value == "admitted"
-        ),
         "zero_tool_call_count": state.zero_tool_call_count,
         "multiple_tool_call_count": state.multiple_tool_call_count,
         "unknown_tool_call_count": state.unknown_tool_call_count,
@@ -245,7 +240,6 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
             and bool(state.exception_class)
         ),
     }
-    values.update(_control_feedback_metrics(result, snapshot))
     kind_counts = _decision_kind_counts(result, state, snapshot)
     values.update(
         {
@@ -259,9 +253,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
 
 
 def _decision_kind_counts(result, instrumentation, snapshot) -> dict[str, int]:
-    explicit = tuple(getattr(result, "control_transition_kind_counts", ())) if result is not None else ()
-    if explicit:
-        return dict(explicit)
+    del result
     if instrumentation.policy_trace:
         counts: dict[str, int] = {}
         for event in instrumentation.policy_trace:
@@ -270,147 +262,6 @@ def _decision_kind_counts(result, instrumentation, snapshot) -> dict[str, int]:
                 counts[name] = counts.get(name, 0) + 1
         return counts
     return dict(snapshot.decision_kind_counts) if snapshot is not None else {}
-
-
-def _control_feedback_metrics(result, snapshot) -> dict[str, int]:
-    transitions = tuple(getattr(result, "control_transitions", ())) if result is not None else ()
-    feedback = tuple(
-        (index, item.control_feedback) for index, item in enumerate(transitions) if item.control_feedback is not None
-    )
-    kind_counts: dict[str, int] = {}
-    source_counts: dict[str, int] = {}
-    code_counts: dict[str, int] = {}
-    related_decision_count = 0
-    contract_violation_count = 0
-    semantic_effect_count = 0
-    recovery_constraints_count = 0
-    opportunity_counts = {1: 0, 2: 0}
-    corrected_counts = {1: 0, 2: 0}
-    scope_ordinals: dict[str, int] = {}
-    for index, item in feedback:
-        assert item is not None
-        kind_counts[item.kind.value] = kind_counts.get(item.kind.value, 0) + 1
-        source_counts[item.source.value] = source_counts.get(item.source.value, 0) + 1
-        code_counts[item.code] = code_counts.get(item.code, 0) + 1
-        related_decision_count += int(item.related_decision is not None)
-        contract_violation_count += int(item.violation is not None)
-        semantic_effect_count += int(item.semantic_effect is not None)
-        recovery_constraints_count += int(item.recovery is not None)
-        if not item.consumes_issue_budget:
-            continue
-        ordinal = scope_ordinals.get(item.scope_digest, 0) + 1
-        scope_ordinals[item.scope_digest] = ordinal
-        if ordinal not in opportunity_counts or index + 1 >= len(transitions):
-            continue
-        opportunity_counts[ordinal] += 1
-        following = transitions[index + 1]
-        if _feedback_opportunity_corrected(item, following):
-            corrected_counts[ordinal] += 1
-    return {
-        "feedback_repairable_rejection_count": kind_counts.get("repairable_rejection", 0),
-        "feedback_no_information_gain_count": kind_counts.get("no_information_gain", 0),
-        "feedback_strategy_transition_required_count": kind_counts.get(
-            "strategy_transition_required",
-            0,
-        ),
-        "feedback_action_admission_source_count": source_counts.get("action_admission", 0),
-        "feedback_action_page_source_count": source_counts.get("action_page", 0),
-        "feedback_policy_observation_source_count": source_counts.get("policy_observation", 0),
-        "feedback_action_evaluation_source_count": source_counts.get("action_evaluation", 0),
-        "feedback_progress_event_source_count": source_counts.get("progress_event", 0),
-        "feedback_context_delivery_count": (
-            getattr(result, "control_feedback_delivery_count", 0)
-            if result is not None
-            else snapshot.control_feedback_delivery_count
-            if snapshot is not None
-            else 0
-        ),
-        "feedback_related_decision_snapshot_count": related_decision_count,
-        "feedback_contract_violation_snapshot_count": contract_violation_count,
-        "feedback_semantic_effect_snapshot_count": semantic_effect_count,
-        "feedback_recovery_constraints_count": recovery_constraints_count,
-        "control_issue_budget_consumption_count": (
-            getattr(result, "control_issue_consumption_count", 0)
-            if result is not None
-            else snapshot.control_issue_consumption_count
-            if snapshot is not None
-            else 0
-        ),
-        "control_repetition_termination_count": (
-            getattr(result, "control_repetition_count", 0)
-            if result is not None
-            else snapshot.control_repetition_count
-            if snapshot is not None
-            else 0
-        ),
-        "first_opportunity_policy_decision_count": opportunity_counts[1],
-        "first_opportunity_admission_corrected_count": corrected_counts[1],
-        "second_opportunity_policy_decision_count": opportunity_counts[2],
-        "second_opportunity_admission_corrected_count": corrected_counts[2],
-        "strategy_transition_feedback_count": kind_counts.get(
-            "strategy_transition_required",
-            0,
-        ),
-        "first_policy_repair_feedback_count": int(
-            any(
-                item is not None and item.kind.value == "repairable_rejection" and transitions[index].sequence == 1
-                for index, item in feedback
-            )
-        ),
-        "repair_feedback_zero_call_violation_count": sum(
-            bool(
-                item is not None
-                and item.kind.value == "repairable_rejection"
-                and (
-                    transitions[index].execution_attempts
-                    or transitions[index].acquisition_attempts
-                    or transitions[index].attempt_receipts
-                )
-            )
-            for index, item in feedback
-        ),
-        "feedback_invalid_action_parameters_code_count": code_counts.get(
-            "invalid_action_parameters",
-            0,
-        ),
-        "feedback_action_outside_action_space_code_count": code_counts.get(
-            "action_outside_action_space",
-            0,
-        ),
-        "feedback_action_outside_current_page_code_count": code_counts.get(
-            "action_outside_current_page",
-            0,
-        ),
-        "feedback_destination_outside_current_page_code_count": code_counts.get(
-            "destination_outside_current_page",
-            0,
-        ),
-        "feedback_action_page_no_information_gain_code_count": code_counts.get(
-            "action_page_no_information_gain",
-            0,
-        ),
-        "feedback_observation_no_information_gain_code_count": code_counts.get(
-            "observation_no_information_gain",
-            0,
-        ),
-    }
-
-
-def _feedback_opportunity_corrected(feedback, following) -> bool:
-    """Apply the frozen owner-validation definition to the next ordinary root."""
-
-    if following.control_feedback is not None:
-        return False
-    if feedback.source.value == "action_admission":
-        return following.admission is not None and following.admission.status.value in {
-            "admitted",
-            "confirmation_required",
-        }
-    if feedback.source.value == "action_page":
-        return following.decision_result == "page_changed"
-    if feedback.source.value == "policy_observation":
-        return following.reason_code == "observation_semantic_gain"
-    return False
 
 
 def _safe_code(value: str, fallback: str) -> str:

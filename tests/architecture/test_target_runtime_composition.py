@@ -41,7 +41,8 @@ def test_target_runtime_owns_lifecycle_without_legacy_coordinator_or_runner() ->
     runtime = RUNTIME / "app" / "runtime.py"
     imports = _imports(runtime)
 
-    assert "affordance_runtime.agent.loop" in imports
+    assert "affordance_runtime.agent.core_loop" in imports
+    assert "affordance_runtime.agent.loop" not in imports
     assert "affordance_runtime.agent.episode_runner" not in imports
     assert "affordance_runtime.coordinator" not in imports
     assert "affordance_runtime.runtime_client" not in imports
@@ -126,8 +127,9 @@ def test_root_public_api_exports_only_target_lifecycle_contracts() -> None:
     ):
         assert f'"{legacy}"' not in root
     for target in (
-        "AgentRunSession",
         "NaturalLanguageTaskRequest",
+        "RunState",
+        "RunStatus",
         "TargetRuntime",
         "TargetRuntimeRunOutcome",
         "TaskBoundary",
@@ -186,16 +188,16 @@ def test_product_composition_is_only_source_target_runtime_constructor() -> None
     assert violations == []
 
 
-def test_target_loop_and_session_have_one_physical_definition_each() -> None:
-    definitions: dict[str, list[str]] = {"AgentLoop": [], "AgentRunSession": []}
+def test_core_loop_and_run_state_have_one_physical_definition_each() -> None:
+    definitions: dict[str, list[str]] = {"CoreAgentLoop": [], "RunState": []}
     for path in sorted(RUNTIME.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
             if isinstance(node, ast.ClassDef) and node.name in definitions:
                 definitions[node.name].append(str(path.relative_to(ROOT)))
     assert definitions == {
-        "AgentLoop": ["src/affordance_runtime/agent/loop.py"],
-        "AgentRunSession": ["src/affordance_runtime/agent/session.py"],
+        "CoreAgentLoop": ["src/affordance_runtime/agent/core_loop.py"],
+        "RunState": ["src/affordance_runtime/agent/run_state.py"],
     }
 
 

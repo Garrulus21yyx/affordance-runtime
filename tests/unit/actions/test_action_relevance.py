@@ -7,7 +7,7 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
-from tests.integration.agent.test_agent_loop import _world
+from tests.support.agent.core_loop_support import _world
 
 
 @dataclass(frozen=True)

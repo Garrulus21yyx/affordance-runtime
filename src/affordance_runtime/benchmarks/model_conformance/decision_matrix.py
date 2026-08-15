@@ -256,7 +256,6 @@ def _decision_context(base: dict[str, Any], variant: str) -> dict[str, Any]:
         actions["total_count"] = 0
         actions["page_size"] = 0
         context["world"]["observation_capabilities"] = []
-        context["decision_mode"] = "recover"
         progress["validated_task_status"] = "blocked"
         progress["unresolved_criteria"] = {
             "items": ["unsupported"], "total_count": 1, "truncated": False,
@@ -326,8 +325,7 @@ def _payload_expectation(variant, payload, context) -> DecisionPayloadExpectatio
         collections["evidence_refs"] = _fact_refs(context)
         nonblank = ("result_summary",)
     elif variant == "wait":
-        remaining = int(context.get("budgets", {}).get("remaining_wait_ms", 0))
-        numeric["max_wait_ms"] = (1, min(60_000, remaining))
+        numeric["max_wait_ms"] = (1, 60_000)
         nonblank = ("reason",)
     else:
         allowed["category"] = ("policy", "safety", "unsupported", "no_progress", "user_request")

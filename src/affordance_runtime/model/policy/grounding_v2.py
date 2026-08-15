@@ -37,7 +37,6 @@ class CompactObservationDomain:
     purposes: tuple[str, ...]
     modalities: tuple[str, ...]
     assurance_levels: tuple[str, ...]
-    remaining_observations: int
 
 
 @dataclass(frozen=True)
@@ -61,13 +60,6 @@ class CompactCompletionDomain:
 
 
 @dataclass(frozen=True)
-class CompactBudgetDomain:
-    remaining_wait_ms: int
-    per_decision_max_wait_ms: int
-    fresh_observation_after_wait: bool
-
-
-@dataclass(frozen=True)
 class CompactDecisionContract:
     decision_type: str
     currently_usable: bool
@@ -88,7 +80,6 @@ class CompactDecisionGuideV2:
     observation_domain: CompactObservationDomain
     paging_domain: CompactPagingDomain
     completion_domain: CompactCompletionDomain
-    budget_domain: CompactBudgetDomain
     decision_contracts: tuple[CompactDecisionContract, ...]
     guide_bytes: int
     truncated: bool
@@ -133,7 +124,6 @@ def _json_value(guide: CompactDecisionGuideV2) -> dict[str, object]:
             "subject_ids": "@action_domain.target_id+agent_context.world.targets[].target_id",
             "modalities": guide.observation_domain.modalities,
             "assurance_levels": guide.observation_domain.assurance_levels,
-            "remaining_observations": guide.observation_domain.remaining_observations,
         },
         "paging_domain": to_json_compatible(guide.paging_domain),
         "completion_domain": {
@@ -144,7 +134,6 @@ def _json_value(guide: CompactDecisionGuideV2) -> dict[str, object]:
             "runtime_revalidation": guide.completion_domain.runtime_revalidation,
             "summary_max_chars": guide.completion_domain.summary_max_chars,
         },
-        "budget_domain": to_json_compatible(guide.budget_domain),
         "decision_contracts": {
             "fields": ("decision_type", "currently_usable", "required_fields",
                        "field_domains_aligned", "runtime_revalidates"),
@@ -188,7 +177,7 @@ def _segment_prefix(values: list[str]) -> str:
 
 def _guide(context, projected, truncated) -> CompactDecisionGuideV2:
     actions, world = context.get("actions", {}), context.get("world", {})
-    task, progress, budgets = context.get("task", {}), context.get("progress", {}), context.get("budgets", {})
+    task, progress = context.get("task", {}), context.get("progress", {})
     capabilities = tuple(world.get("observation_capabilities", ()))
     subject_ids = _unique((
         *(item.get("target_id", "") for item in world.get("targets", {}).get("items", ())),
@@ -210,13 +199,11 @@ def _guide(context, projected, truncated) -> CompactDecisionGuideV2:
         _evidence_refs(world), tuple(progress.get("unresolved_criteria", {}).get("items", ())),
         tuple(progress.get("unresolved_outputs", {}).get("items", ())), True, 1_024,
     )
-    remaining_wait = max(0, int(budgets.get("remaining_wait_ms", 0)))
     observation = CompactObservationDomain(
         subject_ids,
         purposes,
         modalities,
         assurances,
-        max(0, int(budgets.get("remaining_observations", 0))),
     )
     paging = CompactPagingDomain(
         bool(actions.get("has_more")), str(actions.get("next_cursor") or ""),
@@ -224,24 +211,23 @@ def _guide(context, projected, truncated) -> CompactDecisionGuideV2:
         str(actions.get("active_relevance_filter") or ""),
         tuple(str(item) for item in actions.get("available_filters", ())),
     )
-    budget = CompactBudgetDomain(remaining_wait, min(60_000, remaining_wait), True)
     action_domain = CompactActionDomain(tuple(projected), len(actions.get("options", ())), truncated)
     missing = tuple(str(key) for key, value in task.get("public_inputs", {}).items() if value is None)
     return CompactDecisionGuideV2(
         SCHEMA_VERSION, COMPACT_CONTRACT_V2_PROFILE_VERSION, str(context.get("context_id") or ""),
-        action_domain, observation, paging, completion, budget,
-        _contracts(action_domain, observation, paging, completion, budget, missing), 0, truncated,
+        action_domain, observation, paging, completion,
+        _contracts(action_domain, observation, paging, completion, missing), 0, truncated,
     )
 
 
-def _contracts(actions, observation, paging, completion, budget, missing):
+def _contracts(actions, observation, paging, completion, missing):
     common = ("type", "context_id")
     return (
         _contract("select_action", bool(actions.actions), (*common, "action_id", "parameters", "destination_id"), {
             "action_id": "@action_domain.items.action_id", "parameters": "@selected.required_parameter_names",
             "destination_id": "@selected.visible_destination_ids|empty",
         }),
-        _contract("request_evidence", observation.remaining_observations > 0 and bool(observation.purposes),
+        _contract("request_evidence", bool(observation.purposes),
                   (*common, "purpose", "subject_id", "evidence_property", "reason"), {
                       "purpose": "@observation_domain.purposes", "subject_id": "@observation_domain.subject_ids",
                       "evidence_property": "text:0..120", "reason": "text:1..500",
@@ -258,8 +244,8 @@ def _contracts(actions, observation, paging, completion, budget, missing):
             "claimed_criteria": "@completion_domain.criterion_ids", "evidence_refs": "@completion_domain.evidence_refs",
             "result_summary": "text:1..1024", "unresolved_items": (),
         }),
-        _contract("wait", budget.remaining_wait_ms > 0, (*common, "reason", "max_wait_ms"), {
-            "reason": "text:1..500", "max_wait_ms": "1..@budget_domain.per_decision_max_wait_ms",
+        _contract("wait", True, (*common, "reason", "max_wait_ms"), {
+            "reason": "text:1..500", "max_wait_ms": "integer:1..60000",
         }),
         _contract("abort", True, (*common, "reason", "category"), {
             "reason": "text:1..500", "category": ("policy", "safety", "unsupported", "no_progress", "user_request"),

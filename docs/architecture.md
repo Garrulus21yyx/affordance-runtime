@@ -47,10 +47,11 @@ effect class, destination semantics, and verification family. It contains reusab
 
 ### PerTurnToolCatalog
 
-The per-turn catalog compiles currently executable semantic actions and control decisions into public `ToolSpec`
-values. Each tool has one name, description, and strict input schema plus an opaque Runtime binding. The semantic
-registry defines what an action means; the catalog defines what is callable now. They must not be collapsed into a
-backend plugin registry.
+The per-turn catalog compiles currently executable semantic actions and the closed control set
+`request_evidence`, `next_actions`, `propose_done`, `ask_user`, `wait`, and `abort` into public `ToolSpec` values.
+Each tool has one name, description, and strict input schema plus an opaque Runtime binding. The semantic registry
+defines what an action means; the catalog defines what is callable now. They must not be collapsed into a backend
+plugin registry.
 
 ### ModelPort
 
@@ -199,9 +200,9 @@ Run status is `running`, `waiting_user`, `waiting_confirmation`, `done`, `blocke
 Terminal states are absorbing for the current run. Unsupported states fail with a typed reason. Durable replay,
 cross-process idempotency, and distributed recovery are outside the supported scope.
 
-## Migration plan
+## Migration status
 
-The legacy loop is frozen and remains only as a behavior source until cutover. Migration follows this order:
+The control-core migration is complete. The remaining work is empirical benchmark validation:
 
 | Phase | Status | Exit condition |
 |---|---|---|
@@ -210,16 +211,16 @@ The legacy loop is frozen and remains only as a behavior source until cutover. M
 | 3. Introduce the thin model workspace and eight nested `StepView` records | done | no budget, duplicate world, transition, event, or feedback channels reach the grounded model boundary |
 | 4. Migrate observation, action paging, wait, ask/resume, done, confirmation, abort, and error paths | done | supported decisions have typed core-loop integration tests; confirmation continuations preserve one model-step count |
 | 5. Connect benchmark runners to the core loop | done | target benchmark exclusively executes `CoreAgentLoop`; reports persist `runtime=core` and raw per-case evidence |
-| 6. Cut over and delete the legacy cluster | pending | core is default; old control state and projections have no consumers |
+| 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
 | 7. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
 
-Implementation may migrate one decision path per commit, but it may not redesign the architecture per path.
+Any follow-up fixes must preserve this boundary and be justified by a shared invariant or benchmark evidence.
 
-## Delete after cutover
+## Removed at cutover
 
-Delete the legacy `AgentLoop`, `AgentLoopState`, `ControlTransition`, `ControlContinuation`, `ControlFeedback`,
-`ControlOutcome`, `ControlReducer`, progress-event control projections, transition digests, duplicate actor/world views,
-model-visible budget views, and summaries that exist only to support the old ledger-shaped context.
+The legacy `AgentLoop`, `AgentLoopState`, `ControlTransition`, `ControlContinuation`, `ControlFeedback`,
+`ControlOutcome`, `ControlReducer`, progress-event control projections, transition digests, model-visible budget views,
+and summaries that existed only to support the old ledger-shaped context are no longer production modules.
 
 ## Complexity guardrails
 

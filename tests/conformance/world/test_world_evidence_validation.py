@@ -1,9 +1,5 @@
-import asyncio
-
 import pytest
 
-from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.world import (
@@ -13,7 +9,6 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
-from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedTaskEvaluator, _sent, _task, _world
 
 
 def test_world_evidence_index_contains_current_facts_and_controlled_artifact_refs() -> None:
@@ -108,44 +103,3 @@ def test_action_evaluation_rejects_secret_bearing_evidence_mapping() -> None:
             "untrusted evidence",
             evidence={"credential": "raw-secret"},
         )
-
-
-@pytest.mark.parametrize("evidence_ref", ("fact:invented", "fact:before:enabled"))
-def test_agent_loop_rejects_evidence_not_resolved_in_after_world(evidence_ref: str) -> None:
-    class InvalidEvidenceEvaluator:
-        async def evaluate(self, task, before, request, result, after):
-            del task, result
-            return ActionEvaluation(
-                request.request_id,
-                before.observation_id,
-                after.observation_id,
-                ActionEvaluationStatus.EFFECT_CONFIRMED,
-                "model-like confirmation",
-                (evidence_ref,),
-            )
-
-    class FailIfCalledTaskEvaluator(SharedTaskEvaluator):
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def evaluate(self, task, observation):
-            self.calls += 1
-            if self.calls > 1:
-                raise AssertionError("TaskEvaluator must not receive untrusted action evidence")
-            return await super().evaluate(task, observation)
-
-    async def scenario() -> None:
-        evaluator = FailIfCalledTaskEvaluator()
-        environment = ScriptedEnvironment(
-            initial_observation=_world("before", False), post_observations=(_world("after", True),), results=[_sent()]
-        )
-        result = await (AgentLoop(ScriptedPolicy(["first"]), InvalidEvidenceEvaluator(), evaluator)).run(
-            environment, _task()
-        )
-
-        assert result.status == AgentLoopStatus.FAILED
-        assert "evidence" in result.message
-        assert result.control_transitions[-1].action_evaluation is None
-        assert evaluator.calls == 1
-
-    asyncio.run(scenario())

@@ -10,9 +10,14 @@ from typing import Mapping
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.decisions import (
+    Abort,
+    AgentDecision,
+    AskUser,
+    ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    Wait,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_compiler import (
@@ -46,6 +51,13 @@ class _EvidenceBinding:
     subjects: Mapping[str, str]
 
 
+@dataclass(frozen=True)
+class _ControlBinding:
+    kind: str
+    claimed_criteria: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+
+
 def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
@@ -60,11 +72,7 @@ def compile_grounded_tool_catalog(
             if not _observation_tool_needed(context, capability):
                 continue
             purposes.update(set(capability.purposes) & _AGENT_PURPOSES)
-        if (
-            purposes
-            and context.budgets.remaining_observations > 0
-            and not context.pending.uncertain_effect_summary
-        ):
+        if purposes:
             refs = context.grounding.private_subject_bindings()
             subjects = {"current_world": "current_world", **refs}
             ordered_purposes = tuple(sorted(purposes))
@@ -109,6 +117,72 @@ def compile_grounded_tool_catalog(
                 context.actions.next_cursor,
             )
         )
+    satisfied = tuple(
+        item.criterion_id
+        for item in context.task.success_criteria.items
+        if item.criterion_id not in context.progress.unresolved_criteria.items
+    )
+    evidence_refs = tuple(item.fact_ref for item in context.progress.verified_public_facts)
+    specs.extend(
+        (
+            ToolSpec(
+                "propose_done",
+                "Propose completion from current observation and verified progress; Runtime revalidates.",
+                _object_schema(
+                    {"result_summary": {"type": "string", "minLength": 1, "maxLength": 1024}},
+                    ("result_summary",),
+                ),
+            ),
+            ToolSpec(
+                "ask_user",
+                "Pause for information or authorization unavailable from the interface.",
+                _object_schema(
+                    {
+                        "question": {"type": "string", "minLength": 1, "maxLength": 1000},
+                        "requested_fields": {
+                            "type": "array",
+                            "items": {"type": "string", "minLength": 1, "maxLength": 120},
+                            "maxItems": 8,
+                        },
+                    },
+                    ("question",),
+                ),
+            ),
+            ToolSpec(
+                "wait",
+                "Wait briefly for the current interface to settle, then observe again.",
+                _object_schema(
+                    {
+                        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+                        "max_wait_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+                    },
+                    ("reason", "max_wait_ms"),
+                ),
+            ),
+            ToolSpec(
+                "abort",
+                "Stop when the task cannot continue safely or with current capabilities.",
+                _object_schema(
+                    {
+                        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+                        "category": {
+                            "type": "string",
+                            "enum": ["policy", "safety", "unsupported", "no_progress", "user_request"],
+                        },
+                    },
+                    ("reason", "category"),
+                ),
+            ),
+        )
+    )
+    bindings.extend(
+        (
+            _ControlBinding("propose_done", satisfied, evidence_refs),
+            _ControlBinding("ask_user"),
+            _ControlBinding("wait"),
+            _ControlBinding("abort"),
+        )
+    )
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -196,6 +270,47 @@ def resolve_grounded_tool_call(
                 GroundedToolResolutionCode.INVALID_ARGUMENTS
             ) from exc
         return GroundedActionResolution(replace(evidence_decision, tool_call_id=call.call_id))
+    if isinstance(binding, _ControlBinding):
+        control_decision: AgentDecision
+        if binding.kind == "propose_done":
+            control_decision = ProposeDone(
+                expected_context_id,
+                binding.claimed_criteria,
+                binding.evidence_refs,
+                str(call.arguments["result_summary"]),
+                (),
+                call.call_id,
+            )
+        elif binding.kind == "ask_user":
+            requested_fields = call.arguments.get("requested_fields", ())
+            if not isinstance(requested_fields, list | tuple):
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            control_decision = AskUser(
+                expected_context_id,
+                str(call.arguments["question"]),
+                tuple(str(item) for item in requested_fields),
+                call.call_id,
+            )
+        elif binding.kind == "wait":
+            max_wait_ms = call.arguments["max_wait_ms"]
+            if type(max_wait_ms) is not int:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            control_decision = Wait(
+                expected_context_id,
+                str(call.arguments["reason"]),
+                max_wait_ms,
+                call.call_id,
+            )
+        elif binding.kind == "abort":
+            control_decision = Abort(
+                expected_context_id,
+                str(call.arguments["reason"]),
+                str(call.arguments["category"]),
+                call.call_id,
+            )
+        else:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        return GroundedActionResolution(control_decision)
     if not isinstance(binding, CompiledGroundedTool):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     selector_names = tuple(item.public_name for item in binding.selector_fields)

@@ -110,8 +110,7 @@ def _bind_public_domains(kind: DecisionKind, properties: dict[str, Any], context
                 "items": {"type": "string"},
             }
     elif kind is DecisionKind.WAIT:
-        maximum = min(60_000, int(context["budgets"]["remaining_wait_ms"]))
-        properties["max_wait_ms"] = {"type": "integer", "minimum": 1, "maximum": maximum}
+        properties["max_wait_ms"] = {"type": "integer", "minimum": 1, "maximum": 60_000}
 
 
 def _subject_ids(context: dict[str, Any]) -> list[str]:

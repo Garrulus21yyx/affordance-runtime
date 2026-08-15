@@ -8,7 +8,7 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_task_evaluation
 from affordance_runtime.task import EvaluationSpec, RiskProfile, TaskGoal
 from affordance_runtime.world import WorldFusion
-from tests.integration.agent.test_agent_loop import _world
+from tests.support.agent.core_loop_support import _world
 
 
 def _task(path: str, digest: str) -> TaskGoal:

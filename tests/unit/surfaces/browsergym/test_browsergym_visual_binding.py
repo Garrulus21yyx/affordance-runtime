@@ -10,7 +10,6 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.agent import RequestObservation
 from affordance_runtime.agent.context import ContextBuilder
-from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
@@ -150,10 +149,9 @@ def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() ->
             assert len(visual.targets) == 1
             assert visual.bindings == ()
             assert environment.visual_point_grounder_calls == 0
-            state = AgentLoopState(acquired.observation, remaining_turns=3)
             context = ContextBuilder().build(
                 task,
-                state,
+                acquired.observation,
                 ActionSpaceBuilder().build(task, acquired.observation),
                 TaskEvaluation(
                     task.task_id,
@@ -368,11 +366,10 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
-            state = AgentLoopState(initial.observation, remaining_turns=3)
             space = ActionSpaceBuilder().build(task, initial.observation)
             context = ContextBuilder().build(
                 task,
-                state,
+                initial.observation,
                 space,
                 TaskEvaluation(
                     task.task_id,

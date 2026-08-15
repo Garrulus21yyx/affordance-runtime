@@ -1,4 +1,4 @@
-"""Level-4 real DOM attempt through the production target AgentLoop."""
+"""Level-4 real DOM attempt through the product Runtime."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from affordance_runtime.agent import Abort, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import Abort, RunStatus, SelectAction
 from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.app.composition import compose_target_runtime
@@ -79,7 +79,7 @@ async def run_level_four_attempt(
     output = ""
     attributed = _attributed(capturing.outcome, user)
     stage = attributed.stage
-    if stage == ModelConformanceStage.SUCCESS and result.status != AgentLoopStatus.DONE:
+    if stage == ModelConformanceStage.SUCCESS and result.status != RunStatus.DONE:
         stage = ModelConformanceStage.RUNTIME_ADMISSION if result.execution_count == 0 else ModelConformanceStage.TASK_EVALUATION
     metadata = policy.last_metadata
     return ConformanceAttempt(
@@ -149,6 +149,6 @@ def _history(user: str) -> int:
         value = json.loads(user)
         if isinstance(value, dict) and isinstance(value.get("agent_context"), dict):
             value = value["agent_context"]
-        return len(value.get("history", {}).get("items", ()))
+        return len(value.get("recent_steps", ()))
     except (AttributeError, json.JSONDecodeError):
         return 0

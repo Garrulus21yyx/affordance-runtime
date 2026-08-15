@@ -6,11 +6,7 @@ import base64
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
-from importlib.resources import files
 from typing import Any
-
-import yaml
 
 from affordance_runtime.agent.context.actor_world_snapshot import actor_world_for_delivery
 from affordance_runtime.agent.context.budgets import BoundedSection
@@ -23,6 +19,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import MAX_GROUNDED
 from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     perception_uses_images,
+)
+from affordance_runtime.model.policy.prompt import (
+    MODEL_POLICY_INSTRUCTIONS,
+    MODEL_POLICY_PROMPT_VERSION,
 )
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
 from affordance_runtime.model.providers.tool_transport_contracts import ToolSpec
@@ -38,16 +38,8 @@ class GroundedAgentPrompts:
             raise ValueError("grounded-agent prompt bundle is incomplete")
 
 
-@lru_cache(maxsize=1)
 def load_grounded_agent_prompts() -> GroundedAgentPrompts:
-    resource = files("affordance_runtime.model.policy").joinpath("prompts/grounded_agent.yaml")
-    raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
-    if not isinstance(raw, Mapping) or set(raw) != {"version", "actor"}:
-        raise ValueError("grounded-agent prompt bundle has an invalid shape")
-    return GroundedAgentPrompts(
-        str(raw["version"]),
-        str(raw["actor"]),
-    )
+    return GroundedAgentPrompts(MODEL_POLICY_PROMPT_VERSION, MODEL_POLICY_INSTRUCTIONS)
 
 
 @dataclass(frozen=True)
@@ -79,15 +71,13 @@ class GroundedPolicyContextBinder:
     ) -> dict[str, object]:
         refs = dict(context.grounding.target_refs)
         evidence_refs = _evidence_refs(context)
-        if context.actor_world is None:
-            raise ValueError("grounded policy requires an ActorWorldSnapshot")
         public: dict[str, object] = {
             "task": _task(context),
             "observation": to_json_compatible(
                 actor_world_for_delivery(context.actor_world, include_images=include_images)
             ),
             "progress": _progress(context, refs, evidence_refs),
-            "recent_steps": _recent_steps(context.history.items, refs),
+            "recent_steps": _recent_steps(context.recent_steps.items, refs),
         }
         return public
 

@@ -7,7 +7,6 @@ import numpy as np
 from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
-from affordance_runtime.agent import AgentLoopState
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
@@ -121,10 +120,9 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
         risk_profile=RiskProfile.LOW,
     )
     action_space = ActionSpaceBuilder().build(task, projection.world)
-    state = AgentLoopState(projection.world, remaining_turns=5)
     context = ContextBuilder().build(
         task,
-        state,
+        projection.world,
         action_space,
         TaskEvaluation(
             task.task_id,

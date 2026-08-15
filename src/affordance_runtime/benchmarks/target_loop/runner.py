@@ -9,8 +9,8 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from affordance_runtime.agent.core_loop import CoreLoopStartError
+from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.run_state import RunState, RunStatus
-from affordance_runtime.agent.session_snapshot import snapshot_core_episode
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -26,7 +26,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingActionEvaluator,
     CountingEnvironment,
-    finalize_policy_trace,
     instrument_policy,
     instrument_task_evaluator,
 )
@@ -135,7 +134,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
                 "loop_construction_exception",
                 exc,
             )
-            raise _CaseStageError("AgentLoop construction", exc) from exc
+            raise _CaseStageError("CoreAgentLoop construction", exc) from exc
         result = await _run_with_watchdog(
             _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder),
             case.timeout_s,
@@ -145,7 +144,7 @@ async def _run_case(case) -> BenchmarkCaseResult:
         instrumentation.record_watchdog("case_timeout", exc)
         state = state_holder.get("state")
         if state is not None:
-            partial = snapshot_core_episode(state)
+            partial = snapshot_episode(state)
     except _CaseStageError as exc:
         failure = f"{exc.stage} failed: {type(exc.cause).__name__}"
     except Exception as exc:
@@ -165,9 +164,8 @@ async def _run_case(case) -> BenchmarkCaseResult:
                 failure = _append_failure(failure, "cleanup failed")
     state = state_holder.get("state")
     if state is not None:
-        snapshot = snapshot_core_episode(state)
+        snapshot = snapshot_episode(state)
     elapsed = (time.perf_counter() - started) * 1000
-    finalize_policy_trace(instrumentation, result)
     return project_case_result(
         case.case_id,
         result,
@@ -191,7 +189,7 @@ def _build_runtime(composition, instrumentation):
 
 async def _run_episode(case, runtime, environment, task, instrumentation, state_holder):
     try:
-        state = await runtime.initialize_core_task(environment, task)
+        state = await runtime.initialize_task(environment, task)
     except CoreLoopStartError as exc:
         instrumentation.record_failure(CaseFailureOrigin.ENVIRONMENT_RESET, exc.reason_code, exc)
         raise
@@ -199,10 +197,10 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
         instrumentation.record_failure(CaseFailureOrigin.SESSION_START, "session_start_exception", exc)
         raise
     state_holder["state"] = state
-    result = await runtime.continue_core_task(environment, task, state)
+    result = await runtime.continue_task(environment, task, state)
     if case.auto_confirm and result.status is RunStatus.WAITING_CONFIRMATION:
         instrumentation.confirmations_submitted += 1
-        result = await runtime.resume_core_confirmation(
+        result = await runtime.resume_confirmation(
             environment,
             task,
             result,

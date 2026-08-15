@@ -1,4 +1,4 @@
-"""Strictly serial MiniWoB breadth execution through the existing AgentLoop."""
+"""Strictly serial MiniWoB breadth execution through the product Runtime."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import (
     MiniWobBreadthCampaignAcceptance,
     MiniWobBreadthCampaignOutcome,
@@ -100,7 +100,6 @@ REQUIRED_METRICS = (
     "policy_schema_repair_count",
     "tool_argument_repair_count",
     "valid_tool_call_count",
-    "admitted_decision_count",
     "zero_tool_call_count",
     "multiple_tool_call_count",
     "unknown_tool_call_count",
@@ -126,7 +125,7 @@ REQUIRED_METRICS = (
     "cleanup_failures",
     "observation_contract_exceptions",
 )
-_TERMINAL_STATUSES = tuple(item for item in AgentLoopStatus if item is not AgentLoopStatus.RUNNING)
+_TERMINAL_STATUSES = tuple(item for item in RunStatus if item is not RunStatus.RUNNING)
 
 
 async def run_breadth_campaign(

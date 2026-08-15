@@ -13,8 +13,12 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
+    Abort,
+    AskUser,
+    ProposeDone,
     RequestObservation,
     SelectAction,
+    Wait,
 )
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure
 from affordance_runtime.agent.context.acquisition_projection import ObservationCapabilityView
@@ -22,7 +26,6 @@ from affordance_runtime.agent.context.action_candidate_projection import close_a
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
@@ -136,10 +139,9 @@ def _context():
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    state = AgentLoopState(projection.world, remaining_turns=5)
     return ContextBuilder().build(
         task,
-        state,
+        projection.world,
         ActionSpaceBuilder().build(task, projection.world),
         TaskEvaluation(task.task_id, projection.world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
     )
@@ -258,10 +260,9 @@ def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    state = AgentLoopState(projection.world, remaining_turns=5)
     context = ContextBuilder().build(
         task,
-        state,
+        projection.world,
         ActionSpaceBuilder().build(task, projection.world),
         TaskEvaluation(
             task.task_id,
@@ -475,9 +476,20 @@ def test_native_transport_carries_unified_world_and_tools_once() -> None:
     assert isinstance(user_content, str)
     public = json.loads(user_content)
     assert set(public) == {"task", "observation", "progress", "recent_steps"}
-    assert {item.name.split("_")[0] for item in port.tools} == {"type", "activate"}
+    assert {item.name.split("_")[0] for item in port.tools} == {
+        "type",
+        "activate",
+        "propose",
+        "ask",
+        "wait",
+        "abort",
+    }
     assert all("E1(" not in item.description for item in port.tools)
-    assert all("shared public semantics" in item.description for item in port.tools)
+    assert all(
+        "shared public semantics" in item.description
+        for item in port.tools
+        if item.name not in {"propose_done", "ask_user", "wait", "abort"}
+    )
     assert all("memory" not in item.input_schema["properties"] for item in port.tools)
     assert tuple(public) == ("task", "observation", "progress", "recent_steps")
 
@@ -589,6 +601,29 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
         "bindings",
         "serialized_bytes",
     }
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "decision_type"),
+    (
+        ("propose_done", {"result_summary": "task appears complete"}, ProposeDone),
+        ("ask_user", {"question": "Which account?", "requested_fields": ["account"]}, AskUser),
+        ("wait", {"reason": "page is loading", "max_wait_ms": 250}, Wait),
+        ("abort", {"reason": "capability unavailable", "category": "unsupported"}, Abort),
+    ),
+)
+def test_grounded_catalog_exposes_the_complete_core_control_algebra(name, arguments, decision_type) -> None:
+    context = _context()
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+
+    outcome = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(name, arguments, "provider-call:control"),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(outcome.decision, decision_type)
+    assert outcome.decision.tool_call_id == "provider-call:control"
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
@@ -1068,7 +1103,7 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
     refs = tuple(context.grounding.target_refs[target_id] for target_id in target_ids)
     context = replace(
         context,
-        history=BoundedSection(
+        recent_steps=BoundedSection(
             (
                 AgentTurnView(
                     "selectaction",
@@ -1163,7 +1198,7 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
                 ObservationCapabilityView("visual", "weak", ("entity_discovery",)),
             ),
         ),
-        history=BoundedSection(
+        recent_steps=BoundedSection(
             (
                 AgentTurnView(
                     "requestobservation",
@@ -1206,7 +1241,7 @@ def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> N
         )
         for index in range(10)
     )
-    context = replace(context, history=BoundedSection(turns, len(turns), False))
+    context = replace(context, recent_steps=BoundedSection(turns, len(turns), False))
 
     recent_steps = _bound_public_context(context)["recent_steps"]
 

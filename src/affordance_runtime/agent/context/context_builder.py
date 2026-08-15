@@ -2,104 +2,31 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Protocol
 
 from affordance_runtime.actions.paging import ActionPager, InternalActionPage
 from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
-from affordance_runtime.agent.context.budgets import (
-    DEFAULT_MAX_TOTAL_WAIT_MS,
-    BoundedSection,
-    ContextProjectionBudget,
-    serialized_size,
-)
+from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
 from affordance_runtime.agent.context.context import (
-    AgentBudgetView,
     AgentContext,
-    AgentPendingView,
     AgentProgressView,
     ContextIdentity,
-    DecisionMode,
-    IntentContextView,
-    IntentExcerptView,
 )
-from affordance_runtime.agent.context.contracts import AgentActionPageView
-from affordance_runtime.agent.context.control_feedback_projection import project_control_feedback
-from affordance_runtime.agent.context.control_transition_projection import (
-    project_control_transitions,
-)
+from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
 from affordance_runtime.agent.context.projection import project_action_page
 from affordance_runtime.agent.context.task_projection import project_task
-from affordance_runtime.agent.context.transition_digest_projection import project_latest_transition
 from affordance_runtime.agent.context.world_projection import fit_model_world, project_model_world
-from affordance_runtime.agent.progress_projection import project_progress_events
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
-from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.view import build_agent_world_view
-
-if TYPE_CHECKING:
-    from affordance_runtime.agent.control_feedback import ControlFeedback
-    from affordance_runtime.agent.control_transition import ControlTransition
-    from affordance_runtime.agent.progress_control import ProgressEvent
-    from affordance_runtime.confirmation.contracts import ConfirmationRequest
-    from affordance_runtime.execution.contracts import BoundActionRequest
-
-
-class ContextStateView(Protocol):
-    """Read-only state required to project one disposable model context."""
-
-    @property
-    def current_observation(self) -> WorldObservation: ...
-
-    @property
-    def recent_control_transitions(self) -> tuple[ControlTransition, ...]: ...
-
-    @property
-    def control_transition_total_count(self) -> int: ...
-
-    @property
-    def remaining_turns(self) -> int: ...
-
-    @property
-    def task_revision(self) -> int: ...
-
-    @property
-    def progress_revision(self) -> int: ...
-
-    @property
-    def pending_revision(self) -> int: ...
-
-    @property
-    def observation_cursor(self) -> str: ...
-
-    @property
-    def pending_user_question(self) -> str: ...
-
-    @property
-    def pending_confirmation(self) -> ConfirmationRequest | None: ...
-
-    @property
-    def pending_unknown_request(self) -> BoundActionRequest | None: ...
-
-    @property
-    def pending_control_feedback(self) -> ControlFeedback | None: ...
-
-    @property
-    def recent_progress_events(self) -> tuple[ProgressEvent, ...]: ...
-
-    @property
-    def progress_event_total_count(self) -> int: ...
 
 _PINNED_ACTION_WORLD_RESERVE_BYTES = 4_096
 
@@ -113,17 +40,16 @@ class ContextBuilder:
     def build(
         self,
         task: TaskGoal,
-        state: ContextStateView,
+        observation: WorldObservation,
         action_space: ActionSpace,
         task_evaluation: TaskEvaluation,
-        intent_context: IntentContext | None = None,
+        recent_steps: tuple[AgentTurnView, ...] = (),
+        recent_step_total_count: int | None = None,
         action_page: InternalActionPage | None = None,
-        observation_count: int = 1,
-        waited_ms: int = 0,
         context_generation: int = 0,
         observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
     ) -> AgentContext:
-        default_page = self.page(action_space, state)
+        default_page = self.page(action_space, observation)
         page = action_page or default_page
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
@@ -132,21 +58,21 @@ class ContextBuilder:
         projected_actions = project_action_page(
             action_space,
             page,
-            build_agent_world_view(state.current_observation),
+            build_agent_world_view(observation),
             self.budget.max_destinations_per_option,
         )
         shown_actions = projected_actions.options
         pinned_targets = _pinned_targets(
             shown_actions,
-            state,
+            observation,
             self.budget.observation_pinned_capacity,
         )
         world = project_model_world(
-            state.current_observation,
+            observation,
             self.budget,
             pinned_targets,
             observation_capabilities=project_acquisition_offers(observation_capabilities),
-            observation_cursor=state.observation_cursor,
+            observation_cursor="",
         )
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
@@ -163,60 +89,48 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        history_total = state.control_transition_total_count
-        history_items = project_control_transitions(
-            state.recent_control_transitions
-        )[-self.budget.max_history_turns :]
-        identity = _context_identity(state, action_space, page, context_generation)
-        truncation = {
-            "intent": project_intent_context(intent_context, self.budget).excerpts.truncated,
-            "targets": world.targets.truncated,
-            "facts": world.facts.truncated,
-            "conflicts": world.conflicts.truncated,
-            "artifacts": world.artifact_summaries.truncated,
-            "actions": actions.truncated,
-            "history": history_total > len(history_items),
-        }
+        history_items = tuple(recent_steps[-self.budget.max_history_turns :])
+        history_total = len(recent_steps) if recent_step_total_count is None else recent_step_total_count
+        if history_total < len(recent_steps):
+            raise ValueError("recent step total cannot be smaller than the retained steps")
+        identity = _context_identity(task.revision, observation, action_space, page, context_generation)
         grounding = self.grounding_projection.project(
-            state.current_observation,
+            observation,
             world,
             actions,
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
-        last_transition = project_latest_transition(
-            state.recent_control_transitions,
+        progress = _progress_view(
+            task,
+            task_evaluation,
+            world.facts.items,
+            self.budget.max_unresolved_items,
+        )
+        actor_world = project_actor_world_snapshot(
+            observation,
+            world,
             grounding.index,
-            max_progress_changes=self.budget.max_transition_progress_changes,
-            max_evidence_refs=self.budget.max_transition_evidence_refs,
+            grounding.images,
+            max_structure_nodes=self.budget.max_targets * 2,
         )
         context = AgentContext(
             identity.context_id,
             project_task(task),
-            project_intent_context(intent_context, self.budget),
-            _progress_view(task, state, task_evaluation, world.facts.items, self.budget.max_unresolved_items),
+            progress,
             world,
             actions,
             BoundedSection(
                 history_items,
                 history_total,
-                truncation["history"],
+                history_total > len(history_items),
             ),
-            _pending_view(state),
-            AgentBudgetView(
-                state.remaining_turns,
-                max(0, task.loop_budget.max_observations - observation_count),
-                max(0, DEFAULT_MAX_TOTAL_WAIT_MS - waited_ms),
-                truncation,
-            ),
-            DecisionMode.ACT,
-            project_control_feedback(state.pending_control_feedback),
+            actor_world,
             grounding.images,
             grounding.index,
-            last_transition,
         )
         context = _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
         actor_world = project_actor_world_snapshot(
-            state.current_observation,
+            observation,
             context.world,
             grounding.index,
             grounding.images,
@@ -227,14 +141,14 @@ class ContextBuilder:
     def page(
         self,
         action_space: ActionSpace,
-        state: ContextStateView,
+        observation: WorldObservation,
         *,
         query: str = "",
         target_id: str = "",
         relevance_role: str = "",
         cursor: str = "",
     ) -> InternalActionPage:
-        labels = {item.target_id: item.label for item in state.current_observation.targets}
+        labels = {item.target_id: item.label for item in observation.targets}
         return self.pager.page(
             action_space,
             None,
@@ -255,65 +169,28 @@ class ContextBuilder:
             max_targets=self.budget.observation_pinned_capacity,
         )
 
-    def execution_page(
-        self,
-        action_space: ActionSpace,
-        state: ContextStateView,
-        action_id: str,
-        destination_id: str = "",
-    ) -> InternalActionPage:
-        return self.pager.single_action_page(
-            action_space,
-            None,
-            action_id,
-            destination_id,
-            max_destinations_per_option=self.budget.max_destinations_per_option,
-        )
 
-
-def project_intent_context(
-    intent: IntentContext | None,
-    budget: ContextProjectionBudget,
-) -> IntentContextView:
-    excerpts = () if intent is None else intent.excerpts
-    shown_count = min(len(excerpts), budget.max_intent_excerpts)
-    per_excerpt = budget.max_intent_chars // shown_count if shown_count else budget.max_intent_chars
-    items = []
-    for excerpt in excerpts[: budget.max_intent_excerpts]:
-        text = excerpt.text[:per_excerpt]
-        source_id = f"source:{hashlib.sha256(excerpt.source_ref.encode()).hexdigest()}"
-        digest = excerpt.digest.casefold()
-        if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
-            digest = f"sha256:{hashlib.sha256(excerpt.text.encode()).hexdigest()}"
-        items.append(IntentExcerptView(text, excerpt.source_kind, source_id, digest))
-    return IntentContextView(BoundedSection(tuple(items), len(excerpts), len(items) < len(excerpts)))
-
-
-def _context_identity(state, action_space, page, generation: int) -> ContextIdentity:
+def _context_identity(task_revision, observation, action_space, page, generation: int) -> ContextIdentity:
     return ContextIdentity(
-        state.task_revision,
-        state.current_observation.observation_id,
+        task_revision,
+        observation.observation_id,
         action_space.action_space_id,
         page.page_id,
-        state.progress_revision,
-        state.pending_revision,
         generation,
     )
 
 
-def _pinned_targets(actions, state, limit: int) -> tuple[str, ...]:
+def _pinned_targets(actions, observation, limit: int) -> tuple[str, ...]:
     values = [
         target_id
         for option in actions
         for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
     ]
-    if state.pending_confirmation is not None:
-        values.append(state.pending_confirmation.intent.target_id)
-    current = {item.target_id for item in state.current_observation.targets}
+    current = {item.target_id for item in observation.targets}
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
 
-def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> AgentProgressView:
+def _progress_view(task, evaluation, facts, max_unresolved: int) -> AgentProgressView:
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}
     unresolved = tuple(
         criterion_id(item)
@@ -340,23 +217,10 @@ def _progress_view(task, state, evaluation, facts, max_unresolved: int) -> Agent
             len(unresolved_outputs),
             len(unresolved_outputs) > max_unresolved,
         ),
-        events=project_progress_events(state),
         truncated=(
             len(unresolved) > max_unresolved
             or len(unresolved_outputs) > max_unresolved
-            or state.progress_event_total_count > len(state.recent_progress_events)
         ),
-    )
-
-
-def _pending_view(state: ContextStateView) -> AgentPendingView:
-    confirmation = ""
-    if state.pending_confirmation is not None:
-        confirmation = "confirmation required for current semantic action"
-    return AgentPendingView(
-        "user input required" if state.pending_user_question else "",
-        confirmation,
-        "effect outcome remains uncertain" if state.pending_unknown_request is not None else "",
     )
 
 
@@ -382,47 +246,23 @@ def _fit_context(
             progress = replace(context.progress, verified_public_facts=(), truncated=True)
             context = replace(context, progress=progress)
             continue
-        if context.progress.events.items:
-            events = BoundedSection(
-                context.progress.events.items[1:],
-                context.progress.events.total_count,
-                True,
-            )
-            context = replace(
-                context,
-                progress=replace(context.progress, events=events, truncated=True),
-            )
-            continue
-        if len(context.history.items) > 1:
+        if len(context.recent_steps.items) > 1:
             history = BoundedSection(
-                context.history.items[1:],
-                context.history.total_count,
-                context.history.total_count > len(context.history.items) - 1,
+                context.recent_steps.items[1:],
+                context.recent_steps.total_count,
+                context.recent_steps.total_count > len(context.recent_steps.items) - 1,
             )
-            context = replace(context, history=history)
-            continue
-        if context.intent.excerpts.items:
-            excerpts = BoundedSection(
-                context.intent.excerpts.items[1:],
-                context.intent.excerpts.total_count,
-                context.intent.excerpts.total_count > len(context.intent.excerpts.items) - 1,
-            )
-            context = replace(context, intent=replace(context.intent, excerpts=excerpts))
+            context = replace(context, recent_steps=history)
             continue
         raise ValueError("AgentContext fixed sections exceed the total serialized byte budget")
-    flags = dict(context.budgets.section_truncation)
-    flags.update(
-        intent=context.intent.excerpts.truncated,
-        targets=context.world.targets.truncated,
-        facts=context.world.facts.truncated,
-        conflicts=context.world.conflicts.truncated,
-        artifacts=context.world.artifact_summaries.truncated,
-        history=context.history.truncated,
-        progress_events=context.progress.events.truncated,
-    )
-    return replace(context, budgets=replace(context.budgets, section_truncation=flags))
+    return context
 
 
 def _semantic_serialized_size(context: AgentContext) -> int:
-    payload = to_json_compatible(replace(context, image_inputs=()))
+    payload = to_json_compatible({
+        "task": context.task,
+        "observation": context.actor_world,
+        "progress": context.progress,
+        "recent_steps": context.recent_steps,
+    })
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())

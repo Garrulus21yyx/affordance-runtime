@@ -32,7 +32,7 @@ def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
     projection = (RUNTIME / "agent" / "context" / "projection.py").read_text(encoding="utf-8")
     assert "task_plan_contracts" not in projection
     assert "project_plan" not in projection
-    for relative in ("agent/loop.py", "agent/state.py"):
+    for relative in ("agent/core_loop.py", "agent/run_state.py"):
         source = (RUNTIME / relative).read_text(encoding="utf-8")
         assert "task_plan_contracts" not in source
         assert "TaskPlan" not in source
@@ -41,7 +41,7 @@ def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
 def test_agent_loop_has_no_staged_objective_or_workflow_plan_state() -> None:
     source = "\n".join(
         (RUNTIME / relative).read_text(encoding="utf-8")
-        for relative in ("agent/loop.py", "agent/state.py")
+        for relative in ("agent/core_loop.py", "agent/run_state.py")
     )
     for displaced in (
         "AdmittedTaskSpec",
@@ -88,11 +88,11 @@ def test_agent_loop_has_no_staged_objective_or_workflow_plan_state() -> None:
 def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> None:
     production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
     task_contract = (RUNTIME / "task" / "contracts.py").read_text(encoding="utf-8")
-    loop = (RUNTIME / "agent" / "loop.py").read_text(encoding="utf-8")
+    loop = (RUNTIME / "agent" / "core_loop.py").read_text(encoding="utf-8")
 
     assert "target_id:" not in task_contract.split("class TaskGoal", 1)[1].split("class ", 1)[0]
-    assert "require_initial_observation" in loop
-    assert loop.index("require_initial_observation") < loop.index("AgentLoopState(")
+    assert "environment.reset(task)" in loop
+    assert loop.index("environment.reset(task)") < loop.index("RunState(")
     for displaced in (
         "AgentDecisionPackage",
         "TaskFrontier",
@@ -178,21 +178,15 @@ def test_grounded_action_candidates_have_one_model_boundary_projection_chain() -
     assert '"screen_coordinate"' not in binder and '"x"' not in binder and '"y"' not in binder
 
 
-def test_latest_transition_has_one_root_owned_projection_chain() -> None:
-    transition = (RUNTIME / "agent" / "control_transition.py").read_text(encoding="utf-8")
-    reducer = (RUNTIME / "agent" / "control_reducer.py").read_text(encoding="utf-8")
-    builder = (RUNTIME / "agent" / "context" / "context_builder.py").read_text(encoding="utf-8")
-    projection = (
-        RUNTIME / "agent" / "context" / "transition_digest_projection.py"
-    ).read_text(encoding="utf-8")
+def test_step_result_has_one_root_owned_projection_chain() -> None:
+    state = (RUNTIME / "agent" / "run_state.py").read_text(encoding="utf-8")
+    loop = (RUNTIME / "agent" / "core_loop.py").read_text(encoding="utf-8")
+    projection = (RUNTIME / "agent" / "context" / "step_projection.py").read_text(encoding="utf-8")
 
-    assert "class ControlTransition:" in transition
-    assert "before_task_evaluation" in transition
-    assert "project_latest_transition(" in builder
-    assert "state.recent_control_transitions" in builder
-    assert "values[index] = updated" in reducer
-    assert "continued_root_ids" in reducer
-    assert "class RuntimeTransitionDigest" not in "\n".join(
+    assert "class StepResult:" in state
+    assert "def project_step_result" in projection
+    assert "project_step_result(" in loop
+    assert "ControlTransition" not in "\n".join(
         path.read_text(encoding="utf-8") for path in RUNTIME.rglob("*.py")
     )
     assert "ModelPort" not in projection and "provider" not in projection

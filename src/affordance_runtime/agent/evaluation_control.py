@@ -1,4 +1,4 @@
-"""Narrow evaluator-proposal validation at AgentLoop boundaries."""
+"""Narrow evaluator-proposal validation at CoreAgentLoop boundaries."""
 
 from affordance_runtime.agent.policy import ActionEvaluator, TaskEvaluator
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation

@@ -54,7 +54,6 @@ jobs:
           --check mypy
           --check diff_check
           --check compose_config
-          --check legacy_runxfail
           --check target_boundaries
           --check docs_governance
       - uses: actions/upload-artifact@v4

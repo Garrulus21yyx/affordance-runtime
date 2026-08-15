@@ -7,15 +7,11 @@ from affordance_runtime.app.composition import (
 from affordance_runtime.app.runtime import (
     TargetRuntime,
     TargetRuntimeRunOutcome,
-    TargetRuntimeStartOutcome,
-    TargetRuntimeUserInputOutcome,
 )
 
 __all__ = [
     "TargetRuntime",
     "TargetRuntimeRunOutcome",
-    "TargetRuntimeStartOutcome",
-    "TargetRuntimeUserInputOutcome",
     "compose_target_runtime",
     "compose_target_runtime_from_environment",
 ]

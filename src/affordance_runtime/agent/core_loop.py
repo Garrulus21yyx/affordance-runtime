@@ -1,18 +1,14 @@
-"""Readable observe-decide-act-observe-evaluate loop for staged migration."""
+"""Readable observe-decide-act-observe-evaluate loop for every product run."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
-from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context_builder import ContextBuilder
-from affordance_runtime.agent.context.control_transition_projection import (
-    project_step_result,
-)
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.decisions import (
     Abort,
     AbortCategory,
@@ -38,28 +34,30 @@ from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitController, WaitController
-from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation.contracts import (
+    CriterionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
+from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
-from affordance_runtime.task.intent_context import IntentContext
 from affordance_runtime.world.acquisition import (
     AcquisitionStatus,
     ObservationRequestKind,
     WorldObservationRequest,
 )
-from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
-from affordance_runtime.world.source_profile import ObservationModality
+from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
-if TYPE_CHECKING:
-    from affordance_runtime.agent.control_feedback import ControlFeedback
-    from affordance_runtime.agent.control_transition import ControlTransition
-    from affordance_runtime.agent.progress_control import ProgressEvent
-    from affordance_runtime.confirmation.contracts import ConfirmationRequest
-    from affordance_runtime.execution.contracts import BoundActionRequest
+_ASSURANCE_RANK = {
+    ObservationAssurance.WEAK: 0,
+    ObservationAssurance.STRUCTURAL: 1,
+    ObservationAssurance.AUTHORITATIVE: 2,
+}
 
 
 class CoreLoopStartError(RuntimeError):
@@ -83,10 +81,9 @@ class CoreAgentLoop:
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
         state = await self.initialize(environment, task)
-        return await self.continue_run(environment, task, state, intent_context)
+        return await self.continue_run(environment, task, state)
 
     async def initialize(
         self,
@@ -114,21 +111,19 @@ class CoreAgentLoop:
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
         """Continue an initialized state until it pauses or terminates."""
 
-        return await self._run_until_pause(environment, task, state, intent_context)
+        return await self._run_until_pause(environment, task, state)
 
     async def _run_until_pause(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
-        intent_context: IntentContext | None,
     ) -> RunState:
         while state.status is RunStatus.RUNNING:
-            result = await self.step(environment, task, state, intent_context)
+            result = await self.step(environment, task, state)
             state.apply(result)
             if state.status is RunStatus.RUNNING and not isinstance(result.decision, PolicyFailure):
                 state.remember_step(project_step_result(result))
@@ -139,7 +134,6 @@ class CoreAgentLoop:
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
         pending = state.last_step
         if (
@@ -172,7 +166,7 @@ class CoreAgentLoop:
         state.action_page = None
         if state.status is RunStatus.RUNNING:
             state.remember_step(project_step_result(resumed))
-        return await self._run_until_pause(environment, task, state, intent_context)
+        return await self._run_until_pause(environment, task, state)
 
     async def resume_confirmation(
         self,
@@ -181,7 +175,6 @@ class CoreAgentLoop:
         state: RunState,
         *,
         approved: bool,
-        intent_context: IntentContext | None = None,
     ) -> RunState:
         pending = state.last_step
         if (
@@ -206,10 +199,9 @@ class CoreAgentLoop:
             )
             state.last_step = declined
             state.remember_step(project_step_result(declined))
-            return await self._run_until_pause(environment, task, state, intent_context)
+            return await self._run_until_pause(environment, task, state)
         action_space = self.action_space_builder.build(task, state.current_world)
-        context_state = _context_state(task, state)
-        action_page = self.context_builder.page(action_space, context_state)
+        action_page = self.context_builder.page(action_space, state.current_world)
         result = await self._select(
             environment,
             task,
@@ -223,45 +215,34 @@ class CoreAgentLoop:
         state.apply(result, consume_step=False)
         if state.status is RunStatus.RUNNING:
             state.remember_step(project_step_result(result))
-        return await self._run_until_pause(environment, task, state, intent_context)
+        return await self._run_until_pause(environment, task, state)
 
     async def step(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
-        intent_context: IntentContext | None = None,
     ) -> StepResult:
         if state.status is not RunStatus.RUNNING:
             raise ValueError("core step requires a running state")
         action_space = self.action_space_builder.build(task, state.current_world)
-        context_state = _context_state(task, state)
         action_page = (
             state.action_page
             if state.action_page is not None
             and state.action_page.action_space_id == action_space.action_space_id
-            else self.context_builder.page(action_space, context_state)
+            else self.context_builder.page(action_space, state.current_world)
         )
         context = self.context_builder.build(
             task,
-            context_state,
+            state.current_world,
             action_space,
             state.current_task_evaluation,
-            intent_context,
+            state.recent_steps,
+            state.step_count,
             action_page=action_page,
             context_generation=state.next_context_generation(),
-            observation_count=state.observation_count,
             observation_capabilities=environment.observation_capabilities,
         )
-        if state.recent_steps:
-            context = replace(
-                context,
-                history=BoundedSection(
-                    state.recent_steps,
-                    state.step_count,
-                    state.step_count > len(state.recent_steps),
-                ),
-            )
         try:
             decision = await self.decision_ports.action_policy.decide(context)
         except Exception as exc:
@@ -329,7 +310,7 @@ class CoreAgentLoop:
         try:
             page = self.context_builder.page(
                 action_space,
-                _context_state(task, state),
+                state.current_world,
                 query=decision.query,
                 target_id=decision.target_id,
                 relevance_role=decision.relevance_role,
@@ -403,6 +384,12 @@ class CoreAgentLoop:
             purpose,
             (decision.subject_id,),
             modality,
+            _criterion_assurance(
+                task,
+                state.current_task_evaluation,
+                purpose,
+                decision.subject_id,
+            ),
             evidence_property=decision.evidence_property,
         )
         acquisition = await environment.capture(
@@ -580,40 +567,34 @@ def _same_world_step(
     )
 
 
+def _criterion_assurance(
+    task: TaskGoal,
+    evaluation: TaskEvaluation,
+    purpose: ObservationPurpose,
+    subject_id: str,
+) -> ObservationAssurance:
+    if purpose is not ObservationPurpose.CRITERION_VERIFICATION:
+        return ObservationAssurance.WEAK
+    statuses = {item.criterion_id: item.status for item in evaluation.criteria}
+    required = ObservationAssurance.WEAK
+    for criterion in normalize_task_criteria(task):
+        if statuses.get(criterion.criterion_id) is CriterionEvaluationStatus.SATISFIED:
+            continue
+        applies_to_subject = (
+            criterion.subject_id == subject_id
+            or subject_id in criterion.evidence_scope_target_ids
+        )
+        if not applies_to_subject or not criterion.required_assurance:
+            continue
+        candidate = ObservationAssurance(criterion.required_assurance)
+        if _ASSURANCE_RANK[candidate] > _ASSURANCE_RANK[required]:
+            required = candidate
+    return required
+
+
 def _status_for_evaluation(evaluation: TaskEvaluation) -> RunStatus:
     if evaluation.status is TaskEvaluationStatus.COMPLETE:
         return RunStatus.DONE
     if evaluation.status is TaskEvaluationStatus.BLOCKED:
         return RunStatus.BLOCKED
     return RunStatus.RUNNING
-
-
-@dataclass
-class _ContextStateProjection:
-    current_observation: WorldObservation
-    current_task_evaluation: TaskEvaluation
-    remaining_turns: int
-    task_revision: int
-    progress_revision: int
-    context_generation: int
-    recent_control_transitions: tuple[ControlTransition, ...] = ()
-    control_transition_total_count: int = 0
-    pending_revision: int = 0
-    pending_user_question: str = ""
-    pending_confirmation: ConfirmationRequest | None = None
-    pending_unknown_request: BoundActionRequest | None = None
-    pending_control_feedback: ControlFeedback | None = None
-    observation_cursor: str = ""
-    recent_progress_events: tuple[ProgressEvent, ...] = ()
-    progress_event_total_count: int = 0
-
-
-def _context_state(task: TaskGoal, state: RunState) -> _ContextStateProjection:
-    return _ContextStateProjection(
-        state.current_world,
-        state.current_task_evaluation,
-        state.remaining_steps,
-        task.revision,
-        max(0, state.context_generation - 1),
-        state.context_generation,
-    )

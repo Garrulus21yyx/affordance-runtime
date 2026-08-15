@@ -1,6 +1,8 @@
 import asyncio
 from dataclasses import dataclass, replace
 
+import pytest
+
 from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.agent import (
     Abort,
@@ -117,20 +119,20 @@ class CorePolicy:
         if self.choice == "premature_done":
             if self.turns == 1:
                 return ProposeDone(context.context_id, (), (), "done", ())
-            assert len(context.history.items) == 1
-            assert context.history.items[0].semantic_action == "propose_done"
-            assert context.history.items[0].reason == "completion_not_verified"
+            assert len(context.recent_steps.items) == 1
+            assert context.recent_steps.items[0].semantic_action == "propose_done"
+            assert context.recent_steps.items[0].reason == "completion_not_verified"
             return Abort(context.context_id, "feedback observed", AbortCategory.USER_REQUEST)
         if self.choice == "ask_user":
             if self.turns == 1:
                 return AskUser(context.context_id, "Which value?", ("value",))
             assert context.task.public_inputs["value"] == "provided"
-            assert context.history.items[-1].reason == "user_input_received"
+            assert context.recent_steps.items[-1].reason == "user_input_received"
             return Abort(context.context_id, "input observed", AbortCategory.USER_REQUEST)
         if self.choice == "confirm_once":
             if self.turns == 1:
                 return SelectAction(context.context_id, context.actions.options[0].action_id)
-            assert context.history.items[-1].reason == "confirmation_declined"
+            assert context.recent_steps.items[-1].reason == "confirmation_declined"
             return Abort(context.context_id, "decline observed", AbortCategory.USER_REQUEST)
         raise AssertionError("policy should not be called")
 
@@ -187,7 +189,7 @@ def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
 def test_core_runtime_reuses_production_boundaries_and_completes_one_action() -> None:
     async def scenario() -> None:
         runtime = _runtime("first_action")
-        loop = runtime.build_core_loop()
+        loop = runtime.build_loop()
         assert loop.decision_ports is runtime.decision_ports
         assert loop.action_space_builder is runtime.action_space_builder
         assert loop.binder is runtime.binder
@@ -198,7 +200,7 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
             post_observations=(_world("after", True),),
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
         )
-        state = await runtime.run_core_task(environment, _task())
+        state = await runtime.run_task(environment, _task())
 
         assert state.status is RunStatus.DONE
         assert state.current_world.observation_id == "after"
@@ -212,13 +214,27 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
         assert state.last_step.action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
         assert environment.execute_calls == 1
 
+        with pytest.raises(ValueError, match="does not match"):
+            replace(
+                state.last_step,
+                action_evaluation=replace(
+                    state.last_step.action_evaluation,
+                    request_id="request:wrong",
+                ),
+            )
+        with pytest.raises(ValueError, match="tool call lineage"):
+            replace(
+                state.last_step,
+                decision=replace(state.last_step.decision, tool_call_id="provider-call:wrong"),
+            )
+
     asyncio.run(scenario())
 
 
 def test_action_page_is_installed_for_the_next_turn() -> None:
     async def scenario() -> None:
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
-        state = await _runtime("action_page").run_core_task(environment, _task())
+        state = await _runtime("action_page").run_task(environment, _task())
 
         assert state.status is RunStatus.CANCELLED
         assert state.last_step is not None
@@ -242,7 +258,7 @@ def test_wait_uses_runtime_boundary_then_refreshes_observation() -> None:
             initial_observation=_world("before", False),
             independent_observations=(_world("after-wait", False),),
         )
-        state = await _runtime("wait", wait_controller=waiter).run_core_task(
+        state = await _runtime("wait", wait_controller=waiter).run_task(
             environment,
             _task(),
         )
@@ -259,7 +275,7 @@ def test_wait_uses_runtime_boundary_then_refreshes_observation() -> None:
 def test_unverified_done_proposal_returns_to_the_model_loop() -> None:
     async def scenario() -> None:
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
-        state = await _runtime("premature_done").run_core_task(environment, _task())
+        state = await _runtime("premature_done").run_task(environment, _task())
 
         assert state.status is RunStatus.CANCELLED
         assert state.step_count == 2
@@ -273,11 +289,11 @@ def test_user_input_resumes_with_one_consecutive_task_revision() -> None:
         runtime = _runtime("ask_user")
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
         task = _task()
-        paused = await runtime.run_core_task(environment, task)
+        paused = await runtime.run_task(environment, task)
 
         assert paused.status is RunStatus.WAITING_USER
         revised = replace(task, inputs={"value": "provided"}, revision=2)
-        resumed = await runtime.resume_core_user(environment, revised, paused)
+        resumed = await runtime.resume_user(environment, revised, paused)
 
         assert resumed.status is RunStatus.CANCELLED
         assert resumed.task_revision == 2
@@ -295,10 +311,10 @@ def test_confirmation_approval_executes_the_exact_pending_semantics() -> None:
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
         )
         task = replace(_task(), risk_profile=RiskProfile.MEDIUM)
-        paused = await runtime.run_core_task(environment, task)
+        paused = await runtime.run_task(environment, task)
 
         assert paused.status is RunStatus.WAITING_CONFIRMATION
-        resumed = await runtime.resume_core_confirmation(
+        resumed = await runtime.resume_confirmation(
             environment,
             task,
             paused,
@@ -318,8 +334,8 @@ def test_confirmation_decline_returns_to_the_model_without_execution() -> None:
         runtime = _runtime("confirm_once")
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
         task = replace(_task(), risk_profile=RiskProfile.MEDIUM)
-        paused = await runtime.run_core_task(environment, task)
-        resumed = await runtime.resume_core_confirmation(
+        paused = await runtime.run_task(environment, task)
+        resumed = await runtime.resume_confirmation(
             environment,
             task,
             paused,
@@ -342,9 +358,9 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
         async def decide(self, context):
             self.turns += 1
             if self.turns == 1:
-                assert not context.history.items
+                assert not context.recent_steps.items
                 return SelectAction(context.context_id, context.actions.options[0].action_id)
-            previous = context.history.items
+            previous = context.recent_steps.items
             assert len(previous) == 1
             assert previous[0].semantic_action == "activate"
             assert previous[0].dispatch_status == DispatchStatus.SENT
@@ -377,7 +393,7 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             post_observations=(_world("after", False),),
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
         )
-        state = await runtime.run_core_task(environment, _task())
+        state = await runtime.run_task(environment, _task())
 
         assert state.status is RunStatus.CANCELLED
         assert policy.turns == 2

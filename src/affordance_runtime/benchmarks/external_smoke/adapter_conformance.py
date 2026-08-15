@@ -1,10 +1,10 @@
-"""Real fixed MiniWoB adapter conformance through the unchanged AgentLoop."""
+"""Real fixed MiniWoB adapter conformance through the product Runtime."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.external_smoke.case_environment import (
     BrowserGymCaseEnvironment,
     open_browsergym_case,
@@ -216,7 +216,7 @@ def _case(external_case, seed: int, ports: list[BrowserGymStructuredDecisionPort
         task_factory,
         environment_factory,
         composition_factory,
-        (AgentLoopStatus.DONE,),
+        (RunStatus.DONE,),
         external_case.timeout_s,
         seed,
         _REQUIRED_METRICS,

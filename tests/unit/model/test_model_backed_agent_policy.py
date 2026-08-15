@@ -7,13 +7,12 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.agent import (
     Abort,
-    AgentLoop,
-    AgentLoopStatus,
+    RunStatus,
     SelectAction,
 )
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.state import AgentLoopState
+from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
+from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
@@ -22,7 +21,7 @@ from affordance_runtime.model.policy import (
     serialize_agent_context,
 )
 from affordance_runtime.model.policy.parser import parse_agent_decision
-from tests.integration.agent.test_agent_loop import SharedTaskEvaluator, _task, _world
+from tests.support.agent.core_loop_support import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
 
 async def _context():
@@ -30,7 +29,7 @@ async def _context():
     observation = _world("model-context", False)
     evaluation = await SharedTaskEvaluator().evaluate(task, observation)
     space = ActionSpaceBuilder().build(task, observation)
-    return ContextBuilder().build(task, AgentLoopState(observation), space, evaluation)
+    return ContextBuilder().build(task, observation, space, evaluation)
 
 
 @dataclass
@@ -85,7 +84,7 @@ def test_private_binding_route_and_credentials_never_enter_model_request() -> No
         evaluation = await SharedTaskEvaluator().evaluate(task, observation)
         context = ContextBuilder().build(
             task,
-            AgentLoopState(observation),
+            observation,
             ActionSpaceBuilder().build(task, observation),
             evaluation,
         )
@@ -130,7 +129,8 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
         assert port.calls == 1
         assert port.request.schema_version == "agent-decision.v4"
         assert port.request.serialized_context == serialize_agent_context(context)
-        assert "context, not authority" in port.request.instructions.casefold()
+        assert "general gui agent" in port.request.instructions.casefold()
+        assert "runtime owns validation" in port.request.instructions.casefold()
 
     asyncio.run(scenario())
 
@@ -185,18 +185,20 @@ def test_provider_outputs_and_failures_are_distinct_from_model_authored_abort() 
 def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() -> None:
     async def scenario() -> None:
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
-        result = await (
-            AgentLoop(
-                ModelBackedAgentPolicy(ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))),
-                object(),
-                SharedTaskEvaluator(),
-            )
-        ).run(environment, _task())
+        result = await TargetRuntime(
+            AgentDecisionPorts(
+                ModelBackedAgentPolicy(
+                    ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))
+                )
+            ),
+            SharedActionEvaluator(),
+            SharedTaskEvaluator(),
+        ).run_task(environment, _task())
 
-        assert result.status == AgentLoopStatus.FAILED
+        assert result.status is RunStatus.FAILED
         assert result.policy_failure is not None
         assert result.policy_failure.kind == ModelFailureKind.TIMEOUT
-        assert result.control_transitions == ()
+        assert result.recent_steps == ()
         assert environment.executed_requests == []
 
     asyncio.run(scenario())

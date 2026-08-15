@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import replace
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
@@ -14,7 +14,7 @@ def test_environment_factory_failure_is_contained_and_suite_continues() -> None:
         raise RuntimeError("fixture construction failed")
 
     failed = replace(manifest.cases[0], environment_factory=fail,
-                     expected_terminal_statuses=(AgentLoopStatus.FAILED,))
+                     expected_terminal_statuses=(RunStatus.FAILED,))
     reduced = BenchmarkManifest(
         manifest.schema_version, manifest.suite_id, manifest.profile_id,
         manifest.seed, (failed, manifest.cases[1]),
@@ -44,7 +44,7 @@ def test_composition_failure_closes_created_environment_once() -> None:
         raise RuntimeError("composition failed")
 
     case = replace(original, environment_factory=environment, composition_factory=composition,
-                   expected_terminal_statuses=(AgentLoopStatus.FAILED,))
+                   expected_terminal_statuses=(RunStatus.FAILED,))
     result = asyncio.run(run_suite(BenchmarkManifest(
         manifest.schema_version, manifest.suite_id, manifest.profile_id, manifest.seed, (case,),
     )))

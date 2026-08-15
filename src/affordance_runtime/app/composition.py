@@ -37,7 +37,6 @@ def compose_target_runtime(
     binder: ActionBinder | None = None,
     context_builder: ContextBuilder | None = None,
     wait_controller: WaitController | None = None,
-    recent_turn_limit: int = 12,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -51,7 +50,6 @@ def compose_target_runtime(
         binder=binder or ActionBinder(),
         context_builder=context_builder or ContextBuilder(),
         wait_controller=wait_controller or SystemWaitController(),
-        recent_turn_limit=recent_turn_limit,
         required_decisions=required_decisions,
     )
 

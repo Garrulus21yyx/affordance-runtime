@@ -206,10 +206,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
     )
     context = ContextBuilder().build(
         task,
-        __import__(
-            "affordance_runtime.agent.state",
-            fromlist=["AgentLoopState"],
-        ).AgentLoopState(projected.world, remaining_turns=2),
+        projected.world,
         ActionSpaceBuilder().build(task, projected.world),
         TaskEvaluation(
             task.task_id,
@@ -265,10 +262,6 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
     assert media[0].data.startswith(b"\x89PNG")
 
     task = TaskGoal("task:image", "Save", allowed_effects=("external_ui_interaction",))
-    state = __import__(
-        "affordance_runtime.agent.state",
-        fromlist=["AgentLoopState"],
-    ).AgentLoopState(projected.world, remaining_turns=2)
     evaluation = TaskEvaluation(
         task.task_id,
         projected.world.observation_id,
@@ -277,7 +270,7 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
     )
     context = ContextBuilder().build(
         task,
-        state,
+        projected.world,
         ActionSpaceBuilder().build(task, projected.world),
         evaluation,
     )
@@ -385,38 +378,31 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
     assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert projected.world.sources[0].entity_inventory.status is EntityInventoryStatus.COMPLETE
 
-    task = TaskGoal("task:paging", "Click Button 64", allowed_effects=("external_ui_interaction",))
-    state = __import__(
-        "affordance_runtime.agent.state",
-        fromlist=["AgentLoopState"],
-    ).AgentLoopState(projected.world, remaining_turns=2)
+    task = TaskGoal(
+        "task:paging",
+        "Click Button 64",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
     evaluation = TaskEvaluation(
         task.task_id,
         projected.world.observation_id,
         TaskEvaluationStatus.INCOMPLETE,
         "ongoing",
     )
+    action_space = ActionSpaceBuilder().build(task, projected.world)
     context = ContextBuilder().build(
         task,
-        state,
-        ActionSpaceBuilder().build(task, projected.world),
+        projected.world,
+        action_space,
         evaluation,
     )
+    assert len(action_space.options) == 65
     assert context.world.targets.total_count == 65
     assert len(context.world.targets.items) == 64
     assert context.world.targets.truncated is True
     assert context.world.traversal is not None
     assert context.world.traversal.status == "partial"
-
-    state.set_observation_cursor(context.world.traversal.next_cursor)
-    next_context = ContextBuilder().build(
-        task,
-        state,
-        ActionSpaceBuilder().build(task, projected.world),
-        evaluation,
-    )
-    assert any(item.label == "Button 64" for item in next_context.world.targets.items)
-    assert next_context.world.traversal is None
 
 
 def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> None:
@@ -432,10 +418,6 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    state = __import__(
-        "affordance_runtime.agent.state",
-        fromlist=["AgentLoopState"],
-    ).AgentLoopState(projected.world, remaining_turns=2)
     evaluation = TaskEvaluation(
         task.task_id,
         projected.world.observation_id,
@@ -444,7 +426,7 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
     )
     context = ContextBuilder().build(
         task,
-        state,
+        projected.world,
         ActionSpaceBuilder().build(task, projected.world),
         evaluation,
     )
@@ -468,12 +450,8 @@ def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() 
         entity_identity=_IDENTITY,
     ).world
     task = TaskGoal("task:opaque", raw["goal"], allowed_effects=("external_ui_interaction",))
-    state = __import__(
-        "affordance_runtime.agent.state",
-        fromlist=["AgentLoopState"],
-    ).AgentLoopState(world, remaining_turns=2)
     evaluation = TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
-    context = ContextBuilder().build(task, state, ActionSpaceBuilder().build(task, world), evaluation)
+    context = ContextBuilder().build(task, world, ActionSpaceBuilder().build(task, world), evaluation)
     serialized = serialize_agent_context(context)
     for forbidden in ("private-1", "browsergym/miniwob", "selector", "expected_answer", "RAW_REWARD_GLOBAL"):
         assert forbidden not in serialized

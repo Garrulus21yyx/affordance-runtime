@@ -1,143 +1,50 @@
-"""Target short-loop API with a cycle-safe lazy package facade."""
+"""Public contracts for the single thin GUI-agent Runtime."""
 
-# ruff: noqa: F401 -- TYPE_CHECKING imports preserve the public facade's static API.
+from affordance_runtime.agent.core_loop import CoreAgentLoop, CoreLoopStartError
+from affordance_runtime.agent.decision_capability import (
+    ALL_DECISION_CAPABILITIES,
+    GROUNDED_ACTION_DECISION_CAPABILITIES,
+    STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
+    TOOL_ACTION_DECISION_CAPABILITIES,
+    DecisionCapability,
+    UnsupportedComposition,
+    UnsupportedCompositionError,
+)
+from affordance_runtime.agent.decisions import (
+    Abort,
+    AskUser,
+    ProposeDone,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+    Wait,
+)
+from affordance_runtime.agent.result_code import AgentFailureCode
+from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
+from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 
-from __future__ import annotations
-
-from importlib import import_module
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from affordance_runtime.agent.control_feedback import (
-        ControlFeedback,
-        ControlFeedbackKind,
-        ControlFeedbackSource,
-        NextDecisionDisposition,
-    )
-    from affordance_runtime.agent.control_transition import (
-        ActionAdmissionOutcome,
-        AdmissionStatus,
-        ControlTransition,
-        PendingKind,
-        ProgressDelta,
-    )
-    from affordance_runtime.agent.core_loop import CoreAgentLoop, CoreLoopStartError
-    from affordance_runtime.agent.decision_capability import (
-        ALL_DECISION_CAPABILITIES,
-        GROUNDED_ACTION_DECISION_CAPABILITIES,
-        STRUCTURED_PACKAGE_DECISION_CAPABILITIES,
-        TOOL_ACTION_DECISION_CAPABILITIES,
-        DecisionCapability,
-        UnsupportedComposition,
-        UnsupportedCompositionError,
-    )
-    from affordance_runtime.agent.decisions import (
-        Abort,
-        AskUser,
-        ProposeDone,
-        RequestActionPage,
-        RequestObservation,
-        SelectAction,
-        Wait,
-    )
-    from affordance_runtime.agent.loop import AgentLoop
-    from affordance_runtime.agent.result import AgentFailureCode, AgentResult
-    from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
-    from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
-    from affordance_runtime.agent.session import AgentRunSession
-    from affordance_runtime.agent.start_error import AgentSessionStartError
-    from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
-    from affordance_runtime.agent.user_input import (
-        UserInputRequest,
-        UserInputResumed,
-        UserInputResumeOutcome,
-        UserInputResumeRejected,
-        UserInputResumeRejectionCode,
-    )
-    from affordance_runtime.task.contracts import TaskGoal
-
-_EXPORTS = {
-    "ControlFeedback": ("affordance_runtime.agent.control_feedback", "ControlFeedback"),
-    "ControlFeedbackKind": ("affordance_runtime.agent.control_feedback", "ControlFeedbackKind"),
-    "ControlFeedbackSource": ("affordance_runtime.agent.control_feedback", "ControlFeedbackSource"),
-    "NextDecisionDisposition": (
-        "affordance_runtime.agent.control_feedback",
-        "NextDecisionDisposition",
-    ),
-    "ActionAdmissionOutcome": ("affordance_runtime.agent.control_transition", "ActionAdmissionOutcome"),
-    "AdmissionStatus": ("affordance_runtime.agent.control_transition", "AdmissionStatus"),
-    "ALL_DECISION_CAPABILITIES": (
-        "affordance_runtime.agent.decision_capability",
-        "ALL_DECISION_CAPABILITIES",
-    ),
-    "Abort": ("affordance_runtime.agent.decisions", "Abort"),
-    "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
-    "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
-    "CoreAgentLoop": ("affordance_runtime.agent.core_loop", "CoreAgentLoop"),
-    "CoreLoopStartError": ("affordance_runtime.agent.core_loop", "CoreLoopStartError"),
-    "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
-    "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
-    "RunState": ("affordance_runtime.agent.run_state", "RunState"),
-    "RunStatus": ("affordance_runtime.agent.run_state", "RunStatus"),
-    "StepResult": ("affordance_runtime.agent.run_state", "StepResult"),
-    "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
-    "AgentRunSession": ("affordance_runtime.agent.session", "AgentRunSession"),
-    "AgentSessionStartError": ("affordance_runtime.agent.start_error", "AgentSessionStartError"),
-    "DecisionCapability": (
-        "affordance_runtime.agent.decision_capability",
-        "DecisionCapability",
-    ),
-    "GROUNDED_ACTION_DECISION_CAPABILITIES": (
-        "affordance_runtime.agent.decision_capability",
-        "GROUNDED_ACTION_DECISION_CAPABILITIES",
-    ),
-    "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
-    "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
-    "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
-    "ControlTransition": ("affordance_runtime.agent.control_transition", "ControlTransition"),
-    "PendingKind": ("affordance_runtime.agent.control_transition", "PendingKind"),
-    "ProposeDone": ("affordance_runtime.agent.decisions", "ProposeDone"),
-    "ProgressDelta": ("affordance_runtime.agent.control_transition", "ProgressDelta"),
-    "RequestActionPage": ("affordance_runtime.agent.decisions", "RequestActionPage"),
-    "RequestObservation": ("affordance_runtime.agent.decisions", "RequestObservation"),
-    "RuntimeFailure": ("affordance_runtime.agent.runtime_failure", "RuntimeFailure"),
-    "SelectAction": ("affordance_runtime.agent.decisions", "SelectAction"),
-    "STRUCTURED_PACKAGE_DECISION_CAPABILITIES": (
-        "affordance_runtime.agent.decision_capability",
-        "STRUCTURED_PACKAGE_DECISION_CAPABILITIES",
-    ),
-    "TaskGoal": ("affordance_runtime.task.contracts", "TaskGoal"),
-    "TOOL_ACTION_DECISION_CAPABILITIES": (
-        "affordance_runtime.agent.decision_capability",
-        "TOOL_ACTION_DECISION_CAPABILITIES",
-    ),
-    "Wait": ("affordance_runtime.agent.decisions", "Wait"),
-    "UserInputRequest": ("affordance_runtime.agent.user_input", "UserInputRequest"),
-    "UserInputResumed": ("affordance_runtime.agent.user_input", "UserInputResumed"),
-    "UserInputResumeOutcome": ("affordance_runtime.agent.user_input", "UserInputResumeOutcome"),
-    "UserInputResumeRejected": ("affordance_runtime.agent.user_input", "UserInputResumeRejected"),
-    "UserInputResumeRejectionCode": (
-        "affordance_runtime.agent.user_input",
-        "UserInputResumeRejectionCode",
-    ),
-    "UnsupportedComposition": (
-        "affordance_runtime.agent.decision_capability",
-        "UnsupportedComposition",
-    ),
-    "UnsupportedCompositionError": (
-        "affordance_runtime.agent.decision_capability",
-        "UnsupportedCompositionError",
-    ),
-}
-
-__all__ = list(_EXPORTS)
-
-
-def __getattr__(name: str) -> Any:
-    try:
-        module_name, attribute = _EXPORTS[name]
-    except KeyError as exc:
-        raise AttributeError(name) from exc
-    value = getattr(import_module(module_name), attribute)
-    globals()[name] = value
-    return value
+__all__ = [
+    "ALL_DECISION_CAPABILITIES",
+    "Abort",
+    "AgentFailureCode",
+    "AskUser",
+    "CoreAgentLoop",
+    "CoreLoopStartError",
+    "DecisionCapability",
+    "FailureKind",
+    "FailureStage",
+    "GROUNDED_ACTION_DECISION_CAPABILITIES",
+    "ProposeDone",
+    "RequestActionPage",
+    "RequestObservation",
+    "RunState",
+    "RunStatus",
+    "RuntimeFailure",
+    "STRUCTURED_PACKAGE_DECISION_CAPABILITIES",
+    "SelectAction",
+    "StepResult",
+    "TOOL_ACTION_DECISION_CAPABILITIES",
+    "UnsupportedComposition",
+    "UnsupportedCompositionError",
+    "Wait",
+]

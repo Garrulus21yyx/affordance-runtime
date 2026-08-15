@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.agent import AgentLoopStatus
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import (
     InstrumentedBrowserGymSurfaceAdapter,
 )
@@ -162,7 +162,7 @@ def _case(external_case, seed, policy, instrumentations) -> BenchmarkCase:
         task_factory,
         environment_factory,
         composition_factory,
-        (AgentLoopStatus.DONE,),
+        (RunStatus.DONE,),
         external_case.timeout_s,
         seed,
         _REQUIRED,

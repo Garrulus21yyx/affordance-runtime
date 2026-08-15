@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from affordance_runtime.agent import (
-    AgentLoopStatus,
-)
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app import (
     TargetRuntime,
@@ -112,7 +110,7 @@ def test_thin_intake_returns_closed_nonready_outcomes() -> None:
     assert private_execution_input.reason_code == "runtime_private_input_not_supported"
 
 
-def test_target_runtime_starts_a_natural_language_request_through_intake() -> None:
+def test_target_runtime_runs_a_natural_language_request_through_intake() -> None:
     observation = fused_world("observation:initial", surface="static")
     environment = ScriptedEnvironment(initial_observation=observation)
     runtime = TargetRuntime(
@@ -121,19 +119,18 @@ def test_target_runtime_starts_a_natural_language_request_through_intake() -> No
         BlockedTaskEvaluator(),
     )
 
-    started = asyncio.run(
-        runtime.start_request(
+    outcome = asyncio.run(
+        runtime.run_request(
             environment,
             NaturalLanguageTaskRequest("task:read", "Inspect the current page"),
         )
     )
 
-    assert started.started
-    assert isinstance(started.intake, ReadyTask)
-    assert started.session is not None
-    result = asyncio.run(started.session.run_until_pause())
-    assert result.status is AgentLoopStatus.BLOCKED
-    assert result.task.instruction == "Inspect the current page"
+    assert outcome.started
+    assert isinstance(outcome.intake, ReadyTask)
+    assert outcome.state is not None
+    assert outcome.state.status is RunStatus.BLOCKED
+    assert outcome.intake.task.instruction == "Inspect the current page"
 
 
 def test_target_runtime_does_not_touch_environment_for_nonready_intake() -> None:
@@ -152,7 +149,7 @@ def test_target_runtime_does_not_touch_environment_for_nonready_intake() -> None
         BlockedTaskEvaluator(),
     )
     outcome = asyncio.run(
-        runtime.start_request(
+        runtime.run_request(
             environment,
             NaturalLanguageTaskRequest(
                 "task:missing-authority",

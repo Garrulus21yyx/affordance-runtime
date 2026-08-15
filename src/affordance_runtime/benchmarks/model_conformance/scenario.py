@@ -8,7 +8,6 @@ from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.evaluation_control import validated_task_evaluation
-from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
     real_adapter_task,
@@ -39,13 +38,12 @@ async def build_live_dom_scenario() -> LiveDomScenario:
         if acquisition.observation is None:
             raise RuntimeError("model conformance initial acquisition failed")
         observation = acquisition.observation
-        state = AgentLoopState(observation, remaining_turns=task.loop_budget.max_turns)
         evaluation = await validated_task_evaluation(ProductionTaskEvaluator(), task, observation)
         action_space = ActionSpaceBuilder().build(task, observation)
         builder = ContextBuilder()
         context = builder.build(
             task,
-            state,
+            observation,
             action_space,
             evaluation,
             observation_capabilities=environment.observation_capabilities,

@@ -61,7 +61,7 @@ jobs:
           --pytest-log /tmp/target-loop-pytest.txt
           --output /tmp/browsergym-fixed/full.json
           --check ruff --check mypy --check diff_check --check compose_config
-          --check legacy_runxfail --check target_boundaries --check docs_governance
+          --check target_boundaries --check docs_governance
       - name: Exact-head internal harness dependency
         run: |
           python -m affordance_runtime.benchmarks.target_loop.cli --suite internal-core --profile deterministic --seed 7 --output-dir /tmp/target-loop/core-deterministic

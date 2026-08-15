@@ -3,7 +3,7 @@ from __future__ import annotations
 from affordance_runtime import (
     NaturalLanguageTaskRequest,
     TargetRuntime,
-    TargetRuntimeStartOutcome,
+    TargetRuntimeRunOutcome,
 )
 from affordance_runtime.agent import (
     TOOL_ACTION_DECISION_CAPABILITIES,
@@ -42,6 +42,6 @@ def test_public_target_composition_factory_builds_the_runtime_contract() -> None
     assert tuple(runtime.decision_ports.__dataclass_fields__) == ("action_policy",)
 
 
-def test_root_package_exports_target_natural_language_start_contracts() -> None:
+def test_root_package_exports_target_natural_language_run_contracts() -> None:
     assert NaturalLanguageTaskRequest.__name__ == "NaturalLanguageTaskRequest"
-    assert TargetRuntimeStartOutcome.__name__ == "TargetRuntimeStartOutcome"
+    assert TargetRuntimeRunOutcome.__name__ == "TargetRuntimeRunOutcome"

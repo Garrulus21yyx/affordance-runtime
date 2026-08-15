@@ -8,6 +8,8 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from affordance_runtime.agent.decisions import AskUser
+from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app.composition import compose_target_runtime_from_environment
 from affordance_runtime.app.runtime import TargetRuntime, TargetRuntimeRunOutcome
 from affordance_runtime.immutable import to_json_compatible
@@ -151,33 +153,35 @@ def run_target_request(
 
 
 def target_run_payload(outcome: TargetRuntimeRunOutcome) -> dict[str, object]:
-    result = outcome.result
+    state = outcome.state
+    step = state.last_step if state is not None else None
+    decision = step.decision if step is not None else None
     return {
         "request_id": outcome.intake.request_id,
         "intake_status": outcome.intake.status.value,
         "started": outcome.started,
-        "status": result.status.value if result is not None else outcome.intake.status.value,
-        "reason_code": result.reason_code if result is not None else getattr(
+        "status": state.status.value if state is not None else outcome.intake.status.value,
+        "reason_code": step.feedback if step is not None else getattr(
             outcome.intake,
             "reason_code",
             "",
         ),
-        "message": result.message if result is not None else getattr(
+        "message": decision.question if isinstance(decision, AskUser) else getattr(
             outcome.intake,
             "question",
             "",
         ),
-        "observation_count": result.observation_count if result is not None else 0,
-        "execution_count": result.execution_count if result is not None else 0,
-        "task_revision": result.task.revision if result is not None else 0,
+        "observation_count": state.observation_count if state is not None else 0,
+        "execution_count": state.execution_count if state is not None else 0,
+        "task_revision": state.task_revision if state is not None else 0,
         "user_input_request": to_json_compatible(
-            result.user_input_request if result is not None else None
+            decision if state is not None and state.status is RunStatus.WAITING_USER else None
         ),
         "confirmation_request": to_json_compatible(
-            result.confirmation_request if result is not None else None
+            step.confirmation if step is not None else None
         ),
         "task_outcome": to_json_compatible(
-            result.task_outcome if result is not None else None
+            state.task_outcome if state is not None else None
         ),
     }
 

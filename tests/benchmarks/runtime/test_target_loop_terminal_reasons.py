@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import replace
 
-from affordance_runtime.agent import AgentFailureCode, AgentLoopStatus
+from affordance_runtime.agent import AgentFailureCode, RunStatus
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkManifest,
@@ -24,23 +24,23 @@ def test_blocked_runtime_reason_codes_project_to_typed_terminal_reasons() -> Non
         "completion_evidence_not_current": TerminalReasonCode.COMPLETION_EVIDENCE_NOT_CURRENT,
     }
     for reason_code, code in expected.items():
-        assert project_terminal_reason_code(AgentLoopStatus.BLOCKED, reason_code) == code
+        assert project_terminal_reason_code(RunStatus.BLOCKED, reason_code) == code
 
 
 def test_terminal_reason_projection_never_copies_unknown_runtime_detail() -> None:
     private_detail = "private bid=secret-action destination=secret-option"
-    code = project_terminal_reason_code(AgentLoopStatus.BLOCKED, private_detail)
+    code = project_terminal_reason_code(RunStatus.BLOCKED, private_detail)
     assert code == TerminalReasonCode.BLOCKED_OTHER
     assert private_detail not in code.value
 
 
 def test_nonblocked_result_has_no_terminal_reason() -> None:
-    assert project_terminal_reason_code(AgentLoopStatus.DONE, "task complete") is None
+    assert project_terminal_reason_code(RunStatus.DONE, "task complete") is None
 
 
 def test_no_progress_failure_projects_typed_reason_without_message_matching() -> None:
     assert project_terminal_reason_code(
-        AgentLoopStatus.FAILED,
+        RunStatus.FAILED,
         "detail is not an authority",
         AgentFailureCode.NO_PROGRESS_REPETITION,
     ) is TerminalReasonCode.NO_PROGRESS_REPETITION
@@ -67,7 +67,7 @@ def test_suite_report_projects_immediate_admission_block_without_legacy_repetiti
     case = replace(
         original,
         composition_factory=composition,
-        expected_terminal_statuses=(AgentLoopStatus.BLOCKED,),
+        expected_terminal_statuses=(RunStatus.BLOCKED,),
         metric_expectations=(),
     )
     suite = asyncio.run(run_suite(BenchmarkManifest(

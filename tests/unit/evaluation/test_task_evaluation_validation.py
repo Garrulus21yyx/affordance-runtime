@@ -1,9 +1,5 @@
-import asyncio
-
 import pytest
 
-from affordance_runtime.agent import AgentLoop, AgentLoopStatus
-from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     CriterionEvaluation,
     CriterionEvaluationStatus,
@@ -14,7 +10,7 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.validation import validate_task_evaluation
-from tests.integration.agent.test_agent_loop import ScriptedPolicy, SharedActionEvaluator, _task, _world
+from tests.support.agent.core_loop_support import _task, _world
 
 
 def _evaluation(status=TaskEvaluationStatus.COMPLETE, **changes) -> TaskEvaluation:
@@ -89,30 +85,6 @@ def test_incomplete_cannot_claim_every_required_criterion_satisfied() -> None:
             observation,
             WorldEvidenceIndex.from_observation(observation),
         )
-
-
-def test_agent_loop_rejects_invalid_initial_complete_without_policy_or_execution() -> None:
-    class UntrustedTaskEvaluator:
-        async def evaluate(self, task, observation):
-            return TaskEvaluation(
-                task.task_id,
-                observation.observation_id,
-                TaskEvaluationStatus.COMPLETE,
-                "model says complete",
-                completion_evidence_refs=("fact:invented",),
-            )
-
-    async def scenario() -> None:
-        policy = ScriptedPolicy([])
-        result = await (AgentLoop(policy, SharedActionEvaluator(), UntrustedTaskEvaluator())).run(
-            ScriptedEnvironment(initial_observation=_world("after", True)), _criterion_task()
-        )
-
-        assert result.status == AgentLoopStatus.FAILED
-        assert result.execution_count == 0
-        assert "task evaluation" in result.message
-
-    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize(

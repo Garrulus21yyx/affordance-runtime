@@ -1,4 +1,4 @@
-"""Fixed-manifest benchmark harness for the non-default target AgentLoop."""
+"""Fixed-manifest benchmark harness for the product CoreAgentLoop."""
 
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 

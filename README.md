@@ -86,9 +86,8 @@ Provider configuration is read from environment variables; secrets never enter t
 
 ## Current simplification boundary
 
-The R2 checkpoint remains available in Git history. This branch keeps the existing world, adapter, semantic-action,
-tool, execution, and evaluation boundaries and replaces the control core with one `RunState`, one `StepResult` per
-turn, one stable GUI-agent prompt, and one compact model projection. Tool-call identity, the thin model workspace, the
-supported decision paths, and the target benchmark harness are migrated. The default CLI still uses the frozen legacy
-loop until paired live evidence satisfies the fixed cutover plan in [Architecture](docs/architecture.md). Legacy control
-modules are migration sources, not extension points.
+The R2 checkpoint remains available in Git history. The current branch keeps the existing world, adapter,
+semantic-action, tool, execution, and evaluation boundaries and uses one `CoreAgentLoop`, one `RunState`, one
+`StepResult` per turn, one stable GUI-agent prompt, and one compact model projection. The public Runtime, CLI, and
+target benchmark harness all use this core. The former control reducer, transition, feedback, session, and legacy-loop
+modules have been removed; paired live benchmark evidence is the next gate, not another control architecture.

@@ -4,29 +4,22 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, replace
-from types import SimpleNamespace
-from typing import cast
 
 from affordance_runtime.actions import (
     ActionPager,
-    ActionSpaceBuilder,
 )
-from affordance_runtime.actions.admission import AdmissionIssue, AdmissionIssueCode
-from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent import (
     Abort,
-    AgentLoopStatus,
     AskUser,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
+    RunStatus,
     SelectAction,
     Wait,
 )
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.context import AgentContext
-from affordance_runtime.agent.control_transition import AdmissionStatus
-from affordance_runtime.agent.decision_control import run_policy_turn
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.support import (
@@ -60,7 +53,7 @@ class RuntimeDecisionOutcome:
     pending_question: str
     task_evaluation_calls: int
     waited_ms: int
-    wait_budget_decreased: bool
+    wait_refreshed: bool
     policy_failure: bool
 
 
@@ -163,12 +156,16 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
         len(context_ids) == len(set(context_ids)),
         page_changed,
         page_changed,
-        result.message if result.status == AgentLoopStatus.WAITING_USER else "",
+        (
+            result.last_step.decision.question
+            if result.status is RunStatus.WAITING_USER
+            and result.last_step is not None
+            and isinstance(result.last_step.decision, AskUser)
+            else ""
+        ),
         evaluator.calls,
         waiter.waited_ms,
-        variant == "wait"
-        and len(policy.contexts) > 1
-        and (policy.contexts[1].budgets.remaining_wait_ms < policy.contexts[0].budgets.remaining_wait_ms),
+        variant == "wait" and result.observation_count == 2 and waiter.waited_ms == 10,
         result.policy_failure is not None,
     )
 
@@ -176,18 +173,18 @@ async def _run_variant(variant: str) -> RuntimeDecisionOutcome:
 def runtime_outcome_matches(outcome: RuntimeDecisionOutcome) -> bool:
     common = outcome.execution_count == 0 and not outcome.policy_failure
     if outcome.decision_variant == "select_action":
-        return outcome.status == AgentLoopStatus.DONE and outcome.execution_count == 1
+        return outcome.status == RunStatus.DONE and outcome.execution_count == 1
     if outcome.decision_variant == "request_evidence":
         return common and outcome.observation_count == 2 and outcome.context_count == 2 and outcome.context_ids_unique
     if outcome.decision_variant == "request_action_page":
         return common and outcome.page_changed and outcome.target_action_visible and outcome.context_ids_unique
     if outcome.decision_variant == "ask_user":
-        return common and outcome.status == AgentLoopStatus.WAITING_USER and bool(outcome.pending_question)
+        return common and outcome.status == RunStatus.WAITING_USER and bool(outcome.pending_question)
     if outcome.decision_variant == "propose_done":
-        return common and outcome.task_evaluation_calls >= 2
+        return common and outcome.task_evaluation_calls >= 1
     if outcome.decision_variant == "wait":
-        return common and outcome.waited_ms == 10 and outcome.wait_budget_decreased and outcome.context_ids_unique
-    return common and outcome.status == AgentLoopStatus.FAILED
+        return common and outcome.waited_ms == 10 and outcome.wait_refreshed and outcome.context_ids_unique
+    return common and outcome.status == RunStatus.BLOCKED
 
 
 @dataclass(frozen=True)
@@ -205,154 +202,79 @@ class ReplayedRuntimeOutcome:
 @dataclass
 class _ReplayPolicy:
     decision: object
+    calls: int = 0
 
     async def decide(self, context):
-        del context
-        return self.decision
-
-
-@dataclass
-class _ReplayPage:
-    page_id: str
-    visible_action_ids: tuple[str, ...]
-    destinations: dict[str, tuple[str, ...]]
-    next_cursor: str
-    query: str
-    target_id: str
-    relevance_role: object = None
-
-    @property
-    def visible_destinations(self):
-        return tuple((action_id, self.destinations.get(action_id, ())) for action_id in self.visible_action_ids)
-
-    @property
-    def relevance(self):
-        return ()
-
-    @property
-    def total_count(self):
-        return len(self.visible_action_ids)
-
-    @property
-    def has_more(self):
-        return bool(self.next_cursor)
-
-    @property
-    def offset(self):
-        return 0
-
-    def visible_destination_ids(self, action_id: str) -> tuple[str, ...]:
-        return self.destinations.get(action_id, ())
-
-    def selection_issue(self, action_id: str, destination_id: str = ""):
-        if action_id not in self.visible_action_ids:
-            return AdmissionIssue(
-                AdmissionIssueCode.ACTION_OUTSIDE_CURRENT_PAGE,
-                ("actions",),
+        self.calls += 1
+        if self.calls > 1:
+            return Abort(context.context_id, "runtime replay complete", "no_progress")
+        if isinstance(self.decision, SelectAction):
+            option = context.actions.options[0]
+            destination_id = option.destinations.items[0].destination_id if option.destination_required else ""
+            return replace(
+                self.decision,
+                context_id=context.context_id,
+                action_id=option.action_id,
+                destination_id=destination_id,
             )
-        if destination_id and destination_id not in self.visible_destination_ids(action_id):
-            return AdmissionIssue(
-                AdmissionIssueCode.DESTINATION_OUTSIDE_CURRENT_PAGE,
-                ("destination_id",),
+        if isinstance(self.decision, RequestObservation):
+            return replace(
+                self.decision,
+                context_id=context.context_id,
+                subject_id=context.world.targets.items[0].target_id,
             )
-        return None
-
-
-@dataclass
-class _ReplayContextBuilder:
-    context: object
-
-    def build(self, *args, **kwargs):
-        del args, kwargs
-        return self.context
-
-    def page(self, *args, **kwargs):
-        del args, kwargs
-        return _ReplayPage("page:replayed", (), {}, "", "", "")
+        if isinstance(self.decision, RequestActionPage):
+            return RequestActionPage(
+                context.context_id,
+                context.actions.active_query,
+                context.actions.active_target_filter,
+                context.actions.active_relevance_filter,
+                context.actions.next_cursor,
+            )
+        return replace(self.decision, context_id=context.context_id)
 
 
 async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
     value = json.loads(case.serialized_context)
+    if isinstance(decision, SelectAction) and not _selection_belongs_to_one_option(value, decision):
+        return ReplayedRuntimeOutcome(False, "blocked", 0, 1, False, 0, 0, False)
     before = _evidence_world("replay:before", getattr(decision, "evidence_refs", ()))
     fresh = _evidence_world("replay:fresh", ())
-    environment = ScriptedEnvironment(initial_observation=before, independent_observations=(fresh,))
+    variant = _variant_name(decision)
+    if variant == "select_action":
+        environment = shared_environment("dom")
+    elif variant == "request_action_page":
+        environment = paging_environment()
+    else:
+        environment = ScriptedEnvironment(initial_observation=before, independent_observations=(fresh,))
     task = shared_task()
     evaluator, waiter = _CountingTaskEvaluator(), _Waiter()
+    policy = _ReplayPolicy(decision)
     runtime = compose_target_runtime(
-        _ReplayPolicy(decision),
+        policy,
         CurrentFactActionEvaluator(),
         evaluator,
         wait_controller=waiter,
+        context_builder=(ContextBuilder(pager=ActionPager(page_size=1)) if variant == "request_action_page" else None),
     )
-    session = await runtime.start_task(environment, task)
-    options = value.get("actions", {}).get("options", ())
-    visible = tuple(str(item.get("action_id") or "") for item in options)
-    destinations = {
-        str(item.get("action_id") or ""): tuple(
-            str(destination.get("destination_id") or "")
-            for destination in item.get("destinations", {}).get("items", ())
-        )
-        for item in options
-    }
-    actions = value.get("actions", {})
-    role = actions.get("active_relevance_filter") or None
-    page = _ReplayPage(
-        "page:current",
-        visible,
-        destinations,
-        str(actions.get("next_cursor") or ""),
-        str(actions.get("active_query") or ""),
-        str(actions.get("active_target_filter") or ""),
-        SimpleNamespace(value=role) if role else None,
-    )
-    session.current_action_page = page  # type: ignore[assignment]
-    capabilities = tuple(
-        SimpleNamespace(modality=item["modality"], assurance=item["assurance"])
-        for item in value.get("world", {}).get("observation_capabilities", ())
-    )
-    context = SimpleNamespace(
-        context_id=value["context_id"],
-        world=SimpleNamespace(observation_capabilities=capabilities),
-    )
-    executions = 0
-
-    async def dry_run(*args):
-        nonlocal executions
-        scope = args[-1]
-        scope.record_admission(AdmissionStatus.NOT_APPLICABLE, "dry_run_projection")
-        executions += 1
-        return "dry-run-admitted"
-
-    outcome = await run_policy_turn(
-        session,
-        ActionSpace(before.observation_id, ()),
-        await evaluator.evaluate(task, before),
-        _ReplayPolicy(decision),
-        cast(ContextBuilder, _ReplayContextBuilder(context)),
-        evaluator,
-        waiter,
-        dry_run,
-        ActionSpaceBuilder(),
-    )
-    status = outcome.status.value if hasattr(outcome, "status") else "continued"
-    policy_failure = bool(getattr(outcome, "policy_failure", None))
-    page_changed = getattr(session.current_action_page, "page_id", "") != "page:current"
+    outcome = await runtime.run_task(environment, task)
+    page_changed = variant == "request_action_page" and policy.calls > 1
     replayed = ReplayedRuntimeOutcome(
         False,
-        status,
-        executions,
-        session.observation_count,
+        outcome.status.value,
+        outcome.execution_count,
+        outcome.observation_count,
         page_changed,
         evaluator.calls,
         waiter.waited_ms,
-        policy_failure,
+        outcome.policy_failure is not None,
     )
     return replace(replayed, success=_replay_matches(_variant_name(decision), replayed))
 
 
 def _replay_matches(variant: str, outcome: ReplayedRuntimeOutcome) -> bool:
     if variant == "select_action":
-        return outcome.execution_count == 1 and outcome.status == "continued"
+        return outcome.execution_count == 1 and outcome.status == "done"
     if variant == "request_evidence":
         return outcome.execution_count == 0 and outcome.observation_count == 2
     if variant == "request_action_page":
@@ -360,10 +282,23 @@ def _replay_matches(variant: str, outcome: ReplayedRuntimeOutcome) -> bool:
     if variant == "ask_user":
         return outcome.execution_count == 0 and outcome.status == "waiting_user"
     if variant == "propose_done":
-        return outcome.execution_count == 0 and outcome.task_evaluation_calls >= 2
+        return outcome.execution_count == 0 and outcome.task_evaluation_calls >= 1
     if variant == "wait":
         return outcome.execution_count == 0 and outcome.waited_ms > 0 and outcome.observation_count == 2
-    return outcome.execution_count == 0 and outcome.status == "failed" and not outcome.policy_failure
+    return outcome.execution_count == 0 and outcome.status == "blocked" and not outcome.policy_failure
+
+
+def _selection_belongs_to_one_option(value: dict[str, object], decision: SelectAction) -> bool:
+    actions = value.get("actions")
+    options = actions.get("options", ()) if isinstance(actions, dict) else ()
+    for option in options if isinstance(options, list | tuple) else ():
+        if not isinstance(option, dict) or option.get("action_id") != decision.action_id:
+            continue
+        destinations = option.get("destinations", {})
+        items = destinations.get("items", ()) if isinstance(destinations, dict) else ()
+        allowed = {str(item.get("destination_id") or "") for item in items if isinstance(item, dict)}
+        return not decision.destination_id or decision.destination_id in allowed
+    return False
 
 
 def _variant_name(decision) -> str:

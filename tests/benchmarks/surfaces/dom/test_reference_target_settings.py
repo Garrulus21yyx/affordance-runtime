@@ -9,14 +9,13 @@ from affordance_runtime import (
     TaskBoundary,
 )
 from affordance_runtime.agent import (
-    AgentLoopStatus,
     RequestObservation,
+    RunStatus,
     SelectAction,
 )
 from affordance_runtime.app import (
     compose_target_runtime,
 )
-from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
@@ -106,23 +105,21 @@ def test_target_settings_confirms_action_then_completes_from_unified_authoritati
             ))
             started = await runtime.run_request(environment, _request())
 
-            assert started.result is not None
-            assert started.session is not None
-            assert started.result.status is AgentLoopStatus.WAITING_CONFIRMATION
-            assert started.result.execution_count == 0
-            confirmation = started.result.confirmation_request
+            assert started.state is not None
+            assert started.state.status is RunStatus.WAITING_CONFIRMATION
+            assert started.state.execution_count == 0
+            assert started.state.last_step is not None
+            confirmation = started.state.last_step.confirmation
             assert confirmation is not None
 
-            completed = await started.session.resolve_confirmation(
-                ConfirmationDecision(
-                    confirmation.confirmation_id,
-                    confirmation.subject_id,
-                    ConfirmationDecisionKind.CONFIRM,
-                ),
+            completed = await runtime.resume_confirmation(
+                environment,
+                started.intake.task,
+                started.state,
+                approved=True,
             )
 
-            assert completed.status is AgentLoopStatus.DONE
-            assert completed.reason_code == "task_complete"
+            assert completed.status is RunStatus.DONE
             assert completed.execution_count == 1
             assert policy.calls == 2
             assert {source.surface for source in completed.final_observation.sources} == {
@@ -133,10 +130,8 @@ def test_target_settings_confirms_action_then_completes_from_unified_authoritati
                 if fact.subject_id == "settings" and fact.predicate == "notifications"
             )
             assert persisted.value == "enabled"
-            evaluation = started.session.state.current_task_evaluation
-            assert evaluation is not None
+            evaluation = completed.current_task_evaluation
             assert evaluation.completion_evidence_refs == (persisted.fact_id,)
-            assert started.session.state.unresolved_observable_request is None
 
     try:
         asyncio.run(scenario())

@@ -84,11 +84,19 @@ it returns 200. Raw run output belongs under an artifact directory, not in maint
 The current frozen selection manifest remains at `docs/benchmarks/miniwob-60-seed7-v1-manifest.json` until benchmark
 runner cleanup moves manifests and artifacts out of the documentation tree.
 
+## Local deterministic fixtures
+
+`environments/mock_web/` contains reset-by-reload browser tasks. `environments/smart_room/` exposes the same devices
+through DOM and WoT; start it with `docker compose -f environments/smart_room/docker-compose.yml up --build`.
+Its dashboard, WoT servient, failure control, and directory use ports 3000, 8080, 8081, and 8082 by default. Override
+them with the `SMART_ROOM_*_PORT` variables defined by the compose file when parallel fixtures need distinct ports.
+These black-box fixtures never define Runtime recovery, authorization, or completion policy.
+
 ## Current executable gate
 
-The target benchmark harness now exclusively runs `CoreAgentLoop`; it does not retain a second legacy-engine path.
-Every serialized run identity records `runtime=core`. This establishes runtime provenance but makes no new live
-MiniWoB performance claim until the paired cohorts below have run. The current executable gate is:
+The public Runtime, CLI, and target benchmark harness now exclusively run `CoreAgentLoop`; there is no second
+legacy-engine path. Every serialized run identity records `runtime=core`. This establishes runtime provenance but
+makes no new live MiniWoB performance claim until the paired cohorts below have run. The current executable gate is:
 
 ```bash
 pytest -q tests/unit tests/integration tests/conformance

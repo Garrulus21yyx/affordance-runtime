@@ -9,7 +9,7 @@ from affordance_runtime import (
     TaskBoundary,
 )
 from affordance_runtime.agent import (
-    AgentLoopStatus,
+    RunStatus,
     SelectAction,
 )
 from affordance_runtime.app import (
@@ -88,14 +88,11 @@ def test_target_pricing_reveals_records_and_returns_current_structured_dom_outpu
             ))
             started = await runtime.run_request(environment, _request())
 
-        assert started.result is not None
-        assert started.session is not None
-        assert started.result.status is AgentLoopStatus.DONE
-        assert started.result.reason_code == "task_complete"
-        assert started.result.execution_count == 2
+        assert started.state is not None
+        assert started.state.status is RunStatus.DONE
+        assert started.state.execution_count == 2
         assert policy.calls == 2
-        evaluation = started.session.state.current_task_evaluation
-        assert evaluation is not None
+        evaluation = started.state.current_task_evaluation
         assert {item.output_id for item in evaluation.outputs} == {"structured_document"}
         output = evaluation.outputs[0]
         records = {item["label"]: item["fields"] for item in output.value["records"]}
@@ -109,8 +106,8 @@ def test_target_pricing_reveals_records_and_returns_current_structured_dom_outpu
         }
         assert output.value["source_url"] == f"{base_url}/pricing"
         assert output.evidence_refs[0].endswith(":structured_document")
-        assert {source.surface for source in started.result.final_observation.sources} == {"dom"}
-        assert all("/api/pricing" not in repr(source.artifacts) for source in started.result.final_observation.sources)
+        assert {source.surface for source in started.state.final_observation.sources} == {"dom"}
+        assert all("/api/pricing" not in repr(source.artifacts) for source in started.state.final_observation.sources)
 
     try:
         asyncio.run(scenario())
