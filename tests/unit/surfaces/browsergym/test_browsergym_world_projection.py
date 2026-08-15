@@ -116,6 +116,23 @@ def test_entity_identity_distinguishes_same_label_and_page_incarnations() -> Non
     assert set(first_ids).isdisjoint(second_ids)
 
 
+def test_structure_identity_remains_unique_when_ax_nodes_share_one_bid() -> None:
+    first = ax_node("shared-private", "LineBreak", "\n")
+    second = ax_node("shared-private", "InlineTextBox", "")
+    first["nodeId"] = "ax-node:first"
+    second["nodeId"] = "ax-node:second"
+
+    projected = _project_with_identity(
+        raw_observation(first, second),
+        BrowserGymEntityIdentityMap(b"shared-bid-structure-test-key"),
+    )
+    structure = projected.world.sources[0].structure
+
+    assert len(structure) == 2
+    assert len({item.structure_id for item in structure}) == 2
+    assert all(item.structure_id.startswith("structure:") for item in structure)
+
+
 def test_newly_projected_checkbox_is_observable_and_actionable_without_private_routes() -> None:
     baseline_raw = raw_observation(ax_node("button", "button", "Save"))
     omitted_raw = raw_observation(

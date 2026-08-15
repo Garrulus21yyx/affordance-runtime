@@ -52,14 +52,14 @@ def _public_decision(context: dict[str, object]) -> dict[str, object]:
     quoted = _quoted(instruction)
     if instruction.casefold().startswith("enter "):
         desired = quoted[0] if quoted else ""
-        fill = _first(actions, "fill")
+        fill = _first(actions, "type_text")
         if fill is not None and _target_value(targets, fill) != desired:
-            return _selection(context, fill, {"value": desired})
+            return _selection(context, fill, {"text": desired})
         return _selection(context, _labelled(actions, targets, "activate", "submit"), {})
     if instruction.casefold().startswith("select "):
         match = re.search(r"select\s+(.+?)\s+from", instruction, flags=re.IGNORECASE)
         desired = match.group(1).strip() if match else ""
-        select = _first(actions, "select")
+        select = _first(actions, "select_option")
         if select is not None and _target_value(targets, select) != desired:
             return _selection(context, select, {"value": desired})
         return _selection(context, _labelled(actions, targets, "activate", "submit"), {})

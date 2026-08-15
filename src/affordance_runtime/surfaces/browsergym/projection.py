@@ -128,7 +128,7 @@ def project_browsergym_observation(
     }
     retained_structure = analysis.structure[:MAX_STRUCTURE_NODES]
     structure_ids = {
-        structure_node.private_node_id: entity_identity.entity_id(
+        structure_node.private_node_id: entity_identity.structure_id(
             structure_node,
             page_identity=page_identity,
             episode_identity=episode_identity,

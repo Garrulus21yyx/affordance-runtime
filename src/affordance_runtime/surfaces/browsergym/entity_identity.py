@@ -40,10 +40,43 @@ class BrowserGymEntityIdentityMap:
         )
         if backend_identity in {"bid:", "node:"}:
             raise ValueError("BrowserGym entity has no stable backend identity")
+        return self._scoped_id(
+            backend_identity,
+            page_identity=page_identity,
+            episode_identity=episode_identity,
+            prefix="entity",
+        )
+
+    def structure_id(
+        self,
+        node: CanonicalBrowserStructureNode,
+        *,
+        page_identity: str,
+        episode_identity: str,
+    ) -> str:
+        """Keep AX structure nodes unique even when several nodes share one BID."""
+
+        if not node.private_node_id:
+            raise ValueError("BrowserGym structure node has no backend identity")
+        return self._scoped_id(
+            f"node:{node.private_node_id}",
+            page_identity=page_identity,
+            episode_identity=episode_identity,
+            prefix="structure",
+        )
+
+    def _scoped_id(
+        self,
+        backend_identity: str,
+        *,
+        page_identity: str,
+        episode_identity: str,
+        prefix: str,
+    ) -> str:
         scope = (page_identity, episode_identity, backend_identity)
         encoded = "\0".join(scope).encode()
         digest = hmac.new(self._key, encoded, hashlib.sha256).hexdigest()[:32]
-        entity_id = f"entity:{digest}"
+        entity_id = f"{prefix}:{digest}"
         previous = self._issued.setdefault(entity_id, scope)
         if previous != scope:
             raise RuntimeError("BrowserGym opaque entity identity collision")
