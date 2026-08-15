@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
 )
 from affordance_runtime.world import (
@@ -145,9 +145,7 @@ async def _run_case(
     run_id: str,
     implementation_sha: str,
 ) -> dict[str, object]:
-    from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-        BrowserGymMiniWobEnvironment,
-    )
+    from affordance_runtime.benchmarks.external_smoke.case_environment import open_browsergym_case
 
     task_id = f"browsergym/miniwob.{slug}"
     environment = None
@@ -159,7 +157,7 @@ async def _run_case(
     projection_complete = False
     cleanup_complete = False
     try:
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_browsergym_case(
             task_id,
             SEED,
             max_turns=1,

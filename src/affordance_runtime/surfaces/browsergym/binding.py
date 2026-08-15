@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     CanonicalBrowserControl,
 )
 from affordance_runtime.surfaces.visual.contracts import VisualRegionBinding

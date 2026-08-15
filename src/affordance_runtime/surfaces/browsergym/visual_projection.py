@@ -10,7 +10,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_binding import BrowserGymVisualBinding
+from affordance_runtime.surfaces.browsergym.binding import BrowserGymVisualBinding
 from affordance_runtime.surfaces.visual.contracts import (
     VisualFrame,
     VisualRegionBinding,

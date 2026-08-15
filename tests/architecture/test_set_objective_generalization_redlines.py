@@ -36,10 +36,10 @@ def test_removed_witness_compilers_and_task_relative_projection_stay_absent() ->
         RUNTIME / "benchmarks/external_smoke/browsergym_visual_predicate.py"
     ).exists()
     assert "task_predicate_truth" not in _source(
-        "benchmarks/external_smoke/browsergym_semantics.py"
+        "surfaces/browsergym/semantics.py"
     )
     assert "repeated_leaf" not in _source(
-        "benchmarks/external_smoke/browsergym_backend.py"
+        "surfaces/browsergym/backend.py"
     ).casefold()
 
 

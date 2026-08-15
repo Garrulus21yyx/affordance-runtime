@@ -1,9 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.environment import BrowserGymEnvironment
+from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
+)
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BrowserGymTaskStateSource,
+    task_state_from_transition,
+)
+from affordance_runtime.task import (
+    LoopBudget,
+    NaturalLanguageTaskRequest,
+    ReadyTask,
+    RiskProfile,
+    TaskBoundary,
+    ThinTaskIntake,
 )
 from affordance_runtime.world.action_space import ActionSpaceBuilder
 from affordance_runtime.world.binder import ActionBinder
@@ -163,11 +177,38 @@ def task_info(*, reward=0, done=False):
     }
 
 
+def reset_task_state(observation_id: str, *, task_run_id: str = "run:opaque"):
+    return task_state_from_transition(
+        task_run_id=task_run_id,
+        observation_id=observation_id,
+        source_observation_id=observation_id,
+        source=BrowserGymTaskStateSource.RESET,
+        reward=0.0,
+        terminated=False,
+        truncated=False,
+        task_info=task_info(),
+    )
+
+
 def open_fake(fake: FakeBrowserGym, task_id="browsergym/miniwob.click-button"):
-    return __import__(
-        "affordance_runtime.benchmarks.external_smoke.browsergym_environment",
-        fromlist=["BrowserGymMiniWobEnvironment"],
-    ).BrowserGymMiniWobEnvironment.open(task_id, 7, gym_factory=lambda *_args, **_kwargs: fake)
+    return open_surface(task_id, 7, gym_factory=lambda *_args, **_kwargs: fake)
+
+
+def open_surface(task_id: str, seed: int, *, max_turns: int = 20, **kwargs):
+    environment = BrowserGymEnvironment.open(task_id, seed, **kwargs)
+    intake = ThinTaskIntake().compile(NaturalLanguageTaskRequest(
+        f"task:{uuid.uuid4().hex}",
+        environment.goal_instruction,
+        TaskBoundary(
+            allowed_effects=("external_ui_interaction",),
+            forbidden_effects=("external_network_side_effect", "credential_use"),
+            risk_profile=RiskProfile.LOW,
+            loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+        ),
+        source_ref=f"browsergym:{task_id}:goal",
+    ))
+    assert isinstance(intake, ReadyTask)
+    return environment, intake.task
 
 
 def request_for(world, task, semantic_action, parameters=None):

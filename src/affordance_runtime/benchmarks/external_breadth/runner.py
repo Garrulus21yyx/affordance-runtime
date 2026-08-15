@@ -23,8 +23,10 @@ from affordance_runtime.benchmarks.external_breadth.progress import (
     case_progress_digest,
 )
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import InstrumentedBrowserGymEnvironment
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
+    ExternalEnvironmentTaskEvaluator,
+    open_browsergym_case,
+)
 from affordance_runtime.benchmarks.external_smoke.pacing import (
     FixedPacingState,
     PacedAgentPolicy,
@@ -267,7 +269,7 @@ def _target_case(
 
     def environment_factory(instrumentation):
         try:
-            environment, task = BrowserGymMiniWobEnvironment.open(
+            environment, task = open_browsergym_case(
                 case.task_id,
                 case.seed,
                 max_turns=case.max_turns,

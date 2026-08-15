@@ -1,4 +1,4 @@
-"""Pinned BrowserGym WorldEnvironment with active typed acquisition."""
+"""Reusable BrowserGym WorldEnvironment with active typed acquisition."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import uuid
 from dataclasses import dataclass, field, replace
 from typing import Callable, Protocol
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_acquisition import (
+from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.surfaces.browsergym.acquisition import (
     episode_identity,
     failed_acquisition,
     not_sent_outcome,
@@ -15,13 +16,13 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_acquisition import 
     source_revision,
     task_info,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
+from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymBindingStore,
     BrowserGymElementBinding,
     BrowserGymPrivateBinding,
     BrowserGymVisualBinding,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import (
+from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessContext,
     BrowserGymCurrentnessDecision,
     BrowserGymCurrentnessReason,
@@ -29,53 +30,39 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import 
     compare_browsergym_currentness,
     unavailable_currentness,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_diagnostics import (
+from affordance_runtime.surfaces.browsergym.diagnostics import (
     BrowserGymDiagnosticSnapshot,
     diagnostic_snapshot,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_execution import browsergym_action
-from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
+from affordance_runtime.surfaces.browsergym.execution import browsergym_action
+from affordance_runtime.surfaces.browsergym.projection import (
     BrowserGymProjection,
     project_browsergym_observation,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     BrowserGymSemanticError,
     canonical_control_for_bid,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    BrowserGymVerifierSnapshot,
-    as_external_result,
-    verifier_snapshot,
-    verifier_snapshot_from_current_probe,
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BrowserGymTaskStateSnapshot,
+    BrowserGymTaskStateSource,
+    task_state_from_probe,
+    task_state_from_transition,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_visual_disambiguation import (
+from affordance_runtime.surfaces.browsergym.visual_disambiguation import (
     project_browsergym_visual_disambiguation_source,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_visual_projection import (
+from affordance_runtime.surfaces.browsergym.visual_projection import (
     VisualCorrespondenceStatus,
     browsergym_visual_frame,
     project_browsergym_screenshot_source,
     project_browsergym_visual_source,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import (
-    ExternalVerifierResult,
-    ExternalVerifierStatus,
-    VerifierFactSource,
-)
-from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
-from affordance_runtime.task import (
-    LoopBudget,
-    NaturalLanguageTaskRequest,
-    ReadyTask,
-    RiskProfile,
-    TaskBoundary,
-    TaskGoal,
-    ThinTaskIntake,
-)
+from affordance_runtime.task import TaskGoal
 from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.visual_grounding import (
     VisualGrounderPort,
@@ -119,8 +106,8 @@ class BrowserGymPort(Protocol):
 
 
 @dataclass
-class BrowserGymMiniWobEnvironment:
-    benchmark_task_id: str
+class BrowserGymEnvironment:
+    task_id: str
     seed: int
     gym_environment: BrowserGymPort
     task_run_id: str
@@ -178,12 +165,10 @@ class BrowserGymMiniWobEnvironment:
     visual_correspondence_conflict_count: int = 0
     structural_binding_dispatch_count: int = 0
     visual_binding_dispatch_count: int = 0
-    verifier_queries: int = 0
-    official_success_count: int = 0
     _observation_serial: int = 0
     _current_observation_id: str = ""
     _current_source_revision: str = ""
-    _verifier: BrowserGymVerifierSnapshot | None = None
+    _task_state: BrowserGymTaskStateSnapshot | None = None
     _diagnostic: BrowserGymDiagnosticSnapshot | None = None
     _task: TaskGoal | None = None
     _terminated: bool = False
@@ -210,28 +195,23 @@ class BrowserGymMiniWobEnvironment:
     @classmethod
     def open(
         cls,
-        benchmark_task_id: str,
+        task_id: str,
         seed: int,
         *,
         gym_factory: Callable[..., BrowserGymPort] | None = None,
-        max_turns: int = 20,
-        admitted_task_ids: frozenset[str] | None = None,
         visual_region_proposer: VisualRegionProposerPort | None = None,
         visual_point_grounder: VisualGrounderPort | None = None,
         visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
         visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
         marked_candidate_policy_available: bool = False,
-    ) -> tuple[BrowserGymMiniWobEnvironment, TaskGoal]:
-        from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
-
-        admitted = frozenset(REVIEWED_TASK_IDS) if admitted_task_ids is None else admitted_task_ids
-        if benchmark_task_id not in admitted:
-            raise ValueError("BrowserGym task ID is outside the reviewed fixed manifest")
+    ) -> BrowserGymEnvironment:
+        if not task_id.strip():
+            raise ValueError("BrowserGym task ID must be nonempty")
         if gym_factory is None:
-            from affordance_runtime.benchmarks.external_smoke.browsergym_backend import ThreadBoundBrowserGym
+            from affordance_runtime.surfaces.browsergym.backend import ThreadBoundBrowserGym
 
             gym_factory = ThreadBoundBrowserGym
-        gym_environment = gym_factory(benchmark_task_id, headless=True)
+        gym_environment = gym_factory(task_id, headless=True)
         try:
             raw, info = gym_environment.reset(seed=seed)
             prepared_info = task_info(info)
@@ -239,7 +219,7 @@ class BrowserGymMiniWobEnvironment:
             if not isinstance(goal, str) or not goal.strip():
                 raise RuntimeError("BrowserGym reset omitted the public task instruction")
             environment = cls(
-                benchmark_task_id=benchmark_task_id,
+                task_id=task_id,
                 seed=seed,
                 gym_environment=gym_environment,
                 task_run_id=f"run:{uuid.uuid4().hex}",
@@ -254,23 +234,7 @@ class BrowserGymMiniWobEnvironment:
                 visual_predicate_classifier=visual_predicate_classifier,
                 marked_candidate_policy_available=marked_candidate_policy_available,
             )
-            intake = ThinTaskIntake().compile(
-                NaturalLanguageTaskRequest(
-                    f"task:{uuid.uuid4().hex}",
-                    goal,
-                    TaskBoundary(
-                        allowed_effects=("external_ui_interaction",),
-                        forbidden_effects=("external_network_side_effect", "credential_use"),
-                        risk_profile=RiskProfile.LOW,
-                        loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
-                    ),
-                    source_ref=f"browsergym:{benchmark_task_id}:goal",
-                )
-            )
-            if not isinstance(intake, ReadyTask):
-                raise RuntimeError(f"BrowserGym task intake rejected its reviewed profile: {intake.status.value}")
-            task = intake.task
-            return environment, task
+            return environment
         except BaseException:
             gym_environment.close()
             raise
@@ -287,11 +251,11 @@ class BrowserGymMiniWobEnvironment:
         raw = self._prepared_initial_raw
         self._prepared_initial_raw = None
         observation_id, revision = self._next_identity()
-        snapshot = verifier_snapshot(
+        snapshot = task_state_from_transition(
             task_run_id=self.task_run_id,
             observation_id=observation_id,
             source_observation_id=observation_id,
-            source=VerifierFactSource.RESET,
+            source=BrowserGymTaskStateSource.RESET,
             reward=0.0,
             terminated=False,
             truncated=False,
@@ -339,7 +303,7 @@ class BrowserGymMiniWobEnvironment:
             self._page_identity = page_identity(raw)
             self._episode_identity = probe_episode(probe, self._episode_identity)
             observation_id, revision = self._next_identity()
-            snapshot = verifier_snapshot_from_current_probe(
+            snapshot = task_state_from_probe(
                 task_run_id=self.task_run_id,
                 observation_id=observation_id,
                 source_observation_id=observation_id,
@@ -388,11 +352,11 @@ class BrowserGymMiniWobEnvironment:
             self._page_identity = page_identity(raw)
             self._episode_identity = episode_identity(current_task_info)
             observation_id, revision = self._next_identity()
-            snapshot = verifier_snapshot(
+            snapshot = task_state_from_transition(
                 task_run_id=self.task_run_id,
                 observation_id=observation_id,
                 source_observation_id=observation_id,
-                source=VerifierFactSource.POST_ACTION,
+                source=BrowserGymTaskStateSource.POST_ACTION,
                 reward=reward,
                 terminated=terminated,
                 truncated=truncated,
@@ -419,14 +383,10 @@ class BrowserGymMiniWobEnvironment:
             and request.binding.source_revision == private.source_revision
         )
 
-    def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult:
-        if benchmark_task_id != self.benchmark_task_id or self._verifier is None:
-            raise ValueError("mechanical verifier request does not match the private task run")
-        self.verifier_queries += 1
-        result = as_external_result(self._verifier)
-        if str(result.status) == "success":
-            self.official_success_count += 1
-        return result
+    def current_task_state(self) -> BrowserGymTaskStateSnapshot:
+        if self._task_state is None:
+            raise RuntimeError("no BrowserGym task-state snapshot is available")
+        return self._task_state
 
     def diagnostic_snapshot(self) -> BrowserGymDiagnosticSnapshot:
         if self._diagnostic is None:
@@ -448,7 +408,7 @@ class BrowserGymMiniWobEnvironment:
     def _project(
         self,
         raw,
-        snapshot,
+        snapshot: BrowserGymTaskStateSnapshot,
         origin,
         observation_id,
         revision,
@@ -461,7 +421,7 @@ class BrowserGymMiniWobEnvironment:
                 source_revision=revision,
                 page_identity=self._page_identity,
                 episode_identity=self._episode_identity,
-                verifier=snapshot,
+                task_state=snapshot,
                 entity_identity=self.entity_identity,
             )
         except BrowserGymSemanticError as exc:
@@ -469,10 +429,7 @@ class BrowserGymMiniWobEnvironment:
         plan = self._evidence_gated_plan(
             plan,
             projection.world.sources[0],
-            terminal=snapshot.status in {
-                ExternalVerifierStatus.SUCCESS,
-                ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
-            },
+            terminal=snapshot.terminal_hint,
         )
         selected = {item.source: item for item in plan.selections}
         sources = [projection.world.sources[0]]
@@ -602,7 +559,7 @@ class BrowserGymMiniWobEnvironment:
         self.bindings.replace(tuple(private_bindings))
         self._current_observation_id = world.observation_id
         self._current_source_revision = revision
-        self._verifier = snapshot
+        self._task_state = snapshot
         self._diagnostic = diagnostic_snapshot(
             projection.semantic_analysis,
             projection.world.sources[0].semantic_inventory,

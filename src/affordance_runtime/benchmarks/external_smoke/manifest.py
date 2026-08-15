@@ -51,6 +51,8 @@ EXTERNAL_SMOKE_MANIFEST = ExternalSmokeManifest(
     ),
 )
 
+REVIEWED_TASK_IDS = tuple(case.benchmark_task_id for case in EXTERNAL_SMOKE_MANIFEST.cases)
+
 
 def external_manifest_digest(manifest: ExternalSmokeManifest) -> str:
     encoded = json.dumps(asdict(manifest), sort_keys=True, separators=(",", ":"), ensure_ascii=True)

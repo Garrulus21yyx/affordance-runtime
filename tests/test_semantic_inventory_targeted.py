@@ -13,7 +13,7 @@ from affordance_runtime.benchmarks.external_breadth.semantic_inventory_targeted 
     validate_campaign,
     validate_evidence_directory,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
 )
 

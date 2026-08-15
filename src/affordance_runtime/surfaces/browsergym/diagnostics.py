@@ -1,10 +1,10 @@
-"""Benchmark-private copies of the canonical BrowserGym semantic analysis."""
+"""Typed diagnostics derived from canonical BrowserGym semantic analysis."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     BrowserGymSemanticAnalysis,
 )
 from affordance_runtime.world import SemanticInventorySummary

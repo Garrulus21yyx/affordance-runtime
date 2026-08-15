@@ -14,18 +14,18 @@ ROOT = Path(__file__).resolve().parents[1]
     "imports",
     (
         (
-            "affordance_runtime.benchmarks.external_smoke.browsergym_verifier",
+            "affordance_runtime.benchmarks.external_smoke.verifier_policy",
             "affordance_runtime.agent",
             "affordance_runtime.model_boundary",
         ),
         (
             "affordance_runtime.model_boundary",
             "affordance_runtime.agent",
-            "affordance_runtime.benchmarks.external_smoke.browsergym_environment",
+            "affordance_runtime.surfaces.browsergym.environment",
         ),
         (
             "affordance_runtime.agent",
-            "affordance_runtime.benchmarks.external_smoke.browsergym_environment",
+            "affordance_runtime.surfaces.browsergym.environment",
             "affordance_runtime.evaluation",
         ),
     ),

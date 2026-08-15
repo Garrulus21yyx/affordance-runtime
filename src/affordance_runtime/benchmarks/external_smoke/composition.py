@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
+from affordance_runtime.benchmarks.external_smoke.case_environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
 from affordance_runtime.evaluation import ProductionActionEvaluator
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision

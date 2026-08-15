@@ -11,14 +11,14 @@ from affordance_runtime.agent import (
     AgentLoop,
     AgentLoopStatus,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
-    BrowserGymMechanicalActionEvaluator,
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
+    ExternalEnvironmentTaskEvaluator,
+    open_browsergym_case,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-    BrowserGymMiniWobEnvironment,
+from affordance_runtime.evaluation import (
+    ActionEvaluationStatus,
+    ProductionActionEvaluator,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
-from affordance_runtime.evaluation import ActionEvaluationStatus
 from affordance_runtime.model_policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,
@@ -105,10 +105,10 @@ def _quoted(instruction: str) -> tuple[str, ...]:
 
 
 async def _run(task_id: str, port: LocalPublicStructuredPort):
-    environment, task = BrowserGymMiniWobEnvironment.open(task_id, 7, max_turns=6)
+    environment, task = open_browsergym_case(task_id, 7, max_turns=6)
     loop = AgentLoop(
         ModelBackedAgentPolicy(port, call_timeout_s=10),
-        BrowserGymMechanicalActionEvaluator(),
+        ProductionActionEvaluator(),
         ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
     )
     try:

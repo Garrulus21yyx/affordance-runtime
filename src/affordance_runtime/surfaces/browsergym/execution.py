@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
+from affordance_runtime.execution import BoundActionRequest
+from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymElementBinding,
     BrowserGymPrivateBinding,
     BrowserGymVisualBinding,
 )
-from affordance_runtime.execution import BoundActionRequest
 from affordance_runtime.surfaces.visual.execution import integer_click_point
 
 

@@ -6,10 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
-    BROWSERGYM_INTERACTION_CAPABILITIES,
-    BROWSERGYM_INTERACTION_PROFILE,
-)
 from affordance_runtime.model_boundary.projection import project_action_space
 from affordance_runtime.model_policy.grounded_tool_catalog import resolve_grounded_tool_call
 from affordance_runtime.model_policy.grounded_tool_compiler import GroundedToolCompiler
@@ -23,6 +19,10 @@ from affordance_runtime.model_policy.provider_call_normalizer import (
     ToolCallReconciliationStatus,
 )
 from affordance_runtime.model_policy.tool_contracts import ToolCall
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
+    BROWSERGYM_INTERACTION_CAPABILITIES,
+    BROWSERGYM_INTERACTION_PROFILE,
+)
 from affordance_runtime.surfaces.dom.interaction_profile import (
     DOM_INTERACTION_CAPABILITIES,
     DOM_INTERACTION_PROFILE,

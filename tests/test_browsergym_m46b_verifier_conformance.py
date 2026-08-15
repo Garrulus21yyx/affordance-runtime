@@ -8,28 +8,27 @@ import pytest
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
-from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
-    BrowserGymMechanicalActionEvaluator,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_backend import (
-    _VERIFIER_PROBE_SCRIPT,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-    BrowserGymMiniWobEnvironment,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    verifier_snapshot_from_current_probe,
-)
-from affordance_runtime.benchmarks.external_smoke.environment import (
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalEnvironmentTaskEvaluator,
     ExternalVerifierReason,
     ExternalVerifierStatus,
+    open_browsergym_case,
+)
+from affordance_runtime.benchmarks.external_smoke.verifier_policy import (
+    verifier_snapshot_from_current_probe,
 )
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
-from affordance_runtime.evaluation import TaskEvaluationStatus, TaskOutcomeKind
+from affordance_runtime.evaluation import (
+    ProductionActionEvaluator,
+    TaskEvaluationStatus,
+    TaskOutcomeKind,
+)
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.surfaces.browsergym.backend import (
+    _VERIFIER_PROBE_SCRIPT,
+)
 from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
 
 pytestmark = pytest.mark.skipif(
@@ -62,7 +61,7 @@ class ActivateByLabelPolicy:
 
 
 def _open(task_id: str):
-    return BrowserGymMiniWobEnvironment.open(
+    return open_browsergym_case(
         task_id, 7, admitted_task_ids=frozenset({task_id}), max_turns=3,
     )
 
@@ -74,7 +73,7 @@ def test_real_login_user_popup_negative_terminal_is_canonical_and_absorbing() ->
         policy = ActivateByLabelPolicy("ok")
         loop = AgentLoop(
             policy,
-            BrowserGymMechanicalActionEvaluator(),
+            ProductionActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(task_id, environment),
         )
         try:
@@ -142,7 +141,7 @@ def test_real_success_reset_and_read_only_sources_keep_distinct_permissions() ->
         try:
             result = await (AgentLoop(
                 success_policy,
-                BrowserGymMechanicalActionEvaluator(),
+                ProductionActionEvaluator(),
                 ExternalEnvironmentTaskEvaluator(task_id, success_environment),
             )).run(success_environment, success_task)
             assert result.status is AgentLoopStatus.DONE

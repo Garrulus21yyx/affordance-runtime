@@ -5,17 +5,14 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 import numpy as np
-from browsergym_adapter_support import FakeBrowserGym, ax_node, raw_observation
+from browsergym_adapter_support import FakeBrowserGym, ax_node, open_surface, raw_observation
 
 from affordance_runtime.agent.local_objective_evidence import resolve_visual_local_objective_evidence
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-    BrowserGymMiniWobEnvironment,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
-from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.task.set_objective import (
     PredicateTruth,
     ScopeEntityDomain,
@@ -131,7 +128,7 @@ def _open(
             normalized=first.normalized,
         )
     )
-    return BrowserGymMiniWobEnvironment.open(
+    return open_surface(
         "browsergym/miniwob.click-button",
         7,
         gym_factory=lambda *_args, **_kwargs: fake,
@@ -239,7 +236,7 @@ def test_marked_main_policy_owns_ambiguous_candidates_without_task_text_routing(
         )
         proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
         disambiguator = _Disambiguator("E1")
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
@@ -270,7 +267,7 @@ def test_marked_screenshot_policy_owns_ambiguous_e_ref_choice_without_provider_c
         )
         proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
         disambiguator = _Disambiguator("E1")
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
@@ -307,7 +304,7 @@ def test_auxiliary_predicate_classifier_is_not_automatically_invoked() -> None:
         proposer = _Proposer([VisualRegion((0.1, 0.2, 0.2, 0.3), "unused", 0.9)])
         disambiguator = _Disambiguator("E1")
         classifier = _PredicateClassifier((PredicateTruth.TRUE, PredicateTruth.FALSE))
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
@@ -485,7 +482,7 @@ def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None
         raw = raw_observation(goal="Click the visible target.")
         raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
         grounder = FailingGrounder()
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
@@ -509,7 +506,7 @@ def test_point_grounder_is_not_a_browsergym_mainline_visual_capability() -> None
 def test_raw_screenshot_is_an_independent_visual_source_without_semantic_provider() -> None:
     async def scenario() -> None:
         raw = _raw_with_buttons(("okay", "Okay", (50, 20, 40, 30)))
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),

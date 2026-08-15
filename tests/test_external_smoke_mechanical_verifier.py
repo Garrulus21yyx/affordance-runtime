@@ -1,6 +1,6 @@
 import asyncio
 
-from affordance_runtime.benchmarks.external_smoke.environment import (
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalEnvironmentTaskEvaluator,
     ExternalVerifierReason,
     ExternalVerifierResult,

@@ -58,7 +58,11 @@ def test_core_has_no_benchmark_vocabulary_or_adapter_imports() -> None:
     violations: list[str] = []
     for path in SOURCE_ROOT.rglob("*.py"):
         relative = path.relative_to(SOURCE_ROOT)
-        if relative.parts[0] == "benchmarks" or relative.as_posix() == "cli.py":
+        if (
+            relative.parts[0] == "benchmarks"
+            or relative.parts[:2] == ("surfaces", "browsergym")
+            or relative.as_posix() == "cli.py"
+        ):
             continue
         text = path.read_text(encoding="utf-8").casefold()
         if any(term in text for term in forbidden_terms) or "affordance_runtime.benchmarks.browsergym" in text:

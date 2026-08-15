@@ -8,8 +8,10 @@ from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import (
     InstrumentedBrowserGymEnvironment,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalEnvironmentTaskEvaluator
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
+    ExternalEnvironmentTaskEvaluator,
+    open_browsergym_case,
+)
 from affordance_runtime.benchmarks.external_smoke.manifest import EXTERNAL_SMOKE_MANIFEST
 from affordance_runtime.benchmarks.external_smoke.pacing import (
     PacedAgentPolicy,
@@ -100,7 +102,7 @@ def _case(external_case, seed, policy, instrumentations) -> BenchmarkCase:
     holder: dict[str, object] = {}
 
     def environment_factory(instrumentation):
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_browsergym_case(
             external_case.benchmark_task_id, seed, max_turns=external_case.max_turns,
         )
         holder.update(environment=environment, task=task)

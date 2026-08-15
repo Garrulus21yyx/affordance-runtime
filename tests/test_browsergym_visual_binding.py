@@ -4,13 +4,10 @@ import asyncio
 from dataclasses import dataclass, field
 
 import numpy as np
-from browsergym_adapter_support import FakeBrowserGym, raw_observation
+from browsergym_adapter_support import FakeBrowserGym, open_surface, raw_observation
 
 from affordance_runtime.agent import RequestObservation
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-    BrowserGymMiniWobEnvironment,
-)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.model_policy.grounded_tool_catalog import (
@@ -92,7 +89,7 @@ def _open(
                 normalized=first.normalized,
             )
         )
-    return BrowserGymMiniWobEnvironment.open(
+    return open_surface(
         "browsergym/miniwob.click-button",
         7,
         gym_factory=lambda *_args, **_kwargs: fake,
@@ -286,7 +283,7 @@ def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
 def test_optional_visual_failure_preserves_structural_world_with_typed_gap() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: fake,

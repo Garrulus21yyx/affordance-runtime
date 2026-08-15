@@ -123,14 +123,15 @@ Evidence and the remaining producer/consumer inventory are recorded in
 ## Blocking cleanup slice — Target Runtime topology cutover
 
 Status:
-`DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_READY / WAVE_A_ADMITTED /
+`DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY / WAVE_A_ADMITTED /
 BEFORE_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
 
-The physical repository still exposes old and target generations as peers.
-The installed CLI enters the mixed legacy command, the root public API exports
-both runtime families, target execution passes through multiple thin wrappers,
-production BrowserGym surface code remains under benchmark namespaces, and most
-source/tests are flat at package roots.
+T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
+reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
+admission, MiniWoB task-state interpretation, runners and reporting in the
+benchmark namespace. The staged Runtime/Coordinator generation and its tests
+remain physically present pending T3 owner-by-owner deletion; most source/tests
+also remain flat at package roots.
 
 The authoritative implementation plan is
 [Target Runtime topology cutover and legacy deletion](plans/2026-08-15-target-runtime-topology-cutover.md).
@@ -253,7 +254,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
 | Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
-| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_READY` | target façade/CLI/loop wrappers cut over atomically; BrowserGym product-surface ownership and staged Runtime physical deletion remain per the [topology plan](plans/2026-08-15-target-runtime-topology-cutover.md) |
+| Runtime topology cutover | `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY` | target façade/CLI/loop wrappers and BrowserGym product-surface ownership cut over atomically; staged Runtime physical deletion remains per the [topology plan](plans/2026-08-15-target-runtime-topology-cutover.md) |
 | Root default switch | `T1_COMPLETE` | target-only product CLI/public API; benchmark commands have a separate entrypoint |
 | Legacy deletion | pending in topology T2/T3 | delete owner-by-owner with active benchmark migration, target-owned invariant tests and no compatibility shims |
 

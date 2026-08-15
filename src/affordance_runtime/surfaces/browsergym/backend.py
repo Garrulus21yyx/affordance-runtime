@@ -8,7 +8,7 @@ import time
 from concurrent.futures import Future
 from typing import cast
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
 

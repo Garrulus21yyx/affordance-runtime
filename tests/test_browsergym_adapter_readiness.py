@@ -1,16 +1,16 @@
 import json
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
-from affordance_runtime.benchmarks.external_smoke.environment import external_dependency_status
+from affordance_runtime.benchmarks.external_smoke.case_environment import external_dependency_status
 from affordance_runtime.benchmarks.external_smoke.manifest import (
     EXTERNAL_SMOKE_MANIFEST,
+    REVIEWED_TASK_IDS,
     SOURCE_COMMIT,
     external_manifest_digest,
 )
 
 
 def test_adapter_ready_only_from_matching_real_attestation(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("affordance_runtime.benchmarks.external_smoke.environment.version", lambda _name: "0.14.3")
+    monkeypatch.setattr("affordance_runtime.benchmarks.external_smoke.case_environment.version", lambda _name: "0.14.3")
     attestation = tmp_path / "attestation.json"
     payload = {
         "accepted": True,
@@ -29,13 +29,13 @@ def test_adapter_ready_only_from_matching_real_attestation(tmp_path, monkeypatch
 
 
 def test_unknown_task_id_fails_closed_before_environment_use() -> None:
-    from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
+    from affordance_runtime.benchmarks.external_smoke.case_environment import open_browsergym_case
 
     def reject(task_id, **_kwargs):
         raise AssertionError(f"factory must not receive unknown task: {task_id}")
 
     try:
-        BrowserGymMiniWobEnvironment.open("browsergym/miniwob.not-reviewed", 7, gym_factory=reject)
+        open_browsergym_case("browsergym/miniwob.not-reviewed", 7, gym_factory=reject)
     except ValueError as exc:
         assert "reviewed fixed manifest" in str(exc)
     else:

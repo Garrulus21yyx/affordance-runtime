@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 import pytest
-from browsergym_adapter_support import ax_node, raw_observation
+from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
 from affordance_runtime.agent import (
     RequestObservation,
@@ -20,16 +20,6 @@ from affordance_runtime.agent.local_objective_proposal import (
     LocalObjectiveUnsupportedReason,
 )
 from affordance_runtime.agent.state import AgentLoopState
-from affordance_runtime.benchmarks.external_smoke.browsergym_backend import _effective_visibility
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import BrowserGymEntityIdentityMap
-from affordance_runtime.benchmarks.external_smoke.browsergym_projection import project_browsergym_observation
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import PRIVATE_CONTROL_PROPERTIES_KEY
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import BrowserGymVerifierSnapshot
-from affordance_runtime.benchmarks.external_smoke.environment import (
-    ExternalVerifierReason,
-    ExternalVerifierStatus,
-    VerifierFactSource,
-)
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
@@ -84,6 +74,10 @@ from affordance_runtime.model_port import (
     StructuredOutputViolation,
 )
 from affordance_runtime.schema_digest import schema_digest
+from affordance_runtime.surfaces.browsergym.backend import _effective_visibility
+from affordance_runtime.surfaces.browsergym.entity_identity import BrowserGymEntityIdentityMap
+from affordance_runtime.surfaces.browsergym.projection import project_browsergym_observation
+from affordance_runtime.surfaces.browsergym.semantics import PRIVATE_CONTROL_PROPERTIES_KEY
 from affordance_runtime.task import (
     ActionTemplate,
     FactEquals,
@@ -173,14 +167,7 @@ def _context(*, local_objective=None):
         source_revision="revision:grounded",
         page_identity="page:grounded",
         episode_identity="episode:grounded",
-        verifier=BrowserGymVerifierSnapshot(
-            "run:grounded",
-            "observation:grounded",
-            "observation:grounded",
-            VerifierFactSource.RESET,
-            ExternalVerifierStatus.INCOMPLETE,
-            ExternalVerifierReason.VERIFIED_RUNNING,
-        ),
+        task_state=reset_task_state("observation:grounded", task_run_id="run:grounded"),
         entity_identity=_IDENTITY,
     )
     task = TaskGoal(
@@ -304,14 +291,7 @@ def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state
         source_revision="revision:collections",
         page_identity="page:collections",
         episode_identity="episode:collections",
-        verifier=BrowserGymVerifierSnapshot(
-            "run:collections",
-            "observation:collections",
-            "observation:collections",
-            VerifierFactSource.RESET,
-            ExternalVerifierStatus.INCOMPLETE,
-            ExternalVerifierReason.VERIFIED_RUNNING,
-        ),
+        task_state=reset_task_state("observation:collections", task_run_id="run:collections"),
         entity_identity=_IDENTITY,
     )
     task = TaskGoal(

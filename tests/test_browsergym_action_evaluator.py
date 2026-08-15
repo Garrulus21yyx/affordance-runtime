@@ -2,29 +2,21 @@ import asyncio
 from dataclasses import replace
 
 import numpy as np
-from browsergym_adapter_support import ax_node, raw_observation, request_for
+from browsergym_adapter_support import ax_node, raw_observation, request_for, reset_task_state
 
 from affordance_runtime.agent.evaluation_control import validated_action_evaluation
-from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
-    BrowserGymMechanicalActionEvaluator,
+from affordance_runtime.evaluation import (
+    ActionEvaluationStatus,
+    ProductionActionEvaluator,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
-    BrowserGymEntityIdentityMap,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
-    project_browsergym_observation,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    BrowserGymVerifierSnapshot,
-)
-from affordance_runtime.benchmarks.external_smoke.environment import (
-    ExternalVerifierReason,
-    ExternalVerifierStatus,
-    VerifierFactSource,
-)
-from affordance_runtime.evaluation import ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.surfaces.browsergym.entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
+from affordance_runtime.surfaces.browsergym.projection import (
+    project_browsergym_observation,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import CoverageState, ObservationConflict, ObservationSourceProfile
 
@@ -55,14 +47,11 @@ def _world(
             ax_node("private-a", "option", "A"),
             ax_node("private-b", "option", "B"),
         )
-    snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque", observation_id, observation_id, VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
-    )
+    snapshot = reset_task_state(observation_id)
     world = project_browsergym_observation(
         raw_observation(*nodes), observation_id=observation_id,
         source_revision=f"revision:{observation_id}", page_identity="page:opaque",
-        episode_identity="0", verifier=snapshot,
+        episode_identity="0", task_state=snapshot,
         entity_identity=_IDENTITY,
     ).world
     source = world.sources[0]
@@ -89,7 +78,7 @@ def _evaluate(before, after, semantic: str, requested: str, *, adapter_evidence=
         adapter_evidence=adapter_evidence or {},
     )
     return asyncio.run(validated_action_evaluation(
-        BrowserGymMechanicalActionEvaluator(), task, before, request, result, after,
+        ProductionActionEvaluator(), task, before, request, result, after,
     ))
 
 
@@ -131,10 +120,7 @@ def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
         raw_observation(ax_node("private-button", "button", "Submit")),
         observation_id="obs:after", source_revision="revision:after",
         page_identity="page:opaque", episode_identity="0",
-        verifier=BrowserGymVerifierSnapshot(
-            "run:opaque", "obs:after", "obs:after", VerifierFactSource.RESET,
-            ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
-        ),
+        task_state=reset_task_state("obs:after"),
         entity_identity=_IDENTITY,
     ).world
     assert _evaluate(before, missing, "type_text", "desired").status is ActionEvaluationStatus.UNKNOWN
@@ -170,16 +156,13 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
         raw_observation(ax_node("private-button", "button", "Submit")),
         observation_id="obs:before", source_revision="revision:before",
         page_identity="page:opaque", episode_identity="0",
-        verifier=BrowserGymVerifierSnapshot(
-            "run:opaque", "obs:before", "obs:before", VerifierFactSource.RESET,
-            ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
-        ),
+        task_state=reset_task_state("obs:before"),
         entity_identity=_IDENTITY,
     ).world
     after = replace(before, observation_id="obs:after", bindings=(), sources=())
     request = request_for(before, task, "activate")
     result = ActionResult(request.request_id, DispatchStatus.SENT, "browsergym", True)
-    evaluation = asyncio.run(BrowserGymMechanicalActionEvaluator().evaluate(
+    evaluation = asyncio.run(ProductionActionEvaluator().evaluate(
         task, before, request, result, after,
     ))
     assert evaluation.status is ActionEvaluationStatus.UNKNOWN
@@ -195,10 +178,7 @@ def _activate_world(observation_id: str, shade: int):
         source_revision=f"revision:{observation_id}",
         page_identity="page:opaque",
         episode_identity="0",
-        verifier=BrowserGymVerifierSnapshot(
-            "run:opaque", observation_id, observation_id, VerifierFactSource.RESET,
-            ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
-        ),
+        task_state=reset_task_state(observation_id),
         entity_identity=_IDENTITY,
     ).world
 
@@ -208,7 +188,7 @@ def _evaluate_activate(before, after):
     request = request_for(before, task, "activate")
     result = ActionResult(request.request_id, DispatchStatus.SENT, "browsergym", True)
     return asyncio.run(validated_action_evaluation(
-        BrowserGymMechanicalActionEvaluator(), task, before, request, result, after,
+        ProductionActionEvaluator(), task, before, request, result, after,
     ))
 
 

@@ -8,13 +8,13 @@ from browsergym_adapter_support import ax_node, raw_observation
 from hypothesis import given
 from hypothesis import strategies as st
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import (
+from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessContext,
     BrowserGymCurrentnessReason,
     BrowserGymCurrentnessStatus,
     compare_browsergym_currentness,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
     canonical_control_for_bid,
 )

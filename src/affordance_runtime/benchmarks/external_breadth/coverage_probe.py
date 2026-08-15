@@ -48,16 +48,14 @@ async def probe_case(
     seed: int,
     admitted_task_ids: frozenset[str],
 ) -> dict[str, object]:
-    from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-        BrowserGymMiniWobEnvironment,
-    )
+    from affordance_runtime.benchmarks.external_smoke.case_environment import open_browsergym_case
     from affordance_runtime.world import ActionSpaceBuilder
 
     task_id = f"browsergym/miniwob.{selection.task_family_label}"
     environment = None
     stage = "environment_reset"
     try:
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_browsergym_case(
             task_id, seed, max_turns=10, admitted_task_ids=admitted_task_ids,
         )
         stage = "initial_observation"

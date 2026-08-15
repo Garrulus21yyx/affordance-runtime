@@ -7,7 +7,7 @@ import hmac
 import secrets
 from dataclasses import dataclass, field
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     CanonicalBrowserControl,
     CanonicalBrowserStructureNode,
 )

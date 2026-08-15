@@ -16,25 +16,33 @@ from test_agent_loop import ScriptedPolicy
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
-from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
-    BrowserGymMechanicalActionEvaluator,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    MECHANICAL_STATUS_EVIDENCE_KEY,
-    classify_browsergym_verifier,
-    verifier_snapshot,
-)
-from affordance_runtime.benchmarks.external_smoke.environment import (
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
+    BrowserGymCaseEnvironment,
     ExternalEnvironmentTaskEvaluator,
     ExternalVerifierReason,
     ExternalVerifierStatus,
     VerifierFactSource,
 )
+from affordance_runtime.benchmarks.external_smoke.verifier_policy import (
+    classify_browsergym_verifier,
+    verifier_snapshot,
+)
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
-from affordance_runtime.evaluation import TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ProductionActionEvaluator,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
+)
+
+
+def _open_fake_case(fake: FakeBrowserGym):
+    surface, task = open_fake(fake)
+    return BrowserGymCaseEnvironment(surface.task_id, surface), task
 
 
 def test_official_verifier_status_mapping_is_strict() -> None:
@@ -63,7 +71,7 @@ def test_official_verifier_status_mapping_is_strict() -> None:
     assert incomplete.status is ExternalVerifierStatus.INCOMPLETE and not incomplete.evidence_refs
     assert unavailable.status is ExternalVerifierStatus.UNAVAILABLE
     assert failure.status is ExternalVerifierStatus.TERMINAL_TASK_FAILURE
-    assert failure.evidence_refs[0].endswith(f":{MECHANICAL_STATUS_EVIDENCE_KEY}")
+    assert failure.evidence_refs[0].endswith(f":{BROWSERGYM_TASK_STATE_EVIDENCE_KEY}")
 
 
 _ARBITRARY = st.one_of(
@@ -259,7 +267,7 @@ def test_success_evidence_is_current_opaque_and_resolves() -> None:
         "exists": True, "url": raw["url"], "episode": "0", "ready": True,
         "done": False, "role": "button", "label": "okay", "state": {},
     }
-    environment, task = open_fake(fake)
+    environment, task = _open_fake_case(fake)
     before = start_environment(environment, task)
     outcome = asyncio.run(environment.execute(request_for(before, task, "activate")))
     after = outcome.post_acquisition.observation
@@ -283,7 +291,7 @@ def test_independent_capture_does_not_relabel_old_success_verifier_evidence() ->
         "exists": True, "url": raw["url"], "episode": "0", "ready": True,
         "done": False, "role": "button", "label": "okay", "state": {},
     }
-    environment, task = open_fake(fake)
+    environment, task = _open_fake_case(fake)
     before = start_environment(environment, task)
     sent = asyncio.run(environment.execute(request_for(before, task, "activate")))
     assert sent.post_acquisition.observation is not None
@@ -306,11 +314,11 @@ def test_negative_terminal_flows_once_without_synthetic_runtime_failure() -> Non
         fake.step_reward = 0.0
         fake.step_raw_reward = 0
         fake.step_done = True
-        environment, task = open_fake(fake)
+        environment, task = _open_fake_case(fake)
         policy = ScriptedPolicy(["first"])
         loop = AgentLoop(
             policy,
-            BrowserGymMechanicalActionEvaluator(),
+            ProductionActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
         )
         session = await (loop).start(environment, task)

@@ -85,8 +85,9 @@ policy. Semantic confirmation, one-shot disposable AgentContext, strict
 model-policy parsing/transport, declared-minimum evaluation, the internal
 harness, and the pinned `browsergym-miniwob==0.14.3` adapter are closed for their
 declared non-default profiles. General semantic entailment, semantic fusion,
-BrowserGym surface ownership migration, legacy physical deletion, and broad
-autonomous GUI competence remain open.
+legacy physical deletion, and broad autonomous GUI competence remain open.
+Reusable BrowserGym mechanics now live under the product surface namespace;
+MiniWoB manifests and reward interpretation remain benchmark policy.
 
 The BrowserGym breadth evidence now contains three immutable, non-combinable
 exact runs: the historical clean `b3b64a2` run at 6/60, the clean `83dc4fa`

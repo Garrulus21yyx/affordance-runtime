@@ -7,16 +7,13 @@ import os
 import threading
 
 import pytest
-from browsergym_adapter_support import request_for
+from browsergym_adapter_support import open_surface, request_for
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import (
+from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
     BrowserGymCurrentnessStatus,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-    BrowserGymMiniWobEnvironment,
-)
-from affordance_runtime.execution import ActionError, DispatchStatus
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("MINIWOB_URL"),
@@ -47,7 +44,7 @@ def test_pinned_currentness_uses_actual_read_only_and_frame_safe_helpers() -> No
 def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: str) -> None:
     async def scenario() -> None:
         task_id = f"browsergym/miniwob.{slug}"
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             task_id,
             7,
             admitted_task_ids=frozenset({task_id}),
@@ -106,7 +103,7 @@ def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: s
 def test_real_login_user_popup_terminal_reentry_is_stale_and_zero_step() -> None:
     async def scenario() -> None:
         task_id = "browsergym/miniwob.login-user-popup"
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_surface(
             task_id,
             7,
             admitted_task_ids=frozenset({task_id}),

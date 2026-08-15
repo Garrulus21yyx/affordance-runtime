@@ -20,16 +20,16 @@ def test_inventory_authority_dependency_is_one_way_and_task_agnostic() -> None:
 
 def test_browsergym_diagnostics_and_projection_define_no_second_role_taxonomy() -> None:
     diagnostics = (
-        ROOT / "benchmarks" / "external_smoke" / "browsergym_diagnostics.py"
+        ROOT / "surfaces" / "browsergym" / "diagnostics.py"
     ).read_text(encoding="utf-8")
     coverage_probe = (
         ROOT / "benchmarks" / "external_breadth" / "coverage_probe.py"
     ).read_text(encoding="utf-8")
     projection = (
-        ROOT / "benchmarks" / "external_smoke" / "browsergym_projection.py"
+        ROOT / "surfaces" / "browsergym" / "projection.py"
     ).read_text(encoding="utf-8")
     environment = (
-        ROOT / "benchmarks" / "external_smoke" / "browsergym_environment.py"
+        ROOT / "surfaces" / "browsergym" / "environment.py"
     ).read_text(encoding="utf-8")
 
     assert "_INTERACTIVE_ROLES" not in diagnostics

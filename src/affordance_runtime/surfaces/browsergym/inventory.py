@@ -1,4 +1,4 @@
-"""Fail-closed inventory for the exact BrowserGym/MiniWoB package profile."""
+"""Fail-closed inventory for the installed BrowserGym/MiniWoB surface profile."""
 
 from __future__ import annotations
 
@@ -7,13 +7,6 @@ from importlib.metadata import PackageNotFoundError, version
 
 PINNED_PACKAGE = "browsergym-miniwob"
 PINNED_VERSION = "0.14.3"
-REVIEWED_TASK_IDS = (
-    "browsergym/miniwob.click-button",
-    "browsergym/miniwob.enter-text",
-    "browsergym/miniwob.choose-list",
-)
-
-
 @dataclass(frozen=True)
 class BrowserGymApiInventory:
     available: bool
@@ -31,11 +24,7 @@ class BrowserGymApiInventory:
 
     @property
     def accepted(self) -> bool:
-        return (
-            self.available
-            and self.package_version == PINNED_VERSION
-            and all(item in self.registered_task_ids for item in REVIEWED_TASK_IDS)
-        )
+        return self.available and self.package_version == PINNED_VERSION
 
 
 def browsergym_api_inventory() -> BrowserGymApiInventory:

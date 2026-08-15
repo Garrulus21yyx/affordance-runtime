@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_visual_projection import (
+from affordance_runtime.surfaces.browsergym.visual_projection import (
     browsergym_visual_frame,
 )
 from affordance_runtime.visual_disambiguation import (

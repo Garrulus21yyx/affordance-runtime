@@ -1,30 +1,22 @@
 import json
 
 import numpy as np
-from browsergym_adapter_support import ax_node, raw_observation
+from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
-from affordance_runtime.benchmarks.external_smoke import browsergym_projection as projection_module
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
-    BrowserGymEntityIdentityMap,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
-    project_browsergym_observation,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
-    PRIVATE_CONTROL_PROPERTIES_KEY,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    BrowserGymVerifierSnapshot,
-)
-from affordance_runtime.benchmarks.external_smoke.environment import (
-    ExternalVerifierReason,
-    ExternalVerifierStatus,
-    VerifierFactSource,
-)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary.context_builder import ContextBuilder
 from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model_policy.serialization import serialize_agent_context
+from affordance_runtime.surfaces.browsergym import projection as projection_module
+from affordance_runtime.surfaces.browsergym.entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
+from affordance_runtime.surfaces.browsergym.projection import (
+    project_browsergym_observation,
+)
+from affordance_runtime.surfaces.browsergym.semantics import (
+    PRIVATE_CONTROL_PROPERTIES_KEY,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
@@ -45,21 +37,14 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
         ax_node("private-4", "option", "A"),
         ax_node("private-5", "option", "B"),
     )
-    snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque",
-        "obs:1",
-        "obs:1",
-        VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE,
-        ExternalVerifierReason.VERIFIED_RUNNING,
-    )
+    snapshot = reset_task_state("obs:1")
     projected = project_browsergym_observation(
         raw,
         observation_id="obs:1",
         source_revision="revision:1",
         page_identity="page:opaque",
         episode_identity="0",
-        verifier=snapshot,
+        task_state=snapshot,
         entity_identity=_IDENTITY,
     )
     assert len(projected.world.targets) == 3
@@ -455,21 +440,14 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:
     raw = raw_observation(ax_node("private-1", "button", "okay"))
-    snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque",
-        "obs:1",
-        "obs:1",
-        VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE,
-        ExternalVerifierReason.VERIFIED_RUNNING,
-    )
+    snapshot = reset_task_state("obs:1")
     world = project_browsergym_observation(
         raw,
         observation_id="obs:1",
         source_revision="revision:1",
         page_identity="page:opaque",
         episode_identity="0",
-        verifier=snapshot,
+        task_state=snapshot,
         entity_identity=_IDENTITY,
     ).world
     task = TaskGoal("task:opaque", raw["goal"], allowed_effects=("external_ui_interaction",))
@@ -491,40 +469,26 @@ def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() 
 
 
 def _project(raw):
-    snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque",
-        "obs:1",
-        "obs:1",
-        VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE,
-        ExternalVerifierReason.VERIFIED_RUNNING,
-    )
+    snapshot = reset_task_state("obs:1")
     return project_browsergym_observation(
         raw,
         observation_id="obs:1",
         source_revision="revision:1",
         page_identity="page:opaque",
         episode_identity="0",
-        verifier=snapshot,
+        task_state=snapshot,
         entity_identity=_IDENTITY,
     )
 
 
 def _project_with_identity(raw, identity, *, page_identity="page:opaque"):
-    snapshot = BrowserGymVerifierSnapshot(
-        "run:opaque",
-        "obs:identity",
-        "obs:identity",
-        VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE,
-        ExternalVerifierReason.VERIFIED_RUNNING,
-    )
+    snapshot = reset_task_state("obs:identity")
     return project_browsergym_observation(
         raw,
         observation_id="obs:identity",
         source_revision="revision:identity",
         page_identity=page_identity,
         episode_identity="episode:one",
-        verifier=snapshot,
+        task_state=snapshot,
         entity_identity=identity,
     )

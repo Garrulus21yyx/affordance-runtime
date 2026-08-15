@@ -9,25 +9,24 @@ from io import BytesIO
 
 from PIL import Image
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_binding import (
+from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymElementBinding,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_INTERACTION_CAPABILITIES,
     informational_browsergym_roles,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     BrowserGymSemanticAnalysis,
     CanonicalBrowserControl,
     analyze_browsergym_semantics,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    MECHANICAL_EVIDENCE_KEY,
-    MECHANICAL_STATUS_EVIDENCE_KEY,
-    BrowserGymVerifierSnapshot,
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
+    BrowserGymTaskStateSnapshot,
 )
 from affordance_runtime.world import (
     ActionBinding,
@@ -76,7 +75,7 @@ def project_browsergym_observation(
     source_revision: str,
     page_identity: str,
     episode_identity: str,
-    verifier: BrowserGymVerifierSnapshot,
+    task_state: BrowserGymTaskStateSnapshot,
     entity_identity: BrowserGymEntityIdentityMap,
 ) -> BrowserGymProjection:
     analysis = analyze_browsergym_semantics(raw)
@@ -233,10 +232,10 @@ def project_browsergym_observation(
         "status": lattice.code.value,
         "derived_target_count": len(lattice.memberships),
     }
-    for evidence_ref in verifier.evidence_refs:
-        key = evidence_ref.rsplit(":", 1)[-1]
-        if key in {MECHANICAL_EVIDENCE_KEY, MECHANICAL_STATUS_EVIDENCE_KEY}:
-            artifacts[key] = {"public_summary": ""}
+    artifacts[BROWSERGYM_TASK_STATE_EVIDENCE_KEY] = {
+        "public_summary": "Current provider-native BrowserGym task state.",
+        "source": task_state.source.value,
+    }
     screenshot_media = _screenshot_media(
         raw,
         tuple(

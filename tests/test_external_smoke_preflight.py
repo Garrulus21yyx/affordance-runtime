@@ -1,10 +1,10 @@
 import json
 
+from affordance_runtime.benchmarks.external_smoke.case_environment import ExternalDependencyStatus
 from affordance_runtime.benchmarks.external_smoke.cli import (
     EXPECTED_INTERNAL_PROFILES,
     build_external_admission_evidence,
 )
-from affordance_runtime.benchmarks.external_smoke.environment import ExternalDependencyStatus
 
 
 def test_preflight_builds_exact_secret_free_evidence(monkeypatch, tmp_path) -> None:

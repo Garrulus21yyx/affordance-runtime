@@ -10,13 +10,13 @@ from browsergym_adapter_support import (
     start_environment,
 )
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_currentness import (
+from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
-from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
 
 
@@ -118,7 +118,7 @@ def test_currentness_probe_has_no_capture_or_projection_side_effect() -> None:
     before = (
         environment._observation_serial,  # noqa: SLF001 - currentness side-effect gate
         environment.bindings.count,
-        environment._verifier,  # noqa: SLF001
+        environment._task_state,  # noqa: SLF001
         environment.full_observation_count,
         environment.capture_calls,
         environment.step_calls,
@@ -129,7 +129,7 @@ def test_currentness_probe_has_no_capture_or_projection_side_effect() -> None:
     after = (
         environment._observation_serial,  # noqa: SLF001
         environment.bindings.count,
-        environment._verifier,  # noqa: SLF001
+        environment._task_state,  # noqa: SLF001
         environment.full_observation_count,
         environment.capture_calls,
         environment.step_calls,

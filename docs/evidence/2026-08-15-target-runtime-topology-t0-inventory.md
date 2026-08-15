@@ -2,8 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `T0_COMPLETE / INVENTORY_ONLY / NO_PRODUCTION_CUTOVER /
-T1_READY / T2_REQUIRES_BROWSERGYM_OWNER_SPLIT`
+Status: `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY`
 
 ## Scope and method
 
@@ -571,6 +570,9 @@ T0 has no unresolved file bucket. It does identify one mandatory implementation
 split: BrowserGym surface mechanics and MiniWoB manifest/verifier policy cannot
 move as one file owner. This does not block T1. It blocks claiming T2 complete
 until the split and its conformance tests are atomic.
+
+T2 completed that exact split. The implementation and deletion record is
+[Target Runtime topology T2 — BrowserGym surface cutover](2026-08-15-target-runtime-topology-t2-surface-cutover.md).
 
 This inventory does not admit new interaction actions, StateFact closure or
 effect-authority closure. The known broad `activate` structural-delta evaluator

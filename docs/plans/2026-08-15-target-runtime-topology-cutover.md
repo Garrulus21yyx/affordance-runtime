@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_READY / WAVE_A_ADMITTED /
+Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_READY / WAVE_A_ADMITTED /
 BLOCKS_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
 
 ## Goal
@@ -237,7 +237,22 @@ Exit:
 
 ### T2 — active benchmark and surface migration
 
-Status: `READY`
+Status: `COMPLETE`
+
+Implemented result:
+
+- generic BrowserGym acquisition, backend lifecycle, binding, currentness,
+  diagnostics, identity, execution, inventory, projection, interaction profile,
+  semantics and visual integration have one `surfaces/browsergym` owner;
+- the surface stores provider-native task-state lineage without interpreting
+  MiniWoB success or failure;
+- benchmark `case_environment` owns reviewed-task admission and task creation,
+  while `verifier_policy` owns the pinned reward/done truth table;
+- all production, benchmark, script, lexical and test consumers use the new
+  owner, and the old `browsergym_*` implementation files plus the action
+  evaluator compatibility alias are physically absent;
+- architecture redlines forbid a BrowserGym surface implementation or alternate
+  Runtime chain below the benchmark namespace.
 
 - move reusable BrowserGym environment, observation, binding, currentness,
   execution and verifier adapters out of `benchmarks/external_smoke` into
@@ -260,7 +275,7 @@ Exit:
 
 ### T3 — delete legacy orchestration clusters
 
-Status: `PENDING_T1_T2`
+Status: `READY`
 
 Delete owner-by-owner, with all imports/tests/fixtures removed or migrated in
 the same commit. Candidate clusters include:

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
+from affordance_runtime.benchmarks.external_smoke.case_environment import open_browsergym_case
+from affordance_runtime.surfaces.browsergym.environment import BrowserGymEnvironment
 
 
 class _Gym:
@@ -28,7 +29,7 @@ class _Gym:
 
 def test_campaign_task_id_is_private_to_environment() -> None:
     task_id = "browsergym/miniwob.campaign-fixture"
-    environment, task = BrowserGymMiniWobEnvironment.open(
+    environment, task = open_browsergym_case(
         task_id, 7, gym_factory=_Gym, admitted_task_ids=frozenset({task_id}), max_turns=10,
     )
     assert task_id not in repr(task)
@@ -40,7 +41,7 @@ def test_campaign_task_id_is_private_to_environment() -> None:
 
 def test_unadmitted_campaign_task_fails_before_environment_creation() -> None:
     try:
-        BrowserGymMiniWobEnvironment.open(
+        open_browsergym_case(
             "browsergym/miniwob.not-admitted", 7, gym_factory=_Gym,
             admitted_task_ids=frozenset({"browsergym/miniwob.allowed"}),
         )
@@ -48,3 +49,11 @@ def test_unadmitted_campaign_task_fails_before_environment_creation() -> None:
         pass
     else:
         raise AssertionError("unadmitted campaign task was accepted")
+
+
+def test_reusable_surface_does_not_own_benchmark_task_admission() -> None:
+    task_id = "browsergym/miniwob.surface-contract-fixture"
+    environment = BrowserGymEnvironment.open(task_id, 7, gym_factory=_Gym)
+    assert environment.task_id == task_id
+    assert environment.goal_instruction == "Click the public button."
+    asyncio.run(environment.close())

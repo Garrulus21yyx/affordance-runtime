@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantic_profile import (
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
     primitive_is_compatible,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     CanonicalBrowserControl,
 )
 

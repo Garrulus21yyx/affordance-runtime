@@ -228,10 +228,39 @@ def test_target_intake_does_not_import_workflow_or_gui_execution_authority() -> 
     })
 
 
-def test_browsergym_goal_uses_target_thin_intake() -> None:
-    adapter = RUNTIME / "benchmarks" / "external_smoke" / "browsergym_environment.py"
-    source = adapter.read_text(encoding="utf-8")
+def test_browsergym_case_policy_owns_intake_and_surface_is_task_list_agnostic() -> None:
+    case_policy = RUNTIME / "benchmarks" / "external_smoke" / "case_environment.py"
+    surface = RUNTIME / "surfaces" / "browsergym" / "environment.py"
+    source = case_policy.read_text(encoding="utf-8")
+    surface_source = surface.read_text(encoding="utf-8")
 
     assert "ThinTaskIntake().compile(" in source
     assert "NaturalLanguageTaskRequest(" in source
     assert "TaskBoundary(" in source
+    assert "REVIEWED_TASK_IDS" not in surface_source
+    assert "ThinTaskIntake" not in surface_source
+    assert "ExternalVerifier" not in surface_source
+
+
+def test_browsergym_reusable_implementation_has_one_surface_owner() -> None:
+    surface = RUNTIME / "surfaces" / "browsergym"
+    benchmark = RUNTIME / "benchmarks" / "external_smoke"
+    assert surface.is_dir()
+    assert not tuple(benchmark.glob("browsergym_*.py"))
+    for path in surface.glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "affordance_runtime.benchmarks" not in source, path
+    benchmark_environment = (benchmark / "case_environment.py").read_text(encoding="utf-8")
+    assert "BrowserGymCaseEnvironment" in benchmark_environment
+    assert "open_browsergym_case" in benchmark_environment
+    benchmark_sources = "\n".join(
+        path.read_text(encoding="utf-8") for path in benchmark.glob("*.py")
+    )
+    for implementation_owner in (
+        "class BrowserGymEnvironment",
+        "class ThreadBoundBrowserGym",
+        "class BrowserGymBindingStore",
+        "def project_browsergym_observation",
+        "def browsergym_action",
+    ):
+        assert implementation_owner not in benchmark_sources

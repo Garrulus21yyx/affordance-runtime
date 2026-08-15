@@ -1,16 +1,33 @@
-"""Optional BrowserGym dependency and mechanical verifier boundary."""
+"""Benchmark case admission, dependency, and mechanical verifier policy boundary."""
 
 from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Callable, Protocol
 
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.surfaces.browsergym.environment import (
+    BrowserGymEnvironment,
+    BrowserGymPort,
+)
+from affordance_runtime.task import (
+    LoopBudget,
+    NaturalLanguageTaskRequest,
+    ReadyTask,
+    RiskProfile,
+    TaskBoundary,
+    TaskGoal,
+    ThinTaskIntake,
+)
+from affordance_runtime.visual_disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.visual_grounding import VisualGrounderPort, VisualRegionProposerPort
+from affordance_runtime.visual_predicate_classification import VisualPredicateClassifierPort
 
 
 @dataclass(frozen=True)
@@ -97,6 +114,114 @@ class ExternalVerifierPort(Protocol):
     def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult: ...
 
 
+@dataclass
+class BrowserGymCaseEnvironment:
+    """Benchmark case policy around the reusable BrowserGym surface."""
+
+    benchmark_task_id: str
+    surface: BrowserGymEnvironment
+    verifier_queries: int = 0
+    official_success_count: int = 0
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.surface, name)
+
+    @property
+    def observation_capabilities(self):
+        return self.surface.observation_capabilities
+
+    async def reset(self, task):
+        return await self.surface.reset(task)
+
+    async def revise_task(self, task):
+        return await self.surface.revise_task(task)
+
+    async def capture(self, request):
+        return await self.surface.capture(request)
+
+    async def execute(self, request):
+        return await self.surface.execute(request)
+
+    def is_current(self, request):
+        return self.surface.is_current(request)
+
+    async def close(self) -> None:
+        await self.surface.close()
+
+    def current_result(self, benchmark_task_id: str) -> ExternalVerifierResult:
+        if benchmark_task_id != self.benchmark_task_id:
+            raise ValueError("mechanical verifier request does not match the benchmark case")
+        from affordance_runtime.benchmarks.external_smoke.verifier_policy import (
+            as_external_result,
+            assess_browsergym_task_state,
+        )
+
+        self.verifier_queries += 1
+        result = as_external_result(
+            assess_browsergym_task_state(self.surface.current_task_state())
+        )
+        if result.status is ExternalVerifierStatus.SUCCESS:
+            self.official_success_count += 1
+        return result
+
+
+def open_browsergym_case(
+    benchmark_task_id: str,
+    seed: int,
+    *,
+    gym_factory: Callable[..., BrowserGymPort] | None = None,
+    max_turns: int = 20,
+    admitted_task_ids: frozenset[str] | None = None,
+    visual_region_proposer: VisualRegionProposerPort | None = None,
+    visual_point_grounder: VisualGrounderPort | None = None,
+    visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
+    visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
+    marked_candidate_policy_available: bool = False,
+) -> tuple[BrowserGymCaseEnvironment, TaskGoal]:
+    """Admit one reviewed benchmark case and bind it to the generic surface."""
+
+    from affordance_runtime.benchmarks.external_smoke.manifest import REVIEWED_TASK_IDS
+
+    admitted = frozenset(REVIEWED_TASK_IDS) if admitted_task_ids is None else admitted_task_ids
+    if benchmark_task_id not in admitted:
+        raise ValueError("BrowserGym task ID is outside the reviewed fixed manifest")
+    surface = BrowserGymEnvironment.open(
+        benchmark_task_id,
+        seed,
+        gym_factory=gym_factory,
+        visual_region_proposer=visual_region_proposer,
+        visual_point_grounder=visual_point_grounder,
+        visual_candidate_disambiguator=visual_candidate_disambiguator,
+        visual_predicate_classifier=visual_predicate_classifier,
+        marked_candidate_policy_available=marked_candidate_policy_available,
+    )
+    try:
+        intake = ThinTaskIntake().compile(
+            NaturalLanguageTaskRequest(
+                f"task:{uuid.uuid4().hex}",
+                surface.goal_instruction,
+                TaskBoundary(
+                    allowed_effects=("external_ui_interaction",),
+                    forbidden_effects=("external_network_side_effect", "credential_use"),
+                    risk_profile=RiskProfile.LOW,
+                    loop_budget=LoopBudget(
+                        max_turns=max_turns,
+                        max_observations=max_turns * 2,
+                    ),
+                ),
+                source_ref=f"browsergym:{benchmark_task_id}:goal",
+            )
+        )
+        if not isinstance(intake, ReadyTask):
+            raise RuntimeError(
+                f"BrowserGym task intake rejected its reviewed profile: {intake.status.value}"
+            )
+        return BrowserGymCaseEnvironment(benchmark_task_id, surface), intake.task
+    except BaseException:
+        surface.gym_environment.close()
+        raise
+
+
 @dataclass(frozen=True)
 class ExternalEnvironmentTaskEvaluator:
     benchmark_task_id: str
@@ -159,9 +284,9 @@ def external_dependency_status(adapter_attestation: Path | None = None) -> Exter
 
 
 def _adapter_attestation_ready(path: Path, installed: str) -> bool:
-    from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
     from affordance_runtime.benchmarks.external_smoke.manifest import (
         EXTERNAL_SMOKE_MANIFEST,
+        REVIEWED_TASK_IDS,
         SOURCE_COMMIT,
         external_manifest_digest,
     )

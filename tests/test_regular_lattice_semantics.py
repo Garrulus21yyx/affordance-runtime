@@ -3,30 +3,22 @@ from __future__ import annotations
 import random
 
 import numpy as np
-from browsergym_adapter_support import ax_node, raw_observation
+from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 
 from affordance_runtime.agent import AgentLoopState
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
-    BrowserGymEntityIdentityMap,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
-    project_browsergym_observation,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
-    PRIVATE_CONTROL_PROPERTIES_KEY,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    BrowserGymVerifierSnapshot,
-)
-from affordance_runtime.benchmarks.external_smoke.environment import (
-    ExternalVerifierReason,
-    ExternalVerifierStatus,
-    VerifierFactSource,
-)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model_boundary import ContextBuilder
 from affordance_runtime.model_policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model_policy.grounded_tool_catalog import compile_grounded_tool_catalog
+from affordance_runtime.surfaces.browsergym.entity_identity import (
+    BrowserGymEntityIdentityMap,
+)
+from affordance_runtime.surfaces.browsergym.projection import (
+    project_browsergym_observation,
+)
+from affordance_runtime.surfaces.browsergym.semantics import (
+    PRIVATE_CONTROL_PROPERTIES_KEY,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import ActionSpaceBuilder
 from affordance_runtime.world.regular_lattice import (
@@ -312,13 +304,6 @@ def _projection(raw):
         source_revision="revision:grid",
         page_identity="page:grid",
         episode_identity="episode:grid",
-        verifier=BrowserGymVerifierSnapshot(
-            "run:grid",
-            "observation:grid",
-            "observation:grid",
-            VerifierFactSource.RESET,
-            ExternalVerifierStatus.INCOMPLETE,
-            ExternalVerifierReason.VERIFIED_RUNNING,
-        ),
+        task_state=reset_task_state("observation:grid", task_run_id="run:grid"),
         entity_identity=BrowserGymEntityIdentityMap(b"regular-lattice-test-key-32-byte"),
     )

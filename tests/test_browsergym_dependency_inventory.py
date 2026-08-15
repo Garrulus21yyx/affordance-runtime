@@ -1,6 +1,6 @@
-from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import (
+from affordance_runtime.benchmarks.external_smoke.manifest import REVIEWED_TASK_IDS
+from affordance_runtime.surfaces.browsergym.inventory import (
     PINNED_VERSION,
-    REVIEWED_TASK_IDS,
     browsergym_api_inventory,
 )
 

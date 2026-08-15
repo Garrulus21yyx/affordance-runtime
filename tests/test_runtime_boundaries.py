@@ -88,7 +88,12 @@ def test_shared_runtime_sources_contain_no_benchmark_protocol_vocabulary() -> No
     )
     violations: list[str] = []
     for path in source_root.rglob("*.py"):
-        if "benchmarks" in path.parts or path.name == "cli.py":
+        relative = path.relative_to(source_root)
+        if (
+            "benchmarks" in path.parts
+            or relative.parts[:2] == ("surfaces", "browsergym")
+            or path.name == "cli.py"
+        ):
             continue
         text = path.read_text(encoding="utf-8").casefold()
         for token in forbidden:

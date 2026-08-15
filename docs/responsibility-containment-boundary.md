@@ -286,6 +286,18 @@ boundary. The exact owner map is:
   status, messages, latest operations, legacy fields and telemetry cannot
   manufacture task success or failure.
 
+Topology T2 makes that logical split physical. Reusable acquisition, backend,
+binding, currentness, diagnostics, identity, execution, inventory, projection,
+interaction-profile, semantic and visual owners now live in
+`surfaces/browsergym`. `surfaces/browsergym/task_state.py` captures only raw
+provider-native task facts plus source/observation lineage and publishes one
+opaque evidence artifact; it does not classify task success or failure.
+`benchmarks/external_smoke/case_environment.py` alone owns reviewed MiniWoB task
+admission and TaskGoal construction, and
+`benchmarks/external_smoke/verifier_policy.py` alone interprets reward/done facts
+under the pinned benchmark truth table. No surface module imports a benchmark,
+and no compatibility module preserves the displaced benchmark-owned adapter path.
+
 The removed semantic owners were the three-state unavailable collapse,
 status-only routing duplicated across initial/post-action/confirmation paths,
 synthetic `RuntimeFailure(CONTROL, REJECTED)` for task-domain terminal failure,

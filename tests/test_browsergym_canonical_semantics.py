@@ -4,17 +4,17 @@ import copy
 
 import numpy as np
 import pytest
-from browsergym_adapter_support import ax_node, raw_observation
+from browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from hypothesis import given
 from hypothesis import strategies as st
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_entity_identity import (
+from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_projection import (
+from affordance_runtime.surfaces.browsergym.projection import (
     project_browsergym_observation,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
+from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
     BrowserGymSemanticError,
     BrowserGymSemanticErrorCode,
@@ -22,24 +22,13 @@ from affordance_runtime.benchmarks.external_smoke.browsergym_semantics import (
     canonical_control_for_bid,
     canonicalize_browsergym_controls,
 )
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import (
-    BrowserGymVerifierSnapshot,
-)
-from affordance_runtime.benchmarks.external_smoke.environment import (
-    ExternalVerifierReason,
-    ExternalVerifierStatus,
-    VerifierFactSource,
-)
 from affordance_runtime.world import SemanticInventoryStatus
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-canonical-semantics-tests")
 
 
-def _snapshot() -> BrowserGymVerifierSnapshot:
-    return BrowserGymVerifierSnapshot(
-        "run:opaque", "obs:1", "obs:1", VerifierFactSource.RESET,
-        ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING,
-    )
+def _snapshot():
+    return reset_task_state("obs:1")
 
 
 def _projection(raw):
@@ -49,7 +38,7 @@ def _projection(raw):
         source_revision="revision:1",
         page_identity="page:opaque",
         episode_identity="0",
-        verifier=_snapshot(),
+        task_state=_snapshot(),
         entity_identity=_IDENTITY,
     )
 

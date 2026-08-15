@@ -10,9 +10,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 from affordance_runtime.benchmarks.external_smoke.adapter_conformance import AdapterConformanceOutcome
-from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import REVIEWED_TASK_IDS
 from affordance_runtime.benchmarks.external_smoke.manifest import (
     EXTERNAL_SMOKE_MANIFEST,
+    REVIEWED_TASK_IDS,
     SOURCE_COMMIT,
     external_manifest_digest,
 )

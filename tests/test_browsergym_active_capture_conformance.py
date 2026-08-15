@@ -6,13 +6,13 @@ import threading
 
 import pytest
 
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import (
-    BrowserGymMiniWobEnvironment,
-)
-from affordance_runtime.benchmarks.external_smoke.browsergym_verifier import verifier_snapshot
-from affordance_runtime.benchmarks.external_smoke.environment import (
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalVerifierStatus,
-    VerifierFactSource,
+    open_browsergym_case,
+)
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BrowserGymTaskStateSource,
+    task_state_from_transition,
 )
 from affordance_runtime.world import (
     AcquisitionOrigin,
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.skipif(
 
 def test_real_backend_active_capture_is_fresh_read_only_and_thread_owned() -> None:
     async def scenario() -> None:
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_browsergym_case(
             "browsergym/miniwob.click-button",
             7,
         )
@@ -62,18 +62,18 @@ def test_real_backend_active_capture_is_fresh_read_only_and_thread_owned() -> No
 
 def test_real_active_capture_does_not_copy_old_success_or_dispatch_again() -> None:
     async def scenario() -> None:
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_browsergym_case(
             "browsergym/miniwob.click-button",
             7,
         )
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
-            environment._verifier = verifier_snapshot(  # noqa: SLF001 - stale-evidence regression setup
+            environment.surface._task_state = task_state_from_transition(  # noqa: SLF001
                 task_run_id=environment.task_run_id,
                 observation_id=initial.observation.observation_id,
                 source_observation_id=initial.observation.observation_id,
-                source=VerifierFactSource.POST_ACTION,
+                source=BrowserGymTaskStateSource.POST_ACTION,
                 reward=1.0,
                 terminated=True,
                 truncated=False,

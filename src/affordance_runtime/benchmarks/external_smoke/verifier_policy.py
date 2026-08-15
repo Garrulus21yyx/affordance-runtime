@@ -1,4 +1,4 @@
-"""Pinned BrowserGym 0.14.3 official task-fact classification authority."""
+"""Pinned MiniWoB benchmark policy for BrowserGym task-state facts."""
 
 from __future__ import annotations
 
@@ -6,16 +6,18 @@ import math
 from dataclasses import dataclass
 from typing import cast
 
-from affordance_runtime.benchmarks.external_smoke.environment import (
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalVerifierReason,
     ExternalVerifierResult,
     ExternalVerifierStatus,
     VerifierFactSource,
 )
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
+    BrowserGymTaskStateSnapshot,
+)
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
-MECHANICAL_EVIDENCE_KEY = "mechanical-verifier"
-MECHANICAL_STATUS_EVIDENCE_KEY = "mechanical-verifier-status"
 _MISSING = object()
 
 
@@ -208,6 +210,29 @@ def as_external_result(snapshot: BrowserGymVerifierSnapshot) -> ExternalVerifier
     )
 
 
+def assess_browsergym_task_state(
+    snapshot: BrowserGymTaskStateSnapshot,
+) -> BrowserGymVerifierSnapshot:
+    """Interpret raw surface state under the pinned MiniWoB benchmark contract."""
+
+    source = VerifierFactSource(snapshot.source.value)
+    assessment = classify_browsergym_verifier(
+        source,
+        reward=snapshot.value("reward", _MISSING),
+        raw_reward=snapshot.value("raw_reward", _MISSING),
+        terminated=snapshot.value("terminated", _MISSING),
+        truncated=snapshot.value("truncated", _MISSING),
+        done=snapshot.value("done", _MISSING),
+        ready=snapshot.value("ready", _MISSING),
+    )
+    return _snapshot(
+        snapshot.task_run_id,
+        snapshot.observation_id,
+        snapshot.source_observation_id,
+        assessment,
+    )
+
+
 def _snapshot(
     task_run_id: str,
     observation_id: str,
@@ -215,13 +240,15 @@ def _snapshot(
     assessment: VerifierAssessment,
 ) -> BrowserGymVerifierSnapshot:
     evidence_refs: tuple[str, ...] = ()
-    if assessment.status is ExternalVerifierStatus.SUCCESS:
+    if assessment.status in {
+        ExternalVerifierStatus.SUCCESS,
+        ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
+    }:
         evidence_refs = (
-            canonical_artifact_ref(source_observation_id, MECHANICAL_EVIDENCE_KEY),
-        )
-    elif assessment.status is ExternalVerifierStatus.TERMINAL_TASK_FAILURE:
-        evidence_refs = (
-            canonical_artifact_ref(source_observation_id, MECHANICAL_STATUS_EVIDENCE_KEY),
+            canonical_artifact_ref(
+                source_observation_id,
+                BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
+            ),
         )
     return BrowserGymVerifierSnapshot(
         task_run_id,

@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.agent import AgentLoopStatus
-from affordance_runtime.benchmarks.external_smoke.browsergym_environment import BrowserGymMiniWobEnvironment
-from affordance_runtime.benchmarks.external_smoke.browsergym_inventory import browsergym_api_inventory
+from affordance_runtime.benchmarks.external_smoke.case_environment import (
+    BrowserGymCaseEnvironment,
+    open_browsergym_case,
+)
 from affordance_runtime.benchmarks.external_smoke.composition import (
     BrowserGymStructuredDecisionPort,
     adapter_conformance_composition,
@@ -20,6 +22,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricExpectationOperator,
 )
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
+from affordance_runtime.surfaces.browsergym.inventory import browsergym_api_inventory
 
 _REQUIRED_METRICS = (
     "browsergym_reset_calls", "browsergym_step_calls", "browsergym_probe_calls",
@@ -60,7 +63,7 @@ class AdapterConformanceOutcome:
 
 @dataclass
 class InstrumentedBrowserGymEnvironment:
-    wrapped: BrowserGymMiniWobEnvironment
+    wrapped: BrowserGymCaseEnvironment
     instrumentation: object
 
     def __getattr__(self, name):
@@ -141,6 +144,14 @@ async def run_adapter_conformance(seed: int = 7) -> AdapterConformanceOutcome:
     errors.extend(_oracle_errors(ports))
     if not inventory.accepted:
         errors.append("pinned BrowserGym dependency inventory is not accepted")
+    registered = frozenset(inventory.registered_task_ids)
+    missing_tasks = tuple(
+        case.benchmark_task_id
+        for case in EXTERNAL_SMOKE_MANIFEST.cases
+        if case.benchmark_task_id not in registered
+    )
+    if missing_tasks:
+        errors.append("reviewed benchmark tasks are absent from the BrowserGym registry")
     accepted = not errors and suite.acceptance.accepted and len(suite.cases) == 3
     return AdapterConformanceOutcome(suite, accepted, tuple(errors), inventory.package_version, accepted)
 
@@ -157,7 +168,7 @@ def _case(external_case, seed: int, ports: list[BrowserGymStructuredDecisionPort
     holder: dict[str, object] = {}
 
     def environment_factory(instrumentation):
-        environment, task = BrowserGymMiniWobEnvironment.open(
+        environment, task = open_browsergym_case(
             external_case.benchmark_task_id, seed, max_turns=external_case.max_turns,
         )
         holder.update(environment=environment, task=task)
