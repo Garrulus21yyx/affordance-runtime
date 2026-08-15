@@ -1,9 +1,12 @@
 # Wave A.2 adaptive observation policy and bounded world lens
 
 Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED / ACQUISITION_PORT_CONVERGED /
+A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
+REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
+PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
 GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING / LIVE_NOT_RUN`
+SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED / LIVE_NOT_RUN`
 
 Scope: select which available observation sources are semantically activated
 for one acquisition, fuse only those source observations, and project one
@@ -412,3 +415,40 @@ run is `1640 passed, 27 skipped`; the A.2 focused gate is `117 passed`, the
 documentation-governance gate is `15 passed`, and Ruff, mypy over 336 source
 files, and `git diff --check` pass. A fresh-context independent review is still
 required before A.2 closure can be admitted. No live benchmark was run.
+
+That repair was independently reopened again: source acquisition success was
+still equated with fulfillment of every selected semantic need, late-activated
+adapters depended on optional methods outside `SurfaceAdapter`, BrowserGym
+executed only one visual purpose while reporting all purposes fulfilled, the
+public acquisition value did not enforce plan/result conservation, and the
+retired `dynamic_tools.v1` product protocol remained configurable and
+executable. These findings share one cause: the selected plan was not conserved
+as separate lifecycle, physical acquisition, and per-need satisfaction facts
+across every public boundary.
+
+The current local repair separates those facts. Every surface adapter now
+declares `initialize_task`, `physical_environment_id`, and `reset_physical`;
+the environment initializes every adapter and resets one owner for every
+declared physical environment independently of initial source selection.
+`SourceAcquisitionStatus` describes capture outcome while immutable per-need
+results independently report `FULFILLED` or `UNFULFILLED`; an acquired source
+may therefore retain unresolved needs. Generic Visual offers no longer inherit
+visual-property/OCR/spatial capabilities, and concrete providers report only
+outcomes supported by actual targets or facts. BrowserGym multi-purpose
+activation reports only the branch it executed.
+
+`ObservationAcquisition` now rejects missing, extra, mismatched, or
+non-partitioning source results against its immutable selection plan. The
+product model factory accepts only `grounded_tools.v2`; the legacy dynamic
+adapter, catalog compiler/resolver, public exports, benchmark arm, fixtures and
+tests are deleted. `ToolSpec`, `ToolCall`, and `ToolTransportKind` live in the
+provider-neutral transport layer, whose telemetry reports
+`native_tool_calls.v1` rather than a business protocol.
+
+Held-out gates cover late activation, partial fulfillment, BrowserGym
+multi-purpose partial results, malformed public acquisitions, and source-level
+unreachability of the legacy protocol. The current clean full run is `1622
+passed, 27 skipped`; Ruff, mypy over 334 source files, and the focused gates
+pass. This is implementation/property evidence only. A fresh-context
+independent review is required before A.2 closure can be admitted, and no live
+benchmark was run.

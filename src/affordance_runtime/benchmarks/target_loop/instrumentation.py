@@ -186,7 +186,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     adapter = _dynamic_tool_adapter(policy)
     if adapter is not None:
         image_input_count = int(getattr(adapter, "last_image_input_count", len(context.image_inputs)))
-        event["interaction_protocol"] = getattr(adapter, "interaction_protocol", "dynamic_tools.v1")
+        event["interaction_protocol"] = getattr(adapter, "interaction_protocol", "unknown")
         event["tool_transport"] = getattr(getattr(adapter, "transport_kind", None), "value", "")
         event["tool_resolution_code"] = getattr(
             getattr(adapter, "last_resolution_code", None),

@@ -102,8 +102,19 @@ class CountingAdapter:
     def observation_offers(self):
         return self.wrapped.observation_offers
 
-    async def reset(self, task: TaskGoal) -> None:
-        return await self.wrapped.reset(task)
+    @property
+    def physical_environment_id(self) -> str:
+        return self.wrapped.physical_environment_id
+
+    @property
+    def owns_physical_reset(self) -> bool:
+        return self.wrapped.owns_physical_reset
+
+    def initialize_task(self, task: TaskGoal) -> None:
+        self.wrapped.initialize_task(task)
+
+    async def reset_physical(self) -> None:
+        return await self.wrapped.reset_physical()
 
     async def acquire(self, request):
         return await self.wrapped.acquire(request)

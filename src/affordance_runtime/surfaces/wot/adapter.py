@@ -45,6 +45,7 @@ class WotSurfaceAdapter:
     transport: WotTransportPort
     deployment_scope: WotDeploymentScope = WotDeploymentScope.PHYSICAL_DEVICE
     parser: WotAdapter = field(default_factory=WotAdapter, repr=False)
+    owns_physical_reset: bool = field(default=True, repr=False)
     clock: Callable[[], float] = field(default=monotonic, repr=False)
     surface: str = field(default="wot", init=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
@@ -54,18 +55,21 @@ class WotSurfaceAdapter:
     _last_sent_at: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     @property
+    def physical_environment_id(self) -> str:
+        return f"wot_transport:{id(self.transport)}"
+
+    @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
         return (ObservationOffer(self.surface, "environment_state", "authoritative", "medium", self.surface),)
 
-    def prepare(self, task: TaskGoal) -> None:
+    def initialize_task(self, task: TaskGoal) -> None:
         self._task = task
         self._observation_id = ""
         self._td_digest = ""
         self._routes.clear()
         self._last_sent_at.clear()
 
-    async def reset(self, task: TaskGoal) -> None:
-        self.prepare(task)
+    async def reset_physical(self) -> None:
         self.transport.reset()
 
     async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
@@ -111,7 +115,11 @@ class WotSurfaceAdapter:
             },
             acquisition_root_id=f"wot:{td_digest}",
         )
-        return SelectedObservationResult.acquired(request, observation)
+        return SelectedObservationResult.acquired(
+            request,
+            observation,
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     def is_current(self, request: BoundActionRequest) -> bool:
         binding = request.binding

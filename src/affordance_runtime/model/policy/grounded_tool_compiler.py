@@ -16,7 +16,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
+from affordance_runtime.model.providers.tool_transport_contracts import ToolSpec
 
 _ABSENT = object()
 _RESERVED_NAMES = frozenset(

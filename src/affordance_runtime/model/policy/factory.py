@@ -11,20 +11,15 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
     GroundedActionAdapter,
 )
-from affordance_runtime.model.policy.grounding import DecisionGroundingVariant
 from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
-    ModelPortDecisionAdapter,
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
-from affordance_runtime.model.policy.protocol_contracts import STRUCTURED_PACKAGE_PROTOCOL
 from affordance_runtime.model.policy.provider_orchestrator import (
     ProviderCallOrchestrator,
     ProviderCallPolicy,
 )
-from affordance_runtime.model.policy.tool_contracts import DYNAMIC_TOOLS_PROTOCOL
-from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model.providers.port import FallbackModelPort, ModelConfig, model_port_from_environment
 
 
@@ -32,10 +27,8 @@ def model_policy_from_environment(
     environment: Mapping[str, str] | None = None,
     *,
     call_timeout_s: float = 90.0,
-    grounding_variant: DecisionGroundingVariant | str | None = None,
     provider_recovery: bool = True,
     perception_profile: DecisionPerceptionProfile | str | None = None,
-    interaction_protocol: str | None = None,
 ) -> ModelBackedAgentPolicy:
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
@@ -43,20 +36,6 @@ def model_policy_from_environment(
     port = model_port_from_environment(environment)
     if isinstance(port, FallbackModelPort):
         raise ValueError("model policy profile forbids provider fallback")
-    configured_grounding = grounding_variant
-    if configured_grounding is None:
-        configured_grounding = env.get(
-            "LLM_DECISION_GROUNDING",
-            DecisionGroundingVariant.FORMAT_ONLY.value,
-        )
-    try:
-        selected_grounding = DecisionGroundingVariant(configured_grounding)
-    except ValueError as exc:
-        raise ValueError("unsupported model decision grounding profile") from exc
-    if selected_grounding is DecisionGroundingVariant.COMPACT_CONTRACT_V2 and not _enabled(
-        env.get("LLM_ENABLE_EXPERIMENTAL_GROUNDING", "false")
-    ):
-        raise ValueError("experimental compact-contract-v2 grounding is not admitted")
     configured_perception = perception_profile
     if configured_perception is None:
         configured_perception = env.get(
@@ -76,33 +55,15 @@ def model_policy_from_environment(
         provider_circuit_break_s=0.0 if provider_recovery else 60.0,
         prompt_version="p5-m1.1",
     )
-    selected_protocol = interaction_protocol or env.get(
-        "LLM_INTERACTION_PROTOCOL",
-        STRUCTURED_PACKAGE_PROTOCOL,
-    )
+    configured_protocol = env.get("LLM_INTERACTION_PROTOCOL", GROUNDED_TOOLS_PROTOCOL)
+    if configured_protocol != GROUNDED_TOOLS_PROTOCOL:
+        raise ValueError("grounded_tools.v2 is the only product interaction protocol")
     adapter: StructuredDecisionModelPort
-    if selected_protocol == STRUCTURED_PACKAGE_PROTOCOL:
-        adapter = ModelPortDecisionAdapter(
-            port,
-            config,
-            grounding_variant=selected_grounding,
-            perception_profile=selected_perception,
-        )
-    elif selected_protocol == DYNAMIC_TOOLS_PROTOCOL:
-        adapter = DynamicToolDecisionAdapter(
-            port,
-            config,
-            perception_profile=selected_perception,
-            grounding_variant=selected_grounding,
-        )
-    elif selected_protocol == GROUNDED_TOOLS_PROTOCOL:
-        adapter = GroundedActionAdapter(
-            port,
-            config,
-            perception_profile=selected_perception,
-        )
-    else:
-        raise ValueError("unsupported model interaction protocol")
+    adapter = GroundedActionAdapter(
+        port,
+        config,
+        perception_profile=selected_perception,
+    )
     if not provider_recovery:
         return ModelBackedAgentPolicy(
             adapter,

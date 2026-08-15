@@ -33,7 +33,7 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
 from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_INTERACTION_CAPABILITIES,
     BROWSERGYM_INTERACTION_PROFILE,

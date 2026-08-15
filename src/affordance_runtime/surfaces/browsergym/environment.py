@@ -79,6 +79,8 @@ from affordance_runtime.world import (
     ExecutionOutcome,
     ObservationAcquisition,
     ObservationCapabilities,
+    ObservationNeedResult,
+    ObservationNeedSatisfactionStatus,
     ObservationOffer,
     ObservationPurpose,
     ObservationRequestKind,
@@ -535,7 +537,10 @@ class BrowserGymEnvironment:
             SourceAcquisitionStatus.ACQUIRED,
             "source_acquired",
             projection.world.sources[0],
-            tuple(item.need_id for item in requests_by_source["browsergym"].needs),
+            self._need_results(
+                requests_by_source["browsergym"],
+                tuple(item.need_id for item in requests_by_source["browsergym"].needs),
+            ),
         )]
         self.structural_source_acquired_count += 1
         visual_selection = selected.get("browsergym_visual")
@@ -555,6 +560,7 @@ class BrowserGymEnvironment:
                 visual_private_bindings: tuple[BrowserGymVisualBinding, ...]
                 assert visual_request is not None
                 visual_purpose = self._visual_purpose(visual_request)
+                target_disambiguated = False
                 if visual_purpose is ObservationPurpose.WORLD_GROUNDING or (
                     visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
                     and self.visual_candidate_disambiguator is None
@@ -566,6 +572,9 @@ class BrowserGymEnvironment:
                         acquisition_root_id=observation_id,
                     )
                     visual_private_bindings = ()
+                    target_disambiguated = (
+                        visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
+                    )
                 elif visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
                     assert self.visual_candidate_disambiguator is not None
                     self.visual_disambiguator_calls += 1
@@ -579,6 +588,7 @@ class BrowserGymEnvironment:
                         evidence_need=VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
                     )
                     visual_source = disambiguation.source
+                    target_disambiguated = bool(disambiguation.selected_target_id)
                     if disambiguation.selected_target_id:
                         self.visual_disambiguator_selection_count += 1
                         self.visual_correspondence_matched_count += 1
@@ -621,13 +631,54 @@ class BrowserGymEnvironment:
                     self._record_correspondence_metrics(visual.correspondence_decisions)
                 sources.append(visual_source)
                 private_bindings.extend(visual_private_bindings)
+                fulfilled_visual_need_ids: tuple[str, ...]
+                if visual_purpose is ObservationPurpose.WORLD_GROUNDING:
+                    fulfilled_visual_need_ids = tuple(
+                        item.need_id
+                        for item in visual_request.needs
+                        if item.purpose is ObservationPurpose.WORLD_GROUNDING
+                    )
+                elif visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
+                    fulfilled_visual_need_ids = tuple(
+                        item.need_id
+                        for item in visual_request.needs
+                        if item.purpose is ObservationPurpose.TARGET_DISAMBIGUATION
+                        and target_disambiguated
+                    )
+                else:
+                    fulfilled_visual_need_ids = tuple(
+                        item.need_id
+                        for item in visual_request.needs
+                        if (
+                            item.purpose is ObservationPurpose.ENTITY_DISCOVERY
+                            and bool(visual_source.targets)
+                        )
+                        or (
+                            item.purpose in {
+                                ObservationPurpose.EFFECT_VERIFICATION,
+                                ObservationPurpose.CRITERION_VERIFICATION,
+                            }
+                            and bool(visual_source.facts)
+                            and (
+                                not item.subject_ids
+                                or bool(
+                                    set(item.subject_ids)
+                                    & {target.target_id for target in visual_source.targets}
+                                )
+                            )
+                        )
+                    )
                 results.append(SourceAcquisitionResult(
                     "browsergym_visual",
                     visual_selection.requirement,
                     SourceAcquisitionStatus.ACQUIRED,
                     "source_acquired",
                     visual_source,
-                    tuple(item.need_id for item in visual_request.needs),
+                    self._need_results(
+                        visual_request,
+                        fulfilled_visual_need_ids,
+                        "visual_need_unresolved",
+                    ),
                 ))
                 self.visual_source_acquired_count += 1
                 self.visual_binding_acquired_count += len(visual_private_bindings)
@@ -649,8 +700,11 @@ class BrowserGymEnvironment:
                     SourceAcquisitionStatus.FAILED,
                     "source_acquisition_failed",
                     None,
-                    (),
-                    tuple(item.need_id for item in visual_request.needs)
+                    self._need_results(
+                        visual_request,
+                        (),
+                        "source_acquisition_failed",
+                    )
                     if visual_request is not None
                     else (),
                 ))
@@ -693,7 +747,9 @@ class BrowserGymEnvironment:
             AcquisitionStatus.ACQUIRED,
             origin,
             world,
-            "world_acquired_with_optional_gap"
+            "world_acquired_with_unresolved_need"
+            if any(item.unfulfilled_need_ids for item in results)
+            else "world_acquired_with_optional_gap"
             if any(
                 item.requirement is SourceRequirement.OPTIONAL
                 and item.status is not SourceAcquisitionStatus.ACQUIRED
@@ -719,6 +775,29 @@ class BrowserGymEnvironment:
             if purpose in purposes:
                 return purpose
         raise ValueError("selected visual source has no typed observation purpose")
+
+    @staticmethod
+    def _need_results(
+        request: SelectedObservationRequest,
+        fulfilled_need_ids: tuple[str, ...],
+        unfulfilled_reason_code: str = "need_unresolved",
+    ) -> tuple[ObservationNeedResult, ...]:
+        fulfilled = frozenset(fulfilled_need_ids)
+        expected = {item.need_id for item in request.needs}
+        if not fulfilled <= expected:
+            raise ValueError("fulfilled need IDs must belong to selected request")
+        return tuple(
+            ObservationNeedResult(
+                item.need_id,
+                ObservationNeedSatisfactionStatus.FULFILLED
+                if item.need_id in fulfilled
+                else ObservationNeedSatisfactionStatus.UNFULFILLED,
+                "need_fulfilled"
+                if item.need_id in fulfilled
+                else unfulfilled_reason_code,
+            )
+            for item in request.needs
+        )
 
     def _record_correspondence_metrics(self, decisions) -> None:
         for item in decisions:

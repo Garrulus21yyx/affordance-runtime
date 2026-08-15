@@ -12,6 +12,8 @@ from affordance_runtime.world.acquisition import (
     ExecutionOutcome,
     ObservationAcquisition,
     ObservationCapabilities,
+    ObservationNeedResult,
+    ObservationNeedSatisfactionStatus,
     ObservationOffer,
     ObservationRequestKind,
     ObservationSelectionPlan,
@@ -73,16 +75,16 @@ class UnifiedWorldEnvironment:
             return replace(selected, origin=AcquisitionOrigin.RESET)
         try:
             for adapter in self.adapters:
-                prepare = getattr(adapter, "prepare", None)
-                if prepare is not None:
-                    prepare(task)
-            reset_adapters = self._physical_reset_owners(selected)
+                adapter.initialize_task(task)
+            reset_adapters = self._physical_reset_owners()
             for adapter in reset_adapters:
-                await adapter.reset(task)
+                await adapter.reset_physical()
         except Exception:
             return ObservationAcquisition(
                 AcquisitionStatus.FAILED, AcquisitionOrigin.RESET, None, "surface_reset_failed",
-                selected,
+                selected, self._failed_plan_results(
+                    selected, SourceAcquisitionStatus.FAILED, "surface_reset_failed"
+                ),
             )
         return await self._acquire(request, AcquisitionOrigin.RESET, selected)
 
@@ -90,9 +92,7 @@ class UnifiedWorldEnvironment:
         """Update task-relative projections without resetting the physical world."""
 
         for adapter in self.adapters:
-            prepare = getattr(adapter, "prepare", None)
-            if prepare is not None:
-                prepare(task)
+            adapter.initialize_task(task)
         self._task = task
 
     async def capture(self, request: WorldObservationRequest) -> ObservationAcquisition:
@@ -238,11 +238,16 @@ class UnifiedWorldEnvironment:
             source.observation_id for source in world.sources
         )
         self._world_observation_id = world.observation_id
-        reason = "world_acquired_with_optional_gap" if any(
+        if any(item.unfulfilled_need_ids for item in results):
+            reason = "world_acquired_with_unresolved_need"
+        elif any(
             item.requirement is SourceRequirement.OPTIONAL
             and item.status is not SourceAcquisitionStatus.ACQUIRED
             for item in results
-        ) else "world_acquired"
+        ):
+            reason = "world_acquired_with_optional_gap"
+        else:
+            reason = "world_acquired"
         return ObservationAcquisition(
             AcquisitionStatus.ACQUIRED, origin, world, reason, selected, tuple(results),
         )
@@ -322,8 +327,7 @@ class UnifiedWorldEnvironment:
                 result.status,
                 result.reason_code,
                 result.observation,
-                result.fulfilled_need_ids,
-                result.unfulfilled_need_ids,
+                result.need_results,
             ))
         unselected_results = tuple(
             SourceAcquisitionResult(
@@ -344,16 +348,60 @@ class UnifiedWorldEnvironment:
             )
         return outcome.plan
 
-    def _physical_reset_owners(self, plan: ObservationSelectionPlan) -> tuple[SurfaceAdapter, ...]:
-        selected: list[SurfaceAdapter] = []
-        for item in plan.selections:
-            selected.append(self._source_owner(item.source))
-        groups: dict[str, SurfaceAdapter] = {}
-        for selection, adapter in zip(plan.selections, selected, strict=True):
-            offer = self._offer_for(selection.source)
-            group = offer.acquisition_group or offer.source
-            groups.setdefault(group, adapter)
-        return tuple(groups.values())
+    def _physical_reset_owners(self) -> tuple[SurfaceAdapter, ...]:
+        """Choose one reset owner for every declared physical environment.
+
+        Ownership is independent of source selection so a late-activated adapter is
+        always initialized against a physical environment reset for this task.
+        """
+
+        groups: dict[str, list[SurfaceAdapter]] = {}
+        for adapter in self.adapters:
+            if not adapter.physical_environment_id.strip():
+                raise ValueError("surface adapter requires a physical environment ID")
+            groups.setdefault(adapter.physical_environment_id, []).append(adapter)
+        owners: list[SurfaceAdapter] = []
+        for adapters in groups.values():
+            declared = tuple(adapter for adapter in adapters if adapter.owns_physical_reset)
+            if len(declared) != 1:
+                raise ValueError("physical environment requires exactly one reset owner")
+            owners.append(declared[0])
+        return tuple(owners)
+
+    @staticmethod
+    def _failed_plan_results(
+        plan: ObservationSelectionPlan,
+        status: SourceAcquisitionStatus,
+        reason_code: str,
+    ) -> tuple[SourceAcquisitionResult, ...]:
+        selected = tuple(
+            SourceAcquisitionResult(
+                item.source,
+                item.requirement,
+                status,
+                reason_code,
+                None,
+                tuple(
+                    ObservationNeedResult(
+                        need_id,
+                        ObservationNeedSatisfactionStatus.UNFULFILLED,
+                        reason_code,
+                    )
+                    for need_id in item.need_ids
+                ),
+            )
+            for item in plan.selections
+        )
+        unselected = tuple(
+            SourceAcquisitionResult(
+                item.source,
+                SourceRequirement.UNSELECTED,
+                SourceAcquisitionStatus.NOT_ACQUIRED,
+                "source_not_selected",
+            )
+            for item in plan.unselected
+        )
+        return (*unselected, *selected)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return self._surface_adapter(request.binding.surface) is not None and (

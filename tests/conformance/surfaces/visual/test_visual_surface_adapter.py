@@ -171,7 +171,8 @@ def test_bounded_visual_proposer_reports_truncated_coverage_even_when_empty() ->
         proposer = Proposer()
         proposer.propose = lambda request: []  # type: ignore[method-assign]
         adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         observed = await acquire_observation(adapter, "bounded empty")
         assert observed.coverage.value == "truncated"
@@ -186,7 +187,8 @@ def test_explicitly_exhaustive_visual_proposer_may_report_complete_coverage() ->
         proposer = Proposer()
         proposer.acquisition_exhaustive = True
         adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         observed = await acquire_observation(adapter, "exhaustive")
         assert observed.coverage.value == "complete"
@@ -201,7 +203,8 @@ def test_visual_proposer_exceeding_region_bound_fails_closed() -> None:
         region = VisualRegion((0, 0, 0.01, 0.01), "mark", 1.0)
         proposer.propose = lambda request: [region] * (request.max_regions + 1)  # type: ignore[method-assign]
         adapter = VisualSurfaceAdapter(session, proposer)  # type: ignore[arg-type]
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         with pytest.raises(ValueError, match="region bound"):
             await acquire_observation(adapter, "too many")
@@ -294,7 +297,8 @@ def test_reset_invalidates_old_visual_request_without_probe_or_pointer_call() ->
     async def scenario() -> None:
         session = VisualSession()
         adapter, world, _, request = await _bound(session, Proposer())
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         result = (await world.execute(request)).result
         assert result.dispatch_status.value == "not_sent"
@@ -309,7 +313,8 @@ def test_proposer_action_claim_is_normalized_to_observation_only() -> None:
     async def scenario() -> None:
         session = VisualSession()
         adapter = VisualSurfaceAdapter(session, Proposer("point_activate"))  # type: ignore[arg-type]
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
         observed = await acquire_observation(adapter, "initial")
 
         assert len(observed.targets) == 1

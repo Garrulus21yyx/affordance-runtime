@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol, Sequence
 
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec, ToolTransportKind
 from affordance_runtime.model.providers.port import ModelConfig, ModelMessage
+from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec, ToolTransportKind
 
 
 def tool_transport_for_model(provider: str, model: str) -> ToolTransportKind:
@@ -19,7 +19,7 @@ def tool_transport_for_model(provider: str, model: str) -> ToolTransportKind:
         return ToolTransportKind.NATIVE_AUTO
     if provider_name == "zhipu" and model_name == "glm-4.1v-thinking-flashx":
         return ToolTransportKind.COMPACT_JSON
-    raise ValueError("model profile has no admitted dynamic-tools transport")
+    raise ValueError("model profile has no admitted tool-call transport")
 
 
 class NativeToolModelPort(Protocol):

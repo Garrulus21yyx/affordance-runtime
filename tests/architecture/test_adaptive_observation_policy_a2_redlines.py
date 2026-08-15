@@ -52,4 +52,22 @@ def test_surface_port_requires_explicit_observation_offers() -> None:
     assert "SelectedObservationRequest" in surface_port
     assert "SelectedObservationResult" in surface_port
     assert "acquire_group" in surface_port
+    assert "def initialize_task" in surface_port
+    assert "def reset_physical" in surface_port
     assert "getattr" not in surface_port
+
+
+def test_legacy_dynamic_product_protocol_is_source_unreachable() -> None:
+    production_and_tests = "\n".join(
+        path.read_text(encoding="utf-8")
+        for root in (ROOT, ROOT.parents[1] / "tests")
+        for path in root.rglob("*.py")
+        if path != Path(__file__)
+    )
+    forbidden = (
+        "dynamic_" + "tools.v1",
+        "DynamicTool" + "DecisionAdapter",
+        "compile_" + "tool_catalog",
+        "resolve_" + "tool_call",
+    )
+    assert all(item not in production_and_tests for item in forbidden)

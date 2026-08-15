@@ -69,7 +69,7 @@ def main() -> int:
         )
     policy = model_policy_from_environment(
         policy_environment,
-        grounding_variant="format-only", provider_recovery=True,
+        provider_recovery=True,
     )
     outcome = asyncio.run(run_control_feedback_targeted_diagnostic(
         manifest,

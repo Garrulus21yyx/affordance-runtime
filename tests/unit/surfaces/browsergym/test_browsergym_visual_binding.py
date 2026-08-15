@@ -16,7 +16,7 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.providers.tool_transport_contracts import ToolCall
 from affordance_runtime.surfaces.visual.grounding import (
     VisualGroundingPoint,
     VisualGroundingRequest,
@@ -165,6 +165,53 @@ def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() ->
             assert sum(item.marked for item in context.grounding.entities) == 0
         finally:
             await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_multi_purpose_visual_activation_reports_only_the_executed_purpose() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: fake,
+            visual_region_proposer=proposer,
+            marked_candidate_policy_available=True,
+        )
+        try:
+            await environment.reset(task)
+            acquisition = await environment.capture(WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "two visual purposes",
+                (
+                    ObservationNeed(
+                        "need:disambiguate",
+                        ObservationPurpose.TARGET_DISAMBIGUATION,
+                        ("current_world",),
+                        ObservationModality.VISUAL,
+                        ObservationAssurance.WEAK,
+                    ),
+                    ObservationNeed(
+                        "need:discover",
+                        ObservationPurpose.ENTITY_DISCOVERY,
+                        ("current_world",),
+                        ObservationModality.VISUAL,
+                        ObservationAssurance.WEAK,
+                    ),
+                ),
+            ))
+        finally:
+            await environment.close()
+
+        visual = next(
+            item for item in acquisition.source_results if item.source == "browsergym_visual"
+        )
+        assert visual.status is SourceAcquisitionStatus.ACQUIRED
+        assert visual.fulfilled_need_ids == ("need:disambiguate",)
+        assert visual.unfulfilled_need_ids == ("need:discover",)
+        assert proposer.calls == []
 
     asyncio.run(scenario())
 

@@ -52,7 +52,6 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 )
 from affordance_runtime.model.policy.spec import SCHEMA_VERSION
 from affordance_runtime.model.policy.strict_json import validate_json_tree
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec, ToolTransportKind
 from affordance_runtime.model.providers.port import (
     FallbackModelPort,
     ModelConfig,
@@ -66,6 +65,7 @@ from affordance_runtime.model.providers.port import (
     structured_output_repair_contract,
 )
 from affordance_runtime.model.providers.tool_transport import tool_transport_for_model
+from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec, ToolTransportKind
 
 
 class _GroundedCommandPayloadBase(BaseModel):

@@ -15,7 +15,6 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
 )
 from affordance_runtime.model.policy import model_policy_from_environment
 from affordance_runtime.model.policy.model_port_bridge import DecisionPerceptionProfile
-from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
 
 
 def test_perception_ab_selects_only_inventory_v2_capability_covered_cases() -> None:
@@ -90,7 +89,7 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
         "LLM_ACTIVE_PROFILE": "zhipu",
         "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
         "LLM_ZHIPU_API_KEY": "fixture",
-        "LLM_ZHIPU_MODEL": "glm-4.7-flash",
+        "LLM_ZHIPU_MODEL": "glm-4.6v-flash",
         "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
     }
     policy = model_policy_from_environment(environment)
@@ -98,25 +97,6 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
     with __import__("pytest").raises(ValueError, match="frozen Mistral"):
         _adapter(policy)
     assert _adapter(policy, require_frozen_mistral=False).provider_id == "zhipu"
-
-
-def test_dynamic_provider_cohort_uses_the_dynamic_adapter() -> None:
-    environment = {
-        "LLM_ACTIVE_PROFILE": "zhipu",
-        "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
-        "LLM_ZHIPU_API_KEY": "fixture",
-        "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
-        "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-    }
-    policy = model_policy_from_environment(
-        environment,
-        interaction_protocol="dynamic_tools.v1",
-    )
-
-    assert isinstance(
-        _adapter(policy, require_frozen_mistral=False),
-        DynamicToolDecisionAdapter,
-    )
 
 
 def test_provider_cohort_progress_is_atomically_persisted_per_case(tmp_path) -> None:

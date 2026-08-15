@@ -118,7 +118,7 @@ def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -
     policy = (RUNTIME / "model" / "policy" / "policy.py").read_text(encoding="utf-8")
     adapters = "\n".join(
         (RUNTIME / "model" / "policy" / relative).read_text(encoding="utf-8")
-        for relative in ("model_port_bridge.py", "tool_port_bridge.py", "grounded_tool_port_bridge.py")
+        for relative in ("model_port_bridge.py", "grounded_tool_port_bridge.py")
     )
     spec = (RUNTIME / "model" / "policy" / "spec.py").read_text(encoding="utf-8")
 

@@ -70,9 +70,12 @@ WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED /
 VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
 WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED / ACQUISITION_PORT_CONVERGED /
+A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
+REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
+PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
 GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING /
+SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED /
 ACTIVATE_EFFECT_AUTHORITY_OPEN /
 NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`
 
@@ -132,9 +135,12 @@ Status:
 `T0_COMPLETE / T1_COMPLETE / T2_COMPLETE / T3_COMPLETE / T4_COMPLETE /
 T5_COMPLETE / WAVE_A_ADMITTED / WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED / ACQUISITION_PORT_CONVERGED /
+A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
+REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
+PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
 GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING / LIVE_NOT_RUN`
+SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED / LIVE_NOT_RUN`
 
 T1 removed the mixed product CLI/API and pass-through target wrappers. T2 moved
 reusable BrowserGym mechanics into `surfaces/browsergym`, leaving manifest
@@ -204,9 +210,12 @@ as `KEEP_MOVE`; isolation, not deletion, is the A.1 boundary.
 Status:
 `WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED / ACQUISITION_PORT_CONVERGED /
+A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
+REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
+PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
 GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING /
+SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED /
 STATEFACT_CUTOVER_PARTIAL /
 ACTIVATE_EFFECT_AUTHORITY_OPEN / NEW_INTERACTION_ACTIONS_NOT_ADMITTED /
 LIVE_NOT_RUN`
@@ -280,8 +289,9 @@ live benchmark was run.
 The implementation and local property gate are complete, and the independent
 fresh-context review passed. A.1 closure is admitted without widening its
 scope. The repair adds no new interaction, StateFact migration, general
-relation vocabulary, SemanticDelta, or benchmark branch. Wave A.2 is admitted
-but not started at this commit boundary.
+relation vocabulary, SemanticDelta, or benchmark branch. Wave A.2 subsequently
+started, was independently reopened, and remains non-admitted pending another
+fresh-context review; that does not alter A.1 closure.
 
 Decision truth remains single-owned rather than re-adjudicated at construction:
 `WorldFusion` is the only production producer of `EntityAlignmentDecision` and
@@ -293,9 +303,12 @@ producer.
 ## Implemented repair — adaptive observation policy A.2
 
 Status: `DESIGN_ACCEPTED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
-A.2_IMPLEMENTED / SELECTOR_OWNER_CONVERGED / ACQUISITION_PORT_CONVERGED /
+A.2_IMPLEMENTATION_REPAIRED_LOCALLY / SELECTOR_OWNER_CONVERGED /
+REQUEST_RESULT_SPINE_IMPLEMENTED / ADAPTER_LIFECYCLE_CONVERGED /
+PER_NEED_FULFILLMENT_CONVERGED / ACQUISITION_PUBLIC_INVARIANT_ENFORCED /
 GENERIC_STAGE2_CONNECTED / POST_ACTION_FALLBACK_NEEDS_CONSERVED /
-PROPERTY_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_PENDING / LIVE_NOT_RUN`
+SINGLE_PRODUCT_PROTOCOL_CONVERGED / PROPERTY_VERIFIED /
+INDEPENDENT_FRESH_CONTEXT_REVIEW_REQUIRED / LIVE_NOT_RUN`
 
 A.2 keeps the current `ObservationOrchestrator` as the sole source-selection
 owner. It separates physical multi-channel capture from semantic provider
@@ -315,9 +328,13 @@ added. Held-out review showed that the plan was not conserved through provider
 acquisition or fallback and that generic stage two was absent. The repair now
 uses one selected acquisition request/result port, explicit source ownership,
 typed group acquisition, need-conserving fallback, generic residual stage two,
-and one semantic `request_evidence` ingress. Closure remains pending an
-independent fresh-context review. The full contract, evidence and SOTA reuse boundary are
-in the
+and one semantic `request_evidence` ingress. The latest repair also makes task
+initialization and physical reset explicit, separates source acquisition from
+per-need fulfillment, enforces plan/result conservation in the public
+acquisition owner, reports BrowserGym multi-purpose results truthfully, and
+deletes the reachable dynamic product protocol. Closure remains pending an
+independent fresh-context review. The full contract, evidence and SOTA reuse
+boundary are in the
 [Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md).
 
 ## Active target-default convergence queue

@@ -28,6 +28,11 @@ class SequencedAdapter:
     sequence: int = 0
     executions: list[BoundActionRequest] = field(default_factory=list)
     current_source_id: str = ""
+    owns_physical_reset: bool = True
+
+    @property
+    def physical_environment_id(self) -> str:
+        return f"fixture:{self.surface}"
 
     @property
     def observation_offers(self):
@@ -35,9 +40,12 @@ class SequencedAdapter:
             return (ObservationOffer("dom", "structural", "structural", "low"),)
         return (ObservationOffer("wot", "environment_state", "authoritative", "medium"),)
 
-    async def reset(self, task: TaskGoal) -> None:
+    def initialize_task(self, task: TaskGoal) -> None:
         del task
         self.executions.clear()
+
+    async def reset_physical(self) -> None:
+        return None
 
     async def acquire(self, request) -> SelectedObservationResult:
         self.sequence += 1
@@ -72,7 +80,11 @@ class SequencedAdapter:
             bindings=(binding,),
             coverage=CoverageState.COMPLETE,
         )
-        return SelectedObservationResult.acquired(request, observation)
+        return SelectedObservationResult.acquired(
+            request,
+            observation,
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return request.binding.source_observation_id == self.current_source_id

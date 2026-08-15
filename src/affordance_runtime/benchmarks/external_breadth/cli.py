@@ -67,7 +67,7 @@ def main() -> int:
         print(json.dumps({"status": "NOT_RUN_UNAVAILABLE_CONFIG", "errors": errors}, sort_keys=True))
         return 1
     policy = model_policy_from_environment(
-        grounding_variant="format-only", provider_recovery=False,
+        provider_recovery=False,
     )
     outcome = asyncio.run(run_breadth_campaign(
         manifest, policy, args.output_dir, provider_capacity=capacity,
@@ -143,7 +143,7 @@ def _configuration_errors(manifest, *, provider_recovery: bool = False) -> list[
         errors.append("MINIWOB_URL must use the reviewed local source fixture")
     try:
         policy = model_policy_from_environment(
-            grounding_variant="format-only", provider_recovery=provider_recovery,
+            provider_recovery=provider_recovery,
         )
         composed = policy.port
         if provider_recovery and not isinstance(composed, ProviderCallOrchestrator):

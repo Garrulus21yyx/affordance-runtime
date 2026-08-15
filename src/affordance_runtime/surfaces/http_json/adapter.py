@@ -44,8 +44,13 @@ from .transport import HttpJsonTransportPort, UrllibHttpJsonTransport
 class HttpJsonSurfaceAdapter:
     registration: HttpJsonSourceRegistration
     transport: HttpJsonTransportPort = field(default_factory=UrllibHttpJsonTransport, repr=False)
+    owns_physical_reset: bool = field(default=True, repr=False)
     surface: str = field(default="http_json", init=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
+
+    @property
+    def physical_environment_id(self) -> str:
+        return f"http_json_transport:{id(self.transport)}"
 
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
@@ -57,11 +62,11 @@ class HttpJsonSurfaceAdapter:
             self.surface,
         ),)
 
-    def prepare(self, task: TaskGoal) -> None:
+    def initialize_task(self, task: TaskGoal) -> None:
         self._task = task
 
-    async def reset(self, task: TaskGoal) -> None:
-        self.prepare(task)
+    async def reset_physical(self) -> None:
+        return None
 
     async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
         if self._task is None:
@@ -96,7 +101,11 @@ class HttpJsonSurfaceAdapter:
             {},
             acquisition_root_id=f"http-json:{self.registration.source_id}:{revision}",
         )
-        return SelectedObservationResult.acquired(request, observation)
+        return SelectedObservationResult.acquired(
+            request,
+            observation,
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     def is_current(self, request: BoundActionRequest) -> bool:
         del request

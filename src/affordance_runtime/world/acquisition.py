@@ -36,6 +36,11 @@ class SourceRequirement(StrEnum):
     UNSELECTED = "unselected"
 
 
+class ObservationNeedSatisfactionStatus(StrEnum):
+    FULFILLED = "fulfilled"
+    UNFULFILLED = "unfulfilled"
+
+
 class AcquisitionOrigin(StrEnum):
     RESET = "reset"
     INDEPENDENT_CAPTURE = "independent_capture"
@@ -195,13 +200,26 @@ class SelectedObservationRequest:
 
 
 @dataclass(frozen=True)
+class ObservationNeedResult:
+    need_id: str
+    status: ObservationNeedSatisfactionStatus
+    reason_code: str
+
+    def __post_init__(self) -> None:
+        if not self.need_id.strip():
+            raise ValueError("observation need result requires a need ID")
+        if not isinstance(self.status, ObservationNeedSatisfactionStatus):
+            raise TypeError("observation need result status must be typed")
+        _validate_reason_code(self.reason_code)
+
+
+@dataclass(frozen=True)
 class SelectedObservationResult:
     source: str
     status: SourceAcquisitionStatus
     reason_code: str
     observation: SurfaceObservation | None
-    fulfilled_need_ids: tuple[str, ...]
-    unfulfilled_need_ids: tuple[str, ...]
+    need_results: tuple[ObservationNeedResult, ...]
 
     def __post_init__(self) -> None:
         if not self.source.strip():
@@ -211,31 +229,61 @@ class SelectedObservationResult:
         acquired = self.status is SourceAcquisitionStatus.ACQUIRED
         if acquired != isinstance(self.observation, SurfaceObservation):
             raise ValueError("selected provider ACQUIRED requires exactly one observation")
-        object.__setattr__(self, "fulfilled_need_ids", tuple(self.fulfilled_need_ids))
-        object.__setattr__(self, "unfulfilled_need_ids", tuple(self.unfulfilled_need_ids))
-        all_ids = self.fulfilled_need_ids + self.unfulfilled_need_ids
+        object.__setattr__(self, "need_results", tuple(self.need_results))
         if (
-            any(not item.strip() for item in all_ids)
-            or len(set(all_ids)) != len(all_ids)
-            or (acquired and self.unfulfilled_need_ids)
+            any(not isinstance(item, ObservationNeedResult) for item in self.need_results)
+            or len({item.need_id for item in self.need_results}) != len(self.need_results)
             or (not acquired and self.fulfilled_need_ids)
         ):
             raise ValueError("selected provider need outcome is incoherent")
         _validate_reason_code(self.reason_code)
+
+    @property
+    def fulfilled_need_ids(self) -> tuple[str, ...]:
+        return tuple(
+            item.need_id
+            for item in self.need_results
+            if item.status is ObservationNeedSatisfactionStatus.FULFILLED
+        )
+
+    @property
+    def unfulfilled_need_ids(self) -> tuple[str, ...]:
+        return tuple(
+            item.need_id
+            for item in self.need_results
+            if item.status is ObservationNeedSatisfactionStatus.UNFULFILLED
+        )
 
     @classmethod
     def acquired(
         cls,
         request: SelectedObservationRequest,
         observation: SurfaceObservation,
+        *,
+        fulfilled_need_ids: tuple[str, ...],
+        unfulfilled_reason_code: str = "need_unresolved",
     ) -> SelectedObservationResult:
+        fulfilled = frozenset(fulfilled_need_ids)
+        expected = {item.need_id for item in request.needs}
+        if not fulfilled <= expected:
+            raise ValueError("fulfilled need IDs must belong to the selected request")
         return cls(
             request.source,
             SourceAcquisitionStatus.ACQUIRED,
             "source_acquired",
             observation,
-            tuple(item.need_id for item in request.needs),
-            (),
+            tuple(
+                ObservationNeedResult(
+                    item.need_id,
+                    ObservationNeedSatisfactionStatus.FULFILLED
+                    if item.need_id in fulfilled
+                    else ObservationNeedSatisfactionStatus.UNFULFILLED,
+                    "need_fulfilled"
+                    if item.need_id in fulfilled
+                    else unfulfilled_reason_code,
+                )
+                for item in request.needs
+            ),
         )
 
     @classmethod
@@ -255,8 +303,14 @@ class SelectedObservationResult:
             status,
             reason_code,
             None,
-            (),
-            tuple(item.need_id for item in request.needs),
+            tuple(
+                ObservationNeedResult(
+                    item.need_id,
+                    ObservationNeedSatisfactionStatus.UNFULFILLED,
+                    reason_code,
+                )
+                for item in request.needs
+            ),
         )
 
 
@@ -267,8 +321,7 @@ class SourceAcquisitionResult:
     status: SourceAcquisitionStatus
     reason_code: str
     observation: SurfaceObservation | None = None
-    fulfilled_need_ids: tuple[str, ...] = ()
-    unfulfilled_need_ids: tuple[str, ...] = ()
+    need_results: tuple[ObservationNeedResult, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.source.strip() or not isinstance(self.requirement, SourceRequirement):
@@ -282,16 +335,31 @@ class SourceAcquisitionResult:
             self.status is SourceAcquisitionStatus.NOT_ACQUIRED
         ):
             raise ValueError("only unselected sources may be NOT_ACQUIRED")
-        object.__setattr__(self, "fulfilled_need_ids", tuple(self.fulfilled_need_ids))
-        object.__setattr__(self, "unfulfilled_need_ids", tuple(self.unfulfilled_need_ids))
-        all_ids = self.fulfilled_need_ids + self.unfulfilled_need_ids
-        if any(not item.strip() for item in all_ids) or len(set(all_ids)) != len(all_ids):
+        object.__setattr__(self, "need_results", tuple(self.need_results))
+        if (
+            any(not isinstance(item, ObservationNeedResult) for item in self.need_results)
+            or len({item.need_id for item in self.need_results}) != len(self.need_results)
+        ):
             raise ValueError("source acquisition need outcomes must be unique")
-        if self.status is SourceAcquisitionStatus.ACQUIRED and self.unfulfilled_need_ids:
-            raise ValueError("acquired source cannot retain unfulfilled selected needs")
         if self.status is not SourceAcquisitionStatus.ACQUIRED and self.fulfilled_need_ids:
             raise ValueError("failed source cannot report fulfilled selected needs")
         _validate_reason_code(self.reason_code)
+
+    @property
+    def fulfilled_need_ids(self) -> tuple[str, ...]:
+        return tuple(
+            item.need_id
+            for item in self.need_results
+            if item.status is ObservationNeedSatisfactionStatus.FULFILLED
+        )
+
+    @property
+    def unfulfilled_need_ids(self) -> tuple[str, ...]:
+        return tuple(
+            item.need_id
+            for item in self.need_results
+            if item.status is ObservationNeedSatisfactionStatus.UNFULFILLED
+        )
 
 
 @dataclass(frozen=True)
@@ -329,6 +397,25 @@ class ObservationAcquisition:
             self.selection_plan, ObservationSelectionPlan
         ):
             raise TypeError("acquisition selection plan must be typed")
+        if self.selection_plan is None:
+            if self.source_results:
+                raise ValueError("acquisition without a plan cannot carry source results")
+            return
+        expected = {
+            item.source: item
+            for item in self.selection_plan.selections + self.selection_plan.unselected
+        }
+        actual = {item.source: item for item in self.source_results}
+        if len(actual) != len(self.source_results) or actual.keys() != expected.keys():
+            raise ValueError("acquisition source results must exactly conserve the plan")
+        for source, disposition in expected.items():
+            result = actual[source]
+            if result.requirement is not disposition.requirement:
+                raise ValueError("acquisition result requirement must conserve selection")
+            if set(result.fulfilled_need_ids + result.unfulfilled_need_ids) != set(
+                disposition.need_ids
+            ):
+                raise ValueError("acquisition result must partition its selected needs")
 
 
 @dataclass(frozen=True)
@@ -381,12 +468,6 @@ def _default_purposes(modality: ObservationModality) -> tuple[ObservationPurpose
             ObservationPurpose.WORLD_GROUNDING,
             ObservationPurpose.ENTITY_DISCOVERY,
             ObservationPurpose.TARGET_DISAMBIGUATION,
-            ObservationPurpose.EFFECT_VERIFICATION,
-            ObservationPurpose.CRITERION_VERIFICATION,
-            ObservationPurpose.CURRENTNESS_REFRESH,
-            ObservationPurpose.VISUAL_PROPERTY,
-            ObservationPurpose.SPATIAL_RELATIONSHIP,
-            ObservationPurpose.TEXT_IN_IMAGE,
         )
     return (
         ObservationPurpose.WORLD_GROUNDING,

@@ -40,6 +40,7 @@ from affordance_runtime.world.contracts import (
     StateFact,
     SurfaceObservation,
 )
+from affordance_runtime.world.observation_needs import ObservationPurpose
 
 if TYPE_CHECKING:
     from affordance_runtime.surfaces.dom.browser_session import BrowserSession
@@ -50,6 +51,7 @@ class VisualSurfaceAdapter:
     session: BrowserSession
     proposer: VisualRegionProposerPort
     point_grounder: VisualGrounderPort | None = field(default=None, repr=False)
+    owns_physical_reset: bool = field(default=True, repr=False)
     surface: str = field(default="visual", init=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
     _observation_id: str = field(default="", init=False)
@@ -57,19 +59,32 @@ class VisualSurfaceAdapter:
     _regions: dict[str, VisualRegionBinding] = field(default_factory=dict, init=False, repr=False)
 
     @property
+    def physical_environment_id(self) -> str:
+        return f"browser_session:{id(self.session)}"
+
+    @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
         return (ObservationOffer(
-            self.surface, "visual", "weak", "high",
+            self.surface,
+            "visual",
+            "weak",
+            "high",
+            supported_purposes=(
+                ObservationPurpose.WORLD_GROUNDING,
+                ObservationPurpose.ENTITY_DISCOVERY,
+                ObservationPurpose.EFFECT_VERIFICATION,
+                ObservationPurpose.CRITERION_VERIFICATION,
+                ObservationPurpose.CURRENTNESS_REFRESH,
+            ),
         ),)
 
-    def prepare(self, task: TaskGoal) -> None:
+    def initialize_task(self, task: TaskGoal) -> None:
         self._task = task
         self._observation_id = ""
         self._source_revision = ""
         self._regions.clear()
 
-    async def reset(self, task: TaskGoal) -> None:
-        self.prepare(task)
+    async def reset_physical(self) -> None:
         self.session.reset()
 
     async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
@@ -146,7 +161,30 @@ class VisualSurfaceAdapter:
             acquisition_root_id=f"browser:{frame.source_revision}",
             visual_only_target_ids=tuple(region.region_id for region in regions),
         )
-        return SelectedObservationResult.acquired(request, observation)
+        fulfilled = tuple(
+            item.need_id
+            for item in request.needs
+            if item.purpose is ObservationPurpose.WORLD_GROUNDING
+            or (item.purpose is ObservationPurpose.ENTITY_DISCOVERY and bool(targets))
+            or (
+                item.purpose in {
+                    ObservationPurpose.EFFECT_VERIFICATION,
+                    ObservationPurpose.CRITERION_VERIFICATION,
+                }
+                and bool(facts)
+                and (
+                    not item.subject_ids
+                    or bool(set(item.subject_ids) & {target.target_id for target in targets})
+                )
+            )
+            or item.purpose is ObservationPurpose.CURRENTNESS_REFRESH
+        )
+        return SelectedObservationResult.acquired(
+            request,
+            observation,
+            fulfilled_need_ids=fulfilled,
+            unfulfilled_reason_code="no_matching_visual_evidence",
+        )
 
     def is_current(self, request: BoundActionRequest) -> bool:
         binding = request.binding

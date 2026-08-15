@@ -5,8 +5,8 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelConfig, ModelMessage, OpenAICompatibleModelPort
+from affordance_runtime.model.providers.tool_transport_contracts import ToolSpec
 
 
 def test_openai_compatible_native_tool_transport_requires_one_nonparallel_call() -> None:
@@ -71,4 +71,4 @@ def test_openai_compatible_native_tool_transport_requires_one_nonparallel_call()
     assert requests[0]["parallel_tool_calls"] is False
     assert requests[0]["tools"][0]["function"]["name"] == "act_01"
     assert port.last_call is not None
-    assert port.last_call.schema_name == "dynamic_tools.v1"
+    assert port.last_call.schema_name == "native_tool_calls.v1"

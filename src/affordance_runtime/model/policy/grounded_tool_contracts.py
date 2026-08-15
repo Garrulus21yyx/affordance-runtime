@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
+from affordance_runtime.model.providers.tool_transport_contracts import ToolSpec
 
 GROUNDED_TOOLS_PROTOCOL = "grounded_tools.v2"
 GROUNDED_TOOL_CALL_ENVELOPE = "name-arguments.v1"

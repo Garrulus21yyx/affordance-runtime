@@ -25,10 +25,8 @@ from affordance_runtime.benchmarks.model_protocol import (
 )
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
 from affordance_runtime.model.policy import (
-    DYNAMIC_TOOLS_PROTOCOL,
     GROUNDED_TOOLS_PROTOCOL,
     STRUCTURED_PACKAGE_PROTOCOL,
-    DynamicToolDecisionAdapter,
     GroundedActionAdapter,
     ModelBackedAgentPolicy,
     ModelPortDecisionAdapter,
@@ -67,13 +65,10 @@ def _config() -> ModelConfig:
 
 def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     structured = ModelPortDecisionAdapter(_Transport(), _config())
-    dynamic = DynamicToolDecisionAdapter(_Transport(), _config())
     grounded = GroundedActionAdapter(_Transport(), _config())
 
     assert structured.interaction_protocol == STRUCTURED_PACKAGE_PROTOCOL
     assert structured.supported_decisions == STRUCTURED_PACKAGE_DECISION_CAPABILITIES
-    assert dynamic.interaction_protocol == DYNAMIC_TOOLS_PROTOCOL
-    assert dynamic.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
     assert grounded.supported_decisions == TOOL_ACTION_DECISION_CAPABILITIES
@@ -88,7 +83,7 @@ def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
 
 
 def test_model_policy_preserves_adapter_capabilities() -> None:
-    adapter = DynamicToolDecisionAdapter(_Transport(), _config())
+    adapter = GroundedActionAdapter(_Transport(), _config())
 
     assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == (TOOL_ACTION_DECISION_CAPABILITIES)
 

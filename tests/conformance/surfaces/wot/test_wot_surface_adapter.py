@@ -146,7 +146,8 @@ def test_wot_unresolved_security_and_events_have_no_executable_binding() -> None
     async def scenario() -> None:
         transport = FakeWotTransport(shared_td(security="missing"))
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
         observed = await acquire_observation(adapter, "locked")
 
         assert observed.bindings == ()
@@ -202,7 +203,8 @@ def test_wot_reset_invalidates_old_request_without_probe_or_action() -> None:
     async def scenario() -> None:
         transport = FakeWotTransport()
         adapter, world, _, request = await _bound(transport)
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         result = (await world.execute(request)).result
         assert result.error.value == "stale_binding"
@@ -331,7 +333,8 @@ def test_wot_partial_property_read_reports_truncated_coverage() -> None:
         td["properties"]["unavailable"]["forms"][0]["href"] = "/properties/unavailable"
         transport = PartialTransport(td)
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
         observed = await acquire_observation(adapter, "partial")
         assert observed.coverage.value == "truncated"
         assert len(observed.targets) >= 2  # one property, one action, plus the event description
@@ -345,7 +348,8 @@ def test_wot_wrong_property_type_is_not_published_as_world_fact() -> None:
         transport = FakeWotTransport()
         transport.property_value = {"credential": "must-not-leak"}
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         observed = await acquire_observation(adapter, "invalid property")
 
@@ -364,7 +368,8 @@ def test_wot_property_action_event_names_have_source_local_identity() -> None:
         td["events"] = {"enable": td["events"].pop("changed")}
         transport = FakeWotTransport(td)
         adapter = WotSurfaceAdapter(transport, deployment_scope=WotDeploymentScope.LOCAL_SIMULATION)
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         observed = await acquire_observation(adapter, "same names")
         target_ids = {target.target_id for target in observed.targets}
@@ -384,7 +389,8 @@ def test_wot_missing_explicit_thing_identity_fails_closed() -> None:
             FakeWotTransport(td),
             deployment_scope=WotDeploymentScope.LOCAL_SIMULATION,
         )
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
         with pytest.raises(ValueError, match="explicit thing identity"):
             await acquire_observation(adapter, "missing identity")
 

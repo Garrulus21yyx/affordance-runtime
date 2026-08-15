@@ -1,7 +1,7 @@
 import pytest
 
-from affordance_runtime.model.policy.tool_contracts import ToolTransportKind
 from affordance_runtime.model.providers.tool_transport import tool_transport_for_model
+from affordance_runtime.model.providers.tool_transport_contracts import ToolTransportKind
 
 
 @pytest.mark.parametrize(

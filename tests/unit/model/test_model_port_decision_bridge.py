@@ -21,7 +21,6 @@ from affordance_runtime.model.policy.model_port_bridge import (
 )
 from affordance_runtime.model.policy.policy import _build_request
 from affordance_runtime.model.policy.spec import SCHEMA_VERSION, AgentDecisionPayload
-from affordance_runtime.model.policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model.providers.port import (
     FallbackModelPort,
     ModelCallRecord,
@@ -218,7 +217,7 @@ def test_screenshot_ax_profile_fails_before_provider_when_image_is_missing() -> 
     asyncio.run(scenario())
 
 
-def test_factory_selects_dynamic_tools_only_for_an_exact_admitted_model_profile() -> None:
+def test_factory_rejects_non_product_interaction_protocol() -> None:
     environment = {
         "LLM_ACTIVE_PROFILE": "zhipu",
         "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
@@ -227,20 +226,9 @@ def test_factory_selects_dynamic_tools_only_for_an_exact_admitted_model_profile(
         "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
     }
 
-    policy = model_policy_from_environment(
-        environment,
-        interaction_protocol="dynamic_tools.v1",
-    )
-
-    assert isinstance(policy.port.primary_port, DynamicToolDecisionAdapter)
-    assert policy.port.primary_port.transport_kind.value == "compact_json"
-
-    environment["LLM_ZHIPU_MODEL"] = "glm-4.1v-thinking"
-    with pytest.raises(ValueError, match="no admitted"):
-        model_policy_from_environment(
-            environment,
-            interaction_protocol="dynamic_tools.v1",
-        )
+    environment["LLM_INTERACTION_PROTOCOL"] = "retired_protocol"
+    with pytest.raises(ValueError, match="only product interaction protocol"):
+        model_policy_from_environment(environment)
 
 
 def test_bridge_metadata_hashes_endpoint_or_credential_shaped_identifiers() -> None:
@@ -346,7 +334,7 @@ def test_request_build_failure_is_internal_not_provider_unavailable(monkeypatch)
 
 
 def test_environment_factory_forces_zero_retry_and_rejects_fallback(monkeypatch) -> None:
-    port = RecordingModelPort()
+    port = RecordingModelPort(provider="zhipu", model="glm-4.1v-thinking-flashx")
     monkeypatch.setattr("affordance_runtime.model.policy.factory.model_port_from_environment", lambda env: port)
 
     policy = model_policy_from_environment({"LLM_ACTIVE_PROFILE": "local"}, call_timeout_s=20)

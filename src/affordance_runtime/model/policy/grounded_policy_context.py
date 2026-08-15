@@ -24,8 +24,8 @@ from affordance_runtime.model.policy.model_port_bridge import (
     DecisionPerceptionProfile,
     perception_uses_images,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
+from affordance_runtime.model.providers.tool_transport_contracts import ToolSpec
 
 
 @dataclass(frozen=True)

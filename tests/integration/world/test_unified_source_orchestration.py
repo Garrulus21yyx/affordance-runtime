@@ -23,12 +23,14 @@ from affordance_runtime.agent.context.world_projection import project_model_worl
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
+    AcquisitionOrigin,
     AcquisitionStatus,
     CoverageState,
     EntityAlignmentBasis,
     EntityAlignmentDisposition,
     EntityAlignmentProposal,
     EntityAllocation,
+    ObservationAcquisition,
     ObservationAssurance,
     ObservationGroundingRegion,
     ObservationMedia,
@@ -48,6 +50,7 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
     WorldObservationRequest,
+    selected_observation_requests,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from tests.integration.agent.test_agent_loop import ScriptedPolicy, _loop, _world
@@ -318,17 +321,22 @@ class OfferedAdapter:
     observe_calls: int = 0
     prepared: bool = False
     requests: list = field(default_factory=list)
+    owns_physical_reset: bool = True
+    physical_id: str = ""
+
+    @property
+    def physical_environment_id(self):
+        return self.physical_id or f"fake:{self.surface}"
 
     @property
     def observation_offers(self):
         return (self.offer,)
 
-    def prepare(self, task):
+    def initialize_task(self, task):
         del task
         self.prepared = True
 
-    async def reset(self, task):
-        del task
+    async def reset_physical(self):
         self.reset_calls += 1
 
     async def acquire(self, request):
@@ -336,7 +344,11 @@ class OfferedAdapter:
         self.requests.append(request)
         if self.observation is None:
             raise RuntimeError("unavailable")
-        return SelectedObservationResult.acquired(request, self.observation)
+        return SelectedObservationResult.acquired(
+            request,
+            self.observation,
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     async def execute(self, request):
         return ActionResult(
@@ -349,18 +361,29 @@ class NoOfferAdapter:
     surface: str = "undeclared"
     reset_calls: int = 0
     observe_calls: int = 0
+    owns_physical_reset: bool = True
+
+    @property
+    def physical_environment_id(self):
+        return "fake:undeclared"
 
     @property
     def observation_offers(self):
         return ()
 
-    async def reset(self, task):
+    def initialize_task(self, task):
         del task
+
+    async def reset_physical(self):
         self.reset_calls += 1
 
     async def acquire(self, request):
         self.observe_calls += 1
-        return SelectedObservationResult.acquired(request, _source(self.surface))
+        return SelectedObservationResult.acquired(
+            request,
+            _source(self.surface),
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     async def execute(self, request):
         raise AssertionError(f"unexpected execution: {request.request_id}")
@@ -396,6 +419,131 @@ def test_offer_source_alias_resolves_through_explicit_provider_registration() ->
         assert acquired.observation.sources[0].surface == "dom"
 
     asyncio.run(scenario())
+
+
+def test_late_activated_adapter_is_initialized_and_its_physical_environment_reset() -> None:
+    async def scenario() -> None:
+        dom = OfferedAdapter(
+            "dom", ObservationOffer("dom", "structural", "structural", "low"), _source("dom"),
+        )
+        visual = OfferedAdapter(
+            "visual",
+            ObservationOffer("visual", "visual", "weak", "high"),
+            _source("visual", profile=ObservationSourceProfile.visual()),
+        )
+        environment = UnifiedWorldEnvironment((dom, visual))
+
+        initial = await environment.reset(_task())
+        acquired = await environment.capture(WorldObservationRequest(
+            ObservationRequestKind.POLICY_REQUEST,
+            "late visual activation",
+            (_need(
+                ObservationPurpose.ENTITY_DISCOVERY,
+                ObservationModality.VISUAL,
+                ObservationAssurance.WEAK,
+            ),),
+        ))
+
+        assert initial.status is AcquisitionStatus.ACQUIRED
+        assert dom.prepared is visual.prepared is True
+        assert dom.reset_calls == visual.reset_calls == 1
+        assert acquired.status is AcquisitionStatus.ACQUIRED
+        assert visual.observe_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_shared_physical_environment_uses_its_explicit_reset_owner() -> None:
+    async def scenario() -> None:
+        dom = OfferedAdapter(
+            "dom",
+            ObservationOffer("dom", "structural", "structural", "low"),
+            _source("dom"),
+            owns_physical_reset=True,
+            physical_id="fixture:shared-browser",
+        )
+        visual = OfferedAdapter(
+            "visual",
+            ObservationOffer("visual", "visual", "weak", "high"),
+            _source("visual", profile=ObservationSourceProfile.visual()),
+            owns_physical_reset=False,
+            physical_id="fixture:shared-browser",
+        )
+
+        acquired = await UnifiedWorldEnvironment((visual, dom)).reset(_task())
+
+        assert acquired.status is AcquisitionStatus.ACQUIRED
+        assert dom.prepared is visual.prepared is True
+        assert dom.reset_calls == 1
+        assert visual.reset_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_acquired_source_can_truthfully_leave_one_selected_need_unfulfilled() -> None:
+    needs = (
+        _need(ObservationPurpose.ENTITY_DISCOVERY, ObservationModality.VISUAL, ObservationAssurance.WEAK),
+        ObservationNeed(
+            "test:visual_property",
+            ObservationPurpose.VISUAL_PROPERTY,
+            required_modality=ObservationModality.VISUAL,
+            required_assurance=ObservationAssurance.WEAK,
+            evidence_property="color",
+        ),
+    )
+    offer = ObservationOffer(
+        "visual",
+        "visual",
+        "weak",
+        "high",
+        supported_purposes=(
+            ObservationPurpose.ENTITY_DISCOVERY,
+            ObservationPurpose.VISUAL_PROPERTY,
+        ),
+    )
+    request = WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "two semantic needs",
+        needs,
+    )
+    outcome = ObservationOrchestrator().select((offer,), request)
+    assert outcome.plan is not None
+    selected_request = selected_observation_requests(
+        outcome.plan, request, (offer,), "acquisition:partial"
+    )[0]
+
+    result = SelectedObservationResult.acquired(
+        selected_request,
+        _source("visual", profile=ObservationSourceProfile.visual()),
+        fulfilled_need_ids=(needs[0].need_id,),
+        unfulfilled_reason_code="visual_property_not_observed",
+    )
+
+    assert result.status is SourceAcquisitionStatus.ACQUIRED
+    assert result.fulfilled_need_ids == (needs[0].need_id,)
+    assert result.unfulfilled_need_ids == (needs[1].need_id,)
+
+
+def test_public_acquisition_rejects_a_plan_without_conserved_source_results() -> None:
+    request = WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "public invariant",
+    )
+    outcome = ObservationOrchestrator().select(
+        (ObservationOffer("dom", "structural", "structural", "low"),),
+        request,
+    )
+    assert outcome.plan is not None
+
+    with pytest.raises(ValueError, match="exactly conserve the plan"):
+        ObservationAcquisition(
+            AcquisitionStatus.FAILED,
+            AcquisitionOrigin.INDEPENDENT_CAPTURE,
+            None,
+            "malformed_acquisition",
+            outcome.plan,
+            (),
+        )
 
 
 def test_generic_environment_runs_residual_stage_two_with_one_orchestrator() -> None:
@@ -825,17 +973,21 @@ class SharedCaptureAdapter:
     physical_capture_calls: int = 0
     acquisition_ids: list[str] = field(default_factory=list)
     prepared: bool = False
+    owns_physical_reset: bool = True
+
+    @property
+    def physical_environment_id(self):
+        return "fake:shared-browser"
 
     @property
     def observation_offers(self):
         return self.offers
 
-    def prepare(self, task):
+    def initialize_task(self, task):
         del task
         self.prepared = True
 
-    async def reset(self, task):
-        del task
+    async def reset_physical(self):
         self.reset_calls += 1
 
     async def acquire(self, request):
@@ -848,7 +1000,9 @@ class SharedCaptureAdapter:
             self.physical_capture_calls += 1
         return tuple(
             SelectedObservationResult.acquired(
-                request, self.group_observations[request.source]
+                request,
+                self.group_observations[request.source],
+                fulfilled_need_ids=tuple(item.need_id for item in request.needs),
             )
             for request in requests
         )

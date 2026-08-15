@@ -22,7 +22,6 @@ from affordance_runtime.app.cli import (
 )
 from affordance_runtime.app.composition import compose_target_runtime_from_environment
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
-from affordance_runtime.model.policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.task import RiskProfile, TaskUnsupported, ThinTaskIntake
 from tests.support.agent.target_agent_loop_support import FirstOfferedActionPolicy
 
@@ -100,11 +99,10 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
             del context
             return PolicyFailure("fixture", "fixture", False)
 
-    def fake_policy(environment, *, call_timeout_s, interaction_protocol):
+    def fake_policy(environment, *, call_timeout_s):
         captured.update({
             "environment": environment,
             "call_timeout_s": call_timeout_s,
-            "interaction_protocol": interaction_protocol,
         })
         return Policy()
 
@@ -118,7 +116,6 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
     assert captured == {
         "environment": {"PROFILE": "fixture"},
         "call_timeout_s": 7,
-        "interaction_protocol": GROUNDED_TOOLS_PROTOCOL,
     }
     assert runtime.required_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
 

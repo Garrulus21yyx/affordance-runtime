@@ -79,7 +79,8 @@ def test_registered_http_json_projects_only_allowlisted_authoritative_facts() ->
             "unrelated": {"account": "private"},
         })
         adapter = HttpJsonSurfaceAdapter(_registration(), transport)
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         observation = await acquire_observation(adapter, "verify persisted setting")
 
@@ -112,7 +113,8 @@ def test_projection_failure_is_typed_and_does_not_publish_partial_authority() ->
             _registration(),
             FakeTransport({"settings": {}}),
         )
-        await adapter.reset(_task())
+        adapter.initialize_task(_task())
+        await adapter.reset_physical()
 
         with pytest.raises(HttpJsonProjectionError) as caught:
             await acquire_observation(adapter, "missing fact")
@@ -145,16 +147,21 @@ def test_registration_requires_explicit_authority_and_stable_projection_identity
 class StructuralAdapter:
     surface: str = "dom"
     observe_calls: int = 0
+    owns_physical_reset: bool = True
+
+    @property
+    def physical_environment_id(self):
+        return "fixture:dom"
 
     @property
     def observation_offers(self):
         return (ObservationOffer("dom", "structural", "structural", "low"),)
 
-    def prepare(self, task):
+    def initialize_task(self, task):
         del task
 
-    async def reset(self, task):
-        del task
+    async def reset_physical(self):
+        return None
 
     async def acquire(self, request):
         self.observe_calls += 1
@@ -175,7 +182,11 @@ class StructuralAdapter:
             (),
             CoverageState.COMPLETE,
         )
-        return SelectedObservationResult.acquired(request, observation)
+        return SelectedObservationResult.acquired(
+            request,
+            observation,
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     async def execute(self, request):
         return ActionResult(request.request_id, DispatchStatus.SENT, self.surface, True)

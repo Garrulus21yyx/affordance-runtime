@@ -148,7 +148,7 @@ def main() -> int:
         if not gate.executed:
             return 1
         policy = model_policy_from_environment(
-            grounding_variant="format-only", provider_recovery=False,
+            provider_recovery=False,
         )
         live_outcome = asyncio.run(run_fixed_external_smoke(
             policy, seed=args.seed,

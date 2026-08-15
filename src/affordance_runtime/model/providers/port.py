@@ -331,7 +331,10 @@ class OpenAICompatibleModelPort:
     ) -> tuple[object, ...]:
         from affordance_runtime.immutable import to_json_compatible
         from affordance_runtime.model.policy.strict_json import strict_json_loads
-        from affordance_runtime.model.policy.tool_contracts import ToolCall
+        from affordance_runtime.model.providers.tool_transport_contracts import (
+            NATIVE_TOOL_CALLS_TRANSPORT,
+            ToolCall,
+        )
 
         serialized_messages = _serialize_openai_compatible_messages(
             messages,
@@ -423,8 +426,8 @@ class OpenAICompatibleModelPort:
             model=self.model,
             endpoint_class=self.endpoint_class,
             prompt_version=config.prompt_version,
-            schema_name="dynamic_tools.v1",
-            schema_version="dynamic_tools.v1",
+            schema_name=NATIVE_TOOL_CALLS_TRANSPORT,
+            schema_version=NATIVE_TOOL_CALLS_TRANSPORT,
             latency_ms=latency_ms,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
@@ -582,7 +585,7 @@ class OpenAICompatibleModelPort:
             self.private_capture.record(
                 provider=self.provider,
                 model=self.model,
-                schema_name="dynamic_tools.v1",
+                schema_name="native_tool_calls.v1",
                 messages=messages,
                 status=status,
                 response_content={"tools": tools, "response": response_content},

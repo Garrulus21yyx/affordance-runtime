@@ -45,10 +45,15 @@ if TYPE_CHECKING:
 class DomSurfaceAdapter:
     session: BrowserSession
     trusted_interaction_operations: frozenset[str] = frozenset()
+    owns_physical_reset: bool = field(default=True, repr=False)
     surface: str = field(default="dom", init=False)
     _observation_id: str = field(default="", init=False)
     _source_revision: str = field(default="", init=False)
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
+
+    @property
+    def physical_environment_id(self) -> str:
+        return f"browser_session:{id(self.session)}"
 
     def __post_init__(self) -> None:
         operations = frozenset(self.trusted_interaction_operations)
@@ -68,13 +73,12 @@ class DomSurfaceAdapter:
             self.surface, "structural", "structural", "low",
         ),)
 
-    def prepare(self, task: TaskGoal) -> None:
+    def initialize_task(self, task: TaskGoal) -> None:
         self._task = task
         self._observation_id = ""
         self._source_revision = ""
 
-    async def reset(self, task: TaskGoal) -> None:
-        self.prepare(task)
+    async def reset_physical(self) -> None:
         self.session.reset()
 
     async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
@@ -137,7 +141,11 @@ class DomSurfaceAdapter:
             },
             acquisition_root_id=f"browser:{snapshot.observation.page_revision}",
         )
-        return SelectedObservationResult.acquired(request, observation)
+        return SelectedObservationResult.acquired(
+            request,
+            observation,
+            fulfilled_need_ids=tuple(item.need_id for item in request.needs),
+        )
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return self._currentness(request)[0]

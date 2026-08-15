@@ -56,7 +56,6 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelCallRecord,
     ModelConfig,
@@ -66,6 +65,7 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputError,
     StructuredOutputViolation,
 )
+from affordance_runtime.model.providers.tool_transport_contracts import ToolCall, ToolSpec
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.backend import _effective_visibility
 from affordance_runtime.surfaces.browsergym.entity_identity import BrowserGymEntityIdentityMap
