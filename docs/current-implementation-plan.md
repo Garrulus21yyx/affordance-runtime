@@ -120,7 +120,62 @@ state or new action binding may build on that boundary.
 Evidence and the remaining producer/consumer inventory are recorded in
 [Wave-A consumer inventory](evidence/2026-08-14-interaction-capability-wave-a-consumer-inventory.md).
 
-### Open convergence slice — multi-source observed-world graph
+## Blocking cleanup slice — Target Runtime topology cutover
+
+Status:
+`DESIGNED / T0_READY / WAVE_A_ADMITTED /
+BEFORE_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
+
+The physical repository still exposes old and target generations as peers.
+The installed CLI enters the mixed legacy command, the root public API exports
+both runtime families, target execution passes through multiple thin wrappers,
+production BrowserGym surface code remains under benchmark namespaces, and most
+source/tests are flat at package roots.
+
+The authoritative implementation plan is
+[Target Runtime topology cutover and legacy deletion](plans/2026-08-15-target-runtime-topology-cutover.md).
+Its required order is:
+
+```text
+authoritative production + test consumer inventory
+-> target public façade / CLI / AgentLoop cutover
+-> active benchmark and BrowserGym surface migration
+-> owner-by-owner legacy production + test deletion
+-> move only the remaining live files into owner packages
+-> topology closure review
+```
+
+Current diagnostic scale is 505 production Python files, including 150 at the
+package root and 153 under benchmarks; tests contain 342 Python files, 337 at
+the tests root. A bounded import scan finds 49 test files coupled to selected
+legacy runtime/planning/recovery families and 151 coupled to target
+agent/world/model/surface families. These counts trigger the inventory; they do
+not authorize bulk deletion.
+
+Tests are first-class migration consumers. Every production slice must classify
+its tests as `KEEP_MOVE`, `REWRITE`, or `DELETE_WITH_OWNER`, migrate or delete
+them in the same commit, and add architecture redlines that make the displaced
+import physically unreachable. Historical pass-count preservation is not an
+acceptance criterion; retained invariants and supported behavior are.
+
+Minimum gate before world-graph A.1:
+
+- Wave A closure is committed and proportionally verified;
+- target product CLI/API/composition are the default;
+- old coordinator/runtime/contract-execution product loop is deleted;
+- one `TargetRuntime -> AgentLoop -> AgentRunSession` spine is physically
+  obvious;
+- reusable BrowserGym code needed by A.1 has a product surface owner;
+- touched test clusters have migrated and architecture tests forbid restoring
+  the old chain.
+
+The cleanup does not wait for every historical benchmark report test if the
+remaining benchmark-only tail is isolated, has an explicit final disposition
+(`KEEP_MOVE`, `REWRITE`, or `DELETE_WITH_OWNER`), and cannot import or expose
+the deleted product runtime. Supported runner/reporting invariants may remain
+as `KEEP_MOVE`; isolation, not deletion, is the A.1 boundary.
+
+## Open convergence slice — multi-source observed-world graph
 
 Status:
 `SOURCE_ENVELOPE_RETAINED / SINGLE_SOURCE_STRUCTURE_WORKS / MULTISOURCE_CORRESPONDENCE_AND_DEDUP_OPEN`
@@ -187,7 +242,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Slice | Status | Files / verification |
 |---|---|---|
 | Model protocol convergence | `ACTION_PROTOCOL_DONE / OBJECTIVE_MODEL_PHASE_WITHDRAWN_FROM_TARGET` | `grounded_tools.v2` is the benchmark action protocol and supported decisions are explicit. Schema repair returns bounded field errors. The failed live objective diagnostic and owner audit show that the Runtime execution DSL must not be the target agent's planning language; target product/benchmark composition can no longer configure that second model phase. Dormant objective transport remains pending physical deletion. |
-| Product target composition/client | done, pushed | `compose_target_runtime`, `TargetRuntimeClient`, typed continuations; source-tree composition gate |
+| Product target composition/client | implemented non-default; topology consolidation pending | `compose_target_runtime`, `TargetRuntimeClient`, typed continuations; topology inventory must collapse pass-through client/episode layers unless it proves a distinct owner |
 | Product evaluation/DOM evidence | `REOPENED_SPECIALIZATION_AUDIT` | evaluator is product-owned, but arbitrary world-fact/screenshot change currently confirms any activation; replace correlation with explicit effect obligations or semantic verifier evidence |
 | Explicit target CLI | done, pushed | `target-run`, strict intake, thread-bound browser session, real CLI E2E; legacy `run` unchanged |
 | Reference cutover readiness | implemented, governance redesign pending | typed gate exists, but scenario names and exact pytest node IDs are hard-coded in product source; move readiness evidence to an external manifest |
@@ -195,8 +250,9 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
 | Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
-| Root default switch | pending | only after reference readiness, held-out gate, and fresh-context topology review |
-| Legacy deletion | pending | delete owner-by-owner only after all default consumers resolve through target and shared claims have target-owned tests |
+| Runtime topology cutover | designed, not started | [topology cutover plan](plans/2026-08-15-target-runtime-topology-cutover.md); production and tests migrate together; minimum target spine cutover blocks world-graph A.1/new capabilities |
+| Root default switch | pending in topology T1 | target-only product CLI/public API; benchmark commands become a separate entrypoint |
+| Legacy deletion | pending in topology T2/T3 | delete owner-by-owner with active benchmark migration, target-owned invariant tests and no compatibility shims |
 
 World invariant for every pending slice:
 
