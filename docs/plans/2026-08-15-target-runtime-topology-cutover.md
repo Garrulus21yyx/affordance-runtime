@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `DESIGNED / T0_READY / WAVE_A_ADMITTED /
+Status: `DESIGNED / T0_COMPLETE / T1_READY / WAVE_A_ADMITTED /
 BLOCKS_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
 
 ## Goal
@@ -169,7 +169,10 @@ Forbidden dependencies:
 
 ### T0 — authoritative consumer and test inventory
 
-Status: `READY`
+Status: `COMPLETE`
+
+The authoritative inventory and disposition evidence is
+[Target Runtime topology T0 consumer and test inventory](../evidence/2026-08-15-target-runtime-topology-t0-inventory.md).
 
 Create one reviewable inventory containing every candidate legacy production
 module, public export, CLI command, script, benchmark consumer, test file and

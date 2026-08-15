@@ -123,7 +123,7 @@ Evidence and the remaining producer/consumer inventory are recorded in
 ## Blocking cleanup slice — Target Runtime topology cutover
 
 Status:
-`DESIGNED / T0_READY / WAVE_A_ADMITTED /
+`DESIGNED / T0_COMPLETE / T1_READY / WAVE_A_ADMITTED /
 BEFORE_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
 
 The physical repository still exposes old and target generations as peers.
@@ -134,6 +134,9 @@ source/tests are flat at package roots.
 
 The authoritative implementation plan is
 [Target Runtime topology cutover and legacy deletion](plans/2026-08-15-target-runtime-topology-cutover.md).
+The repository-wide production, benchmark, script, test and fixture disposition
+is recorded in the
+[T0 consumer and test inventory](evidence/2026-08-15-target-runtime-topology-t0-inventory.md).
 Its required order is:
 
 ```text
@@ -250,7 +253,7 @@ cutover. Detailed diagnoses and deletion gates remain in the
 | Pricing structural/output projection | `REOPENED_SPECIALIZATION_FOUND` | pushed `4a37e7c` passes its witnesses but is not generic evidence: `article/dl/dt/dd`, fixed `structured_document`, record count, and broad activation-diff acceptance specialize the reference page |
 | Export materialization/integrity | paused by specialization audit | do not extend the same projection/evaluator pattern; resume only after generic artifact and semantic-agent boundaries replace the reopened pattern |
 | Target-default held-out benchmark | pending | predeclare profile, seeds, and threshold; run from a clean pushed SHA |
-| Runtime topology cutover | designed, not started | [topology cutover plan](plans/2026-08-15-target-runtime-topology-cutover.md); production and tests migrate together; minimum target spine cutover blocks world-graph A.1/new capabilities |
+| Runtime topology cutover | `T0_COMPLETE / T1_READY` | [topology cutover plan](plans/2026-08-15-target-runtime-topology-cutover.md) and [T0 inventory](evidence/2026-08-15-target-runtime-topology-t0-inventory.md); production and tests migrate together; minimum target spine cutover blocks world-graph A.1/new capabilities |
 | Root default switch | pending in topology T1 | target-only product CLI/public API; benchmark commands become a separate entrypoint |
 | Legacy deletion | pending in topology T2/T3 | delete owner-by-owner with active benchmark migration, target-owned invariant tests and no compatibility shims |
 
