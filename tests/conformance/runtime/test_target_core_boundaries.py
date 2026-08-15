@@ -217,7 +217,7 @@ def test_benchmark_case_projection_is_narrow_and_separate_from_model_projection(
     assert "project_case_result(" in runner_source
 
 
-def test_turn_history_is_read_only_projection_not_a_second_write_api() -> None:
+def test_compatibility_turn_history_is_physically_absent() -> None:
     state_tree = ast.parse((PACKAGE / "agent" / "state.py").read_text(encoding="utf-8"))
     state = next(
         node
@@ -231,4 +231,4 @@ def test_turn_history_is_read_only_projection_not_a_second_write_api() -> None:
     }
 
     assert "append_turn" not in methods
-    assert "recent_turns" in methods
+    assert "recent_turns" not in methods

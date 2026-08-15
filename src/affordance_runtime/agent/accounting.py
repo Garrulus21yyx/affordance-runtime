@@ -29,6 +29,8 @@ class RunAccounting:
     def record(self, receipt: AttemptReceipt) -> None:
         if receipt.attempt_id in self._receipt_ids:
             raise ValueError("attempt receipt was already accounted")
+        if receipt.attempt_id != self.next_attempt_id():
+            raise ValueError("attempt receipt identity is not the next run-scoped sequence")
         self._receipt_ids.add(receipt.attempt_id)
         self._observation_attempts += receipt.acquisition_attempts
         self._execution_attempts += receipt.execution_attempts

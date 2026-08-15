@@ -2,10 +2,9 @@
 
 from typing import Protocol
 
-from affordance_runtime.execution.contracts import BoundActionRequest
+from affordance_runtime.execution.contracts import BoundActionRequest, ExecutionOutcome
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
-    ExecutionOutcome,
     ObservationAcquisition,
     ObservationCapabilities,
     WorldObservationRequest,

@@ -12,12 +12,12 @@ from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigi
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus, ExecutionOutcome
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.contracts import ModelMetadata
-from affordance_runtime.world import AcquisitionStatus, ExecutionOutcome, ObservationAcquisition
+from affordance_runtime.world import AcquisitionStatus, ObservationAcquisition
 
 
 @dataclass
@@ -338,7 +338,7 @@ def _runtime_transition_trace(transition):
         "sequence": transition.sequence,
         "admission_status": (transition.admission.status.value if transition.admission is not None else ""),
         "admission_reason_code": (transition.admission.reason_code if transition.admission is not None else ""),
-        "dispatch_status": (transition.execution.dispatch_status.value if transition.execution is not None else ""),
+        "dispatch_status": (transition.execution.result.dispatch_status.value if transition.execution is not None else ""),
         "semantic_action": intent.semantic_action if intent is not None else "",
         "target_id": intent.target_id if intent is not None else "",
         "destination_id": intent.destination_id if intent is not None else "",
@@ -545,11 +545,13 @@ class CountingEnvironment:
         if not isinstance(outcome, ExecutionOutcome):
             return outcome
         result = outcome.result
-        if not isinstance(result, ActionResult) or not isinstance(outcome.post_acquisition, ObservationAcquisition):
+        if not isinstance(result, ActionResult):
             return outcome
-        state.environment_post_acquisitions += int(
-            outcome.post_acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
-        )
+        if isinstance(outcome.post_acquisition, ObservationAcquisition):
+            state.environment_post_acquisitions += int(
+                outcome.post_acquisition.status
+                in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
+            )
         dispatches = _dispatch_count(self.wrapped, before, result)
         if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
             state.stale_opportunities += 1

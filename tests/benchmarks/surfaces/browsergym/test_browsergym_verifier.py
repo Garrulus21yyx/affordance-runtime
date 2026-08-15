@@ -397,7 +397,7 @@ def test_negative_terminal_flows_once_without_synthetic_runtime_failure() -> Non
         assert first.task_outcome is not None
         assert first.task_outcome.kind.value == "terminal_failure"
         assert first.control_transitions[0].execution is not None
-        assert first.control_transitions[0].execution.dispatch_status is DispatchStatus.SENT
+        assert first.control_transitions[0].execution.result.dispatch_status is DispatchStatus.SENT
         assert fake.actions and len(fake.actions) == environment.step_calls == 1
         task_evaluation = first.control_transitions[0].task_evaluation
         assert task_evaluation is not None

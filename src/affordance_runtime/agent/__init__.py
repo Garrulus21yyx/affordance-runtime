@@ -15,10 +15,8 @@ if TYPE_CHECKING:
         NextDecisionDisposition,
     )
     from affordance_runtime.agent.control_transition import (
-        AcquisitionSummary,
+        ActionAdmissionOutcome,
         AdmissionStatus,
-        AdmissionSummary,
-        ControlContinuation,
         ControlTransition,
         PendingKind,
         ProgressDelta,
@@ -46,11 +44,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
     from affordance_runtime.agent.session import AgentRunSession
     from affordance_runtime.agent.start_error import AgentSessionStartError
-    from affordance_runtime.agent.state import (
-        AgentLoopState,
-        AgentLoopStatus,
-        Turn,
-    )
+    from affordance_runtime.agent.state import AgentLoopState, AgentLoopStatus
     from affordance_runtime.agent.user_input import (
         UserInputRequest,
         UserInputResumed,
@@ -68,8 +62,7 @@ _EXPORTS = {
         "affordance_runtime.agent.control_feedback",
         "NextDecisionDisposition",
     ),
-    "AcquisitionSummary": ("affordance_runtime.agent.control_transition", "AcquisitionSummary"),
-    "AdmissionSummary": ("affordance_runtime.agent.control_transition", "AdmissionSummary"),
+    "ActionAdmissionOutcome": ("affordance_runtime.agent.control_transition", "ActionAdmissionOutcome"),
     "AdmissionStatus": ("affordance_runtime.agent.control_transition", "AdmissionStatus"),
     "ALL_DECISION_CAPABILITIES": (
         "affordance_runtime.agent.decision_capability",
@@ -94,7 +87,6 @@ _EXPORTS = {
     "AskUser": ("affordance_runtime.agent.decisions", "AskUser"),
     "FailureKind": ("affordance_runtime.agent.runtime_failure", "FailureKind"),
     "FailureStage": ("affordance_runtime.agent.runtime_failure", "FailureStage"),
-    "ControlContinuation": ("affordance_runtime.agent.control_transition", "ControlContinuation"),
     "ControlTransition": ("affordance_runtime.agent.control_transition", "ControlTransition"),
     "PendingKind": ("affordance_runtime.agent.control_transition", "PendingKind"),
     "ProposeDone": ("affordance_runtime.agent.decisions", "ProposeDone"),
@@ -112,7 +104,6 @@ _EXPORTS = {
         "affordance_runtime.agent.decision_capability",
         "TOOL_ACTION_DECISION_CAPABILITIES",
     ),
-    "Turn": ("affordance_runtime.agent.control_transition", "Turn"),
     "Wait": ("affordance_runtime.agent.decisions", "Wait"),
     "UserInputRequest": ("affordance_runtime.agent.user_input", "UserInputRequest"),
     "UserInputResumed": ("affordance_runtime.agent.user_input", "UserInputResumed"),

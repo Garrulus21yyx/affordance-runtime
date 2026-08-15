@@ -1,867 +1,313 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 
-import pytest
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
-from affordance_runtime.agent import AgentLoopStatus
-from affordance_runtime.agent.accounting import RunAccounting
-from affordance_runtime.agent.attempt_receipt import (
-    AttemptDisposition,
-    AttemptOperation,
-    AttemptReceipt,
-)
 from affordance_runtime.agent.control_reducer import (
     AppendRoot,
-    ApplyContinuation,
-    ApplyUserInputContinuation,
     ControlAccepted,
     ControlRejected,
     ControlState,
     reduce_control,
-    validate_control_state,
 )
 from affordance_runtime.agent.control_transition import (
-    AcquisitionSummary,
-    AdmissionStatus,
-    AdmissionSummary,
-    ControlContinuation,
     ControlTransition,
-    ExecutionSummary,
     PendingKind,
     ProgressDelta,
 )
-from affordance_runtime.agent.decisions import AskUser, SelectAction, Wait
-from affordance_runtime.agent.user_input import UserInputContinuation
-from affordance_runtime.benchmarks.target_loop.failure_origin import (
-    OBSERVATION_FAILURE_ORIGINS,
-    observation_failure_origin,
+from affordance_runtime.agent.decisions import Abort, RequestObservation, Wait
+from affordance_runtime.agent.state import AgentLoopStatus
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.evaluation import EvaluationOutcome
+from affordance_runtime.world import AcquisitionOrigin, ObservationCapabilities
+from tests.integration.agent.test_agent_loop import (
+    ScriptedPolicy,
+    _loop,
+    _sent,
+    _task,
+    _world,
 )
-from affordance_runtime.evaluation import (
-    ActionEvaluation,
-    ActionEvaluationStatus,
-    TaskEvaluation,
-    TaskEvaluationStatus,
-    TaskOutcomeFact,
-    TaskOutcomeKind,
-)
-from affordance_runtime.execution import ActionError, DispatchStatus
-from affordance_runtime.risk.contracts import RiskDecisionKind
-from affordance_runtime.risk.policy import RiskPolicy
-from affordance_runtime.world import (
-    AcquisitionOrigin,
-    AcquisitionStatus,
-    ObservationRequestKind,
-)
-from tests.integration.agent.test_confirmation_continuation import _task, _world
+from tests.support.observation_acquisition import failed_acquisition
 
 
-class ControlReducerMachine(RuleBasedStateMachine):
-    """Stepwise production/reference comparison for the bounded reducer."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.production = ControlState()
-        self.model_roots: list[ControlTransition] = []
-        self.model_total = 0
-        self.model_sent_unknown = 0
-        self.model_consumed: set[str] = set()
-        self.model_terminal = ""
-        self.model_waiting_user = False
-        self.pending_root = ""
-        self.last_consumed_root = ""
-        self.accounting = RunAccounting()
-        self.fake_execute_calls = 0
-        self.fake_effectful_dispatches = 0
-
-    @rule(
-        limit=st.integers(min_value=1, max_value=4),
-        dispatch=st.sampled_from((None, DispatchStatus.NOT_SENT, DispatchStatus.SENT,
-                                  DispatchStatus.SENT_UNKNOWN)),
-    )
-    def append_legal_root(self, limit, dispatch) -> None:
-        attempt_id = self.accounting.receipt_count + 1
-        transition = _root(
-            self.model_total + 1,
-            dispatch=dispatch,
-            attempt_id=attempt_id,
-        )
-        result = reduce_control(self.production, AppendRoot(transition, limit))
-        if self.model_terminal or self.model_waiting_user or self.pending_root:
-            assert isinstance(result, ControlRejected)
-            return
-        assert isinstance(result, ControlAccepted)
-        self.production = result.state
-        self.model_roots = (*self.model_roots, transition)[-limit:]
-        self.model_roots = list(self.model_roots)
-        self.model_total += 1
-        self.model_sent_unknown += int(dispatch is DispatchStatus.SENT_UNKNOWN)
-        for receipt in transition.attempt_receipts:
-            self.accounting.record(receipt)
-            self.fake_execute_calls += 1
-            self.fake_effectful_dispatches += receipt.effectful_dispatches
-
-    @precondition(
-        lambda self: not self.model_terminal
-        and not self.model_waiting_user
-        and not self.pending_root
-    )
-    @rule(limit=st.integers(min_value=1, max_value=4))
-    def request_confirmation(self, limit) -> None:
-        transition = _root(
-            self.model_total + 1,
-            pending=PendingKind.CONFIRMATION,
-            status=AgentLoopStatus.WAITING_CONFIRMATION,
-        )
-        result = reduce_control(self.production, AppendRoot(transition, limit))
-        assert isinstance(result, ControlAccepted)
-        self.production = result.state
-        self.model_roots = list((*self.model_roots, transition)[-limit:])
-        self.model_total += 1
-        self.pending_root = transition.transition_id
-
-    @precondition(lambda self: bool(self.pending_root))
-    @rule(scenario=st.sampled_from((
-        "no_dispatch", "retry", "exception", "cancel", "evaluated",
-    )))
-    def resolve_confirmation_once(self, scenario) -> None:
-        continuation = _continuation_scenario(
-            self.pending_root,
-            scenario,
-            self.accounting.receipt_count + 1,
-        )
-        status = continuation.resulting_status
-        result = reduce_control(self.production, ApplyContinuation(continuation))
-        assert isinstance(result, ControlAccepted)
-        self.production = result.state
-        index = next(
-            i for i, item in enumerate(self.model_roots)
-            if item.transition_id == self.pending_root
-        )
-        previous = self.model_roots[index]
-        all_acquisitions = (
-            *previous.acquisition_attempts,
-            *continuation.acquisition_attempts,
-        )
-        self.model_roots[index] = replace(
-            previous,
-            execution=continuation.execution or previous.execution,
-            execution_attempts=(
-                *previous.execution_attempts,
-                *continuation.execution_attempts,
-            ),
-            acquisition=(
-                replace(
-                    all_acquisitions[-1],
-                    attempts=sum(item.attempts for item in all_acquisitions),
-                )
-                if all_acquisitions
-                else None
-            ),
-            acquisition_attempts=all_acquisitions,
-            attempt_receipts=(
-                *previous.attempt_receipts,
-                *continuation.attempt_receipts,
-            ),
-            after_observation_id=continuation.after_observation_id,
-            task_evaluation=continuation.task_evaluation,
-            pending_kind=continuation.pending_kind,
-            resulting_status=status,
-            reason_code=continuation.reason_code,
-        )
-        for receipt in continuation.attempt_receipts:
-            self.accounting.record(receipt)
-            self.fake_execute_calls += int(
-                receipt.operation is AttemptOperation.EXECUTE
-            )
-            self.fake_effectful_dispatches += receipt.effectful_dispatches
-        self.model_sent_unknown += sum(
-            item.dispatch_status is DispatchStatus.SENT_UNKNOWN
-            for item in continuation.attempt_receipts
-        )
-        self.model_consumed.add(self.pending_root)
-        self.last_consumed_root = self.pending_root
-        self.pending_root = ""
-        self.model_terminal = (
-            str(status)
-            if status in {
-                AgentLoopStatus.DONE,
-                AgentLoopStatus.BLOCKED,
-                AgentLoopStatus.CANCELLED,
-                AgentLoopStatus.FAILED,
-            }
-            else ""
-        )
-        self.model_waiting_user = status is AgentLoopStatus.WAITING_USER
-
-    @precondition(lambda self: bool(self.last_consumed_root))
-    @rule()
-    def replay_consumed_confirmation_is_rejected(self) -> None:
-        result = reduce_control(
-            self.production,
-            ApplyContinuation(_continuation(
-                self.last_consumed_root, AgentLoopStatus.DONE,
-            )),
-        )
-        expected = (
-            "terminal_state_is_absorbing"
-            if self.model_terminal
-            else "confirmation_root_already_consumed"
-        )
-        assert result == ControlRejected(expected)
-
-    @precondition(lambda self: bool(self.model_terminal))
-    @rule()
-    def terminal_reentry_is_rejected(self) -> None:
-        result = reduce_control(
-            self.production,
-            AppendRoot(_root(self.model_total + 1), 4),
-        )
-        assert result == ControlRejected("terminal_state_is_absorbing")
-
-    @invariant()
-    def production_matches_reference_after_every_step(self) -> None:
-        assert self.production.total_count == self.model_total
-        assert self.production.recent_transitions == tuple(self.model_roots)
-        assert self.production.sent_unknown_total_count == self.model_sent_unknown
-        assert set(self.production.continued_root_ids) == self.model_consumed
-        assert self.production.terminal_status == self.model_terminal
-        assert len({item.transition_id for item in self.model_roots}) == len(
-            self.model_roots
-        )
-        assert sum(dict(self.production.kind_counts).values()) == self.model_total
-        assert self.production.total_count >= len(self.production.recent_transitions)
-        assert validate_control_state(self.production) is None
-        assert self.accounting.execution_attempts == self.fake_execute_calls
-        assert (
-            self.accounting.effectful_dispatches
-            == self.fake_effectful_dispatches
-        )
-
-
-ControlReducerMachine.TestCase.settings = settings(
-    max_examples=100,
-    stateful_step_count=30,
-    deadline=None,
-)
-
-
-@given(
-    junk=st.one_of(
-        st.none(),
-        st.integers(),
-        st.text(max_size=12),
-        st.lists(st.integers(), max_size=3),
-        st.dictionaries(st.text(max_size=3), st.integers(), max_size=2),
-    )
-)
-def test_arbitrary_control_state_shapes_never_escape_typed_reduction(junk) -> None:
-    states = (
-        replace(ControlState(), terminal_status=junk),
-        replace(ControlState(), continued_root_ids=(junk,)),
-        replace(ControlState(), kind_counts=((junk, 1),)),
-    )
-    for state in states:
-        result = reduce_control(state, AppendRoot(_root(1), 1))
-        assert isinstance(result, ControlAccepted | ControlRejected)
-
-
-def _root(
-    sequence: int,
-    *,
-    dispatch: DispatchStatus | None = None,
-    pending: PendingKind = PendingKind.NONE,
-    status: AgentLoopStatus | None = None,
-    attempt_id: int | None = None,
-) -> ControlTransition:
-    execution = None
-    executions = ()
-    receipts = ()
-    acquisition = None
-    acquisitions = ()
-    if dispatch is not None:
-        request_id = f"request:{sequence}"
-        transport_success = dispatch is DispatchStatus.SENT
-        error = None if transport_success else ActionError.EXECUTION_FAILED
-        execution = ExecutionSummary(
-            request_id,
-            request_id,
-            "backend",
-            dispatch,
-            transport_success,
-            error,
-            0,
-        )
-        executions = (execution,)
-        receipt = AttemptReceipt(
-            f"attempt:{attempt_id or sequence}", AttemptOperation.EXECUTE, "post_action",
-            AcquisitionOrigin.POST_ACTION, AcquisitionOrigin.POST_ACTION,
-            AttemptDisposition.RETURNED, "post_action_acquired", 1, 1,
-            int(dispatch is not DispatchStatus.NOT_SENT), 0, dispatch,
-            request_id, request_id, True,
-            acquisition_status=AcquisitionStatus.ACQUIRED,
-        )
-        receipts = (receipt,)
-        acquisition = AcquisitionSummary(
-            AcquisitionStatus.ACQUIRED, AcquisitionOrigin.POST_ACTION,
-            "post_action_acquired", 1, "post_action", AcquisitionOrigin.POST_ACTION,
-        )
-        acquisitions = (acquisition,)
-        decision = SelectAction(f"context:{sequence}", "action")
-        admission = AdmissionSummary(AdmissionStatus.ADMITTED, "admitted")
-    elif pending is PendingKind.CONFIRMATION:
-        decision = SelectAction(f"context:{sequence}", "action")
-        request_id = ""
-        admission = AdmissionSummary(
-            AdmissionStatus.CONFIRMATION_REQUIRED, "admitted"
-        )
-    else:
-        decision = Wait(f"context:{sequence}", "wait", 1)
-        request_id = ""
-        admission = None
+def _root(sequence: int) -> ControlTransition:
+    world = _world(f"observation:{sequence}", False)
     return ControlTransition(
-        f"transition:{sequence}", sequence, f"observation:{sequence}", decision,
-        admission, execution,
-        executions, acquisition, acquisitions, receipts,
-        f"observation:{sequence + 1}", None, None, ProgressDelta(), pending,
-        status, "root_recorded", request_id=request_id,
-    )
-
-
-def _continuation(root_id: str, status: AgentLoopStatus) -> ControlContinuation:
-    pending = (
-        PendingKind.USER
-        if status is AgentLoopStatus.WAITING_USER
-        else PendingKind.NONE
-    )
-    return ControlContinuation(
-        root_id, "observation:confirmed", None, (), (), None, (), None, "",
-        None, None, ProgressDelta(), pending, status,
-        "confirmation_resolved",
-    )
-
-
-def _continuation_scenario(
-    root_id: str,
-    scenario: str,
-    first_attempt_id: int,
-) -> ControlContinuation:
-    if scenario == "no_dispatch":
-        return _continuation(root_id, AgentLoopStatus.WAITING_USER)
-    if scenario in {"exception", "cancel"}:
-        disposition = (
-            AttemptDisposition.CANCELLED
-            if scenario == "cancel"
-            else AttemptDisposition.THREW
-        )
-        status = (
-            AgentLoopStatus.CANCELLED
-            if scenario == "cancel"
-            else AgentLoopStatus.FAILED
-        )
-        receipt = AttemptReceipt(
-            f"attempt:{first_attempt_id}",
-            AttemptOperation.EXECUTE,
-            "execute",
-            AcquisitionOrigin.POST_ACTION,
-            None,
-            disposition,
-            "execute_cancelled" if scenario == "cancel" else "execute_exception",
-            0,
-            1,
-            0,
-            0,
-            expected_request_id=f"request:{first_attempt_id}",
-            exception_class="CancelledError" if scenario == "cancel" else "RuntimeError",
-        )
-        return replace(
-            _continuation(root_id, status),
-            attempt_receipts=(receipt,),
-        )
-
-    dispatches = (
-        (DispatchStatus.NOT_SENT, DispatchStatus.SENT)
-        if scenario == "retry"
-        else (DispatchStatus.SENT,)
-    )
-    executions = []
-    acquisitions = []
-    receipts = []
-    for offset, dispatch in enumerate(dispatches):
-        attempt_id = first_attempt_id + offset
-        request_id = f"request:{attempt_id}"
-        summary = ExecutionSummary(
-            request_id,
-            request_id,
-            "backend",
-            dispatch,
-            dispatch is DispatchStatus.SENT,
-            None if dispatch is DispatchStatus.SENT else ActionError.EXECUTION_FAILED,
-        )
-        acquisition = AcquisitionSummary(
-            AcquisitionStatus.ACQUIRED,
-            AcquisitionOrigin.POST_ACTION,
-            "post_action_acquired",
-            1,
-            "post_action",
-            AcquisitionOrigin.POST_ACTION,
-        )
-        executions.append(summary)
-        acquisitions.append(acquisition)
-        receipts.append(AttemptReceipt(
-            f"attempt:{attempt_id}",
-            AttemptOperation.EXECUTE,
-            "post_action",
-            AcquisitionOrigin.POST_ACTION,
-            AcquisitionOrigin.POST_ACTION,
-            AttemptDisposition.RETURNED,
-            "post_action_acquired",
-            1,
-            1,
-            int(dispatch is not DispatchStatus.NOT_SENT),
-            0,
-            dispatch,
-            request_id,
-            request_id,
-            True,
-            acquisition_status=AcquisitionStatus.ACQUIRED,
-        ))
-    after_id = "observation:confirmed"
-    task_evaluation = (
-        TaskEvaluation(
-            "task:state-machine",
-            after_id,
-            TaskEvaluationStatus.COMPLETE,
-            "completed",
-        )
-        if scenario == "evaluated"
-        else None
-    )
-    return replace(
-        _continuation(
-            root_id,
-            AgentLoopStatus.DONE if scenario == "evaluated" else None,
-        ),
-        acquisition=replace(acquisitions[-1], attempts=len(acquisitions)),
-        acquisition_attempts=tuple(acquisitions),
-        attempt_receipts=tuple(receipts),
-        execution=executions[-1],
-        execution_attempts=tuple(executions),
-        task_evaluation=task_evaluation,
-    )
-
-
-def test_root_identity_and_observation_epoch_are_global_sequence_invariants() -> None:
-    first = reduce_control(ControlState(), AppendRoot(_root(1), 1))
-    assert isinstance(first, ControlAccepted)
-    discontinuous = replace(_root(2), before_observation_id="observation:foreign")
-    assert reduce_control(first.state, AppendRoot(discontinuous, 1)) == ControlRejected(
-        "observation_epoch_discontinuity"
-    )
-    second = reduce_control(first.state, AppendRoot(_root(2), 1))
-    assert isinstance(second, ControlAccepted)
-    reused = replace(_root(3), transition_id="transition:1")
-    assert reduce_control(second.state, AppendRoot(reused, 1)) == ControlRejected(
-        "root_identity_sequence_mismatch"
-    )
-
-
-def test_user_input_continuation_consumes_waiting_root_exactly_once() -> None:
-    root = replace(
-        _root(1),
-        decision=AskUser("context:1", "Clarify", ("inputs.answer",)),
-        pending_kind=PendingKind.USER,
-        resulting_status=AgentLoopStatus.WAITING_USER,
-        reason_code="user_input_requested",
-    )
-    pending = reduce_control(ControlState(), AppendRoot(root, 2))
-    assert isinstance(pending, ControlAccepted)
-    continuation = UserInputContinuation(
-        "user-input:0123456789abcdef01234567",
-        root.transition_id,
-        "task:state-machine",
-        1,
-        2,
-    )
-
-    resumed = reduce_control(
-        pending.state,
-        ApplyUserInputContinuation(continuation),
-    )
-
-    assert isinstance(resumed, ControlAccepted)
-    assert resumed.transition.pending_kind is PendingKind.NONE
-    assert resumed.transition.resulting_status is None
-    assert resumed.transition.reason_code == "user_input_submitted"
-    next_root = reduce_control(resumed.state, AppendRoot(_root(2), 2))
-    assert isinstance(next_root, ControlAccepted)
-    assert reduce_control(
-        resumed.state,
-        ApplyUserInputContinuation(continuation),
-    ) == ControlRejected("user_input_root_already_consumed")
-
-
-def test_execution_summaries_cannot_create_physical_attempt_truth() -> None:
-    fabricated = replace(_root(1, dispatch=DispatchStatus.SENT_UNKNOWN), attempt_receipts=())
-    assert reduce_control(ControlState(), AppendRoot(fabricated, 1)) == ControlRejected(
-        "execution_receipt_count_mismatch"
-    )
-
-
-def test_every_command_validates_the_merged_candidate_state() -> None:
-    first = reduce_control(
-        ControlState(),
-        AppendRoot(_root(1, dispatch=DispatchStatus.SENT, attempt_id=1), 4),
-    )
-    assert isinstance(first, ControlAccepted)
-    second = _root(2, dispatch=DispatchStatus.SENT, attempt_id=1)
-    assert validate_control_state(
-        ControlState((second,), 2, (("SelectAction", 2),))
-    ) is None
-    assert reduce_control(first.state, AppendRoot(second, 4)) == ControlRejected(
-        "duplicate_attempt_receipt"
-    )
-
-
-def test_pending_confirmation_cannot_already_have_crossed_execute_port() -> None:
-    pending = _root(
-        1,
-        pending=PendingKind.CONFIRMATION,
-        status=AgentLoopStatus.WAITING_CONFIRMATION,
-    )
-    dispatched = _root(1, dispatch=DispatchStatus.SENT)
-    contradictory = replace(
-        pending,
-        execution=dispatched.execution,
-        execution_attempts=dispatched.execution_attempts,
-        acquisition=dispatched.acquisition,
-        acquisition_attempts=dispatched.acquisition_attempts,
-        attempt_receipts=dispatched.attempt_receipts,
-        request_id=dispatched.request_id,
-    )
-    assert reduce_control(
-        ControlState(), AppendRoot(contradictory, 1)
-    ) == ControlRejected("confirmation_lifecycle_mismatch")
-
-
-def test_task_evaluation_epoch_is_closed_at_continuation_boundary() -> None:
-    root = _root(
-        1,
-        pending=PendingKind.CONFIRMATION,
-        status=AgentLoopStatus.WAITING_CONFIRMATION,
-    )
-    accepted = reduce_control(ControlState(), AppendRoot(root, 1))
-    assert isinstance(accepted, ControlAccepted)
-    stale = TaskEvaluation(
-        "task:state-machine",
-        "observation:stale",
-        TaskEvaluationStatus.INCOMPLETE,
-        "stale",
-    )
-    with pytest.raises(ValueError, match="after observation"):
-        replace(
-            _continuation(root.transition_id, AgentLoopStatus.DONE),
-            task_evaluation=stale,
-        )
-
-
-@pytest.mark.parametrize(
-    ("backend", "transport_success", "error"),
-    (("backend", False, None), ("", True, None)),
-)
-def test_execution_summary_is_a_total_action_result_projection(
-    backend, transport_success, error,
-) -> None:
-    from affordance_runtime.agent.control_transition import ExecutionSummary
-
-    with pytest.raises(ValueError, match="ActionResult"):
-        ExecutionSummary(
-            "request:one",
-            "request:one",
-            backend,
-            DispatchStatus.SENT,
-            transport_success,
-            error,
-        )
-
-
-def test_confirmation_continuation_must_leave_pending_state() -> None:
-    root = _root(
-        1,
-        pending=PendingKind.CONFIRMATION,
-        status=AgentLoopStatus.WAITING_CONFIRMATION,
-    )
-    accepted = reduce_control(ControlState(), AppendRoot(root, 1))
-    assert isinstance(accepted, ControlAccepted)
-    continuation = replace(
-        _continuation(root.transition_id, AgentLoopStatus.WAITING_CONFIRMATION),
-        pending_kind=PendingKind.CONFIRMATION,
-    )
-    assert reduce_control(
-        accepted.state, ApplyContinuation(continuation)
-    ) == ControlRejected("confirmation_continuation_must_resolve")
-
-
-def test_control_state_validation_is_total_over_malformed_state_shapes() -> None:
-    command = AppendRoot(_root(1), 1)
-    malformed_counts = ControlState(kind_counts=(("Wait",),))
-    assert reduce_control(malformed_counts, command) == ControlRejected(
-        "invalid_control_kind_totals"
-    )
-
-    first = _root(1)
-    third = _root(3)
-    gapped = ControlState((first, third), 3, (("Wait", 3),))
-    assert reduce_control(gapped, AppendRoot(_root(4), 1)) == ControlRejected(
-        "invalid_control_suffix"
-    )
-
-    terminal = _root(1, status=AgentLoopStatus.DONE)
-    hidden_terminal = ControlState((terminal,), 1, (("Wait", 1),))
-    assert reduce_control(hidden_terminal, AppendRoot(_root(2), 1)) == ControlRejected(
-        "terminal_status_projection_mismatch"
-    )
-
-    contradictory_kinds = ControlState((first,), 1, (("SelectAction", 1),))
-    assert reduce_control(
-        contradictory_kinds, AppendRoot(_root(2), 1)
-    ) == ControlRejected("invalid_control_kind_totals")
-
-    impossible_history = ControlState(continued_root_ids=("transition:999",))
-    assert reduce_control(impossible_history, command) == ControlRejected(
-        "invalid_continuation_history"
-    )
-    impossible_unknown_total = ControlState(sent_unknown_total_count=1)
-    assert reduce_control(impossible_unknown_total, command) == ControlRejected(
-        "invalid_sent_unknown_total"
-    )
-    missing_epoch_anchor = ControlState(total_count=1, kind_counts=(("Wait", 1),))
-    assert reduce_control(missing_epoch_anchor, AppendRoot(_root(2), 1)) == ControlRejected(
-        "invalid_control_suffix"
-    )
-
-    pending = _root(
-        1,
-        pending=PendingKind.CONFIRMATION,
-        status=AgentLoopStatus.WAITING_CONFIRMATION,
-    )
-    later = _root(2)
-    hidden_pending = ControlState(
-        (pending, later),
-        2,
-        (("Wait", 2),),
-    )
-    assert reduce_control(
-        hidden_pending,
-        ApplyContinuation(_continuation(pending.transition_id, AgentLoopStatus.DONE)),
-    ) == ControlRejected("invalid_nonlatest_stopping_transition")
-
-    stopped_then_running = ControlState(
-        (_root(1, status=AgentLoopStatus.DONE), _root(2)),
-        2,
-        (("Wait", 2),),
-    )
-    assert reduce_control(
-        stopped_then_running, AppendRoot(_root(3), 1)
-    ) == ControlRejected("invalid_nonlatest_stopping_transition")
-
-
-def test_pending_status_and_attempt_identity_algebras_are_closed() -> None:
-    contradictory = _root(
-        1,
-        pending=PendingKind.USER,
-        status=AgentLoopStatus.DONE,
-    )
-    assert reduce_control(
-        ControlState(), AppendRoot(contradictory, 1)
-    ) == ControlRejected("pending_status_mismatch")
-
-    terminal_evaluation = TaskEvaluation(
-        "task:1",
-        "observation:2",
-        TaskEvaluationStatus.BLOCKED,
-        "official terminal failure",
-        outcome=TaskOutcomeFact(
-            TaskOutcomeKind.TERMINAL_FAILURE,
-            "verified_terminal_task_failure",
-            ("fact:observation:2:status",),
-        ),
-    )
-    mismatched_terminal = replace(
-        _root(1, status=AgentLoopStatus.DONE),
-        task_evaluation=terminal_evaluation,
-    )
-    assert reduce_control(
-        ControlState(), AppendRoot(mismatched_terminal, 1)
-    ) == ControlRejected("task_outcome_disposition_mismatch")
-    matched_terminal = replace(
-        _root(1, status=AgentLoopStatus.BLOCKED),
-        task_evaluation=terminal_evaluation,
-    )
-    assert isinstance(
-        reduce_control(ControlState(), AppendRoot(matched_terminal, 1)),
-        ControlAccepted,
-    )
-
-    root = _root(1, dispatch=DispatchStatus.SENT_UNKNOWN)
-    duplicate = replace(
-        root,
-        execution_attempts=(*root.execution_attempts, *root.execution_attempts),
-        acquisition=replace(root.acquisition, attempts=2),
-        acquisition_attempts=(*root.acquisition_attempts, *root.acquisition_attempts),
-        attempt_receipts=(*root.attempt_receipts, *root.attempt_receipts),
-    )
-    assert reduce_control(
-        ControlState(), AppendRoot(duplicate, 1)
-    ) == ControlRejected("duplicate_attempt_receipt")
-
-    reset_receipt = AttemptReceipt(
-        "attempt:1",
-        AttemptOperation.RESET,
-        "reset",
-        AcquisitionOrigin.RESET,
-        AcquisitionOrigin.RESET,
-        AttemptDisposition.RETURNED,
-        "reset_acquired",
-        1,
-        0,
-        0,
-        0,
-        acquisition_status=AcquisitionStatus.ACQUIRED,
-    )
-    reset_summary = AcquisitionSummary(
-        AcquisitionStatus.ACQUIRED,
-        AcquisitionOrigin.RESET,
-        "reset_acquired",
-        1,
-        "reset",
-        AcquisitionOrigin.RESET,
-    )
-    reset_in_root = replace(
-        _root(1),
-        acquisition=reset_summary,
-        acquisition_attempts=(reset_summary,),
-        attempt_receipts=(reset_receipt,),
-    )
-    assert reduce_control(
-        ControlState(), AppendRoot(reset_in_root, 1)
-    ) == ControlRejected("reset_receipt_outside_control_root")
-
-    impossible_acquisition = AcquisitionSummary(
-        AcquisitionStatus.ACQUIRED,
+        f"transition:{sequence}",
+        sequence,
+        world,
+        Wait(f"context:{sequence}", "bounded wait", 1),
         None,
-        "capture_acquired",
-        0,
-        "wait_refresh",
-        AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        (),
+        (),
+        (),
+        (),
+        world,
+        None,
+        None,
+        ProgressDelta(),
+        PendingKind.NONE,
+        None,
+        "wait_continued",
     )
-    invalid_acquisition_root = replace(
+
+
+@given(st.integers(min_value=1, max_value=24))
+@settings(max_examples=40)
+def test_generated_exact_roots_have_monotonic_identity(sequence: int) -> None:
+    root = _root(sequence)
+    assert root.sequence == sequence
+    assert root.transition_id.startswith(f"transition:{sequence}")
+    assert root.before_observation is root.after_observation
+    assert root.execution_attempts == ()
+    assert root.acquisition_attempts == ()
+
+
+@given(st.integers(min_value=1, max_value=12))
+@settings(max_examples=30)
+def test_generated_reducer_sequence_is_contiguous(length: int) -> None:
+    world = _world("observation:shared", False)
+    control = ControlState()
+    for sequence in range(1, length + 1):
+        transition = ControlTransition(
+            f"transition:{sequence}",
+            sequence,
+            world,
+            Wait(f"context:{sequence}", "bounded wait", 1),
+            None,
+            (),
+            (),
+            (),
+            (),
+            world,
+            None,
+            None,
+            ProgressDelta(),
+            PendingKind.NONE,
+            None,
+            "wait_continued",
+        )
+        reduced = reduce_control(control, AppendRoot(transition, length))
+        assert isinstance(reduced, ControlAccepted)
+        control = reduced.state
+    assert control.total_count == length
+
+
+def test_adjacent_roots_require_exact_world_object_continuity() -> None:
+    first = _root(1)
+    accepted = reduce_control(ControlState(), AppendRoot(first, 3))
+    assert isinstance(accepted, ControlAccepted)
+    cloned_world = replace(first.after_observation)
+    second = replace(
+        _root(2),
+        before_observation=cloned_world,
+        after_observation=cloned_world,
+    )
+    rejected = reduce_control(accepted.state, AppendRoot(second, 3))
+    assert isinstance(rejected, ControlRejected)
+    assert rejected.code == "observation_epoch_discontinuity"
+
+
+def test_terminal_state_is_absorbing() -> None:
+    world = _world("observation:terminal", False)
+    terminal = replace(
         _root(1),
-        acquisition=impossible_acquisition,
-        acquisition_attempts=(impossible_acquisition,),
+        before_observation=world,
+        after_observation=world,
+        decision=Abort("context:1", "stop", "policy"),
+        resulting_status=AgentLoopStatus.FAILED,
+        reason_code="abort_policy",
     )
-    assert reduce_control(
-        ControlState(), AppendRoot(invalid_acquisition_root, 1)
-    ) == ControlRejected("acquisition_attempt_status_mismatch")
+    accepted = reduce_control(ControlState(), AppendRoot(terminal, 3))
+    assert isinstance(accepted, ControlAccepted)
+    assert isinstance(
+        reduce_control(accepted.state, AppendRoot(_root(2), 3)),
+        ControlRejected,
+    )
+
+
+def test_pending_status_cross_product_fails_closed() -> None:
+    malformed = replace(
+        _root(1),
+        pending_kind=PendingKind.USER,
+        resulting_status=AgentLoopStatus.FAILED,
+    )
+    rejected = reduce_control(ControlState(), AppendRoot(malformed, 3))
+    assert isinstance(rejected, ControlRejected)
+    assert rejected.code == "pending_status_mismatch"
 
 
 @given(
-    kind=st.sampled_from(tuple(TaskOutcomeKind)),
-    dispatch=st.sampled_from((DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN)),
-    action_status=st.sampled_from(tuple(ActionEvaluationStatus)),
-    runtime_failure=st.booleans(),
-)
-def test_task_outcome_cross_domain_precedence_is_closed(
-    kind: TaskOutcomeKind,
-    dispatch: DispatchStatus,
-    action_status: ActionEvaluationStatus,
-    runtime_failure: bool,
-) -> None:
-    task_status = {
-        TaskOutcomeKind.RUNNING_INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
-        TaskOutcomeKind.TERMINAL_SUCCESS: TaskEvaluationStatus.COMPLETE,
-        TaskOutcomeKind.TERMINAL_FAILURE: TaskEvaluationStatus.BLOCKED,
-        TaskOutcomeKind.VERIFIER_UNAVAILABLE: TaskEvaluationStatus.UNKNOWN,
-    }[kind]
-    terminal_ref = "fact:observation:2:task-status"
-    evidence_refs = (terminal_ref,) if kind in {
-        TaskOutcomeKind.TERMINAL_SUCCESS,
-        TaskOutcomeKind.TERMINAL_FAILURE,
-    } else ()
-    task_evaluation = TaskEvaluation(
-        "task:state-machine",
-        "observation:2",
-        task_status,
-        "generated task fact",
-        completion_evidence_refs=(
-            evidence_refs if kind is TaskOutcomeKind.TERMINAL_SUCCESS else ()
-        ),
-        outcome=TaskOutcomeFact(kind, f"generated_{kind.value}", evidence_refs),
-    )
-    action_evaluation = ActionEvaluation(
-        "request:1",
-        "observation:1",
-        "observation:2",
-        action_status,
-        "generated action fact",
-        ("fact:observation:2:action",)
-        if action_status in {
-            ActionEvaluationStatus.EFFECT_CONFIRMED,
-            ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
-        }
-        else (),
-    )
-
-    if kind is TaskOutcomeKind.TERMINAL_SUCCESS:
-        pending, resulting = PendingKind.NONE, AgentLoopStatus.DONE
-    elif kind is TaskOutcomeKind.TERMINAL_FAILURE:
-        pending, resulting = PendingKind.NONE, AgentLoopStatus.BLOCKED
-    elif runtime_failure:
-        pending, resulting = PendingKind.NONE, AgentLoopStatus.FAILED
-    elif dispatch is DispatchStatus.SENT_UNKNOWN:
-        pending, resulting = PendingKind.UNKNOWN_EFFECT, AgentLoopStatus.WAITING_USER
-    elif action_status is ActionEvaluationStatus.REJECTED:
-        pending, resulting = PendingKind.NONE, AgentLoopStatus.FAILED
-    elif kind is TaskOutcomeKind.VERIFIER_UNAVAILABLE:
-        pending, resulting = PendingKind.NONE, AgentLoopStatus.WAITING_USER
-    else:
-        pending, resulting = PendingKind.NONE, None
-
-    generated = replace(
-        _root(1, dispatch=dispatch),
-        action_evaluation=action_evaluation,
-        task_evaluation=task_evaluation,
-        pending_kind=pending,
-        resulting_status=resulting,
-        reason_code="generated_precedence",
-    )
-    reduced = reduce_control(ControlState(), AppendRoot(generated, 1))
-    assert isinstance(reduced, ControlAccepted), reduced
-
-
-def test_observation_failure_origin_mapping_is_total_and_path_independent() -> None:
-    assert set(OBSERVATION_FAILURE_ORIGINS) == set(ObservationRequestKind)
-    for kind in ObservationRequestKind:
-        assert observation_failure_origin(kind) is observation_failure_origin(kind.value)
-
-
-def test_changed_fresh_risk_material_cannot_reuse_old_subject() -> None:
-    selection = _selection_for_risk()
-    assessment = RiskPolicy().assess(_task(), selection)
-    with pytest.raises(ValueError, match="canonical semantics"):
-        replace(
-            assessment,
-            decision=RiskDecisionKind.BLOCK,
-            risk=type(assessment.risk).HIGH,
+    st.sampled_from(
+        (
+            "evaluation_identity",
+            "evaluation_before_identity",
+            "admission_selection_identity",
+            "success_without_evaluation",
         )
+    )
+)
+@settings(max_examples=16, deadline=None)
+def test_generated_single_phase_authority_mutations_fail_closed(mutation: str) -> None:
+    async def action_root():
+        result = await (_loop(ScriptedPolicy(["first"]))).run(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
+            _task(),
+        )
+        return result.control_transitions[0]
+
+    root = asyncio.run(action_root())
+    assert isinstance(root.evaluation, EvaluationOutcome)
+    assert root.admission is not None and root.admission.selection is not None
+    try:
+        if mutation == "evaluation_identity":
+            malformed = replace(
+                root,
+                evaluation=replace(root.evaluation, evaluation_id="evaluation:foreign"),
+            )
+        elif mutation == "evaluation_before_identity":
+            malformed = replace(
+                root,
+                evaluation=replace(
+                    root.evaluation,
+                    before_observation=replace(root.before_observation),
+                ),
+            )
+        elif mutation == "admission_selection_identity":
+            malformed = replace(
+                root,
+                admission=replace(
+                    root.admission,
+                    selection=replace(root.admission.selection),
+                ),
+            )
+        else:
+            malformed = replace(root, evaluation=None)
+    except ValueError:
+        return
+
+    reduced = reduce_control(ControlState(), AppendRoot(malformed, 3))
+    assert isinstance(reduced, ControlRejected)
 
 
-def _selection_for_risk():
-    from affordance_runtime.actions.action_space import ActionSpaceBuilder
+@given(st.sampled_from((AgentLoopStatus.DONE, AgentLoopStatus.WAITING_USER, AgentLoopStatus.WAITING_CONFIRMATION)))
+@settings(max_examples=12)
+def test_generated_wait_disposition_mutations_fail_closed(status: AgentLoopStatus) -> None:
+    malformed = replace(
+        _root(1),
+        resulting_status=status,
+        pending_kind=(
+            PendingKind.USER
+            if status is AgentLoopStatus.WAITING_USER
+            else PendingKind.CONFIRMATION
+            if status is AgentLoopStatus.WAITING_CONFIRMATION
+            else PendingKind.NONE
+        ),
+    )
+    reduced = reduce_control(ControlState(), AppendRoot(malformed, 3))
+    assert isinstance(reduced, ControlRejected)
 
-    world = _world("risk", False, "#private")
-    option = ActionSpaceBuilder().build(_task(), world).options[0]
-    return ActionSpaceBuilder().admit(option, {})
+
+@given(
+    st.sampled_from(("wait", "observation")),
+    st.booleans(),
+    st.sampled_from(
+        (
+            None,
+            AgentLoopStatus.FAILED,
+            AgentLoopStatus.BLOCKED,
+            AgentLoopStatus.WAITING_USER,
+            AgentLoopStatus.DONE,
+        )
+    ),
+)
+@settings(max_examples=30, deadline=None)
+def test_generated_capture_failure_disposition_product_fails_closed(
+    decision_kind: str,
+    unavailable: bool,
+    mutation: AgentLoopStatus | None,
+) -> None:
+    decision = (
+        Wait("context:test", "settle", 1)
+        if decision_kind == "wait"
+        else RequestObservation(
+            "context:test",
+            "criterion_verification",
+            "current_world",
+            "",
+            "refresh",
+        )
+    )
+    expected = AgentLoopStatus.BLOCKED if unavailable else AgentLoopStatus.FAILED
+    assume(mutation is not expected)
+
+    async def failed_root():
+        class Policy:
+            async def decide(self, context):
+                return replace(decision, context_id=context.context_id)
+
+        class FailedEnvironment(ScriptedEnvironment):
+            async def capture(self, request):
+                return failed_acquisition(
+                    AcquisitionOrigin.INDEPENDENT_CAPTURE,
+                    "required_source_exhausted",
+                    kind=request.kind,
+                    acquisition_id="acquisition:2",
+                    request=request,
+                )
+
+        environment_type = ScriptedEnvironment if unavailable else FailedEnvironment
+        result = await (_loop(Policy())).run(
+            environment_type(
+                initial_observation=_world("before", False),
+                observation_capabilities=(
+                    ObservationCapabilities(False, True) if unavailable else ObservationCapabilities(True, True)
+                ),
+            ),
+            _task(),
+        )
+        return result.control_transitions[0]
+
+    root = asyncio.run(failed_root())
+    assert root.resulting_status is expected
+    malformed = replace(root, resulting_status=mutation)
+    reduced = reduce_control(ControlState(), AppendRoot(malformed, 3))
+    assert isinstance(reduced, ControlRejected)
+
+
+@given(st.sampled_from((AgentLoopStatus.FAILED, AgentLoopStatus.BLOCKED, AgentLoopStatus.CANCELLED)))
+@settings(max_examples=12, deadline=None)
+def test_generated_successful_wait_cannot_be_relabelled_terminal(
+    mutation: AgentLoopStatus,
+) -> None:
+    async def successful_wait_root():
+        class Policy:
+            calls = 0
+
+            async def decide(self, context):
+                self.calls += 1
+                if self.calls == 1:
+                    return Wait(context.context_id, "settle", 1)
+                return Abort(context.context_id, "stop", "policy")
+
+        result = await (_loop(Policy())).run(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                independent_observations=(_world("fresh", False),),
+            ),
+            _task(),
+        )
+        return result.control_transitions[0]
+
+    root = asyncio.run(successful_wait_root())
+    assert root.resulting_status is None
+    malformed = replace(root, resulting_status=mutation)
+    reduced = reduce_control(ControlState(), AppendRoot(malformed, 3))
+    assert isinstance(reduced, ControlRejected)

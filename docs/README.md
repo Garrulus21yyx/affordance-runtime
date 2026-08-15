@@ -47,16 +47,16 @@ one world interface. Internal transaction submission is not the product center.
 The multi-source world-graph A.1 repair is property-verified and has passed an
 independent fresh-context review; A.1 closure remains admitted for its identity
 and fusion-decision scope. Repeated A.2 reopenings have withdrawn adaptive-
-acquisition closure and triggered a full-chain convergence review. Implemented
-selector, adapter-lifecycle, per-need and single-product-protocol components are
-retained, but exact request/plan/provider/need/fusion facts are still narrowed
-through control DTOs, BrowserGym and the generic environment still assemble
-duplicate acquisition lifecycles, and static fixtures bypass that chain.
-StateFact/effect/new-interaction work is blocked until R0–R3 establish one
-immutable aggregate per causal phase and one-way model projections. See the
+acquisition closure and triggered a full-chain convergence review. R1 has
+converged acquisition on one coordinator and R2 now composes exact execution,
+evaluation and control-transition authority while deleting Summary/Turn
+compatibility paths. R3 projection and request-evidence boundaries remain
+open. StateFact/effect/new-interaction work remains blocked until R3 completes
+the declared full-chain gates. See the
 [full-chain authority contract](runtime-authority-aggregate-convergence.md),
 [R0 consumer inventory and migration map](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md),
 [R1 acquisition convergence evidence](evidence/2026-08-15-runtime-authority-r1-closure.md),
+[R2 exact composition evidence](evidence/2026-08-15-runtime-authority-r2-closure.md),
 [A.1 plan](plans/2026-08-15-world-graph-a1.md), and
 [A.2 record](plans/2026-08-15-adaptive-observation-policy-a2.md). No live
 benchmark was run.

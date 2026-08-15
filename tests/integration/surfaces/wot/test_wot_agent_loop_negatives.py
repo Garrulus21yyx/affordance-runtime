@@ -146,15 +146,14 @@ def test_wot_sent_unknown_and_unknown_property_waits_without_replay() -> None:
 
 def test_wot_wrong_result_lineage_fails_before_evaluation() -> None:
     transport = FakeWotTransport()
-    result = _run(
-        transport,
-        _task(),
-        FirstPolicy(),
-        evaluator=NeverEvaluator(),
-        world_type=WrongLineageWorld,
-    )
-    assert result.status == AgentLoopStatus.FAILED
-    assert result.execution_count == 1
+    with pytest.raises(ValueError, match="lineage"):
+        _run(
+            transport,
+            _task(),
+            FirstPolicy(),
+            evaluator=NeverEvaluator(),
+            world_type=WrongLineageWorld,
+        )
     assert transport.action_endpoint_calls == 1
 
 

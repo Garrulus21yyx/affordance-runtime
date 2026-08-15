@@ -5,7 +5,15 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.execution.contracts import (
+    ActionDispatchCancelled,
+    ActionError,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+    ExecutionCancelled,
+    ExecutionOutcome,
+)
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     AcquisitionCancelled,
@@ -14,7 +22,6 @@ from affordance_runtime.world.acquisition import (
     AcquisitionReasonKind,
     AcquisitionStage,
     AcquisitionStatus,
-    ExecutionOutcome,
     ObservationAcquisition,
     ObservationCapabilities,
     ObservationNeedSatisfactionStatus,
@@ -179,9 +186,7 @@ class ObservationAcquisitionCoordinator:
         try:
             provider_results = list(await self._acquire_selected(stage_requests))
         except _ProviderCancellation as exc:
-            cancelled_results = {
-                item.source: item for item in exc.results
-            }
+            cancelled_results = {item.source: item for item in exc.results}
             for pending in all_initial_requests:
                 if pending.source not in cancelled_results:
                     cancelled_results[pending.source] = SelectedObservationResult.failed(
@@ -433,9 +438,7 @@ class ObservationAcquisitionCoordinator:
                                 SourceAcquisitionStatus.CANCELLED,
                                 "source_acquisition_cancelled",
                             )
-                    raise _ProviderCancellation(
-                        tuple(results[item.source] for item in requests)
-                    ) from exc
+                    raise _ProviderCancellation(tuple(results[item.source] for item in requests)) from exc
                 except Exception:
                     for selected_request in group_requests:
                         results[selected_request.source] = SelectedObservationResult.failed(
@@ -752,7 +755,22 @@ class ObservationAcquisitionCoordinator:
                     ActionError.STALE_BINDING,
                 ),
             )
-        result = await adapter.execute(request)
+        try:
+            result = await adapter.execute(request)
+        except ActionDispatchCancelled as exc:
+            outcome = self._cancelled_execution(request, exc.result)
+            raise ExecutionCancelled(outcome) from exc
+        except asyncio.CancelledError as exc:
+            result = ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                request.binding.executor_id,
+                False,
+                ActionError.CANCELLED,
+            )
+            raise ExecutionCancelled(ExecutionOutcome(request, result, None)) from exc
+        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+            raise ValueError("execution result lineage mismatch")
         if result.dispatch_status is DispatchStatus.NOT_SENT:
             return self._not_dispatched(request, result)
         post_request = WorldObservationRequest(
@@ -765,13 +783,68 @@ class ObservationAcquisitionCoordinator:
             self._route_source_for_binding(request.binding.source_observation_id),
         )
         if isinstance(post_plan, ObservationAcquisition):
-            return ExecutionOutcome(result, post_plan)
-        post = await self._acquire(
-            post_request,
-            AcquisitionOrigin.POST_ACTION,
-            post_plan,
+            return ExecutionOutcome(request, result, post_plan)
+        try:
+            post = await self._acquire(
+                post_request,
+                AcquisitionOrigin.POST_ACTION,
+                post_plan,
+            )
+        except AcquisitionCancelled as exc:
+            raise ExecutionCancelled(ExecutionOutcome(request, result, exc.acquisition)) from exc
+        return ExecutionOutcome(request, result, post)
+
+    def _cancelled_execution(
+        self,
+        request: BoundActionRequest,
+        result: ActionResult,
+    ) -> ExecutionOutcome:
+        if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+            raise ValueError("cancelled execution result lineage mismatch")
+        if result.dispatch_status is DispatchStatus.NOT_SENT:
+            return ExecutionOutcome(request, result, None)
+        post_request = WorldObservationRequest(
+            ObservationRequestKind.POST_ACTION_FALLBACK,
+            "post action cancellation",
+            request.verification_needs,
         )
-        return ExecutionOutcome(result, post)
+        acquisition_id = self._next_acquisition_id()
+        selected = self.observation_orchestrator.select(
+            self._offers,
+            post_request,
+            route_source=self._route_source_for_binding(request.binding.source_observation_id),
+        )
+        if selected.plan is None:
+            post = self._pre_selection(
+                acquisition_id,
+                AcquisitionOrigin.POST_ACTION,
+                post_request,
+                selected.reason_code,
+            )
+        else:
+            selected_requests = selected_observation_requests(
+                selected.plan,
+                post_request,
+                self._offers,
+                acquisition_id,
+            )
+            cancelled_results = tuple(
+                SelectedObservationResult.failed(
+                    item,
+                    SourceAcquisitionStatus.CANCELLED,
+                    "source_acquisition_cancelled",
+                )
+                for item in selected_requests
+            )
+            post = self._cancelled(
+                acquisition_id,
+                AcquisitionOrigin.POST_ACTION,
+                post_request,
+                selected.plan,
+                self._activations(selected_requests, cancelled_results),
+                "source_acquisition_cancelled",
+            )
+        return ExecutionOutcome(request, result, self._remember(post))
 
     def _post_action_plan(
         self,
@@ -811,20 +884,7 @@ class ObservationAcquisitionCoordinator:
         request: BoundActionRequest,
         result: ActionResult,
     ) -> ExecutionOutcome:
-        observation_request = WorldObservationRequest(
-            ObservationRequestKind.POST_ACTION_FALLBACK,
-            "action not dispatched",
-            request.verification_needs,
-        )
-        post = self._remember(
-            self._pre_selection(
-                self._next_acquisition_id(),
-                AcquisitionOrigin.POST_ACTION,
-                observation_request,
-                "action_not_dispatched",
-            )
-        )
-        return ExecutionOutcome(result, post)
+        return ExecutionOutcome(request, result, None)
 
 
 @dataclass(frozen=True)

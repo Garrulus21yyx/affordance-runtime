@@ -55,6 +55,12 @@ class LinkedAcquisition:
     acquisition: ObservationAcquisition
 
     def __post_init__(self) -> None:
+        if self.relationship is not AcquisitionRelationship.POST_ACTION_FALLBACK:
+            raise ValueError("linked acquisition relationship is unsupported")
+        if not isinstance(self.acquisition, ObservationAcquisition):
+            raise TypeError("linked acquisition must retain the exact aggregate")
+        if not self.primary_acquisition_id.strip():
+            raise ValueError("linked fallback requires its primary acquisition identity")
         if self.primary_acquisition_id == self.acquisition.acquisition_id:
             raise ValueError("linked fallback requires a distinct acquisition identity")
 
@@ -276,15 +282,24 @@ async def capture_for_session(
         acquisition = await session.environment.capture(request)
     except asyncio.CancelledError as exc:
         acquisition = exc.acquisition if isinstance(exc, AcquisitionCancelled) else None
-        if acquisition is not None:
-            scope.record_acquisition(
-                acquisition.status,
-                acquisition.origin,
-                acquisition.reason_code,
-                acquisition_attempt_count(acquisition),
-                acquisition.request.kind,
-                expected_origin=AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        if acquisition is not None and acquisition.request is not request:
+            _record_capture_exception(
+                session,
+                scope,
+                request,
+                attempt_id,
+                "capture_malformed",
+                AttemptDisposition.MALFORMED,
+                "",
             )
+            session.pending_runtime_failure = RuntimeFailure(
+                FailureStage.ACQUISITION,
+                FailureKind.INVALID_OUTPUT,
+                "capture_malformed",
+            )
+            raise TypeError("WorldEnvironment.capture returned a foreign request authority") from exc
+        if acquisition is not None:
+            scope.record_acquisition(acquisition)
         _record_capture_exception(
             session,
             scope,
@@ -293,6 +308,7 @@ async def capture_for_session(
             "capture_cancelled",
             AttemptDisposition.CANCELLED,
             "CancelledError",
+            acquisition,
         )
         raise
     except Exception as exc:
@@ -313,7 +329,7 @@ async def capture_for_session(
             exception_class=exception_class,
         )
         raise
-    if not isinstance(acquisition, ObservationAcquisition):
+    if not isinstance(acquisition, ObservationAcquisition) or acquisition.request is not request:
         _record_capture_exception(
             session,
             scope,
@@ -358,7 +374,7 @@ async def capture_for_session(
         ),
     )
     session.accounting.record(receipt)
-    scope.record_attempt(receipt)
+    scope.record_attempt(receipt, acquisition)
     return acquired
 
 
@@ -370,21 +386,22 @@ def _record_capture_exception(
     reason_code: str,
     disposition: AttemptDisposition,
     exception_class: str,
+    acquisition: ObservationAcquisition | None = None,
 ) -> None:
     receipt = AttemptReceipt(
         attempt_id,
         AttemptOperation.CAPTURE,
         str(request.kind),
         AcquisitionOrigin.INDEPENDENT_CAPTURE,
-        None,
+        acquisition.origin if acquisition is not None else None,
         disposition,
         reason_code,
-        1,
+        acquisition_attempt_count(acquisition) if acquisition is not None else 1,
         0,
         0,
         0,
         exception_class=exception_class,
-        acquisition_status=AcquisitionStatus.FAILED,
+        acquisition_status=(acquisition.status if acquisition is not None else AcquisitionStatus.FAILED),
     )
     session.accounting.record(receipt)
     scope.record_attempt(receipt)

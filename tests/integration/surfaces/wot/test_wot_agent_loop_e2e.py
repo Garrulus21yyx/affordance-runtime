@@ -120,14 +120,14 @@ def test_real_http_wot_only_short_loop_completes_with_one_semantic_action() -> N
         assert result.observation_count == 2
         assert result.execution_count == 1
         assert result.currentness_probe_count == 1
-        assert len(result.turns) == 1
-        assert result.turns[0].before_observation_id != result.turns[0].after_observation_id
-        assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
+        assert len(result.control_transitions) == 1
+        assert result.control_transitions[0].before_observation_id != result.control_transitions[0].after_observation_id
+        assert result.control_transitions[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
         assert fixture.td_calls == 3
         assert fixture.property_calls == 2
         assert fixture.action_calls == 1
         assert tuple(adapter.surface for adapter in environment.adapters) == ("wot",)
-        assert "href" not in repr(result.turns)
+        assert "href" not in repr(result.control_transitions)
         assert "credential" not in repr(result)
 
 

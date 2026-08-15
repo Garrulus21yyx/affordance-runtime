@@ -156,13 +156,13 @@ def test_dom_visual_wot_share_one_agent_contract_with_adapter_only_variation(
         assert result.observation_count == 2
         assert result.execution_count == 1
         assert result.currentness_probe_count == 1
-        assert len(result.turns) == 1
-        assert result.turns[0].before_observation_id != result.turns[0].after_observation_id
-        assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
-        assert result.turns[0].action_evaluation is not None
+        assert len(result.control_transitions) == 1
+        assert result.control_transitions[0].before_observation_id != result.control_transitions[0].after_observation_id
+        assert result.control_transitions[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
+        assert result.control_transitions[0].action_evaluation is not None
         assert metrics["actions"]() == 1
         assert metrics["models"]() == expected_model_calls
-        representation = repr(result.turns)
+        representation = repr(result.control_transitions)
         assert all(private not in representation for private in ("selector", "action_point", "href", "credential"))
 
 
@@ -200,11 +200,11 @@ def test_dom_visual_wot_confirmation_uses_fresh_private_binding(profile: str) ->
         assert result.execution_count == 1
         assert metrics["actions"]() == 1
         assert metrics["private"]()
-        evaluation = result.turns[-1].action_evaluation
+        evaluation = result.control_transitions[-1].action_evaluation
         assert evaluation is not None
-        assert evaluation.request_id == result.turns[-1].request_id
-        assert evaluation.before_observation_id == result.turns[-1].before_observation_id
-        assert evaluation.after_observation_id == result.turns[-1].after_observation_id
+        assert evaluation.request_id == result.control_transitions[-1].request_id
+        assert evaluation.before_observation_id == result.control_transitions[-1].evaluation.before_observation.observation_id
+        assert evaluation.after_observation_id == result.control_transitions[-1].after_observation_id
         if profile == "wot":
             # The TD does not declare that the action target owns the separate
             # property target, so the stricter effect validator must not infer it.

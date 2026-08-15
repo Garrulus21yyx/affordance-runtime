@@ -180,7 +180,7 @@ def test_effectful_fill_executes_once_then_repeat_is_contained() -> None:
         assert policy.contexts[2].control_feedback is not None
         assert policy.contexts[2].control_feedback.kind == "strategy_transition_required"
         assert result.control_issue_consumption_count == 0
-        assert result.turns[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+        assert result.control_transitions[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
         snapshot = session.snapshot_partial_episode()
         assert snapshot.observation_count == 2
         assert snapshot.execution_count == 1

@@ -16,16 +16,18 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
-from affordance_runtime.agent.attempt_receipt import (
-    AttemptDisposition,
-    AttemptOperation,
-    AttemptReceipt,
-)
 from affordance_runtime.agent.context.control_transition_projection import (
     project_control_transitions,
 )
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.control_reducer import (
+    AppendRoot,
+    ControlRejected,
+    ControlState,
+    reduce_control,
+)
 from affordance_runtime.agent.control_transition import (
+    ActionAdmissionOutcome,
     AdmissionStatus,
     ControlTransitionScope,
     PendingKind,
@@ -33,75 +35,184 @@ from affordance_runtime.agent.control_transition import (
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.evaluation import EvaluationOutcome, TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.world import (
     AcquisitionOrigin,
-    AcquisitionStatus,
     ObservationRequestKind,
 )
-from tests.integration.agent.test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
+from tests.integration.agent.test_agent_loop import (
+    ScriptedPolicy,
+    SharedActionEvaluator,
+    SharedTaskEvaluator,
+    _loop,
+    _sent,
+    _task,
+    _world,
+)
 
 
-def test_transition_is_frozen_bounded_and_strips_adapter_payload() -> None:
+def test_transition_is_frozen_and_scope_finalizes_once() -> None:
     state = AgentLoopState(_world("before", False))
-    decision = SelectAction("context:one", "action:one")
+    decision = Wait("context:one", "wait", 1)
     scope = ControlTransitionScope(state, decision)
-    scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
-    result = ActionResult(
-        "request:one",
-        DispatchStatus.SENT,
-        "dom",
-        True,
-        adapter_evidence={"selector": "#private", "raw_payload": "secret"},
-    )
-    scope.record_execution_receipt(
-        AttemptReceipt(
-            "attempt:1",
-            AttemptOperation.EXECUTE,
-            "post_action",
-            AcquisitionOrigin.POST_ACTION,
-            AcquisitionOrigin.POST_ACTION,
-            AttemptDisposition.RETURNED,
-            "post_action_acquired",
-            1,
-            1,
-            1,
-            0,
-            DispatchStatus.SENT,
-            "request:one",
-            "request:one",
-            True,
-            acquisition_status=AcquisitionStatus.ACQUIRED,
-        ),
-        "request:one",
-        None,
-        result,
-    )
+    scope.set_reason("wait_continued")
     transition = scope.finalize(state, None)
 
     assert transition.sequence == 1
     assert transition.pending_kind is PendingKind.NONE
-    assert "selector" not in repr(transition)
-    assert "raw_payload" not in repr(transition)
-    assert transition.as_turn().result is not None
-    assert transition.as_turn().result.adapter_evidence == {}
+    assert transition.execution is None
     with pytest.raises(FrozenInstanceError):
         transition.reason_code = "changed"  # type: ignore[misc]
     with pytest.raises(RuntimeError, match="already finalized"):
         scope.finalize(state, None)
 
 
-def test_transition_rejects_old_task_evaluation_epoch_before_model_projection() -> None:
+def test_admission_outcome_rejects_open_or_contradictory_shapes() -> None:
+    with pytest.raises(ValueError, match="selection and allow assessment"):
+        ActionAdmissionOutcome(AdmissionStatus.ADMITTED, "action_admitted")
+    with pytest.raises(ValueError, match="issue or selected rejection"):
+        ActionAdmissionOutcome(AdmissionStatus.REJECTED, "action_rejected")
+
+
+def test_reducer_rejects_a_second_effectful_execution_attempt() -> None:
+    async def scenario() -> None:
+        result = await (_loop(ScriptedPolicy(["first"]))).run(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
+            _task(),
+        )
+        root = result.control_transitions[0]
+        execution = root.execution_attempts[0]
+        receipt = root.attempt_receipts[-1]
+        malformed = replace(
+            root,
+            execution_attempts=(execution, execution),
+            attempt_receipts=(receipt, replace(receipt, attempt_id="attempt:999")),
+        )
+
+        rejected = reduce_control(ControlState(), AppendRoot(malformed, 12))
+
+        assert isinstance(rejected, ControlRejected)
+        assert rejected.code in {"duplicate_execution_request", "multiple_effectful_dispatches"}
+
+    asyncio.run(scenario())
+
+
+def test_transition_requires_identity_reachable_execution_and_unique_acquisition() -> None:
+    async def scenario() -> None:
+        result = await (_loop(ScriptedPolicy(["first"]))).run(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
+            _task(),
+        )
+        root = result.control_transitions[0]
+        assert isinstance(root.evaluation, EvaluationOutcome)
+        execution = root.execution_attempts[0]
+        primary = root.acquisition_attempts[0]
+
+        cloned_execution = replace(execution)
+        cloned_evaluation = replace(root.evaluation, execution=cloned_execution)
+        with pytest.raises(ValueError, match="evaluation execution is not reachable"):
+            replace(root, evaluation=cloned_evaluation)
+        with pytest.raises(ValueError, match="acquisition attempts cannot repeat"):
+            replace(root, acquisition_attempts=(primary, primary))
+        with pytest.raises(ValueError, match="identity must derive"):
+            replace(root.evaluation, evaluation_id="evaluation:foreign")
+        with pytest.raises(ValueError, match="before authority mismatch"):
+            replace(
+                root,
+                evaluation=replace(
+                    root.evaluation,
+                    before_observation=replace(root.before_observation),
+                ),
+            )
+        assert root.admission is not None and root.admission.selection is not None
+        with pytest.raises(ValueError, match="exact admitted selection"):
+            replace(
+                root,
+                admission=replace(
+                    root.admission,
+                    selection=replace(root.admission.selection),
+                ),
+            )
+
+    asyncio.run(scenario())
+
+
+def test_admission_rejects_selection_risk_subject_divergence() -> None:
+    async def scenario() -> None:
+        result = await (_loop(ScriptedPolicy(["first"]))).run(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                post_observations=(_world("after", True),),
+                results=[_sent()],
+            ),
+            _task(),
+        )
+        admission = result.control_transitions[0].admission
+        assert admission is not None and admission.selection is not None
+
+        with pytest.raises(ValueError, match="risk subject"):
+            replace(
+                admission,
+                selection=replace(admission.selection, target_id="foreign-target"),
+            )
+
+    asyncio.run(scenario())
+
+
+def test_reducer_rejects_decision_with_foreign_phase_facts() -> None:
+    async def scenario() -> None:
+        observe = RequestObservation(
+            "context:test",
+            "criterion_verification",
+            "current_world",
+            "",
+            "refresh",
+        )
+        stop = Abort("context:test", "stop", "policy")
+        result = await (_loop(ScriptedPolicy([observe, stop]))).run(
+            ScriptedEnvironment(
+                initial_observation=_world("before", False),
+                independent_observations=(_world("fresh", False),),
+            ),
+            _task(),
+        )
+        observed = result.control_transitions[0]
+        malformed = replace(
+            observed,
+            decision=stop,
+            evaluation=None,
+            control_feedback=None,
+            resulting_status=AgentLoopStatus.FAILED,
+            reason_code="abort_policy",
+        )
+
+        rejected = reduce_control(ControlState(), AppendRoot(malformed, 12))
+
+        assert isinstance(rejected, ControlRejected)
+        assert rejected.code == "decision_phase_shape_mismatch"
+
+    asyncio.run(scenario())
+
+
+def test_transition_rejects_unreached_world_before_model_projection() -> None:
     state = AgentLoopState(_world("before", False))
     scope = ControlTransitionScope(state, Wait("context:one", "wait", 1))
     scope.set_reason("runtime_exception")
     transition = scope.finalize(state, None)
-    with pytest.raises(ValueError, match="task evaluation"):
+    with pytest.raises(ValueError, match="not reachable"):
         replace(
             transition,
-            after_observation_id="after",
-            task_evaluation=TaskEvaluation(
+            after_observation=_world("after", False),
+            direct_task_evaluation=TaskEvaluation(
                 _task().task_id,
                 "before",
                 TaskEvaluationStatus.INCOMPLETE,
@@ -109,8 +220,7 @@ def test_transition_rejects_old_task_evaluation_epoch_before_model_projection() 
             ),
         )
 
-    current = replace(transition, after_observation_id="after")
-    view = project_control_transitions((current,))[0]
+    view = project_control_transitions((transition,))[0]
 
     assert view.task_evaluation_status == ""
     assert view.reason == "runtime_exception"
@@ -154,7 +264,7 @@ def test_exact_root_total_survives_bounded_suffix() -> None:
 
     assert state.control_transition_total_count == 7
     assert [item.sequence for item in state.recent_control_transitions] == [5, 6, 7]
-    assert len(state.recent_turns) == 3
+    assert len(state.recent_control_transitions) == 3
 
 
 @pytest.mark.parametrize(
@@ -232,7 +342,7 @@ def test_refresh_decision_and_following_abort_each_create_one_root(kind: str) ->
         assert session.state.control_transition_total_count == 2
         refresh = session.state.recent_control_transitions[0]
         assert refresh.acquisition is not None
-        assert refresh.acquisition.request_kind == str(
+        assert str(refresh.acquisition.request.kind) == str(
             ObservationRequestKind.WAIT_REFRESH if kind == "wait" else ObservationRequestKind.POLICY_REQUEST
         )
         assert refresh.after_observation_id == "fresh"
@@ -246,12 +356,13 @@ def test_action_transition_retains_typed_control_facts_once() -> None:
             return SelectAction(context.context_id, context.actions.options[0].action_id)
 
     async def scenario() -> None:
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=[_sent()],
+        )
         session = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
-            ScriptedEnvironment(
-                initial_observation=_world("before", False),
-                post_observations=(_world("after", True),),
-                results=[_sent()],
-            ),
+            environment,
             _task(),
         )
         result = await session.run_until_pause()
@@ -262,9 +373,15 @@ def test_action_transition_retains_typed_control_facts_once() -> None:
         assert transition.admission is not None
         assert transition.admission.status is AdmissionStatus.ADMITTED
         assert transition.execution is not None
-        assert transition.execution.dispatch_status is DispatchStatus.SENT
+        assert transition.execution.result.dispatch_status is DispatchStatus.SENT
+        assert transition.execution.request is environment.executed_requests[0]
         assert transition.acquisition is not None
-        assert transition.acquisition.attempts == 1
+        assert transition.acquisition.origin is AcquisitionOrigin.POST_ACTION
+        assert transition.execution.post_acquisition is transition.acquisition
+        assert transition.evaluation is not None
+        assert transition.evaluation.execution is transition.execution
+        assert transition.evaluation.consumed_acquisition is transition.acquisition
+        assert transition.evaluation.after_observation is result.final_observation
         assert transition.action_evaluation is not None
         assert transition.task_evaluation is not None
 

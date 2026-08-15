@@ -145,7 +145,7 @@ def test_agent_loop_rejects_evidence_not_resolved_in_after_world(evidence_ref: s
 
         assert result.status == AgentLoopStatus.FAILED
         assert "evidence" in result.message
-        assert result.turns[-1].action_evaluation is None
+        assert result.control_transitions[-1].action_evaluation is None
         assert evaluator.calls == 1
 
     asyncio.run(scenario())

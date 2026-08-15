@@ -136,9 +136,9 @@ def project_latest_transition(
         AgentExecutionOutcomeView(
             str(admission.status) if admission is not None else "",
             admission.reason_code if admission is not None else "",
-            str(execution.dispatch_status) if execution is not None else "",
-            execution.transport_success if execution is not None else None,
-            str(execution.error or "") if execution is not None else "",
+            str(execution.result.dispatch_status) if execution is not None else "",
+            execution.result.transport_success if execution is not None else None,
+            str(execution.result.error or "") if execution is not None else "",
             len(transition.execution_attempts),
             str(transition.pending_kind),
             str(transition.resulting_status or ""),

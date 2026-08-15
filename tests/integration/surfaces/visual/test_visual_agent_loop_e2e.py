@@ -104,9 +104,9 @@ def test_real_browser_visual_only_short_loop_completes_with_one_semantic_action(
         assert result.observation_count == 2
         assert result.execution_count == 1
         assert result.currentness_probe_count == 1
-        assert len(result.turns) == 1
-        assert result.turns[0].before_observation_id != result.turns[0].after_observation_id
-        assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
+        assert len(result.control_transitions) == 1
+        assert result.control_transitions[0].before_observation_id != result.control_transitions[0].after_observation_id
+        assert result.control_transitions[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
         assert environment.adapters[0].surface == "visual"
         assert proposer.calls == 2
     finally:

@@ -45,7 +45,6 @@ if TYPE_CHECKING:
         project_action_page,
         project_action_space,
         project_parameter_schema_for_model,
-        project_turns,
     )
     from affordance_runtime.agent.context.source_projection import (
         ModelSemanticInventoryView,
@@ -117,7 +116,6 @@ _EXPORTS = {
         "affordance_runtime.agent.context.transition_digest_projection",
         "project_latest_transition",
     ),
-    "project_turns": ("affordance_runtime.agent.context.projection", "project_turns"),
 }
 
 __all__ = list(_EXPORTS)

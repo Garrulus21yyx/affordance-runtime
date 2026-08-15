@@ -58,7 +58,7 @@ def test_agent_loop_rejects_action_evaluation_with_wrong_lineage(wrong_field: st
         assert result.status == AgentLoopStatus.FAILED
         assert "evaluation lineage" in result.message
         assert result.execution_count == 1
-        assert result.turns[-1].action_evaluation is None
+        assert result.control_transitions[-1].action_evaluation is None
         assert task_evaluator.calls == 1
 
     asyncio.run(scenario())

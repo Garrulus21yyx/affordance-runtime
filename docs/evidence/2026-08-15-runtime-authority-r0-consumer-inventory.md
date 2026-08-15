@@ -9,8 +9,9 @@
 
 > **Disposition update (2026-08-15):** R1 has implemented the acquisition
 > portion of this map. See [R1 acquisition convergence](2026-08-15-runtime-authority-r1-closure.md).
-> The tables below remain the immutable pre-cutover inventory; R2/R3 entries are
-> still pending.
+> R2 has implemented exact execution/evaluation/control composition. See
+> [R2 exact composition](2026-08-15-runtime-authority-r2-closure.md). The tables
+> below remain the immutable pre-cutover inventory; R3 entries are still pending.
 
 ## 1. Review method and bounded conclusion
 
@@ -230,10 +231,16 @@ ActionAdmissionOutcome =
   | REJECTED(exact typed AdmissionIssue or typed risk rejection)
   | CONFIRMATION_REQUIRED(exact selection, exact risk assessment,
                           exact ConfirmationRequest)
+  | CONFIRMED(exact fresh selection, exact fresh risk assessment,
+              exact prior ConfirmationRequest)
 ```
 
 It replaces `AdmissionSummary`; it does not replace `ActionSpace`, decision,
-or binding authority.
+or binding authority. `CONFIRMED` is legal only as a reached fact on the typed
+confirmation continuation: the fresh `SelectAction` must match that fresh
+selection, the first `BoundActionRequest` must retain the selection by object
+identity, and the confirmation request must be the exact request stored by the
+original `CONFIRMATION_REQUIRED` root. It is not a second root-admission path.
 
 ### 4.4 ExecutionOutcome
 
@@ -287,6 +294,7 @@ ControlTransition
   before observation and before task evaluation
   exact AgentDecision
   exact ActionAdmissionOutcome when applicable
+  exact confirmation continuation decision/readmission when applicable
   exact decision outcome union:
     observation acquisition(s)
     | execution attempt outcome(s) + optional linked fallback

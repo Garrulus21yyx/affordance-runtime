@@ -20,8 +20,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.context.contracts import AgentTaskView, AgentTurnView
-    from affordance_runtime.agent.control_transition import Turn
+    from affordance_runtime.agent.context.contracts import AgentTaskView
     from affordance_runtime.task.contracts import TaskGoal
 
 _SECRET_MARKERS = ("password", "secret", "token", "credential", "authorization", "api_key", "apikey")
@@ -140,14 +139,6 @@ def _project_action_options(
             for action_id in visible_action_ids
             if (option := by_id.get(action_id)) is not None
         )
-
-
-def project_turns(turns: tuple[Turn, ...]) -> tuple[AgentTurnView, ...]:
-    from affordance_runtime.agent.context.control_transition_projection import (
-        project_turns as project,
-    )
-
-    return project(turns)
 
 
 def project_public_value(value: Any, depth: int = 0) -> Any:

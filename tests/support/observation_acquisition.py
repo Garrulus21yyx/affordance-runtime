@@ -53,6 +53,7 @@ def acquired_acquisition(
     *,
     kind: ObservationRequestKind = ObservationRequestKind.POLICY_REQUEST,
     acquisition_id: str = "test:acquisition",
+    request: WorldObservationRequest | None = None,
 ) -> ObservationAcquisition:
     source = world.sources[0]
     offer = ObservationOffer(
@@ -61,7 +62,7 @@ def acquired_acquisition(
         source.source_profile.assurance,
         source.source_profile.acquisition_cost,
     )
-    request = WorldObservationRequest(kind, "test acquisition")
+    request = request or WorldObservationRequest(kind, "test acquisition")
     plan = ObservationOrchestrator(acquisition_budget=1).select((offer,), request).plan
     assert plan is not None
     selected = selected_observation_requests(plan, request, (offer,), acquisition_id)[0]
@@ -91,9 +92,10 @@ def failed_acquisition(
     *,
     kind: ObservationRequestKind = ObservationRequestKind.POLICY_REQUEST,
     acquisition_id: str = "test:failed-acquisition",
+    request: WorldObservationRequest | None = None,
 ) -> ObservationAcquisition:
     offer = ObservationOffer("static", "structural", "structural", "low")
-    request = WorldObservationRequest(kind, "test failed acquisition")
+    request = request or WorldObservationRequest(kind, "test failed acquisition")
     plan = ObservationOrchestrator(acquisition_budget=1).select((offer,), request).plan
     assert plan is not None
     selected = selected_observation_requests(plan, request, (offer,), acquisition_id)[0]

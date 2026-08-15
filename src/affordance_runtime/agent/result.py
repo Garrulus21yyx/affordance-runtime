@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from affordance_runtime.agent.control_transition import ControlTransition, Turn
+from affordance_runtime.agent.control_transition import ControlTransition
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure, runtime_failure_from_outcome
@@ -26,7 +26,6 @@ class AgentResult:
     status: AgentLoopStatus
     task: TaskGoal
     final_observation: WorldObservation
-    turns: tuple[Turn, ...]
     observation_count: int
     execution_count: int
     currentness_probe_count: int = 0
@@ -74,27 +73,35 @@ def project_result(
             attempt_id=attempt_id,
         )
     return AgentResult(
-        outcome.status,
-        session.task,
-        state.current_observation,
-        state.recent_turns,
-        session.accounting.observation_attempts,
-        session.accounting.execution_attempts,
-        session.accounting.currentness_probes,
-        outcome.message,
-        state.pending_confirmation if outcome.status == AgentLoopStatus.WAITING_CONFIRMATION else None,
-        outcome.policy_failure,
-        outcome.failure_code,
-        state.recent_control_transitions,
-        state.control_transition_total_count,
-        outcome.reason_code,
-        tuple(sorted(state.control_transition_kind_counts.items())),
-        state.sent_unknown_total_count,
-        runtime_failure or runtime_failure_from_outcome(outcome, root_id=root_id, attempt_id=attempt_id),
-        current_outcome,
-        state.control_feedback_total_count,
-        state.control_feedback_delivery_total_count,
-        state.control_issue_consumption_total_count,
-        state.control_repetition_total_count,
-        state.pending_user_request if outcome.status == AgentLoopStatus.WAITING_USER else None,
+        status=outcome.status,
+        task=session.task,
+        final_observation=state.current_observation,
+        observation_count=session.accounting.observation_attempts,
+        execution_count=session.accounting.execution_attempts,
+        currentness_probe_count=session.accounting.currentness_probes,
+        message=outcome.message,
+        confirmation_request=(
+            state.pending_confirmation
+            if outcome.status == AgentLoopStatus.WAITING_CONFIRMATION
+            else None
+        ),
+        policy_failure=outcome.policy_failure,
+        failure_code=outcome.failure_code,
+        control_transitions=state.recent_control_transitions,
+        control_transition_total_count=state.control_transition_total_count,
+        reason_code=outcome.reason_code,
+        control_transition_kind_counts=tuple(sorted(state.control_transition_kind_counts.items())),
+        sent_unknown_count=state.sent_unknown_total_count,
+        runtime_failure=(
+            runtime_failure
+            or runtime_failure_from_outcome(outcome, root_id=root_id, attempt_id=attempt_id)
+        ),
+        task_outcome=current_outcome,
+        control_feedback_count=state.control_feedback_total_count,
+        control_feedback_delivery_count=state.control_feedback_delivery_total_count,
+        control_issue_consumption_count=state.control_issue_consumption_total_count,
+        control_repetition_count=state.control_repetition_total_count,
+        user_input_request=(
+            state.pending_user_request if outcome.status == AgentLoopStatus.WAITING_USER else None
+        ),
     )

@@ -31,7 +31,13 @@ class SurfaceAdapter(Protocol):
 
     def is_current(self, request: BoundActionRequest) -> bool: ...
 
-    async def execute(self, request: BoundActionRequest) -> ActionResult: ...
+    async def execute(self, request: BoundActionRequest) -> ActionResult:
+        """Return exact dispatch truth.
+
+        A plain cancellation means dispatch was not crossed. After crossing it,
+        adapters must raise ``ActionDispatchCancelled`` with SENT_UNKNOWN truth.
+        """
+        ...
 
 
 @runtime_checkable

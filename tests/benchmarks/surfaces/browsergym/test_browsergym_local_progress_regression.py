@@ -127,7 +127,7 @@ def test_real_enter_text_progress_aware_path_converges_without_repeat() -> None:
     assert counts == (2, 1, 0)
     assert port.calls == 2
     assert result.execution_count == 2
-    assert result.turns[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    assert result.control_transitions[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
     events = port.progress_views[1]["events"]["items"]
     assert events[-1]["effect_status"] == "effect_confirmed"
 
@@ -150,7 +150,7 @@ def test_real_choose_list_select_effect_is_confirmed_and_completes() -> None:
 
     assert result.status is AgentLoopStatus.DONE
     assert counts == (2, 0, 1)
-    assert result.turns[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    assert result.control_transitions[0].action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
 
 
 def test_real_click_button_activate_remains_executable_and_completes() -> None:

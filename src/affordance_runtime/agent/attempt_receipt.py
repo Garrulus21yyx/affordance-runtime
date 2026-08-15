@@ -142,6 +142,11 @@ class AttemptReceipt:
                 and self.actual_origin is None
                 and self.acquisition_status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
             )
+            closed_cancellation = (
+                self.disposition is AttemptDisposition.CANCELLED
+                and self.actual_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
+                and self.acquisition_status is AcquisitionStatus.CANCELLED
+            )
             if (
                 self.expected_origin is not AcquisitionOrigin.INDEPENDENT_CAPTURE
                 or (
@@ -160,7 +165,7 @@ class AttemptReceipt:
                 or self.request_lineage_valid is not None
             ):
                 raise ValueError("capture attempt violates the physical operation matrix")
-            if returned:
+            if returned or closed_cancellation:
                 if not preselection_unavailable and (self.actual_origin is None or self.acquisition_status is None):
                     raise ValueError("returned capture requires typed acquisition truth")
             elif self.actual_origin is not None or self.acquisition_status is not AcquisitionStatus.FAILED:
@@ -174,23 +179,31 @@ class AttemptReceipt:
             or not self.expected_request_id
         ):
             raise ValueError("execute attempt violates the physical operation matrix")
-        if returned:
+        closed_cancellation = self.disposition is AttemptDisposition.CANCELLED and self.dispatch_status is not None
+        if returned or closed_cancellation:
             expected_dispatches = int(self.dispatch_status is not DispatchStatus.NOT_SENT)
+            no_post = self.dispatch_status is DispatchStatus.NOT_SENT
             if (
                 self.dispatch_status is None
                 or self.effectful_dispatches != expected_dispatches
                 or self.acquisition_attempts not in {0, 1}
                 or not self.actual_request_id
                 or self.request_lineage_valid is None
-                or self.acquisition_status is None
+                or (no_post != (self.acquisition_status is None))
             ):
                 raise ValueError("returned execute violates the disposition matrix")
             if self.request_lineage_valid and (self.actual_request_id != self.expected_request_id):
                 raise ValueError("valid execute lineage requires matching request identity")
+            if no_post:
+                if self.actual_origin is not None or self.acquisition_attempts != 0:
+                    raise ValueError("NOT_SENT execute cannot fabricate post acquisition")
+                return
+            assert self.acquisition_status is not None
             expected_acquisition_attempts = {
                 AcquisitionStatus.ACQUIRED: 1,
                 AcquisitionStatus.FAILED: 1,
                 AcquisitionStatus.CAPABILITY_UNAVAILABLE: 0,
+                AcquisitionStatus.CANCELLED: 1,
             }[self.acquisition_status]
             if (
                 self.actual_origin is not AcquisitionOrigin.POST_ACTION

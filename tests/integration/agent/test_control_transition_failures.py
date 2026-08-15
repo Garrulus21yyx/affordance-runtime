@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import replace
 
 import pytest
 
-from affordance_runtime.agent import AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, RequestObservation
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.world import AcquisitionOrigin, WorldFusion
+from affordance_runtime.evaluation import (
+    EvaluationInterruption,
+    EvaluationInterruptionReason,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
+from affordance_runtime.execution import (
+    ActionDispatchCancelled,
+    ActionError,
+    ActionResult,
+    DispatchStatus,
+)
+from affordance_runtime.world import WorldFusion
 from tests.integration.agent.test_agent_loop import (
     ScriptedPolicy,
     SharedActionEvaluator,
@@ -79,12 +90,12 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
         assert root.resulting_status is AgentLoopStatus.FAILED
         assert root.reason_code == "runtime_exception"
         assert root.execution is not None
-        assert root.execution.dispatch_status is DispatchStatus.SENT
+        assert root.execution.result.dispatch_status is DispatchStatus.SENT
         if stage == "task":
             assert root.action_evaluation is not None
             assert root.action_evaluation.after_observation_id == "after"
         assert root.after_observation_id == "after"
-        assert root.acquisition is not None and root.acquisition.attempts == 1
+        assert len(root.acquisition_attempts) == 1
         assert session.state.current_observation.observation_id == "after"
         assert session.execution_count == 1
         assert session.observation_count == 2
@@ -136,8 +147,64 @@ def test_evaluator_cancellation_preserves_facts_and_propagates() -> None:
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("exc", (RuntimeError("execute failed"), asyncio.CancelledError()))
-def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(exc) -> None:
+@pytest.mark.parametrize(
+    "exc",
+    [
+        ValueError("invalid task evaluation"),
+        RuntimeError("task evaluator failed"),
+        asyncio.CancelledError(),
+    ],
+)
+def test_observation_evaluation_interruption_retains_exact_trigger(exc: BaseException) -> None:
+    async def scenario() -> None:
+        decision = RequestObservation(
+            "context:test",
+            "criterion_verification",
+            "current_world",
+            "",
+            "refresh",
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            independent_observations=(_world("fresh", False),),
+        )
+        session = await (
+            AgentLoop(
+                ScriptedPolicy([decision]),
+                SharedActionEvaluator(),
+                SecondCallTaskEvaluator(exc),
+            )
+        ).start(environment, _task())
+
+        if isinstance(exc, ValueError):
+            await session.run_until_pause()
+        else:
+            with pytest.raises(type(exc)):
+                await session.run_until_pause()
+
+        root = session.state.recent_control_transitions[0]
+        assert isinstance(root.evaluation, EvaluationInterruption)
+        assert root.evaluation.execution is None
+        assert root.evaluation.observation_trigger is root.evaluation.consumed_acquisition
+        assert root.evaluation.observation_trigger in root.acquisition_attempts
+        assert root.evaluation.after_observation is root.after_observation
+        assert root.evaluation.action_evaluation is None
+        assert root.evaluation.reason_code in {
+            EvaluationInterruptionReason.TASK_CANCELLED,
+            EvaluationInterruptionReason.TASK_INVALID,
+            EvaluationInterruptionReason.TASK_CALL_FAILED,
+        }
+        with pytest.raises(TypeError, match="reason must be typed"):
+            replace(root.evaluation, reason_code="not_actually_cancelled")
+        with pytest.raises(ValueError, match="task trigger"):
+            replace(root.evaluation, reason_code=EvaluationInterruptionReason.ACTION_INVALID)
+
+    asyncio.run(scenario())
+
+
+def test_execute_exception_latches_terminal_session_without_duplicate_dispatch() -> None:
+    exc = RuntimeError("execute failed")
+
     class RaisingEnvironment(ScriptedEnvironment):
         async def execute(self, request):
             self.execute_calls += 1
@@ -154,21 +221,62 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
         terminal = await session.run_until_pause()
         root = session.state.recent_control_transitions[0]
         assert terminal is session.last_result
-        assert terminal.status is (
-            AgentLoopStatus.CANCELLED if isinstance(exc, asyncio.CancelledError) else AgentLoopStatus.FAILED
-        )
-        assert root.reason_code == (
-            "runtime_cancelled" if isinstance(exc, asyncio.CancelledError) else "runtime_exception"
-        )
+        assert terminal.status is AgentLoopStatus.FAILED
+        assert root.reason_code == "runtime_exception"
         assert policy.decisions == []
         assert environment.execute_calls == 1
         assert session.state.control_transition_total_count == 1
         assert terminal.runtime_failure is not None
-        assert terminal.runtime_failure.stage is (
-            FailureStage.SESSION if isinstance(exc, asyncio.CancelledError) else FailureStage.EXECUTION
-        )
+        assert terminal.runtime_failure.stage is FailureStage.EXECUTION
         assert terminal.runtime_failure.root_id == root.transition_id
         assert terminal.runtime_failure.attempt_id == root.attempt_receipts[-1].attempt_id
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("crossed_dispatch", [False, True])
+def test_execute_cancellation_closes_exact_outcome_before_propagation(
+    crossed_dispatch: bool,
+) -> None:
+    def cancel(request, observation):
+        del observation
+        if not crossed_dispatch:
+            raise asyncio.CancelledError
+        raise ActionDispatchCancelled(
+            ActionResult(
+                request.request_id,
+                DispatchStatus.SENT_UNKNOWN,
+                request.binding.executor_id,
+                False,
+                ActionError.CANCELLED,
+            )
+        )
+
+    async def scenario() -> None:
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            execute_fn=cancel,
+        )
+        session = await (_loop(ScriptedPolicy(["first"]))).start(environment, _task())
+
+        with pytest.raises(asyncio.CancelledError):
+            await session.run_until_pause()
+
+        root = session.state.recent_control_transitions[0]
+        assert root.resulting_status is AgentLoopStatus.CANCELLED
+        assert root.execution is not None
+        assert root.execution.request is environment.adapter.executed_requests[0]
+        assert root.execution.result.error is ActionError.CANCELLED
+        assert root.execution.result.dispatch_status is (
+            DispatchStatus.SENT_UNKNOWN if crossed_dispatch else DispatchStatus.NOT_SENT
+        )
+        if crossed_dispatch:
+            assert root.execution.post_acquisition is not None
+            assert root.execution.post_acquisition in root.acquisition_attempts
+        else:
+            assert root.execution.post_acquisition is None
+            assert root.acquisition_attempts == ()
+        assert root.attempt_receipts[-1].disposition.value == "cancelled"
 
     asyncio.run(scenario())
 
@@ -256,6 +364,68 @@ def test_malformed_execute_return_is_one_failed_physical_attempt() -> None:
     asyncio.run(scenario())
 
 
+def test_execute_boundary_rejects_substituted_request_authority() -> None:
+    class SubstitutingEnvironment(ScriptedEnvironment):
+        async def execute(self, request):
+            outcome = await super().execute(request)
+            return replace(
+                outcome,
+                request=replace(outcome.request, timeout_ms=outcome.request.timeout_ms + 1),
+            )
+
+    async def scenario() -> None:
+        environment = SubstitutingEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=[_sent()],
+        )
+        session = await (_loop(ScriptedPolicy(["first"]))).start(environment, _task())
+
+        with pytest.raises(TypeError, match="malformed contract"):
+            await session.run_until_pause()
+
+        root = session.state.recent_control_transitions[0]
+        assert environment.execute_calls == 1
+        assert root.execution is None
+        assert root.attempt_receipts[-1].disposition.value == "malformed"
+
+    asyncio.run(scenario())
+
+
+def test_capture_boundary_rejects_substituted_request_authority() -> None:
+    class SubstitutingEnvironment(ScriptedEnvironment):
+        async def capture(self, request):
+            acquisition = await super().capture(request)
+            return replace(
+                acquisition,
+                request=replace(request, reason=f"{request.reason} substituted"),
+            )
+
+    async def scenario() -> None:
+        decision = RequestObservation(
+            "context:test",
+            "criterion_verification",
+            "current_world",
+            "",
+            "refresh",
+        )
+        environment = SubstitutingEnvironment(
+            initial_observation=_world("before", False),
+            independent_observations=(_world("fresh", False),),
+        )
+        session = await (_loop(ScriptedPolicy([decision]))).start(environment, _task())
+
+        with pytest.raises(TypeError, match="malformed contract"):
+            await session.run_until_pause()
+
+        root = session.state.recent_control_transitions[0]
+        assert environment.capture_calls == 1
+        assert root.acquisition_attempts == ()
+        assert root.attempt_receipts[-1].disposition.value == "malformed"
+
+    asyncio.run(scenario())
+
+
 def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() -> None:
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)
@@ -267,19 +437,15 @@ def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() ->
             ),
             _task(),
         )
-        terminal = await session.run_until_pause()
+        with pytest.raises(ValueError, match="lineage"):
+            await session.run_until_pause()
         root = session.state.recent_control_transitions[0]
-        assert terminal.reason_code == "action_result_lineage_mismatch"
-        assert root.execution is not None
-        assert root.execution.expected_request_id == root.request_id
-        assert root.execution.request_id.startswith("request_sha256_")
-        assert root.execution.backend.startswith("backend_sha256_")
-        assert root.attempt_receipts[0].request_lineage_valid is False
+        assert root.execution is None
+        assert root.attempt_receipts[0].disposition.value == "threw"
         assert "request:wrong" not in repr(root)
-        assert root.acquisition is not None and root.acquisition.attempts == 1
         assert session.execution_count == 1
-        assert session.observation_count == 2
-        assert tuple(item.origin for item in root.acquisition_attempts) == (AcquisitionOrigin.POST_ACTION,)
+        assert session.observation_count == 1
+        assert root.acquisition_attempts == ()
 
     asyncio.run(scenario())
 
@@ -297,15 +463,12 @@ def test_foreign_execution_identity_is_private_across_transition_and_turn() -> N
             ),
             _task(),
         )
-        terminal = await session.run_until_pause()
+        with pytest.raises(ValueError, match="lineage"):
+            await session.run_until_pause()
         root = session.state.recent_control_transitions[0]
-        assert terminal.reason_code == "action_result_lineage_mismatch"
         assert marker not in repr(root)
-        assert marker not in repr(root.as_turn())
         assert marker not in repr(session.snapshot_partial_episode())
-        assert root.execution is not None
-        assert root.execution.request_id.startswith("request_sha256_")
-        assert root.execution.backend.startswith("backend_sha256_")
+        assert root.execution is None
 
     asyncio.run(scenario())
 
@@ -330,9 +493,9 @@ def test_matching_private_backend_identity_is_always_opaque_in_transition() -> N
         root = session.state.recent_control_transitions[0]
         assert terminal.status is AgentLoopStatus.DONE
         assert marker not in repr(root)
-        assert marker not in repr(root.as_turn())
         assert root.execution is not None
-        assert root.execution.backend.startswith("backend_sha256_")
+        assert root.execution.request.binding.executor_id == marker
+        assert root.execution.result.backend == marker
 
     asyncio.run(scenario())
 
@@ -361,6 +524,8 @@ def test_invalid_probe_metadata_fails_closed_without_polluting_counts(invalid) -
         assert terminal.reason_code == "invalid_currentness_probe_count"
         assert session.currentness_probe_count == 0
         assert root.execution is not None
-        assert root.execution.currentness_probe_count == 0
+        retained = root.execution.result.adapter_evidence["currentness_probe_count"]
+        assert math.isnan(retained) if isinstance(invalid, float) and math.isnan(invalid) else retained == invalid
+        assert root.attempt_receipts[0].currentness_probe_count == 0
 
     asyncio.run(scenario())

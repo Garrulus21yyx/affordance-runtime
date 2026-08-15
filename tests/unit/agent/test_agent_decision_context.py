@@ -281,7 +281,8 @@ def test_no_op_page_request_advances_context_epoch() -> None:
 
 def test_stale_binding_refresh_rejects_reused_observation_identity() -> None:
     class UnavailableBinder:
-        def bind(self, selection, observation, context_id):
+        def bind_for_execution(self, selection, observation, context_id, task):
+            del selection, observation, context_id, task
             raise BindingError("unavailable")
 
     class Policy:

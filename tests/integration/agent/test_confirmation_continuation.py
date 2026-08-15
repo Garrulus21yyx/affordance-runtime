@@ -9,6 +9,7 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent.control_reducer import ControlRejected, validate_control_state
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
@@ -143,10 +144,50 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
         assert "#old" not in repr(paused.confirmation_request)
         assert "#fresh" not in repr(paused.confirmation_request)
         assert session.state.control_transition_total_count == 1
-        continuation = session.state.latest_control_continuation
-        assert continuation is not None
-        assert continuation.source_transition_id == root_id
-        assert session.state.recent_control_transitions[0].transition_id == root_id
+        root = session.state.recent_control_transitions[0]
+        assert root.transition_id == root_id
+        assert root.execution is not None
+        assert root.evaluation is not None
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_continuation_chain_rejects_foreign_decision_or_approval() -> None:
+    async def scenario() -> None:
+        environment = ScriptedEnvironment(
+            initial_observation=_world("old", False, "#old"),
+            independent_observations=(_world("fresh", False, "#fresh"),),
+            post_observations=(_world("after", True, "#after"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        )
+        session = await (_loop()).start(environment, _task())
+        paused = await session.run_until_pause()
+        await session.resolve_confirmation(_decision(paused))
+        root = session.state.recent_control_transitions[0]
+        assert root.continuation_admission is not None
+        assert root.continuation_admission.confirmation_request is not None
+        assert root.continuation_decision is not None
+        state = session.state._control_reducer_state()
+
+        foreign_decision = replace(
+            root.continuation_decision,
+            action_id="action:foreign",
+            parameters={"x": 1},
+            destination_id="foreign-destination",
+        )
+        foreign_approval = replace(
+            root.continuation_admission,
+            confirmation_request=replace(
+                root.continuation_admission.confirmation_request,
+                confirmation_id="confirmation:foreign",
+            ),
+        )
+        for malformed in (
+            replace(root, continuation_decision=foreign_decision),
+            replace(root, continuation_admission=foreign_approval),
+        ):
+            rejected = validate_control_state(replace(state, recent_transitions=(malformed,)))
+            assert isinstance(rejected, ControlRejected)
 
     asyncio.run(scenario())
 
@@ -223,6 +264,8 @@ def test_confirmation_refresh_failure_closes_original_root(
                 _world("fresh", False, "#fresh"),
                 AcquisitionOrigin.RESET,
                 kind=request.kind,
+                acquisition_id="acquisition:2",
+                request=request,
             )
 
     async def scenario() -> None:
@@ -251,7 +294,7 @@ def test_confirmation_refresh_failure_closes_original_root(
         assert root.resulting_status is AgentLoopStatus.FAILED
         assert root.after_observation_id == "old"
         assert root.acquisition is not None
-        assert root.acquisition.reason_code == reason_code
+        assert root.attempt_receipts[-1].reason_code == reason_code
         assert environment.capture_calls == capture_calls
         assert session.state.control_transition_total_count == 1
         assert session.approved_confirmation is None
@@ -372,7 +415,36 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
             "#rebound",
         ]
         root = session.state.recent_control_transitions[0]
-        assert [item.dispatch_status for item in root.execution_attempts] == [
+        first, second = root.execution_attempts
+        state = session.state._control_reducer_state()
+        mutations = (
+            replace(
+                root,
+                execution_attempts=(
+                    replace(
+                        first,
+                        result=replace(first.result, error=ActionError.INVALID_PARAMETERS),
+                    ),
+                    second,
+                ),
+            ),
+            replace(
+                root,
+                execution_attempts=(
+                    replace(
+                        first,
+                        request=replace(first.request, context_id="context:foreign"),
+                    ),
+                    second,
+                ),
+            ),
+        )
+        for malformed in mutations:
+            assert isinstance(
+                validate_control_state(replace(state, recent_transitions=(malformed,))),
+                ControlRejected,
+            )
+        assert [item.result.dispatch_status for item in root.execution_attempts] == [
             DispatchStatus.NOT_SENT,
             DispatchStatus.SENT,
         ]
@@ -436,7 +508,7 @@ def test_confirmed_execution_exception_closes_root_and_propagates(
         root = session.state.recent_control_transitions[0]
         assert root.transition_id == root_id
         assert root.execution is not None
-        assert root.execution.dispatch_status is DispatchStatus.SENT
+        assert root.execution.result.dispatch_status is DispatchStatus.SENT
         assert root.after_observation_id == "after"
         assert root.reason_code == (
             "runtime_cancelled" if isinstance(exc, asyncio.CancelledError) else "runtime_exception"
@@ -554,6 +626,8 @@ def test_wrong_origin_confirmation_records_expected_and_actual_origin() -> None:
                 _world("fresh", False, "#fresh"),
                 AcquisitionOrigin.RESET,
                 kind=request.kind,
+                acquisition_id="acquisition:2",
+                request=request,
             )
 
     async def scenario() -> None:
@@ -565,9 +639,11 @@ def test_wrong_origin_confirmation_records_expected_and_actual_origin() -> None:
         await session.resolve_confirmation(_decision(paused))
 
         attempt = session.state.recent_control_transitions[0].acquisition_attempts[0]
-        assert attempt.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
         assert attempt.origin is AcquisitionOrigin.RESET
-        assert attempt.request_kind == str(ObservationRequestKind.CONFIRMATION_REFRESH)
+        assert attempt.request.kind is ObservationRequestKind.CONFIRMATION_REFRESH
+        assert session.state.recent_control_transitions[0].attempt_receipts[0].expected_origin is (
+            AcquisitionOrigin.INDEPENDENT_CAPTURE
+        )
 
     asyncio.run(scenario())
 
@@ -635,9 +711,10 @@ def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
             await session.resolve_confirmation(_decision(paused))
 
         root = session.state.recent_control_transitions[0]
-        attempt = root.acquisition_attempts[0]
-        assert attempt.attempts == 1
-        assert attempt.origin is None
+        assert root.acquisition_attempts == ()
+        attempt = root.attempt_receipts[-1]
+        assert attempt.acquisition_attempts == 1
+        assert attempt.actual_origin is None
         assert attempt.expected_origin is AcquisitionOrigin.INDEPENDENT_CAPTURE
         assert session.observation_count == 2
         assert session.state.control_transition_total_count == 1
@@ -676,7 +753,8 @@ def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None
         assert session.observation_count == 2
         assert len(root.attempt_receipts) == 1
         assert root.attempt_receipts[0].disposition.value == "malformed"
-        assert root.acquisition_attempts[0].attempts == 1
+        assert root.acquisition_attempts == ()
+        assert root.attempt_receipts[0].acquisition_attempts == 1
         assert session.last_result is not None
         assert session.last_result.runtime_failure is not None
         assert session.last_result.runtime_failure.stage is FailureStage.ACQUISITION
@@ -783,7 +861,7 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
         assert root.execution_attempts == ()
         assert environment.execute_calls == 0
         assert blocked.observation_count == session.observation_count == 2
-        assert sum(item.acquisition.attempts for item in (root,) if item.acquisition) == 1
+        assert len(root.acquisition_attempts) == 1
         assert session.approved_confirmation is None
 
     asyncio.run(scenario())

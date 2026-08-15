@@ -90,7 +90,7 @@ def test_real_login_user_popup_negative_terminal_is_canonical_and_absorbing() ->
             assert result.control_transition_total_count == 1
             transition = result.control_transitions[0]
             assert transition.execution is not None
-            assert transition.execution.dispatch_status is DispatchStatus.SENT
+            assert transition.execution.result.dispatch_status is DispatchStatus.SENT
             assert transition.task_evaluation is not None
             assert transition.task_evaluation.status is TaskEvaluationStatus.BLOCKED
             assert transition.task_evaluation.completion_evidence_refs == ()

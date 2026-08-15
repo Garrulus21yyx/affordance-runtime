@@ -3,11 +3,12 @@
 > **Lifecycle:** CURRENT NORMATIVE CONTRACT
 > **Updated:** 2026-08-15
 > **Scope:** end-to-end authority conservation, phase aggregates, composition roots, and projections in the target GUI loop
-> **Status:** `R1_IMPLEMENTED / SINGLE_ACQUISITION_COORDINATOR / EXACT_OBSERVATION_ACQUISITION_AGGREGATE / GENERIC_BROWSERGYM_CONVERGED / ACQUISITION_PROPERTIES_VERIFIED / INDEPENDENT_FRESH_CONTEXT_REVIEW_COMPLETE / R2_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`
+> **Status:** `R2_IMPLEMENTED / EXACT_EXECUTION_COMPOSITION / EXACT_EVALUATION_COMPOSITION / EXACT_CONTROL_TRANSITION / LEGACY_SUMMARIES_AND_TURN_DELETED / R3_IMPLEMENTATION_READY / A.2_STILL_OPEN / LIVE_NOT_RUN`
 > **Target:** [Target AgentLoop Authority Map](task-execution-authority-map.md)
 > **Implementation truth:** [Implementation Status](implementation-status.md)
 > **R0 evidence:** [Runtime authority R0 consumer inventory](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md)
 > **R1 evidence:** [Runtime authority R1 acquisition convergence](evidence/2026-08-15-runtime-authority-r1-closure.md)
+> **R2 evidence:** [Runtime authority R2 exact composition](evidence/2026-08-15-runtime-authority-r2-closure.md)
 
 ## 1. Decision
 
@@ -57,7 +58,7 @@ are copied into every object.
 The A.2 reopenings are not independent defects. They are manifestations of one
 missing end-to-end invariant.
 
-### 2.1 Confirmed causal chain
+### 2.1 Confirmed pre-R1/R2 causal chain
 
 ```text
 SelectedObservationRequest / SelectedObservationResult
@@ -89,7 +90,7 @@ the plan that caused it.
 | capability projection overwrites same modality/assurance offers by input order | projection algebra bug | the view reconstructs capability truth with a lossy dictionary key |
 | post-action route source is inferred from surface/minimum cost | lineage reconstruction | executed binding lineage is not consumed directly |
 | static environments construct planless acquisitions directly | verification defect | most loop tests bypass the production request/plan/result contract |
-| `ControlTransition` calls itself lossless while retaining `ExecutionSummary` and `AcquisitionSummary` | documentation and architecture defect | summaries are treated as canonical accounting inputs |
+| pre-R2 `ControlTransition` called itself lossless while retaining `ExecutionSummary` and `AcquisitionSummary` | documentation and architecture defect | summaries were treated as canonical accounting inputs; R2 deletes them |
 
 The previous tests were useful regression witnesses, but they proved producer-
 local examples rather than conservation through every owner and consumer. A
@@ -285,12 +286,19 @@ Invariants:
 Cancellation before dispatch is typed `NOT_SENT`; cancellation after dispatch
 has crossed the uncertainty boundary and is typed `SENT_UNKNOWN`. In both
 cases the decision scope retains the exact outcome before host cancellation
-propagates.
+propagates. The `SurfaceAdapter.execute` port defines a plain cancellation as
+pre-dispatch; an adapter that has crossed dispatch must raise the typed
+`ActionDispatchCancelled` carrier with its exact `SENT_UNKNOWN/CANCELLED`
+result. The execution coordinator, not the adapter, closes the primary
+cancelled post acquisition and `ExecutionCancelled.outcome`.
 
 ### 6.2 Temporal and idempotency rules
 
 - acquisition and execution attempt IDs are unique and monotonic within one
   `AgentRunSession`;
+- `RunAccounting` issues/accepts the exact next physical attempt ID and the
+  acquisition coordinator issues acquisition IDs; the control reducer only
+  validates their order in composed exact facts and owns no duplicate counter;
 - one selected source request has exactly one terminal result;
 - one physical acquisition group is invoked at most once per acquisition;
 - lifecycle stages only advance; a later fact cannot erase an earlier request,
@@ -300,6 +308,10 @@ propagates.
 - one accepted decision root is finalized once; an admitted confirmation/user
   continuation may replace that exact root slot once under its existing source
   identity, never append a duplicate policy decision.
+- confirmation refresh retains a separate exact `CONFIRMED` readmission and
+  fresh `SelectAction`; both correlate to the exact prior confirmation and the
+  first bound request rather than rewriting the original
+  `CONFIRMATION_REQUIRED` admission.
 
 ### 6.3 EvaluationOutcome
 
@@ -503,7 +515,7 @@ request, plan, correlated activations, per-need outcomes, fusion outcome,
 terminal stage/status/reason and cancellation reachability are enforced.
 `FreshAcquisition`, BrowserGym's second lifecycle and both direct static
 fixtures are deleted. Property, package and independent fresh-context gates pass
-as recorded in the linked R1 record. R2 is ready; R2 and R3 remain open.
+as recorded in the linked R1 record. R2 is now implemented; R3 remains open.
 
 ### R2 — execution/evaluation/transition composition
 
@@ -512,6 +524,11 @@ as recorded in the linked R1 record. R2 is ready; R2 and R3 remain open.
 - make `EvaluationOutcome` correlate the exact consumed evidence;
 - make `ControlTransition` compose exact outcomes and delete summary owners and
   compatibility `Turn` reconstruction.
+
+Implemented in R2: exact request/result/post acquisition and evaluation values
+remain reachable from each decision root; fallback stays linked; interrupted
+evaluation retains its reached exact prefix; Summary/Turn schemas and reducer
+reconstruction are absent. See the linked R2 evidence. This does not close A.2.
 
 ### R3 — one-way projections and test topology
 

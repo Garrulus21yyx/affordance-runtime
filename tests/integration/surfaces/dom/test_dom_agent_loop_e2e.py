@@ -44,9 +44,9 @@ def test_real_browser_dom_short_loop_completes_with_one_semantic_action() -> Non
         assert result.observation_count == 2
         assert result.execution_count == 1
         assert result.currentness_probe_count == 1
-        assert len(result.turns) == 1
-        assert result.turns[0].before_observation_id != result.turns[0].after_observation_id
-        assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
+        assert len(result.control_transitions) == 1
+        assert result.control_transitions[0].before_observation_id != result.control_transitions[0].after_observation_id
+        assert result.control_transitions[0].task_evaluation.status == TaskEvaluationStatus.COMPLETE
     finally:
         session.close()
 
@@ -94,10 +94,10 @@ def test_product_target_runtime_confirms_dom_activation_from_structural_evidence
 
         assert result.status is AgentLoopStatus.DONE
         assert result.execution_count == 1
-        assert result.turns[0].action_evaluation.status.value == "effect_confirmed"
-        assert result.turns[0].action_evaluation.evidence["verification_profile"] == (
+        assert result.control_transitions[0].action_evaluation.status.value == "effect_confirmed"
+        assert result.control_transitions[0].action_evaluation.evidence["verification_profile"] == (
             "structural_target_diff_v1"
         )
-        assert result.turns[0].action_evaluation.evidence_refs
+        assert result.control_transitions[0].action_evaluation.evidence_refs
     finally:
         session.close()

@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from affordance_runtime.agent import Abort, AgentLoop, Wait
+from affordance_runtime.agent import Abort, AgentLoop, ProposeDone
 from affordance_runtime.agent.control_transition import ControlTransitionScope
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
@@ -36,7 +36,7 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
         session = await (AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())).start(
             ScriptedEnvironment(initial_observation=_world("current", False)), _task()
         )
-        decision = Wait("context:history", "history", 1)
+        decision = ProposeDone("context:history", (), (), "historical evaluation", ())
         old = TaskEvaluation(
             _task().task_id,
             "current",

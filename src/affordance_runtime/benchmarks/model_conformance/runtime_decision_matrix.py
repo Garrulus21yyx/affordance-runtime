@@ -319,7 +319,7 @@ async def replay_runtime_decision(case, decision) -> ReplayedRuntimeOutcome:
     async def dry_run(*args):
         nonlocal executions
         scope = args[-1]
-        scope.record_admission(AdmissionStatus.ADMITTED, "dry_run_admitted")
+        scope.record_admission(AdmissionStatus.NOT_APPLICABLE, "dry_run_projection")
         executions += 1
         return "dry-run-admitted"
 

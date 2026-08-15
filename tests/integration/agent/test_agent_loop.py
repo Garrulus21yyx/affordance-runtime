@@ -17,6 +17,8 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.attempt_receipt import AttemptOperation
+from affordance_runtime.agent.control_reducer import AppendRoot, ControlRejected, ControlState, reduce_control
 from affordance_runtime.agent.control_transition import PendingKind
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
@@ -46,6 +48,7 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+from tests.support.observation_acquisition import acquired_acquisition, failed_acquisition
 
 
 def _world(observation_id: str, enabled: bool, *, risk: ActionRisk = ActionRisk.LOW) -> WorldObservation:
@@ -373,7 +376,7 @@ def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
         result = await (_loop(ScriptedPolicy([proposal, "first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1
-        assert isinstance(result.turns[0].decision, ProposeDone)
+        assert isinstance(result.control_transitions[0].decision, ProposeDone)
 
     asyncio.run(scenario())
 
@@ -387,7 +390,7 @@ def test_transport_success_without_state_change_is_not_done() -> None:
         result = await (_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 1
-        assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.INCOMPLETE
+        assert result.control_transitions[0].task_evaluation.status == TaskEvaluationStatus.INCOMPLETE
 
     asyncio.run(scenario())
 
@@ -411,9 +414,42 @@ def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None
             AcquisitionOrigin.INDEPENDENT_CAPTURE,
         )
         assert tuple(item.reason_code for item in transition.acquisition_attempts) == (
-            "observation_identity_reused",
+            "world_acquired",
             "required_source_exhausted",
         )
+        assert transition.linked_acquisitions[0].primary_acquisition_id == (
+            transition.execution.post_acquisition.acquisition_id
+        )
+        assert transition.execution.post_acquisition is transition.acquisition_attempts[0]
+        assert transition.linked_acquisitions[0].acquisition is transition.acquisition_attempts[1]
+        fresh_primary = acquired_acquisition(
+            _world("fresh-primary", True),
+            AcquisitionOrigin.POST_ACTION,
+            kind=transition.execution.post_acquisition.request.kind,
+            acquisition_id=transition.execution.post_acquisition.acquisition_id,
+            request=transition.execution.post_acquisition.request,
+        )
+        with pytest.raises(ValueError, match="fresh primary"):
+            replace(
+                transition,
+                execution_attempts=(replace(transition.execution, post_acquisition=fresh_primary),),
+                acquisition_attempts=(fresh_primary, transition.acquisition_attempts[1]),
+            )
+        second_fallback = failed_acquisition(
+            AcquisitionOrigin.INDEPENDENT_CAPTURE,
+            "required_source_exhausted",
+            kind=ObservationRequestKind.POST_ACTION_FALLBACK,
+            acquisition_id="acquisition:99",
+        )
+        with pytest.raises(ValueError, match="at most one fallback"):
+            replace(
+                transition,
+                linked_acquisitions=(
+                    *transition.linked_acquisitions,
+                    replace(transition.linked_acquisitions[0], acquisition=second_fallback),
+                ),
+                acquisition_attempts=(*transition.acquisition_attempts, second_fallback),
+            )
 
     asyncio.run(scenario())
 
@@ -483,6 +519,22 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
         assert [request.kind for request in environment.capture_requests] == [
             ObservationRequestKind.CURRENTNESS_REFRESH,
         ]
+        root = result.control_transitions[0]
+        without_refresh = replace(
+            root,
+            acquisition_attempts=tuple(
+                item
+                for item in root.acquisition_attempts
+                if item.request.kind is not ObservationRequestKind.CURRENTNESS_REFRESH
+            ),
+            attempt_receipts=tuple(
+                item for item in root.attempt_receipts if item.operation is not AttemptOperation.CAPTURE
+            ),
+            after_observation=root.before_observation,
+        )
+        rejected = reduce_control(ControlState(), AppendRoot(without_refresh, 12))
+        assert isinstance(rejected, ControlRejected)
+        assert rejected.code == "reroute_currentness_refresh_mismatch"
 
     asyncio.run(scenario())
 
@@ -508,7 +560,7 @@ def test_recent_turns_are_bounded() -> None:
             ),
             _task(),
         )
-        assert len(result.turns) == 12
+        assert len(result.control_transitions) == 12
 
     asyncio.run(scenario())
 
@@ -603,12 +655,12 @@ def test_wrong_action_result_lineage_is_rejected_before_evaluation() -> None:
             post_observations=(_world("obs-2", True),),
             results=[ActionResult("wrong-request", DispatchStatus.SENT, "wrong-backend", True)],
         )
-        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
-        assert result.status == AgentLoopStatus.FAILED
-        assert "lineage" in result.message
-        assert result.turns[0].action_evaluation is None
-        assert result.observation_count == 2
-        assert result.execution_count == 1
+        session = await (_loop(ScriptedPolicy(["first"]))).start(environment, _task())
+        with pytest.raises(ValueError, match="lineage"):
+            await session.run_until_pause()
+        assert session.state.recent_control_transitions[0].execution is None
+        assert session.observation_count == 1
+        assert session.execution_count == 1
 
     asyncio.run(scenario())
 
@@ -629,10 +681,9 @@ def test_not_sent_wrong_lineage_fails_before_evaluation(request_id: str, backend
             results=[ActionResult(request_id, DispatchStatus.NOT_SENT, backend, False, ActionError.EXECUTION_FAILED)],
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), FailIfEvaluated(), SharedTaskEvaluator())
-        result = await (loop).run(environment, _task())
-
-        assert result.status == AgentLoopStatus.FAILED
-        assert "lineage" in result.message
-        assert len(environment.executed_requests) == 1
+        with pytest.raises(ValueError, match="lineage"):
+            await loop.run(environment, _task())
+        assert environment.execute_calls == 1
+        assert len(environment.adapter.executed_requests) == 1
 
     asyncio.run(scenario())

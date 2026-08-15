@@ -16,12 +16,11 @@ blocked until the existing Runtime chain conserves exact phase aggregates from
 request through the accepted-decision transition. The active contract is
 [Runtime authority aggregate convergence](runtime-authority-aggregate-convergence.md).
 
-## Implemented and reviewed slice — R1 single acquisition coordinator cutover
+## Implemented slice — R2 exact execution/evaluation/control composition
 
-Status: `R1_IMPLEMENTED / SINGLE_ACQUISITION_COORDINATOR /
-EXACT_OBSERVATION_ACQUISITION_AGGREGATE / GENERIC_BROWSERGYM_CONVERGED /
-ACQUISITION_PROPERTIES_VERIFIED /
-INDEPENDENT_FRESH_CONTEXT_REVIEW_COMPLETE / R2_IMPLEMENTATION_READY /
+Status: `R2_IMPLEMENTED / EXACT_EXECUTION_COMPOSITION /
+EXACT_EVALUATION_COMPOSITION / EXACT_CONTROL_TRANSITION /
+LEGACY_SUMMARIES_AND_TURN_DELETED / R3_IMPLEMENTATION_READY /
 A.2_STILL_OPEN / LIVE_NOT_RUN`
 
 R0 completed the architecture-first repository review and froze:
@@ -39,13 +38,19 @@ R0 completed the architecture-first repository review and froze:
 
 The complete source-backed inventory and atomic file order are in
 [R0 consumer inventory](evidence/2026-08-15-runtime-authority-r0-consumer-inventory.md).
-R1 now implements the closed acquisition aggregate and sole coordinator,
+R1 implements the closed acquisition aggregate and sole coordinator,
 migrates generic and BrowserGym acquisition through it, and deletes the
 displaced lifecycle owners and planless static-fixture paths in the same
 cutover. The implementation evidence is [the R1 acquisition convergence
-record](evidence/2026-08-15-runtime-authority-r1-closure.md). R1's property,
-package and independent-review gates pass. R2 is the next implementation slice;
-R3 remains ordered behind it.
+record](evidence/2026-08-15-runtime-authority-r1-closure.md). R2 now composes
+exact execution, post acquisition, evaluation and transition authority and
+deletes Summary/Turn compatibility paths. Confirmation continuation preserves
+its fresh `CONFIRMED` readmission and fresh decision as reached facts linked to
+the exact prior approval and first bound request; see the
+[R2 evidence](evidence/2026-08-15-runtime-authority-r2-closure.md). R3 is next;
+A.2 remains open. R2's independent fresh-context review passed after replaying
+request substitution, interruption-phase, reroute, fallback and exact-world
+mutations; the full repository gate is `1643 passed, 27 skipped`.
 
 The implementation order is fixed by dependency, not by the earlier 0–7 issue
 list:
@@ -123,8 +128,8 @@ VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL /
 WORLD_GRAPH_A.1_REPAIR_IMPLEMENTED / PROPERTY_VERIFIED /
 INDEPENDENT_FRESH_CONTEXT_REVIEW_PASSED / A.1_CLOSURE_ADMITTED /
 A.2_COMPONENTS_IMPLEMENTED / A.2_CLOSURE_WITHDRAWN /
-REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / R1_ACQUISITION_CONVERGED /
-R2_R3_CROSS_BOUNDARY_LOSS_OPEN /
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / R2_EXACT_CONTROL_CHAIN_CONVERGED /
+R3_PROJECTION_BOUNDARIES_OPEN /
 ACTIVATE_EFFECT_AUTHORITY_OPEN /
 NEW_INTERACTION_ACTIONS_NOT_ADMITTED / LIVE_NOT_RUN`
 
@@ -345,8 +350,8 @@ producer.
 
 Status: `DESIGN_RETAINED / WORLD_GRAPH_A.1_CLOSURE_ADMITTED /
 A.2_COMPONENTS_IMPLEMENTED / CLOSURE_WITHDRAWN /
-REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / R1_ACQUISITION_CONVERGED /
-R2_R3_CROSS_BOUNDARY_LOSS_OPEN / LIVE_NOT_RUN`
+REOPENED_FULL_CHAIN_CONVERGENCE_REVIEW / R2_EXACT_CONTROL_CHAIN_CONVERGED /
+R3_PROJECTION_BOUNDARIES_OPEN / LIVE_NOT_RUN`
 
 A.2 keeps the current `ObservationOrchestrator` as the sole source-selection
 owner. It separates physical multi-channel capture from semantic provider
@@ -371,8 +376,9 @@ initialization and physical reset explicit, separates source acquisition from
 per-need fulfillment, enforces plan/result conservation in the public
 acquisition owner, reports BrowserGym multi-purpose results truthfully, and
 deletes the reachable dynamic product protocol. Those components remain valid.
-R1 has now removed the duplicate acquisition composition root and bypassing
-static fixtures; lossy R2 control DTOs and R3 projection boundaries remain.
+R1 removed the duplicate acquisition composition root and bypassing static
+fixtures; R2 removed lossy control DTOs and composes exact phase authority.
+R3 projection/request-evidence boundaries remain.
 A.2 closure is therefore withdrawn, not merely waiting for review. The policy
 record is
 [Wave A.2 adaptive observation policy](plans/2026-08-15-adaptive-observation-policy-a2.md);
@@ -487,7 +493,7 @@ NumPy, and `pytest | tee` masked collection failure until attestation. Commit
 | P5-M4.3 historical MiniWoB-60 | `VALID_NEGATIVE_EVIDENCE` | clean `b3b64a2`, 6/60; immutable standalone run |
 | P5-M4.4 attribution | `CLOSED_FOR_CURRENT_SCOPE` | future typed attribution and inventory closure |
 | post-M4.4 separately authorized rerun-v3 | `VALID_NEGATIVE_EVIDENCE` | separate clean `83dc4fa` run at 4/60 |
-| P5-M4.5-A acquisition lifecycle | `R1_ACQUISITION_CONVERGENCE_IMPLEMENTED / PROPERTY_VERIFIED / INDEPENDENT_REVIEW_COMPLETE / A.2_STILL_OPEN` | one coordinator conserves exact reset/capture/post-action request, plan, activation, need and fusion facts; R2/R3 whole-chain work remains open |
+| P5-M4.5-A acquisition lifecycle | `R1_ACQUISITION_CONVERGENCE_IMPLEMENTED / PROPERTY_VERIFIED / INDEPENDENT_REVIEW_COMPLETE / A.2_STILL_OPEN` | one coordinator conserves exact reset/capture/post-action request, plan, activation, need and fusion facts; R2 is implemented and R3 whole-chain projection work remains open |
 | P5-M4.5-B control/failure contract | `INTEGRATED_NON_DEFAULT / REOPENED_CONVERGENCE_REVIEW / IMPLEMENTED_NOT_VERIFIED` | implementation candidate under architecture-first reducer, boundary, failure-owner and property review; no reviewed closure SHA |
 | P5-M4.5-C same-profile diagnostic | `COMPLETE_DIAGNOSTIC / EVIDENCE_VALID_AT_4924CE6 / FORMAL_EXIT_NOT_ATTESTED / PERFORMANCE_NOT_CLAIMED / GENERALIZATION_NOT_CLAIMED` | immutable 60/60, 8/60 run; diagnostic execution does not close B or claim performance/generalization |
 | P5-M4.6 evidence-directed remediation | `SINGLE_AGENT_CONTEXT_CUTOVER_IMPLEMENTED / LOCALLY_VERIFIED / PUSHED_E7F9F46 / LIVE_NOT_RUN / GENERALIZATION_OPEN` | The mandatory updater diagnosed at `cdb4bc9` is removed rather than repaired. `AgentContext` is the sole internal task/world/progress/history/pending/budget context; one YAML-backed binder creates one provider input; the valid grounded action path makes one semantic call. Catalog owns only current tools and opaque bindings. Legacy serialization is generated only for legacy adapters, not on the grounded path. No critic, second planner, working-memory envelope, task rule or alternate Runtime path is admitted. Focused tests, full `2474 passed, 27 skipped`, Ruff and mypy are green. Historical updater and atomic-memory runs remain negative evidence. See the [active convergence plan](plans/2026-08-14-single-agent-context-convergence.md). |

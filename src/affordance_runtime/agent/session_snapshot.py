@@ -84,7 +84,7 @@ def snapshot_partial_episode(session: AgentRunSession) -> PartialEpisodeSnapshot
         if latest_control is not None and latest_control.resulting_status is not None
         else "",
         latest_control.reason_code if latest_control is not None else "",
-        latest_control.acquisition.request_kind
+        str(latest_control.acquisition.request.kind)
         if latest_control is not None and latest_control.acquisition is not None
         else "",
         str(latest_receipt.operation) if latest_receipt is not None else "",

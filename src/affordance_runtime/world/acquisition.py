@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-from affordance_runtime.execution.contracts import ActionResult
 from affordance_runtime.world.contracts import SurfaceObservation, WorldObservation
 from affordance_runtime.world.fusion import FusionStatus, WorldFusionResult
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
@@ -606,20 +605,6 @@ class AcquisitionCancelled(asyncio.CancelledError):
     def __init__(self, acquisition: ObservationAcquisition) -> None:
         super().__init__(acquisition.reason_code)
         self.acquisition = acquisition
-
-
-@dataclass(frozen=True)
-class ExecutionOutcome:
-    result: ActionResult
-    post_acquisition: ObservationAcquisition
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.result, ActionResult):
-            raise TypeError("execution outcome result must be typed")
-        if not isinstance(self.post_acquisition, ObservationAcquisition):
-            raise TypeError("execution post acquisition must be typed")
-        if self.post_acquisition.origin is not AcquisitionOrigin.POST_ACTION:
-            raise ValueError("execution post acquisition must have POST_ACTION origin")
 
 
 def selected_observation_requests(

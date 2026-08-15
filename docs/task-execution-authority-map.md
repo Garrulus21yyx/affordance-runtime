@@ -71,12 +71,17 @@ not an ingress, compatibility layer, or hidden capability of `AgentLoop`.
 | physical effect | environment executor + `ExecutionCoordinator` | exact bound request | `ExecutionOutcome` retaining request, result and post acquisition when dispatched | semantic completion, caller-side reassembly |
 | effect/task truth | evaluators | exact execution/acquisition lineage + fresh world + TaskGoal | correlated `EvaluationOutcome` | executor receipt or model narration |
 | accepted-decision closure | transition reducer | exact decision/admission/acquisition/execution/evaluation outcomes | one bounded `ControlTransition` | reconstruction from summaries, telemetry or model views |
+| physical attempt sequence | `RunAccounting` | exact next `AttemptReceipt` | contiguous run-scoped attempt identity and totals | reducer-owned watermark or receipt-derived phase authority |
 | benchmark | harness | manifest + public outcomes | measurements/evidence | production branches or task semantics |
 
 R1 implementation note (2026-08-15): the acquisition-lifecycle row is now
 realized by `ObservationAcquisitionCoordinator` behind
 `UnifiedWorldEnvironment`; `BrowserGymSurfaceAdapter` is the grouped backend.
-R2/R3 rows and whole-chain closure remain pending.
+R2 implementation note (2026-08-15): execution, evaluation and transition rows
+now compose exact aggregates; Summary/Turn schemas and receipt reconstruction
+are deleted. A confirmation continuation retains its exact fresh decision and
+`CONFIRMED` readmission while preserving the original pending admission and
+approval identity. R3 rows and whole-chain closure remain pending.
 
 ## Identity timing
 

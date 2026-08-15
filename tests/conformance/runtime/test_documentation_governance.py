@@ -262,7 +262,7 @@ def test_target_contract_keeps_one_observation_grounded_authority_chain() -> Non
     assert "typed-decision to JSON to typed-decision" not in architecture
     assert "durable ledger" in architecture
     assert "WorldEnvironment independent capture" in status
-    assert "lossless ControlTransition" in status
+    assert "exact ControlTransition" in status
     assert "CLOSED_FOR_FILL_SELECT_LOCAL_LIVENESS" in status
 
 

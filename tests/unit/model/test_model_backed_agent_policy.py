@@ -196,7 +196,7 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
         assert result.status == AgentLoopStatus.FAILED
         assert result.policy_failure is not None
         assert result.policy_failure.kind == ModelFailureKind.TIMEOUT
-        assert result.turns == ()
+        assert result.control_transitions == ()
         assert environment.executed_requests == []
 
     asyncio.run(scenario())

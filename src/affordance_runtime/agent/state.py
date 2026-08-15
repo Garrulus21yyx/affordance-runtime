@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.agent.control_feedback import ControlFeedback
-from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition, Turn
+from affordance_runtime.agent.control_transition import ControlContinuation, ControlTransition
 from affordance_runtime.agent.progress_control import ProgressEvent
 from affordance_runtime.agent.user_input import UserInputContinuation, UserInputRequest
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
@@ -53,7 +53,6 @@ class AgentLoopState:
     pending_unknown_request: BoundActionRequest | None = None
     unresolved_observable_request: BoundActionRequest | None = field(default=None, repr=False)
     pending_confirmation_transition_id: str = ""
-    latest_control_continuation: ControlContinuation | None = None
     latest_user_input_continuation: UserInputContinuation | None = None
     current_task_evaluation: TaskEvaluation | None = field(default=None, repr=False)
     remaining_turns: int = 20
@@ -71,10 +70,6 @@ class AgentLoopState:
     control_repetition_total_count: int = 0
     control_issue_consumption_total_count: int = 0
     observation_cursor: str = ""
-
-    @property
-    def recent_turns(self) -> tuple[Turn, ...]:
-        return tuple(item.as_turn() for item in self.recent_control_transitions)
 
     def _append_control_transition(self, transition: ControlTransition) -> None:
         from affordance_runtime.agent.control_reducer import (

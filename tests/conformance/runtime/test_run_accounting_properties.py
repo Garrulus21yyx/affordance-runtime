@@ -55,6 +55,27 @@ def test_same_receipt_cannot_be_accounted_twice() -> None:
         raise AssertionError("duplicate receipt was accepted")
 
 
+def test_accounting_rejects_noncontiguous_attempt_identity_at_its_owner() -> None:
+    accounting = RunAccounting()
+    receipt = AttemptReceipt(
+        "attempt:999",
+        AttemptOperation.CAPTURE,
+        "wait_refresh",
+        AcquisitionOrigin.INDEPENDENT_CAPTURE,
+        None,
+        AttemptDisposition.RETURNED,
+        "independent_capture_unsupported",
+        0,
+        0,
+        0,
+        0,
+        acquisition_status=AcquisitionStatus.CAPABILITY_UNAVAILABLE,
+    )
+
+    with pytest.raises(ValueError, match="next run-scoped sequence"):
+        accounting.record(receipt)
+
+
 @given(st.text().filter(lambda value: "\x00" not in value))
 def test_foreign_exception_class_is_normalized_to_a_bounded_private_token(name: str) -> None:
     error = type(name, (Exception,), {})("private exception detail")
@@ -188,9 +209,15 @@ def _legal_receipt(index: int, spec: str) -> AttemptReceipt:
     )
     return AttemptReceipt(
         attempt_id, AttemptOperation.EXECUTE, "post_action",
-        AcquisitionOrigin.POST_ACTION, AcquisitionOrigin.POST_ACTION,
-        AttemptDisposition.RETURNED, "post_action_acquired", 1, 1,
+        AcquisitionOrigin.POST_ACTION,
+        None if dispatch is DispatchStatus.NOT_SENT else AcquisitionOrigin.POST_ACTION,
+        AttemptDisposition.RETURNED,
+        "action_not_dispatched" if dispatch is DispatchStatus.NOT_SENT else "post_action_acquired",
+        0 if dispatch is DispatchStatus.NOT_SENT else 1,
+        1,
         int(dispatch is not DispatchStatus.NOT_SENT), 0, dispatch,
         f"request:{index}", f"request:{index}", True,
-        acquisition_status=AcquisitionStatus.ACQUIRED,
+        acquisition_status=(
+            None if dispatch is DispatchStatus.NOT_SENT else AcquisitionStatus.ACQUIRED
+        ),
     )

@@ -19,7 +19,13 @@ from affordance_runtime.agent.context.budgets import BoundedSection, ContextProj
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentActionPageView
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
 from affordance_runtime.agent.context.world_projection import project_model_world
-from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.execution import (
+    ActionDispatchCancelled,
+    ActionError,
+    ActionResult,
+    DispatchStatus,
+    ExecutionCancelled,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionCancelled,
@@ -454,15 +460,11 @@ def test_coordinator_closes_initialization_provider_and_malformed_failures() -> 
 
     async def scenario() -> None:
         offer = ObservationOffer("dom", "structural", "structural", "low")
-        initialization = await UnifiedWorldEnvironment(
-            (InitializationFailure("dom", offer, _source("dom")),)
-        ).reset(_task())
-        provider = await UnifiedWorldEnvironment(
-            (ProviderFailure("dom", offer, _source("dom")),)
-        ).reset(_task())
-        malformed = await UnifiedWorldEnvironment(
-            (MalformedProvider("dom", offer, _source("dom")),)
-        ).reset(_task())
+        initialization = await UnifiedWorldEnvironment((InitializationFailure("dom", offer, _source("dom")),)).reset(
+            _task()
+        )
+        provider = await UnifiedWorldEnvironment((ProviderFailure("dom", offer, _source("dom")),)).reset(_task())
+        malformed = await UnifiedWorldEnvironment((MalformedProvider("dom", offer, _source("dom")),)).reset(_task())
 
         assert initialization.stage is AcquisitionStage.INITIALIZATION_FAILED
         assert provider.stage is AcquisitionStage.SOURCE_ACQUISITION_FAILED
@@ -493,9 +495,7 @@ def test_coordinator_preserves_cancellation_and_fusion_failure() -> None:
         await environment.reset(_task())
         adapter.cancel = True
         with pytest.raises(AcquisitionCancelled) as cancelled:
-            await environment.capture(
-                WorldObservationRequest(ObservationRequestKind.WAIT_REFRESH, "cancel")
-            )
+            await environment.capture(WorldObservationRequest(ObservationRequestKind.WAIT_REFRESH, "cancel"))
         assert cancelled.value.acquisition.stage is AcquisitionStage.CANCELLED
         assert cancelled.value.acquisition.status is AcquisitionStatus.CANCELLED
 
@@ -585,10 +585,7 @@ def test_grouped_cancellation_closes_later_selected_groups_without_calling_them(
             "visual-a-discovery",
             "visual-z-disambiguation",
         }
-        assert all(
-            item.result.status is SourceAcquisitionStatus.CANCELLED
-            for item in acquisition.activations
-        )
+        assert all(item.result.status is SourceAcquisitionStatus.CANCELLED for item in acquisition.activations)
         assert disambiguation.grouped_calls == calls_before
 
         structural = GroupedAdapter(
@@ -645,10 +642,7 @@ def test_grouped_cancellation_closes_later_selected_groups_without_calling_them(
             "dom-a",
             "visual-z",
         }
-        assert all(
-            item.result.status is SourceAcquisitionStatus.CANCELLED
-            for item in staged_acquisition.activations
-        )
+        assert all(item.result.status is SourceAcquisitionStatus.CANCELLED for item in staged_acquisition.activations)
         assert deferred_visual.grouped_calls == visual_calls_before
 
     asyncio.run(scenario())
@@ -959,6 +953,102 @@ def test_post_action_dom_route_does_not_reuse_prior_visual_selection() -> None:
         assert [item.source for item in outcome.post_acquisition.selection_plan.selections] == ["dom"]
         assert dom.observe_calls == 3
         assert visual.observe_calls == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("crossed_dispatch", [False, True])
+def test_execution_cancellation_closes_exact_dispatch_and_post_acquisition(
+    crossed_dispatch: bool,
+) -> None:
+    class CancellingAdapter(OfferedAdapter):
+        async def execute(self, request):
+            if not crossed_dispatch:
+                raise asyncio.CancelledError
+            raise ActionDispatchCancelled(
+                ActionResult(
+                    request.request_id,
+                    DispatchStatus.SENT_UNKNOWN,
+                    self.surface,
+                    False,
+                    ActionError.CANCELLED,
+                )
+            )
+
+    async def scenario() -> None:
+        adapter = CancellingAdapter(
+            "dom",
+            ObservationOffer("dom", "structural", "structural", "low"),
+            _source("dom"),
+        )
+        environment = UnifiedWorldEnvironment((adapter,))
+        task = _task()
+        acquired = await environment.reset(task)
+        assert acquired.observation is not None
+        option = ActionSpaceBuilder().build(task, acquired.observation).options[0]
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(option, {}),
+            acquired.observation,
+            "context:test",
+        )
+
+        with pytest.raises(ExecutionCancelled) as captured:
+            await environment.execute(request)
+
+        outcome = captured.value.outcome
+        assert outcome.request is request
+        assert outcome.result.error is ActionError.CANCELLED
+        assert outcome.result.dispatch_status is (
+            DispatchStatus.SENT_UNKNOWN if crossed_dispatch else DispatchStatus.NOT_SENT
+        )
+        if crossed_dispatch:
+            assert outcome.post_acquisition is environment.last_acquisition
+            assert outcome.post_acquisition is not None
+            assert outcome.post_acquisition.origin is AcquisitionOrigin.POST_ACTION
+            assert outcome.post_acquisition.status is AcquisitionStatus.CANCELLED
+        else:
+            assert outcome.post_acquisition is None
+
+    asyncio.run(scenario())
+
+
+def test_post_acquisition_cancellation_preserves_sent_execution_before_propagation() -> None:
+    class PostCancellingAdapter(OfferedAdapter):
+        cancel_acquisition = False
+
+        async def acquire(self, request):
+            if self.cancel_acquisition:
+                raise asyncio.CancelledError
+            return await super().acquire(request)
+
+    async def scenario() -> None:
+        adapter = PostCancellingAdapter(
+            "dom",
+            ObservationOffer("dom", "structural", "structural", "low"),
+            _source("dom"),
+        )
+        environment = UnifiedWorldEnvironment((adapter,))
+        task = _task()
+        acquired = await environment.reset(task)
+        assert acquired.observation is not None
+        option = ActionSpaceBuilder().build(task, acquired.observation).options[0]
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(option, {}),
+            acquired.observation,
+            "context:test",
+        )
+        adapter.cancel_acquisition = True
+
+        with pytest.raises(ExecutionCancelled) as captured:
+            await environment.execute(request)
+
+        outcome = captured.value.outcome
+        assert outcome.request is request
+        assert outcome.result.dispatch_status is DispatchStatus.SENT
+        assert outcome.result.error is None
+        assert outcome.post_acquisition is environment.last_acquisition
+        assert outcome.post_acquisition is not None
+        assert outcome.post_acquisition.status is AcquisitionStatus.CANCELLED
 
     asyncio.run(scenario())
 

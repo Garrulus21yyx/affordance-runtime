@@ -12,18 +12,14 @@ from affordance_runtime.agent import (
     ProposeDone,
     RequestActionPage,
     RequestObservation,
-    SelectAction,
     Wait,
 )
 from affordance_runtime.agent.context import (
     project_action_space,
     project_parameter_schema_for_model,
     project_task,
-    project_turns,
 )
-from affordance_runtime.agent.state import Turn
-from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
-from affordance_runtime.execution import ActionIntent, ActionResult, DispatchStatus
+from affordance_runtime.agent.context.control_transition_projection import project_decision_summary
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AgentTargetView,
@@ -273,53 +269,6 @@ def test_parameter_schema_projection_rejects_unsupported_or_malformed_shapes(sch
         project_parameter_schema_for_model(schema)
 
 
-def test_recent_turn_projection_is_semantic_and_private_payload_free() -> None:
-    result = ActionResult(
-        "request:private",
-        DispatchStatus.SENT,
-        "dom-private-backend",
-        True,
-        adapter_evidence={"selector": "#send", "credential": "private"},
-    )
-    evaluation = ActionEvaluation(
-        "request:private",
-        "before-private",
-        "after-private",
-        ActionEvaluationStatus.EFFECT_CONFIRMED,
-        "backend=/private/path selector=#send credential=raw-secret",
-        ("fact:sent",),
-    )
-    turn = Turn(
-        "before-private",
-        SelectAction("context:test", "action:opaque", {"text": "hello", "password": "private"}, "alice"),
-        ActionIntent("send", "message", {"text": "hello", "password": "private"}, "alice"),
-        "request:private",
-        result,
-        "after-private",
-        evaluation,
-    )
-
-    view = project_turns((turn,))[0]
-
-    assert view.semantic_action == "send"
-    assert view.target_id == "message"
-    assert view.destination_id == "alice"
-    assert view.public_parameters["password"] == "[REDACTED]"
-    assert view.dispatch_status == DispatchStatus.SENT
-    representation = repr(view)
-    for private in (
-        "request:private",
-        "before-private",
-        "after-private",
-        "dom-private-backend",
-        "#send",
-        "adapter_evidence",
-        "/private/path",
-        "raw-secret",
-    ):
-        assert private not in representation
-
-
 @pytest.mark.parametrize(
     ("decision", "expected"),
     (
@@ -332,9 +281,8 @@ def test_recent_turn_projection_is_semantic_and_private_payload_free() -> None:
     ),
 )
 def test_non_action_turn_projection_has_bounded_semantic_summary(decision, expected: str) -> None:
-    view = project_turns((Turn("before", decision, decision_result="page_changed"),))[0]
-
-    assert expected in view.semantic_summary
-    representation = repr(view)
+    summary = project_decision_summary(decision, "page_changed")
+    assert expected in summary
+    representation = repr(summary)
     assert "context:1" not in representation
     assert "selector" not in representation

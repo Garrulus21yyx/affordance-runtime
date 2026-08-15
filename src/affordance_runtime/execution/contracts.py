@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -11,6 +12,7 @@ from affordance_runtime.schema_digest import schema_digest
 
 if TYPE_CHECKING:
     from affordance_runtime.actions.space_contracts import AdmittedActionSelection
+    from affordance_runtime.world.acquisition import ObservationAcquisition
     from affordance_runtime.world.contracts import ActionBinding
     from affordance_runtime.world.observation_needs import ObservationNeed
 
@@ -28,6 +30,7 @@ class ActionError(StrEnum):
     INVALID_PARAMETERS = "invalid_parameters"
     EXECUTION_FAILED = "execution_failed"
     UNSUPPORTED_ACTION = "unsupported_action"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -127,7 +130,67 @@ class ActionResult:
             (self.dispatch_status in {DispatchStatus.NOT_SENT, DispatchStatus.SENT_UNKNOWN} and self.transport_success)
             or (self.transport_success and self.error is not None)
             or (not self.transport_success and self.error is None)
+            or (self.error is ActionError.CANCELLED and self.dispatch_status is DispatchStatus.SENT)
         )
         if inconsistent:
             raise ValueError("action result dispatch status, transport success, and error are inconsistent")
         object.__setattr__(self, "adapter_evidence", freeze_json(self.adapter_evidence))
+
+
+@dataclass(frozen=True)
+class ExecutionOutcome:
+    """Exact immutable closure of one bound dispatch attempt."""
+
+    request: BoundActionRequest
+    result: ActionResult
+    post_acquisition: ObservationAcquisition | None
+
+    def __post_init__(self) -> None:
+        from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationAcquisition
+
+        if not isinstance(self.request, BoundActionRequest):
+            raise TypeError("execution outcome request must be typed")
+        if not isinstance(self.result, ActionResult):
+            raise TypeError("execution outcome result must be typed")
+        if self.result.request_id != self.request.request_id or self.result.backend != self.request.binding.executor_id:
+            raise ValueError("execution outcome request/result lineage mismatch")
+        dispatched = self.result.dispatch_status is not DispatchStatus.NOT_SENT
+        if dispatched != (self.post_acquisition is not None):
+            raise ValueError("execution outcome dispatch/post-acquisition shape mismatch")
+        if self.post_acquisition is not None:
+            if not isinstance(self.post_acquisition, ObservationAcquisition):
+                raise TypeError("execution post acquisition must be typed")
+            if self.post_acquisition.origin is not AcquisitionOrigin.POST_ACTION:
+                raise ValueError("execution post acquisition must have POST_ACTION origin")
+
+
+class ActionDispatchCancelled(asyncio.CancelledError):
+    """Adapter cancellation carrying its exact dispatch-boundary result."""
+
+    def __init__(self, result: ActionResult) -> None:
+        if result.error is not ActionError.CANCELLED or result.dispatch_status not in {
+            DispatchStatus.NOT_SENT,
+            DispatchStatus.SENT_UNKNOWN,
+        }:
+            raise ValueError("dispatch cancellation must retain NOT_SENT or SENT_UNKNOWN truth")
+        self.result = result
+
+
+class ExecutionCancelled(asyncio.CancelledError):
+    """Host cancellation propagated only after exact execution closure."""
+
+    def __init__(self, outcome: ExecutionOutcome) -> None:
+        from affordance_runtime.world.acquisition import AcquisitionStatus
+
+        action_cancelled = outcome.result.error is ActionError.CANCELLED and outcome.result.dispatch_status in {
+            DispatchStatus.NOT_SENT,
+            DispatchStatus.SENT_UNKNOWN,
+        }
+        post_cancelled = (
+            outcome.result.dispatch_status is not DispatchStatus.NOT_SENT
+            and outcome.post_acquisition is not None
+            and outcome.post_acquisition.status is AcquisitionStatus.CANCELLED
+        )
+        if not (action_cancelled or post_cancelled):
+            raise ValueError("execution cancellation requires exact action or post-acquisition cancellation")
+        self.outcome = outcome

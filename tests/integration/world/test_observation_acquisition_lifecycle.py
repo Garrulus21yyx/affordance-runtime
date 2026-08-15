@@ -3,6 +3,7 @@ from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
+from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.agent import (
     Abort,
     AgentFailureCode,
@@ -17,7 +18,7 @@ from affordance_runtime.agent.observation_control import (
 )
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus, ExecutionOutcome
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     AcquisitionOrigin,
@@ -25,7 +26,6 @@ from affordance_runtime.world import (
     AcquisitionReasonKind,
     AcquisitionStage,
     AcquisitionStatus,
-    ExecutionOutcome,
     ObservationAssurance,
     ObservationCapabilities,
     ObservationModality,
@@ -36,6 +36,8 @@ from affordance_runtime.world import (
     WorldObservation,
     WorldObservationRequest,
 )
+from tests.integration.agent.test_agent_loop import _task as _action_task
+from tests.integration.agent.test_agent_loop import _world as _action_world
 from tests.support.observation_acquisition import acquired_acquisition, failed_acquisition
 from tests.support.world import fused_world
 
@@ -46,6 +48,15 @@ def _world(identity: str) -> WorldObservation:
 
 def _task() -> TaskGoal:
     return TaskGoal("task", "Inspect", risk_profile=RiskProfile.READ_ONLY)
+
+
+def _request():
+    world = _action_world("bound", False)
+    builder = ActionSpaceBuilder()
+    option = builder.build(_action_task(), world).options[0]
+    admission = builder.try_admit(option, {}, "")
+    assert admission.admitted is not None
+    return ActionBinder().bind(admission.admitted, world, "context:test")
 
 
 def test_acquisition_values_are_frozen_and_enforce_observation_invariant() -> None:
@@ -69,6 +80,7 @@ def test_execution_result_and_outcome_algebras_reject_untyped_variants() -> None
         ActionResult("request:1", DispatchStatus.SENT, "dom", 1)  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="result"):
         ExecutionOutcome(  # type: ignore[arg-type]
+            _request(),
             object(),
             failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_capture_failed"),
         )
@@ -88,15 +100,16 @@ def test_reason_code_is_bounded_stable_and_private_marker_free(reason: str) -> N
 
 
 def test_sent_unknown_and_failed_post_acquisition_preserve_both_truths() -> None:
+    request = _request()
     result = ActionResult(
-        "request:1",
+        request.request_id,
         DispatchStatus.SENT_UNKNOWN,
-        "static",
+        request.binding.executor_id,
         False,
         ActionError.EXECUTION_FAILED,
     )
     post = failed_acquisition(AcquisitionOrigin.POST_ACTION, "post_capture_failed")
-    outcome = ExecutionOutcome(result, post)
+    outcome = ExecutionOutcome(request, result, post)
     assert outcome.result.dispatch_status is DispatchStatus.SENT_UNKNOWN
     assert outcome.post_acquisition.status is AcquisitionStatus.FAILED
 
@@ -318,6 +331,7 @@ def test_independent_capture_rejects_non_independent_origin(origin: AcquisitionO
                 _world("wrong-origin"),
                 origin,
                 kind=request.kind,
+                request=request,
             )
 
     async def scenario() -> None:

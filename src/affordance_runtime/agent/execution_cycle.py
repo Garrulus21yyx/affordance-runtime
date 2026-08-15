@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 
 from affordance_runtime.actions.binder import ActionBinder, BindingError
 from affordance_runtime.actions.space_contracts import (
@@ -19,7 +18,6 @@ from affordance_runtime.agent.attempt_receipt import (
 )
 from affordance_runtime.agent.control_outcome import Continue, LoopDirective, Terminate
 from affordance_runtime.agent.control_transition import (
-    AdmissionStatus,
     ControlContinuationScope,
     ControlTransitionScope,
 )
@@ -47,16 +45,23 @@ from affordance_runtime.agent.state import AgentLoopStatus
 from affordance_runtime.agent.task_evaluation_policy import (
     task_evaluation_disposition_for_world,
 )
-from affordance_runtime.evaluation.action_verification import (
-    derive_action_verification_obligations,
-    observation_needs_for_verification,
+from affordance_runtime.evaluation.contracts import (
+    EvaluationInterruption,
+    EvaluationInterruptionReason,
+    EvaluationOutcome,
+    TaskEvaluationStatus,
 )
-from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
-from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.execution.contracts import (
+    ActionError,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+    ExecutionCancelled,
+    ExecutionOutcome,
+)
 from affordance_runtime.world.acquisition import (
     AcquisitionOrigin,
     AcquisitionStatus,
-    ExecutionOutcome,
     ObservationRequestKind,
     WorldObservationRequest,
 )
@@ -73,7 +78,6 @@ async def execute_cycle(
     scope: ControlTransitionScope | ControlContinuationScope,
 ) -> LoopDirective:
     task, state = session.task, session.state
-    scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
     if session.observation_count >= task.loop_budget.max_observations:
         scope.set_reason("observation_budget_exhausted")
         return Terminate(
@@ -83,7 +87,7 @@ async def execute_cycle(
         )
     before = state.current_observation
     try:
-        request = binder.bind(selection, before, decision.context_id)
+        request = binder.bind_for_execution(selection, before, decision.context_id, task)
     except BindingError:
         return await _binding_refresh(session, before.observation_id, scope)
     current = session.current_context_snapshot
@@ -94,11 +98,6 @@ async def execute_cycle(
             "stale_bound_request",
             "bound request context is not current",
         )
-    verification_needs = observation_needs_for_verification(
-        request.request_id,
-        derive_action_verification_obligations(task, request, before),
-    )
-    request = replace(request, verification_needs=verification_needs)
     outcome = await _execute_boundary(
         session,
         request,
@@ -111,13 +110,8 @@ async def execute_cycle(
         _probe_count(result)
     except ValueError:
         probe_error = True
-    primary = validate_fresh_acquisition(
-        outcome.post_acquisition,
-        before.observation_id,
-        expected_origin=AcquisitionOrigin.POST_ACTION,
-        post_action=True,
-    )
     if probe_error:
+        _retain_fresh_primary(state, scope, outcome, before)
         scope.set_reason("invalid_currentness_probe_count")
         return Terminate(
             AgentLoopStatus.FAILED,
@@ -152,6 +146,7 @@ async def execute_cycle(
         try:
             _probe_count(result)
         except ValueError:
+            _retain_fresh_primary(state, scope, outcome, before)
             scope.set_reason("invalid_currentness_probe_count")
             return Terminate(
                 AgentLoopStatus.FAILED,
@@ -169,12 +164,6 @@ async def execute_cycle(
                 failure_stage=FailureStage.EXECUTION,
                 failure_kind=FailureKind.INVALID_OUTPUT,
             )
-        primary = validate_fresh_acquisition(
-            outcome.post_acquisition,
-            before.observation_id,
-            expected_origin=AcquisitionOrigin.POST_ACTION,
-            post_action=True,
-        )
         if result.dispatch_status is DispatchStatus.NOT_SENT:
             scope.set_reason("route_exhausted")
             return Terminate(
@@ -184,6 +173,13 @@ async def execute_cycle(
                 failure_stage=FailureStage.EXECUTION,
                 failure_kind=FailureKind.CALL_FAILED,
             )
+    assert outcome.post_acquisition is not None
+    primary = validate_fresh_acquisition(
+        outcome.post_acquisition,
+        before.observation_id,
+        expected_origin=AcquisitionOrigin.POST_ACTION,
+        post_action=True,
+    )
     if result.dispatch_status is DispatchStatus.SENT:
         state.clear_control_issue_budget()
     remaining = task.loop_budget.max_observations - session.observation_count
@@ -205,16 +201,18 @@ async def execute_cycle(
             scope,
         )
         acquired = post_action_fallback_result(primary, fallback)
+        if acquired.linked_fallback is not None:
+            scope.record_linked_acquisition(acquired.linked_fallback)
     if acquired.observation is None:
         return no_fresh_after_result(session, decision, request, result, acquired, scope)
     state.install_observation(acquired.observation)
-    scope.record_after(acquired.observation.observation_id)
+    scope.record_after(acquired.observation)
     return await _evaluate_after(
         session,
         selection,
         decision,
-        request,
-        result,
+        outcome,
+        acquired,
         before,
         acquired.observation,
         action_evaluator,
@@ -227,8 +225,8 @@ async def _evaluate_after(
     session,
     selection,
     decision,
-    request,
-    result,
+    execution,
+    acquired,
     before,
     after,
     action_evaluator,
@@ -236,6 +234,19 @@ async def _evaluate_after(
     scope,
 ) -> LoopDirective:
     task, state = session.task, session.state
+
+    def interrupt(reason_code: EvaluationInterruptionReason, action=None):
+        scope.record_evaluation_interruption(
+            EvaluationInterruption.interrupted_after_execution(
+                before,
+                execution,
+                acquired.consumed_acquisition,
+                after,
+                reason_code,
+                action,
+            )
+        )
+
     prior_task_evaluation = state.current_task_evaluation
     prior_action_space = session.current_action_space
     try:
@@ -243,14 +254,15 @@ async def _evaluate_after(
             action_evaluator,
             task,
             before,
-            request,
-            result,
+            execution.request,
+            execution.result,
             after,
         )
     except asyncio.CancelledError:
+        interrupt(EvaluationInterruptionReason.ACTION_CANCELLED)
         raise
     except ValueError as exc:
-        scope.record_evaluations()
+        interrupt(EvaluationInterruptionReason.ACTION_INVALID)
         scope.set_reason("action_evaluation_invalid")
         return Terminate(
             AgentLoopStatus.FAILED,
@@ -260,7 +272,7 @@ async def _evaluate_after(
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     except Exception as exc:
-        scope.record_evaluations()
+        interrupt(EvaluationInterruptionReason.ACTION_CALL_FAILED)
         scope.set_reason("action_evaluation_call_failed")
         session.pending_runtime_failure = RuntimeFailure(
             FailureStage.EVALUATION,
@@ -269,12 +281,13 @@ async def _evaluate_after(
             exception_class=safe_exception_class(exc),
         )
         raise
-    scope.record_evaluations(action=action_evaluation)
     try:
         task_evaluation = await validated_task_evaluation(task_evaluator, task, after)
     except asyncio.CancelledError:
+        interrupt(EvaluationInterruptionReason.TASK_CANCELLED, action_evaluation)
         raise
     except ValueError as exc:
+        interrupt(EvaluationInterruptionReason.TASK_INVALID, action_evaluation)
         scope.set_reason("task_evaluation_invalid")
         return Terminate(
             AgentLoopStatus.FAILED,
@@ -284,6 +297,7 @@ async def _evaluate_after(
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
     except Exception as exc:
+        interrupt(EvaluationInterruptionReason.TASK_CALL_FAILED, action_evaluation)
         scope.set_reason("task_evaluation_call_failed")
         session.pending_runtime_failure = RuntimeFailure(
             FailureStage.EVALUATION,
@@ -292,7 +306,15 @@ async def _evaluate_after(
             exception_class=safe_exception_class(exc),
         )
         raise
-    scope.record_evaluations(task=task_evaluation)
+    evaluation = EvaluationOutcome.completed_after_execution(
+        before,
+        execution,
+        acquired.consumed_acquisition,
+        after,
+        action_evaluation,
+        task_evaluation,
+    )
+    scope.record_evaluation(evaluation)
     state.current_task_evaluation = task_evaluation
     progress_event = record_execution_progress(
         session,
@@ -311,8 +333,8 @@ async def _evaluate_after(
     outcome = post_action_result(
         task,
         state,
-        request,
-        result,
+        execution.request,
+        execution.result,
         action_evaluation,
         task_evaluation,
         unknown_recoverable=(
@@ -347,7 +369,7 @@ async def _evaluate_after(
             public_subject_id=selection.target_id,
             related_decision=selection_snapshot(decision, selection.target_id),
             semantic_effect=SemanticEffectSnapshot(
-                result.dispatch_status.value,
+                execution.result.dispatch_status.value,
                 selection.semantic_effects,
                 action_evaluation.status.value,
                 public_world_semantic_digest(before) != public_world_semantic_digest(after),
@@ -385,7 +407,7 @@ async def _binding_refresh(
     )
     if acquired.observation is not None:
         session.state.install_observation(acquired.observation)
-        scope.record_after(acquired.observation.observation_id)
+        scope.record_after(acquired.observation)
         return Continue("binding_refreshed")
     return Terminate(
         AgentLoopStatus.FAILED,
@@ -442,7 +464,7 @@ async def _reroute_not_sent(
             )
         before = acquired.observation
         state.install_observation(before)
-        scope.record_after(before.observation_id)
+        scope.record_after(before)
         action_space = session.agent_loop.action_space_builder.build(session.task, before)
         option = _equivalent_option(action_space.options, selection)
         if option is None:
@@ -481,10 +503,11 @@ async def _reroute_not_sent(
             if different_surface and binding.surface == request.binding.surface
         }
     try:
-        alternate_request = binder.bind(
+        alternate_request = binder.bind_for_execution(
             current_selection,
             before,
             decision.context_id,
+            session.task,
             excluded_binding_ids=frozenset(excluded_binding_ids),
         )
     except BindingError:
@@ -539,10 +562,79 @@ def _probe_count(result: ActionResult) -> int:
     return value
 
 
+def _retain_fresh_primary(state, scope, outcome, before) -> None:
+    if outcome.post_acquisition is None:
+        return
+    primary = validate_fresh_acquisition(
+        outcome.post_acquisition,
+        before.observation_id,
+        expected_origin=AcquisitionOrigin.POST_ACTION,
+        post_action=True,
+    )
+    if primary.observation is not None:
+        state.install_observation(primary.observation)
+        scope.record_after(primary.observation)
+
+
 async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOutcome:
     attempt_id = session.accounting.next_attempt_id()
     try:
         outcome = await session.environment.execute(request)
+    except ExecutionCancelled as exc:
+        outcome = exc.outcome
+        if outcome.request is not request:
+            _record_execute_exception(
+                session,
+                scope,
+                request,
+                attempt_id,
+                AttemptDisposition.MALFORMED,
+                "execute_malformed",
+                "",
+            )
+            session.pending_runtime_failure = RuntimeFailure(
+                FailureStage.EXECUTION,
+                FailureKind.INVALID_OUTPUT,
+                "execute_malformed",
+            )
+            raise TypeError("WorldEnvironment.execute returned a foreign request authority") from exc
+        result = outcome.result
+        cancelled_post = (
+            validate_fresh_acquisition(
+                outcome.post_acquisition,
+                previous_id,
+                expected_origin=AcquisitionOrigin.POST_ACTION,
+                post_action=True,
+            )
+            if outcome.post_acquisition is not None
+            else None
+        )
+        try:
+            probes = _probe_count(result)
+        except ValueError:
+            probes = 0
+        receipt = AttemptReceipt(
+            attempt_id,
+            AttemptOperation.EXECUTE,
+            "post_action",
+            AcquisitionOrigin.POST_ACTION,
+            cancelled_post.actual_origin if cancelled_post is not None else None,
+            AttemptDisposition.CANCELLED,
+            "execute_cancelled",
+            cancelled_post.attempts if cancelled_post is not None else 0,
+            1,
+            int(result.dispatch_status is not DispatchStatus.NOT_SENT),
+            probes,
+            result.dispatch_status,
+            request.request_id,
+            safe_boundary_identity(result.request_id, request.request_id, kind="request"),
+            result.request_id == request.request_id and result.backend == request.binding.executor_id,
+            exception_class="CancelledError",
+            acquisition_status=cancelled_post.status if cancelled_post is not None else None,
+        )
+        session.accounting.record(receipt)
+        scope.record_execution_receipt(receipt, outcome)
+        raise
     except asyncio.CancelledError:
         _record_execute_exception(
             session,
@@ -572,7 +664,11 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
             exception_class=exception_class,
         )
         raise
-    if not isinstance(outcome, ExecutionOutcome) or not isinstance(outcome.result, ActionResult):
+    if (
+        not isinstance(outcome, ExecutionOutcome)
+        or not isinstance(outcome.result, ActionResult)
+        or outcome.request is not request
+    ):
         _record_execute_exception(
             session,
             scope,
@@ -590,18 +686,15 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         raise TypeError("WorldEnvironment.execute returned a malformed contract")
     result = outcome.result
     request_lineage_valid = result.request_id == request.request_id and result.backend == request.binding.executor_id
-    public_result = ActionResult(
-        safe_boundary_identity(result.request_id, request.request_id, kind="request"),
-        result.dispatch_status,
-        safe_boundary_identity(result.backend, request.binding.executor_id, kind="backend"),
-        result.transport_success,
-        result.error,
-    )
-    primary = validate_fresh_acquisition(
-        outcome.post_acquisition,
-        previous_id,
-        expected_origin=AcquisitionOrigin.POST_ACTION,
-        post_action=True,
+    primary = (
+        validate_fresh_acquisition(
+            outcome.post_acquisition,
+            previous_id,
+            expected_origin=AcquisitionOrigin.POST_ACTION,
+            post_action=True,
+        )
+        if outcome.post_acquisition is not None
+        else None
     )
     try:
         probes = _probe_count(result)
@@ -613,25 +706,27 @@ async def _execute_boundary(session, request, previous_id, scope) -> ExecutionOu
         AttemptOperation.EXECUTE,
         "post_action",
         AcquisitionOrigin.POST_ACTION,
-        outcome.post_acquisition.origin,
+        outcome.post_acquisition.origin if outcome.post_acquisition is not None else None,
         AttemptDisposition.RETURNED,
-        primary.reason_code,
-        primary.attempts,
+        primary.reason_code if primary is not None else "action_not_dispatched",
+        primary.attempts if primary is not None else 0,
         1,
         dispatched,
         probes,
         result.dispatch_status,
         request.request_id,
-        public_result.request_id,
+        safe_boundary_identity(result.request_id, request.request_id, kind="request"),
         request_lineage_valid,
         acquisition_status=(
-            AcquisitionStatus.FAILED
+            None
+            if primary is None
+            else AcquisitionStatus.FAILED
             if primary.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE and primary.attempts
             else primary.status
         ),
     )
     session.accounting.record(receipt)
-    scope.record_execution_receipt(receipt, request.request_id, request.intent, public_result)
+    scope.record_execution_receipt(receipt, outcome)
     return outcome
 
 

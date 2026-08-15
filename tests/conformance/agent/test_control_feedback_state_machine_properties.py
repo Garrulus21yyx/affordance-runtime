@@ -5,6 +5,7 @@ from dataclasses import replace
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from affordance_runtime.actions.admission import invalid_parameters_issue
 from affordance_runtime.agent.control_feedback import (
     ContractViolationSnapshot,
     ControlFeedback,
@@ -23,7 +24,7 @@ from affordance_runtime.agent.control_reducer import (
     ControlState,
     reduce_control,
 )
-from affordance_runtime.agent.control_transition import AdmissionStatus, AdmissionSummary
+from affordance_runtime.agent.control_transition import ActionAdmissionOutcome, AdmissionStatus
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.state import AgentLoopState
 from tests.benchmarks.agent.test_control_state_machine_properties import _root
@@ -37,10 +38,15 @@ def _feedback(scope: str, issue: str, source: ControlFeedbackSource) -> ControlF
         else {
             "related_decision": RelatedDecisionSnapshot("select_action", "action:1"),
             "violation": ContractViolationSnapshot(
-                "current_action_space", "invalid_action_parameters", ("parameters",), {}, {},
+                "current_action_space",
+                "invalid_action_parameters",
+                ("parameters",),
+                {},
+                {},
             ),
             "recovery": RecoveryConstraints(
-                must_change_fields=("parameters",), retry_allowed=True,
+                must_change_fields=("parameters",),
+                retry_allowed=True,
             ),
         }
     )
@@ -51,9 +57,9 @@ def _feedback(scope: str, issue: str, source: ControlFeedbackSource) -> ControlF
         NextDecisionDisposition.CHANGE_STRATEGY if no_gain else NextDecisionDisposition.CORRECT_OR_REPLAN,
         no_gain,
         None,
-        ("observation",) if source is ControlFeedbackSource.POLICY_OBSERVATION else (
-            ("actions",) if source is ControlFeedbackSource.ACTION_PAGE else ("parameters",)
-        ),
+        ("observation",)
+        if source is ControlFeedbackSource.POLICY_OBSERVATION
+        else (("actions",) if source is ControlFeedbackSource.ACTION_PAGE else ("parameters",)),
         scope,
         issue,
         "c" * 64 if no_gain else "",
@@ -118,17 +124,20 @@ def test_reducer_accepts_only_zero_call_rejected_root_with_repair_feedback() -> 
     root = replace(
         root,
         decision=SelectAction("context:1", "outside"),
-        admission=AdmissionSummary(
-            AdmissionStatus.REJECTED, "invalid_action_parameters",
+        admission=ActionAdmissionOutcome(
+            AdmissionStatus.REJECTED,
+            "invalid_action_parameters",
+            issue=invalid_parameters_issue(),
         ),
-        after_observation_id=root.before_observation_id,
+        after_observation=root.before_observation,
         reason_code="invalid_action_parameters",
         control_feedback=feedback,
     )
 
     accepted = reduce_control(ControlState(), AppendRoot(root, 3))
     mismatched = reduce_control(
-        ControlState(), AppendRoot(replace(root, control_feedback=None), 3),
+        ControlState(),
+        AppendRoot(replace(root, control_feedback=None), 3),
     )
 
     assert isinstance(accepted, ControlAccepted)

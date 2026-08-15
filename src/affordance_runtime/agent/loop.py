@@ -403,6 +403,14 @@ class AgentLoop:
             )
             scope = session.confirmation_continuation_scope
             assert scope is not None
+            scope.record_continuation_decision(decision)
+            scope.record_admission(
+                AdmissionStatus.CONFIRMED,
+                "confirmation_revalidated",
+                selection=selection,
+                risk_assessment=assessment,
+                confirmation_request=confirmed,
+            )
             admitted_outcome = await self._execute_admitted(session, selection, decision, scope)
             routed = admitted_outcome.routed
             if admitted_outcome.disposition is progress_control.SelectionProgressDisposition.ALREADY_SATISFIED:
@@ -486,7 +494,7 @@ class AgentLoop:
             from affordance_runtime.agent.control_feedback import repair_feedback, route_feedback
 
             issue = admission.issue
-            scope.record_admission(AdmissionStatus.REJECTED, issue.code.value)
+            scope.record_admission(AdmissionStatus.REJECTED, issue.code.value, issue=issue)
             feedback = repair_feedback(
                 state,
                 action_space,
@@ -505,38 +513,59 @@ class AgentLoop:
                 self.risk_policy.assess(task, selection),
             )
         except (TypeError, ValueError):
-            scope.record_admission(AdmissionStatus.REJECTED, "risk_assessment_invalid")
+            scope.record_admission(
+                AdmissionStatus.REJECTED,
+                "risk_assessment_invalid",
+                selection=selection,
+            )
             return Terminate(
                 AgentLoopStatus.BLOCKED,
                 "risk_assessment_invalid",
                 "risk assessment is invalid",
             )
         if assessment.decision is RiskDecisionKind.BLOCK:
-            scope.record_admission(AdmissionStatus.REJECTED, "risk_blocked")
+            scope.record_admission(
+                AdmissionStatus.REJECTED,
+                "risk_blocked",
+                selection=selection,
+                risk_assessment=assessment,
+            )
             return Terminate(AgentLoopStatus.BLOCKED, "risk_blocked", assessment.reason)
         if assessment.decision is RiskDecisionKind.NEEDS_CONFIRMATION:
-            scope.record_admission(
-                AdmissionStatus.CONFIRMATION_REQUIRED,
-                "confirmation_required",
-            )
             intent = ActionIntent(
                 selection.semantic_action,
                 selection.target_id,
                 dict(selection.parameters),
                 selection.destination_id,
             )
-            state.set_pending_confirmation(
-                build_confirmation_request(
-                    intent,
-                    assessment,
-                    build_agent_world_view(state.current_observation),
-                )
+            confirmation = build_confirmation_request(
+                intent,
+                assessment,
+                build_agent_world_view(state.current_observation),
             )
+            scope.record_admission(
+                AdmissionStatus.CONFIRMATION_REQUIRED,
+                "confirmation_required",
+                selection=selection,
+                risk_assessment=assessment,
+                confirmation_request=confirmation,
+            )
+            state.set_pending_confirmation(confirmation)
             return Pause(AgentLoopStatus.WAITING_CONFIRMATION, "confirmation_required", assessment.reason)
         if assessment.decision is RiskDecisionKind.ALLOW:
-            scope.record_admission(AdmissionStatus.ADMITTED, "action_admitted")
+            scope.record_admission(
+                AdmissionStatus.ADMITTED,
+                "action_admitted",
+                selection=selection,
+                risk_assessment=assessment,
+            )
             return selection
-        scope.record_admission(AdmissionStatus.REJECTED, "risk_decision_invalid")
+        scope.record_admission(
+            AdmissionStatus.REJECTED,
+            "risk_decision_invalid",
+            selection=selection,
+            risk_assessment=assessment,
+        )
         return Terminate(
             AgentLoopStatus.BLOCKED,
             "risk_decision_invalid",
@@ -645,7 +674,7 @@ class AgentLoop:
             )
             return self._close_confirmation(session, outcome, acquired.reason_code)
         session.state.install_observation(acquired.observation)
-        scope.record_after(acquired.observation.observation_id)
+        scope.record_after(acquired.observation)
         session.last_result = None
         return await self._run_control(session)
 

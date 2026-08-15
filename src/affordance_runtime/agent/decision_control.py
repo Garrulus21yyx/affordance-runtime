@@ -45,6 +45,7 @@ from affordance_runtime.agent.negative_claim_coverage import (
     NegativeClaimCoverageGate,
 )
 from affordance_runtime.agent.observation_control import (
+    FreshObservationOutcome,
     capture_for_session,
 )
 from affordance_runtime.agent.policy import AgentPolicy, PolicyFailure, TaskEvaluator
@@ -56,7 +57,13 @@ from affordance_runtime.agent.task_evaluation_policy import (
 )
 from affordance_runtime.agent.user_input import build_user_input_request
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, WaitController
-from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation.contracts import (
+    EvaluationInterruption,
+    EvaluationInterruptionReason,
+    EvaluationOutcome,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world.acquisition import (
@@ -287,7 +294,7 @@ async def _route_decision(
     if state.unresolved_observable_request is not None:
         state.clear_unknown_effect_observation()
         reason = "effect_unknown"
-        scope.record_admission(AdmissionStatus.REJECTED, reason)
+        scope.record_admission(AdmissionStatus.NOT_APPLICABLE, reason)
         scope.record_decision_result(reason)
         scope.set_reason(reason)
         return Terminate(
@@ -298,7 +305,7 @@ async def _route_decision(
     page = session.current_action_page or context_builder.page(action_space, state)
     issue = page.selection_issue(decision.action_id, decision.destination_id)
     if issue is not None:
-        scope.record_admission(AdmissionStatus.REJECTED, issue.code.value)
+        scope.record_admission(AdmissionStatus.REJECTED, issue.code.value, issue=issue)
         feedback = repair_feedback(
             state,
             action_space,
@@ -368,7 +375,7 @@ async def _policy_observation(
     if repeated_no_gain is not None:
         return route_feedback(state, scope, repeated_no_gain)
     acquired = await _fresh_observation(session, decision, request, scope)
-    if not isinstance(acquired, Continue):
+    if not isinstance(acquired, FreshObservationOutcome):
         return acquired
     try:
         evaluation = await validated_task_evaluation(
@@ -377,8 +384,24 @@ async def _policy_observation(
             state.current_observation,
         )
     except asyncio.CancelledError:
+        scope.record_evaluation_interruption(
+            EvaluationInterruption.interrupted_after_observation(
+                scope.before_observation,
+                acquired.consumed_acquisition,
+                state.current_observation,
+                EvaluationInterruptionReason.TASK_CANCELLED,
+            )
+        )
         raise
     except ValueError as exc:
+        scope.record_evaluation_interruption(
+            EvaluationInterruption.interrupted_after_observation(
+                scope.before_observation,
+                acquired.consumed_acquisition,
+                state.current_observation,
+                EvaluationInterruptionReason.TASK_INVALID,
+            )
+        )
         scope.set_reason("task_evaluation_invalid")
         return Terminate(
             AgentLoopStatus.FAILED,
@@ -387,10 +410,33 @@ async def _policy_observation(
             failure_stage=FailureStage.EVALUATION,
             failure_kind=FailureKind.INVALID_OUTPUT,
         )
+    except Exception as exc:
+        scope.record_evaluation_interruption(
+            EvaluationInterruption.interrupted_after_observation(
+                scope.before_observation,
+                acquired.consumed_acquisition,
+                state.current_observation,
+                EvaluationInterruptionReason.TASK_CALL_FAILED,
+            )
+        )
+        session.pending_runtime_failure = RuntimeFailure(
+            FailureStage.EVALUATION,
+            FailureKind.CALL_FAILED,
+            "task_evaluation_call_failed",
+            exception_class=safe_exception_class(exc),
+        )
+        raise
     state.current_task_evaluation = evaluation
     if state.unresolved_observable_request is not None and evaluation.status is not TaskEvaluationStatus.UNKNOWN:
         state.clear_unknown_effect_observation()
-    scope.record_evaluations(task=evaluation)
+    scope.record_evaluation(
+        EvaluationOutcome.completed_after_observation(
+            scope.before_observation,
+            acquired.consumed_acquisition,
+            state.current_observation,
+            evaluation,
+        )
+    )
     disposition = task_evaluation_disposition_for_world(
         session.task,
         evaluation,
@@ -502,7 +548,8 @@ async def _wait_refresh(
         )
     await waiter.wait(decision.max_wait_ms)
     session.accounting.record_wait(decision.max_wait_ms)
-    return await _fresh_observation(session, decision, request, scope)
+    acquired = await _fresh_observation(session, decision, request, scope)
+    return Continue("observation_acquired") if isinstance(acquired, FreshObservationOutcome) else acquired
 
 
 def ensure_current_action_page(
@@ -527,7 +574,7 @@ async def _fresh_observation(
     decision: AgentDecision,
     request: WorldObservationRequest,
     scope: ControlTransitionScope,
-) -> LoopDirective:
+) -> FreshObservationOutcome | LoopDirective:
     state = session.state
     if not _can_observe(session):
         scope.set_reason("observation_budget_exhausted")
@@ -547,7 +594,8 @@ async def _fresh_observation(
             failure_code=acquired.failure_code,
         )
     state.install_observation(acquired.observation)
-    return Continue("observation_acquired")
+    scope.record_after(acquired.observation)
+    return acquired
 
 
 async def _propose_done(
