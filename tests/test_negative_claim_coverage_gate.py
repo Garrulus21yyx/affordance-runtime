@@ -1,6 +1,6 @@
 import asyncio
 
-from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import Abort, AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     TaskEvaluation,
@@ -64,7 +64,7 @@ def _run(world: WorldObservation, policy: _AbortPolicy):
             loop_budget=LoopBudget(max_turns=3, max_observations=3),
         )
         environment = StaticEnvironment([world])
-        result = await AgentEpisodeRunner(AgentLoop(policy, _UnusedActionEvaluator(), _IncompleteEvaluator())).run(
+        result = await (AgentLoop(policy, _UnusedActionEvaluator(), _IncompleteEvaluator())).run(
             environment, task
         )
         return result, environment

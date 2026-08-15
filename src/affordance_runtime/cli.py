@@ -1,4 +1,4 @@
-"""Command-line interface for fixture serving, gold-path runs, and baselines."""
+"""Legacy and offline benchmark command collection, isolated from the product CLI."""
 
 from __future__ import annotations
 
@@ -29,33 +29,12 @@ from affordance_runtime.task_spec_authority import AdmittedTaskSpec
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="affordance-runtime")
+    parser = argparse.ArgumentParser(prog="affordance-runtime-benchmark")
     subcommands = parser.add_subparsers(dest="command", required=True)
-
-    from affordance_runtime.target_cli import add_target_run_parser
-
-    add_target_run_parser(subcommands)
 
     fixture = subcommands.add_parser("serve-fixture", help="serve the resettable local SaaS fixture")
     fixture.add_argument("--host", default="127.0.0.1")
     fixture.add_argument("--port", type=int, default=3000)
-
-    run = subcommands.add_parser("run", help="run a bounded GUI task")
-    run.add_argument("--scenario", choices=["pricing", "settings", "export"], default="pricing")
-    run.add_argument("--target")
-    run.add_argument("--artifacts", type=Path, default=Path("artifacts"))
-    run.add_argument("--headed", action="store_true")
-    run.add_argument("--approve", action="store_true", help="explicitly approve the export capability")
-    run.add_argument(
-        "--task-planning",
-        action="store_true",
-        help="enable the optional task-planning layer for the reference pricing path",
-    )
-    run.add_argument(
-        "--accepted-profile",
-        type=Path,
-        help="load a digest-validated registry containing accepted TaskSkill/RecoverySkill artifacts",
-    )
 
     baseline = subcommands.add_parser("baseline", help="run the direct Playwright pricing baseline")
     baseline.add_argument("--target", default="http://127.0.0.1:3000/pricing")
@@ -205,12 +184,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.command == "target-run":
-        from affordance_runtime.target_cli import run_target_command
-
-        result = run_target_command(args)
-        print(json.dumps(result, indent=2, sort_keys=True, default=str))
-        return 0 if result["status"] == "done" else 1
     if args.command == "serve-fixture":
         serve_fixture(args.host, args.port)
         return 0
@@ -371,18 +344,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(ollama_report.to_dict(), indent=2, sort_keys=True))
         return 0 if ollama_report.ready else 1
-    if args.command == "run":
-        result = run_scenario(
-            args.scenario,
-            args.target,
-            args.artifacts,
-            headless=not args.headed,
-            approve=args.approve,
-            task_planning=args.task_planning,
-            accepted_profile=args.accepted_profile,
-        )
-        print(json.dumps(result, indent=2, sort_keys=True, default=str))
-        return 0 if result["status"] == "done" else 1
     return 2
 
 

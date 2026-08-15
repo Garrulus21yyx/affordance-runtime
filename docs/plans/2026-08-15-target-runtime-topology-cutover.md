@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 
-Status: `DESIGNED / T0_COMPLETE / T1_READY / WAVE_A_ADMITTED /
+Status: `DESIGNED / T0_COMPLETE / T1_COMPLETE / T2_READY / WAVE_A_ADMITTED /
 BLOCKS_WORLD_GRAPH_A.1_AND_NEW_CAPABILITIES`
 
 ## Goal
@@ -19,23 +19,22 @@ tests, exports and fixtures in the same coherent change.
 
 ## Why this is required
 
-The target logical chain exists, but the filesystem still exposes several
-generations as peers:
+At plan inception the target logical chain existed while the filesystem still
+exposed several generations as peers:
 
 ```text
 legacy product path
 cli.py -> composition.py -> RunCoordinator
        -> RuntimeLoopPhase -> ContractExecutionLoop -> legacy phase modules
 
-target product path
+target product path before T1
 target composition/client -> TargetRuntime
                           -> AgentEpisodeRunner -> AgentLoop
 ```
 
-The root public package exports both generations, and the installed console
-script still enters the mixed legacy CLI. Production BrowserGym surface code is
-also located below benchmark packages. These shapes make old APIs and test
-fixtures de facto owners even after semantic authority has moved.
+T1 removed that public/loop ambiguity. The remaining physical blockers are the
+benchmark-owned BrowserGym implementation, the internally retained staged
+Runtime cluster and the flat package layout.
 
 Current-worktree inventory is diagnostic rather than deletion authority:
 
@@ -72,12 +71,10 @@ AgentRunSession
   sole pause/resume/confirmation/user-input session handle
 ```
 
-`TargetRuntimeClient` and `AgentEpisodeRunner` are presumed redundant
-pass-through layers. Phase T0 must confirm their consumers and any unique
-contract. If none exists, their methods move to `TargetRuntime` or
-`AgentRunSession` and both classes are deleted. They may be retained only if
-the inventory identifies a distinct lifecycle authority that cannot be owned by
-those three concepts; convenience wrapping is not sufficient.
+T0 confirmed that `TargetRuntimeClient` and `AgentEpisodeRunner` had no unique
+contract. T1 moved their behavior to `TargetRuntime`, `AgentLoop` and
+`AgentRunSession`, deleted both files and migrated every production and test
+consumer without an alias.
 
 There is one product composition function and one installed product command.
 Benchmark commands use a separate benchmark entrypoint and consume the public
@@ -203,7 +200,18 @@ Exit:
 
 ### T1 — public façade and command cutover
 
-Status: `PENDING_T0`
+Status: `COMPLETE`
+
+Implemented result:
+
+- root exports contain the target lifecycle only;
+- `affordance-runtime` and `python -m affordance_runtime` enter the target
+  product `run` command;
+- `affordance-runtime-benchmark` owns benchmark commands and exposes no legacy
+  product `run`;
+- `TargetRuntimeClient` and `AgentEpisodeRunner` are physically absent;
+- target façade/loop/session tests and architecture redlines own the retained
+  lifecycle properties.
 
 - make `TargetRuntime` the sole public runtime façade;
 - make `AgentLoop` the sole product loop and `AgentRunSession` the sole
@@ -229,7 +237,7 @@ Exit:
 
 ### T2 — active benchmark and surface migration
 
-Status: `PENDING_T1`
+Status: `READY`
 
 - move reusable BrowserGym environment, observation, binding, currentness,
   execution and verifier adapters out of `benchmarks/external_smoke` into

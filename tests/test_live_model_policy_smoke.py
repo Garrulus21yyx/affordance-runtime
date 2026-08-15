@@ -4,7 +4,7 @@ import os
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.model_policy import model_policy_from_environment
 from affordance_runtime.testing import StaticEnvironment
 
@@ -18,7 +18,7 @@ def test_opt_in_live_model_policy_smoke_uses_one_safe_internal_action() -> None:
     environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
 
     result = asyncio.run(
-        AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
             environment, _task()
         )
     )

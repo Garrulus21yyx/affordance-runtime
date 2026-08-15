@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from test_agent_loop import ScriptedPolicy, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.testing import StaticEnvironment
 
@@ -54,7 +54,7 @@ def test_agent_loop_rejects_action_evaluation_with_wrong_lineage(wrong_field: st
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), WrongLineageEvaluator(), task_evaluator)
 
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
 
         assert result.status == AgentLoopStatus.FAILED
         assert "evaluation lineage" in result.message

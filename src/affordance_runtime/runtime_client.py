@@ -12,7 +12,7 @@ from affordance_runtime.trace import TraceDag
 
 @dataclass(frozen=True)
 class RuntimeClient:
-    """Legacy staged-pipeline client; new target consumers use TargetRuntimeClient."""
+    """Legacy staged-pipeline client; product consumers use TargetRuntime."""
 
     coordinator: RunCoordinator
 

@@ -7,7 +7,7 @@ from urllib.parse import quote
 import pytest
 from target_agent_loop_support import FirstOfferedActionPolicy
 
-from affordance_runtime import cli
+from affordance_runtime import target_cli as product_cli
 from affordance_runtime.agent import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     compose_target_runtime,
@@ -16,12 +16,12 @@ from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
 from affordance_runtime.target_cli import (
+    build_parser,
     load_target_request,
     run_target_request,
     task_boundary_from_mapping,
 )
-from affordance_runtime.target_composition import compose_target_client_from_environment
-from affordance_runtime.target_runtime_client import TargetRuntimeClient
+from affordance_runtime.target_composition import compose_target_runtime_from_environment
 from affordance_runtime.task import RiskProfile, TaskUnsupported, ThinTaskIntake
 
 
@@ -111,17 +111,17 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
         fake_policy,
     )
 
-    client = compose_target_client_from_environment({"PROFILE": "fixture"}, call_timeout_s=7)
+    runtime = compose_target_runtime_from_environment({"PROFILE": "fixture"}, call_timeout_s=7)
 
     assert captured == {
         "environment": {"PROFILE": "fixture"},
         "call_timeout_s": 7,
         "interaction_protocol": GROUNDED_TOOLS_PROTOCOL,
     }
-    assert client.runtime.required_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
+    assert runtime.required_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
 
 
-def test_target_run_root_cli_routes_without_changing_legacy_run(monkeypatch, tmp_path: Path) -> None:
+def test_product_cli_routes_only_the_target_run_contract(monkeypatch, tmp_path: Path) -> None:
     boundary = _boundary_file(tmp_path, {
         "success_criteria": [{
             "id": "available",
@@ -139,8 +139,8 @@ def test_target_run_root_cli_routes_without_changing_legacy_run(monkeypatch, tmp
 
     monkeypatch.setattr("affordance_runtime.target_cli.run_target_command", fake_run)
 
-    exit_code = cli.main([
-        "target-run",
+    exit_code = product_cli.main([
+        "run",
         "--target",
         "https://example.test",
         "--instruction",
@@ -150,11 +150,14 @@ def test_target_run_root_cli_routes_without_changing_legacy_run(monkeypatch, tmp
     ])
 
     assert exit_code == 0
-    assert captured == {"command": "target-run", "instruction": "Inspect the page"}
-    parser = cli.build_parser()
-    legacy = parser.parse_args(["run"])
-    assert legacy.command == "run"
-    assert legacy.scenario == "pricing"
+    assert captured == {"command": "run", "instruction": "Inspect the page"}
+    parsed = build_parser().parse_args([
+        "run", "--target", "https://example.test", "--instruction", "Inspect",
+        "--boundary", str(boundary),
+    ])
+    assert parsed.command == "run"
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["benchmark"])
 
 
 def test_target_run_closes_browser_and_projects_nonready_outcome(tmp_path: Path) -> None:
@@ -181,11 +184,11 @@ def test_target_run_closes_browser_and_projects_nonready_outcome(tmp_path: Path)
             del args
             raise AssertionError("nonready CLI intake must not evaluate")
 
-    client = TargetRuntimeClient(compose_target_runtime(
+    runtime = compose_target_runtime(
         UnusedPolicy(),
         UnusedEvaluator(),
         UnusedEvaluator(),
-    ))
+    )
 
     def forbidden_session_factory(target, *, headless):
         del target, headless
@@ -194,7 +197,7 @@ def test_target_run_closes_browser_and_projects_nonready_outcome(tmp_path: Path)
     payload = run_target_request(
         "https://example.test",
         request,
-        client=client,
+        runtime=runtime,
         session_factory=forbidden_session_factory,
     )
 
@@ -223,16 +226,16 @@ def test_target_run_executes_real_dom_through_product_runtime(tmp_path: Path) ->
         onclick="this.setAttribute('aria-expanded', 'true')">Enable shared state</button>
     </main></body></html>
     """
-    client = TargetRuntimeClient(compose_target_runtime(
+    runtime = compose_target_runtime(
         FirstOfferedActionPolicy(),
         ProductionActionEvaluator(),
         ProductionTaskEvaluator(),
-    ))
+    )
 
     payload = run_target_request(
         "data:text/html," + quote(html),
         request,
-        client=client,
+        runtime=runtime,
     )
 
     assert payload["intake_status"] == "ready"

@@ -2,7 +2,7 @@ import asyncio
 import json
 from dataclasses import FrozenInstanceError
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.result import AgentFailureCode
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -138,7 +138,7 @@ def test_already_satisfied_selection_is_zero_call_then_typed_failure() -> None:
         loop = _loop(policy)
         binder = CountingBinder()
         loop.binder = binder
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
 
         assert result.status is AgentLoopStatus.FAILED
         assert result.failure_code is AgentFailureCode.NO_PROGRESS_REPETITION
@@ -170,7 +170,7 @@ def test_effectful_fill_executes_once_then_repeat_is_contained() -> None:
             [_world("observation:one", ""), _world("observation:two", "desired")],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await AgentEpisodeRunner(_loop(policy)).start(environment, _task())
+        session = await (_loop(policy)).start(environment, _task())
         result = await session.run_until_pause()
 
         assert result.status is AgentLoopStatus.FAILED

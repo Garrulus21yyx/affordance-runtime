@@ -8,7 +8,7 @@ from PIL import Image
 from test_agent_loop import ScriptedPolicy, _loop, _world
 from test_agent_loop import _task as shared_task
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoopStatus
+from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.model_boundary.budgets import BoundedSection, ContextProjectionBudget
 from affordance_runtime.model_boundary.contracts import AgentActionOptionView, AgentActionPageView
@@ -569,7 +569,7 @@ def test_not_sent_may_use_one_equivalent_alternate_and_dispatch_once() -> None:
             post_observations=(after,),
             execute_fn=execute,
         )
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(
+        result = await (_loop(ScriptedPolicy(["first"]))).run(
             environment, shared_task(),
         )
 
@@ -606,7 +606,7 @@ def test_sent_unknown_closes_reroute_even_when_equivalent_route_exists() -> None
             post_observations=(after,),
             execute_fn=execute,
         )
-        await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(
+        await (_loop(ScriptedPolicy(["first"]))).run(
             environment, shared_task(),
         )
 

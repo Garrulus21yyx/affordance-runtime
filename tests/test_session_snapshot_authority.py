@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
-from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, Wait
+from affordance_runtime.agent import Abort, AgentLoop, Wait
 from affordance_runtime.agent.control_transition import ControlTransitionScope
 from affordance_runtime.evaluation import (
     TaskEvaluation,
@@ -33,7 +33,7 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
     current: TaskEvaluationStatus,
 ) -> None:
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("current", False)]), _task())
         decision = Wait("context:history", "history", 1)
@@ -62,7 +62,7 @@ def test_snapshot_current_task_status_never_falls_back_to_transition_history(
 
 def test_snapshot_fails_closed_on_current_task_evaluation_lineage_mismatch() -> None:
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("current", False)]), _task())
         session.state.current_task_evaluation = TaskEvaluation(
@@ -80,7 +80,7 @@ def test_snapshot_fails_closed_on_current_task_evaluation_lineage_mismatch() -> 
 
 def test_snapshot_projects_only_current_canonical_task_outcome() -> None:
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(UnusedPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("current", False)]), _task())
         session.state.current_task_evaluation = TaskEvaluation(

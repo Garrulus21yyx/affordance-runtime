@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-affordance-runtime = "affordance_runtime.cli:main"
+affordance-runtime = "affordance_runtime.target_cli:main"
+affordance-runtime-benchmark = "affordance_runtime.cli:main"
 
 [project.optional-dependencies]
 web = [

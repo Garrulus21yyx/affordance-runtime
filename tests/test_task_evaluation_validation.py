@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from test_agent_loop import ScriptedPolicy, SharedActionEvaluator, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import (
     CriterionEvaluation,
     CriterionEvaluationStatus,
@@ -104,7 +104,7 @@ def test_agent_loop_rejects_invalid_initial_complete_without_policy_or_execution
 
     async def scenario() -> None:
         policy = ScriptedPolicy([])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), UntrustedTaskEvaluator())
         ).run(StaticEnvironment([_world("after", True)]), _criterion_task())
 

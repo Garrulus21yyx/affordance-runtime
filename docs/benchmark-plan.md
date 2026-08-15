@@ -125,7 +125,7 @@ P5-M2.1 did not independently admit an external run; P5-M3/M4 supplied the
 separate harness, adapter and exact-profile admission evidence.
 
 The P5-M3 internal manifests are `internal-core`, `internal-safety`, and
-`internal-evaluation`. They run sequentially through `AgentEpisodeRunner`, keep
+`internal-evaluation`. They run sequentially through `TargetRuntime`, keep
 expected terminal states outside all product inputs, record denominator-aware
 rates (`N/A` for zero opportunities), and fail closed on forbidden effects,
 duplicate unknown attempts, stale dispatch violations, cleanup failure, or

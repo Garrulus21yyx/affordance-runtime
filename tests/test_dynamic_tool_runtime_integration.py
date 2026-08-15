@@ -6,7 +6,7 @@ from dataclasses import replace
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 from test_dynamic_tool_bridge import _CompactPort
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.model_policy.tool_port_bridge import DynamicToolDecisionAdapter
 from affordance_runtime.model_port import ModelConfig
@@ -44,7 +44,7 @@ def test_dynamic_tool_facade_dispatches_only_through_existing_agent_loop() -> No
     policy = ModelBackedAgentPolicy(adapter, call_timeout_s=3)
 
     result = asyncio.run(
-        AgentEpisodeRunner(
+        (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
     )
@@ -79,7 +79,7 @@ def test_argument_repair_is_one_policy_turn_and_one_runtime_transition() -> None
     )
 
     result = asyncio.run(
-        AgentEpisodeRunner(
+        (
             AgentLoop(ModelBackedAgentPolicy(adapter, call_timeout_s=3), SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
     )

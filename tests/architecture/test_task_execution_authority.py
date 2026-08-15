@@ -30,7 +30,7 @@ def test_task_plan_has_exactly_one_production_owner() -> None:
 def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
     projection = (RUNTIME / "model_boundary" / "projection.py").read_text(encoding="utf-8")
     assert "from affordance_runtime.task_plan_contracts import TaskPlan" in projection
-    for relative in ("agent/loop.py", "agent/state.py", "agent/episode_runner.py"):
+    for relative in ("agent/loop.py", "agent/state.py"):
         source = (RUNTIME / relative).read_text(encoding="utf-8")
         assert "task_plan_contracts" not in source
         assert "TaskPlan" not in source
@@ -39,7 +39,7 @@ def test_workflow_task_plan_projection_does_not_enter_agent_loop() -> None:
 def test_agent_loop_uses_rolling_local_objective_not_workflow_plan_state() -> None:
     source = "\n".join(
         (RUNTIME / relative).read_text(encoding="utf-8")
-        for relative in ("agent/loop.py", "agent/state.py", "agent/episode_runner.py")
+        for relative in ("agent/loop.py", "agent/state.py")
     )
     for displaced in (
         "AdmittedTaskSpec",

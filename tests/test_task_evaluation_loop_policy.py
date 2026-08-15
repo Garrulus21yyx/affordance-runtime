@@ -6,7 +6,7 @@ from test_confirmation_continuation import ActionEvaluator, FirstPolicy
 from test_confirmation_continuation import _task as confirmation_task
 from test_confirmation_continuation import _world as confirmation_world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import (
     ActionEvaluation,
@@ -74,7 +74,7 @@ def test_initial_non_incomplete_task_evaluation_controls_loop(status, loop_statu
         loop = AgentLoop(FailIfCalledPolicy(), SharedActionEvaluator(), evaluator)
         environment = StaticEnvironment([_world("initial", False)])
 
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
 
         assert result.status == loop_status
         assert result.execution_count == 0
@@ -124,7 +124,7 @@ def test_observable_unknown_effect_requires_observation_before_another_action() 
                 ),
             )),
         )
-        session = await AgentEpisodeRunner(AgentLoop(
+        session = await (AgentLoop(
             ScriptedPolicy(["first", "first"]),
             UnknownActionEvaluator(),
             ProductionTaskEvaluator(),
@@ -157,7 +157,7 @@ def test_confirmation_fresh_task_evaluation_prevents_execution(status, loop_stat
         environment = StaticEnvironment(
             [confirmation_world("initial", False, "#initial"), confirmation_world("fresh", status == TaskEvaluationStatus.COMPLETE, "#fresh")]
         )
-        session = await AgentEpisodeRunner(loop).start(environment, confirmation_task())
+        session = await (loop).start(environment, confirmation_task())
         paused = await session.run_until_pause()
         request = paused.confirmation_request
         assert request is not None
@@ -188,7 +188,7 @@ def test_post_action_blocked_stops_before_another_policy_turn() -> None:
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), SharedActionEvaluator(), evaluator)
 
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
 
         assert result.status == AgentLoopStatus.BLOCKED
         assert result.execution_count == 1
@@ -218,7 +218,7 @@ def test_canonical_task_terminal_failure_is_absorbing_without_runtime_failure() 
     async def scenario() -> None:
         evaluator = TerminalEvaluator()
         loop = AgentLoop(FailIfCalledPolicy(), SharedActionEvaluator(), evaluator)
-        session = await AgentEpisodeRunner(loop).start(
+        session = await (loop).start(
             StaticEnvironment([_world("initial", False)]), _task(),
         )
 

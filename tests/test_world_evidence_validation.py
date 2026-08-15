@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from test_agent_loop import ScriptedPolicy, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.testing import StaticEnvironment
@@ -130,7 +130,7 @@ def test_agent_loop_rejects_evidence_not_resolved_in_after_world(evidence_ref: s
     async def scenario() -> None:
         evaluator = FailIfCalledTaskEvaluator()
         environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(ScriptedPolicy(["first"]), InvalidEvidenceEvaluator(), evaluator)
         ).run(environment, _task())
 

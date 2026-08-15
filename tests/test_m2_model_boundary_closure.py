@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 from test_agent_loop import SharedTaskEvaluator, _task, _world
 
-from affordance_runtime.agent import Abort, AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import Abort, AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
@@ -50,7 +50,7 @@ def test_huge_json_integer_is_zero_execution_and_zero_surface_probe() -> None:
 
     async def scenario() -> None:
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(ModelBackedAgentPolicy(Port()), object(), SharedTaskEvaluator())
         ).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED

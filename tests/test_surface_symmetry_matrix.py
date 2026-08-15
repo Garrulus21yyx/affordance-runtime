@@ -16,7 +16,7 @@ from test_visual_agent_loop_e2e import (
 )
 from test_wot_agent_loop_e2e import shared_state_server
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.browser_session import BrowserSession
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import TaskEvaluationStatus
@@ -148,7 +148,7 @@ def test_dom_visual_wot_share_one_agent_contract_with_adapter_only_variation(
             SharedStateTaskEvaluator(),
         )
 
-        result = run_immediate(AgentEpisodeRunner(loop).run(environment, task))
+        result = run_immediate((loop).run(environment, task))
 
         assert result.status == AgentLoopStatus.DONE
         assert result.observation_count == 2
@@ -168,14 +168,12 @@ def test_dom_visual_wot_share_one_agent_contract_with_adapter_only_variation(
 def test_dom_visual_wot_confirmation_uses_fresh_private_binding(profile: str) -> None:
     with profile_environment(profile) as (environment, metrics):
         task = replace(shared_state_task(), risk_profile=RiskProfile.MEDIUM)
-        runner = AgentEpisodeRunner(
-            AgentLoop(
-                FirstOfferedActionPolicy(),
-                SharedStateActionEvaluator(),
-                SharedStateTaskEvaluator(),
-            )
+        loop = AgentLoop(
+            FirstOfferedActionPolicy(),
+            SharedStateActionEvaluator(),
+            SharedStateTaskEvaluator(),
         )
-        session = run_immediate(runner.start(environment, task))
+        session = run_immediate(loop.start(environment, task))
         paused = run_immediate(session.run_until_pause())
 
         assert paused.status == AgentLoopStatus.WAITING_CONFIRMATION
@@ -231,7 +229,7 @@ def test_dom_visual_wot_policy_views_share_semantic_vocabulary_without_private_r
     for profile in ("dom", "visual", "wot"):
         with profile_environment(profile) as (environment, _metrics):
             result = run_immediate(
-                AgentEpisodeRunner(
+                (
                     AgentLoop(CapturePolicy(), SharedStateActionEvaluator(), SharedStateTaskEvaluator())
                 ).run(environment, shared_state_task())
             )

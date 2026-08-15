@@ -3,7 +3,7 @@ from dataclasses import replace
 
 from test_confirmation_continuation import ActionEvaluator, TaskEvaluator, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, AskUser, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, AskUser, SelectAction
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.testing import StaticEnvironment
@@ -74,7 +74,7 @@ def test_no_exact_subject_returns_to_policy_and_uses_its_new_selection() -> None
             [_world("initial", False, "#initial"), _changed_candidates_world()]
         )
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
-        session = await AgentEpisodeRunner(loop).start(environment, _expanded_task())
+        session = await (loop).start(environment, _expanded_task())
         paused = await session.run_until_pause()
 
         result = await session.resolve_confirmation(_decision(paused))
@@ -95,7 +95,7 @@ def test_no_exact_subject_allows_policy_to_ask_user() -> None:
             [_world("initial", False, "#initial"), _changed_candidates_world()]
         )
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
-        session = await AgentEpisodeRunner(loop).start(environment, _expanded_task())
+        session = await (loop).start(environment, _expanded_task())
         paused = await session.run_until_pause()
 
         result = await session.resolve_confirmation(_decision(paused))
@@ -121,7 +121,7 @@ def test_unavailable_confirmed_action_does_not_authorize_another_target() -> Non
         fresh = replace(other, targets=(other_target,), bindings=(other_binding,))
         environment = StaticEnvironment([_world("initial", False, "#initial"), fresh])
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()
 
         result = await session.resolve_confirmation(_decision(paused))

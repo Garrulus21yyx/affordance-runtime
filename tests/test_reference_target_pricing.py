@@ -6,11 +6,9 @@ from threading import Thread
 
 from affordance_runtime import (
     NaturalLanguageTaskRequest,
-    TargetRuntimeClient,
     TaskBoundary,
-    compose_target_runtime,
 )
-from affordance_runtime.agent import AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoopStatus, SelectAction, compose_target_runtime
 from affordance_runtime.browser_thread_session import ThreadBoundBrowserSession
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.fixtures import create_fixture_server
@@ -70,11 +68,11 @@ def test_target_pricing_reveals_records_and_returns_current_structured_dom_outpu
 
     async def scenario() -> None:
         policy = PricingPolicy()
-        client = TargetRuntimeClient(compose_target_runtime(
+        runtime = compose_target_runtime(
             policy,
             ProductionActionEvaluator(),
             ProductionTaskEvaluator(),
-        ))
+        )
         with ThreadBoundBrowserSession.launch(f"{base_url}/pricing") as browser:
             environment = UnifiedWorldEnvironment((
                 DomSurfaceAdapter(
@@ -82,7 +80,7 @@ def test_target_pricing_reveals_records_and_returns_current_structured_dom_outpu
                     frozenset({"interaction.reveal@v1"}),
                 ),
             ))
-            started = await client.run(environment, _request())
+            started = await runtime.run_request(environment, _request())
 
         assert started.result is not None
         assert started.session is not None

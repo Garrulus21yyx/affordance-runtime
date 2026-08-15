@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.model_boundary import ModelFailureKind
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
 from affordance_runtime.model_port import ModelConfig, OpenAICompatibleModelPort
@@ -103,7 +103,7 @@ def test_local_http_model_port_bridge_completes_one_safe_runtime_action() -> Non
     environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
     try:
         result = asyncio.run(
-            AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+            (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
                 environment, _task()
             )
         )
@@ -163,7 +163,7 @@ def test_local_http_failures_are_bounded_typed_and_zero_execution(behavior, expe
     environment = StaticEnvironment([_world("before", False)])
     try:
         result = asyncio.run(
-            AgentEpisodeRunner(
+            (
                 AgentLoop(_policy(server, deadline=deadline), SharedActionEvaluator(), SharedTaskEvaluator())
             ).run(environment, _task())
         )

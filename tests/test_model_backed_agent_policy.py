@@ -6,7 +6,6 @@ from test_agent_loop import SharedTaskEvaluator, _task, _world
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
     SelectAction,
@@ -185,7 +184,7 @@ def test_provider_outputs_and_failures_are_distinct_from_model_authored_abort() 
 def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))),
                 object(),

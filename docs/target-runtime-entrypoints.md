@@ -1,22 +1,21 @@
 # Target Runtime entrypoints
 
-Status: current product entrypoint reference; `target-run` is explicit and is not yet
-the default `run` command.
+Status: current product entrypoint reference; target public/CLI cutover complete.
 
 ## Python API
 
-Product callers compose once and retain the typed client/session lifecycle:
+Product callers compose once and retain the typed runtime/session lifecycle:
 
 ```python
 from affordance_runtime import (
     NaturalLanguageTaskRequest,
-    RiskProfile,
-    TargetRuntimeClient,
+    TargetRuntime,
     TaskBoundary,
-    compose_target_client_from_environment,
+    compose_target_runtime_from_environment,
 )
+from affordance_runtime.task import RiskProfile
 
-client: TargetRuntimeClient = compose_target_client_from_environment()
+runtime: TargetRuntime = compose_target_runtime_from_environment()
 request = NaturalLanguageTaskRequest(
     "task:save",
     "Save the current form",
@@ -31,12 +30,15 @@ request = NaturalLanguageTaskRequest(
         },),
     ),
 )
+
+outcome = await runtime.run_request(environment, request)
 ```
 
-`TargetRuntimeClient.run` performs intake, creates one `AgentRunSession`, and runs
+`TargetRuntime.run_request` performs intake, creates one `AgentRunSession`, and runs
 until terminal status or a typed user/confirmation pause. Long-lived callers keep the
-session and use `submit_user_input` or `resolve_confirmation`; the CLI is intentionally
-one-shot and only projects a pending request.
+session and use `TargetRuntime.submit_user_input` for re-admitted task meaning or
+`AgentRunSession.resolve_confirmation` for a pending confirmation; the CLI is
+intentionally one-shot and only projects a pending request.
 
 ## Explicit target CLI
 
@@ -63,7 +65,7 @@ selectors, coordinates, action IDs, bindings, executors, or other current-GUI ro
 Run the configured model through the target path:
 
 ```bash
-affordance-runtime target-run \
+affordance-runtime run \
   --target http://127.0.0.1:3000/settings \
   --instruction "Enable shared state" \
   --request-id task:enable-shared \
@@ -84,7 +86,7 @@ boundary JSON
 → ReadyTask
 → ThreadBoundBrowserSession
 → DomSurfaceAdapter / UnifiedWorldEnvironment
-→ TargetRuntimeClient / AgentLoop
+→ TargetRuntime / AgentLoop / AgentRunSession
 → grounded model action selection
 → Runtime bind + execute
 → ProductionActionEvaluator / ProductionTaskEvaluator
@@ -95,10 +97,11 @@ Non-ready intake exits before browser launch. Exit status is zero only for `done
 blocked, failed, rejected, unsupported, and one-shot pause outcomes return non-zero
 with typed status/reason fields.
 
-## Legacy compatibility
+## Benchmark entrypoint
 
-`affordance-runtime run` and `RuntimeClient` still use the staged Coordinator path.
-The latter is also exported as `LegacyRuntimeClient`. They remain feature-frozen until
-reference-scenario consumers are retargeted, a predeclared target-default held-out
-multi-seed gate passes, and a fresh topology review confirms that API, CLI, and current
-benchmark share the product composition owner.
+The product CLI contains only the target `run` command. Offline and historical
+benchmark commands use `affordance-runtime-benchmark`; they are not exported by
+the product parser. Legacy `RuntimeClient`, `RunRequest`, `RunResult` and
+`UnifiedObservation` are no longer root public exports. Their internal modules
+remain pending the owner-by-owner T3 deletion and do not constitute a supported
+compatibility path.

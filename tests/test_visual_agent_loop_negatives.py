@@ -6,7 +6,6 @@ from target_agent_loop_support import SharedStateActionEvaluator, SharedStateTas
 from test_visual_surface_adapter import PointGrounder, Proposer, VisualSession
 
 from affordance_runtime.agent import (
-    AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
     ProposeDone,
@@ -109,7 +108,7 @@ def _run(session, proposer, task, policy, action_evaluator=None):
         action_evaluator or SharedStateActionEvaluator(),
         SharedStateTaskEvaluator(),
     )
-    return asyncio.run(AgentEpisodeRunner(loop).run(environment, task))
+    return asyncio.run((loop).run(environment, task))
 
 
 @pytest.mark.parametrize("key", ["x", "y", "bbox", "coordinate", "backend", "selector", "point"])

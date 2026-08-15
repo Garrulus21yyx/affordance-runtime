@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
@@ -78,7 +78,7 @@ def test_real_login_user_popup_negative_terminal_is_canonical_and_absorbing() ->
             ExternalEnvironmentTaskEvaluator(task_id, environment),
         )
         try:
-            session = await AgentEpisodeRunner(loop).start(environment, task)
+            session = await (loop).start(environment, task)
             result = await session.run_until_pause()
             repeated = await session.run_until_pause()
 
@@ -140,7 +140,7 @@ def test_real_success_reset_and_read_only_sources_keep_distinct_permissions() ->
         success_environment, success_task = _open(task_id)
         success_policy = ActivateByLabelPolicy()
         try:
-            result = await AgentEpisodeRunner(AgentLoop(
+            result = await (AgentLoop(
                 success_policy,
                 BrowserGymMechanicalActionEvaluator(),
                 ExternalEnvironmentTaskEvaluator(task_id, success_environment),

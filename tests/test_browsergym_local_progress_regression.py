@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 import pytest
 
 from affordance_runtime.agent import (
-    AgentEpisodeRunner,
     AgentFailureCode,
     AgentLoop,
     AgentLoopStatus,
@@ -113,7 +112,7 @@ async def _run(task_id: str, port: LocalPublicStructuredPort):
         ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
     )
     try:
-        result = await AgentEpisodeRunner(loop).run(environment, task)
+        result = await (loop).run(environment, task)
         counts = (environment.step_calls, environment.fill_calls, environment.select_calls)
         return result, counts
     finally:

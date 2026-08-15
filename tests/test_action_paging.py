@@ -6,7 +6,6 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
     RequestActionPage,
@@ -222,7 +221,7 @@ def test_hidden_page_action_id_is_rejected_with_zero_execution() -> None:
 
     async def scenario() -> None:
         environment = StaticEnvironment([before])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),
@@ -258,7 +257,7 @@ def test_page_request_changes_context_and_old_page_decision_is_stale_zero_call()
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([before])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 policy,
                 SharedActionEvaluator(),
@@ -301,7 +300,7 @@ def test_page_a_to_b_to_a_never_revalidates_first_page_decision() -> None:
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([before])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 policy,
                 SharedActionEvaluator(),
@@ -339,7 +338,7 @@ def test_next_page_action_is_selectable_and_model_sees_active_cursor_state() -> 
 
     async def scenario() -> None:
         environment = StaticEnvironment([before, after], [_sent()])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),
@@ -377,7 +376,7 @@ def test_page_cursor_requires_exact_current_continuation(mode: str) -> None:
 
     async def scenario() -> None:
         environment = StaticEnvironment([before])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),
@@ -407,7 +406,7 @@ def test_previous_page_action_is_rejected_even_with_current_context_id() -> None
 
     async def scenario() -> None:
         environment = StaticEnvironment([before])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),
@@ -443,7 +442,7 @@ def test_confirmed_hidden_action_gets_a_coherent_private_execution_page() -> Non
             [medium_world("before", False), medium_world("fresh", False), medium_world("after", True)],
             [_sent()],
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),

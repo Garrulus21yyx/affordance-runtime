@@ -21,7 +21,7 @@ from test_model_policy_admission import (
     _TaskEvaluator as DestinationTaskEvaluator,
 )
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.model_boundary import ContextBuilder, ContextProjectionBudget
 from affordance_runtime.model_policy import ModelBackedAgentPolicy
 from affordance_runtime.testing import StaticEnvironment
@@ -62,7 +62,7 @@ def test_model_policy_can_page_then_select_from_the_exact_next_page() -> None:
             [_two_action_world("before", False), _two_action_world("after", True)],
             [_sent()],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(port),
                 SharedActionEvaluator(),
@@ -98,7 +98,7 @@ def test_model_policy_observation_and_wait_receive_a_fresh_context(kind: str) ->
     async def scenario() -> None:
         port = ScriptedStructuredDecisionPort(script)
         waiter = FakeWaiter()
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(port),
                 SharedActionEvaluator(),
@@ -140,7 +140,7 @@ def test_model_propose_done_still_requires_the_deterministic_task_evaluator() ->
     async def scenario() -> None:
         evaluator = CountingEvaluator()
         port = ScriptedStructuredDecisionPort(script)
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(ModelBackedAgentPolicy(port), SharedActionEvaluator(), evaluator)
         ).run(StaticEnvironment([_world("before", False)]), _task())
 
@@ -186,7 +186,7 @@ def test_model_propose_done_can_reference_current_artifact_without_bypassing_eva
         evaluator = CountingEvaluator()
         port = ScriptedStructuredDecisionPort(script)
 
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(ModelBackedAgentPolicy(port), SharedActionEvaluator(), evaluator)
         ).run(StaticEnvironment([observation]), _task())
 
@@ -218,7 +218,7 @@ def test_model_propose_done_rejects_unknown_criteria_and_unresolved_items(claime
 
     async def scenario() -> None:
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(ScriptedStructuredDecisionPort(script)),
                 SharedActionEvaluator(),
@@ -245,7 +245,7 @@ def test_stale_model_context_response_is_zero_execution() -> None:
     async def scenario() -> None:
         port = ScriptedStructuredDecisionPort(script)
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(ModelBackedAgentPolicy(port), SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -272,7 +272,7 @@ def test_model_hidden_action_and_destination_are_rejected_by_runtime_admission()
             }
 
         environment = StaticEnvironment([before])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(ScriptedStructuredDecisionPort(script)),
                 SharedActionEvaluator(),
@@ -294,7 +294,7 @@ def test_model_hidden_action_and_destination_are_rejected_by_runtime_admission()
             }
 
         environment = StaticEnvironment([_destination_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(ScriptedStructuredDecisionPort(script)),
                 DestinationActionEvaluator(),
@@ -322,7 +322,7 @@ def test_model_private_execution_parameters_are_typed_failure_and_zero_execution
 
     async def scenario() -> None:
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(ScriptedStructuredDecisionPort(script)),
                 SharedActionEvaluator(),
@@ -347,7 +347,7 @@ def test_runtime_confirmation_wraps_model_policy_and_does_not_make_a_second_mode
             ],
             [_sent()],
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(policy, ConfirmationActionEvaluator(), ConfirmationTaskEvaluator())
         ).start(environment, confirmation_task())
         paused = await session.run_until_pause()

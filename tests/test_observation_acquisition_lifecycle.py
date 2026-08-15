@@ -5,7 +5,6 @@ import pytest
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
     AgentFailureCode,
     AgentLoop,
     AgentSessionStartError,
@@ -157,8 +156,8 @@ def test_agent_loop_start_is_the_only_logical_reset_owner() -> None:
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
         runner_environment = StaticEnvironment(initial_observation=_world("runner"))
         direct_environment = StaticEnvironment(initial_observation=_world("direct"))
-        await AgentEpisodeRunner(loop).run(runner_environment, _task())
-        await loop.run(_task(), direct_environment)
+        await (loop).run(runner_environment, _task())
+        await loop.run(direct_environment, _task())
         assert runner_environment.reset_calls == 1
         assert direct_environment.reset_calls == 1
         assert runner_environment.capture_calls == direct_environment.capture_calls == 0
@@ -178,7 +177,7 @@ def test_non_acquired_initial_result_raises_typed_start_error() -> None:
         environment = FailedReset(initial_observation=_world("unused"))
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
         with pytest.raises(AgentSessionStartError) as captured:
-            await AgentEpisodeRunner(loop).start(environment, _task())
+            await (loop).start(environment, _task())
         assert captured.value.status is AcquisitionStatus.FAILED
         assert captured.value.origin is AcquisitionOrigin.RESET
         assert captured.value.reason_code == "initial_capture_failed"
@@ -201,7 +200,7 @@ def test_thrown_reset_failure_carries_privacy_safe_attempt_truth(failure) -> Non
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
         expected = asyncio.CancelledError if isinstance(failure, asyncio.CancelledError) else AgentSessionStartError
         with pytest.raises(expected) as captured:
-            await AgentEpisodeRunner(loop).start(environment, _task())
+            await (loop).start(environment, _task())
         evidence = captured.value.start_evidence
         assert evidence.receipt.operation.value == "reset"
         assert evidence.receipt.disposition.value in {"threw", "cancelled"}
@@ -226,7 +225,7 @@ def test_immutable_foreign_reset_exception_is_normalized_without_losing_receipt(
         environment = RaisingReset(initial_observation=_world("unused"))
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
         with pytest.raises(AgentSessionStartError) as captured:
-            await AgentEpisodeRunner(loop).start(environment, _task())
+            await (loop).start(environment, _task())
         assert captured.value.exception_class == "ImmutableError"
         assert captured.value.start_evidence.accounting.receipt_count == 1
         assert isinstance(captured.value.__cause__, ImmutableError)
@@ -244,7 +243,7 @@ def test_malformed_reset_return_is_one_failed_physical_attempt() -> None:
         environment = MalformedReset(initial_observation=_world("unused"))
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
         with pytest.raises(AgentSessionStartError) as captured:
-            await AgentEpisodeRunner(loop).start(environment, _task())
+            await (loop).start(environment, _task())
         evidence = captured.value.start_evidence
         assert environment.reset_calls == 1
         assert evidence.receipt.disposition.value == "malformed"
@@ -266,7 +265,7 @@ def test_foreign_reset_exception_name_cannot_break_physical_accounting() -> None
         environment = RaisingReset(initial_observation=_world("unused"))
         loop = AgentLoop(_AbortPolicy(), _NeverActionEvaluator(), _IncompleteTaskEvaluator())
         with pytest.raises(AgentSessionStartError) as captured:
-            await AgentEpisodeRunner(loop).start(environment, _task())
+            await (loop).start(environment, _task())
         evidence = captured.value.start_evidence
         assert environment.reset_calls == 1
         assert evidence.accounting.observation_attempts == 1

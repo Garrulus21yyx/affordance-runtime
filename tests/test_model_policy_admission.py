@@ -1,6 +1,6 @@
 import asyncio
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -96,7 +96,7 @@ def test_hidden_destination_is_rejected_before_execution() -> None:
 
     async def scenario() -> None:
         environment = StaticEnvironment([_destination_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 _ActionEvaluator(),
@@ -126,7 +126,7 @@ def test_visible_destination_is_accepted() -> None:
             [_destination_world("before", False), _destination_world("after", True)],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 _ActionEvaluator(),

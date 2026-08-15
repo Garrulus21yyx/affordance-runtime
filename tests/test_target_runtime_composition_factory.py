@@ -4,9 +4,8 @@ from affordance_runtime import (
     NaturalLanguageTaskRequest,
     TargetRuntime,
     TargetRuntimeStartOutcome,
-    compose_target_runtime,
 )
-from affordance_runtime.agent import TOOL_ACTION_DECISION_CAPABILITIES
+from affordance_runtime.agent import TOOL_ACTION_DECISION_CAPABILITIES, compose_target_runtime
 
 
 class _Policy:

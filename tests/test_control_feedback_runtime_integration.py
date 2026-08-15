@@ -9,7 +9,6 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
     RequestActionPage,
@@ -38,7 +37,7 @@ def test_invalid_parameters_reach_next_normal_policy_context_once_then_correct()
             [_world("before", False), _world("after", True)],
             [_sent(DispatchStatus.SENT, True)],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -78,7 +77,7 @@ def test_same_issue_with_different_invalid_values_terminates_without_execution()
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -103,7 +102,7 @@ def test_action_page_identity_churn_cannot_bypass_no_gain_repetition() -> None:
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -129,7 +128,7 @@ def test_casefold_equivalent_page_queries_are_bounded_as_one_no_gain_issue() -> 
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -163,7 +162,7 @@ def test_distinct_requests_with_same_page_result_are_bounded() -> None:
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -211,7 +210,7 @@ def test_generated_request_view_churn_without_new_facts_is_bounded(
                 _world(f"fresh-{index}", False) for index in range(5)
             ),
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -251,7 +250,7 @@ def test_page_and_unchanged_policy_observation_cannot_reset_each_other() -> None
                 _world(f"fresh-{index}", False) for index in range(6)
             ),
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -290,7 +289,7 @@ def test_policy_observation_fresh_identity_without_semantic_gain_is_bounded() ->
                 _world("fresh-two", False),
             ),
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -325,7 +324,7 @@ def test_policy_observation_task_terminal_precedes_no_gain_feedback() -> None:
             initial_observation=_world("before", False),
             independent_observations=(_world("terminal", True),),
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -352,7 +351,7 @@ def test_three_distinct_admission_page_issues_share_one_budget() -> None:
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -386,7 +385,7 @@ def test_adapter_invalid_parameters_after_admission_is_not_policy_repair() -> No
                 ActionError.INVALID_PARAMETERS,
             )],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -417,7 +416,7 @@ def test_no_effect_feedback_carries_expected_observed_delta_and_mechanical_recov
             [_world("before", False), _world("after", False)],
             [_sent(DispatchStatus.SENT, True)],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -452,7 +451,7 @@ def test_exact_replay_after_confirmed_no_effect_is_zero_dispatch() -> None:
             [_world("before", False), _world("after", False)],
             [_sent(DispatchStatus.SENT, True)],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -481,7 +480,7 @@ def test_empty_no_gain_filter_restores_default_recovery_page_without_new_epoch()
             [_world("before", False), _world("after", True)],
             [_sent(DispatchStatus.SENT, True)],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 
@@ -537,7 +536,7 @@ def test_relevant_public_semantic_gain_resets_issue_budget() -> None:
             post_observations=(_world("after", True),),
             results=(_sent(DispatchStatus.SENT, True),),
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, _task())
 

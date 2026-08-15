@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.state import AgentLoopState
 from affordance_runtime.model_boundary import ContextBuilder, ModelFailure, ModelFailureKind
@@ -311,7 +311,7 @@ def test_policy_deadline_cancels_one_hanging_provider_attempt() -> None:
     async def scenario() -> None:
         port = HangingPort()
         environment = StaticEnvironment([_world("before", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ModelBackedAgentPolicy(port, call_timeout_s=0.01),
                 SharedActionEvaluator(),

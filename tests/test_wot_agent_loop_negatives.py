@@ -5,7 +5,7 @@ import pytest
 from target_agent_loop_support import SharedStateActionEvaluator, SharedStateTaskEvaluator
 from test_wot_surface_adapter import FakeWotTransport, shared_td
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
@@ -72,7 +72,7 @@ def _run(transport, task, policy, *, scope=WotDeploymentScope.LOCAL_SIMULATION, 
     adapter = WotSurfaceAdapter(transport, deployment_scope=scope)
     world = world_type((adapter,))
     loop = AgentLoop(policy, evaluator or SharedStateActionEvaluator(), SharedStateTaskEvaluator())
-    return asyncio.run(AgentEpisodeRunner(loop).run(world, task))
+    return asyncio.run((loop).run(world, task))
 
 
 @pytest.mark.parametrize(

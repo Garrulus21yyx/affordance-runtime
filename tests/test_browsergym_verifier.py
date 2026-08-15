@@ -13,7 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from test_agent_loop import ScriptedPolicy
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.benchmarks.external_breadth.campaign_contracts import MiniWobTaskOutcome
 from affordance_runtime.benchmarks.external_breadth.classification import classify_case
 from affordance_runtime.benchmarks.external_smoke.browsergym_action_evaluator import (
@@ -313,7 +313,7 @@ def test_negative_terminal_flows_once_without_synthetic_runtime_failure() -> Non
             BrowserGymMechanicalActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
         )
-        session = await AgentEpisodeRunner(loop).start(environment, task)
+        session = await (loop).start(environment, task)
         first = await session.run_until_pause()
         second = await session.run_until_pause()
 

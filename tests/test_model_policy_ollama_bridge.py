@@ -6,7 +6,7 @@ from typing import Any
 
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.model_policy import ModelBackedAgentPolicy, ModelPortDecisionAdapter
 from affordance_runtime.model_policy.spec import AgentDecisionPayload
 from affordance_runtime.model_port import ModelConfig, OllamaModelPort
@@ -64,7 +64,7 @@ def test_exact_ollama_agent_decision_schema_completes_one_runtime_action() -> No
     environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
     try:
         result = asyncio.run(
-            AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+            (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
                 environment, _task()
             )
         )

@@ -42,7 +42,6 @@ if TYPE_CHECKING:
         SelectAction,
         Wait,
     )
-    from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
     from affordance_runtime.agent.local_objective_proposal import (
         LocalObjectiveNeedsInput,
         LocalObjectiveNotRequired,
@@ -55,6 +54,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.result import AgentFailureCode, AgentResult
     from affordance_runtime.agent.runtime import (
         TargetRuntime,
+        TargetRuntimeRunOutcome,
         TargetRuntimeStartOutcome,
         TargetRuntimeUserInputOutcome,
     )
@@ -95,13 +95,13 @@ _EXPORTS = {
         "ALL_DECISION_CAPABILITIES",
     ),
     "Abort": ("affordance_runtime.agent.decisions", "Abort"),
-    "AgentEpisodeRunner": ("affordance_runtime.agent.episode_runner", "AgentEpisodeRunner"),
     "AgentFailureCode": ("affordance_runtime.agent.result", "AgentFailureCode"),
     "AgentLoop": ("affordance_runtime.agent.loop", "AgentLoop"),
     "AgentLoopState": ("affordance_runtime.agent.state", "AgentLoopState"),
     "AgentLoopStatus": ("affordance_runtime.agent.state", "AgentLoopStatus"),
     "AgentResult": ("affordance_runtime.agent.result", "AgentResult"),
     "TargetRuntime": ("affordance_runtime.agent.runtime", "TargetRuntime"),
+    "TargetRuntimeRunOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeRunOutcome"),
     "TargetRuntimeStartOutcome": ("affordance_runtime.agent.runtime", "TargetRuntimeStartOutcome"),
     "TargetRuntimeUserInputOutcome": (
         "affordance_runtime.agent.runtime",

@@ -222,7 +222,7 @@ The target path now has:
 | TaskFrontier / VerifiedTaskState / RequirementHypothesis | `DELETED_FROM_AGENTLOOP`; displaced duplicate semantic owners |
 | WorldObservation / AgentWorldView / ActionSpace | `INTEGRATED_NON_DEFAULT`; exact option/binding-group fidelity and source/world currentness closed |
 | Wave-A InteractionCapability owner spine | `IMPLEMENTED_WAVE_A_CLOSURE / EXISTING_ACTION_OWNER_SPINE / WOT_SET_VALUE_RESTORED / MODEL_REPAIR_CONNECTED / VERIFICATION_CONTRACT_FOUNDATION_IMPLEMENTED / STATEFACT_CUTOVER_PARTIAL / LIVE_NOT_RUN`; old vocabulary/canonicalizer/embedded-normalizer owners deleted; five not-yet-produced actions remain semantic-only |
-| Target Runtime physical topology | `T0_COMPLETE / T1_READY / WAVE_A_ADMITTED`; [consumer/test inventory](evidence/2026-08-15-target-runtime-topology-t0-inventory.md) classifies product, benchmark, script, test and fixture consumers; mixed CLI/API, pass-through wrappers and benchmark-owned reusable BrowserGym code remain physically unchanged; production and tests must cut over/delete together per the [topology plan](plans/2026-08-15-target-runtime-topology-cutover.md) |
+| Target Runtime physical topology | `T0_COMPLETE / T1_COMPLETE / T2_READY / WAVE_A_ADMITTED`; target-only root API/product CLI, separate benchmark entrypoint and sole `TargetRuntime -> AgentLoop -> AgentRunSession` lifecycle implemented; pass-through client/episode files and tests deleted; 503 production files remain, including 149 at package root and 153 under benchmarks; BrowserGym surface migration and staged Runtime deletion remain per the [topology plan](plans/2026-08-15-target-runtime-topology-cutover.md) |
 | WorldEnvironment independent capture | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; environment-owned capabilities and offers admit typed capture without consulting AgentContext |
 | post-action observation | `INTEGRATED_NON_DEFAULT / CLOSED_M4_5_A`; `ExecutionOutcome` carries the typed after acquisition and normal evaluation performs no second capture |
 | ObservationAcquisition / ExecutionOutcome target contracts | `INTEGRATED_NON_DEFAULT`; reset, independent capture and post-action origins distinguish acquired, unavailable and failed |
@@ -439,7 +439,7 @@ closure external benchmarks had not run. Later M4 evidence is separately
 profile-scoped below.
 
 P5-M3 is now closed for its fixed internal manifest. The harness calls only the
-target `AgentEpisodeRunner`/`AgentLoop`, runs cases sequentially with fresh
+target `TargetRuntime`/`AgentLoop`, runs cases sequentially with fresh
 composition/environment/session state, and applies the manifest oracle only
 after Runtime termination. Local runs at `637063ccd924` accepted internal core,
 safety, and evaluation profiles. This is protocol evidence, not live-model or

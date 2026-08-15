@@ -4,7 +4,7 @@ from dataclasses import fields
 import pytest
 from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
@@ -99,7 +99,7 @@ def test_stale_decision_is_zero_execute_and_zero_probe_then_rebuilt() -> None:
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
-        result = await AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
             environment, _task()
         )
 
@@ -138,7 +138,7 @@ def test_replayed_old_context_decision_does_not_execute_again() -> None:
             [_world("before", False), _world("after", False)],
             [_sent()],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(ReplayPolicy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).run(environment, task)
 
@@ -160,7 +160,7 @@ def test_bound_action_request_carries_current_accepted_context() -> None:
     async def scenario() -> None:
         policy = Policy()
         environment = StaticEnvironment([_world("before", False), _world("after", True)], [_sent()])
-        await AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
             environment, _task()
         )
 
@@ -188,7 +188,7 @@ def test_wait_uses_fake_controller_and_performs_fresh_observe() -> None:
             SharedTaskEvaluator(),
             wait_controller=waiter,
         )
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
 
         assert waiter.waits == [25]
         assert result.observation_count == 2
@@ -215,7 +215,7 @@ def test_fresh_observation_decisions_reject_reused_identity(decision_kind: str) 
     async def scenario() -> None:
         observation = _world("same", False)
         environment = StaticEnvironment([observation, observation])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),
@@ -245,7 +245,7 @@ def test_each_policy_call_gets_a_new_context_epoch_even_when_projection_is_uncha
 
     async def scenario() -> None:
         policy = Policy()
-        result = await AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
             StaticEnvironment([_world("before", False)]), _task()
         )
 
@@ -269,7 +269,7 @@ def test_no_op_page_request_advances_context_epoch() -> None:
 
     async def scenario() -> None:
         policy = Policy()
-        await AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
             StaticEnvironment([_world("before", False)]), _task()
         )
 
@@ -291,7 +291,7 @@ def test_stale_binding_refresh_rejects_reused_observation_identity() -> None:
     async def scenario() -> None:
         observation = _world("same", False)
         environment = StaticEnvironment([observation, observation])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),
@@ -329,7 +329,7 @@ def test_propose_done_cannot_bypass_validated_task_evaluator() -> None:
 
     async def scenario() -> None:
         evaluator = CountingEvaluator()
-        result = await AgentEpisodeRunner(AgentLoop(Policy(), SharedActionEvaluator(), evaluator)).run(
+        result = await (AgentLoop(Policy(), SharedActionEvaluator(), evaluator)).run(
             StaticEnvironment([_world("before", False)]), _task()
         )
 
@@ -360,7 +360,7 @@ def test_intent_context_cannot_expand_task_effect_authority() -> None:
             )
         )
         read_only = _task().__class__("inspect", "Inspect shared state")
-        result = await AgentEpisodeRunner(AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        result = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).run(
             StaticEnvironment([_world("before", False)]), read_only, intent
         )
 
@@ -403,7 +403,7 @@ def test_non_action_decisions_are_projected_into_recurrent_semantic_history() ->
             return Abort(context.context_id, "history verified", "policy")
 
     async def scenario() -> None:
-        result = await AgentEpisodeRunner(AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        result = await (AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())).run(
             StaticEnvironment([_world("before", False), _world("after", False)]),
             _task(),
         )
@@ -422,7 +422,7 @@ def test_total_wait_budget_is_enforced_without_real_delay() -> None:
     async def scenario() -> None:
         waiter = _FakeWaiter()
         environment = StaticEnvironment([_world("one", False), _world("two", False), _world("three", False)])
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 Policy(),
                 SharedActionEvaluator(),

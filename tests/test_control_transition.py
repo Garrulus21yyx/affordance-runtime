@@ -8,7 +8,6 @@ from test_agent_loop import SharedActionEvaluator, SharedTaskEvaluator, _sent, _
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
     AskUser,
@@ -186,7 +185,7 @@ def test_each_terminal_accepted_decision_creates_one_root(
             return decision_factory(context.context_id)
 
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("before", False)]), _task())
         await session.run_until_pause()
@@ -225,7 +224,7 @@ def test_refresh_decision_and_following_abort_each_create_one_root(kind: str) ->
             )
 
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("before", False), _world("fresh", False)]), _task())
         await session.run_until_pause()
@@ -249,7 +248,7 @@ def test_action_transition_retains_typed_control_facts_once() -> None:
             return SelectAction(context.context_id, context.actions.options[0].action_id)
 
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(
             StaticEnvironment([_world("before", False), _world("after", True)], [_sent()]),
@@ -279,7 +278,7 @@ def test_provider_failure_before_decision_creates_no_transition() -> None:
             return PolicyFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "provider unavailable")
 
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(Policy(), SharedActionEvaluator(), SharedTaskEvaluator())
         ).start(StaticEnvironment([_world("before", False)]), _task())
         await session.run_until_pause()

@@ -11,7 +11,6 @@ from affordance_runtime.agent.decision_capability import (
     UnsupportedCompositionError,
     normalize_decision_capabilities,
 )
-from affordance_runtime.agent.episode_runner import AgentEpisodeRunner
 from affordance_runtime.agent.loop import AgentLoop
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.result import AgentResult
@@ -54,6 +53,25 @@ class TargetRuntimeStartOutcome:
 TargetRuntimeUserInputOutcome: TypeAlias = (
     UserInputResumeOutcome | TaskInputRequired | TaskPolicyRejected | TaskUnsupported
 )
+
+
+@dataclass(frozen=True)
+class TargetRuntimeRunOutcome:
+    """One admitted target session and its first run-until-pause result."""
+
+    intake: TaskIntakeOutcome
+    session: AgentRunSession | None = None
+    result: AgentResult | None = None
+
+    def __post_init__(self) -> None:
+        admitted = isinstance(self.intake, ReadyTask)
+        executable = self.session is not None and self.result is not None
+        if admitted != executable:
+            raise ValueError("target runtime run must align intake, session, and result")
+
+    @property
+    def started(self) -> bool:
+        return self.session is not None
 
 
 @dataclass(frozen=True)
@@ -114,7 +132,7 @@ class TargetRuntime:
         task: TaskGoal,
         intent_context: IntentContext | None = None,
     ) -> AgentRunSession:
-        return await AgentEpisodeRunner(self.build_loop()).start(environment, task, intent_context)
+        return await self.build_loop().start(environment, task, intent_context)
 
     async def run_task(
         self,
@@ -122,19 +140,48 @@ class TargetRuntime:
         task: TaskGoal,
         intent_context: IntentContext | None = None,
     ) -> AgentResult:
-        session = await self.start_task(environment, task, intent_context)
-        return await session.run_until_pause()
+        return await self.build_loop().run(environment, task, intent_context)
+
+    def admit(self, request: NaturalLanguageTaskRequest) -> TaskIntakeOutcome:
+        """Compile stable task authority before allocating a world session."""
+
+        return self.intake.compile(request)
 
     async def start_request(
         self,
         environment: WorldEnvironment,
         request: NaturalLanguageTaskRequest,
     ) -> TargetRuntimeStartOutcome:
-        admitted = self.intake.compile(request)
+        admitted = self.admit(request)
         if not isinstance(admitted, ReadyTask):
             return TargetRuntimeStartOutcome(admitted)
         session = await self.start_task(environment, admitted.task, admitted.intent_context)
         return TargetRuntimeStartOutcome(admitted, session)
+
+    async def run_request(
+        self,
+        environment: WorldEnvironment,
+        request: NaturalLanguageTaskRequest,
+    ) -> TargetRuntimeRunOutcome:
+        admitted = self.admit(request)
+        if not isinstance(admitted, ReadyTask):
+            return TargetRuntimeRunOutcome(admitted)
+        return await self.run_admitted(environment, admitted)
+
+    async def run_admitted(
+        self,
+        environment: WorldEnvironment,
+        admitted: ReadyTask,
+    ) -> TargetRuntimeRunOutcome:
+        if not isinstance(admitted, ReadyTask):
+            raise TypeError("target runtime admitted run requires ReadyTask")
+        session = await self.start_task(
+            environment,
+            admitted.task,
+            admitted.intent_context,
+        )
+        result = await session.run_until_pause()
+        return TargetRuntimeRunOutcome(admitted, session, result)
 
     async def submit_user_input(
         self,

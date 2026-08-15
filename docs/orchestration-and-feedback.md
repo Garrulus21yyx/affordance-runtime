@@ -300,7 +300,7 @@ no external environment or provider is constructed. Environment-native reward
 or completion is consumed only by the benchmark-only mechanical TaskEvaluator
 and post-run acceptance, never by policy routing.
 Model conformance is also outside orchestration. Levels 0–3 stop before
-execution; Level 4 enters the unchanged AgentEpisodeRunner and Runtime
+execution; Level 4 enters the unchanged AgentLoop through TargetRuntime
 admission. A diagnostic failure cannot trigger retry/fallback, repair output,
 change a Runtime turn, or enter AgentContext/Turn history. Compact grounding is
 explicit per diagnostic call; the ordinary policy composition stays format-only.
@@ -385,7 +385,7 @@ precedence over an older approval, and invalid confirmation/risk enum values fai
 
 The MiniWoB-60 runner creates cases in frozen manifest order, shares one fixed
 pacing state across case boundaries, and delegates every episode to the normal
-AgentEpisodeRunner/AgentLoop. A case outcome is classified only after the loop
+TargetRuntime/AgentLoop. A case outcome is classified only after the loop
 or harness terminates. Failure advances to the next case without retry;
 process interruption leaves `complete=false` and a later run must start all 60
 cases under a new run ID. Capability labels and aggregate feedback remain

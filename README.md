@@ -71,11 +71,13 @@ or act across environments more effectively.
 
 ## Current implementation truth
 
-The older TaskSpec/TaskPlan/ActionContract/StateKernel/RuntimeCommitter control
-path remains the `run` default baseline. The explicit `target-run` command and
-`TargetRuntimeClient` now provide an executable natural-language target path with the
-product DOM world, grounded-tools model protocol, and product evaluators; default
-cutover and legacy deletion remain open. The target path implements the
+The installed `affordance-runtime run` command and root Python API now enter the
+target-only `TargetRuntime -> AgentLoop -> AgentRunSession` path with the product
+DOM world, grounded-tools model protocol, and product evaluators. Benchmark
+commands are isolated under `affordance-runtime-benchmark`. The older
+TaskSpec/TaskPlan/ActionContract/StateKernel/RuntimeCommitter modules remain
+internal pending owner-by-owner T3 deletion, but are no longer a public product
+entrypoint. The target path implements the
 strong TaskGoal and world/action/evaluation contracts and integrated DOM,
 Visual full-digest, and WoT local HTTP JSON single-surface verticals. The
 three-surface adapter-only shared-state matrix is proven with one deterministic
@@ -83,7 +85,8 @@ policy. Semantic confirmation, one-shot disposable AgentContext, strict
 model-policy parsing/transport, declared-minimum evaluation, the internal
 harness, and the pinned `browsergym-miniwob==0.14.3` adapter are closed for their
 declared non-default profiles. General semantic entailment, semantic fusion,
-default cutover, and broad autonomous GUI competence remain open.
+BrowserGym surface ownership migration, legacy physical deletion, and broad
+autonomous GUI competence remain open.
 
 The BrowserGym breadth evidence now contains three immutable, non-combinable
 exact runs: the historical clean `b3b64a2` run at 6/60, the clean `83dc4fa`

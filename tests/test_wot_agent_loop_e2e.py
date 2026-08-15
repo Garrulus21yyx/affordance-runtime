@@ -12,7 +12,7 @@ from target_agent_loop_support import (
     shared_state_task,
 )
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import TaskEvaluationStatus
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
@@ -115,7 +115,7 @@ def test_real_http_wot_only_short_loop_completes_with_one_semantic_action() -> N
             SharedStateTaskEvaluator(),
         )
 
-        result = run_immediate(AgentEpisodeRunner(loop).run(environment, task))
+        result = run_immediate((loop).run(environment, task))
 
         assert result.status == AgentLoopStatus.DONE
         assert result.observation_count == 2
@@ -145,7 +145,7 @@ def test_real_http_wot_model_policy_completes_through_strict_structured_decision
         policy = first_action_model_policy()
         loop = AgentLoop(policy, SharedStateActionEvaluator(), SharedStateTaskEvaluator())
 
-        result = run_immediate(AgentEpisodeRunner(loop).run(environment, shared_state_task()))
+        result = run_immediate((loop).run(environment, shared_state_task()))
 
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1

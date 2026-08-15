@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 
 import pytest
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus, SelectAction
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.evaluation import (
@@ -122,8 +122,8 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
         policy = FirstPolicy()
-        runner = AgentEpisodeRunner(AgentLoop(policy, ActionEvaluator(), TaskEvaluator()))
-        session = await runner.start(environment, _task())
+        loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
+        session = await loop.start(environment, _task())
         paused = await session.run_until_pause()
 
         assert paused.status == AgentLoopStatus.WAITING_CONFIRMATION
@@ -153,7 +153,7 @@ def test_confirmation_freshly_rebinds_selector_and_executes_once() -> None:
 def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         request = paused.confirmation_request
         assert request is not None
@@ -166,7 +166,7 @@ def test_confirmation_wrong_identity_and_deny_fail_closed_without_execution() ->
         assert environment.executed_requests == []
 
         denied_environment = StaticEnvironment([_world("old", False, "#old")])
-        denied_session = await AgentEpisodeRunner(_loop()).start(denied_environment, _task())
+        denied_session = await (_loop()).start(denied_environment, _task())
         denied_pause = await denied_session.run_until_pause()
         denied = await denied_session.resolve_confirmation(_decision(denied_pause, ConfirmationDecisionKind.DENY))
         assert denied.status == AgentLoopStatus.CANCELLED
@@ -180,7 +180,7 @@ def test_confirmation_observation_budget_exhaustion_closes_original_root() -> No
     async def scenario() -> None:
         task = replace(_task(), loop_budget=LoopBudget(max_turns=1, max_observations=1))
         environment = StaticEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, task)
+        session = await (_loop()).start(environment, task)
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
 
@@ -238,7 +238,7 @@ def test_confirmation_refresh_failure_closes_original_root(
             environment = StaticEnvironment([old, old])
         else:
             environment = StaticEnvironment([old])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
 
@@ -293,7 +293,7 @@ def test_confirmation_fresh_task_terminal_closes_root_without_execution(
         environment = StaticEnvironment(
             [_world("old", False, "#old"), _world("fresh", True, "#fresh")]
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(FirstPolicy(), ActionEvaluator(), evaluator)
         ).start(environment, _task())
         paused = await session.run_until_pause()
@@ -322,7 +322,7 @@ def test_confirmation_subject_change_requires_new_confirmation() -> None:
         )
         policy = FirstPolicy()
         loop = AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()
 
         changed = await session.resolve_confirmation(_decision(paused))
@@ -363,7 +363,7 @@ def test_not_sent_does_not_consume_confirmation_and_freshly_rebinds() -> None:
             ],
             execute_fn=execute,
         )
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
 
         completed = await session.resolve_confirmation(_decision(paused))
@@ -408,7 +408,7 @@ def test_sent_unknown_no_effect_consumes_confirmation_and_waits_without_replay()
                 )
             ],
         )
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         first = await session.run_until_pause()
 
         second = await session.resolve_confirmation(_decision(first))
@@ -442,7 +442,7 @@ def test_confirmed_execution_exception_closes_root_and_propagates(
             ],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(FirstPolicy(), RaisingEvaluator(), TaskEvaluator())
         ).start(environment, _task())
         paused = await session.run_until_pause()
@@ -499,7 +499,7 @@ def test_sent_unknown_unknown_waits_for_user_and_never_replays() -> None:
             ],
         )
         loop = AgentLoop(FirstPolicy(), UnknownEvaluator(), TaskEvaluator())
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()
 
         waiting = await session.resolve_confirmation(_decision(paused))
@@ -519,7 +519,7 @@ def test_confirmation_decision_cannot_be_reused_after_effectful_send() -> None:
             [_world("initial", False, "#initial"), _world("fresh", False, "#fresh"), _world("after", True, "#after")],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         decision = _decision(paused)
         completed = await session.resolve_confirmation(decision)
@@ -538,7 +538,7 @@ def test_confirmation_requires_a_fresh_observation_identity() -> None:
     async def scenario() -> None:
         repeated = _world("same", False, "#same")
         environment = StaticEnvironment([repeated, repeated])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
 
         result = await session.resolve_confirmation(_decision(paused))
@@ -562,7 +562,7 @@ def test_confirmation_continues_after_last_policy_turn_and_executes_once() -> No
             ],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(policy, ActionEvaluator(), TaskEvaluator())
         ).start(environment, task)
         paused = await session.run_until_pause()
@@ -591,7 +591,7 @@ def test_wrong_origin_confirmation_records_expected_and_actual_origin() -> None:
 
     async def scenario() -> None:
         environment = WrongOriginEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         await session.resolve_confirmation(_decision(paused))
 
@@ -627,7 +627,7 @@ def test_confirmed_already_satisfied_closes_root_before_new_policy_decision() ->
             fill_world("initial", ""),
             fill_world("confirmed", "desired"),
         ])
-        session = await AgentEpisodeRunner(loop).start(environment, task)
+        session = await (loop).start(environment, task)
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
 
@@ -660,7 +660,7 @@ def test_confirmation_capture_exception_is_counted_and_closes_root(exc) -> None:
 
     async def scenario() -> None:
         environment = RaisingCaptureEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(type(exc)):
             await session.resolve_confirmation(_decision(paused))
@@ -700,7 +700,7 @@ def test_malformed_confirmation_capture_still_has_one_physical_receipt() -> None
 
     async def scenario() -> None:
         environment = MalformedCaptureEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(TypeError, match="malformed contract"):
             await session.resolve_confirmation(_decision(paused))
@@ -730,7 +730,7 @@ def test_foreign_capture_exception_name_cannot_break_physical_accounting() -> No
 
     async def scenario() -> None:
         environment = RaisingCaptureEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(type(foreign_error)):
             await session.resolve_confirmation(_decision(paused))
@@ -760,7 +760,7 @@ def test_confirmation_action_space_exception_closes_same_root_after_capture() ->
         ])
         loop = _loop()
         loop.action_space_builder = RaisingSecondBuilder()
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()
         root_id = session.state.recent_control_transitions[0].transition_id
 
@@ -795,7 +795,7 @@ def test_confirmation_capability_accessor_exception_is_not_a_physical_capture() 
 
     async def scenario() -> None:
         environment = RaisingCapabilitiesEnvironment([_world("old", False, "#old")])
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         environment.raise_capability = True
         with pytest.raises(RuntimeError, match="private capability detail"):
@@ -830,7 +830,7 @@ def test_fresh_risk_block_overrides_prior_confirmation_for_same_subject() -> Non
         ])
         loop = _loop()
         loop.risk_policy = BlockingFreshRisk()
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()
 
         blocked = await session.resolve_confirmation(_decision(paused))
@@ -860,7 +860,7 @@ def test_malformed_risk_policy_result_fails_closed_without_execution(malformed) 
         environment = StaticEnvironment([_world("initial", False, "#initial")])
         loop = _loop()
         loop.risk_policy = MalformedRiskPolicy()
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "risk_assessment_invalid"
         assert environment.execute_calls == 0
@@ -883,7 +883,7 @@ def test_risk_assessment_for_another_selection_cannot_authorize_current_action()
         environment = StaticEnvironment([_world("initial", False, "#initial")])
         loop = _loop()
         loop.risk_policy = WrongSubjectRiskPolicy()
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
         assert result.status is AgentLoopStatus.BLOCKED
         assert result.reason_code == "risk_assessment_invalid"
         assert environment.execute_calls == 0
@@ -916,7 +916,7 @@ def test_confirmed_task_evaluator_exception_preserves_action_epoch_only(exc) -> 
             ],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(FirstPolicy(), ActionEvaluator(), RaisingThirdTaskEvaluator())
         ).start(environment, _task())
         paused = await session.run_until_pause()

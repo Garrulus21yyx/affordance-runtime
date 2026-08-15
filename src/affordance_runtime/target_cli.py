@@ -8,11 +8,11 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from affordance_runtime.agent.runtime import TargetRuntime, TargetRuntimeRunOutcome
 from affordance_runtime.browser_thread_session import ThreadBoundBrowserSession
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
-from affordance_runtime.target_composition import compose_target_client_from_environment
-from affordance_runtime.target_runtime_client import TargetRuntimeClient, TargetRuntimeRunOutcome
+from affordance_runtime.target_composition import compose_target_runtime_from_environment
 from affordance_runtime.task import (
     EvaluationSpec,
     LoopBudget,
@@ -40,8 +40,8 @@ _BOUNDARY_FIELDS = frozenset({
 
 def add_target_run_parser(subcommands: argparse._SubParsersAction) -> None:
     parser = subcommands.add_parser(
-        "target-run",
-        help="run one natural-language task through the target Runtime",
+        "run",
+        help="run one natural-language task through the product Runtime",
     )
     parser.add_argument("--target", required=True)
     parser.add_argument("--instruction", required=True)
@@ -53,6 +53,20 @@ def add_target_run_parser(subcommands: argparse._SubParsersAction) -> None:
         help="JSON stable task boundary; must include success criteria or requested outputs",
     )
     parser.add_argument("--headed", action="store_true")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="affordance-runtime")
+    subcommands = parser.add_subparsers(dest="command", required=True)
+    add_target_run_parser(subcommands)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    result = run_target_command(args)
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0 if result["status"] == "done" else 1
 
 
 def run_target_command(args: argparse.Namespace) -> dict[str, object]:
@@ -123,16 +137,16 @@ def run_target_request(
     request: NaturalLanguageTaskRequest,
     *,
     headless: bool = True,
-    client: TargetRuntimeClient | None = None,
+    runtime: TargetRuntime | None = None,
     session_factory=ThreadBoundBrowserSession.launch,
 ) -> dict[str, object]:
-    target_client = client or compose_target_client_from_environment()
-    admitted = target_client.admit(request)
+    target_runtime = runtime or compose_target_runtime_from_environment()
+    admitted = target_runtime.admit(request)
     if not isinstance(admitted, ReadyTask):
         return target_run_payload(TargetRuntimeRunOutcome(admitted))
     with session_factory(target, headless=headless) as session:
         world = UnifiedWorldEnvironment((DomSurfaceAdapter(session),))
-        outcome = asyncio.run(target_client.run_admitted(world, admitted))
+        outcome = asyncio.run(target_runtime.run_admitted(world, admitted))
     return target_run_payload(outcome)
 
 

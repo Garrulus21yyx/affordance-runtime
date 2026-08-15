@@ -5,7 +5,6 @@ import pytest
 
 from affordance_runtime.agent import (
     Abort,
-    AgentEpisodeRunner,
     AgentFailureCode,
     AgentLoop,
     AgentLoopStatus,
@@ -228,7 +227,7 @@ def test_objective_proposal_and_action_selection_are_separate_phases() -> None:
         SharedTaskEvaluator(),
     )
 
-    result = asyncio.run(AgentEpisodeRunner(loop).run(environment, _task()))
+    result = asyncio.run((loop).run(environment, _task()))
 
     assert result.status is AgentLoopStatus.DONE
     assert proposer.calls == 1
@@ -260,7 +259,7 @@ def test_objective_not_required_is_scoped_once_then_action_policy_runs() -> None
         SharedTaskEvaluator(),
     )
 
-    result = asyncio.run(AgentEpisodeRunner(loop).run(environment, _task()))
+    result = asyncio.run((loop).run(environment, _task()))
 
     assert result.status is AgentLoopStatus.DONE
     assert proposer.calls == 1
@@ -288,7 +287,7 @@ def test_objective_needs_input_pauses_with_a_resumable_typed_request() -> None:
     )
 
     result = asyncio.run(
-        AgentEpisodeRunner(loop).run(StaticEnvironment([_world("obs-1", False)]), _task())
+        (loop).run(StaticEnvironment([_world("obs-1", False)]), _task())
     )
 
     assert result.status is AgentLoopStatus.WAITING_USER
@@ -319,7 +318,7 @@ def test_objective_unsupported_blocks_before_action_policy() -> None:
     )
 
     result = asyncio.run(
-        AgentEpisodeRunner(loop).run(StaticEnvironment([_world("obs-1", False)]), _task())
+        (loop).run(StaticEnvironment([_world("obs-1", False)]), _task())
     )
 
     assert result.status is AgentLoopStatus.BLOCKED
@@ -355,7 +354,7 @@ def test_objective_proposer_requires_explicit_composition_requirement() -> None:
 def test_initial_satisfaction_is_zero_execution_done() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", True)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy([]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 0
         assert result.observation_count == 1
@@ -370,7 +369,7 @@ def test_sent_unknown_confirmed_effect_executes_once_and_completes() -> None:
             [_world("obs-1", False), _world("obs-2", True)],
             [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1
         assert result.observation_count == 2
@@ -384,7 +383,7 @@ def test_sent_unknown_unconfirmed_effect_waits_without_replay() -> None:
             [_world("obs-1", False), _world("obs-2", False)],
             [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.user_input_request is None
         assert result.execution_count == 1
@@ -441,8 +440,8 @@ def test_nonterminal_task_fact_preserves_sent_unknown_pending_without_replay(
             [_sent(DispatchStatus.SENT_UNKNOWN, False)],
         )
         policy = ScriptedPolicy(["first"])
-        runner = AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), CanonicalTaskEvaluator()))
-        session = await runner.start(environment, _task())
+        loop = AgentLoop(policy, SharedActionEvaluator(), CanonicalTaskEvaluator())
+        session = await loop.start(environment, _task())
         result = await session.run_until_pause()
         repeated = await session.run_until_pause()
 
@@ -496,7 +495,7 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
             [_world("obs-1", False), _world("obs-2", False)],
             [_sent()],
         )
-        result = await AgentEpisodeRunner(
+        result = await (
             AgentLoop(
                 ScriptedPolicy(["first"]),
                 RejectingActionEvaluator(),
@@ -517,7 +516,7 @@ def test_nonterminal_verifier_unavailable_does_not_erase_action_rejection() -> N
 def test_unknown_action_and_private_parameter_injection_are_zero_execution() -> None:
     async def scenario(decision) -> AgentLoopStatus:
         environment = StaticEnvironment([_world("obs-1", False)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([decision, decision]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy([decision, decision]))).run(environment, _task())
         assert result.execution_count == 0
         return result.status
 
@@ -538,7 +537,7 @@ def test_selector_injection_on_offered_action_is_rejected() -> None:
 
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
-        result = await AgentEpisodeRunner(_loop(InjectingPolicy())).run(environment, _task())
+        result = await (_loop(InjectingPolicy())).run(environment, _task())
         assert result.status == AgentLoopStatus.BLOCKED
         assert result.execution_count == 0
 
@@ -550,7 +549,7 @@ def test_policy_finish_does_not_complete_an_unsatisfied_task() -> None:
         environment = StaticEnvironment([_world("obs-1", False)])
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", True)], [_sent()])
         proposal = ProposeDone("context:test", (), (), "claim done", ())
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([proposal, "first"]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy([proposal, "first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1
         assert isinstance(result.turns[0].decision, ProposeDone)
@@ -565,7 +564,7 @@ def test_transport_success_without_state_change_is_not_done() -> None:
             [_sent()],
         )
         abort = Abort("context:test", "no progress", "policy")
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         assert result.execution_count == 1
         assert result.turns[0].task_evaluation.status == TaskEvaluationStatus.INCOMPLETE
@@ -576,7 +575,7 @@ def test_transport_success_without_state_change_is_not_done() -> None:
 def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-1", True)], [_sent()])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.message == "static_capture_failed"
         assert result.failure_code is AgentFailureCode.POST_ACTION_ACQUISITION_FAILED
@@ -598,7 +597,7 @@ def test_reused_primary_post_observation_reports_failed_fallback_truth() -> None
 def test_non_low_risk_action_waits_for_confirmation_with_zero_execution() -> None:
     async def scenario() -> None:
         environment = StaticEnvironment([_world("obs-1", False, risk=ActionRisk.MEDIUM)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_CONFIRMATION
         assert result.execution_count == 0
 
@@ -610,7 +609,7 @@ def test_medium_or_high_task_waits_even_for_low_risk_option(risk_profile: RiskPr
     async def scenario() -> None:
         task = replace(_task(), risk_profile=risk_profile)
         environment = StaticEnvironment([_world("obs-1", False)])
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, task)
+        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, task)
 
         assert result.status == AgentLoopStatus.WAITING_CONFIRMATION
         assert result.execution_count == 0
@@ -625,7 +624,7 @@ def test_read_only_task_cannot_select_an_effectful_option() -> None:
         effectful_option = _loop(ScriptedPolicy([])).action_space_builder.build(_task(), world).options[0]
         task = TaskGoal("inspect", "Inspect shared state")
         environment = StaticEnvironment([world])
-        result = await AgentEpisodeRunner(
+        result = await (
             _loop(
                 ScriptedPolicy(
                     [
@@ -651,7 +650,7 @@ def test_stale_binding_reobserves_with_zero_executor_calls() -> None:
     async def scenario() -> None:
         environment = StaleEnvironment([_world("obs-1", False), _world("obs-2", False)])
         abort = Abort("context:test", "still stale", "policy")
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first", abort]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         # Step 12 permits one fresh revalidation attempt after stale NOT_SENT.
         assert result.execution_count == 2
@@ -676,7 +675,7 @@ def test_recent_turns_are_bounded() -> None:
         decisions = [
             RequestObservation("context:test", "world", "structural", "structural", "refresh") for _ in range(15)
         ] + [Abort("context:test", "enough", "policy")]
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(decisions))).run(
+        result = await (_loop(ScriptedPolicy(decisions))).run(
             StaticEnvironment(observations),
             _task(),
         )
@@ -702,7 +701,7 @@ def test_sent_unknown_verified_effect_waits_when_task_is_incomplete() -> None:
         )
         abort = Abort("context:test", "next objective unavailable", "policy")
         loop = AgentLoop(ScriptedPolicy(["first", abort]), SharedActionEvaluator(), IncompleteTaskEvaluator())
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
         assert result.status == AgentLoopStatus.WAITING_USER
         assert result.execution_count == 1
         assert "unknown" in result.message
@@ -721,7 +720,7 @@ def test_observation_budget_is_reserved_before_execution() -> None:
         )
         environment = StaticEnvironment([_world("obs-1", False), _world("obs-2", False)])
         request = RequestObservation("context:test", "world", "structural", "structural", "refresh")
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy([request, "first"]))).run(environment, task)
+        result = await (_loop(ScriptedPolicy([request, "first"]))).run(environment, task)
         assert result.status == AgentLoopStatus.FAILED
         assert "observation budget" in result.message
         assert result.execution_count == 0
@@ -757,7 +756,7 @@ def test_last_turn_refresh_is_evaluated_before_turn_budget(
                 _world("fresh", fresh_enabled),
             ]
         )
-        result = await AgentEpisodeRunner(AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
+        result = await (AgentLoop(policy, SharedActionEvaluator(), SharedTaskEvaluator())).run(
             environment, task
         )
 
@@ -776,7 +775,7 @@ def test_wrong_action_result_lineage_is_rejected_before_evaluation() -> None:
             [_world("obs-1", False), _world("obs-2", True)],
             [ActionResult("wrong-request", DispatchStatus.SENT, "wrong-backend", True)],
         )
-        result = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).run(environment, _task())
+        result = await (_loop(ScriptedPolicy(["first"]))).run(environment, _task())
         assert result.status == AgentLoopStatus.FAILED
         assert "lineage" in result.message
         assert result.turns[0].action_evaluation is None
@@ -809,7 +808,7 @@ def test_not_sent_wrong_lineage_fails_before_evaluation(request_id: str, backend
             ],
         )
         loop = AgentLoop(ScriptedPolicy(["first"]), FailIfEvaluated(), SharedTaskEvaluator())
-        result = await AgentEpisodeRunner(loop).run(environment, _task())
+        result = await (loop).run(environment, _task())
 
         assert result.status == AgentLoopStatus.FAILED
         assert "lineage" in result.message

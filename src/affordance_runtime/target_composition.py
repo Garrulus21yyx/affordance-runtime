@@ -9,18 +9,18 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     TOOL_ACTION_DECISION_CAPABILITIES,
 )
+from affordance_runtime.agent.runtime import TargetRuntime
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
 from affordance_runtime.model_policy import model_policy_from_environment
 from affordance_runtime.model_policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
-from affordance_runtime.target_runtime_client import TargetRuntimeClient
 
 
-def compose_target_client_from_environment(
+def compose_target_runtime_from_environment(
     environment: Mapping[str, str] | None = None,
     *,
     call_timeout_s: float = 90.0,
     interaction_protocol: str | None = None,
-) -> TargetRuntimeClient:
+) -> TargetRuntime:
     """Compose the configured model against the supported product GUI control set."""
 
     selected_protocol = interaction_protocol or GROUNDED_TOOLS_PROTOCOL
@@ -29,7 +29,7 @@ def compose_target_client_from_environment(
         call_timeout_s=call_timeout_s,
         interaction_protocol=selected_protocol,
     )
-    return TargetRuntimeClient(compose_target_runtime(
+    return compose_target_runtime(
         policy,
         ProductionActionEvaluator(),
         ProductionTaskEvaluator(),
@@ -38,4 +38,4 @@ def compose_target_client_from_environment(
             if selected_protocol == GROUNDED_TOOLS_PROTOCOL
             else TOOL_ACTION_DECISION_CAPABILITIES
         ),
-    ))
+    )

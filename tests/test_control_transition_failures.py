@@ -16,7 +16,7 @@ from test_agent_loop import (
     _world,
 )
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionResult, DispatchStatus
@@ -61,7 +61,7 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
             SecondCallTaskEvaluator(RuntimeError("private evaluator detail"))
             if stage == "task" else SharedTaskEvaluator()
         )
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(ScriptedPolicy(["first"]), action_evaluator, task_evaluator)
         ).start(
             StaticEnvironment([_world("before", False), _world("after", True)], [_sent()]),
@@ -101,7 +101,7 @@ def test_evaluator_runtime_error_preserves_incremental_execution_truth(stage: st
 
 def test_evaluator_cancellation_preserves_facts_and_propagates() -> None:
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(
+        session = await (
             AgentLoop(
                 ScriptedPolicy(["first"]),
                 RaisingActionEvaluator(asyncio.CancelledError()),
@@ -139,7 +139,7 @@ def test_execute_exception_latches_terminal_session_without_duplicate_dispatch(e
     async def scenario() -> None:
         policy = ScriptedPolicy(["first"])
         environment = RaisingEnvironment([_world("before", False)])
-        session = await AgentEpisodeRunner(_loop(policy)).start(environment, _task())
+        session = await (_loop(policy)).start(environment, _task())
         with pytest.raises(type(exc)):
             await session.run_until_pause()
 
@@ -182,7 +182,7 @@ def test_foreign_execute_exception_name_cannot_break_physical_accounting() -> No
 
     async def scenario() -> None:
         environment = RaisingEnvironment([_world("before", False)])
-        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+        session = await (_loop(ScriptedPolicy(["first"]))).start(
             environment, _task(),
         )
         with pytest.raises(type(foreign_error)):
@@ -209,7 +209,7 @@ def test_predecision_component_exception_keeps_typed_stage_without_root(componen
             raise RuntimeError("private evaluation detail")
 
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(AgentLoop(
+        session = await (AgentLoop(
             RaisingPolicy() if component == "policy" else ScriptedPolicy(["first"]),
             SharedActionEvaluator(),
             RaisingInitialTaskEvaluator()
@@ -242,7 +242,7 @@ def test_malformed_execute_return_is_one_failed_physical_attempt() -> None:
 
     async def scenario() -> None:
         environment = MalformedEnvironment([_world("before", False)])
-        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+        session = await (_loop(ScriptedPolicy(["first"]))).start(
             environment, _task(),
         )
         with pytest.raises(TypeError, match="malformed contract"):
@@ -259,7 +259,7 @@ def test_malformed_execute_return_is_one_failed_physical_attempt() -> None:
 def test_lineage_mismatch_preserves_truth_without_foreign_identity_material() -> None:
     async def scenario() -> None:
         result = ActionResult("request:wrong", DispatchStatus.SENT, "dom", True)
-        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+        session = await (_loop(ScriptedPolicy(["first"]))).start(
             StaticEnvironment([_world("before", False), _world("after", True)], [result]),
             _task(),
         )
@@ -287,7 +287,7 @@ def test_foreign_execution_identity_is_private_across_transition_and_turn() -> N
 
     async def scenario() -> None:
         result = ActionResult(marker, DispatchStatus.SENT, marker, True)
-        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+        session = await (_loop(ScriptedPolicy(["first"]))).start(
             StaticEnvironment([_world("before", False), _world("after", True)], [result]),
             _task(),
         )
@@ -314,7 +314,7 @@ def test_matching_private_backend_identity_is_always_opaque_in_transition() -> N
         source = replace(before.sources[0], bindings=(binding,))
         before = replace(before, bindings=(binding,), sources=(source,))
         result = ActionResult("*", DispatchStatus.SENT, marker, True)
-        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+        session = await (_loop(ScriptedPolicy(["first"]))).start(
             StaticEnvironment([before, after], [result]), _task(),
         )
         terminal = await session.run_until_pause()
@@ -337,7 +337,7 @@ def test_invalid_probe_metadata_fails_closed_without_polluting_counts(invalid) -
             "*", DispatchStatus.SENT, "dom", True,
             adapter_evidence={"currentness_probe_count": invalid},
         )
-        session = await AgentEpisodeRunner(_loop(ScriptedPolicy(["first"]))).start(
+        session = await (_loop(ScriptedPolicy(["first"]))).start(
             StaticEnvironment([_world("before", False), _world("after", True)], [result]),
             _task(),
         )

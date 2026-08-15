@@ -1,4 +1,4 @@
-"""Admitted fixed-manifest live policy execution through AgentEpisodeRunner."""
+"""Admitted fixed-manifest live policy execution through TargetRuntime."""
 
 from __future__ import annotations
 

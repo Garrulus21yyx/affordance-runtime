@@ -10,7 +10,6 @@ from target_agent_loop_support import (
 )
 
 from affordance_runtime.agent import (
-    AgentEpisodeRunner,
     AgentLoop,
     AgentLoopStatus,
     compose_target_runtime,
@@ -38,7 +37,7 @@ def test_real_browser_dom_short_loop_completes_with_one_semantic_action() -> Non
         task = shared_state_task()
         loop = AgentLoop(FirstOfferedActionPolicy(), SharedStateActionEvaluator(), SharedStateTaskEvaluator())
 
-        result = run_immediate(AgentEpisodeRunner(loop).run(environment, task))
+        result = run_immediate((loop).run(environment, task))
 
         assert result.status == AgentLoopStatus.DONE
         assert result.observation_count == 2
@@ -64,7 +63,7 @@ def test_real_browser_dom_model_policy_completes_through_strict_structured_decis
         policy = first_action_model_policy()
         loop = AgentLoop(policy, SharedStateActionEvaluator(), SharedStateTaskEvaluator())
 
-        result = run_immediate(AgentEpisodeRunner(loop).run(environment, shared_state_task()))
+        result = run_immediate((loop).run(environment, shared_state_task()))
 
         assert result.status == AgentLoopStatus.DONE
         assert result.execution_count == 1

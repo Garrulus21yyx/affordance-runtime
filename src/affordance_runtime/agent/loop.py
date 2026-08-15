@@ -110,8 +110,8 @@ class AgentLoop:
 
     async def start(
         self,
-        task: TaskGoal,
         environment: WorldEnvironment,
+        task: TaskGoal,
         intent_context: IntentContext | None = None,
     ) -> AgentRunSession:
         accounting = RunAccounting()
@@ -194,11 +194,11 @@ class AgentLoop:
 
     async def run(
         self,
-        task: TaskGoal,
         environment: WorldEnvironment,
+        task: TaskGoal,
         intent_context: IntentContext | None = None,
     ) -> AgentResult:
-        return await (await self.start(task, environment, intent_context)).run_until_pause()
+        return await (await self.start(environment, task, intent_context)).run_until_pause()
 
     async def _run_session(self, session: AgentRunSession) -> AgentResult:
         return project_result(session, await self._run_control(session))

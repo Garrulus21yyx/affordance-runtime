@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from test_confirmation_continuation import _decision, _loop, _task, _world
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoopStatus
+from affordance_runtime.agent import AgentLoopStatus
 from affordance_runtime.confirmation import ConfirmationDecision, ConfirmationDecisionKind
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.testing import StaticEnvironment
@@ -29,7 +29,7 @@ def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None
         )
         loop = _loop()
         loop.action_evaluator = evaluator
-        session = await AgentEpisodeRunner(loop).start(environment, _task())
+        session = await (loop).start(environment, _task())
         paused = await session.run_until_pause()
         with pytest.raises(RuntimeError, match="private evaluator detail"):
             await session.resolve_confirmation(_decision(paused))
@@ -51,7 +51,7 @@ def test_action_exception_latches_terminal_result_and_prevents_reentry() -> None
 
 def test_confirmation_without_pending_does_not_create_a_fake_pause() -> None:
     async def scenario() -> None:
-        session = await AgentEpisodeRunner(_loop()).start(
+        session = await (_loop()).start(
             StaticEnvironment([_world("initial", False, "#initial")]), _task()
         )
         rejected = await session.resolve_confirmation(ConfirmationDecision(
@@ -74,7 +74,7 @@ def test_done_session_returns_original_result_after_repeated_confirmation() -> N
             [_world("initial", False, "#initial"), _world("fresh", False, "#fresh"), _world("after", True, "#after")],
             [ActionResult("*", DispatchStatus.SENT, "dom", True)],
         )
-        session = await AgentEpisodeRunner(_loop()).start(environment, _task())
+        session = await (_loop()).start(environment, _task())
         paused = await session.run_until_pause()
         decision = _decision(paused)
         terminal = await session.resolve_confirmation(decision)
@@ -97,7 +97,7 @@ def test_done_session_returns_original_result_after_repeated_confirmation() -> N
 def test_cancelled_and_failed_sessions_cannot_be_rewritten() -> None:
     async def scenario() -> None:
         cancelled_environment = StaticEnvironment([_world("cancel", False, "#cancel")])
-        cancelled_session = await AgentEpisodeRunner(_loop()).start(cancelled_environment, _task())
+        cancelled_session = await (_loop()).start(cancelled_environment, _task())
         pause = await cancelled_session.run_until_pause()
         deny = _decision(pause, ConfirmationDecisionKind.DENY)
         cancelled = await cancelled_session.resolve_confirmation(deny)
@@ -109,7 +109,7 @@ def test_cancelled_and_failed_sessions_cannot_be_rewritten() -> None:
 
         repeated = _world("same", False, "#same")
         failed_environment = StaticEnvironment([repeated, repeated])
-        failed_session = await AgentEpisodeRunner(_loop()).start(failed_environment, _task())
+        failed_session = await (_loop()).start(failed_environment, _task())
         failed_pause = await failed_session.run_until_pause()
         confirm = _decision(failed_pause)
         failed = await failed_session.resolve_confirmation(confirm)

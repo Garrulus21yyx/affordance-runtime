@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from target_agent_loop_support import FirstOfferedActionPolicy
 
-from affordance_runtime.agent import AgentEpisodeRunner, AgentLoop, AgentLoopStatus
+from affordance_runtime.agent import AgentLoop, AgentLoopStatus
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -93,7 +93,7 @@ def test_dynamic_semantic_target_creation_advances_from_incomplete_to_complete()
     )
 
     result = asyncio.run(
-        AgentEpisodeRunner(AgentLoop(FirstOfferedActionPolicy(), InconclusiveActionEvaluator(), evaluator)).run(
+        (AgentLoop(FirstOfferedActionPolicy(), InconclusiveActionEvaluator(), evaluator)).run(
             environment, _task()
         )
     )

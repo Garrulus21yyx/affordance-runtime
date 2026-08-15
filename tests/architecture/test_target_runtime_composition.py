@@ -40,11 +40,12 @@ def test_target_composition_owner_has_no_benchmark_dependency() -> None:
     )
 
 
-def test_target_client_uses_target_runtime_without_legacy_coordinator() -> None:
-    client = RUNTIME / "target_runtime_client.py"
-    imports = _imports(client)
+def test_target_runtime_owns_lifecycle_without_legacy_coordinator_or_runner() -> None:
+    runtime = RUNTIME / "agent" / "runtime.py"
+    imports = _imports(runtime)
 
-    assert "affordance_runtime.agent.runtime" in imports
+    assert "affordance_runtime.agent.loop" in imports
+    assert "affordance_runtime.agent.episode_runner" not in imports
     assert "affordance_runtime.coordinator" not in imports
     assert "affordance_runtime.runtime_client" not in imports
     assert "affordance_runtime.composition" not in imports
@@ -91,7 +92,6 @@ def test_target_product_entry_has_no_legacy_or_benchmark_dependency() -> None:
     for relative in (
         "browser_thread_session.py",
         "target_composition.py",
-        "target_runtime_client.py",
         "target_cli.py",
     ):
         imports = _imports(RUNTIME / relative)
@@ -112,6 +112,56 @@ def test_reference_cutover_readiness_cannot_enter_runtime_or_model_policy() -> N
             if forbidden_import in _imports(path):
                 violations.append(str(path.relative_to(ROOT)))
     assert violations == []
+
+
+def test_pass_through_target_wrappers_are_physically_deleted() -> None:
+    assert not (RUNTIME / "target_runtime_client.py").exists()
+    assert not (RUNTIME / "agent" / "episode_runner.py").exists()
+    facade = (RUNTIME / "agent" / "__init__.py").read_text(encoding="utf-8")
+    root = (RUNTIME / "__init__.py").read_text(encoding="utf-8")
+    assert "AgentEpisodeRunner" not in facade
+    assert "TargetRuntimeClient" not in root
+
+
+def test_root_public_api_exports_only_target_lifecycle_contracts() -> None:
+    root = (RUNTIME / "__init__.py").read_text(encoding="utf-8")
+    for legacy in (
+        "ActionContract",
+        "LegacyRuntimeClient",
+        "PlannerPort",
+        "PlanningRequest",
+        "RunRequest",
+        "RunResult",
+        "RuntimeClient",
+        "UnifiedAffordance",
+        "UnifiedObservation",
+    ):
+        assert f'"{legacy}"' not in root
+    for target in (
+        "AgentRunSession",
+        "NaturalLanguageTaskRequest",
+        "TargetRuntime",
+        "TargetRuntimeRunOutcome",
+        "TaskBoundary",
+        "TaskGoal",
+        "compose_target_runtime_from_environment",
+    ):
+        assert f'"{target}"' in root
+    assert '"compose_target_runtime"' not in root
+
+
+def test_installed_product_and_benchmark_commands_have_separate_entrypoints() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'affordance-runtime = "affordance_runtime.target_cli:main"' in project
+    assert 'affordance-runtime-benchmark = "affordance_runtime.cli:main"' in project
+    assert (RUNTIME / "__main__.py").read_text(encoding="utf-8").strip() == (
+        "from affordance_runtime.target_cli import main\n\nraise SystemExit(main())"
+    )
+    product_cli = (RUNTIME / "target_cli.py").read_text(encoding="utf-8")
+    benchmark_cli = (RUNTIME / "cli.py").read_text(encoding="utf-8")
+    assert 'subcommands.add_parser(\n        "run"' in product_cli
+    assert "target-run" not in product_cli
+    assert 'subcommands.add_parser("run"' not in benchmark_cli
 
 
 def test_all_benchmark_modules_use_product_target_composition_owner() -> None:
@@ -141,6 +191,19 @@ def test_product_composition_is_only_source_target_runtime_constructor() -> None
             if name == "TargetRuntime":
                 violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:{name}")
     assert violations == []
+
+
+def test_target_loop_and_session_have_one_physical_definition_each() -> None:
+    definitions: dict[str, list[str]] = {"AgentLoop": [], "AgentRunSession": []}
+    for path in sorted(RUNTIME.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name in definitions:
+                definitions[node.name].append(str(path.relative_to(ROOT)))
+    assert definitions == {
+        "AgentLoop": ["src/affordance_runtime/agent/loop.py"],
+        "AgentRunSession": ["src/affordance_runtime/agent/session.py"],
+    }
 
 
 def test_target_intake_does_not_import_workflow_or_gui_execution_authority() -> None:
