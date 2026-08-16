@@ -708,6 +708,15 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
     assert recent["action"]["details"]["container"] == "E1"
     assert recent["result"]["details"] == {"container": "E1", "count": 2}
 
+    trace = _policy_trace_event(
+        2,
+        context,
+        CountChildren(context.context_id, "E1", "provider-call:count"),
+        object(),
+    )
+    assert trace["decision"]["container_ref"] == "E1"
+    assert trace["previous_runtime_tool_result"] == {"container": "E1", "count": 2}
+
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
     payload_type = _command_payload_type(
