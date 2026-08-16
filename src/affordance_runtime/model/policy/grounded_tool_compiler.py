@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
+from affordance_runtime.agent.decisions import AgentDecision, SelectAction
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
@@ -62,6 +64,41 @@ class CompiledGroundedTool:
     selector_mode: SelectorMode
     selector_fields: tuple[CompiledSelectorField, ...]
     private_resolutions: tuple[PrivateResolutionEntry, ...]
+
+    def resolve(
+        self,
+        arguments: Mapping[str, object],
+        context_id: str,
+        tool_call_id: str,
+    ) -> AgentDecision:
+        selector_names = tuple(item.public_name for item in self.selector_fields)
+        selector_values = {name: arguments[name] for name in selector_names}
+        matches = tuple(
+            item
+            for item in self.private_resolutions
+            if dict(item.selector_values) == selector_values
+        )
+        if len(matches) != 1:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS
+            )
+        match = matches[0]
+        parameters = {
+            name: value for name, value in arguments.items() if name not in selector_names
+        }
+        try:
+            validate_value(parameters, match.parameter_schema, path="command")
+        except ValueError as exc:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS
+            ) from exc
+        return SelectAction(
+            context_id,
+            match.action_id,
+            parameters,
+            match.destination_id or "",
+            tool_call_id,
+        )
 
 
 class GroundedToolCompiler:

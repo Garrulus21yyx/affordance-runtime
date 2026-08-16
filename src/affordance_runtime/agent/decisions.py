@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias
@@ -134,26 +135,24 @@ class AskUser:
 
 
 @dataclass(frozen=True)
-class CountChildren:
-    """Request deterministic counts over complete current structural containers."""
+class LocalToolResult:
+    """One Registry-resolved local tool call and its deterministic public result."""
 
     context_id: str
-    container_refs: tuple[str, ...]
+    tool_name: str
+    arguments: Mapping[str, object]
+    result: Mapping[str, object]
     tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_tool_call_id(self.tool_call_id)
-        object.__setattr__(self, "container_refs", tuple(self.container_refs))
-        if (
-            not 1 <= len(self.container_refs) <= 12
-            or len(set(self.container_refs)) != len(self.container_refs)
-            or any(
-                re.fullmatch(r"[EN][1-9][0-9]{0,2}", item) is None
-                for item in self.container_refs
-            )
-        ):
-            raise ValueError("count containers require unique current public references")
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", self.tool_name) is None:
+            raise ValueError("local tool result requires a valid registered name")
+        if not self.result:
+            raise ValueError("local tool result cannot be empty")
+        object.__setattr__(self, "arguments", freeze_json(self.arguments))
+        object.__setattr__(self, "result", freeze_json(self.result))
 
 
 @dataclass(frozen=True)
@@ -225,7 +224,7 @@ AgentDecision: TypeAlias = (
     | RequestObservation
     | RequestActionPage
     | AskUser
-    | CountChildren
+    | LocalToolResult
     | FinalResponse
     | ProposeDone
     | Wait

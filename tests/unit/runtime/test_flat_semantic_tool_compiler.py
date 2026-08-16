@@ -13,6 +13,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolCatalog,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
+    RegisteredGroundedTool,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 
@@ -95,8 +96,7 @@ def _catalog(tool) -> GroundedToolCatalog:
     return GroundedToolCatalog(
         "grounded-catalog:" + "b" * 32,
         _CONTEXT,
-        (tool.public_spec,),
-        (tool,),
+        (RegisteredGroundedTool(tool.public_spec, tool),),
         1,
     )
 

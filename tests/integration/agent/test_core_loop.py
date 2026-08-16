@@ -7,7 +7,7 @@ from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    CountChildren,
+    LocalToolResult,
     ProposeDone,
     RequestActionPage,
     RunStatus,
@@ -169,6 +169,7 @@ class CorePolicy:
             if self.turns == 1:
                 return RequestActionPage(context.context_id, query="toggle")
             assert context.actions.active_query == "toggle"
+            assert context.recent_steps.items[-1].semantic_action == "next_actions"
             return Abort(context.context_id, "page observed", AbortCategory.USER_REQUEST)
         if self.choice == "wait":
             if self.turns == 1:
@@ -189,7 +190,13 @@ class CorePolicy:
             return Abort(context.context_id, "input observed", AbortCategory.USER_REQUEST)
         if self.choice == "count_children":
             if self.turns == 1:
-                return CountChildren(context.context_id, ("N1", "N4"), "provider-call:count")
+                return LocalToolResult(
+                    context.context_id,
+                    "count_children",
+                    {"containers": ("N1", "N4")},
+                    {"counts": {"N1": 2, "N4": 3}, "total": 5},
+                    "provider-call:count",
+                )
             step = context.recent_steps.items[-1]
             assert step.semantic_action == "count_children"
             assert step.semantic_summary["result"] == {

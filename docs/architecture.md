@@ -20,7 +20,7 @@ observe selected sources
   -> project task + observation + progress + recent steps
   -> model chooses exactly one offered tool
   -> validate and bind
-  -> execute at most once
+  -> return one local tool result or execute one GUI action at most once
   -> acquire a fresh post-action observation
   -> evaluate action effect and task completion
   -> update RunState or terminate
@@ -48,12 +48,13 @@ effect class, destination semantics, and verification family. It contains reusab
 
 ### PerTurnToolCatalog
 
-The per-turn catalog compiles currently executable semantic actions and the closed control set
-`request_evidence`, `next_actions`, `ask_user`, `wait`, and `abort` into public `ToolSpec` values. `propose_done` is not
-published by the grounded product catalog and is not part of the target control algebra.
-Each tool has one name, description, and strict input schema plus an opaque Runtime binding. The semantic registry
-defines what an action means; the catalog defines what is callable now. They must not be collapsed into a backend
-plugin registry.
+The per-turn catalog is the single model-visible Tool Registry. It compiles currently executable semantic actions,
+local deterministic utilities such as `count_children`, and the closed control set `request_evidence`, `next_actions`,
+`ask_user`, `wait`, and `abort`. `propose_done` is not published by the grounded product catalog and is not part of
+the target control algebra. Each registered entry pairs one name, description, and strict input schema with one
+opaque Runtime binding whose uniform `resolve` contract performs private binding or its local deterministic handler.
+The semantic registry defines what a GUI action means; the per-turn registry defines what is callable now. Neither is
+a backend plugin registry.
 
 The public catalog has one stable tool name per semantic operation. Names come directly from
 `SemanticActionRegistry` (`activate`, `type_text`, `select_option`, and so on); they never contain a digest, target
@@ -83,8 +84,9 @@ OpenAI-compatible response envelope is not a standard chat-completion/tool-call 
 ### CoreAgentLoop
 
 `CoreAgentLoop` owns temporal order and termination. It never interprets page semantics, creates backend selectors,
-or accumulates another control history. For a dispatched action it always performs at most one execution followed by
-a fresh observation, action evaluation, and task evaluation. Runtime owns `max_steps` and stops at zero.
+implements a named tool such as counting, or accumulates another control history. It records a generic Registry-owned
+local result, or for a dispatched GUI action performs at most one execution followed by a fresh observation, action
+evaluation, and task evaluation. Runtime owns `max_steps` and stops at zero.
 
 ### RunState and StepResult
 
@@ -92,8 +94,10 @@ a fresh observation, action evaluation, and task evaluation. Runtime owns `max_s
 terminal status, private counters, and at most eight public recent-step summaries. Counters and limits never enter the
 model context.
 
-`StepResult` is the complete fact for one turn: decision, optional execution, before/after observation identities,
-action evaluation, task evaluation, and resulting status. It is not a log, aggregate root, or reconstruction format.
+`StepResult` is the complete fact for one turn: decision, optional local tool result or GUI execution, before/after
+observation identities, action evaluation, task evaluation, and resulting status. A local result is stored once on
+its resolved call and exposed through `StepResult`, not copied into a second state field. `StepResult` is not a log,
+aggregate root, or reconstruction format.
 
 ## Mechanical action/result identity
 
@@ -192,7 +196,7 @@ Runtime contract:
   return only the user-facing answer and no tool call.
 ```
 
-Control decisions such as `request_observation`, `ask_user`, and `abort` use the same current tool-call protocol. There
+Control decisions such as `request_evidence`, `ask_user`, and `abort` use the same current tool-call protocol. There
 is no parallel legacy `AgentDecision` response schema in the final model boundary.
 
 `ask_user` is a typed pause with content, not a bare status transition. The model owns the exact question because it
@@ -225,9 +229,10 @@ Repair results retain the provider `call_id`. They are dynamic tool results, not
 ## Counting and arithmetic boundary
 
 The public world preserves observed structure and does not inject task-derived counts or answers. When the current
-structural document is complete, the per-turn catalog may expose a deterministic
-`count_children(containers=[...])` utility over current public references. The model chooses every relevant repeated
-group; Runtime returns each mechanical direct-child count and their total as the result of that explicit turn.
+public structural document is complete, the per-turn Registry exposes the deterministic
+`count_children(containers=[...])` entry. Its binding owns the schema, eligible current references, validation, and
+mechanical direct-child handler. The model chooses every relevant repeated group; the binding returns each count and
+their total as the result of that explicit turn.
 Runtime never parses the task to select operands or infer which groups matter. Further arithmetic remains model
 reasoning until benchmark evidence demonstrates a different shared failure after explicit totals are available.
 

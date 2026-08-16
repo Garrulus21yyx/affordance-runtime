@@ -15,7 +15,7 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    CountChildren,
+    LocalToolResult,
     RequestObservation,
     SelectAction,
     Wait,
@@ -391,7 +391,7 @@ def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_r
             (
                 AgentTurnView(
                     "requestobservation",
-                    "request_observation",
+                    "request_evidence",
                     semantic_summary={
                         "purpose": "visual_property",
                         "feedback_code": "observation_acquired",
@@ -630,10 +630,11 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     assert set(catalog.__dataclass_fields__) == {
         "catalog_id",
         "context_id",
-        "specs",
-        "bindings",
+        "tools",
         "serialized_bytes",
     }
+    assert tuple(item.spec for item in catalog.tools) == catalog.specs
+    assert tuple(item.binding for item in catalog.tools) == catalog.bindings
 
 
 @pytest.mark.parametrize(
@@ -679,9 +680,11 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
         expected_context_id=context.context_id,
     )
 
-    assert outcome.decision == CountChildren(
+    assert outcome.decision == LocalToolResult(
         context.context_id,
-        ("E1",),
+        "count_children",
+        {"containers": ("E1",)},
+        {"counts": {"E1": 2}, "total": 2},
         "provider-call:count",
     )
 
@@ -692,9 +695,9 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
         recent_steps=BoundedSection(
             (
                 AgentTurnView(
-                    "countchildren",
+                    "localtoolresult",
                     "count_children",
-                    reason="child_count_ready",
+                    reason="local_tool_result",
                     semantic_summary={
                         "containers": ("E1",),
                         "result": {"counts": {"E1": 2}, "total": 2},
@@ -714,10 +717,16 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
     trace = _policy_trace_event(
         2,
         context,
-        CountChildren(context.context_id, ("E1",), "provider-call:count"),
+        LocalToolResult(
+            context.context_id,
+            "count_children",
+            {"containers": ("E1",)},
+            {"counts": {"E1": 2}, "total": 2},
+            "provider-call:count",
+        ),
         object(),
     )
-    assert trace["decision"]["container_refs"] == ("E1",)
+    assert trace["decision"]["tool_name"] == "count_children"
     assert trace["previous_runtime_tool_result"] == {"counts": {"E1": 2}, "total": 2}
 
 

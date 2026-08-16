@@ -27,6 +27,7 @@ from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolC
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
     GroundedToolCatalog,
+    RegisteredGroundedTool,
 )
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
@@ -237,8 +238,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     catalog = GroundedToolCatalog(
         "grounded-catalog:schema",
         "context:schema",
-        (compiled.public_spec,),
-        (compiled,),
+        (RegisteredGroundedTool(compiled.public_spec, compiled),),
         1,
     )
     arguments = {"target": "E1", "text": "beta"}
@@ -353,8 +353,7 @@ def test_unknown_tool_returns_bounded_current_names_without_guessing_arguments()
     catalog = GroundedToolCatalog(
         "grounded-catalog:owner",
         "context:owner",
-        (canonical.public_spec,),
-        (canonical,),
+        (RegisteredGroundedTool(canonical.public_spec, canonical),),
         1,
     )
     result = ProviderCallNormalizer().normalize(

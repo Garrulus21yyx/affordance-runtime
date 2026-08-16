@@ -6,7 +6,6 @@ from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
-from affordance_runtime.agent.context.actor_world_snapshot import countable_child_groups
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -15,8 +14,8 @@ from affordance_runtime.agent.decisions import (
     AbortCategory,
     AgentDecision,
     AskUser,
-    CountChildren,
     FinalResponse,
+    LocalToolResult,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -283,7 +282,7 @@ class CoreAgentLoop:
                 RequestObservation,
                 RequestActionPage,
                 AskUser,
-                CountChildren,
+                LocalToolResult,
                 FinalResponse,
                 ProposeDone,
                 Wait,
@@ -307,24 +306,14 @@ class CoreAgentLoop:
             return await self._observe(environment, task, state, decision)
         if isinstance(decision, RequestActionPage):
             return self._action_page(task, state, action_space, decision)
-        if isinstance(decision, CountChildren):
-            available_counts = countable_child_groups(context.actor_world)
-            if any(item not in available_counts for item in decision.container_refs):
-                return _same_world_step(
-                    state,
-                    decision,
-                    RunStatus.BLOCKED,
-                    "count_container_unavailable",
-                )
-            counts = {item: available_counts[item] for item in decision.container_refs}
+        if isinstance(decision, LocalToolResult):
             return StepResult(
                 decision,
                 state.current_world,
                 state.current_world,
                 state.current_task_evaluation,
                 RunStatus.RUNNING,
-                feedback="child_count_ready",
-                tool_result={"counts": counts, "total": sum(counts.values())},
+                feedback="local_tool_result",
             )
         if isinstance(decision, Wait):
             return await self._wait(environment, task, state, decision)

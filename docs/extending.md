@@ -48,6 +48,13 @@ an adapter publishes matching `ActionBinding` values in its normalized observati
 and admits model-visible actions; `actions/binder.py` resolves the selected current binding. A new semantic verb changes
 the capability registry and its owning adapters, not `CoreAgentLoop`.
 
+## Add a local deterministic tool
+
+Add one entry to the existing per-turn catalog. The entry must pair its current `ToolSpec` with one private binding
+that implements the same `resolve` contract as every other tool. Its handler may compute only from the current public
+snapshot captured by that binding and must return a generic local tool result. Do not add the tool name, arguments, or
+semantics to `CoreAgentLoop`, `RunState`, context projection, instrumentation, or a second executor/registry.
+
 ## Add a model provider
 
 Prefer a PydanticAI `Model` and `Provider`. OpenAI-compatible services should configure `OpenAIChatModel` with an

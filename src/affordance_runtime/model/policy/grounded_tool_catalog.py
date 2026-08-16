@@ -4,27 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Mapping
 
 from affordance_runtime.actions.schema_validation import validate_value
-from affordance_runtime.agent.context.actor_world_snapshot import countable_child_groups
+from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
-    CountChildren,
+    LocalToolResult,
     RequestActionPage,
     RequestObservation,
-    SelectAction,
     Wait,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.policy.grounded_tool_compiler import (
-    CompiledGroundedTool,
-    GroundedToolCompiler,
-)
+from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     MAX_GROUNDED_WORKSPACE_BYTES,
@@ -33,6 +29,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
+    RegisteredGroundedTool,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.observation_needs import ObservationPurpose
@@ -45,21 +42,107 @@ class _NextActionsBinding:
     relevance_role: str
     cursor: str
 
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        del arguments
+        return RequestActionPage(
+            context_id,
+            self.query,
+            self.target_id,
+            self.relevance_role,
+            self.cursor,
+            tool_call_id,
+        )
+
 
 @dataclass(frozen=True)
 class _EvidenceBinding:
     purposes: tuple[str, ...]
     subjects: Mapping[str, str]
 
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        purpose = str(arguments["purpose"])
+        subject_ref = str(arguments["subject"])
+        evidence_property = str(arguments.get("property", ""))
+        try:
+            return RequestObservation(
+                context_id,
+                purpose,
+                self.subjects[subject_ref],
+                evidence_property,
+                f"agent declared {purpose} evidence gap",
+                tool_call_id=tool_call_id,
+            )
+        except (KeyError, ValueError) as exc:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS
+            ) from exc
+
 
 @dataclass(frozen=True)
 class _ControlBinding:
     kind: str
 
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        if self.kind == "ask_user":
+            requested_fields = arguments.get("requested_fields", ())
+            if not isinstance(requested_fields, list | tuple):
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.INVALID_ARGUMENTS
+                )
+            return AskUser(
+                context_id,
+                str(arguments["question"]),
+                tuple(str(item) for item in requested_fields),
+                tool_call_id,
+            )
+        if self.kind == "wait":
+            max_wait_ms = arguments["max_wait_ms"]
+            if type(max_wait_ms) is not int:
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.INVALID_ARGUMENTS
+                )
+            return Wait(
+                context_id,
+                str(arguments["reason"]),
+                max_wait_ms,
+                tool_call_id,
+            )
+        if self.kind == "abort":
+            return Abort(
+                context_id,
+                str(arguments["reason"]),
+                str(arguments["category"]),
+                tool_call_id,
+            )
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+
 
 @dataclass(frozen=True)
 class _CountChildrenBinding:
-    container_refs: tuple[str, ...]
+    counts: Mapping[str, int]
+
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        raw_refs = arguments["containers"]
+        if not isinstance(raw_refs, list | tuple):
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS
+            )
+        container_refs = tuple(str(item) for item in raw_refs)
+        if (
+            len(set(container_refs)) != len(container_refs)
+            or any(item not in self.counts for item in container_refs)
+        ):
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS
+            )
+        counts = {item: self.counts[item] for item in container_refs}
+        return LocalToolResult(
+            context_id,
+            "count_children",
+            {"containers": container_refs},
+            {"counts": counts, "total": sum(counts.values())},
+            tool_call_id,
+        )
 
 
 def compile_grounded_tool_catalog(
@@ -68,19 +151,18 @@ def compile_grounded_tool_catalog(
 ) -> GroundedToolCatalog:
     if phase is not GroundedToolPhase.ACTION_SELECTION:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    specs: list[ToolSpec] = []
-    bindings: list[object] = []
-    if phase is GroundedToolPhase.ACTION_SELECTION:
-        purposes: set[str] = set()
-        for capability in context.world.observation_capabilities:
-            if not _observation_tool_needed(context, capability):
-                continue
+    registered: list[RegisteredGroundedTool] = []
+
+    purposes: set[str] = set()
+    for capability in context.world.observation_capabilities:
+        if _observation_tool_needed(context, capability):
             purposes.update(set(capability.purposes) & _AGENT_PURPOSES)
-        if purposes:
-            refs = context.grounding.private_subject_bindings()
-            subjects = {"current_world": "current_world", **refs}
-            ordered_purposes = tuple(sorted(purposes))
-            specs.append(ToolSpec(
+    if purposes:
+        refs = context.grounding.private_subject_bindings()
+        subjects = {"current_world": "current_world", **refs}
+        ordered_purposes = tuple(sorted(purposes))
+        registered.append(RegisteredGroundedTool(
+            ToolSpec(
                 "request_evidence",
                 "Declare a semantic evidence gap. Runtime admits the need and chooses the provider, source, assurance, and acquisition mode.",
                 _object_schema(
@@ -94,55 +176,57 @@ def compile_grounded_tool_catalog(
                     },
                     ("purpose", "subject"),
                 ),
-            ))
-            bindings.append(_EvidenceBinding(ordered_purposes, subjects))
+            ),
+            _EvidenceBinding(ordered_purposes, subjects),
+        ))
 
-    if phase is GroundedToolPhase.ACTION_SELECTION:
-        compiled = GroundedToolCompiler().compile(
+    registered.extend(
+        RegisteredGroundedTool(item.public_spec, item)
+        for item in GroundedToolCompiler().compile(
             context.actions.options,
             context_id=context.context_id,
         )
-        specs.extend(item.public_spec for item in compiled)
-        bindings.extend(compiled)
+    )
 
-    child_counts = countable_child_groups(context.actor_world)
+    child_counts = _countable_child_groups(context.actor_world)
     if child_counts:
-        specs.append(ToolSpec(
-            "count_children",
-            "Required for counting repeated visible items: select every relevant current group; Runtime returns each exact direct-child count and their total.",
-            _object_schema(
-                {
-                    "containers": {
-                        "type": "array",
-                        "description": "all relevant repeated-group references from the current observation",
-                        "items": {"type": "string", "enum": list(child_counts)},
-                        "minItems": 1,
-                        "maxItems": len(child_counts),
-                    }
-                },
-                ("containers",),
+        registered.append(RegisteredGroundedTool(
+            ToolSpec(
+                "count_children",
+                "Mechanically count direct children of selected complete repeated groups and return each count plus the total.",
+                _object_schema(
+                    {
+                        "containers": {
+                            "type": "array",
+                            "description": "all relevant repeated-group references from the current observation",
+                            "items": {"type": "string", "enum": list(child_counts)},
+                            "minItems": 1,
+                            "maxItems": len(child_counts),
+                        }
+                    },
+                    ("containers",),
+                ),
             ),
+            _CountChildrenBinding(child_counts),
         ))
-        bindings.append(_CountChildrenBinding(tuple(child_counts)))
 
-    if phase is GroundedToolPhase.ACTION_SELECTION and context.actions.has_more:
-        specs.append(
+    if context.actions.has_more:
+        registered.append(RegisteredGroundedTool(
             ToolSpec(
                 "next_actions",
                 "Inspect the next in-memory page of currently legal actions.",
                 _object_schema({}),
-            )
-        )
-        bindings.append(
+            ),
             _NextActionsBinding(
                 context.actions.active_query,
                 context.actions.active_target_filter,
                 context.actions.active_relevance_filter,
                 context.actions.next_cursor,
-            )
-        )
-    specs.extend(
-        (
+            ),
+        ))
+
+    registered.extend((
+        RegisteredGroundedTool(
             ToolSpec(
                 "ask_user",
                 "Pause for task information unavailable from the interface. Never use this for action authorization or risk confirmation.",
@@ -158,6 +242,9 @@ def compile_grounded_tool_catalog(
                     ("question",),
                 ),
             ),
+            _ControlBinding("ask_user"),
+        ),
+        RegisteredGroundedTool(
             ToolSpec(
                 "wait",
                 "Wait briefly for the current interface to settle, then observe again.",
@@ -169,6 +256,9 @@ def compile_grounded_tool_catalog(
                     ("reason", "max_wait_ms"),
                 ),
             ),
+            _ControlBinding("wait"),
+        ),
+        RegisteredGroundedTool(
             ToolSpec(
                 "abort",
                 "Stop when the task cannot continue safely or with current capabilities.",
@@ -183,15 +273,13 @@ def compile_grounded_tool_catalog(
                     ("reason", "category"),
                 ),
             ),
-        )
-    )
-    bindings.extend(
-        (
-            _ControlBinding("ask_user"),
-            _ControlBinding("wait"),
             _ControlBinding("abort"),
-        )
-    )
+        ),
+    ))
+    names = tuple(tool.spec.name for tool in registered)
+    if len(names) != len(set(names)):
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    specs = [tool.spec for tool in registered]
     if not specs:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -210,7 +298,7 @@ def compile_grounded_tool_catalog(
     digest = hashlib.sha256(f"{context.context_id}\0{encoded}".encode()).hexdigest()[:32]
     catalog_id = f"grounded-catalog:{digest}"
     return GroundedToolCatalog(
-        catalog_id, context.context_id, tuple(specs), tuple(bindings), encoded_bytes
+        catalog_id, context.context_id, tuple(registered), encoded_bytes
     )
 
 
@@ -239,105 +327,18 @@ def resolve_grounded_tool_call(
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-    if isinstance(binding, _NextActionsBinding):
-        decision = RequestActionPage(
-            expected_context_id, binding.query, binding.target_id, binding.relevance_role, binding.cursor
-        )
-        return GroundedActionResolution(replace(decision, tool_call_id=call.call_id))
-    if isinstance(binding, _EvidenceBinding):
-        purpose = str(call.arguments["purpose"])
-        subject_ref = str(call.arguments["subject"])
-        evidence_property = str(call.arguments.get("property", ""))
-        try:
-            evidence_decision = RequestObservation(
-                expected_context_id,
-                purpose,
-                binding.subjects[subject_ref],
-                evidence_property,
-                f"agent declared {purpose} evidence gap",
-            )
-        except (KeyError, ValueError) as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS
-            ) from exc
-        return GroundedActionResolution(replace(evidence_decision, tool_call_id=call.call_id))
-    if isinstance(binding, _CountChildrenBinding):
-        raw_refs = call.arguments["containers"]
-        if not isinstance(raw_refs, list | tuple):
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS
-            )
-        container_refs = tuple(str(item) for item in raw_refs)
-        if (
-            len(set(container_refs)) != len(container_refs)
-            or any(item not in binding.container_refs for item in container_refs)
-        ):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        return GroundedActionResolution(
-            CountChildren(expected_context_id, container_refs, call.call_id)
-        )
-    if isinstance(binding, _ControlBinding):
-        control_decision: AgentDecision
-        if binding.kind == "ask_user":
-            requested_fields = call.arguments.get("requested_fields", ())
-            if not isinstance(requested_fields, list | tuple):
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            control_decision = AskUser(
-                expected_context_id,
-                str(call.arguments["question"]),
-                tuple(str(item) for item in requested_fields),
-                call.call_id,
-            )
-        elif binding.kind == "wait":
-            max_wait_ms = call.arguments["max_wait_ms"]
-            if type(max_wait_ms) is not int:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            control_decision = Wait(
-                expected_context_id,
-                str(call.arguments["reason"]),
-                max_wait_ms,
-                call.call_id,
-            )
-        elif binding.kind == "abort":
-            control_decision = Abort(
-                expected_context_id,
-                str(call.arguments["reason"]),
-                str(call.arguments["category"]),
-                call.call_id,
-            )
-        else:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        return GroundedActionResolution(control_decision)
-    if not isinstance(binding, CompiledGroundedTool):
+    resolver = getattr(binding, "resolve", None)
+    if not callable(resolver):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    selector_names = tuple(item.public_name for item in binding.selector_fields)
-    selector_values = {name: call.arguments[name] for name in selector_names}
-    matches = tuple(
-        item for item in binding.private_resolutions
-        if dict(item.selector_values) == selector_values
-    )
-    if len(matches) != 1:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-    match = matches[0]
-    parameters = {
-        name: value for name, value in call.arguments.items()
-        if name not in selector_names
-    }
     try:
-        validate_value(parameters, match.parameter_schema, path="command")
-    except ValueError as exc:
+        decision = resolver(call.arguments, expected_context_id, call.call_id)
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, GroundedToolResolutionError):
+            raise
         raise GroundedToolResolutionError(
             GroundedToolResolutionCode.INVALID_ARGUMENTS
         ) from exc
-    return GroundedActionResolution(
-        SelectAction(
-            expected_context_id,
-            match.action_id,
-            parameters,
-            match.destination_id or "",
-            call.call_id,
-        ),
-    )
+    return GroundedActionResolution(decision)
 
 
 def resolve_grounded_action_call(
@@ -384,3 +385,30 @@ _AGENT_PURPOSES = frozenset({
     ObservationPurpose.TEXT_IN_IMAGE.value,
     ObservationPurpose.CRITERION_VERIFICATION.value,
 })
+
+
+def _countable_child_groups(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:
+    """Return exact counts only for complete homogeneous public groups."""
+
+    counts: dict[str, int] = {}
+
+    def visit(node: ActorWorldNodeView) -> None:
+        if len(node.children) >= 2 and _homogeneous_children(node.children):
+            counts[node.ref] = len(node.children)
+        for child in node.children:
+            visit(child)
+
+    for document in snapshot.documents:
+        if not document.truncated:
+            for root in document.roots:
+                visit(root)
+    return counts
+
+
+def _homogeneous_children(children: tuple[ActorWorldNodeView, ...]) -> bool:
+    first = children[0]
+    shape = (first.role, first.label, first.state, len(first.children))
+    return all(
+        (child.role, child.label, child.state, len(child.children)) == shape
+        for child in children[1:]
+    )

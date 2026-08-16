@@ -264,34 +264,6 @@ def actor_world_for_delivery(
     )
 
 
-def countable_child_groups(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:
-    """Exact direct-child counts available from fully retained repeated groups."""
-
-    counts: dict[str, int] = {}
-
-    def visit(node: ActorWorldNodeView) -> None:
-        if len(node.children) >= 2 and _homogeneous_actor_children(node.children):
-            counts[node.ref] = len(node.children)
-        for child in node.children:
-            visit(child)
-
-    for document in snapshot.documents:
-        if document.truncated:
-            continue
-        for root in document.roots:
-            visit(root)
-    return freeze_json(counts)
-
-
-def _homogeneous_actor_children(children: tuple[ActorWorldNodeView, ...]) -> bool:
-    first = children[0]
-    shape = (first.role, first.label, first.state, len(first.children))
-    return all(
-        (child.role, child.label, child.state, len(child.children)) == shape
-        for child in children[1:]
-    )
-
-
 def project_actor_world_snapshot(
     observation: WorldObservation,
     world: ModelWorldView,

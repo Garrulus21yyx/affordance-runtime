@@ -191,6 +191,19 @@ def test_step_result_has_one_root_owned_projection_chain() -> None:
     assert "ModelPort" not in projection and "provider" not in projection
 
 
+def test_named_local_tool_semantics_remain_catalog_owned() -> None:
+    owners = {
+        path.relative_to(RUNTIME).as_posix()
+        for path in _python_sources()
+        if "count_children" in path.read_text(encoding="utf-8")
+    }
+
+    assert owners == {
+        "agent/decision_capability.py",
+        "model/policy/grounded_tool_catalog.py",
+    }
+
+
 def test_normative_architecture_contains_the_single_authority_map() -> None:
     architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
 

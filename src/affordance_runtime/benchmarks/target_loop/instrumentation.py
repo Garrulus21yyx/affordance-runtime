@@ -7,7 +7,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import CountChildren, RequestObservation, SelectAction
+from affordance_runtime.agent.decisions import LocalToolResult, RequestObservation, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -173,7 +173,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     if context.recent_steps.items:
         latest_step = context.recent_steps.items[-1]
         tool_result = latest_step.semantic_summary.get("result")
-        if latest_step.semantic_action == "count_children" and isinstance(tool_result, Mapping):
+        if isinstance(tool_result, Mapping):
             event["previous_runtime_tool_result"] = to_json_compatible(tool_result)
     adapter = _dynamic_tool_adapter(policy)
     if adapter is not None:
@@ -207,7 +207,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         )
         event["structured_output_repair_failed"] = bool(getattr(adapter, "last_structured_output_repair_failed", False))
     decision = outcome
-    if isinstance(decision, (SelectAction, RequestObservation, CountChildren)):
+    if isinstance(decision, (SelectAction, RequestObservation, LocalToolResult)):
         event["outcome"] = type(decision).__name__
         event["decision"] = _decision_trace(decision)
         if isinstance(decision, SelectAction):
@@ -299,7 +299,8 @@ def _decision_trace(decision):
         "relevance_role",
         "cursor",
         "category",
-        "container_refs",
+        "tool_name",
+        "arguments",
     ):
         item = getattr(decision, name, None)
         if item not in (None, ""):

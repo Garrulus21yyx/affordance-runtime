@@ -15,12 +15,11 @@ TaskGoal
   -> choose observation sources
   -> acquire DOM / AX / visual / WoT evidence
   -> fuse one current WorldObservation
-  -> compile the current semantic ToolCatalog
+  -> compile the current per-turn Tool Registry
   -> project task, current observation, verified progress, and recent steps
   -> model chooses exactly one offered tool
-  -> Runtime validates, binds, and executes
-  -> acquire a fresh post-action observation
-  -> evaluate the action and task
+  -> Runtime validates and resolves one local result, or binds and executes one GUI action
+  -> after GUI dispatch, acquire a fresh observation and evaluate the action and task
   -> continue or finish
 ```
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Protocol
 
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
@@ -34,28 +36,56 @@ class GroundedToolResolutionCode(StrEnum):
     INVALID_ARGUMENT = "invalid_argument"
 
 
+class GroundedToolBinding(Protocol):
+    """One registered current tool's private call resolver or local handler."""
+
+    def resolve(
+        self,
+        arguments: Mapping[str, object],
+        context_id: str,
+        tool_call_id: str,
+    ) -> AgentDecision: ...
+
+
+@dataclass(frozen=True)
+class RegisteredGroundedTool:
+    """One atomic public schema/private binding pair in the per-turn Registry."""
+
+    spec: ToolSpec
+    binding: GroundedToolBinding
+
+    def __post_init__(self) -> None:
+        if not callable(getattr(self.binding, "resolve", None)):
+            raise TypeError("registered grounded tool requires one resolver")
+
+
 @dataclass(frozen=True)
 class GroundedToolCatalog:
     """Current public tools and their opaque Runtime bindings; never a context owner."""
 
     catalog_id: str
     context_id: str
-    specs: tuple[ToolSpec, ...]
-    bindings: tuple[object, ...]
+    tools: tuple[RegisteredGroundedTool, ...]
     serialized_bytes: int
 
     def __post_init__(self) -> None:
         if not self.catalog_id.startswith("grounded-catalog:") or not self.context_id.startswith("context:"):
             raise ValueError("grounded catalog identity is invalid")
         if (
-            not 1 <= len(self.specs) <= MAX_GROUNDED_TOOL_COUNT
-            or len(self.specs) != len(self.bindings)
-            or len({item.name for item in self.specs}) != len(self.specs)
+            not 1 <= len(self.tools) <= MAX_GROUNDED_TOOL_COUNT
+            or len({item.spec.name for item in self.tools}) != len(self.tools)
             or not 0 < self.serialized_bytes <= MAX_GROUNDED_WORKSPACE_BYTES
         ):
-            raise ValueError("grounded catalog must align specs and bindings")
-        object.__setattr__(self, "specs", tuple(self.specs))
-        object.__setattr__(self, "bindings", tuple(self.bindings))
+            raise ValueError("grounded catalog registrations are invalid")
+        object.__setattr__(self, "tools", tuple(self.tools))
+
+    @property
+    def specs(self) -> tuple[ToolSpec, ...]:
+        return tuple(item.spec for item in self.tools)
+
+    @property
+    def bindings(self) -> tuple[GroundedToolBinding, ...]:
+        return tuple(item.binding for item in self.tools)
 
 
 @dataclass(frozen=True)

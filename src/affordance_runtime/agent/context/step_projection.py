@@ -10,8 +10,8 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
-    CountChildren,
     FinalResponse,
+    LocalToolResult,
     ProposeDone,
     RequestActionPage,
     RequestObservation,
@@ -34,7 +34,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             RequestObservation,
             RequestActionPage,
             AskUser,
-            CountChildren,
+            LocalToolResult,
             FinalResponse,
             ProposeDone,
             Wait,
@@ -91,8 +91,8 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         }
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}
-    if isinstance(decision, CountChildren):
-        return {"containers": decision.container_refs}
+    if isinstance(decision, LocalToolResult):
+        return project_public_value(decision.arguments)
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
     if isinstance(decision, ProposeDone):
@@ -109,11 +109,12 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
 
 
 def _control_tool_name(decision: AgentDecision) -> str:
+    if isinstance(decision, LocalToolResult):
+        return decision.tool_name
     return {
-        RequestObservation: "request_observation",
-        RequestActionPage: "request_action_page",
+        RequestObservation: "request_evidence",
+        RequestActionPage: "next_actions",
         AskUser: "ask_user",
-        CountChildren: "count_children",
         FinalResponse: "final_response",
         ProposeDone: "propose_done",
         Wait: "wait",
