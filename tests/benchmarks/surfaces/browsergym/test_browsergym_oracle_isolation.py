@@ -3,12 +3,14 @@ from pathlib import Path
 from affordance_runtime.benchmarks.external_smoke.manifest import EXTERNAL_SMOKE_MANIFEST
 
 
-def test_conformance_policy_uses_production_policy_parser_and_agent_loop() -> None:
+def test_conformance_policy_uses_typed_agent_context_and_production_loop() -> None:
     composition = Path("src/affordance_runtime/benchmarks/external_smoke/composition.py").read_text()
     runner = Path("src/affordance_runtime/benchmarks/target_loop/runner.py").read_text()
     assert "ModelBackedAgentPolicy" in composition
     assert "ResolvedModelDecision" in composition
-    assert "payload_to_decision" in composition
+    assert "request.agent_context" in composition
+    assert "payload_to_decision" not in composition
+    assert "serialized_context" not in composition
     assert "TargetRuntime" in runner
     assert "AgentEpisodeRunner(" not in runner
     assert "AgentLoop(" not in runner

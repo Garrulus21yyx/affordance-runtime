@@ -20,8 +20,6 @@ from affordance_runtime.model.policy.contracts import (
     ResolvedModelDecision,
 )
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
-from affordance_runtime.model.policy.prompt import MODEL_POLICY_INSTRUCTIONS, SCHEMA_VERSION, decision_response_schema
-from affordance_runtime.model.policy.serialization import serialize_agent_context
 
 _PUBLIC_FAILURES = {
     ModelFailureKind.PROVIDER_UNAVAILABLE: "model decision provider is unavailable",
@@ -65,12 +63,7 @@ class ModelBackedAgentPolicy:
         object.__setattr__(self, "last_provider_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         try:
-            request = _build_request(
-                context,
-                include_serialized_context=bool(
-                    getattr(self.port, "requires_serialized_context", True)
-                ),
-            )
+            request = _build_request(context)
         except Exception:
             return _policy_failure(ModelFailure(ModelFailureKind.INTERNAL_ERROR, "request construction failed", False))
         try:
@@ -102,19 +95,10 @@ class ModelBackedAgentPolicy:
         )
 
 
-def _build_request(
-    context: AgentContext,
-    *,
-    include_serialized_context: bool = True,
-) -> ModelDecisionRequest:
+def _build_request(context: AgentContext) -> ModelDecisionRequest:
     suffix = hashlib.sha256(context.context_id.encode()).hexdigest()[:24]
     return ModelDecisionRequest(
         request_id=f"model-request:{suffix}",
-        serialized_context=(serialize_agent_context(context) if include_serialized_context else ""),
-        schema_version=SCHEMA_VERSION,
-        instructions=MODEL_POLICY_INSTRUCTIONS,
-        decision_schema=decision_response_schema(),
-        image_inputs=context.image_inputs,
         agent_context=context,
     )
 

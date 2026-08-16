@@ -9,7 +9,6 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    ProposeDone,
     RequestActionPage,
     RequestObservation,
     Wait,
@@ -21,10 +20,6 @@ from affordance_runtime.agent.context import (
 )
 from affordance_runtime.agent.context.step_projection import project_decision_summary
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    AgentTargetView,
-    AgentWorldView,
-)
 
 
 def _task() -> TaskGoal:
@@ -44,16 +39,8 @@ def _task() -> TaskGoal:
     )
 
 
-def _world() -> AgentWorldView:
-    return AgentWorldView(
-        "world-internal",
-        (
-            AgentTargetView("message", "button", "Send message"),
-            AgentTargetView("alice", "person", "Alice"),
-        ),
-        (),
-        {"dom": "complete"},
-    )
+def _labels() -> dict[str, str]:
+    return {"message": "Send message", "alice": "Alice"}
 
 
 def _space() -> ActionSpace:
@@ -94,7 +81,7 @@ def test_task_projection_is_bounded_and_secret_safe() -> None:
 
 
 def test_action_space_projection_excludes_runtime_route_identity() -> None:
-    view = project_action_space(_space(), _world())
+    view = project_action_space(_space(), _labels())
     option = view.options[0]
 
     assert option.action_id == "action:opaque"
@@ -275,7 +262,6 @@ def test_parameter_schema_projection_rejects_unsupported_or_malformed_shapes(sch
         (RequestObservation("context:1", "entity_discovery", "target:1", "", "inspect"), "subject_id"),
         (RequestActionPage("context:1", query="find"), "query"),
         (AskUser("context:1", "Which account?", ("account",)), "question"),
-        (ProposeDone("context:1", ("criterion:1",), ("fact:1",), "done", ()), "claimed_criteria"),
         (Wait("context:1", "settle", 25), "max_wait_ms"),
         (Abort("context:1", "stop", "policy"), "category"),
     ),

@@ -32,10 +32,9 @@ class PricingPolicy:
         assert "/api/pricing" not in repr(context)
         assert "selector" not in repr(context)
         desired_label = "Show Pro limits" if self.calls == 1 else "Show Enterprise limits"
-        labels = {item.target_id: item.label for item in context.world.targets.items}
         option = next(
             item for item in context.actions.options
-            if labels.get(item.target_id) == desired_label
+            if item.target_label == desired_label
         )
         return SelectAction(context.context_id, option.action_id)
 

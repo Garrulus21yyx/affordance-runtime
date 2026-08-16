@@ -85,6 +85,9 @@ Do not copy these into the system prompt.
 The public context has one task, one current observation, one verified progress view, and at most eight nested
 action/result `StepView` records. A context change must remove or replace an existing field rather than add another
 projection of the same fact. Budget counters, backend data, old worlds, benchmark data, and telemetry are forbidden.
+`WorldObservation` is the Runtime authority, `ActorWorldSnapshot` is the decision model's only current-world
+projection, and `GroundedPolicyContextBinder` is the only provider-message assembler. Do not add serialized-context
+compatibility, another world view on `AgentContext`, or a provider-specific context builder.
 
 Required tests snapshot the complete public shape, prove that current observation overrides history, verify mechanical
 action/result pairing and truncation, and reject private-field leakage.

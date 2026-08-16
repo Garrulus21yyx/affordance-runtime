@@ -10,7 +10,8 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.actions.classification import classify_dom_action
-from affordance_runtime.agent.decisions import ProposeDone
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.execution.contracts import (
     ActionIntent,
     ActionResult,
@@ -22,13 +23,11 @@ from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERA
 from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
-    CoverageState,
     ObservationSourceProfile,
     SemanticTarget,
     SurfaceObservation,
     WorldFusion,
     WorldObservation,
-    build_agent_world_view,
 )
 
 
@@ -64,12 +63,18 @@ def _world() -> WorldObservation:
 
 
 def test_policy_view_hides_binding_payload_and_preserves_source_instance_coverage() -> None:
-    view = build_agent_world_view(_world())
+    view = project_model_world(_world(), ContextProjectionBudget())
 
     assert "selector" not in repr(view)
     assert "credential" not in repr(view)
-    assert view.targets[0].supported_actions == ("activate",)
-    assert view.coverage["obs-1"] == CoverageState.COMPLETE
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        risk_profile=RiskProfile.LOW,
+    )
+    assert ActionSpaceBuilder().build(task, _world()).options[0].semantic_action == "activate"
+    assert view.sources[0].projection_coverage == "complete"
 
 
 def test_action_space_is_current_and_schema_is_immutable() -> None:
@@ -110,8 +115,6 @@ def test_action_and_result_contracts_do_not_mix_binding_or_completion() -> None:
     assert "binding" not in {item.name for item in fields(ActionIntent)}
     assert "task_complete" not in {item.name for item in fields(ActionResult)}
     assert ActionResult("r1", DispatchStatus.SENT, "dom", True).transport_success
-    proposal = ProposeDone("context:test", (), (), "suggested", ())
-    assert isinstance(proposal, ProposeDone)
 
 
 def test_surface_primitives_share_canonical_semantic_vocabulary() -> None:

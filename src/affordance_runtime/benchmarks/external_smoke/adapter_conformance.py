@@ -237,8 +237,14 @@ def _oracle_errors(ports: list[BrowserGymStructuredDecisionPort]) -> tuple[str, 
     errors = []
     task_ids = tuple(item.benchmark_task_id.casefold() for item in EXTERNAL_SMOKE_MANIFEST.cases)
     for port in ports:
-        for serialized in port.serialized_contexts:
-            lowered = serialized.casefold()
+        for context in port.public_contexts:
+            lowered = repr((
+                context.task,
+                context.progress,
+                context.actions,
+                context.recent_steps,
+                context.actor_world,
+            )).casefold()
             if any(value in lowered for value in (*task_ids, *_ORACLE_MARKERS)):
-                errors.append("private benchmark or oracle material entered serialized AgentContext")
+                errors.append("private benchmark or oracle material entered AgentContext")
     return tuple(errors)

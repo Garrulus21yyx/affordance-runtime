@@ -40,5 +40,5 @@ def perception_uses_images(
             source.projection_coverage != "complete"
             or source.conflict_status != "clear"
         )
-        for source in context.world.sources
+        for source in context.actor_world.sources
     )

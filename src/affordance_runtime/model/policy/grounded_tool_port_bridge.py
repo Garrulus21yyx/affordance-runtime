@@ -50,7 +50,6 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationResult,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.policy.spec import SCHEMA_VERSION
 from affordance_runtime.model.policy.strict_json import validate_json_tree
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
@@ -146,10 +145,6 @@ class CompactJsonDecisionPort:
         return GROUNDED_TOOLS_PROTOCOL
 
     @property
-    def requires_serialized_context(self) -> bool:
-        return False
-
-    @property
     def provider_id(self) -> str:
         return self.port.provider
 
@@ -186,9 +181,7 @@ class CompactJsonDecisionPort:
         object.__setattr__(self, "last_structured_output_repair_failed", False)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
 
-    def _compile_catalog(self, request: ModelDecisionRequest, expected_schema: str, catalog_builder):
-        if request.schema_version != expected_schema or request.agent_context is None:
-            raise ValueError("grounded tool request lacks canonical context")
+    def _compile_catalog(self, request: ModelDecisionRequest, catalog_builder):
         catalog = catalog_builder(request.agent_context)
         object.__setattr__(self, "last_catalog_count", len(catalog.specs))
         object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
@@ -457,14 +450,10 @@ class CompactJsonDecisionPort:
     ) -> ResolvedModelDecision | ModelFailure:
         self._reset_diagnostics()
         try:
-            catalog = self._compile_catalog(request, SCHEMA_VERSION, compile_grounded_action_catalog)
-            context = request.agent_context
-            if context is None:
-                raise ValueError("grounded action requires one canonical AgentContext")
+            catalog = self._compile_catalog(request, compile_grounded_action_catalog)
             messages = self.context_binder.action_messages(
-                context,
-                catalog.specs,
                 request,
+                catalog.specs,
                 supports_multimodal=self.port.supports_multimodal,
                 perception_profile=self.perception_profile,
                 include_tool_menu=True,
@@ -670,7 +659,6 @@ def _metadata(
         perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",
         grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
-        decision_schema_digest="compact_json",
     )
 
 

@@ -21,7 +21,6 @@ _AGENT_EVIDENCE_PURPOSES = frozenset({
     ObservationPurpose.TEXT_IN_IMAGE,
     ObservationPurpose.CRITERION_VERIFICATION,
 })
-MAX_RESULT_SUMMARY_CHARS = 1_024
 MAX_FINAL_RESPONSE_CHARS = 8_000
 _MAX_COLLECTION = 32
 _TOOL_CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
@@ -168,27 +167,6 @@ class FinalResponse:
 
 
 @dataclass(frozen=True)
-class ProposeDone:
-    context_id: str
-    claimed_criteria: tuple[str, ...]
-    evidence_refs: tuple[str, ...]
-    result_summary: str
-    unresolved_items: tuple[str, ...]
-    tool_call_id: str = ""
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        _require_tool_call_id(self.tool_call_id)
-        _require_bounded(self.result_summary, MAX_RESULT_SUMMARY_CHARS, "completion result summary")
-        object.__setattr__(self, "claimed_criteria", tuple(self.claimed_criteria))
-        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
-        object.__setattr__(self, "unresolved_items", tuple(self.unresolved_items))
-        _require_collection(self.claimed_criteria, "claimed criteria", item_limit=240)
-        _require_collection(self.evidence_refs, "evidence refs")
-        _require_collection(self.unresolved_items, "unresolved items", item_limit=500)
-
-
-@dataclass(frozen=True)
 class Wait:
     context_id: str
     reason: str
@@ -226,7 +204,6 @@ AgentDecision: TypeAlias = (
     | AskUser
     | LocalToolResult
     | FinalResponse
-    | ProposeDone
     | Wait
     | Abort
 )

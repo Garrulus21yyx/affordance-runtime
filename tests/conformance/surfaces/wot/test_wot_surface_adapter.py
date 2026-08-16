@@ -8,14 +8,13 @@ from affordance_runtime.actions import (
     ActionBinder,
     ActionSpaceBuilder,
 )
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    build_agent_world_view,
-)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from tests.support.observation_acquisition import acquire_observation
 
@@ -125,7 +124,7 @@ def test_wot_adapter_observes_state_keeps_route_private_and_executes_once() -> N
         transport = FakeWotTransport()
         _, world, observed, request = await _bound(transport)
 
-        view = build_agent_world_view(observed)
+        view = project_model_world(observed, ContextProjectionBudget())
         assert "href" not in repr(view)
         assert "method" not in repr(view)
         assert "security" not in repr(view)

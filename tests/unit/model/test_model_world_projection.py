@@ -11,7 +11,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     ObservationConflict,
@@ -108,7 +107,17 @@ def test_verified_progress_contains_only_evaluator_supported_facts() -> None:
         evaluation,
     )
 
-    assert tuple(item.fact_ref for item in context.progress.verified_public_facts) == ("fact:verified",)
+    assert tuple(item.fact_ref for item in context.progress.verified_public_facts) == ("F1",)
+    assert tuple(item.subject_id for item in context.progress.verified_public_facts) == ("E1",)
+    verified = context.progress.verified_public_facts[0]
+    matching = tuple(
+        fact
+        for document in context.actor_world.documents
+        for root in document.roots
+        for fact in root.facts
+        if fact.field == "verified"
+    )
+    assert matching[0].evidence_ref == verified.fact_ref
     assert not hasattr(context, "budgets")
 
 
@@ -132,9 +141,9 @@ def test_model_artifact_is_resolvable_without_exposing_its_private_value() -> No
         _evaluation(task, observation.observation_id),
     )
 
-    artifact = context.world.artifact_summaries.items[0]
-    assert WorldEvidenceIndex.from_observation(observation).resolve(artifact.evidence_ref)
-    assert artifact.kind == "receipt"
+    artifact = context.actor_world.artifacts[0]
+    assert artifact["evidence_ref"] == "A1"
+    assert artifact["kind"] == "receipt"
     assert "/private/receipt.pdf" not in repr(context)
     assert "secret" not in repr(context)
 
@@ -165,7 +174,8 @@ def test_complete_context_respects_one_total_byte_budget() -> None:
     )
 
     assert serialized_size(context) <= budget.max_total_serialized_bytes
-    assert context.world.targets.truncated
+    assert context.actor_world.traversal is not None
+    assert context.actor_world.traversal.status != "complete"
 
 
 def test_action_page_reports_runtime_membership_and_truncation_truthfully() -> None:

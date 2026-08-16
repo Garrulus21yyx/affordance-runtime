@@ -21,7 +21,6 @@ from affordance_runtime.agent import (
     Wait,
 )
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure
-from affordance_runtime.agent.context.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
@@ -168,9 +167,8 @@ def _nested_context():
 def _bound_public_context(context) -> dict[str, object]:
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     messages = GroundedPolicyContextBinder().action_messages(
-        context,
-        catalog.specs,
         _action_request(context),
+        catalog.specs,
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
         include_tool_menu=True,
@@ -353,10 +351,17 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
 
 def test_structure_first_does_not_attach_image_just_because_world_has_visual_source() -> None:
     context = _context()
-    visual_source = replace(context.world.sources[0], modality="visual")
+    visual_source = replace(
+        context.actor_world.sources[0],
+        source_ref="S2",
+        modality="visual",
+    )
     context = replace(
         context,
-        world=replace(context.world, sources=(*context.world.sources, visual_source)),
+        actor_world=replace(
+            context.actor_world,
+            sources=(*context.actor_world.sources, visual_source),
+        ),
     )
     port = _ActionPort()
     adapter = CompactJsonDecisionPort(
@@ -380,13 +385,17 @@ def test_structure_first_does_not_attach_image_just_because_world_has_visual_sou
 def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_request() -> None:
     context = _context()
     visual_source = replace(
-        context.world.sources[0],
+        context.actor_world.sources[0],
+        source_ref="S2",
         modality="visual",
         projection_coverage="partial",
     )
     context = replace(
         context,
-        world=replace(context.world, sources=(*context.world.sources, visual_source)),
+        actor_world=replace(
+            context.actor_world,
+            sources=(*context.actor_world.sources, visual_source),
+        ),
         recent_steps=BoundedSection(
             (
                 AgentTurnView(
@@ -444,11 +453,11 @@ def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
     context = _context()
     context = replace(
         context,
-        world=replace(
-            context.world,
+        actor_world=replace(
+            context.actor_world,
             observation_capabilities=(
-                ObservationCapabilityView("structural", "structural", ("criterion_verification",)),
-                ObservationCapabilityView("visual", "weak", ("entity_discovery",)),
+                {"modality": "structural", "assurance": "structural", "purposes": ("criterion_verification",)},
+                {"modality": "visual", "assurance": "weak", "purposes": ("entity_discovery",)},
             ),
         ),
     )
@@ -1047,11 +1056,11 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
     context = _context()
     context = replace(
         context,
-        world=replace(
-            context.world,
+        actor_world=replace(
+            context.actor_world,
             observation_capabilities=(
-                ObservationCapabilityView("structural", "structural", ("criterion_verification",)),
-                ObservationCapabilityView("visual", "weak", ("entity_discovery",)),
+                {"modality": "structural", "assurance": "structural", "purposes": ("criterion_verification",)},
+                {"modality": "visual", "assurance": "weak", "purposes": ("entity_discovery",)},
             ),
         ),
         recent_steps=BoundedSection(

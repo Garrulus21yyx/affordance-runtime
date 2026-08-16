@@ -10,7 +10,6 @@ from typing import Any
 from affordance_runtime.confirmation.contracts import ConfirmationRequest
 from affordance_runtime.execution.contracts import ActionIntent
 from affordance_runtime.risk.contracts import RiskAssessment
-from affordance_runtime.world.view import AgentWorldView
 
 _SECRET_MARKERS = (
     "password",
@@ -29,10 +28,10 @@ _MAX_DEPTH = 2
 def build_confirmation_request(
     intent: ActionIntent,
     assessment: RiskAssessment,
-    world: AgentWorldView,
+    target_labels: Mapping[str, str],
 ) -> ConfirmationRequest:
-    target = _display_target(world, intent.target_id)
-    destination = _display_target(world, intent.destination_id) if intent.destination_id else ""
+    target = _display_target(target_labels, intent.target_id)
+    destination = _display_target(target_labels, intent.destination_id) if intent.destination_id else ""
     parameters = json.dumps(_bounded(intent.parameters), sort_keys=True, ensure_ascii=False)
     effects = ", ".join(assessment.semantic_effects) or "no declared effect"
     consequences = ", ".join(assessment.consequences)
@@ -54,9 +53,9 @@ def build_confirmation_request(
     )
 
 
-def _display_target(world: AgentWorldView, target_id: str) -> str:
-    target = next((item for item in world.targets if item.target_id == target_id), None)
-    return f"{target.label} ({target_id})" if target is not None else target_id
+def _display_target(target_labels: Mapping[str, str], target_id: str) -> str:
+    label = target_labels.get(target_id)
+    return f"{label} ({target_id})" if label else target_id
 
 
 def _bounded(value: Any, depth: int = 0) -> Any:

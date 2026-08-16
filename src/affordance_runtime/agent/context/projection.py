@@ -17,7 +17,6 @@ from affordance_runtime.agent.context.contracts import (
     AgentDestinationView,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.world.view import AgentWorldView
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.contracts import AgentTaskView
@@ -54,14 +53,14 @@ def project_task(task: TaskGoal) -> AgentTaskView:
 
 def project_action_space(
     action_space: ActionSpace,
-    world: AgentWorldView,
+    target_labels: Mapping[str, str],
     relevance: Mapping[str, ActionRelevance] | None = None,
 ) -> AgentActionSpaceView:
     return AgentActionSpaceView(
         _project_action_options(
             action_space,
             tuple(option.action_id for option in action_space.options),
-            world,
+            target_labels,
             relevance or {},
             max_destinations_per_option=max(
                 (len(option.eligible_destination_ids) for option in action_space.options),
@@ -74,7 +73,7 @@ def project_action_space(
 def project_action_page(
     action_space: ActionSpace,
     page: InternalActionPage,
-    world: AgentWorldView,
+    target_labels: Mapping[str, str],
     max_destinations_per_option: int,
 ) -> AgentActionSpaceView:
     if page.action_space_id != action_space.action_space_id:
@@ -83,7 +82,7 @@ def project_action_page(
         _project_action_options(
             action_space,
             page.visible_action_ids,
-            world,
+            target_labels,
             dict(page.relevance),
             max_destinations_per_option,
             dict(page.visible_destinations),
@@ -94,12 +93,12 @@ def project_action_page(
 def _project_action_options(
     action_space: ActionSpace,
     visible_action_ids: tuple[str, ...],
-    world: AgentWorldView,
+    target_labels: Mapping[str, str],
     relevance: Mapping[str, ActionRelevance],
     max_destinations_per_option: int,
     visible_destinations: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[AgentActionOptionView, ...]:
-    labels = {target.target_id: target.label for target in world.targets}
+    labels = dict(target_labels)
     by_id = {option.action_id: option for option in action_space.options}
     return tuple(
             AgentActionOptionView(

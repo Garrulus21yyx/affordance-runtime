@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -106,7 +105,6 @@ class ActorWorldMediaView:
     source_ref: str
     kind: str
     mime_type: str
-    sha256: str
     availability: str
     attachment: str
     aligned_node_refs: tuple[str, ...] = ()
@@ -156,7 +154,6 @@ class ActorWorldFacetCollectionView:
 
 @dataclass(frozen=True)
 class ActorWorldSnapshot:
-    snapshot_id: str
     documents: tuple[ActorWorldDocumentView, ...]
     sources: tuple[ActorWorldSourceView, ...]
     media: tuple[ActorWorldMediaView, ...]
@@ -243,7 +240,6 @@ def actor_world_for_delivery(
             item.source_ref,
             item.kind,
             item.mime_type,
-            item.sha256,
             item.availability,
             "attached" if include_images else "not_attached",
             item.aligned_node_refs,
@@ -251,7 +247,6 @@ def actor_world_for_delivery(
         for item in snapshot.media
     )
     return ActorWorldSnapshot(
-        snapshot.snapshot_id,
         documents,
         snapshot.sources,
         media,
@@ -270,6 +265,7 @@ def project_actor_world_snapshot(
     grounding: AgentGroundingIndexView,
     image_inputs: tuple[AgentImageInput, ...],
     max_structure_nodes: int = 128,
+    fact_refs: Mapping[str, str] | None = None,
 ) -> ActorWorldSnapshot:
     """Close one Actor view without consulting ActionSpace or ToolSpec."""
 
@@ -290,9 +286,11 @@ def project_actor_world_snapshot(
     facts_by_subject: dict[str, list[ActorWorldFactView]] = defaultdict(list)
     evidence_by_subject: dict[str, dict[str, str]] = defaultdict(dict)
     global_facts: list[ActorWorldGlobalFactView] = []
-    fact_refs = {fact.fact_ref: f"F{index}" for index, fact in enumerate(world.facts.items, 1)}
+    stable_fact_refs = dict(fact_refs or {
+        fact.fact_ref: f"F{index}" for index, fact in enumerate(world.facts.items, 1)
+    })
     for fact in world.facts.items:
-        evidence = fact_refs[fact.fact_ref]
+        evidence = stable_fact_refs[fact.fact_ref]
         target = visible.get(fact.subject_id)
         if target is not None and target.state.get(fact.predicate) == fact.value:
             evidence_by_subject[fact.subject_id].setdefault(fact.predicate, evidence)
@@ -465,7 +463,6 @@ def project_actor_world_snapshot(
             _media_source_ref(observation, image.evidence_ref, source_refs),
             "screenshot",
             image.mime_type,
-            image.sha256,
             "current",
             "not_attached",
             _media_aligned_refs(observation, image.evidence_ref, refs),
@@ -502,7 +499,6 @@ def project_actor_world_snapshot(
         ),
     )
     return ActorWorldSnapshot(
-        f"snapshot:{hashlib.sha256(observation.observation_id.encode()).hexdigest()[:16]}",
         documents,
         sources,
         media,
@@ -654,7 +650,12 @@ def _structure_documents(
             if item.semantic_target_id
         }
         if lens_index == 0:
-            required = set(by_id)
+            required = {
+                item.structure_id
+                for item in source.structure
+                if not item.semantic_target_id
+                or canonical_for_structure.get(item.structure_id) in visible
+            }
         else:
             required = {
                 item.structure_id

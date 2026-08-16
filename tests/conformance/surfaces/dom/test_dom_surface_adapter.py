@@ -5,12 +5,11 @@ from affordance_runtime.actions import (
     ActionBinder,
     ActionSpaceBuilder,
 )
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    build_agent_world_view,
-)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 
@@ -62,7 +61,7 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
         acquisition = await world.reset(task)
         assert acquisition.observation is not None
         before = acquisition.observation
-        view = build_agent_world_view(before)
+        view = project_model_world(before, ContextProjectionBudget())
         space = ActionSpaceBuilder().build(task, before)
         option = space.options[0]
         request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), before, "context:test")

@@ -154,9 +154,9 @@ def compile_grounded_tool_catalog(
     registered: list[RegisteredGroundedTool] = []
 
     purposes: set[str] = set()
-    for capability in context.world.observation_capabilities:
+    for capability in context.actor_world.observation_capabilities:
         if _observation_tool_needed(context, capability):
-            purposes.update(set(capability.purposes) & _AGENT_PURPOSES)
+            purposes.update(set(capability["purposes"]) & _AGENT_PURPOSES)
     if purposes:
         refs = context.grounding.private_subject_bindings()
         subjects = {"current_world": "current_world", **refs}
@@ -366,13 +366,13 @@ def _object_schema(properties: Mapping[str, object], required=()):
 def _observation_tool_needed(context: AgentContext, capability) -> bool:
     current = tuple(
         source
-        for source in context.world.sources
-        if source.modality == capability.modality
+        for source in context.actor_world.sources
+        if source.modality == capability["modality"]
         and source.freshness == "current"
     )
     return not current or any(
         source.projection_coverage != "complete"
-        or source.conflict_status != "clear"
+        or bool(context.actor_world.conflicts)
         for source in current
     )
 

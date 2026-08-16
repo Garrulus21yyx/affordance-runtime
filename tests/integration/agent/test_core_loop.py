@@ -8,7 +8,6 @@ from affordance_runtime.agent import (
     Abort,
     AskUser,
     LocalToolResult,
-    ProposeDone,
     RequestActionPage,
     RunStatus,
     SelectAction,
@@ -175,13 +174,6 @@ class CorePolicy:
             if self.turns == 1:
                 return Wait(context.context_id, "allow interface to settle", 5)
             return Abort(context.context_id, "wait observed", AbortCategory.USER_REQUEST)
-        if self.choice == "premature_done":
-            if self.turns == 1:
-                return ProposeDone(context.context_id, (), (), "done", ())
-            assert len(context.recent_steps.items) == 1
-            assert context.recent_steps.items[0].semantic_action == "propose_done"
-            assert context.recent_steps.items[0].reason == "completion_not_verified"
-            return Abort(context.context_id, "feedback observed", AbortCategory.USER_REQUEST)
         if self.choice == "ask_user":
             if self.turns == 1:
                 return AskUser(context.context_id, "Which value?", ("value",))
@@ -361,18 +353,6 @@ def test_wait_uses_runtime_boundary_then_refreshes_observation() -> None:
         assert state.observation_count == 2
         assert state.waited_ms == 5
         assert waiter.waits == [5]
-
-    asyncio.run(scenario())
-
-
-def test_unverified_done_proposal_returns_to_the_model_loop() -> None:
-    async def scenario() -> None:
-        environment = ScriptedEnvironment(initial_observation=_world("before", False))
-        state = await _runtime("premature_done").run_task(environment, _task())
-
-        assert state.status is RunStatus.CANCELLED
-        assert state.step_count == 2
-        assert state.execution_count == 0
 
     asyncio.run(scenario())
 

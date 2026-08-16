@@ -6,10 +6,6 @@ from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    AgentTargetView,
-    AgentWorldView,
-)
 
 
 def _selection() -> AdmittedActionSelection:
@@ -35,16 +31,8 @@ def _selection() -> AdmittedActionSelection:
     )
 
 
-def _world(target_label: str = "Quarterly report") -> AgentWorldView:
-    return AgentWorldView(
-        "observation:1",
-        (
-            AgentTargetView("message:quarterly", "message", target_label),
-            AgentTargetView("person:alice", "person", "Alice"),
-        ),
-        (),
-        {"dom": "complete"},
-    )
+def _labels(target_label: str = "Quarterly report") -> dict[str, str]:
+    return {"message:quarterly": target_label, "person:alice": "Alice"}
 
 
 def _assessment(selection: AdmittedActionSelection):
@@ -65,7 +53,7 @@ def test_confirmation_summary_presents_semantics_and_redacts_secret_like_paramet
         dict(selection.parameters),
         selection.destination_id,
     )
-    request = build_confirmation_request(intent, _assessment(selection), _world())
+    request = build_confirmation_request(intent, _assessment(selection), _labels())
 
     assert "drag_to" in request.summary
     assert "Quarterly report (message:quarterly)" in request.summary
@@ -84,8 +72,8 @@ def test_display_label_change_updates_summary_without_changing_subject() -> None
     assessment = _assessment(selection)
     intent = ActionIntent("drag_to", "message:quarterly", dict(selection.parameters), "person:alice")
 
-    first = build_confirmation_request(intent, assessment, _world("Quarterly report"))
-    updated = build_confirmation_request(intent, assessment, _world("Q3 report"))
+    first = build_confirmation_request(intent, assessment, _labels("Quarterly report"))
+    updated = build_confirmation_request(intent, assessment, _labels("Q3 report"))
 
     assert first.subject_id == updated.subject_id
     assert first.summary != updated.summary

@@ -8,12 +8,11 @@ from affordance_runtime.actions import (
     ActionBinder,
     ActionSpaceBuilder,
 )
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.surfaces.visual import VisualFrame, VisualSurfaceAdapter, VisualViewport
 from affordance_runtime.surfaces.visual.grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    build_agent_world_view,
-)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from tests.support.observation_acquisition import acquire_observation
 
@@ -102,7 +101,7 @@ def test_visual_adapter_keeps_coordinates_private_and_uses_one_probe_and_pointer
         proposer = Proposer()
         _, world, observed, request = await _bound(session, proposer)
 
-        assert "action_point" not in repr(build_agent_world_view(observed))
+        assert "action_point" not in repr(project_model_world(observed, ContextProjectionBudget()))
         assert request.binding.payload["action_point_xy"] == (40.0, 40.0)
         result = (await world.execute(request)).result
 
@@ -239,7 +238,7 @@ def test_visual_state_projection_keeps_only_bounded_semantic_values() -> None:
             "expanded": False,
             "value": ["bounded", 2],
         }
-        assert "selector" not in repr(build_agent_world_view(observed))
+        assert "selector" not in repr(project_model_world(observed, ContextProjectionBudget()))
 
     asyncio.run(scenario())
 

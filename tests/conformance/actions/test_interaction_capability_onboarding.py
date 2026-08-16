@@ -57,7 +57,6 @@ from affordance_runtime.world import (
     SemanticTarget,
     StateFact,
     WorldObservation,
-    build_agent_world_view,
 )
 from tests.support.world import fused_world
 
@@ -220,7 +219,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     option = action_space.options[0]
     projected = project_action_space(
         action_space,
-        build_agent_world_view(world),
+        {item.target_id: item.label for item in world.targets},
     ).options[0]
     projected = replace(
         projected,
@@ -291,14 +290,12 @@ def test_state_compatibility_projection_rejects_contradiction_at_construction() 
 def test_tool_compilation_cannot_delete_actor_world_nodes_or_facts() -> None:
     task, world = _type_text_world()
     action_space = ActionSpaceBuilder().build(task, world)
-    actor_world = build_agent_world_view(world)
-    before_targets = actor_world.targets
-    before_facts = actor_world.facts
+    labels = {item.target_id: item.label for item in world.targets}
+    before_labels = dict(labels)
 
-    project_action_space(action_space, actor_world)
+    project_action_space(action_space, labels)
 
-    assert actor_world.targets == before_targets
-    assert actor_world.facts == before_facts
+    assert labels == before_labels
 
 
 def test_normalizer_import_boundary_and_deleted_owners_are_unreachable() -> None:
@@ -336,7 +333,10 @@ def test_normalizer_import_boundary_and_deleted_owners_are_unreachable() -> None
 def test_unknown_tool_returns_bounded_current_names_without_guessing_arguments() -> None:
     task, world = _type_text_world()
     action_space = ActionSpaceBuilder().build(task, world)
-    projected = project_action_space(action_space, build_agent_world_view(world)).options[0]
+    projected = project_action_space(
+        action_space,
+        {item.target_id: item.label for item in world.targets},
+    ).options[0]
     projected = replace(
         projected,
         operation="type_text",

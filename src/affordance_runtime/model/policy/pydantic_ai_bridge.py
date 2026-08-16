@@ -69,10 +69,6 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
 
     @property
-    def requires_serialized_context(self) -> bool:
-        return False
-
-    @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
         return GROUNDED_ACTION_DECISION_CAPABILITIES
 
@@ -96,8 +92,6 @@ class PydanticAIGroundedDecisionPort:
         self,
         request: ModelDecisionRequest,
     ) -> ResolvedModelDecision | ModelFailure:
-        if request.agent_context is None:
-            return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded PydanticAI request lacks AgentContext")
         try:
             from pydantic_ai import (
                 Agent,
@@ -123,9 +117,8 @@ class PydanticAIGroundedDecisionPort:
         try:
             catalog = compile_grounded_action_catalog(request.agent_context)
             messages = self.context_binder.action_messages(
-                request.agent_context,
-                catalog.specs,
                 request,
+                catalog.specs,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
                 include_tool_menu=False,
@@ -218,7 +211,7 @@ class PydanticAIGroundedDecisionPort:
                 model_id=self.model_id,
                 endpoint_class="openai-compatible",
                 prompt_version=self.context_binder.prompts.version,
-                schema_version=request.schema_version,
+                schema_version=GROUNDED_TOOLS_PROTOCOL,
                 prompt_tokens=run_usage.input_tokens,
                 completion_tokens=run_usage.output_tokens,
                 total_tokens=run_usage.input_tokens + run_usage.output_tokens,

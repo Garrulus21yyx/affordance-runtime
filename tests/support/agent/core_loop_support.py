@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from affordance_runtime.actions import ActionBinding, ActionRisk
-from affordance_runtime.agent import Abort, ProposeDone, RequestObservation, SelectAction
+from affordance_runtime.agent import Abort, RequestObservation, SelectAction
 from affordance_runtime.evaluation import (
     ActionEvaluation,
     ActionEvaluationStatus,
@@ -83,7 +83,7 @@ class ScriptedPolicy:
         decision = self.decisions.pop(0)
         if decision == "first":
             return SelectAction(context.context_id, context.actions.options[0].action_id)
-        if isinstance(decision, (SelectAction, RequestObservation, ProposeDone, Abort)):
+        if isinstance(decision, (SelectAction, RequestObservation, Abort)):
             return replace(decision, context_id=context.context_id)
         return decision
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.paging import ActionPager, InternalActionPage
@@ -17,16 +18,23 @@ from affordance_runtime.agent.context.context import (
     ContextIdentity,
 )
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
-from affordance_runtime.agent.context.grounding_projection import GroundingProjection
+from affordance_runtime.agent.context.grounding_projection import (
+    GroundingProjection,
+    GroundingProjectionResult,
+)
 from affordance_runtime.agent.context.projection import project_action_page
 from affordance_runtime.agent.context.task_projection import project_task
-from affordance_runtime.agent.context.world_projection import fit_model_world, project_model_world
+from affordance_runtime.agent.context.world_projection import (
+    ModelWorldView,
+    PublicFactView,
+    fit_model_world,
+    project_model_world,
+)
 from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.view import build_agent_world_view
 
 _PINNED_ACTION_WORLD_RESERVE_BYTES = 4_096
 
@@ -58,7 +66,7 @@ class ContextBuilder:
         projected_actions = project_action_page(
             action_space,
             page,
-            build_agent_world_view(observation),
+            {item.target_id: item.label for item in observation.targets},
             self.budget.max_destinations_per_option,
         )
         shown_actions = projected_actions.options
@@ -100,23 +108,11 @@ class ContextBuilder:
             actions,
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
-        progress = _progress_view(
+        return _fit_context(
+            identity.context_id,
             task,
             task_evaluation,
-            world.facts.items,
-            self.budget.max_unresolved_items,
-        )
-        actor_world = project_actor_world_snapshot(
             observation,
-            world,
-            grounding.index,
-            grounding.images,
-            max_structure_nodes=self.budget.max_targets * 2,
-        )
-        context = AgentContext(
-            identity.context_id,
-            project_task(task),
-            progress,
             world,
             actions,
             BoundedSection(
@@ -124,19 +120,10 @@ class ContextBuilder:
                 history_total,
                 history_total > len(history_items),
             ),
-            actor_world,
-            grounding.images,
-            grounding.index,
+            grounding,
+            self.budget,
+            pinned_targets,
         )
-        context = _fit_context(context, self.budget.max_total_serialized_bytes, pinned_targets)
-        actor_world = project_actor_world_snapshot(
-            observation,
-            context.world,
-            grounding.index,
-            grounding.images,
-            max_structure_nodes=self.budget.max_targets * 2,
-        )
-        return replace(context, actor_world=actor_world)
 
     def page(
         self,
@@ -190,7 +177,14 @@ def _pinned_targets(actions, observation, limit: int) -> tuple[str, ...]:
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
 
-def _progress_view(task, evaluation, facts, max_unresolved: int) -> AgentProgressView:
+def _progress_view(
+    task: TaskGoal,
+    evaluation: TaskEvaluation,
+    facts: tuple[PublicFactView, ...],
+    fact_refs: Mapping[str, str],
+    target_refs: Mapping[str, str],
+    max_unresolved: int,
+) -> AgentProgressView:
     statuses = {item.criterion_id: item.status for item in evaluation.criteria}
     unresolved = tuple(
         criterion_id(item)
@@ -205,7 +199,15 @@ def _progress_view(task, evaluation, facts, max_unresolved: int) -> AgentProgres
         *(ref for item in evaluation.criteria for ref in item.evidence_refs),
         *(ref for item in evaluation.outputs for ref in item.evidence_refs),
     }
-    verified = tuple(item for item in facts if item.fact_ref in evidence_refs)
+    verified = tuple(
+        replace(
+            item,
+            fact_ref=fact_refs[item.fact_ref],
+            subject_id=target_refs.get(item.subject_id, "task"),
+        )
+        for item in facts
+        if item.fact_ref in evidence_refs
+    )
     return AgentProgressView(
         validated_task_status=evaluation.status,
         verified_public_facts=verified,
@@ -225,37 +227,74 @@ def _progress_view(task, evaluation, facts, max_unresolved: int) -> AgentProgres
 
 
 def _fit_context(
-    context: AgentContext,
-    max_bytes: int,
+    context_id: str,
+    task: TaskGoal,
+    task_evaluation: TaskEvaluation,
+    observation: WorldObservation,
+    world: ModelWorldView,
+    actions: AgentActionPageView,
+    history: BoundedSection[AgentTurnView],
+    grounding: GroundingProjectionResult,
+    budget: ContextProjectionBudget,
     pinned_target_ids: tuple[str, ...],
 ) -> AgentContext:
-    while _semantic_serialized_size(context) > max_bytes:
+    include_verified_facts = True
+    task_view = project_task(task)
+    fact_refs = {item.fact_ref: f"F{index}" for index, item in enumerate(world.facts.items, 1)}
+    progress_basis = _progress_view(
+        task,
+        task_evaluation,
+        world.facts.items,
+        fact_refs,
+        grounding.index.target_refs,
+        budget.max_unresolved_items,
+    )
+    while True:
+        progress = progress_basis
+        if not include_verified_facts and progress.verified_public_facts:
+            progress = replace(progress, verified_public_facts=(), truncated=True)
+        context = AgentContext(
+            context_id,
+            task_view,
+            progress,
+            actions,
+            history,
+            project_actor_world_snapshot(
+                observation,
+                world,
+                grounding.index,
+                grounding.images,
+                max_structure_nodes=budget.max_targets * 2,
+                fact_refs=fact_refs,
+            ),
+            grounding.images,
+            grounding.index,
+        )
+        if _semantic_serialized_size(context) <= budget.max_total_serialized_bytes:
+            return context
         try:
             smaller_world = fit_model_world(
-                context.world,
-                max(1, serialized_size(context.world) - 1),
+                world,
+                max(1, serialized_size(world) - 1),
                 pinned_target_ids,
                 allow_target_removal=False,
             )
         except ValueError:
-            smaller_world = context.world
-        if smaller_world != context.world:
-            context = replace(context, world=smaller_world)
+            smaller_world = world
+        if smaller_world != world:
+            world = smaller_world
             continue
-        if context.progress.verified_public_facts:
-            progress = replace(context.progress, verified_public_facts=(), truncated=True)
-            context = replace(context, progress=progress)
+        if include_verified_facts and progress.verified_public_facts:
+            include_verified_facts = False
             continue
-        if len(context.recent_steps.items) > 1:
+        if len(history.items) > 1:
             history = BoundedSection(
-                context.recent_steps.items[1:],
-                context.recent_steps.total_count,
-                context.recent_steps.total_count > len(context.recent_steps.items) - 1,
+                history.items[1:],
+                history.total_count,
+                history.total_count > len(history.items) - 1,
             )
-            context = replace(context, recent_steps=history)
             continue
         raise ValueError("AgentContext fixed sections exceed the total serialized byte budget")
-    return context
 
 
 def _semantic_serialized_size(context: AgentContext) -> int:

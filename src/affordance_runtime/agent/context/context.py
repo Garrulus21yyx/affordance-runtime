@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
-from affordance_runtime.agent.context.world_projection import ModelWorldView, PublicFactView
+from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.immutable import freeze_json
 
 if TYPE_CHECKING:
@@ -121,7 +121,6 @@ class AgentContext:
     context_id: str
     task: AgentTaskView
     progress: AgentProgressView
-    world: ModelWorldView
     actions: AgentActionPageView
     recent_steps: BoundedSection[AgentTurnView]
     actor_world: ActorWorldSnapshot

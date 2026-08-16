@@ -27,7 +27,7 @@ Every live run records, per case:
 Reports must not contain prompts, model responses, selectors, coordinates, credentials, hidden state, oracle values,
 expected answers, or benchmark reward payloads exposed to the model.
 
-Every core-loop run must additionally record the prompt version, context schema version, tool-catalog schema version,
+Every core-loop run must additionally record the prompt version, typed-context protocol version, tool-catalog schema version,
 Runtime engine, and model-adapter choice as metadata. These values support reproducibility but cannot alter product
 behavior. During cutover, `compact-json` and `pydantic-ai` are compared only where the same model supports both wire
 contracts, with the same provider, prompt, context, catalog, cohort, seed, and step budget. A model change is reported

@@ -12,10 +12,6 @@ from affordance_runtime.confirmation import (
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    AgentTargetView,
-    AgentWorldView,
-)
 
 
 def test_confirmation_decision_rejects_non_enum_kind() -> None:
@@ -49,13 +45,7 @@ def _request():
     )
     assessment = RiskPolicy().assess(task, selection)
     intent = ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters))
-    world = AgentWorldView(
-        "observation:display",
-        (AgentTargetView(selection.target_id, "button", "Shared state"),),
-        (),
-        {"dom": "complete"},
-    )
-    return build_confirmation_request(intent, assessment, world)
+    return build_confirmation_request(intent, assessment, {selection.target_id: "Shared state"})
 
 
 def test_confirmation_request_contains_only_semantic_confirmation_subject() -> None:

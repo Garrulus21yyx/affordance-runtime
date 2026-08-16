@@ -1,5 +1,4 @@
 import asyncio
-import json
 from dataclasses import dataclass, replace
 
 from affordance_runtime.actions import (
@@ -18,9 +17,7 @@ from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,
     ResolvedModelDecision,
-    serialize_agent_context,
 )
-from affordance_runtime.model.policy.parser import parse_agent_decision
 from tests.support.agent.core_loop_support import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
 
 
@@ -46,23 +43,20 @@ class ScriptedPort:
         return self.outcome
 
 
-def _resolved(raw: str, context_id: str, metadata: ModelMetadata | None = None):
-    decision = parse_agent_decision(raw, context_id)
-    assert hasattr(decision, "context_id")
+def _resolved(decision, metadata: ModelMetadata | None = None):
     return ResolvedModelDecision(decision, metadata or ModelMetadata())
 
 
-def test_agent_context_serialization_is_deterministic_bounded_and_route_free() -> None:
+def test_model_request_has_one_typed_context_authority() -> None:
     async def scenario() -> None:
         context = await _context()
-        first = serialize_agent_context(context)
-        second = serialize_agent_context(context)
+        port = ScriptedPort(_resolved(Abort(context.context_id, "fixture stop", "policy")))
+        await ModelBackedAgentPolicy(port).decide(context)
 
-        assert first == second
-        assert len(first.encode()) <= 64 * 1024
-        assert json.loads(first)["context_id"] == context.context_id
-        for private in ("selector", "#shared", "binding:model-context", "executor", "credential"):
-            assert private not in first
+        assert port.request.agent_context is context
+        assert port.request.context_id == context.context_id
+        assert not hasattr(port.request, "serialized_context")
+        assert not hasattr(port.request, "decision_schema")
 
     asyncio.run(scenario())
 
@@ -88,19 +82,16 @@ def test_private_binding_route_and_credentials_never_enter_model_request() -> No
             ActionSpaceBuilder().build(task, observation),
             evaluation,
         )
-        raw = json.dumps(
-            {
-                "type": "abort",
-                "context_id": context.context_id,
-                "reason": "inspection complete",
-                "category": "policy",
-            }
-        )
-        port = ScriptedPort(_resolved(raw, context.context_id))
+        port = ScriptedPort(_resolved(Abort(context.context_id, "inspection complete", "policy")))
 
         await ModelBackedAgentPolicy(port).decide(context)
 
-        request = port.request.serialized_context
+        request = repr((
+            port.request.agent_context.task,
+            port.request.agent_context.progress,
+            port.request.agent_context.actions,
+            port.request.agent_context.actor_world,
+        ))
         for private in ("#private", "private.example", "top-secret", "private-executor"):
             assert private not in request
 
@@ -111,34 +102,24 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
     async def scenario() -> None:
         context = await _context()
         option = context.actions.options[0]
-        raw = json.dumps(
-            {
-                "type": "select_action",
-                "context_id": context.context_id,
-                "action_id": option.action_id,
-                "parameters": {},
-                "destination_id": "",
-            }
-        )
-        port = ScriptedPort(_resolved(raw, context.context_id, ModelMetadata("fixture", "scripted", "response:1")))
+        port = ScriptedPort(_resolved(
+            SelectAction(context.context_id, option.action_id),
+            ModelMetadata("fixture", "scripted", "response:1"),
+        ))
 
         decision = await ModelBackedAgentPolicy(port).decide(context)
 
         assert isinstance(decision, SelectAction)
         assert decision.context_id == context.context_id
         assert port.calls == 1
-        assert port.request.schema_version == "agent-decision.v4"
-        assert port.request.serialized_context == serialize_agent_context(context)
-        assert "general gui agent" in port.request.instructions.casefold()
-        assert "runtime owns validation" in port.request.instructions.casefold()
+        assert port.request.agent_context is context
 
     asyncio.run(scenario())
 
 
-def test_canonical_context_port_does_not_build_the_legacy_serialized_projection() -> None:
+def test_canonical_context_port_receives_the_same_agent_context() -> None:
     @dataclass
     class CanonicalContextPort:
-        requires_serialized_context: bool = False
         request: object | None = None
 
         async def generate(self, request):
@@ -155,7 +136,6 @@ def test_canonical_context_port_does_not_build_the_legacy_serialized_projection(
         outcome = await ModelBackedAgentPolicy(port).decide(context)
 
         assert isinstance(outcome, Abort)
-        assert port.request.serialized_context == ""
         assert port.request.agent_context is context
 
     asyncio.run(scenario())
@@ -207,9 +187,9 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
 def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
     async def scenario() -> None:
         context = await _context()
-        raw = json.dumps({"type": "abort", "context_id": context.context_id, "reason": "stop", "category": "policy"})
-
-        decision = await ModelBackedAgentPolicy(ScriptedPort(_resolved(raw, context.context_id))).decide(context)
+        decision = await ModelBackedAgentPolicy(
+            ScriptedPort(_resolved(Abort(context.context_id, "stop", "policy")))
+        ).decide(context)
 
         assert isinstance(decision, Abort)
 

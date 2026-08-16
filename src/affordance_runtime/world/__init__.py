@@ -75,7 +75,6 @@ from affordance_runtime.world.source_profile import (
     VerificationStrength,
     assurance_satisfies,
 )
-from affordance_runtime.world.view import AgentTargetView, AgentWorldView, build_agent_world_view
 from affordance_runtime.world.vision_escalation import (
     VisionEvidenceNeed,
     derive_visual_evidence_needs,
@@ -90,8 +89,6 @@ __all__ = [
     "AcquisitionStage",
     "AcquisitionStatus",
     "AcquisitionCancelled",
-    "AgentTargetView",
-    "AgentWorldView",
     "CanonicalObservationMedia",
     "CoverageState",
     "EntityAlignmentBasis",
@@ -147,7 +144,6 @@ __all__ = [
     "WorldObservationRequest",
     "UnifiedWorldEnvironment",
     "assurance_satisfies",
-    "build_agent_world_view",
     "derive_visual_evidence_needs",
     "selected_observation_requests",
 ]

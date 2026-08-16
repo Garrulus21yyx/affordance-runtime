@@ -12,7 +12,6 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     LocalToolResult,
-    ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -36,7 +35,6 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             AskUser,
             LocalToolResult,
             FinalResponse,
-            ProposeDone,
             Wait,
             Abort,
         ),
@@ -95,12 +93,6 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         return project_public_value(decision.arguments)
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
-    if isinstance(decision, ProposeDone):
-        return {
-            "claimed_criteria": decision.claimed_criteria,
-            "result_summary": decision.result_summary,
-            "unresolved_items": decision.unresolved_items,
-        }
     if isinstance(decision, Wait):
         return {"reason": decision.reason, "max_wait_ms": decision.max_wait_ms}
     if isinstance(decision, Abort):
@@ -116,7 +108,6 @@ def _control_tool_name(decision: AgentDecision) -> str:
         RequestActionPage: "next_actions",
         AskUser: "ask_user",
         FinalResponse: "final_response",
-        ProposeDone: "propose_done",
         Wait: "wait",
         Abort: "abort",
         SelectAction: "select_action",

@@ -28,6 +28,10 @@ action/result summaries. Tool schemas are compiled for the current turn. Runtime
 coordinates, handles, credentials, and all budget counters private; it validates, executes, refreshes observation,
 evaluates outcomes, and terminates the loop.
 
+There is one decision-input chain: Runtime-owned `WorldObservation` is bounded into one `ActorWorldSnapshot`, stored
+once in the typed `AgentContext`, and assembled into provider messages by one binder. There is no parallel serialized
+context, flat model world, legacy decision schema/parser, or confirmation-only world copy.
+
 When required task information is unavailable, the model may pause with `ask_user`. That decision contains a concrete
 question that the caller can show verbatim plus the input fields expected from the reply. Runtime preserves and resumes
 that request; confirmations for risky actions use the separate Runtime-owned confirmation path.
@@ -102,5 +106,5 @@ semantic-action, tool, execution, and evaluation boundaries and uses one `CoreAg
 `StepResult` per turn, one stable GUI-agent prompt, and one compact model projection. The public Runtime, CLI, and
 target benchmark harness all use this core. The former control reducer, transition, feedback, session, and legacy-loop
 modules have been removed. PydanticAI owns standard native tool transport, while 4.1V keeps one bounded compact wire
-adapter. Superseded structured-package, native-tool, automatic-fallback, and model-conformance paths are deleted;
-running paired live benchmarks is the next gate.
+adapter. Superseded structured-package, native-tool, automatic-fallback, and model-conformance paths are deleted; the
+obsolete `propose_done` branch is also deleted. Running paired live benchmarks is the next gate.

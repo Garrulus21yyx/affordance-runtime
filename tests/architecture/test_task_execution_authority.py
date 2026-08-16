@@ -119,13 +119,13 @@ def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -
     adapters = (RUNTIME / "model" / "policy" / "grounded_tool_port_bridge.py").read_text(
         encoding="utf-8"
     )
-    spec = (RUNTIME / "model" / "policy" / "spec.py").read_text(encoding="utf-8")
-
     assert "ResolvedModelDecision" in adapters
     assert "if isinstance(outcome, ResolvedModelDecision)" in policy
     assert "ModelDecisionResponse" not in production
     assert "parse_agent_decision" not in policy
-    assert "LocalObjective" not in spec
+    assert not (RUNTIME / "model" / "policy" / "spec.py").exists()
+    assert not (RUNTIME / "model" / "policy" / "parser.py").exists()
+    assert not (RUNTIME / "model" / "policy" / "serialization.py").exists()
     assert "LocalObjective" not in production
     assert "OBJECTIVE_PROPOSAL" not in production
 

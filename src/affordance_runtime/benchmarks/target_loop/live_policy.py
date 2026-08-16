@@ -27,9 +27,12 @@ from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.model.policy import ModelBackedAgentPolicy, model_policy_from_environment
+from affordance_runtime.model.policy import (
+    GROUNDED_TOOLS_PROTOCOL,
+    ModelBackedAgentPolicy,
+    model_policy_from_environment,
+)
 from affordance_runtime.model.policy.contracts import ModelMetadata
-from affordance_runtime.model.policy.spec import SCHEMA_VERSION
 
 LIVE_ATTESTATION_SCHEMA_VERSION = "target-loop-live-model-policy.v1"
 
@@ -212,12 +215,12 @@ def _configured_metadata(policy: ModelBackedAgentPolicy) -> ModelMetadata:
             model_id=str(getattr(transport, "model", "")),
             endpoint_class=str(getattr(transport, "endpoint_class", "")),
             prompt_version=str(getattr(config, "prompt_version", "")),
-            schema_version=SCHEMA_VERSION,
+            schema_version=GROUNDED_TOOLS_PROTOCOL,
             grounding_variant=str(getattr(adapter, "grounding_variant", "")),
             grounding_profile_version=str(getattr(adapter, "grounding_profile_version", "")),
         )
     except ValueError:
-        return ModelMetadata(schema_version=SCHEMA_VERSION)
+        return ModelMetadata(schema_version=GROUNDED_TOOLS_PROTOCOL)
 
 
 def _failed(output: Path, sha: str, reason: str) -> LiveModelPolicyAttestation:

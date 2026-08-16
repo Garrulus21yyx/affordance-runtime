@@ -8,8 +8,6 @@ from typing import Final
 
 import yaml
 
-from affordance_runtime.model.policy.spec import SCHEMA_VERSION, decision_response_schema
-
 
 def _load_prompt() -> tuple[str, str]:
     resource = files("affordance_runtime.model.policy").joinpath("prompts/grounded_agent.yaml")
@@ -31,6 +29,4 @@ MODEL_POLICY_INSTRUCTIONS: Final = _prompt_instructions
 __all__ = [
     "MODEL_POLICY_INSTRUCTIONS",
     "MODEL_POLICY_PROMPT_VERSION",
-    "SCHEMA_VERSION",
-    "decision_response_schema",
 ]

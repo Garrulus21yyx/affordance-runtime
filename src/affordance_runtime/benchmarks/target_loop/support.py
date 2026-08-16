@@ -22,7 +22,6 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
-from affordance_runtime.model.policy.spec import AgentDecisionPayload, payload_to_decision
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
@@ -75,18 +74,8 @@ class ScriptedDecisionPort:
         self.calls += 1
         if self.fail:
             return ModelFailure(ModelFailureKind.TIMEOUT, "fixture timeout", False)
-        import json
-
-        context = json.loads(request.serialized_context)
-        option = context["actions"]["options"][0]
-        payload = {
-            "type": "select_action",
-            "context_id": context["context_id"],
-            "action_id": option["action_id"],
-            "parameters": {},
-            "destination_id": "",
-        }
-        decision = payload_to_decision(AgentDecisionPayload.model_validate(payload), request.context_id)
+        option = request.agent_context.actions.options[0]
+        decision = SelectAction(request.context_id, option.action_id)
         return ResolvedModelDecision(decision, ModelMetadata("fixture", "scripted", "response:1"))
 
 

@@ -65,7 +65,10 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
 
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
-    assert DecisionCapability.PROPOSE_DONE not in grounded.supported_decisions
+    assert {item.value for item in grounded.supported_decisions} == {
+        "select_action", "request_evidence", "request_action_page", "ask_user",
+        "count_children", "wait", "abort",
+    }
 
 
 def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:

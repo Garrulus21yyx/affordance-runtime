@@ -15,7 +15,6 @@ class DecisionCapability(StrEnum):
     REQUEST_ACTION_PAGE = "request_action_page"
     ASK_USER = "ask_user"
     COUNT_CHILDREN = "count_children"
-    PROPOSE_DONE = "propose_done"
     WAIT = "wait"
     ABORT = "abort"
 
@@ -28,12 +27,7 @@ TOOL_ACTION_DECISION_CAPABILITIES = frozenset(
         DecisionCapability.REQUEST_ACTION_PAGE,
     }
 )
-GROUNDED_ACTION_DECISION_CAPABILITIES = ALL_DECISION_CAPABILITIES - {
-    DecisionCapability.PROPOSE_DONE,
-}
-STRUCTURED_PACKAGE_DECISION_CAPABILITIES = ALL_DECISION_CAPABILITIES - {
-    DecisionCapability.COUNT_CHILDREN,
-}
+GROUNDED_ACTION_DECISION_CAPABILITIES = ALL_DECISION_CAPABILITIES
 
 
 def normalize_decision_capabilities(

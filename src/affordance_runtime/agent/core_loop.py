@@ -16,7 +16,6 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     LocalToolResult,
-    ProposeDone,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -284,7 +283,6 @@ class CoreAgentLoop:
                 AskUser,
                 LocalToolResult,
                 FinalResponse,
-                ProposeDone,
                 Wait,
                 Abort,
             ),
@@ -327,12 +325,6 @@ class CoreAgentLoop:
                 RunStatus.DONE if ready else RunStatus.RUNNING,
                 "final_response" if ready else "final_response_not_ready",
             )
-        if isinstance(decision, ProposeDone):
-            status = self._status_for_task(task, state.current_task_evaluation)
-            if status is RunStatus.RUNNING:
-                status = RunStatus.RUNNING
-            feedback = "task_complete" if status is RunStatus.DONE else "completion_not_verified"
-            return _same_world_step(state, decision, status, feedback)
         if isinstance(decision, AskUser):
             return _same_world_step(state, decision, RunStatus.WAITING_USER, "user_input_required")
         if isinstance(decision, Abort):

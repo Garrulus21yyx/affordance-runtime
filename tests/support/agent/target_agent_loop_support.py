@@ -28,7 +28,7 @@ def shared_state_task() -> TaskGoal:
 
 class FirstOfferedActionPolicy:
     async def decide(self, context):
-        task, world, action_space = context.task, context.world, context.actions
+        task, world, action_space = context.task, context.actor_world, context.actions
         recent_turns = context.recent_steps.items
         del task, recent_turns
         representation = repr(world)

@@ -50,16 +50,15 @@ class GroundedPolicyContextBinder:
 
     def action_messages(
         self,
-        context: AgentContext,
-        tools: tuple[ToolSpec, ...],
         request: ModelDecisionRequest,
+        tools: tuple[ToolSpec, ...],
         *,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
         include_tool_menu: bool,
     ) -> tuple[ModelMessage, ...]:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        public = self._public_context(context, include_images)
+        public = self._public_context(request.agent_context, include_images)
         if include_tool_menu:
             public["tools"] = _tool_menu(tools)
         return self._messages(self.prompts.actor, public, request, include_images)
@@ -70,13 +69,12 @@ class GroundedPolicyContextBinder:
         include_images: bool,
     ) -> dict[str, object]:
         refs = dict(context.grounding.target_refs)
-        evidence_refs = _evidence_refs(context)
         public: dict[str, object] = {
             "task": _task(context),
             "observation": to_json_compatible(
                 actor_world_for_delivery(context.actor_world, include_images=include_images)
             ),
-            "progress": _progress(context, refs, evidence_refs),
+            "progress": _progress(context),
             "recent_steps": _recent_steps(context.recent_steps.items, refs),
         }
         return public
@@ -149,8 +147,6 @@ def _task(context: AgentContext) -> dict[str, object]:
 
 def _progress(
     context: AgentContext,
-    refs: Mapping[str, str],
-    evidence_refs: Mapping[str, str],
 ) -> dict[str, object]:
     progress = context.progress
     unresolved_criteria = tuple(progress.unresolved_criteria.items)
@@ -173,8 +169,8 @@ def _progress(
         "unresolved_outputs": unresolved_outputs,
         "evidence": tuple(
             {
-                "evidence_ref": evidence_refs[item.fact_ref],
-                "subject": _subject(item.subject_id, refs),
+                "evidence_ref": item.fact_ref,
+                "subject": item.subject_id,
                 "field": item.predicate,
                 "value": project_public_value(item.value),
             }
@@ -238,16 +234,6 @@ def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
         }
         for item in tools
     )
-
-
-def _evidence_refs(context: AgentContext) -> dict[str, str]:
-    fact_ids = dict.fromkeys(
-        (
-            *(item.fact_ref for item in context.world.facts.items),
-            *(item.fact_ref for item in context.progress.verified_public_facts),
-        )
-    )
-    return {fact_id: f"F{index}" for index, fact_id in enumerate(fact_ids, start=1)}
 
 
 def _section(

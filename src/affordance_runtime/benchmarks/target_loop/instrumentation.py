@@ -152,7 +152,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         "policy_call": call,
         "context_id": context.context_id,
         "visible_action_count": len(context.actions.options),
-        "selected_source_modalities": tuple(source.modality for source in context.world.sources),
+        "selected_source_modalities": tuple(source.modality for source in context.actor_world.sources),
         "recent_step_count": len(context.recent_steps.items),
         "provider_attempts": tuple(
             {

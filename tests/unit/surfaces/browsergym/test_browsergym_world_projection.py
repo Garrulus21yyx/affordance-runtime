@@ -6,7 +6,6 @@ from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model.policy.serialization import serialize_agent_context
 from affordance_runtime.surfaces.browsergym import projection as projection_module
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
@@ -27,6 +26,12 @@ from tests.support.surfaces.browsergym.projection_support import (
 )
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-world-projection-tests")
+
+
+def _walk(node):
+    yield node
+    for child in node.children:
+        yield from _walk(child)
 
 
 def test_structural_projection_is_bounded_truthful_and_private() -> None:
@@ -275,7 +280,7 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
         evaluation,
     )
     assert context.image_inputs[0].sha256 == media[0].sha256
-    serialized = serialize_agent_context(context)
+    serialized = json.dumps(GroundedPolicyContextBinder._public_context(context, False))
     assert "image_inputs" not in serialized
     assert media[0].sha256 not in serialized
 
@@ -398,11 +403,12 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
         evaluation,
     )
     assert len(action_space.options) == 65
-    assert context.world.targets.total_count == 65
-    assert len(context.world.targets.items) == 64
-    assert context.world.targets.truncated is True
-    assert context.world.traversal is not None
-    assert context.world.traversal.status == "partial"
+    document = context.actor_world.documents[0]
+    assert document.total_node_count == 65
+    assert document.retained_node_count == 64
+    assert document.truncated is True
+    assert context.actor_world.traversal is not None
+    assert context.actor_world.traversal.status == "partial"
 
 
 def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> None:
@@ -431,10 +437,16 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
         evaluation,
     )
 
-    assert any(item.label == "Continue task" for item in context.world.targets.items)
-    assert context.world.traversal is not None
-    assert context.world.traversal.next_cursor
-    assert len(context.world.targets.items) == 64
+    nodes = tuple(
+        node
+        for document in context.actor_world.documents
+        for root in document.roots
+        for node in _walk(root)
+    )
+    assert any(item.label == "Continue task" for item in nodes)
+    assert context.actor_world.traversal is not None
+    assert context.actor_world.traversal.next_cursor
+    assert len(nodes) == 64
 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:
@@ -452,15 +464,12 @@ def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() 
     task = TaskGoal("task:opaque", raw["goal"], allowed_effects=("external_ui_interaction",))
     evaluation = TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
     context = ContextBuilder().build(task, world, ActionSpaceBuilder().build(task, world), evaluation)
-    serialized = serialize_agent_context(context)
+    serialized = repr((context.task, context.progress, context.actions, context.actor_world))
     for forbidden in ("private-1", "browsergym/miniwob", "selector", "expected_answer", "RAW_REWARD_GLOBAL"):
         assert forbidden not in serialized
-    assert json.loads(serialized)["task"]["instruction"] == raw["goal"]
-    source_wire = json.loads(serialized)["world"]["sources"][0]
-    assert source_wire["projection_coverage"] == "complete"
-    assert "coverage" not in source_wire
-    assert source_wire["semantic_inventory"]["status"] == "represented"
-    assert source_wire["entity_inventory"]["status"] == "complete"
+    assert context.task.instruction == raw["goal"]
+    assert context.actor_world.sources[0].projection_coverage == "complete"
+    assert context.actor_world.sources[0].inventory_coverage == "complete"
 
 
 def _project(raw):

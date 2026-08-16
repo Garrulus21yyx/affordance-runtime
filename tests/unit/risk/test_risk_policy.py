@@ -10,10 +10,6 @@ from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskAssessment, RiskDecisionKind, RiskPolicy, semantic_subject_id
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    AgentTargetView,
-    AgentWorldView,
-)
 
 
 @pytest.mark.parametrize(
@@ -139,12 +135,7 @@ def test_risk_assessment_uses_one_effective_risk(
     request = build_confirmation_request(
         ActionIntent(selection.semantic_action, selection.target_id, dict(selection.parameters)),
         assessment,
-        AgentWorldView(
-            "observation:display",
-            (AgentTargetView(selection.target_id, "button", "Shared state"),),
-            (),
-            {"fixture": "complete"},
-        ),
+        {selection.target_id: "Shared state"},
     )
 
     assert assessment.decision == RiskDecisionKind.NEEDS_CONFIRMATION

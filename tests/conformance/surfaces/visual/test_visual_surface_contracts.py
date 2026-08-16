@@ -7,6 +7,8 @@ from affordance_runtime.actions import (
     ActionBinding,
     ActionSpaceBuilder,
 )
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.surfaces.visual.grounding import VisualRegion
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
@@ -14,7 +16,6 @@ from affordance_runtime.world import (
     SemanticTarget,
     SurfaceObservation,
     WorldFusion,
-    build_agent_world_view,
 )
 
 
@@ -124,7 +125,7 @@ def test_visual_private_geometry_never_enters_policy_view() -> None:
         risk_profile=RiskProfile.LOW,
     )
 
-    view = build_agent_world_view(world)
+    view = project_model_world(world, ContextProjectionBudget())
     space = ActionSpaceBuilder().build(task, world)
 
     assert tuple(option.semantic_action for option in space.options) == ("activate",)

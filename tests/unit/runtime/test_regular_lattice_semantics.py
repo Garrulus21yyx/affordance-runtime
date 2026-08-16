@@ -139,11 +139,9 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     assert "grid_coordinate" not in candidate.target_state
     assert "grid_membership" not in candidate.target_state
     assert "grid_coordinate_confidence" not in candidate.target_state
-    assert {
-        fact.predicate
-        for fact in context.world.facts.items
-        if fact.subject_id == target.target_id
-    }.issuperset({"grid_coordinate", "grid_membership", "grid_coordinate_confidence"})
+    world_representation = repr(context.actor_world)
+    for field_name in ("grid_coordinate", "grid_membership", "grid_coordinate_confidence"):
+        assert field_name in world_representation
     public = GroundedPolicyContextBinder._public_context(
         context,
         False,

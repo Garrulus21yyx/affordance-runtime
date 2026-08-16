@@ -142,6 +142,22 @@ TaskEvaluator-owned criterion and output status. No model summary call is made p
 used before any future model-authored compaction, which may be added only if a long-horizon benchmark demonstrates a
 shared failure.
 
+The construction path is deliberately one-way:
+
+```text
+WorldObservation (Runtime authority)
+  -> bounded internal projection used only while building the turn
+  -> ActorWorldSnapshot (the decision model's only public current-world view)
+  -> GroundedPolicyContextBinder (the only provider-message assembler)
+```
+
+`AgentContext` contains `actor_world`; it does not also contain a flat `world`, serialized context string, provider
+schema, or prompt copy. `ModelDecisionRequest` carries that same typed `AgentContext` by reference. The tool catalog,
+perception policy, provider binder, and benchmark instrumentation all consume `actor_world`. Evaluator-specific
+before/after evidence views are private inputs to a different role and never enter the decision context. Action and
+confirmation labels are projected directly from the authoritative observation instead of constructing another
+agent-world object.
+
 The model never receives remaining budgets, backend routes, selectors, coordinates, private bindings, acquisition
 attempts, reducers, old screenshots, old worlds, full traces, benchmark rewards, oracle values, or hidden state.
 
@@ -207,8 +223,7 @@ consecutive `TaskGoal` revision containing the supplied inputs. Runtime-owned ri
 
 Ordinary GUI-effect tasks terminate directly when `TaskEvaluator` confirms completion; they do not require another
 model turn. Tasks that explicitly request a textual answer use the model's native final output after their requested
-outputs have been verified. `propose_done` is no longer model-visible; its legacy typed branch remains only until the
-old structured model path is deleted.
+outputs have been verified. `propose_done` and the old structured decision schema are physically absent.
 
 ## Validation and repair
 
@@ -272,7 +287,7 @@ validation:
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
 | 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
 | 8. Select model transport by actual wire capability | done | native tools use `pydantic-ai`; 4.1V uses `compact-json`; both pass the same real click-button Runtime witness and `propose_done` is not model-visible |
-| 9. Converge the model/tool boundary and delete superseded transports | in progress | stable registry-owned public tool names and `target`/`source`/`destination` schemas; exact private bindings; structure-first image attachment; then retain one compact 4.1V adapter and shared visual inference only |
+| 9. Converge the model/tool/context boundary and delete superseded paths | done | one typed AgentContext, one Actor world projection, one provider binder, stable registry-owned tools, and no legacy structured decision/parser/serialization path |
 | 10. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
 
 Phase 9 ends with the full test gate plus the frozen five-case visual witness (`miniwob-60-05`, `34`, `42`, `49`,
