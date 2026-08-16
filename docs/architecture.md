@@ -224,12 +224,12 @@ Repair results retain the provider `call_id`. They are dynamic tool results, not
 
 ## Counting and arithmetic boundary
 
-Adapters mechanically expose generic aggregate facts such as `member_count` for repeated current groups when those
-facts follow directly from the observed structure. The model decides which groups and values are relevant to the
-task; Runtime never parses the task to select operands or infer an answer. Simple arithmetic remains model reasoning
-until benchmark evidence shows a shared arithmetic failure after explicit operands are available. Only then may the
-same catalog add a small deterministic pure `calculate(operation, operands)` tool. This would be a utility in the
-same loop, not a planner, nested agent, code executor, or benchmark-specific shortcut.
+The public world preserves observed structure and does not inject task-derived counts or answers. When the current
+structural document is complete, the per-turn catalog may expose a deterministic `count_children(container=...)`
+utility over current public references. The model chooses the relevant container; Runtime returns the mechanical
+direct-child count as the result of that explicit turn. Runtime never parses the task to select operands or infer an
+answer. Further arithmetic remains model reasoning until benchmark evidence demonstrates a shared failure after
+explicit counts are available.
 
 ## Authority
 

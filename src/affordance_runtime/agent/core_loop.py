@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
+from affordance_runtime.agent.context.actor_world_snapshot import countable_child_groups
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -14,6 +15,7 @@ from affordance_runtime.agent.decisions import (
     AbortCategory,
     AgentDecision,
     AskUser,
+    CountChildren,
     FinalResponse,
     ProposeDone,
     RequestActionPage,
@@ -276,7 +278,17 @@ class CoreAgentLoop:
             )
         if not isinstance(
             decision,
-            (SelectAction, RequestObservation, RequestActionPage, AskUser, FinalResponse, ProposeDone, Wait, Abort),
+            (
+                SelectAction,
+                RequestObservation,
+                RequestActionPage,
+                AskUser,
+                CountChildren,
+                FinalResponse,
+                ProposeDone,
+                Wait,
+                Abort,
+            ),
         ):
             raise TypeError("agent policy returned an unsupported decision")
         if decision.context_id != context.context_id:
@@ -295,6 +307,24 @@ class CoreAgentLoop:
             return await self._observe(environment, task, state, decision)
         if isinstance(decision, RequestActionPage):
             return self._action_page(task, state, action_space, decision)
+        if isinstance(decision, CountChildren):
+            count = countable_child_groups(context.actor_world).get(decision.container_ref)
+            if count is None:
+                return _same_world_step(
+                    state,
+                    decision,
+                    RunStatus.BLOCKED,
+                    "count_container_unavailable",
+                )
+            return StepResult(
+                decision,
+                state.current_world,
+                state.current_world,
+                state.current_task_evaluation,
+                RunStatus.RUNNING,
+                feedback="child_count_ready",
+                tool_result={"container": decision.container_ref, "count": count},
+            )
         if isinstance(decision, Wait):
             return await self._wait(environment, task, state, decision)
         if isinstance(decision, FinalResponse):

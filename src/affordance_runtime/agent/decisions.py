@@ -134,6 +134,21 @@ class AskUser:
 
 
 @dataclass(frozen=True)
+class CountChildren:
+    """Request a deterministic count over one complete current structural container."""
+
+    context_id: str
+    container_ref: str
+    tool_call_id: str = ""
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
+        if re.fullmatch(r"[EN][1-9][0-9]{0,2}", self.container_ref) is None:
+            raise ValueError("count container requires a current public reference")
+
+
+@dataclass(frozen=True)
 class FinalResponse:
     """Native user-facing result emitted only after Runtime-verified completion."""
 
@@ -198,5 +213,13 @@ class Abort:
 
 
 AgentDecision: TypeAlias = (
-    SelectAction | RequestObservation | RequestActionPage | AskUser | FinalResponse | ProposeDone | Wait | Abort
+    SelectAction
+    | RequestObservation
+    | RequestActionPage
+    | AskUser
+    | CountChildren
+    | FinalResponse
+    | ProposeDone
+    | Wait
+    | Abort
 )

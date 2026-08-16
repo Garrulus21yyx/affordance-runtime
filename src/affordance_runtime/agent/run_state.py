@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.actions.paging import InternalActionPage
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.decisions import AgentDecision, SelectAction
+from affordance_runtime.agent.decisions import AgentDecision, CountChildren, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ExecutionOutcome
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -46,6 +48,7 @@ class StepResult:
     waited_ms: int = 0
     failure_code: AgentFailureCode | None = None
     runtime_failure: RuntimeFailure | None = None
+    tool_result: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status_after, RunStatus):
@@ -77,6 +80,12 @@ class StepResult:
             raise TypeError("step failure code must be typed")
         if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
             raise TypeError("step runtime failure must be typed")
+        if self.tool_result is not None:
+            if not isinstance(self.decision, CountChildren):
+                raise ValueError("Runtime tool result does not match its decision")
+            if self.execution is not None:
+                raise ValueError("a Runtime tool result cannot also contain action execution")
+            object.__setattr__(self, "tool_result", freeze_json(self.tool_result))
 
 
 @dataclass

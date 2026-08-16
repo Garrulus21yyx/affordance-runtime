@@ -208,7 +208,11 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
                 record.node_id,
                 record.parent_id,
                 record.child_ids,
-                record.role or "unknown",
+                (
+                    "generic"
+                    if record.bid in suppressed_clickable_bids and record.role == "clickable"
+                    else record.role or "unknown"
+                ),
                 record.name,
                 record.state,
             ),

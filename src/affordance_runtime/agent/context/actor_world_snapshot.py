@@ -264,6 +264,34 @@ def actor_world_for_delivery(
     )
 
 
+def countable_child_groups(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:
+    """Exact direct-child counts available from fully retained repeated groups."""
+
+    counts: dict[str, int] = {}
+
+    def visit(node: ActorWorldNodeView) -> None:
+        if len(node.children) >= 2 and _homogeneous_actor_children(node.children):
+            counts[node.ref] = len(node.children)
+        for child in node.children:
+            visit(child)
+
+    for document in snapshot.documents:
+        if document.truncated:
+            continue
+        for root in document.roots:
+            visit(root)
+    return freeze_json(counts)
+
+
+def _homogeneous_actor_children(children: tuple[ActorWorldNodeView, ...]) -> bool:
+    first = children[0]
+    shape = (first.role, first.label, first.state, len(first.children))
+    return all(
+        (child.role, child.label, child.state, len(child.children)) == shape
+        for child in children[1:]
+    )
+
+
 def project_actor_world_snapshot(
     observation: WorldObservation,
     world: ModelWorldView,
@@ -717,11 +745,7 @@ def _structure_documents(
                 actor_refs[structure_id],
                 target.role if target is not None else item.role,
                 target.label if target is not None else item.label,
-                _with_complete_member_count(
-                    target.state if target is not None else item.state,
-                    len(item.child_structure_ids),
-                    complete=str(source.coverage) == "complete",
-                ),
+                target.state if target is not None else item.state,
                 evidence_by_subject.get(canonical_id or "", {}),
                 tuple(facts_by_subject.get(canonical_id or "", ())),
                 _non_tree_relations(target, refs) if target is not None else {},
@@ -759,22 +783,6 @@ def _structure_documents(
         ))
         remaining -= len(retained)
     return tuple(documents)
-
-
-def _with_complete_member_count(
-    state: Mapping[str, object],
-    member_count: int,
-    *,
-    complete: bool,
-) -> Mapping[str, object]:
-    """Expose an exact direct-child count only when the source inventory is complete."""
-
-    if not complete or member_count == 0:
-        return state
-    existing = state.get("member_count")
-    if existing is not None and existing != member_count:
-        raise ValueError("source member_count conflicts with its closed structure")
-    return {**dict(state), "member_count": member_count}
 
 
 def _forest_order(structure, allowed: set[str]) -> list:

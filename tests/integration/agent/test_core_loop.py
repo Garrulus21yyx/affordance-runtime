@@ -7,6 +7,7 @@ from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    CountChildren,
     ProposeDone,
     RequestActionPage,
     RunStatus,
@@ -30,6 +31,7 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
     ObservationSourceProfile,
+    ObservationStructureNode,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -94,6 +96,38 @@ def _task() -> TaskGoal:
     )
 
 
+def _count_world() -> WorldObservation:
+    base = _world("count", False)
+    source = base.sources[0]
+    counted_source = replace(
+        source,
+        structure=(
+            ObservationStructureNode(
+                "group",
+                "group",
+                "Blocks",
+                child_structure_ids=("block:1", "block:2"),
+            ),
+            ObservationStructureNode(
+                "block:1",
+                "graphics-symbol",
+                "",
+                parent_structure_id="group",
+            ),
+            ObservationStructureNode(
+                "block:2",
+                "graphics-symbol",
+                "",
+                parent_structure_id="group",
+            ),
+        ),
+        structure_total_count=3,
+    )
+    fused = WorldFusion().fuse((counted_source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
 @dataclass
 class CorePolicy:
     choice: str
@@ -129,6 +163,13 @@ class CorePolicy:
             assert context.task.public_inputs["value"] == "provided"
             assert context.recent_steps.items[-1].reason == "user_input_received"
             return Abort(context.context_id, "input observed", AbortCategory.USER_REQUEST)
+        if self.choice == "count_children":
+            if self.turns == 1:
+                return CountChildren(context.context_id, "N1", "provider-call:count")
+            step = context.recent_steps.items[-1]
+            assert step.semantic_action == "count_children"
+            assert step.semantic_summary["result"] == {"container": "N1", "count": 2}
+            return Abort(context.context_id, "count observed", AbortCategory.USER_REQUEST)
         if self.choice == "confirm_once":
             if self.turns == 1:
                 return SelectAction(context.context_id, context.actions.options[0].action_id)
@@ -227,6 +268,24 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
                 state.last_step,
                 decision=replace(state.last_step.decision, tool_call_id="provider-call:wrong"),
             )
+
+    asyncio.run(scenario())
+
+
+def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
+    async def scenario() -> None:
+        runtime = _runtime("count_children")
+        environment = ScriptedEnvironment(initial_observation=_count_world())
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.execution_count == 0
+        assert state.observation_count == 1
+        assert state.recent_steps[0].semantic_summary["result"] == {
+            "container": "N1",
+            "count": 2,
+        }
 
     asyncio.run(scenario())
 

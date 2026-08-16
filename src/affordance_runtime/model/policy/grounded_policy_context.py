@@ -206,23 +206,27 @@ def _turn(
         "tool": item.semantic_action,
         "target": _subject(item.target_id, refs, unknown=""),
     }
+    result_details = None
     if detailed:
         action["arguments"] = project_public_value(item.public_parameters)
         if item.destination_id:
             action["destination"] = _subject(item.destination_id, refs, unknown="")
         if item.semantic_summary:
-            action["details"] = _replace_target_refs(
-                project_public_value(item.semantic_summary), refs
-            )
-    return {
-        "action": action,
-        "result": {
-            "dispatch": item.dispatch_status,
-            "effect": item.action_evaluation_status,
-            "task": item.task_evaluation_status,
-            "reason": item.reason,
-        },
+            details = _replace_target_refs(project_public_value(item.semantic_summary), refs)
+            if isinstance(details, Mapping):
+                details = dict(details)
+                result_details = details.pop("result", None)
+            if details:
+                action["details"] = details
+    result = {
+        "dispatch": item.dispatch_status,
+        "effect": item.action_evaluation_status,
+        "task": item.task_evaluation_status,
+        "reason": item.reason,
     }
+    if result_details is not None:
+        result["details"] = result_details
+    return {"action": action, "result": result}
 
 
 def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:

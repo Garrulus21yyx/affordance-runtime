@@ -166,6 +166,11 @@ def test_dom_clickable_drawing_nodes_are_hittable_filtered_and_deduplicated() ->
     }
     assert len(clickable_target_ids) == 1
     assert {binding.target_id for binding in projection.world.bindings} == clickable_target_ids
+    structure_roles = {
+        item.private_bid: item.role for item in analyze_browsergym_semantics(raw).structure
+    }
+    assert structure_roles["tiny"] == "generic"
+    assert structure_roles["occluded"] == "generic"
 
 
 def test_equal_unlabeled_dom_overlays_deduplicate_independently_of_ax_order() -> None:

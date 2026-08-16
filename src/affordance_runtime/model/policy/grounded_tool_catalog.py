@@ -8,11 +8,13 @@ from dataclasses import dataclass, replace
 from typing import Mapping
 
 from affordance_runtime.actions.schema_validation import validate_value
+from affordance_runtime.agent.context.actor_world_snapshot import countable_child_groups
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
+    CountChildren,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -53,6 +55,11 @@ class _EvidenceBinding:
 @dataclass(frozen=True)
 class _ControlBinding:
     kind: str
+
+
+@dataclass(frozen=True)
+class _CountChildrenBinding:
+    container_refs: tuple[str, ...]
 
 
 def compile_grounded_tool_catalog(
@@ -97,6 +104,24 @@ def compile_grounded_tool_catalog(
         )
         specs.extend(item.public_spec for item in compiled)
         bindings.extend(compiled)
+
+    child_counts = countable_child_groups(context.actor_world)
+    if child_counts:
+        specs.append(ToolSpec(
+            "count_children",
+            "Mechanically count the direct children of one current complete structural container.",
+            _object_schema(
+                {
+                    "container": {
+                        "type": "string",
+                        "description": "current container reference from observation",
+                        "enum": list(child_counts),
+                    }
+                },
+                ("container",),
+            ),
+        ))
+        bindings.append(_CountChildrenBinding(tuple(child_counts)))
 
     if phase is GroundedToolPhase.ACTION_SELECTION and context.actions.has_more:
         specs.append(
@@ -234,6 +259,15 @@ def resolve_grounded_tool_call(
                 GroundedToolResolutionCode.INVALID_ARGUMENTS
             ) from exc
         return GroundedActionResolution(replace(evidence_decision, tool_call_id=call.call_id))
+    if isinstance(binding, _CountChildrenBinding):
+        container_ref = str(call.arguments["container"])
+        if container_ref not in binding.container_refs:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS
+            )
+        return GroundedActionResolution(
+            CountChildren(expected_context_id, container_ref, call.call_id)
+        )
     if isinstance(binding, _ControlBinding):
         control_decision: AgentDecision
         if binding.kind == "ask_user":

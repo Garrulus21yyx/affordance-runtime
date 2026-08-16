@@ -10,6 +10,7 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
+    CountChildren,
     FinalResponse,
     ProposeDone,
     RequestActionPage,
@@ -28,7 +29,17 @@ def project_step_result(result: StepResult) -> AgentTurnView:
     decision = result.decision
     if not isinstance(
         decision,
-        (SelectAction, RequestObservation, RequestActionPage, AskUser, FinalResponse, ProposeDone, Wait, Abort),
+        (
+            SelectAction,
+            RequestObservation,
+            RequestActionPage,
+            AskUser,
+            CountChildren,
+            FinalResponse,
+            ProposeDone,
+            Wait,
+            Abort,
+        ),
     ):
         raise TypeError("policy failures do not enter model step history")
     if isinstance(decision, SelectAction) and result.execution is not None:
@@ -50,6 +61,8 @@ def project_step_result(result: StepResult) -> AgentTurnView:
     if isinstance(decision, RequestObservation | RequestActionPage):
         target_id = decision.subject_id if isinstance(decision, RequestObservation) else decision.target_id
     summary = dict(project_decision_summary(decision))
+    if result.tool_result is not None:
+        summary["result"] = project_public_value(result.tool_result)
     summary["feedback_code"] = result.feedback
     return AgentTurnView(
         type(decision).__name__.lower(),
@@ -78,6 +91,8 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         }
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}
+    if isinstance(decision, CountChildren):
+        return {"container": decision.container_ref}
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
     if isinstance(decision, ProposeDone):
@@ -98,6 +113,7 @@ def _control_tool_name(decision: AgentDecision) -> str:
         RequestObservation: "request_observation",
         RequestActionPage: "request_action_page",
         AskUser: "ask_user",
+        CountChildren: "count_children",
         FinalResponse: "final_response",
         ProposeDone: "propose_done",
         Wait: "wait",

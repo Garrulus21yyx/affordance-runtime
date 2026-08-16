@@ -15,6 +15,7 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    CountChildren,
     RequestObservation,
     SelectAction,
     Wait,
@@ -131,6 +132,36 @@ def _context():
         projection.world,
         ActionSpaceBuilder().build(task, projection.world),
         TaskEvaluation(task.task_id, projection.world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+    )
+
+
+def _nested_context():
+    raw = raw_observation(
+        ax_node("group", "generic", "Choices", child_ids=("one", "two")),
+        ax_node("one", "graphics-symbol", "", parent_id="group"),
+        ax_node("two", "graphics-symbol", "", parent_id="group"),
+        goal="Count the choices.",
+    )
+    projection = project_browsergym_observation(
+        raw,
+        observation_id="observation:nested",
+        source_revision="revision:nested",
+        page_identity="page:nested",
+        episode_identity="episode:nested",
+        task_state=reset_task_state("observation:nested", task_run_id="run:nested"),
+        entity_identity=_IDENTITY,
+    )
+    task = TaskGoal("task:nested", raw["goal"], risk_profile=RiskProfile.READ_ONLY)
+    return ContextBuilder().build(
+        task,
+        projection.world,
+        ActionSpaceBuilder().build(task, projection.world),
+        TaskEvaluation(
+            task.task_id,
+            projection.world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
     )
 
 
@@ -628,6 +659,54 @@ def test_grounded_catalog_does_not_expose_propose_done() -> None:
     catalog = compile_grounded_tool_catalog(_context(), GroundedToolPhase.ACTION_SELECTION)
 
     assert "propose_done" not in {item.name for item in catalog.specs}
+
+
+def test_grounded_catalog_counts_complete_current_children_without_mutating_world() -> None:
+    context = _nested_context()
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in catalog.specs if item.name == "count_children")
+    containers = spec.input_schema["properties"]["container"]["enum"]
+    assert containers == ("E1",) or containers == ["E1"]
+    root = context.actor_world.documents[0].roots[0]
+    assert "member_count" not in root.state
+
+    outcome = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("count_children", {"container": "E1"}, "provider-call:count"),
+        expected_context_id=context.context_id,
+    )
+
+    assert outcome.decision == CountChildren(
+        context.context_id,
+        "E1",
+        "provider-call:count",
+    )
+
+
+def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
+    context = replace(
+        _nested_context(),
+        recent_steps=BoundedSection(
+            (
+                AgentTurnView(
+                    "countchildren",
+                    "count_children",
+                    reason="child_count_ready",
+                    semantic_summary={
+                        "container": "E1",
+                        "result": {"container": "E1", "count": 2},
+                    },
+                ),
+            ),
+            1,
+            False,
+        ),
+    )
+
+    recent = _bound_public_context(context)["recent_steps"][0]
+
+    assert recent["action"]["details"]["container"] == "E1"
+    assert recent["result"]["details"] == {"container": "E1", "count": 2}
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:
