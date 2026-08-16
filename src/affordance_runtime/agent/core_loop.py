@@ -308,14 +308,15 @@ class CoreAgentLoop:
         if isinstance(decision, RequestActionPage):
             return self._action_page(task, state, action_space, decision)
         if isinstance(decision, CountChildren):
-            count = countable_child_groups(context.actor_world).get(decision.container_ref)
-            if count is None:
+            available_counts = countable_child_groups(context.actor_world)
+            if any(item not in available_counts for item in decision.container_refs):
                 return _same_world_step(
                     state,
                     decision,
                     RunStatus.BLOCKED,
                     "count_container_unavailable",
                 )
+            counts = {item: available_counts[item] for item in decision.container_refs}
             return StepResult(
                 decision,
                 state.current_world,
@@ -323,7 +324,7 @@ class CoreAgentLoop:
                 state.current_task_evaluation,
                 RunStatus.RUNNING,
                 feedback="child_count_ready",
-                tool_result={"container": decision.container_ref, "count": count},
+                tool_result={"counts": counts, "total": sum(counts.values())},
             )
         if isinstance(decision, Wait):
             return await self._wait(environment, task, state, decision)

@@ -120,8 +120,32 @@ def _count_world() -> WorldObservation:
                 "",
                 parent_structure_id="group",
             ),
+            ObservationStructureNode(
+                "group:2",
+                "group",
+                "More blocks",
+                child_structure_ids=("block:3", "block:4", "block:5"),
+            ),
+            ObservationStructureNode(
+                "block:3",
+                "graphics-symbol",
+                "",
+                parent_structure_id="group:2",
+            ),
+            ObservationStructureNode(
+                "block:4",
+                "graphics-symbol",
+                "",
+                parent_structure_id="group:2",
+            ),
+            ObservationStructureNode(
+                "block:5",
+                "graphics-symbol",
+                "",
+                parent_structure_id="group:2",
+            ),
         ),
-        structure_total_count=3,
+        structure_total_count=7,
     )
     fused = WorldFusion().fuse((counted_source,))
     assert fused.observation is not None
@@ -165,10 +189,13 @@ class CorePolicy:
             return Abort(context.context_id, "input observed", AbortCategory.USER_REQUEST)
         if self.choice == "count_children":
             if self.turns == 1:
-                return CountChildren(context.context_id, "N1", "provider-call:count")
+                return CountChildren(context.context_id, ("N1", "N4"), "provider-call:count")
             step = context.recent_steps.items[-1]
             assert step.semantic_action == "count_children"
-            assert step.semantic_summary["result"] == {"container": "N1", "count": 2}
+            assert step.semantic_summary["result"] == {
+                "counts": {"N1": 2, "N4": 3},
+                "total": 5,
+            }
             return Abort(context.context_id, "count observed", AbortCategory.USER_REQUEST)
         if self.choice == "confirm_once":
             if self.turns == 1:
@@ -283,8 +310,8 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
         assert state.execution_count == 0
         assert state.observation_count == 1
         assert state.recent_steps[0].semantic_summary["result"] == {
-            "container": "N1",
-            "count": 2,
+            "counts": {"N1": 2, "N4": 3},
+            "total": 5,
         }
 
     asyncio.run(scenario())

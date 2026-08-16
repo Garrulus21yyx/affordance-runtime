@@ -299,7 +299,7 @@ def _decision_trace(decision):
         "relevance_role",
         "cursor",
         "category",
-        "container_ref",
+        "container_refs",
     ):
         item = getattr(decision, name, None)
         if item not in (None, ""):

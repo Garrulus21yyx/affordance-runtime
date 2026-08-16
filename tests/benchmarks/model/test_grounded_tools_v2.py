@@ -668,20 +668,20 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     context = _nested_context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "count_children")
-    containers = spec.input_schema["properties"]["container"]["enum"]
+    containers = spec.input_schema["properties"]["containers"]["items"]["enum"]
     assert containers == ("E1",) or containers == ["E1"]
     root = context.actor_world.documents[0].roots[0]
     assert "member_count" not in root.state
 
     outcome = resolve_grounded_tool_call(
         catalog,
-        ToolCall("count_children", {"container": "E1"}, "provider-call:count"),
+        ToolCall("count_children", {"containers": ["E1"]}, "provider-call:count"),
         expected_context_id=context.context_id,
     )
 
     assert outcome.decision == CountChildren(
         context.context_id,
-        "E1",
+        ("E1",),
         "provider-call:count",
     )
 
@@ -696,8 +696,8 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
                     "count_children",
                     reason="child_count_ready",
                     semantic_summary={
-                        "container": "E1",
-                        "result": {"container": "E1", "count": 2},
+                        "containers": ("E1",),
+                        "result": {"counts": {"E1": 2}, "total": 2},
                     },
                 ),
             ),
@@ -708,17 +708,17 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
 
     recent = _bound_public_context(context)["recent_steps"][0]
 
-    assert recent["action"]["details"]["container"] == "E1"
-    assert recent["result"]["details"] == {"container": "E1", "count": 2}
+    assert recent["action"]["details"]["containers"] == ["E1"]
+    assert recent["result"]["details"] == {"counts": {"E1": 2}, "total": 2}
 
     trace = _policy_trace_event(
         2,
         context,
-        CountChildren(context.context_id, "E1", "provider-call:count"),
+        CountChildren(context.context_id, ("E1",), "provider-call:count"),
         object(),
     )
-    assert trace["decision"]["container_ref"] == "E1"
-    assert trace["previous_runtime_tool_result"] == {"container": "E1", "count": 2}
+    assert trace["decision"]["container_refs"] == ("E1",)
+    assert trace["previous_runtime_tool_result"] == {"counts": {"E1": 2}, "total": 2}
 
 
 def test_single_operation_compact_schema_constrains_the_operation_name() -> None:

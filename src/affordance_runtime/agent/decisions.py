@@ -135,17 +135,25 @@ class AskUser:
 
 @dataclass(frozen=True)
 class CountChildren:
-    """Request a deterministic count over one complete current structural container."""
+    """Request deterministic counts over complete current structural containers."""
 
     context_id: str
-    container_ref: str
+    container_refs: tuple[str, ...]
     tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_tool_call_id(self.tool_call_id)
-        if re.fullmatch(r"[EN][1-9][0-9]{0,2}", self.container_ref) is None:
-            raise ValueError("count container requires a current public reference")
+        object.__setattr__(self, "container_refs", tuple(self.container_refs))
+        if (
+            not 1 <= len(self.container_refs) <= 12
+            or len(set(self.container_refs)) != len(self.container_refs)
+            or any(
+                re.fullmatch(r"[EN][1-9][0-9]{0,2}", item) is None
+                for item in self.container_refs
+            )
+        ):
+            raise ValueError("count containers require unique current public references")
 
 
 @dataclass(frozen=True)

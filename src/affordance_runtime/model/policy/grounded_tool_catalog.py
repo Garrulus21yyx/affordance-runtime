@@ -109,16 +109,18 @@ def compile_grounded_tool_catalog(
     if child_counts:
         specs.append(ToolSpec(
             "count_children",
-            "Mechanically count the direct children of one current complete structural container.",
+            "Required for counting repeated visible items: select every relevant current group; Runtime returns each exact direct-child count and their total.",
             _object_schema(
                 {
-                    "container": {
-                        "type": "string",
-                        "description": "current container reference from observation",
-                        "enum": list(child_counts),
+                    "containers": {
+                        "type": "array",
+                        "description": "all relevant repeated-group references from the current observation",
+                        "items": {"type": "string", "enum": list(child_counts)},
+                        "minItems": 1,
+                        "maxItems": len(child_counts),
                     }
                 },
-                ("container",),
+                ("containers",),
             ),
         ))
         bindings.append(_CountChildrenBinding(tuple(child_counts)))
@@ -260,13 +262,19 @@ def resolve_grounded_tool_call(
             ) from exc
         return GroundedActionResolution(replace(evidence_decision, tool_call_id=call.call_id))
     if isinstance(binding, _CountChildrenBinding):
-        container_ref = str(call.arguments["container"])
-        if container_ref not in binding.container_refs:
+        raw_refs = call.arguments["containers"]
+        if not isinstance(raw_refs, list | tuple):
             raise GroundedToolResolutionError(
                 GroundedToolResolutionCode.INVALID_ARGUMENTS
             )
+        container_refs = tuple(str(item) for item in raw_refs)
+        if (
+            len(set(container_refs)) != len(container_refs)
+            or any(item not in binding.container_refs for item in container_refs)
+        ):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return GroundedActionResolution(
-            CountChildren(expected_context_id, container_ref, call.call_id)
+            CountChildren(expected_context_id, container_refs, call.call_id)
         )
     if isinstance(binding, _ControlBinding):
         control_decision: AgentDecision

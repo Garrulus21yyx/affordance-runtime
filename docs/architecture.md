@@ -225,11 +225,11 @@ Repair results retain the provider `call_id`. They are dynamic tool results, not
 ## Counting and arithmetic boundary
 
 The public world preserves observed structure and does not inject task-derived counts or answers. When the current
-structural document is complete, the per-turn catalog may expose a deterministic `count_children(container=...)`
-utility over current public references. The model chooses the relevant container; Runtime returns the mechanical
-direct-child count as the result of that explicit turn. Runtime never parses the task to select operands or infer an
-answer. Further arithmetic remains model reasoning until benchmark evidence demonstrates a shared failure after
-explicit counts are available.
+structural document is complete, the per-turn catalog may expose a deterministic
+`count_children(containers=[...])` utility over current public references. The model chooses every relevant repeated
+group; Runtime returns each mechanical direct-child count and their total as the result of that explicit turn.
+Runtime never parses the task to select operands or infer which groups matter. Further arithmetic remains model
+reasoning until benchmark evidence demonstrates a different shared failure after explicit totals are available.
 
 ## Authority
 

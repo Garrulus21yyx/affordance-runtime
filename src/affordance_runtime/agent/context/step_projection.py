@@ -92,7 +92,7 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}
     if isinstance(decision, CountChildren):
-        return {"container": decision.container_ref}
+        return {"containers": decision.container_refs}
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
     if isinstance(decision, ProposeDone):
