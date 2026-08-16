@@ -27,7 +27,13 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 context = json.loads(body["messages"][1]["content"])
                 option = context["tools"][0]
-                decision = {"name": option["name"], "arguments": {}}
+                properties = option["input_schema"]["properties"]
+                arguments = {
+                    name: properties[name]["enum"][0]
+                    for name in option["input_schema"]["required"]
+                    if properties[name].get("enum")
+                }
+                decision = {"name": option["name"], "arguments": arguments}
                 payload = json.dumps(
                     {
                         "id": "response:m3-http-policy",

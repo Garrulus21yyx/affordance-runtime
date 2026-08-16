@@ -55,6 +55,17 @@ Each tool has one name, description, and strict input schema plus an opaque Runt
 defines what an action means; the catalog defines what is callable now. They must not be collapsed into a backend
 plugin registry.
 
+The public catalog has one stable tool name per semantic operation. Names come directly from
+`SemanticActionRegistry` (`activate`, `type_text`, `select_option`, and so on); they never contain a digest, target
+identity, selector, or snapshot-dependent suffix. A single-target action uses `target`, whose enum contains only the
+current public entity references. A two-endpoint action uses `source` and `destination`. Runtime privately maps the
+chosen operation and current reference tuple to one exact action binding. Refreshing or reordering the world may
+change the enum values, but never the tool name or parameter shape.
+
+Public references are opaque current-snapshot handles, not values the model derives or copies from hidden Runtime
+state. Unknown, invalid, ambiguous, or stale references fail without dispatch and receive the exact current schema
+for at most one repair. Hashes remain private integrity data and must never be model input.
+
 ### Model and tool protocol
 
 PydanticAI owns provider clients, provider messages, native tool-call parsing, call IDs, and basic schema repair. The
@@ -129,6 +140,11 @@ shared failure.
 
 The model never receives remaining budgets, backend routes, selectors, coordinates, private bindings, acquisition
 attempts, reducers, old screenshots, old worlds, full traces, benchmark rewards, oracle values, or hidden state.
+
+Structured public facts are the default observation. Merely having a visual source in the fused world does not attach
+an image to the main model turn. Visual evidence is first converted into public semantic facts by the visual adapter;
+a raw current image is attached only when the active observation request explicitly requires unresolved visual
+evidence. Old images are never retained in recent steps.
 
 A native-tool provider receives tools through PydanticAI rather than a duplicate menu in the context. A retained
 compact-JSON compatibility model may receive the same current catalog in the public context because it has no native
@@ -206,6 +222,15 @@ Tool handling is deterministic and bounded:
 
 Repair results retain the provider `call_id`. They are dynamic tool results, not permanent prompt instructions.
 
+## Counting and arithmetic boundary
+
+Adapters mechanically expose generic aggregate facts such as `member_count` for repeated current groups when those
+facts follow directly from the observed structure. The model decides which groups and values are relevant to the
+task; Runtime never parses the task to select operands or infer an answer. Simple arithmetic remains model reasoning
+until benchmark evidence shows a shared arithmetic failure after explicit operands are available. Only then may the
+same catalog add a small deterministic pure `calculate(operation, operands)` tool. This would be a utility in the
+same loop, not a planner, nested agent, code executor, or benchmark-specific shortcut.
+
 ## Authority
 
 | Question | Owner |
@@ -242,7 +267,7 @@ validation:
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
 | 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
 | 8. Select model transport by actual wire capability | done | native tools use `pydantic-ai`; 4.1V uses `compact-json`; both pass the same real click-button Runtime witness and `propose_done` is not model-visible |
-| 9. Delete the superseded policy transport paths | in progress | retain one compact 4.1V adapter and shared visual inference only; remove the old structured-package/native-tool policy paths and their concrete benchmark coupling |
+| 9. Converge the model/tool boundary and delete superseded transports | in progress | stable registry-owned public tool names and `target`/`source`/`destination` schemas; exact private bindings; structure-first image attachment; then retain one compact 4.1V adapter and shared visual inference only |
 | 10. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
 
 Phase 9 ends with the full test gate plus the frozen five-case visual witness (`miniwob-60-05`, `34`, `42`, `49`,

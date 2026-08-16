@@ -219,6 +219,7 @@ def test_primary_lens_bound_preserves_ancestor_closure_and_native_child_order() 
     assert document.truncated
     assert len(document.roots) == 1
     assert document.roots[0].label == "Document"
+    assert document.roots[0].state["member_count"] == 2
     assert tuple(item.label for item in document.roots[0].children) == ("Two",)
 
 

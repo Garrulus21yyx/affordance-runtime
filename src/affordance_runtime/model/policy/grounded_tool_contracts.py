@@ -32,9 +32,6 @@ class GroundedToolResolutionCode(StrEnum):
     CATALOG_INVALID = "grounded_tool_catalog_invalid"
     UNKNOWN_TOOL = "unknown_tool"
     INVALID_ARGUMENT = "invalid_argument"
-    TOOL_ARGUMENT_OWNER_MISMATCH = "tool_argument_owner_mismatch"
-    AMBIGUOUS_TOOL_INTENT = "ambiguous_tool_intent"
-    NON_EQUIVALENT_TOOL_INTENT = "non_equivalent_tool_intent"
 
 
 @dataclass(frozen=True)

@@ -717,7 +717,11 @@ def _structure_documents(
                 actor_refs[structure_id],
                 target.role if target is not None else item.role,
                 target.label if target is not None else item.label,
-                target.state if target is not None else item.state,
+                _with_complete_member_count(
+                    target.state if target is not None else item.state,
+                    len(item.child_structure_ids),
+                    complete=str(source.coverage) == "complete",
+                ),
                 evidence_by_subject.get(canonical_id or "", {}),
                 tuple(facts_by_subject.get(canonical_id or "", ())),
                 _non_tree_relations(target, refs) if target is not None else {},
@@ -755,6 +759,22 @@ def _structure_documents(
         ))
         remaining -= len(retained)
     return tuple(documents)
+
+
+def _with_complete_member_count(
+    state: Mapping[str, object],
+    member_count: int,
+    *,
+    complete: bool,
+) -> Mapping[str, object]:
+    """Expose an exact direct-child count only when the source inventory is complete."""
+
+    if not complete or member_count == 0:
+        return state
+    existing = state.get("member_count")
+    if existing is not None and existing != member_count:
+        raise ValueError("source member_count conflicts with its closed structure")
+    return {**dict(state), "member_count": member_count}
 
 
 def _forest_order(structure, allowed: set[str]) -> list:

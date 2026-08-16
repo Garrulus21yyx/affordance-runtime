@@ -33,16 +33,9 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model.policy.grounded_tool_compiler import (
-    CompiledGroundedTool,
-    CompiledSelectorField,
-    PrivateResolutionEntry,
-    SelectorMode,
-)
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOL_CALL_ENVELOPE,
     GroundedActionResolution,
-    GroundedToolCatalog,
     GroundedToolPhase,
 )
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
@@ -53,17 +46,12 @@ from affordance_runtime.model.policy.grounded_tool_port_bridge import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import _build_request as _action_request
-from affordance_runtime.model.policy.provider_call_normalizer import (
-    ProviderCallNormalizer,
-    ToolCallIssueCode,
-    ToolCallReconciliationStatus,
-)
+from affordance_runtime.model.policy.provider_call_normalizer import ToolCallIssueCode
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelCallRecord,
     ModelConfig,
     ModelImageURLPart,
-    ModelMessage,
     ModelTextPart,
     StructuredOutputError,
     StructuredOutputViolation,
@@ -105,7 +93,7 @@ class _ActionPort:
             latency_ms=1,
             response_id=f"response:{self.calls}",
         )
-        return output_schema.model_validate({"name": "activate", "arguments": {}})
+        return output_schema.model_validate({"name": "activate", "arguments": {"target": "E3"}})
 
 
 def _context():
@@ -329,7 +317,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert trace["selected_grounding"]["marked"] is False
 
 
-def test_structure_first_grounded_action_adds_image_only_after_visual_source_acquisition() -> None:
+def test_structure_first_does_not_attach_image_just_because_world_has_visual_source() -> None:
     context = _context()
     visual_source = replace(context.world.sources[0], modality="visual")
     context = replace(
@@ -347,15 +335,54 @@ def test_structure_first_grounded_action_adds_image_only_after_visual_source_acq
 
     assert not isinstance(outcome, ModelFailure)
     user_content = port.messages[1].content
+    assert isinstance(user_content, str)
+    assert adapter.last_image_input_count == 0
+    public = json.loads(user_content)
+    assert "actions" not in public
+    trace = _policy_trace_event(1, context, outcome.decision, adapter)
+    assert trace["model_image_input_count"] == 0
+
+
+def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_request() -> None:
+    context = _context()
+    visual_source = replace(
+        context.world.sources[0],
+        modality="visual",
+        projection_coverage="partial",
+    )
+    context = replace(
+        context,
+        world=replace(context.world, sources=(*context.world.sources, visual_source)),
+        recent_steps=BoundedSection(
+            (
+                AgentTurnView(
+                    "requestobservation",
+                    "request_observation",
+                    semantic_summary={
+                        "purpose": "visual_property",
+                        "feedback_code": "observation_acquired",
+                    },
+                ),
+            ),
+            1,
+            False,
+        ),
+    )
+    port = _ActionPort()
+    adapter = CompactJsonDecisionPort(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert not isinstance(outcome, ModelFailure)
+    user_content = port.messages[1].content
     assert isinstance(user_content, tuple)
     assert isinstance(user_content[0], ModelTextPart)
     assert isinstance(user_content[1], ModelImageURLPart)
     assert adapter.last_image_input_count == 1
-    public = json.loads(user_content[0].text)
-    assert "actions" not in public
-    trace = _policy_trace_event(1, context, outcome.decision, adapter)
-    assert trace["model_image_input_count"] == 1
-    assert trace["selected_grounding"]["marked"] is True
 
 
 def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
@@ -437,7 +464,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
             del config
             self.messages = tuple(messages)
             self.output_schema = output_schema
-            return output_schema.model_validate({"name": "activate", "arguments": {}})
+            return output_schema.model_validate({"name": "activate", "arguments": {"target": "E3"}})
 
     context = _context()
     port = CompactPort()
@@ -463,7 +490,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     }
     assert all("E1(" not in item["description"] for item in public["tools"])
     assert all(
-        "shared public semantics" in item["description"]
+        "current observation" in item["description"]
         for item in public["tools"]
         if item["name"] not in {"ask_user", "wait", "abort"}
     )
@@ -488,7 +515,7 @@ def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
             if self.calls == 1:
                 return GroundedToolCommandPayload(name="click", arguments={})
             self.repair_messages = tuple(messages)
-            return GroundedToolCommandPayload(name="activate", arguments={})
+            return GroundedToolCommandPayload(name="activate", arguments={"target": "E3"})
 
     context = _context()
     port = ToolIntentRepairPort()
@@ -514,13 +541,8 @@ def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
     assert '"emit_one_complete_call":true' in repair_system
 
 
-def test_all_typed_did_you_mean_intent_failures_share_the_bounded_reemission_path() -> None:
-    assert _TOOL_INTENT_REPAIR_CODES == {
-        ToolCallIssueCode.UNKNOWN_TOOL,
-        ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
-        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT,
-        ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT,
-    }
+def test_only_unknown_tool_names_use_the_did_you_mean_reemission_path() -> None:
+    assert _TOOL_INTENT_REPAIR_CODES == {ToolCallIssueCode.UNKNOWN_TOOL}
 
 
 def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> None:
@@ -562,7 +584,7 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
         catalog,
         ToolCall(
             "activate",
-            {},
+            {"target": "E3"},
         ),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
@@ -679,253 +701,6 @@ def test_compact_action_payload_defers_exact_arguments_to_selected_tool_validato
     ) is not None
 
 
-def test_unique_same_operation_selector_owner_normalizes_only_compiler_routing() -> None:
-    submit_spec = ToolSpec(
-        "activate_submit",
-        "Activate Submit.",
-        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
-    )
-    blue_schema = {
-        "type": "object",
-        "properties": {"grounding_ref": {"type": "string", "enum": ["E5", "E10"]}},
-        "required": ["grounding_ref"],
-        "additionalProperties": False,
-    }
-    blue_spec = ToolSpec("activate_blue", "Activate a blue target.", blue_schema)
-    submit_binding = CompiledGroundedTool(
-        "activate",
-        submit_spec,
-        SelectorMode.CONSTANT_TARGET,
-        (),
-        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
-        "sha256:equivalent",
-    )
-    selector = CompiledSelectorField(
-        "grounding_ref",
-        ("target.grounding_ref",),
-        blue_schema["properties"]["grounding_ref"],
-    )
-    blue_binding = CompiledGroundedTool(
-        "activate",
-        blue_spec,
-        SelectorMode.GROUNDING_FALLBACK,
-        (selector,),
-        (
-            PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue-1", None, "E5", {"grounding_ref": "E5"}),
-            PrivateResolutionEntry({"grounding_ref": "E10"}, "action:blue-2", None, "E10", {"grounding_ref": "E10"}),
-        ),
-        "sha256:equivalent",
-    )
-    catalog = GroundedToolCatalog(
-        "grounded-catalog:test", "context:test",
-        (submit_spec, blue_spec), (submit_binding, blue_binding), 1,
-    )
-
-    normalized = ProviderCallNormalizer().normalize(
-        ToolCall("activate_submit", {"grounding_ref": "E10"}),
-        catalog,
-    )
-
-    assert normalized.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT
-    assert normalized.exact_call == ToolCall("activate_blue", {"grounding_ref": "E10"})
-
-
-def test_routing_normalization_telemetry_retains_original_and_normalized_operations() -> None:
-    request = _action_request(_context())
-    submit_spec = ToolSpec(
-        "activate_submit",
-        "Activate Submit.",
-        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
-    )
-    blue_schema = {
-        "type": "object",
-        "properties": {"grounding_ref": {"type": "string", "enum": ["E10"]}},
-        "required": ["grounding_ref"],
-        "additionalProperties": False,
-    }
-    blue_spec = ToolSpec("activate_blue", "Activate blue.", blue_schema)
-    submit_binding = CompiledGroundedTool(
-        "activate",
-        submit_spec,
-        SelectorMode.CONSTANT_TARGET,
-        (),
-        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
-        "sha256:equivalent",
-    )
-    blue_binding = CompiledGroundedTool(
-        "activate",
-        blue_spec,
-        SelectorMode.GROUNDING_FALLBACK,
-        (
-            CompiledSelectorField(
-                "grounding_ref",
-                ("target.grounding_ref",),
-                blue_schema["properties"]["grounding_ref"],
-            ),
-        ),
-        (
-            PrivateResolutionEntry(
-                {"grounding_ref": "E10"},
-                "action:blue",
-                None,
-                "E10",
-                {"grounding_ref": "E10"},
-            ),
-        ),
-        "sha256:equivalent",
-    )
-    catalog = GroundedToolCatalog(
-        "grounded-catalog:test",
-        request.context_id,
-        (submit_spec, blue_spec),
-        (submit_binding, blue_binding),
-        1,
-    )
-
-    @dataclass
-    class TelemetryPort:
-        provider: str = "zhipu"
-        model: str = "glm-4.1v-thinking-flashx"
-        endpoint_class: str = "fixture"
-        supports_multimodal: bool = False
-        last_call: ModelCallRecord | None = None
-
-        async def generate_structured(self, messages, output_schema, config):
-            del messages, output_schema, config
-            return GroundedToolCommandPayload(
-                name="activate_submit",
-                arguments={"grounding_ref": "E10"},
-            )
-
-    adapter = CompactJsonDecisionPort(
-        TelemetryPort(),
-        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
-    )
-    resolved, _metadata = asyncio.run(
-        adapter._resolve_catalog(
-            request,
-            catalog,
-            (ModelMessage(role="system", content="Select one current tool."),),
-            lambda _catalog, call, **_kwargs: call,
-            GroundedToolCommandPayload,
-        )
-    )
-
-    assert resolved.name == "activate_blue"
-    assert dict(resolved.arguments) == {"grounding_ref": "E10"}
-    assert resolved.call_id.startswith("call:")
-    assert adapter.last_routing_original_operation == "activate_submit"
-    assert adapter.last_routing_normalized_operation == "activate_blue"
-
-
-def test_unique_constant_target_accepts_a_redundant_current_grounding_ref() -> None:
-    selected_spec = ToolSpec(
-        "activate_blue",
-        "Activate a blue target.",
-        {
-            "type": "object",
-            "properties": {"grounding_ref": {"type": "string", "enum": ["E5"]}},
-            "required": ["grounding_ref"],
-            "additionalProperties": False,
-        },
-    )
-    submit_spec = ToolSpec(
-        "activate_submit",
-        "Activate Submit.",
-        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
-    )
-    selected_binding = CompiledGroundedTool(
-        "activate",
-        selected_spec,
-        SelectorMode.GROUNDING_FALLBACK,
-        (
-            CompiledSelectorField(
-                "grounding_ref",
-                ("grounding_ref",),
-                {"type": "string", "enum": ["E5"]},
-            ),
-        ),
-        (PrivateResolutionEntry({"grounding_ref": "E5"}, "action:blue", None, "E5", {"grounding_ref": "E5"}),),
-        "sha256:equivalent",
-    )
-    submit_binding = CompiledGroundedTool(
-        "activate",
-        submit_spec,
-        SelectorMode.CONSTANT_TARGET,
-        (),
-        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
-        "sha256:equivalent",
-    )
-    catalog = GroundedToolCatalog(
-        "grounded-catalog:test", "context:test",
-        (selected_spec, submit_spec), (selected_binding, submit_binding), 1,
-    )
-
-    accepted = ProviderCallNormalizer().normalize(
-        ToolCall("activate_blue", {"grounding_ref": "E17"}),
-        catalog,
-    )
-    assert accepted.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT
-    assert accepted.exact_call == ToolCall("activate_submit", {})
-    rejected = ProviderCallNormalizer().normalize(
-        ToolCall("activate_blue", {"grounding_ref": "E99"}),
-        catalog,
-    )
-    assert rejected.issue_code is ToolCallIssueCode.INVALID_ARGUMENT
-
-
-def test_routing_normalization_fails_closed_when_selector_owner_is_ambiguous() -> None:
-    schema = {
-        "type": "object",
-        "properties": {"grounding_ref": {"type": "string", "enum": ["E5"]}},
-        "required": ["grounding_ref"],
-        "additionalProperties": False,
-    }
-    selected_spec = ToolSpec(
-        "activate_submit",
-        "Activate Submit.",
-        {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
-    )
-    selector = CompiledSelectorField(
-        "grounding_ref",
-        ("target.grounding_ref",),
-        schema["properties"]["grounding_ref"],
-    )
-    alternatives = tuple(
-        CompiledGroundedTool(
-            "activate",
-            ToolSpec(name, f"Activate {name}.", schema),
-            SelectorMode.GROUNDING_FALLBACK,
-            (selector,),
-            (PrivateResolutionEntry({"grounding_ref": "E5"}, f"action:{name}", None, "E5", {"grounding_ref": "E5"}),),
-            "sha256:equivalent",
-        )
-        for name in ("activate_first", "activate_second")
-    )
-    selected_binding = CompiledGroundedTool(
-        "activate",
-        selected_spec,
-        SelectorMode.CONSTANT_TARGET,
-        (),
-        (PrivateResolutionEntry({}, "action:submit", None, "E17", {"grounding_ref": "E17"}),),
-        "sha256:equivalent",
-    )
-    catalog = GroundedToolCatalog(
-        "grounded-catalog:test", "context:test",
-        (selected_spec, *(item.public_spec for item in alternatives)),
-        (selected_binding, *alternatives), 1,
-    )
-    original = ToolCall("activate_submit", {"grounding_ref": "E5"})
-
-    result = ProviderCallNormalizer().normalize(original, catalog)
-    assert result.status is ToolCallReconciliationStatus.REPAIR_REQUIRED
-    assert result.issue_code is ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT
-    assert tuple(item.tool_name for item in result.did_you_mean) == (
-        "activate_first",
-        "activate_second",
-    )
-
-
 def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
     context = _context()
     source_options = context.actions.options[:2]
@@ -989,13 +764,10 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
     assert "actions" not in public
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     tool = next(item for item in catalog.specs if item.name == "activate")
-    assert to_json_compatible(tool.input_schema["properties"]["within_label"]["enum"]) == [
-        "MacBook Air",
-        "MacBook Pro",
-    ]
+    assert to_json_compatible(tool.input_schema["properties"]["target"]["enum"]) == ["E1", "E2"]
     outcome = resolve_grounded_tool_call(
         catalog,
-        ToolCall("activate", {"within_label": "MacBook Pro"}),
+        ToolCall("activate", {"target": "E2"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(outcome, GroundedActionResolution)
@@ -1003,7 +775,7 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
     assert outcome.decision.action_id == actions.options[1].action_id
 
 
-def test_invalid_compact_semantic_choice_is_not_repaired_as_argument_format() -> None:
+def test_invalid_compact_target_gets_one_bounded_repair_then_fails_closed() -> None:
     @dataclass
     class InvalidTargetPort:
         provider: str = "zhipu"
@@ -1016,7 +788,7 @@ def test_invalid_compact_semantic_choice_is_not_repaired_as_argument_format() ->
         async def generate_structured(self, messages, output_schema, config):
             del messages, output_schema, config
             self.calls += 1
-            return GroundedToolCommandPayload(name="activate", arguments={"ordinal": 99})
+            return GroundedToolCommandPayload(name="activate", arguments={"target": "E99"})
 
     context = _selector_context(
         operation="activate",
@@ -1032,12 +804,12 @@ def test_invalid_compact_semantic_choice_is_not_repaired_as_argument_format() ->
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert isinstance(outcome, ModelFailure)
-    assert port.calls == 1
-    assert adapter.last_argument_repair_count == 0
-    assert adapter.last_argument_violation_paths == ("parameters.ordinal",)
+    assert port.calls == 2
+    assert adapter.last_argument_repair_count == 1
+    assert adapter.last_argument_violation_paths == ("parameters.target",)
 
 
-def test_compact_business_argument_repair_cannot_change_a_valid_semantic_choice() -> None:
+def test_compact_argument_repair_may_explicitly_reemit_a_different_current_target() -> None:
     @dataclass
     class DriftingRepairPort:
         provider: str = "zhipu"
@@ -1051,10 +823,10 @@ def test_compact_business_argument_repair_cannot_change_a_valid_semantic_choice(
             del messages, output_schema, config
             self.calls += 1
             if self.calls == 1:
-                return GroundedToolCommandPayload(name="type_text", arguments={"ordinal": 2})
+                return GroundedToolCommandPayload(name="type_text", arguments={"target": "E2"})
             return GroundedToolCommandPayload(
                 name="type_text",
-                arguments={"ordinal": 1, "text": "secret"},
+                arguments={"target": "E3", "text": "secret"},
             )
 
     context = _selector_context(
@@ -1075,7 +847,7 @@ def test_compact_business_argument_repair_cannot_change_a_valid_semantic_choice(
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert isinstance(outcome, ModelFailure)
+    assert not isinstance(outcome, ModelFailure)
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
     assert adapter.last_argument_violation_paths == ("parameters.text",)
@@ -1235,18 +1007,18 @@ def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> N
     assert recent_steps[-1]["action"]["arguments"] == {"text": "9"}
 
 
-def test_single_target_action_is_a_private_constant() -> None:
+def test_single_target_action_still_requires_the_current_public_reference() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     activate = next(item for item in catalog.specs if item.name == "activate")
 
-    assert to_json_compatible(activate.input_schema) == {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": False,
-    }
-    outcome = resolve_grounded_tool_call(catalog, ToolCall("activate", {}), expected_context_id=context.context_id)
+    assert to_json_compatible(activate.input_schema)["required"] == ["target"]
+    assert to_json_compatible(activate.input_schema)["properties"]["target"]["enum"] == ["E3"]
+    outcome = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("activate", {"target": "E3"}),
+        expected_context_id=context.context_id,
+    )
     assert isinstance(outcome, GroundedActionResolution)
 
 

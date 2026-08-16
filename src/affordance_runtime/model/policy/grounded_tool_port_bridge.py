@@ -33,7 +33,6 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_action_catalog,
     resolve_grounded_action_call,
 )
-from affordance_runtime.model.policy.grounded_tool_compiler import CompiledGroundedTool
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOL_CALL_ENVELOPE,
     GROUNDED_TOOLS_PROTOCOL,
@@ -98,14 +97,7 @@ class GroundedToolCommandPayload(_GroundedCommandPayloadBase):
     """Compact action-selection command; retained as the public compatibility name."""
 
 
-_TOOL_INTENT_REPAIR_CODES = frozenset(
-    {
-        ToolCallIssueCode.UNKNOWN_TOOL,
-        ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
-        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT,
-        ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT,
-    }
-)
+_TOOL_INTENT_REPAIR_CODES = frozenset({ToolCallIssueCode.UNKNOWN_TOOL})
 
 
 @dataclass(frozen=True)
@@ -230,25 +222,10 @@ class CompactJsonDecisionPort:
         call = original_call
         normalizer = ProviderCallNormalizer()
         reconciliation = normalizer.normalize(call, catalog)
-        if reconciliation.status in {
-            ToolCallReconciliationStatus.EXACT,
-            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
-        }:
+        if reconciliation.status is ToolCallReconciliationStatus.EXACT:
             assert reconciliation.exact_call is not None
-            normalized = reconciliation.exact_call
-            call = normalized
-        else:
-            normalized = call
-        if reconciliation.status is ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT:
-            normalization = (
-                "redundant_grounding_to_constant"
-                if normalized.arguments != original_call.arguments
-                else "unique_same_operation_argument_owner"
-            )
-            object.__setattr__(self, "last_routing_normalization", normalization)
-            object.__setattr__(self, "last_routing_original_operation", original_call.name)
-            object.__setattr__(self, "last_routing_normalized_operation", normalized.name)
-        elif reconciliation.issue_code in _TOOL_INTENT_REPAIR_CODES:
+            call = reconciliation.exact_call
+        if reconciliation.issue_code in _TOOL_INTENT_REPAIR_CODES:
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
             object.__setattr__(self, "last_tool_intent_repair_count", 1)
             repaired = await self._repair_tool_intent(
@@ -260,10 +237,7 @@ class CompactJsonDecisionPort:
             )
             repaired = _with_call_id(repaired, request.request_id, "tool-intent-repair")
             repaired_reconciliation = normalizer.normalize(repaired, catalog)
-            if repaired_reconciliation.status not in {
-                ToolCallReconciliationStatus.EXACT,
-                ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
-            }:
+            if repaired_reconciliation.status is not ToolCallReconciliationStatus.EXACT:
                 raise GroundedToolResolutionError(
                     _resolution_code_for_reconciliation(repaired_reconciliation.issue_code)
                 )
@@ -273,11 +247,7 @@ class CompactJsonDecisionPort:
             object.__setattr__(self, "last_routing_original_operation", original_call.name)
             object.__setattr__(self, "last_routing_normalized_operation", call.name)
         elif (
-            reconciliation.status
-            not in {
-                ToolCallReconciliationStatus.EXACT,
-                ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
-            }
+            reconciliation.status is not ToolCallReconciliationStatus.EXACT
             and reconciliation.issue_code is not ToolCallIssueCode.INVALID_ARGUMENT
         ):
             raise GroundedToolResolutionError(
@@ -309,9 +279,6 @@ class CompactJsonDecisionPort:
             object.__setattr__(self, "last_argument_violation_code", issue.code.value)
             object.__setattr__(self, "last_argument_violation_paths", issue.public_field_paths)
             object.__setattr__(self, "last_selected_operation", spec.name)
-            if _semantic_selector_violation(binding, issue.public_field_paths):
-                # A different semantic/grounding selector is a different GUI decision.
-                raise
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
             object.__setattr__(self, "last_argument_repair_count", 1)
             repaired = await self._repair_selected_operation(
@@ -441,13 +408,12 @@ class CompactJsonDecisionPort:
         original_call: ToolCall,
         binding: object,
     ) -> ToolCall:
-        repair_spec = _selector_fixed_repair_spec(spec, original_call, binding)
+        del binding
+        repair_spec = spec
         repair_messages = _argument_repair_messages(messages, repair_spec, issue)
         payload_type = _command_payload_type((repair_spec,), payload_base=payload_base)
         payload = await self._generate_structured(repair_messages, payload_type)
         repaired = ToolCall(payload.name, payload.command_arguments(repair_spec))
-        if _selector_changed(original_call, repaired, binding):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return repaired
 
     async def _repair_tool_intent(
@@ -552,12 +518,6 @@ def _command_payload_type(
     )
 
 
-def _selector_names(binding: object) -> tuple[str, ...]:
-    if not isinstance(binding, CompiledGroundedTool):
-        return ()
-    return tuple(item.public_name for item in binding.selector_fields)
-
-
 def _resolution_code_for_reconciliation(
     code: ToolCallIssueCode | None,
 ) -> GroundedToolResolutionCode:
@@ -566,45 +526,9 @@ def _resolution_code_for_reconciliation(
     codes: dict[ToolCallIssueCode, GroundedToolResolutionCode] = {
         ToolCallIssueCode.UNKNOWN_TOOL: GroundedToolResolutionCode.UNKNOWN_TOOL,
         ToolCallIssueCode.INVALID_ARGUMENT: GroundedToolResolutionCode.INVALID_ARGUMENT,
-        ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH: GroundedToolResolutionCode.TOOL_ARGUMENT_OWNER_MISMATCH,
-        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT: GroundedToolResolutionCode.AMBIGUOUS_TOOL_INTENT,
-        ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT: GroundedToolResolutionCode.NON_EQUIVALENT_TOOL_INTENT,
         ToolCallIssueCode.STALE_CATALOG: GroundedToolResolutionCode.STALE_CATALOG,
     }
     return codes.get(code, GroundedToolResolutionCode.CATALOG_INVALID)
-
-
-def _semantic_selector_violation(binding: object, field_paths: tuple[str, ...]) -> bool:
-    names = _selector_names(binding)
-    return any(
-        path == f"parameters.{name}" or path.startswith(f"parameters.{name}.") for path in field_paths for name in names
-    )
-
-
-def _selector_fixed_repair_spec(
-    spec: ToolSpec,
-    original_call: ToolCall,
-    binding: object,
-) -> ToolSpec:
-    names = _selector_names(binding)
-    if not names or any(name not in original_call.arguments for name in names):
-        return spec
-    schema = to_json_compatible(spec.input_schema)
-    if not isinstance(schema, dict):
-        raise ValueError("grounded tool schema is invalid")
-    properties = schema.get("properties")
-    if not isinstance(properties, dict):
-        raise ValueError("grounded tool properties are invalid")
-    for name in names:
-        selector_schema = properties.get(name)
-        if not isinstance(selector_schema, dict):
-            raise ValueError("grounded selector schema is invalid")
-        selector_schema["enum"] = [to_json_compatible(original_call.arguments[name])]
-    return ToolSpec(spec.name, spec.description, schema)
-
-
-def _selector_changed(original: ToolCall, repaired: ToolCall, binding: object) -> bool:
-    return any(repaired.arguments.get(name) != original.arguments.get(name) for name in _selector_names(binding))
 
 
 def _format_repair_messages(messages, error: StructuredOutputError):

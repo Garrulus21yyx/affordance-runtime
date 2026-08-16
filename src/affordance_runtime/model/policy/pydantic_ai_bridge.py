@@ -289,10 +289,7 @@ def _resolve_deferred(output, catalog, context_id: str):
             ToolCall(call.tool_name, arguments, call.tool_call_id),
             catalog,
         )
-        if reconciliation.status not in {
-            ToolCallReconciliationStatus.EXACT,
-            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
-        }:
+        if reconciliation.status is not ToolCallReconciliationStatus.EXACT:
             return None
         assert reconciliation.exact_call is not None
         return resolve_grounded_action_call(

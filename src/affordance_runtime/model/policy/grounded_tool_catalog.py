@@ -182,26 +182,8 @@ def compile_grounded_tool_catalog(
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     digest = hashlib.sha256(f"{context.context_id}\0{encoded}".encode()).hexdigest()[:32]
     catalog_id = f"grounded-catalog:{digest}"
-    catalog_bindings = tuple(
-        replace(
-            binding,
-            authority_equivalence_digest="sha256:" + hashlib.sha256(
-                json.dumps(
-                    (
-                        catalog_id,
-                        context.context_id,
-                        binding.authority_equivalence_digest,
-                    ),
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest(),
-        )
-        if isinstance(binding, CompiledGroundedTool)
-        else binding
-        for binding in bindings
-    )
     return GroundedToolCatalog(
-        catalog_id, context.context_id, tuple(specs), catalog_bindings, encoded_bytes
+        catalog_id, context.context_id, tuple(specs), tuple(bindings), encoded_bytes
     )
 
 
@@ -299,6 +281,12 @@ def resolve_grounded_tool_call(
         name: value for name, value in call.arguments.items()
         if name not in selector_names
     }
+    try:
+        validate_value(parameters, match.parameter_schema, path="command")
+    except ValueError as exc:
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.INVALID_ARGUMENTS
+        ) from exc
     return GroundedActionResolution(
         SelectAction(
             expected_context_id,

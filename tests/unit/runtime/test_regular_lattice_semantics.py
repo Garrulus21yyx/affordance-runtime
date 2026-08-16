@@ -168,9 +168,8 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
 
     action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     activate = next(spec for spec in action_catalog.specs if spec.name == "activate")
-    target_values = activate.input_schema["properties"]["semantic_grid_coordinate"]["enum"]
-    assert "(1,-2)" in target_values
-    assert candidate.target_ref not in target_values
+    target_values = activate.input_schema["properties"]["target"]["enum"]
+    assert candidate.target_ref in target_values
 
     assert target.target_id in dict(context.grounding.target_refs)
 

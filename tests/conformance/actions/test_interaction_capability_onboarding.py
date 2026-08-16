@@ -241,7 +241,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
         (compiled,),
         1,
     )
-    arguments = {"text": "beta"}
+    arguments = {"target": "E1", "text": "beta"}
     normalized = ProviderCallNormalizer().normalize(
         ToolCall(compiled.public_spec.name, arguments),
         catalog,
@@ -261,10 +261,11 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     ).admitted
 
     assert binding.parameter_schema == option.parameter_schema == projected.parameter_schema
-    assert compiled.public_spec.input_schema["properties"] == binding.parameter_schema["properties"]
-    assert compiled.public_spec.input_schema["required"] == binding.parameter_schema["required"]
+    assert compiled.public_spec.input_schema["properties"]["text"] == binding.parameter_schema["properties"]["text"]
+    assert compiled.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
+    assert compiled.public_spec.input_schema["required"] == ("target", "text")
     assert admitted is not None
-    assert admitted.parameters == arguments
+    assert admitted.parameters == {"text": "beta"}
     assert admitted.schema_digest == option.schema_digest
     assert isinstance(binding.verification_contract, VerificationContract)
     assert binding.verification_contract_digest == option.verification_contract_digest
@@ -332,7 +333,7 @@ def test_normalizer_import_boundary_and_deleted_owners_are_unreachable() -> None
     assert "_normalize_catalog_call" not in production
 
 
-def test_non_equivalent_representation_returns_typed_did_you_mean_without_exact_call() -> None:
+def test_unknown_tool_returns_bounded_current_names_without_guessing_arguments() -> None:
     task, world = _type_text_world()
     action_space = ActionSpaceBuilder().build(task, world)
     projected = project_action_space(action_space, build_agent_world_view(world)).options[0]
@@ -349,27 +350,21 @@ def test_non_equivalent_representation_returns_typed_did_you_mean_without_exact_
         (projected,),
         context_id="context:owner",
     )[0]
-    wrong_spec = replace(canonical.public_spec, name="type_text_wrong_owner")
-    wrong = replace(
-        canonical,
-        public_spec=wrong_spec,
-        authority_equivalence_digest="sha256:not-equivalent",
-    )
     catalog = GroundedToolCatalog(
         "grounded-catalog:owner",
         "context:owner",
-        (wrong_spec, canonical.public_spec),
-        (wrong, canonical),
+        (canonical.public_spec,),
+        (canonical,),
         1,
     )
     result = ProviderCallNormalizer().normalize(
-        ToolCall("type_text_wrong_owner", {"grounding_ref": "E1", "text": "alpha"}),
+        ToolCall("type_text_typo", {"target": "E1", "text": "alpha"}),
         catalog,
     )
 
-    assert result.status is ToolCallReconciliationStatus.REPAIR_REQUIRED
-    assert result.issue_code is ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT
+    assert result.status is ToolCallReconciliationStatus.REJECTED
+    assert result.issue_code is ToolCallIssueCode.UNKNOWN_TOOL
     assert result.exact_call is None
     assert len(result.did_you_mean) == 1
     assert result.did_you_mean[0].tool_name == canonical.public_spec.name
-    assert result.did_you_mean[0].public_arguments == {"text": "alpha"}
+    assert result.did_you_mean[0].public_arguments == {}

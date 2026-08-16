@@ -8,14 +8,12 @@ from enum import StrEnum
 
 from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.model.policy.grounded_tool_compiler import CompiledGroundedTool
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 
 
 class ToolCallReconciliationStatus(StrEnum):
     EXACT = "exact"
-    NORMALIZED_EQUIVALENT = "normalized_equivalent"
     REPAIR_REQUIRED = "repair_required"
     REJECTED = "rejected"
 
@@ -23,9 +21,6 @@ class ToolCallReconciliationStatus(StrEnum):
 class ToolCallIssueCode(StrEnum):
     UNKNOWN_TOOL = "unknown_tool"
     INVALID_ARGUMENT = "invalid_argument"
-    TOOL_ARGUMENT_OWNER_MISMATCH = "tool_argument_owner_mismatch"
-    AMBIGUOUS_TOOL_INTENT = "ambiguous_tool_intent"
-    NON_EQUIVALENT_TOOL_INTENT = "non_equivalent_tool_intent"
     STALE_CATALOG = "stale_catalog"
 
 
@@ -49,21 +44,11 @@ class ToolCallReconciliationResult:
     did_you_mean: tuple[DidYouMeanCandidate, ...] = ()
 
     def __post_init__(self) -> None:
-        exact = self.status in {
-            ToolCallReconciliationStatus.EXACT,
-            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
-        }
+        exact = self.status is ToolCallReconciliationStatus.EXACT
         if exact != (self.exact_call is not None) or exact == (self.issue_code is not None):
             raise ValueError("provider call reconciliation outcome is inconsistent")
         object.__setattr__(self, "field_paths", tuple(self.field_paths))
         object.__setattr__(self, "did_you_mean", tuple(self.did_you_mean))
-
-
-@dataclass(frozen=True)
-class _Candidate:
-    spec: ToolSpec
-    binding: CompiledGroundedTool
-    arguments: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -117,11 +102,10 @@ class ProviderCallNormalizer:
                 ToolCallIssueCode.UNKNOWN_TOOL,
                 did_you_mean=tuple(
                     DidYouMeanCandidate(spec.name, {}, ToolCallIssueCode.UNKNOWN_TOOL)
-                    for spec in catalog.specs[:8]
+                    for spec in catalog.specs[:3]
                 ),
             )
         selected_spec = catalog.specs[selected_index]
-        selected_binding = catalog.bindings[selected_index]
         selected_issue = validate_value_issue(
             call.arguments,
             selected_spec.input_schema,
@@ -131,69 +115,6 @@ class ProviderCallNormalizer:
             return ToolCallReconciliationResult(
                 ToolCallReconciliationStatus.EXACT,
                 exact_call=call,
-            )
-        if not isinstance(selected_binding, CompiledGroundedTool):
-            return _invalid_arguments(selected_issue)
-
-        candidates = _representation_candidates(call, catalog)
-        if len(candidates) > 1:
-            return _issue(
-                ToolCallReconciliationStatus.REPAIR_REQUIRED,
-                ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT,
-                field_paths=selected_issue.public_field_paths,
-                argument_code=selected_issue.code.value,
-                did_you_mean=tuple(
-                    DidYouMeanCandidate(
-                        item.spec.name,
-                        item.arguments,
-                        ToolCallIssueCode.AMBIGUOUS_TOOL_INTENT,
-                    )
-                    for item in candidates[:8]
-                ),
-            )
-        if len(candidates) == 1:
-            candidate = candidates[0]
-            equivalent = (
-                bool(selected_binding.authority_equivalence_digest)
-                and selected_binding.authority_equivalence_digest
-                == candidate.binding.authority_equivalence_digest
-            )
-            exact_call = ToolCall(candidate.spec.name, candidate.arguments, call.call_id)
-            if equivalent and _business_arguments_unchanged(
-                call,
-                exact_call,
-                candidate.binding,
-            ):
-                return ToolCallReconciliationResult(
-                    ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
-                    exact_call=exact_call,
-                )
-            code = (
-                ToolCallIssueCode.NON_EQUIVALENT_TOOL_INTENT
-                if not equivalent
-                else ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH
-            )
-            return _issue(
-                ToolCallReconciliationStatus.REPAIR_REQUIRED,
-                code,
-                field_paths=selected_issue.public_field_paths,
-                argument_code=selected_issue.code.value,
-                did_you_mean=(DidYouMeanCandidate(candidate.spec.name, candidate.arguments, code),),
-            )
-
-        foreign_selector_names = {
-            field.public_name
-            for binding in catalog.bindings
-            if isinstance(binding, CompiledGroundedTool)
-            for field in binding.selector_fields
-        } - set(_selector_names(selected_binding))
-        if foreign_selector_names.intersection(call.arguments):
-            return _issue(
-                ToolCallReconciliationStatus.REPAIR_REQUIRED,
-                ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
-                field_paths=selected_issue.public_field_paths,
-                argument_code=selected_issue.code.value,
-                did_you_mean=_owner_mismatch_candidates(call, catalog),
             )
         return _invalid_arguments(selected_issue)
 
@@ -205,90 +126,7 @@ def _catalog_is_current(catalog: GroundedToolCatalog) -> bool:
         or len(catalog.specs) != len(catalog.bindings)
     ):
         return False
-    return all(
-        not isinstance(binding, CompiledGroundedTool)
-        or binding.authority_equivalence_digest.startswith("sha256:")
-        for binding in catalog.bindings
-    )
-
-
-def _representation_candidates(
-    call: ToolCall,
-    catalog: GroundedToolCatalog,
-) -> tuple[_Candidate, ...]:
-    result = []
-    for spec, binding in zip(catalog.specs, catalog.bindings, strict=True):
-        if spec.name == call.name or not isinstance(binding, CompiledGroundedTool):
-            continue
-        selector_names = _selector_names(binding)
-        business_names = set(_schema_properties(spec)) - set(selector_names)
-        for row in binding.private_resolutions:
-            owned = dict(row.reconciliation_values)
-            explicit = {
-                name: value for name, value in call.arguments.items() if name in owned
-            }
-            if not explicit or any(owned[name] != value for name, value in explicit.items()):
-                continue
-            arguments = {
-                **dict(row.selector_values),
-                **{
-                    name: call.arguments[name]
-                    for name in business_names
-                    if name in call.arguments
-                },
-            }
-            represented_names = set(arguments) | set(explicit)
-            if set(call.arguments) - represented_names:
-                continue
-            if validate_value_issue(arguments, spec.input_schema, path="parameters") is None:
-                result.append(_Candidate(spec, binding, arguments))
-    unique = {
-        (item.spec.name, repr(dict(item.arguments))): item for item in result
-    }
-    return tuple(unique[key] for key in sorted(unique))
-
-
-def _business_arguments_unchanged(
-    raw: ToolCall,
-    exact: ToolCall,
-    binding: CompiledGroundedTool,
-) -> bool:
-    selectors = set(_selector_names(binding))
-    exact_business = {
-        name: value for name, value in exact.arguments.items() if name not in selectors
-    }
-    return all(raw.arguments.get(name) == value for name, value in exact_business.items())
-
-
-def _owner_mismatch_candidates(
-    call: ToolCall,
-    catalog: GroundedToolCatalog,
-) -> tuple[DidYouMeanCandidate, ...]:
-    candidates = []
-    for spec in catalog.specs:
-        properties = set(_schema_properties(spec))
-        owned = {
-            name: value for name, value in call.arguments.items() if name in properties
-        }
-        if not owned:
-            continue
-        candidates.append(
-            DidYouMeanCandidate(
-                spec.name,
-                owned,
-                ToolCallIssueCode.TOOL_ARGUMENT_OWNER_MISMATCH,
-            )
-        )
-    return tuple(candidates[:8])
-
-
-def _selector_names(binding: CompiledGroundedTool) -> tuple[str, ...]:
-    return tuple(item.public_name for item in binding.selector_fields)
-
-
-def _schema_properties(spec: ToolSpec) -> Mapping[str, object]:
-    properties = spec.input_schema.get("properties", {})
-    return properties if isinstance(properties, Mapping) else {}
+    return True
 
 
 def _invalid_arguments(issue) -> ToolCallReconciliationResult:

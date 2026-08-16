@@ -69,7 +69,11 @@ class ScriptedModel:
                     "request_evidence",
                 }
                 name = next(tool.name for tool in info.function_tools if tool.name not in controls)
-                arguments: dict[str, object] = {}
+                selected = next(tool for tool in info.function_tools if tool.name == name)
+                target_schema = selected.parameters_json_schema["properties"].get("target", {})
+                arguments: dict[str, object] = {
+                    "target": target_schema["enum"][0]
+                } if target_schema else {}
             else:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
@@ -228,7 +232,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
         pydantic_bridge.ProviderCallNormalizer,
         "normalize",
         lambda *_args: ToolCallReconciliationResult(
-            ToolCallReconciliationStatus.NORMALIZED_EQUIVALENT,
+            ToolCallReconciliationStatus.EXACT,
             exact_call=normalized,
         ),
     )
