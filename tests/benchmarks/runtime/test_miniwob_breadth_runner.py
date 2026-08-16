@@ -317,12 +317,12 @@ def _manifest() -> MiniWobBreadthManifest:
     cases = tuple(
         MiniWobBreadthCase(
             f"miniwob-60-{index:02d}", f"browsergym/miniwob.fake-{index:02d}",
-            "current_primitives", ("activate",), 10, 120.0, 7,
+            "current_primitives", ("activate",), 10, 180.0, 7,
         )
         for index in range(1, 61)
     )
     return MiniWobBreadthManifest(
-        "miniwob-breadth-manifest.v1", "miniwob-60-seed7-v1", "browsergym-miniwob",
+        "miniwob-breadth-manifest.v1", "miniwob-60-seed7-v2", "browsergym-miniwob",
         "0.14.3", "7fd85d71a4b60325c6585396ec4f48377d049838", "sha256:registry",
         "sha256:inventory", "miniwob-60-seeded-breadth.v1", "mistral-medium-3-5",
         "format-only.v1", 7.5, cases,

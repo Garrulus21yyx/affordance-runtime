@@ -30,7 +30,7 @@ class RoleCapabilityOffer:
     semantic_action: str
     primitive_action: str
     currentness_fields: tuple[str, ...]
-    availability_requirements: tuple[str, ...]
+    execution_requirements: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,6 @@ def _role(
     semantic_action: str,
     primitive_action: str,
     currentness_fields: tuple[str, ...],
-    availability_requirements: tuple[str, ...],
 ) -> BrowserGymRoleSpec:
     return BrowserGymRoleSpec(
         role,
@@ -70,7 +69,7 @@ def _role(
             semantic_action,
             primitive_action,
             currentness_fields,
-            availability_requirements,
+            _PRIMITIVE_EXECUTION_REQUIREMENTS[primitive_action],
         ),),
     )
 
@@ -79,33 +78,40 @@ _COMMON_ACTIVATION_AVAILABILITY = ("attached", "visible", "enabled")
 _COMMON_EDIT_AVAILABILITY = (
     "attached", "visible", "enabled", "not_readonly", "editable",
 )
+_PRIMITIVE_EXECUTION_REQUIREMENTS = {
+    "click": _COMMON_ACTIVATION_AVAILABILITY,
+    "fill": _COMMON_EDIT_AVAILABILITY,
+    # BrowserGym's select_option route operates on an attached native <select>
+    # and retries Playwright with force.  Visibility and generic editability are
+    # therefore not execution preconditions; the canonical option-domain check
+    # below remains the proof that this route is backed by a native select.
+    "select_option": ("attached", "enabled", "not_readonly"),
+    "drag_and_drop": _COMMON_ACTIVATION_AVAILABILITY,
+}
 
 _ROLE_SPECS = {
-    "button": _role("button", "activate", "click", ("expanded",), _COMMON_ACTIVATION_AVAILABILITY),
-    "link": _role("link", "activate", "click", ("expanded",), _COMMON_ACTIVATION_AVAILABILITY),
-    "textbox": _role("textbox", "type_text", "fill", ("value", "required"), _COMMON_EDIT_AVAILABILITY),
-    "searchbox": _role("searchbox", "type_text", "fill", ("value", "required"), _COMMON_EDIT_AVAILABILITY),
+    "button": _role("button", "activate", "click", ("expanded",)),
+    "link": _role("link", "activate", "click", ("expanded",)),
+    "textbox": _role("textbox", "type_text", "fill", ("value", "required")),
+    "searchbox": _role("searchbox", "type_text", "fill", ("value", "required")),
     "combobox": _role(
         "combobox", "select_option", "select_option",
         ("value", "expanded", "required", "selected_options"),
-        _COMMON_EDIT_AVAILABILITY,
     ),
     "listbox": _role(
         "listbox", "select_option", "select_option",
         ("value", "expanded", "required", "selected_options"),
-        _COMMON_EDIT_AVAILABILITY,
     ),
-    "checkbox": _role("checkbox", "activate", "click", ("checked",), _COMMON_ACTIVATION_AVAILABILITY),
-    "radio": _role("radio", "activate", "click", ("checked",), _COMMON_ACTIVATION_AVAILABILITY),
-    "tab": _role("tab", "activate", "click", ("selected",), _COMMON_ACTIVATION_AVAILABILITY),
-    "menuitem": _role("menuitem", "activate", "click", ("expanded", "checked"), _COMMON_ACTIVATION_AVAILABILITY),
-    "clickable": _role("clickable", "activate", "click", (), _COMMON_ACTIVATION_AVAILABILITY),
+    "checkbox": _role("checkbox", "activate", "click", ("checked",)),
+    "radio": _role("radio", "activate", "click", ("checked",)),
+    "tab": _role("tab", "activate", "click", ("selected",)),
+    "menuitem": _role("menuitem", "activate", "click", ("expanded", "checked")),
+    "clickable": _role("clickable", "activate", "click", ()),
     "draggable": _role(
         "draggable",
         "drag_to",
         "drag_and_drop",
         (),
-        _COMMON_ACTIVATION_AVAILABILITY,
     ),
     "drop_target": BrowserGymRoleSpec("drop_target", True, ()),
     "slider": BrowserGymRoleSpec("slider", True, ()),

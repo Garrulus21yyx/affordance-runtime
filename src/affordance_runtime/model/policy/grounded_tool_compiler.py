@@ -353,7 +353,8 @@ def _description(
     effects = ", ".join(rows[0].option.semantic_effects) or rows[0].option.effect_category
     return (
         f"{operation} using current observation {endpoints}. "
-        f"Choose only listed references. Effect: {effects}; risk: {rows[0].option.risk}."
+        "Choose only references listed by this tool; other observed references are context only and "
+        f"are not interactive with this operation. Effect: {effects}; risk: {rows[0].option.risk}."
     )[:500]
 
 

@@ -18,6 +18,7 @@ from affordance_runtime.world import (
     CoverageState,
     ObservationConflict,
     ObservationSourceProfile,
+    StateFact,
     WorldFusion,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
@@ -204,6 +205,37 @@ def _activate_world(observation_id: str, shade: int):
     ).world
 
 
+def _activate_structural_world(observation_id: str, active: bool):
+    world = _activate_world(observation_id, 255)
+    source = world.sources[0]
+    target = source.targets[0]
+    active_fact = StateFact(
+        f"fact:{observation_id}:active",
+        target.target_id,
+        "active",
+        active,
+        source.observation_id,
+    )
+    facts = tuple(
+        item
+        for item in source.facts
+        if not (item.subject_id == target.target_id and item.predicate == "active")
+    ) + (active_fact,)
+    source = replace(
+        source,
+        targets=(replace(target, state={**target.state, "active": active}),),
+        facts=facts,
+        entity_inventory=replace(
+            source.entity_inventory,
+            fact_count=len(facts),
+            fact_total_count=len(facts),
+        ),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
 def _evaluate_activate(before, after):
     task = _task()
     request = request_for(before, task, "activate")
@@ -226,6 +258,104 @@ def test_activate_visual_change_is_effect_confirmed_with_public_diff_evidence() 
         "screenshot_changed": True,
         "target_changed": False,
     }
+
+
+def test_activate_target_state_change_keeps_public_before_after_fact_delta() -> None:
+    before = _activate_structural_world("obs:before", False)
+    after = _activate_structural_world("obs:after", True)
+
+    evaluation = _evaluate_activate(before, after)
+
+    assert evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    assert evaluation.evidence["verification_profile"] == "structural_target_diff_v1"
+    assert evaluation.evidence["fact_changes"] == (
+        {
+            "subject_id": before.targets[0].target_id,
+            "predicate": "active",
+            "before": False,
+            "after": True,
+        },
+    )
+
+
+def test_activate_target_feedback_excludes_unrelated_world_changes() -> None:
+    before = _activate_structural_world("obs:before", False)
+    after = _activate_structural_world("obs:after", True)
+    before_source = before.sources[0]
+    after_source = after.sources[0]
+    unrelated_before = replace(
+        before_source.targets[0],
+        target_id="target:unrelated",
+        role="generic",
+        label="Other",
+        state={"viewport.visible": True},
+    )
+    unrelated_after = replace(
+        unrelated_before,
+        state={"viewport.visible": False},
+    )
+    before_fact = StateFact(
+        "fact:before:unrelated",
+        unrelated_before.target_id,
+        "viewport.visible",
+        True,
+        before_source.observation_id,
+    )
+    after_fact = replace(
+        before_fact,
+        fact_id="fact:after:unrelated",
+        value=False,
+        source_id=after_source.observation_id,
+    )
+    before_source = replace(
+        before_source,
+        targets=(*before_source.targets, unrelated_before),
+        facts=(*before_source.facts, before_fact),
+        semantic_inventory=replace(
+            before_source.semantic_inventory,
+            recognized_target_count=2,
+            projected_target_count=2,
+            non_executable_target_count=1,
+            informational_target_count=1,
+        ),
+        entity_inventory=replace(
+            before_source.entity_inventory,
+            entity_count=2,
+            entity_total_count=2,
+            fact_count=2,
+            fact_total_count=2,
+        ),
+    )
+    after_source = replace(
+        after_source,
+        targets=(*after_source.targets, unrelated_after),
+        facts=(*after_source.facts, after_fact),
+        semantic_inventory=replace(
+            after_source.semantic_inventory,
+            recognized_target_count=2,
+            projected_target_count=2,
+            non_executable_target_count=1,
+            informational_target_count=1,
+        ),
+        entity_inventory=replace(
+            after_source.entity_inventory,
+            entity_count=2,
+            entity_total_count=2,
+            fact_count=2,
+            fact_total_count=2,
+        ),
+    )
+    before = WorldFusion().fuse((before_source,)).observation
+    after = WorldFusion().fuse((after_source,)).observation
+    assert before is not None and after is not None
+
+    evaluation = _evaluate_activate(before, after)
+
+    assert evaluation.evidence["verification_profile"] == "structural_target_diff_v1"
+    assert all(
+        change["subject_id"] == before.targets[0].target_id
+        for change in evaluation.evidence["fact_changes"]
+    )
 
 
 def test_activate_unchanged_visual_state_is_no_effect_confirmed() -> None:

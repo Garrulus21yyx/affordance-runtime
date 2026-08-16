@@ -16,6 +16,10 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     resolve_grounded_tool_call,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.surfaces.browsergym.semantics import PRIVATE_CONTROL_PROPERTIES_KEY
+from affordance_runtime.surfaces.visual.disambiguation import (
+    VisualCandidateDisambiguationRequest,
+)
 from affordance_runtime.surfaces.visual.grounding import (
     VisualGroundingPoint,
     VisualGroundingRequest,
@@ -31,7 +35,12 @@ from affordance_runtime.world import (
     SourceAcquisitionStatus,
     WorldObservationRequest,
 )
-from tests.support.surfaces.browsergym.browsergym_adapter_support import FakeBrowserGym, open_surface, raw_observation
+from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+    FakeBrowserGym,
+    ax_node,
+    open_surface,
+    raw_observation,
+)
 
 
 @dataclass
@@ -69,6 +78,19 @@ class _Grounder:
     def ground(self, request: VisualGroundingRequest) -> VisualGroundingPoint:
         self.calls.append(request)
         return self.point
+
+
+@dataclass
+class _CandidateDisambiguator:
+    selected_ref: str | None = "E1"
+    calls: list[VisualCandidateDisambiguationRequest] = field(default_factory=list)
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "fixture-v1"
+
+    def choose(self, request: VisualCandidateDisambiguationRequest) -> str | None:
+        self.calls.append(request)
+        return self.selected_ref
 
 
 def _raw(*, shade: int = 255):
@@ -117,6 +139,90 @@ def _visual_request():
             ),
         ),
     )
+
+
+def _target_disambiguation_request() -> WorldObservationRequest:
+    return WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "the policy needs one current target",
+        (
+            ObservationNeed(
+                "agent:visual:target",
+                ObservationPurpose.TARGET_DISAMBIGUATION,
+                ("current_world",),
+                ObservationModality.VISUAL,
+                ObservationAssurance.WEAK,
+            ),
+        ),
+    )
+
+
+def _candidate_raw(*boxes: tuple[int, int, int, int]) -> dict[str, object]:
+    nodes = tuple(ax_node(f"button-{index}", "button", "Choice") for index in range(len(boxes)))
+    raw = raw_observation(*nodes)
+    raw["screenshot"] = np.full((100, 200, 3), 255, dtype=np.uint8)
+    physical = raw[PRIVATE_CONTROL_PROPERTIES_KEY]
+    assert isinstance(physical, dict)
+    for index, bbox in enumerate(boxes):
+        item = physical[f"button-{index}"]
+        assert isinstance(item, dict)
+        item["bbox"] = list(bbox)
+    return raw
+
+
+def test_disambiguation_candidates_are_current_viewport_scoped_and_clipped() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20), (190, 30, 20, 20), (10, 1000, 30, 20))
+        fake = FakeBrowserGym(raw)
+        disambiguator = _CandidateDisambiguator()
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: fake,
+            visual_candidate_disambiguator=disambiguator,
+        )
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_target_disambiguation_request())
+        finally:
+            await environment.close()
+
+        assert acquired.status.value == "acquired"
+        assert len(disambiguator.calls) == 1
+        assert tuple(item.bbox for item in disambiguator.calls[0].candidates) == (
+            (10, 10, 30, 20),
+            (190, 30, 10, 20),
+        )
+        assert environment.visual_provider_failure_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_insufficient_viewport_candidates_do_not_call_or_blame_provider() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20), (10, 1000, 30, 20))
+        fake = FakeBrowserGym(raw)
+        disambiguator = _CandidateDisambiguator()
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: fake,
+            visual_candidate_disambiguator=disambiguator,
+        )
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(_target_disambiguation_request())
+        finally:
+            await environment.close()
+
+        result = next(item for item in acquired.source_results if item.source == "browsergym_visual")
+        assert result.status is SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE
+        assert result.reason_code == "visual_candidate_set_unavailable"
+        assert disambiguator.calls == []
+        assert environment.visual_disambiguator_calls == 0
+        assert environment.visual_provider_failure_count == 0
+
+    asyncio.run(scenario())
 
 
 def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() -> None:
@@ -351,6 +457,7 @@ def test_required_visual_failure_returns_typed_failed_acquisition() -> None:
             assert acquired.reason_code == "required_source_exhausted"
             result = next(item for item in acquired.source_results if item.source == "browsergym_visual")
             assert result.status is SourceAcquisitionStatus.FAILED
+            assert result.reason_code == "region_proposal_provider_error"
             assert fake.capture_count == 1
         finally:
             await environment.close()

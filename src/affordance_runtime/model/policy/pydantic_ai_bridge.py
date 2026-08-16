@@ -26,6 +26,7 @@ from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
+    ModelGenerationAttempt,
     ModelMetadata,
     ResolvedModelDecision,
 )
@@ -60,6 +61,14 @@ class PydanticAIGroundedDecisionPort:
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
     transport_timeout_s: float = 85.0
     context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
+    last_catalog_count: int = field(default=0, init=False, compare=False)
+    last_catalog_bytes: int = field(default=0, init=False, compare=False)
+    last_catalog_specs: tuple[object, ...] = field(default=(), init=False, compare=False)
+    last_image_input_count: int = field(default=0, init=False, compare=False)
+    last_model_call_count: int = field(default=0, init=False, compare=False)
+    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
+        default=(), init=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip() or not self.model_id.strip():
@@ -92,6 +101,12 @@ class PydanticAIGroundedDecisionPort:
         self,
         request: ModelDecisionRequest,
     ) -> ResolvedModelDecision | ModelFailure:
+        object.__setattr__(self, "last_catalog_count", 0)
+        object.__setattr__(self, "last_catalog_bytes", 0)
+        object.__setattr__(self, "last_catalog_specs", ())
+        object.__setattr__(self, "last_image_input_count", 0)
+        object.__setattr__(self, "last_model_call_count", 0)
+        object.__setattr__(self, "last_generation_attempts", ())
         try:
             from pydantic_ai import (
                 Agent,
@@ -116,6 +131,10 @@ class PydanticAIGroundedDecisionPort:
 
         try:
             catalog = compile_grounded_action_catalog(request.agent_context)
+            object.__setattr__(self, "last_catalog_count", len(catalog.specs))
+            object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
+            object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
+            object.__setattr__(self, "last_image_input_count", len(request.image_inputs))
             messages = self.context_binder.action_messages(
                 request,
                 catalog.specs,
@@ -125,6 +144,10 @@ class PydanticAIGroundedDecisionPort:
             )
             instructions, user_prompt = _pydantic_prompt(messages, request.image_inputs, BinaryContent)
             final_ready = _final_response_ready(request.agent_context)
+            if final_ready:
+                object.__setattr__(self, "last_catalog_count", 0)
+                object.__setattr__(self, "last_catalog_bytes", 0)
+                object.__setattr__(self, "last_catalog_specs", ())
             toolset = ExternalToolset(
                 [
                     ToolDefinition(
@@ -144,12 +167,14 @@ class PydanticAIGroundedDecisionPort:
             )
             usage = RunUsage()
             limits = UsageLimits(request_limit=2)
+            object.__setattr__(self, "last_model_call_count", 1)
             result = await agent.run(
                 user_prompt,
                 toolsets=[] if final_ready else [toolset],
                 usage=usage,
                 usage_limits=limits,
             )
+            self._record_generation(result, "initial", catalog.specs)
             decision = (
                 _resolve_final_response(result.output, request.context_id)
                 if final_ready
@@ -168,6 +193,7 @@ class PydanticAIGroundedDecisionPort:
                     if isinstance(repair, DeferredToolResults)
                     else {"user_prompt": repair}
                 )
+                object.__setattr__(self, "last_model_call_count", 2)
                 result = await agent.run(
                     message_history=result.all_messages(),
                     toolsets=[toolset],
@@ -175,6 +201,7 @@ class PydanticAIGroundedDecisionPort:
                     usage_limits=limits,
                     **repair_kwargs,
                 )
+                self._record_generation(result, "tool_call_repair", catalog.specs)
                 decision = _resolve_deferred(result.output, catalog, request.context_id)
             if decision is None:
                 return _failure(
@@ -218,6 +245,50 @@ class PydanticAIGroundedDecisionPort:
                 grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
                 perception_profile=self.perception_profile.value,
             ),
+        )
+
+    def _record_generation(self, result: object, phase: str, specs: tuple[object, ...]) -> None:
+        messages = json.loads(result.new_messages_json())
+        requests = [message for message in messages if message.get("kind") == "request"]
+        responses = [message for message in messages if message.get("kind") == "response"]
+        usage = result.usage
+        response = responses[-1] if responses else {}
+        transcript = {
+            "openinference.span.kind": "LLM",
+            "llm.system": self.provider_id,
+            "llm.model_name": self.model_id,
+            "llm.input_messages": requests,
+            "llm.output_messages": responses,
+            "llm.tools": [
+                {
+                    "tool.name": getattr(spec, "name", ""),
+                    "tool.description": getattr(spec, "description", ""),
+                    "tool.json_schema": to_json_compatible(getattr(spec, "input_schema", {})),
+                }
+                for spec in specs
+            ],
+            "llm.token_count.prompt": usage.input_tokens,
+            "llm.token_count.completion": usage.output_tokens,
+            "llm.token_count.total": usage.input_tokens + usage.output_tokens,
+            "response.id": str(response.get("provider_response_id") or ""),
+            "status": "accepted",
+            "error": "",
+        }
+        attempt = ModelGenerationAttempt(
+            attempt=len(self.last_generation_attempts) + 1,
+            phase=phase,
+            schema_name=GROUNDED_TOOLS_PROTOCOL,
+            status="accepted",
+            response_id=str(response.get("provider_response_id") or ""),
+            prompt_tokens=usage.input_tokens,
+            completion_tokens=usage.output_tokens,
+            total_tokens=usage.input_tokens + usage.output_tokens,
+            transcript=transcript,
+        )
+        object.__setattr__(
+            self,
+            "last_generation_attempts",
+            (*self.last_generation_attempts, attempt),
         )
 
 

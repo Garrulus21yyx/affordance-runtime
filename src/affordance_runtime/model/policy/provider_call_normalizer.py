@@ -74,13 +74,13 @@ class ProviderCallNormalizer:
             return value
         if arguments is None:
             arguments = args_alias
-        if arguments is None:
-            arguments = raw
-        elif raw:
-            if not isinstance(arguments, Mapping) or set(arguments).intersection(raw):
-                return value
-            arguments = {**arguments, **raw}
-        return {"name": name, "arguments": arguments}
+        # Provider-side commentary is non-authoritative envelope metadata.  It
+        # is deliberately discarded here and can never become a tool argument;
+        # the selected catalog schema still validates every action-bearing value.
+        normalized = {"name": name}
+        if arguments is not None:
+            normalized["arguments"] = arguments
+        return normalized
 
     def normalize(
         self,
@@ -106,6 +106,7 @@ class ProviderCallNormalizer:
                 ),
             )
         selected_spec = catalog.specs[selected_index]
+        call = _normalize_nested_parameters(call, selected_spec.input_schema)
         selected_issue = validate_value_issue(
             call.arguments,
             selected_spec.input_schema,
@@ -117,6 +118,24 @@ class ProviderCallNormalizer:
                 exact_call=call,
             )
         return _invalid_arguments(selected_issue)
+
+
+def _normalize_nested_parameters(
+    call: ToolCall,
+    input_schema: Mapping[str, object],
+) -> ToolCall:
+    """Unwrap one unambiguous legacy argument wrapper without guessing values."""
+
+    arguments = call.arguments
+    properties = input_schema.get("properties")
+    if (
+        set(arguments) == {"parameters"}
+        and isinstance(arguments["parameters"], Mapping)
+        and isinstance(properties, Mapping)
+        and "parameters" not in properties
+    ):
+        return ToolCall(call.name, dict(arguments["parameters"]), call.call_id)
+    return call
 
 
 def _catalog_is_current(catalog: GroundedToolCatalog) -> bool:
@@ -133,9 +152,20 @@ def _invalid_arguments(issue) -> ToolCallReconciliationResult:
     return _issue(
         ToolCallReconciliationStatus.REPAIR_REQUIRED,
         ToolCallIssueCode.INVALID_ARGUMENT,
-        field_paths=issue.public_field_paths,
+        field_paths=project_argument_paths_to_wire(issue.public_field_paths),
         argument_code=issue.code.value,
     )
+
+
+def project_argument_paths_to_wire(paths: tuple[str, ...]) -> tuple[str, ...]:
+    """Translate internal admission paths into the model-visible envelope."""
+
+    projected = []
+    for path in paths:
+        if path != "parameters" and not path.startswith("parameters."):
+            raise ValueError("argument admission path is outside the parameter contract")
+        projected.append("arguments" + path[len("parameters"):])
+    return tuple(projected)
 
 
 def _issue(

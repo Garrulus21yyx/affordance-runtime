@@ -440,6 +440,8 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             assert previous[0].action_evaluation_status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED
             assert previous[0].task_evaluation_status == TaskEvaluationStatus.INCOMPLETE
             assert previous[0].reason == "state did not change"
+            assert previous[0].semantic_summary["feedback_code"] == "action_no_effect_change_strategy"
+            assert previous[0].target_snapshot["label"]
             return Abort(context.context_id, "feedback projection verified", AbortCategory.USER_REQUEST)
 
     class NoEffectActionEvaluator:

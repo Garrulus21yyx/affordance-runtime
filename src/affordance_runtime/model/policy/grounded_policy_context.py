@@ -202,6 +202,8 @@ def _turn(
         "tool": item.semantic_action,
         "target": _subject(item.target_id, refs, unknown=""),
     }
+    if item.target_snapshot:
+        action["target_snapshot"] = project_public_value(item.target_snapshot)
     result_details = None
     if detailed:
         action["arguments"] = project_public_value(item.public_parameters)
@@ -214,12 +216,16 @@ def _turn(
                 result_details = details.pop("result", None)
             if details:
                 action["details"] = details
-    result = {
+    result: dict[str, object] = {
         "dispatch": item.dispatch_status,
         "effect": item.action_evaluation_status,
         "task": item.task_evaluation_status,
         "reason": item.reason,
     }
+    if item.effect_summary:
+        result["effect_details"] = _replace_target_refs(
+            project_public_value(item.effect_summary), refs
+        )
     if result_details is not None:
         result["details"] = result_details
     return {"action": action, "result": result}

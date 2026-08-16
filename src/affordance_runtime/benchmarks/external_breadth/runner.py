@@ -576,8 +576,9 @@ def _validate_formal_policy(
     if provider_recovery:
         raise ValueError("provider recovery orchestration is outside the simplified Runtime")
     adapter = composed
-    provider = getattr(adapter.port, "provider", "")
-    model = getattr(adapter.port, "model", "")
+    provider_port = getattr(adapter, "port", None)
+    provider = getattr(provider_port, "provider", "")
+    model = getattr(provider_port, "model", "")
     identity = provider, model, getattr(adapter, "grounding_profile_version", "")
     config = getattr(adapter, "config", None)
     if (

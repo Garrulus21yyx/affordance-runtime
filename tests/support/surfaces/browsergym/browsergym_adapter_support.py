@@ -50,6 +50,32 @@ def ax_node(
     return node
 
 
+def dom_snapshot(*elements: tuple[str, str, dict[str, str]]) -> dict[str, object]:
+    """Build BrowserGym's CDP DOMSnapshot shape for adapter contract tests."""
+
+    strings: list[str] = []
+
+    def intern(value: str) -> int:
+        try:
+            return strings.index(value)
+        except ValueError:
+            strings.append(value)
+            return len(strings) - 1
+
+    node_names: list[int] = []
+    attributes: list[list[int]] = []
+    for tag, bid, values in elements:
+        node_names.append(intern(tag.upper()))
+        encoded: list[int] = []
+        for name, value in (("bid", bid), *values.items()):
+            encoded.extend((intern(name), intern(value)))
+        attributes.append(encoded)
+    return {
+        "strings": strings,
+        "documents": [{"nodes": {"nodeName": node_names, "attributes": attributes}}],
+    }
+
+
 def raw_observation(*nodes, goal='Click the "okay" button.', url="file:///fixed/task.html"):
     copied = [dict(node) for node in nodes]
     select_indexes = [index for index, node in enumerate(copied) if node["role"]["value"] in {"combobox", "listbox"}]

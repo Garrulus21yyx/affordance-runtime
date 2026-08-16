@@ -53,6 +53,7 @@ from affordance_runtime.world import (
     SemanticTarget,
     SourceAcquisitionStatus,
     SourceEntityEndpoint,
+    SourceRequirement,
     StateFact,
     SurfaceObservation,
     WorldFusion,
@@ -267,7 +268,7 @@ def test_first_version_budget_fails_closed_before_a_third_source() -> None:
     assert selected.reason_code == "source_budget_exhausted"
 
 
-def test_same_orchestrator_adds_one_visual_source_for_residual_ambiguity() -> None:
+def test_candidate_plurality_does_not_trigger_visual_before_policy_intent() -> None:
     structured = _source("dom")
     second_target = replace(structured.targets[0], target_id="target:second")
     second_binding = replace(
@@ -294,10 +295,35 @@ def test_same_orchestrator_adds_one_visual_source_for_residual_ambiguity() -> No
     )
 
     assert selected.plan is not None
+    assert [item.source for item in selected.plan.selections] == ["dom"]
+
+
+def test_typed_structural_truncation_adds_optional_visual_discovery() -> None:
+    structured = replace(_source("dom"), coverage=CoverageState.TRUNCATED)
+    offers = (
+        ObservationOffer("dom", "structural", "structural", "low"),
+        ObservationOffer(
+            "visual",
+            "visual",
+            "weak",
+            "high",
+            supported_purposes=(ObservationPurpose.ENTITY_DISCOVERY,),
+        ),
+    )
+
+    selected = ObservationOrchestrator().select_after_baseline(
+        offers,
+        WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "ordinary"),
+        structured,
+        terminal=False,
+    )
+
+    assert selected.plan is not None
     assert [item.source for item in selected.plan.selections] == ["dom", "visual"]
     visual = selected.plan.selections[1]
-    assert visual.reason_code == "visual_target_disambiguation"
-    assert visual.need_ids == ("residual:target_disambiguation",)
+    assert visual.reason_code == "visual_entity_discovery"
+    assert visual.need_ids == ("residual:entity_discovery",)
+    assert visual.requirement is SourceRequirement.OPTIONAL
 
 
 def test_public_state_distinction_closes_ambiguity_without_visual_source() -> None:
@@ -774,7 +800,7 @@ def test_public_acquisition_rejects_a_plan_without_conserved_source_results() ->
         replace(acquired, activations=())
 
 
-def test_generic_environment_runs_residual_stage_two_with_one_orchestrator() -> None:
+def test_generic_environment_does_not_infer_disambiguation_from_duplicate_controls() -> None:
     async def scenario() -> None:
         structured = _source("dom")
         second_target = replace(structured.targets[0], target_id="target:second")
@@ -811,9 +837,7 @@ def test_generic_environment_runs_residual_stage_two_with_one_orchestrator() -> 
         )
 
         assert acquired.status is AcquisitionStatus.ACQUIRED
-        assert dom.observe_calls == 2 and visual.observe_calls == 1
-        assert dom.requests[-1].acquisition_id == visual.requests[-1].acquisition_id
-        assert tuple(need.purpose for need in visual.requests[-1].needs) == (ObservationPurpose.TARGET_DISAMBIGUATION,)
+        assert dom.observe_calls == 2 and visual.observe_calls == 0
 
     asyncio.run(scenario())
 

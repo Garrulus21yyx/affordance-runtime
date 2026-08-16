@@ -41,11 +41,31 @@ def apply_action_evidence_profile(
         and evaluation.evidence.get("verification_profile") == "visual_diff_v1"
     ):
         return _apply_activate_visual_profile(evaluation, request, before, after, records)
-    if not obligations or not after.sources:
+    if not after.sources:
         return _unknown(evaluation, "action verification scope or source profile is unavailable")
     if evaluation.status == ActionEvaluationStatus.EFFECT_CONFIRMED:
+        self_supported = _self_supported_structural_effect(
+            evaluation,
+            records,
+            before,
+            after,
+            request.intent.target_id,
+        )
+        if (
+            evaluation.evidence.get("verification_profile") == "structural_target_diff_v1"
+            and self_supported
+        ):
+            return evaluation
+        if not obligations:
+            return (
+                evaluation
+                if self_supported
+                else _unknown(evaluation, "action verification scope is unavailable")
+            )
         supported = any(_effect_supported(item, records, before, after) for item in obligations)
         return evaluation if supported else _unknown(evaluation, "current evidence does not satisfy a verification obligation")
+    if not obligations:
+        return _unknown(evaluation, "action verification scope is unavailable")
     complete = bool(after.source_manifest) and all(
         item.coverage == CoverageState.COMPLETE for item in after.source_manifest
     )
@@ -84,6 +104,31 @@ def _effect_supported(obligation, records, before, after) -> bool:
         item is not None and item.kind == "fact" and item.subject_id == obligation.subject_id
         and item.predicate == obligation.predicate and item.value == obligation.expected_value
         and _assurance(item.source_assurance, obligation.required_assurance)
+        for item in records
+    )
+
+
+def _self_supported_structural_effect(
+    evaluation,
+    records,
+    before,
+    after,
+    target_id: str,
+) -> bool:
+    """Preserve a closed positive structural proof when no task minimum exists."""
+
+    profile = evaluation.evidence.get("verification_profile")
+    if profile not in {"structural_target_diff_v1", "structural_world_diff_v1"}:
+        return False
+    return any(
+        item is not None
+        and item.kind == "fact"
+        and (profile != "structural_target_diff_v1" or item.subject_id == target_id)
+        and item.predicate != "focused"
+        and evidence_source_is_current(item, after)
+        and _assurance(item.source_assurance, "structural")
+        and _source_coverage_complete(item.source_observation_id, after)
+        and _before_values(before, item.subject_id, item.predicate) != (item.value,)
         for item in records
     )
 

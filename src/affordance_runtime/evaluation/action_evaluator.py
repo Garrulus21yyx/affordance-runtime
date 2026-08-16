@@ -104,9 +104,18 @@ def _evaluation(request, before, after, status, refs=()) -> ActionEvaluation:
         ActionEvaluationStatus.NO_EFFECT_CONFIRMED: "public postcondition did not change",
         ActionEvaluationStatus.UNKNOWN: "public postcondition is not mechanically resolved",
     }[status]
+    evidence: dict[str, object] = {}
+    if status in {
+        ActionEvaluationStatus.EFFECT_CONFIRMED,
+        ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+    }:
+        evidence["observed_effect"] = status.value
+    changes = _fact_changes(before, after, tuple(refs))
+    if changes:
+        evidence["fact_changes"] = changes
     return ActionEvaluation(
         request.request_id, before.observation_id, after.observation_id,
-        status, reason, tuple(refs),
+        status, reason, tuple(refs), evidence,
     )
 
 
@@ -114,13 +123,14 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
     target_changed = _target_semantics(before, request.intent.target_id) != _target_semantics(
         after, request.intent.target_id,
     )
-    structural_refs = _changed_target_fact_refs(
+    target_refs = _changed_target_fact_refs(
         before,
         after,
         request.intent.target_id,
     )
-    structural_refs = tuple(dict.fromkeys((*structural_refs, *_changed_world_fact_refs(before, after))))
+    structural_refs = target_refs or _changed_world_fact_refs(before, after)
     if structural_refs:
+        fact_changes = _fact_changes(before, after, structural_refs)
         return ActionEvaluation(
             request.request_id,
             before.observation_id,
@@ -128,20 +138,21 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
             ActionEvaluationStatus.EFFECT_CONFIRMED,
             (
                 "public target semantics changed with current structural evidence"
-                if target_changed
+                if target_refs
                 else "public structural world facts changed after interaction"
             ),
             structural_refs,
             {
                 "verification_profile": (
                     "structural_target_diff_v1"
-                    if target_changed
+                    if target_refs
                     else "structural_world_diff_v1"
                 ),
                 "expected_effects": request.selection.semantic_effects,
                 "observed_effect": ActionEvaluationStatus.EFFECT_CONFIRMED.value,
-                "target_changed": target_changed,
+                "target_changed": bool(target_refs),
                 "structural_world_changed": True,
+                "fact_changes": fact_changes,
             },
         )
     before_digests = _screenshot_digests(before)
@@ -220,6 +231,35 @@ def _changed_world_fact_refs(before, after) -> tuple[str, ...]:
         and _source_coverage_complete(record.source_observation_id, after)
     )
     return tuple(dict.fromkeys(refs))
+
+
+def _fact_changes(before, after, evidence_refs: tuple[str, ...]) -> tuple[dict[str, object], ...]:
+    """Describe public fact transitions already proved by current after evidence."""
+
+    index = WorldEvidenceIndex.from_observation(after)
+    changes: list[dict[str, object]] = []
+    for evidence_ref in evidence_refs:
+        record = index.resolve_record(evidence_ref)
+        if record is None or record.kind != "fact":
+            continue
+        before_values = tuple(
+            fact.value
+            for fact in before.facts
+            if fact.subject_id == record.subject_id and fact.predicate == record.predicate
+        )
+        if before_values == (record.value,):
+            continue
+        change: dict[str, object] = {
+            "subject_id": record.subject_id,
+            "predicate": record.predicate,
+            "after": record.value,
+        }
+        if len(before_values) == 1:
+            change["before"] = before_values[0]
+        else:
+            change["before_values"] = before_values
+        changes.append(change)
+    return tuple(changes)
 
 
 def _source_coverage_complete(source_observation_id: str, observation) -> bool:

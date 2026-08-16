@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
@@ -10,6 +11,11 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
+)
+from affordance_runtime.agent.observability import (
+    NullRunTraceSink,
+    RunTraceSink,
+    trace_recorder_from_environment,
 )
 from affordance_runtime.agent.policy import (
     ActionEvaluator,
@@ -37,6 +43,7 @@ def compose_target_runtime(
     binder: ActionBinder | None = None,
     context_builder: ContextBuilder | None = None,
     wait_controller: WaitController | None = None,
+    trace_sink: RunTraceSink | None = None,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -50,6 +57,7 @@ def compose_target_runtime(
         binder=binder or ActionBinder(),
         context_builder=context_builder or ContextBuilder(),
         wait_controller=wait_controller or SystemWaitController(),
+        trace_sink=trace_sink if trace_sink is not None else NullRunTraceSink(),
         required_decisions=required_decisions,
     )
 
@@ -61,8 +69,9 @@ def compose_target_runtime_from_environment(
 ) -> TargetRuntime:
     """Compose the configured model against the supported product GUI control set."""
 
+    runtime_environment = os.environ if environment is None else environment
     policy = model_policy_from_environment(
-        environment,
+        runtime_environment,
         call_timeout_s=call_timeout_s,
     )
     return compose_target_runtime(
@@ -70,4 +79,5 @@ def compose_target_runtime_from_environment(
         ProductionActionEvaluator(),
         ProductionTaskEvaluator(),
         required_decisions=GROUNDED_ACTION_DECISION_CAPABILITIES,
+        trace_sink=trace_recorder_from_environment(runtime_environment),
     )

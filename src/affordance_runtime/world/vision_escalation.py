@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from affordance_runtime.world.contracts import SurfaceObservation
+from affordance_runtime.world.contracts import CoverageState, SurfaceObservation
 
 
 class VisionEvidenceNeed(StrEnum):
@@ -37,38 +37,11 @@ def derive_visual_evidence_needs(
         return (VisionEvidenceNeed.RAW_SCREENSHOT,)
     if postcondition_unresolved:
         return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
-    if _actionable_targets_are_ambiguous(structured):
-        return (VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,)
+    # A bounded structural omission is a Runtime-owned fact. Candidate count,
+    # duplicate labels, and task-language similarity are not: they require the
+    # policy to first state what it intends to interact with. Consequently,
+    # single-target disambiguation is admitted only as an explicit typed need,
+    # never inferred here before the policy has selected an action intent.
+    if structured.coverage is CoverageState.TRUNCATED:
+        return (VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY,)
     return ()
-
-
-def _actionable_targets_are_ambiguous(structured: SurfaceObservation) -> bool:
-    actionable_ids = {binding.target_id for binding in structured.bindings}
-    candidates = [
-        target for target in structured.targets if target.target_id in actionable_ids
-    ]
-    if len(candidates) < 2:
-        return False
-    descriptors = [_public_disambiguation_descriptor(target) for target in candidates]
-    return len(set(descriptors)) < len(descriptors)
-
-
-def _public_disambiguation_descriptor(target) -> tuple[object, ...]:
-    within = target.relations.get("within")
-    if isinstance(within, dict):
-        within_value: object = tuple(sorted((str(key), repr(value)) for key, value in within.items()))
-    else:
-        within_value = repr(within)
-    return (
-        target.role.casefold().strip(),
-        target.label.casefold().strip(),
-        tuple(sorted((str(key), repr(value)) for key, value in target.state.items())),
-        within_value,
-        tuple(
-            sorted(
-                (str(key), repr(value))
-                for key, value in target.relations.items()
-                if key != "within"
-            )
-        ),
-    )

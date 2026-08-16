@@ -152,6 +152,31 @@ def test_same_count_different_select_domain_is_stale_but_order_is_not() -> None:
     assert decision.reason is BrowserGymCurrentnessReason.OPTION_DOMAIN_CHANGED
 
 
+def test_select_currentness_uses_its_execution_requirements_not_visual_drift() -> None:
+    captured_raw = raw_observation(
+        ax_node("control", "combobox", "Choice", value="A"),
+        ax_node("a", "option", "A"),
+        ax_node("b", "option", "B"),
+    )
+    captured_raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"].update({
+        "visible": False,
+        "editable": False,
+    })
+    live_raw = copy.deepcopy(captured_raw)
+    live_raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"].update({
+        "visible": True,
+        "editable": True,
+    })
+
+    decision = compare_browsergym_currentness(
+        _control(captured_raw),
+        _control(live_raw),
+        replace(_context(), requested_primitive="select_option"),
+    )
+
+    assert decision.status is BrowserGymCurrentnessStatus.CURRENT
+
+
 def test_missing_element_is_typed_stale() -> None:
     decision = compare_browsergym_currentness(_control(), None, _context())
     assert (decision.status, decision.reason) == (

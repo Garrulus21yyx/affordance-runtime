@@ -20,12 +20,12 @@ from affordance_runtime.benchmarks.external_breadth.registry import PACKAGE_NAME
 from affordance_runtime.benchmarks.external_breadth.selection import SELECTION_NAMESPACE, select_tasks
 
 SCHEMA_VERSION = "miniwob-breadth-manifest.v1"
-CAMPAIGN_ID = "miniwob-60-seed7-v1"
+CAMPAIGN_ID = "miniwob-60-seed7-v2"
 MODEL_PROFILE = "mistral-medium-3-5"
 GROUNDING_PROFILE = "format-only.v1"
 SEED = 7
 MAX_TURNS = 10
-TIMEOUT_S = 120.0
+TIMEOUT_S = 180.0
 PACING_S = 7.5
 
 

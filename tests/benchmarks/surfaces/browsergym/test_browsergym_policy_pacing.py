@@ -47,6 +47,8 @@ def test_policy_pacing_preserves_wrapped_capabilities() -> None:
 
 
 def test_pacing_budget_coherence_accepts_valid_and_rejects_impossible_schedule() -> None:
-    validate_pacing_budget(10, 7.5, 120.0, 5.0)
-    with pytest.raises(ValueError, match="minimum pacing schedule"):
+    validate_pacing_budget(10, 7.5, 180.0, 5.0)
+    with pytest.raises(ValueError, match="minimum pacing and per-turn execution"):
+        validate_pacing_budget(10, 7.5, 120.0, 5.0)
+    with pytest.raises(ValueError, match="minimum pacing and per-turn execution"):
         validate_pacing_budget(20, 7.5, 120.0, 5.0)

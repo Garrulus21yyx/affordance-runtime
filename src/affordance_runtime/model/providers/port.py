@@ -211,6 +211,7 @@ class OpenAICompatibleModelPort:
     thinking_mode: Literal["enabled", "disabled"] | None = None
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
+    last_transcript: Mapping[str, object] | None = field(default=None, init=False, repr=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
     circuit_failure_kind: ProviderFailureKind | None = field(default=None, init=False)
 
@@ -228,6 +229,8 @@ class OpenAICompatibleModelPort:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
+        self.last_call = None
+        self.last_transcript = None
         schema = output_schema.model_json_schema()
         request_messages = _messages_with_structured_output_contract(
             messages,
@@ -274,10 +277,33 @@ class OpenAICompatibleModelPort:
                 transient_backoff_s=config.transient_backoff_s,
             )
         except ProviderModelError as exc:
-            self._capture(serialized_messages, output_schema, "provider_failure", error=exc.kind.value)
+            self._capture(
+                serialized_messages,
+                output_schema,
+                "provider_failure",
+                error=exc.kind.value,
+            )
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
+        usage = response.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        self.last_call = ModelCallRecord(
+            provider=self.provider,
+            model=self.model,
+            endpoint_class=self.endpoint_class,
+            prompt_version=config.prompt_version,
+            schema_name=output_schema.__name__,
+            schema_version=str(schema.get("title") or output_schema.__name__),
+            latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=int(usage.get("total_tokens") or prompt_tokens + completion_tokens),
+            response_id=str(response.get("id") or ""),
+            rate_limit_retry_count=rate_limit_retry_count,
+            transient_retry_count=transient_retry_count,
+        )
         try:
             content = response["choices"][0]["message"]["content"]
             if isinstance(content, list):
@@ -299,24 +325,6 @@ class OpenAICompatibleModelPort:
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
                 violations=violations,
             ) from exc
-        usage = response.get("usage") or {}
-        prompt_tokens = int(usage.get("prompt_tokens") or 0)
-        completion_tokens = int(usage.get("completion_tokens") or 0)
-        self.last_call = ModelCallRecord(
-            provider=self.provider,
-            model=self.model,
-            endpoint_class=self.endpoint_class,
-            prompt_version=config.prompt_version,
-            schema_name=output_schema.__name__,
-            schema_version=str(schema.get("title") or output_schema.__name__),
-            latency_ms=latency_ms,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=int(usage.get("total_tokens") or prompt_tokens + completion_tokens),
-            response_id=str(response.get("id") or ""),
-            rate_limit_retry_count=rate_limit_retry_count,
-            transient_retry_count=transient_retry_count,
-        )
         self._capture(
             serialized_messages,
             output_schema,
@@ -336,6 +344,17 @@ class OpenAICompatibleModelPort:
         response_id: str = "",
         error: str = "",
     ) -> None:
+        self.last_transcript = _openinference_llm_transcript(
+            provider=self.provider,
+            model=self.model,
+            messages=messages,
+            output_schema=output_schema,
+            status=status,
+            response_content=response_content,
+            response_id=response_id,
+            error=error,
+            record=self.last_call,
+        )
         if self.private_capture is not None:
             self.private_capture.record(
                 provider=self.provider,
@@ -356,6 +375,7 @@ class OllamaModelPort:
     endpoint_class: str = "local"
     supports_multimodal: bool = field(default=False, init=False)
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
+    last_transcript: Mapping[str, object] | None = field(default=None, init=False, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
     circuit_failure_kind: ProviderFailureKind | None = field(default=None, init=False)
@@ -374,6 +394,8 @@ class OllamaModelPort:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
+        self.last_call = None
+        self.last_transcript = None
         schema = output_schema.model_json_schema()
         options: dict[str, Any] = {
             "temperature": config.temperature,
@@ -405,22 +427,6 @@ class OllamaModelPort:
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
-        try:
-            content = str(response["message"]["content"])
-            parsed = output_schema.model_validate_json(content)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            violations = _schema_failure_violations(exc)
-            self._capture(
-                messages,
-                output_schema,
-                "schema_error",
-                response_content=locals().get("content"),
-                error=_schema_failure_summary(exc),
-            )
-            raise StructuredOutputError(
-                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
-                violations=violations,
-            ) from exc
         prompt_tokens = int(response.get("prompt_eval_count") or 0)
         completion_tokens = int(response.get("eval_count") or 0)
         self.last_call = ModelCallRecord(
@@ -437,6 +443,22 @@ class OllamaModelPort:
             rate_limit_retry_count=rate_limit_retry_count,
             transient_retry_count=transient_retry_count,
         )
+        try:
+            content = str(response["message"]["content"])
+            parsed = output_schema.model_validate_json(content)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            violations = _schema_failure_violations(exc)
+            self._capture(
+                messages,
+                output_schema,
+                "schema_error",
+                response_content=locals().get("content"),
+                error=_schema_failure_summary(exc),
+            )
+            raise StructuredOutputError(
+                f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
+                violations=violations,
+            ) from exc
         self._capture(messages, output_schema, "accepted", response_content=content)
         return parsed
 
@@ -449,6 +471,16 @@ class OllamaModelPort:
         response_content: object | None = None,
         error: str = "",
     ) -> None:
+        self.last_transcript = _openinference_llm_transcript(
+            provider=self.provider,
+            model=self.model,
+            messages=messages,
+            output_schema=output_schema,
+            status=status,
+            response_content=response_content,
+            error=error,
+            record=self.last_call,
+        )
         if self.private_capture is not None:
             self.private_capture.record(
                 provider=self.provider,
@@ -460,6 +492,44 @@ class OllamaModelPort:
                 error=error,
             )
 
+
+def _openinference_llm_transcript(
+    *,
+    provider: str,
+    model: str,
+    messages: Sequence[ModelMessage | Mapping[str, Any]],
+    output_schema: type[BaseModel],
+    status: str,
+    response_content: object | None,
+    response_id: str = "",
+    error: str = "",
+    record: ModelCallRecord | None = None,
+) -> dict[str, object]:
+    """Project one provider exchange using OpenInference LLM span semantics."""
+
+    input_messages = [
+        dict(message) if isinstance(message, Mapping) else message.model_dump()
+        for message in messages
+    ]
+    output_messages = (
+        [{"role": "assistant", "content": response_content}]
+        if response_content is not None
+        else []
+    )
+    return {
+        "openinference.span.kind": "LLM",
+        "llm.system": provider,
+        "llm.model_name": model,
+        "llm.input_messages": input_messages,
+        "llm.output_messages": output_messages,
+        "llm.tools": [{"tool.json_schema": output_schema.model_json_schema()}],
+        "llm.token_count.prompt": int(getattr(record, "prompt_tokens", 0)),
+        "llm.token_count.completion": int(getattr(record, "completion_tokens", 0)),
+        "llm.token_count.total": int(getattr(record, "total_tokens", 0)),
+        "response.id": response_id,
+        "status": status,
+        "error": error,
+    }
 
 def _messages_with_structured_output_contract(
     messages: Sequence[ModelMessage],
@@ -476,7 +546,10 @@ def _messages_with_structured_output_contract(
     )
     contract = (
         "Return exactly one JSON object and no Markdown or explanatory text. "
-        "The object must satisfy this JSON Schema; unknown fields are forbidden: "
+        "Return a data instance that satisfies the schema, never the JSON Schema definition itself. "
+        "Do not copy schema keywords such as oneOf, properties, required, const, or type into the "
+        "response unless the schema explicitly declares one of them as a data property. "
+        "Unknown fields are forbidden. JSON Schema: "
         f"{encoded_schema}"
     )
     if messages and messages[0].role == "system" and isinstance(messages[0].content, str):
@@ -629,6 +702,7 @@ def _structured_json_content(
             language = text[3:first_newline].strip().lower()
             if language in {"", "json", "jsonc", "application/json"}:
                 text = text[first_newline + 1 : -3].strip()
+    text = _strip_surplus_closing_braces(text)
     if output_schema is None:
         return text
     try:
@@ -645,6 +719,22 @@ def _structured_json_content(
     if wrapper_name not in _schema_wrapper_names(output_schema) or not isinstance(wrapped, dict):
         return text
     return json.dumps(wrapped, ensure_ascii=False, separators=(",", ":"))
+
+
+def _strip_surplus_closing_braces(text: str) -> str:
+    """Accept one complete object followed only by redundant closing braces."""
+
+    try:
+        value, end = json.JSONDecoder(
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        ).raw_decode(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return text
+    trailing = text[end:].strip()
+    if isinstance(value, dict) and trailing and set(trailing) == {"}"}:
+        return text[:end]
+    return text
 
 
 def _schema_wrapper_names(output_schema: type[BaseModel]) -> frozenset[str]:
@@ -690,13 +780,27 @@ def _schema_failure_summary(error: Exception) -> str:
 
 def _schema_failure_violations(error: Exception) -> tuple[StructuredOutputViolation, ...]:
     if isinstance(error, ValidationError):
-        return tuple(
-            StructuredOutputViolation(
-                _safe_schema_token(".".join(str(part) for part in item.get("loc", ())), "$", 160),
-                _safe_schema_token(str(item.get("type") or "validation_error"), "validation_error", 80),
-            )
-            for item in error.errors()[:4]
-        )
+        violations: list[StructuredOutputViolation] = []
+        for item in error.errors():
+            context = item.get("ctx")
+            field_paths = context.get("field_paths") if isinstance(context, dict) else None
+            argument_code = context.get("argument_code") if isinstance(context, dict) else None
+            if isinstance(field_paths, tuple | list) and field_paths:
+                violations.extend(
+                    StructuredOutputViolation(
+                        _safe_schema_token(str(path), "$", 160),
+                        _safe_schema_token(str(argument_code or item.get("type")), "validation_error", 80),
+                    )
+                    for path in field_paths
+                )
+            else:
+                violations.append(StructuredOutputViolation(
+                    _safe_schema_token(".".join(str(part) for part in item.get("loc", ())), "$", 160),
+                    _safe_schema_token(str(item.get("type") or "validation_error"), "validation_error", 80),
+                ))
+            if len(violations) >= 4:
+                break
+        return tuple(violations[:4])
     if isinstance(error, json.JSONDecodeError):
         return (StructuredOutputViolation("$", "invalid_json"),)
     return ()

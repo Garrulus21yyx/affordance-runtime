@@ -181,7 +181,11 @@ class AgentTurnView:
     task_evaluation_status: str = ""
     reason: str = ""
     semantic_summary: Mapping[str, object] = field(default_factory=dict)
+    target_snapshot: Mapping[str, object] = field(default_factory=dict)
+    effect_summary: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_parameters", freeze_json(self.public_parameters))
         object.__setattr__(self, "semantic_summary", freeze_json(self.semantic_summary))
+        object.__setattr__(self, "target_snapshot", freeze_json(self.target_snapshot))
+        object.__setattr__(self, "effect_summary", freeze_json(self.effect_summary))

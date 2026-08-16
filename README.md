@@ -28,6 +28,11 @@ action/result summaries. Tool schemas are compiled for the current turn. Runtime
 coordinates, handles, credentials, and all budget counters private; it validates, executes, refreshes observation,
 evaluates outcomes, and terminates the loop.
 
+The same Loop emits a non-authoritative complete trace at the model-turn and completed-step boundaries. Local traces
+retain causal IDs and each provider exchange as an OpenInference-shaped LLM transcript (input messages, advertised
+tool schema, output message, usage, status, and repair phase). Binary media is content-addressed instead of duplicated.
+Optional Langfuse export renders those same agent/LLM/tool spans without becoming another Runtime loop.
+
 There is one decision-input chain: Runtime-owned `WorldObservation` is bounded into one `ActorWorldSnapshot`, stored
 once in the typed `AgentContext`, and assembled into provider messages by one binder. There is no parallel serialized
 context, flat model world, legacy decision schema/parser, or confirmation-only world copy.
@@ -51,7 +56,7 @@ does not call a separate completion tool.
 - post-action effect and task evaluation;
 - BrowserGym benchmarks that measure success, observation cost, model cost, and recovery.
 
-This project does not implement a durable event ledger, predictive world model, multi-agent platform,
+This project does not implement an authoritative control/event ledger, predictive world model, multi-agent platform,
 general workflow engine, or production-grade replay system.
 
 ## Repository map
@@ -99,6 +104,10 @@ Use `LLM_MODEL_ADAPTER=pydantic-ai` for models that return standard native tool 
 `LLM_MODEL_ADAPTER=compact-json` for `glm-4.1v-thinking-flashx`: the model is retained for visual operation, but its
 non-standard response envelope requires the bounded compact compatibility path. Both adapters feed the same catalog,
 context, typed decisions, and `CoreAgentLoop`.
+
+For durable local tracing set `AFFORDANCE_TRACE_DIR`; set `AFFORDANCE_LANGFUSE_ENABLED=true` only with that local
+directory configured and the `observability` extra installed. Each provider exchange is part of that trace's LLM
+transcript. The separate `LLM_ENABLE_PRIVATE_MODEL_CAPTURE` path is only an optional isolated raw-envelope copy.
 
 ## Current simplification boundary
 

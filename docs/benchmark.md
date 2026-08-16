@@ -24,8 +24,16 @@ Every live run records, per case:
 - tokens and elapsed time;
 - typed environment, provider, Runtime, and task failures.
 
-Reports must not contain prompts, model responses, selectors, coordinates, credentials, hidden state, oracle values,
-expected answers, or benchmark reward payloads exposed to the model.
+Published reports must not contain prompts, model responses, selectors, coordinates, credentials, hidden state,
+oracle values, expected answers, or benchmark reward payloads exposed to the model.
+
+Local per-case evidence additionally contains a private complete `traces/<case-id>/trace.jsonl` plus
+content-addressed media artifacts. This operational trace is not copied into the public report: it records the exact
+public model context and tool catalog, typed decision, provider diagnostics, execution and evaluation facts, and
+causal IDs needed to diagnose a failure. Each provider attempt contributes its complete OpenInference-shaped local
+transcript, including repair-phase input and output; screenshot payloads remain content-addressed. Trace-write failure
+invalidates benchmark evidence but never changes Runtime behavior. Langfuse export is optional and projects these
+same spans rather than replacing the local trace.
 
 Every core-loop run must additionally record the prompt version, typed-context protocol version, tool-catalog schema version,
 Runtime engine, and model-adapter choice as metadata. These values support reproducibility but cannot alter product
@@ -90,8 +98,11 @@ export PYTHONPATH=src:tests
 Before a live run, verify `http://127.0.0.1:18888/miniwob/click-button.html`. Reuse the existing project server when
 it returns 200. Raw run output belongs under an artifact directory, not in maintained documentation.
 
-The current frozen selection manifest remains at `docs/benchmarks/miniwob-60-seed7-v1-manifest.json` until benchmark
-runner cleanup moves manifests and artifacts out of the documentation tree.
+The historical 120-second selection manifest remains at
+`docs/benchmarks/miniwob-60-seed7-v1-manifest.json`. The current 180-second watchdog contract is frozen separately as
+`docs/benchmarks/miniwob-60-seed7-v2-manifest.json`; v1 evidence must never be relabeled as v2. The v2 validator
+reserves explicit pacing, per-turn execution, reset, and finalization time instead of treating the pacing schedule as
+the only watchdog consumer.
 
 ## Local deterministic fixtures
 

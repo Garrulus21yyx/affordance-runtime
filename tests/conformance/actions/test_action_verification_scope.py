@@ -107,6 +107,133 @@ def test_unrelated_target_and_empty_obligation_claims_are_unknown() -> None:
     assert no_obligation.status == ActionEvaluationStatus.UNKNOWN
 
 
+def test_closed_structural_world_diff_survives_empty_task_obligations() -> None:
+    before = _world("before", (("target:1", "selected", False),))
+    after = _world("after", (("target:1", "selected", True),))
+    proposal = ActionEvaluation(
+        "request:1",
+        before.observation_id,
+        after.observation_id,
+        ActionEvaluationStatus.EFFECT_CONFIRMED,
+        "structural change",
+        ("fact:after:target:1:selected",),
+        {"verification_profile": "structural_world_diff_v1"},
+    )
+
+    result = apply_action_evidence_profile(
+        proposal,
+        TaskGoal("empty", "No criteria"),
+        _request(),
+        before,
+        after,
+        WorldEvidenceIndex.from_observation(after),
+        (),
+    )
+
+    assert result.status == ActionEvaluationStatus.EFFECT_CONFIRMED
+
+
+def test_closed_structural_target_diff_survives_empty_task_obligations() -> None:
+    before = _world("before", (("target:1", "selected", False),))
+    after = _world("after", (("target:1", "selected", True),))
+    proposal = ActionEvaluation(
+        "request:1",
+        before.observation_id,
+        after.observation_id,
+        ActionEvaluationStatus.EFFECT_CONFIRMED,
+        "target changed",
+        ("fact:after:target:1:selected",),
+        {"verification_profile": "structural_target_diff_v1"},
+    )
+
+    result = apply_action_evidence_profile(
+        proposal,
+        TaskGoal("empty", "No criteria"),
+        _request(),
+        before,
+        after,
+        WorldEvidenceIndex.from_observation(after),
+        (),
+    )
+
+    assert result.status == ActionEvaluationStatus.EFFECT_CONFIRMED
+
+
+def test_structural_target_diff_cannot_be_proved_by_an_unrelated_target() -> None:
+    before = _world(
+        "before",
+        (("target:1", "selected", False), ("other", "selected", False)),
+    )
+    after = _world(
+        "after",
+        (("target:1", "selected", False), ("other", "selected", True)),
+    )
+    proposal = ActionEvaluation(
+        "request:1",
+        before.observation_id,
+        after.observation_id,
+        ActionEvaluationStatus.EFFECT_CONFIRMED,
+        "unrelated target changed",
+        ("fact:after:other:selected",),
+        {"verification_profile": "structural_target_diff_v1"},
+    )
+
+    result = apply_action_evidence_profile(
+        proposal,
+        TaskGoal("empty", "No criteria"),
+        _request(),
+        before,
+        after,
+        WorldEvidenceIndex.from_observation(after),
+        (),
+    )
+
+    assert result.status == ActionEvaluationStatus.UNKNOWN
+
+
+def test_target_effect_is_confirmed_without_advancing_its_task_obligation() -> None:
+    task = _task(
+        {
+            "id": "enabled",
+            "subject_id": "target:1",
+            "predicate": "enabled",
+            "value": True,
+        }
+    )
+    before = _world(
+        "before",
+        (("target:1", "enabled", False), ("target:1", "selected", False)),
+    )
+    after = _world(
+        "after",
+        (("target:1", "enabled", False), ("target:1", "selected", True)),
+    )
+    request = _request()
+    obligations = derive_action_verification_obligations(task, request, before)
+    assert obligations
+    proposal = ActionEvaluation(
+        "request:1",
+        before.observation_id,
+        after.observation_id,
+        ActionEvaluationStatus.EFFECT_CONFIRMED,
+        "target changed without satisfying the criterion",
+        ("fact:after:target:1:selected",),
+        {"verification_profile": "structural_target_diff_v1"},
+    )
+
+    result = apply_action_evidence_profile(
+        proposal,
+        task,
+        request,
+        before,
+        after,
+        WorldEvidenceIndex.from_observation(after),
+        obligations,
+    )
+
+    assert result.status == ActionEvaluationStatus.EFFECT_CONFIRMED
+
+
 def test_artifact_created_requires_explicit_output_and_after_only_identity() -> None:
     task = TaskGoal("artifact", "Create report", requested_outputs=("report",))
     request = _request(expected_outcome={"output_id": "report"})

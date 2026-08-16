@@ -220,6 +220,8 @@ async def _run_arm(
                     "perception_profile": perception_profile.value,
                     "typed_outcome": record.outcome.value,
                     "policy_trace": record.diagnostic_trace,
+                    "trace_path": instrumentations[index - 1].trace_path,
+                    "trace_errors": tuple(instrumentations[index - 1].trace_recorder.errors),
                     "case": public_case_evidence(record.result),
                 },
             )
@@ -234,7 +236,7 @@ async def _run_arm(
             )
 
         case_completed = persist_case
-    suite = await run_suite(target, case_completed=case_completed)
+    suite = await run_suite(target, case_completed=case_completed, trace_dir=progress_dir)
     suite = replace(suite, cases=tuple(_derived_metrics(item) for item in suite.cases))
     records = tuple(
         _record(case, result, instrumentation)

@@ -20,9 +20,22 @@ from affordance_runtime.surfaces.browsergym.interaction_profile import (
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
-MIN_DOM_CLICKABLE_VISIBILITY = 0.5
+MAX_DOM_ATTRIBUTE_TOKENS = 32
 MIN_DOM_CLICKABLE_AREA = 20.0
 SemanticScalar: TypeAlias = str | bool | int | float | None
+
+_DOM_SCALAR_ATTRIBUTES = frozenset({
+    "aria-description",
+    "aria-label",
+    "alt",
+    "id",
+    "name",
+    "placeholder",
+    "role",
+    "title",
+    "type",
+})
+_DOM_TOKEN_ATTRIBUTES = frozenset({"class"})
 
 
 class BrowserGymSemanticErrorCode(str, Enum):
@@ -54,7 +67,7 @@ class BrowserGymControlAvailability:
             "not_readonly": self.readonly is False,
             "editable": self.editable is True,
         }
-        return all(conditions.get(name, False) for name in offer.availability_requirements)
+        return all(conditions.get(name, False) for name in offer.execution_requirements)
 
     def as_tuple(self) -> tuple[tuple[str, bool | None], ...]:
         return (
@@ -137,6 +150,12 @@ class _AxRecord:
 
 
 @dataclass(frozen=True)
+class _DomSemanticEvidence:
+    tag: str
+    state: tuple[tuple[str, SemanticScalar | tuple[str, ...]], ...]
+
+
+@dataclass(frozen=True)
 class CanonicalBrowserStructureNode:
     private_bid: str
     private_node_id: str
@@ -144,7 +163,7 @@ class CanonicalBrowserStructureNode:
     private_child_ids: tuple[str, ...]
     role: str
     accessible_name: str
-    public_state: tuple[tuple[str, SemanticScalar], ...]
+    public_state: tuple[tuple[str, SemanticScalar | tuple[str, ...]], ...]
 
 
 def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
@@ -154,6 +173,7 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
             "observation is not a mapping",
         )
     records = _normalized_records(raw, _ax_records(raw))
+    dom_semantics = _dom_semantic_evidence(raw)
     physical = _physical_properties(raw)
     dom_properties = _dom_properties(raw)
     suppressed_clickable_bids = _suppressed_dom_clickable_bids(records, dom_properties)
@@ -188,7 +208,15 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
                     BrowserGymSemanticErrorCode.CONFLICTING_OPTION_OWNER,
                     f"option {identity!r} is reachable from multiple owners",
                 )
-        controls.append(_canonical_control(record, spec, options, physical.get(record.bid)))
+        controls.append(
+            _canonical_control(
+                record,
+                spec,
+                options,
+                physical.get(record.bid),
+                dom_semantics.get(record.bid),
+            )
+        )
     diagnostic_roles = diagnostic_browsergym_roles()
     distribution = Counter(
         record.role
@@ -203,6 +231,7 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
     for record in records:
         if not record.node_id:
             continue
+        dom_evidence = dom_semantics.get(record.bid)
         structure_by_node_id.setdefault(
             record.node_id,
             CanonicalBrowserStructureNode(
@@ -216,7 +245,10 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
                     else record.role or "unknown"
                 ),
                 record.name,
-                record.state,
+                (
+                    *record.state,
+                    *(dom_evidence.state if dom_evidence is not None else ()),
+                ),
             ),
         )
     return BrowserGymSemanticAnalysis(
@@ -331,11 +363,20 @@ def _normalized_records(
             and (record.role == "generic" or browsergym_role_spec(record.role) is None)
         )
         if clickable:
+            assert isinstance(properties, dict)
+            viewport_visibility = properties.get("visibility")
+            viewport_state = (
+                (("viewport.visible", float(viewport_visibility) > 0.0),)
+                if isinstance(viewport_visibility, int | float)
+                and not isinstance(viewport_visibility, bool)
+                else ()
+            )
             normalized.append(
                 replace(
                     record,
                     role="clickable",
                     name=_descendant_text(record, by_node_id),
+                    state=(*record.state, *viewport_state),
                 )
             )
         else:
@@ -350,20 +391,130 @@ def _dom_properties(raw: dict[str, object]) -> dict[str, object]:
     return {key: item for key, item in value.items() if isinstance(key, str)}
 
 
+def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvidence]:
+    """Decode bounded public semantics from BrowserGym's raw DOMSnapshot.
+
+    BrowserGym already aligns DOM and AX nodes with one private BID.  AX
+    remains authoritative for accessible role/name/state; salient DOM
+    attributes are preserved as parallel, explicitly-provenanced evidence.
+    BrowserGym's routing and rendering attributes are never projected.
+    """
+
+    snapshot = raw.get("dom_object")
+    if snapshot is None:
+        return {}
+    if not isinstance(snapshot, dict):
+        raise BrowserGymSemanticError(
+            BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+            "DOM snapshot is not a mapping",
+        )
+    strings = snapshot.get("strings")
+    documents = snapshot.get("documents")
+    if not isinstance(strings, list) or not all(isinstance(item, str) for item in strings):
+        raise BrowserGymSemanticError(
+            BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+            "DOM snapshot string table is malformed",
+        )
+    if not isinstance(documents, list):
+        raise BrowserGymSemanticError(
+            BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+            "DOM snapshot documents are unavailable",
+        )
+
+    result: dict[str, _DomSemanticEvidence] = {}
+    for document in documents:
+        nodes = document.get("nodes") if isinstance(document, dict) else None
+        attributes = nodes.get("attributes") if isinstance(nodes, dict) else None
+        node_names = nodes.get("nodeName") if isinstance(nodes, dict) else None
+        if not isinstance(attributes, list) or not isinstance(node_names, list):
+            raise BrowserGymSemanticError(
+                BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+                "DOM snapshot node attributes are malformed",
+            )
+        if len(attributes) != len(node_names):
+            raise BrowserGymSemanticError(
+                BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+                "DOM snapshot node tables have conflicting lengths",
+            )
+        for node_index, encoded_attributes in enumerate(attributes):
+            if not isinstance(encoded_attributes, list) or len(encoded_attributes) % 2:
+                raise BrowserGymSemanticError(
+                    BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+                    "DOM snapshot attribute vector is malformed",
+                )
+            decoded: dict[str, str] = {}
+            for offset in range(0, len(encoded_attributes), 2):
+                name = _dom_string(strings, encoded_attributes[offset])
+                value = _dom_string(strings, encoded_attributes[offset + 1], allow_missing=True)
+                decoded[name.casefold()] = value
+            bid = decoded.get("bid", "").strip()
+            if not bid:
+                continue
+            tag = _dom_string(strings, node_names[node_index]).casefold()
+            state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = []
+            if tag:
+                state.append(("semantic.dom.tag", tag[:MAX_SEMANTIC_TEXT]))
+            for name in sorted(_DOM_SCALAR_ATTRIBUTES):
+                value = " ".join(decoded.get(name, "").split())
+                if value:
+                    state.append((f"semantic.dom.attribute.{name}", value[:MAX_SEMANTIC_TEXT]))
+                    if len(value) > MAX_SEMANTIC_TEXT:
+                        state.append((f"semantic.dom.attribute.{name}.truncated", True))
+            for name in sorted(_DOM_TOKEN_ATTRIBUTES):
+                tokens = tuple(dict.fromkeys(decoded.get(name, "").split()))
+                if tokens:
+                    state.append((
+                        f"semantic.dom.attribute.{name}_tokens",
+                        tokens[:MAX_DOM_ATTRIBUTE_TOKENS],
+                    ))
+                    if len(tokens) > MAX_DOM_ATTRIBUTE_TOKENS:
+                        state.append((f"semantic.dom.attribute.{name}.truncated", True))
+            evidence = _DomSemanticEvidence(tag, tuple(state))
+            previous = result.setdefault(bid, evidence)
+            if previous != evidence:
+                raise BrowserGymSemanticError(
+                    BrowserGymSemanticErrorCode.CONFLICTING_BID,
+                    f"BID {bid!r} has conflicting DOM semantic evidence",
+                )
+    return result
+
+
+def _dom_string(strings: list[str], value: object, *, allow_missing: bool = False) -> str:
+    if allow_missing and value == -1:
+        return ""
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value >= len(strings)
+    ):
+        raise BrowserGymSemanticError(
+            BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+            "DOM snapshot contains an invalid string-table reference",
+        )
+    return strings[value]
+
+
 def _suppressed_dom_clickable_bids(
     records: tuple[_AxRecord, ...],
     dom_properties: dict[str, object],
 ) -> frozenset[str]:
-    """Reject non-hittable DOM fallbacks and collapse same-control drawing nodes.
+    """Reject geometry-less DOM fallbacks and collapse duplicate controls.
 
     Native AX controls are never affected.  The filter is intentionally
-    bounded to records normalized from DOM clickability.  When BrowserGym has
-    no geometry (for example an older fixture), the record is retained and the
-    ordinary availability contract remains authoritative.
+    bounded to records normalized from DOM clickability. BrowserGym viewport
+    visibility is presentation state, not action-inventory authority: BID
+    actions use Playwright locators, which scroll into view before dispatch.
+    Therefore an off-viewport control remains in the canonical inventory and
+    its ordinary live availability contract remains authoritative.
     """
 
     candidates = [record for record in records if record.role == "clickable" and record.bid]
-    suppressed: set[str] = set()
+    suppressed: set[str] = {
+        record.bid
+        for record in candidates
+        if len(_owned_native_executable_controls(record, records)) == 1
+    }
     boxes: dict[str, tuple[float, float, float, float]] = {}
     for record in candidates:
         properties = dom_properties.get(record.bid)
@@ -371,14 +522,6 @@ def _suppressed_dom_clickable_bids(
             continue
         bbox = _float_bbox(properties.get("bbox"))
         if bbox is None:
-            continue
-        visibility = properties.get("visibility")
-        if (
-            isinstance(visibility, int | float)
-            and not isinstance(visibility, bool)
-            and float(visibility) < MIN_DOM_CLICKABLE_VISIBILITY
-        ):
-            suppressed.add(record.bid)
             continue
         if bbox[2] * bbox[3] < MIN_DOM_CLICKABLE_AREA:
             suppressed.add(record.bid)
@@ -403,6 +546,38 @@ def _suppressed_dom_clickable_bids(
             if loser is left:
                 break
     return frozenset(suppressed)
+
+
+def _owned_native_executable_controls(
+    owner: _AxRecord,
+    records: tuple[_AxRecord, ...],
+) -> frozenset[str]:
+    """Return native executable descendants owned by one DOM fallback.
+
+    DOM clickability is a lower-authority fallback.  A wrapper around exactly
+    one native AX control represents the same interaction and must not become
+    a second public action.  Wrappers containing multiple controls remain
+    observable because they cannot be losslessly collapsed to one target.
+    """
+
+    by_node_id: dict[str, tuple[_AxRecord, ...]] = {}
+    for record in records:
+        by_node_id[record.node_id] = (*by_node_id.get(record.node_id, ()), record)
+    pending = list(owner.child_ids)
+    visited: set[str] = set()
+    native: set[str] = set()
+    while pending:
+        node_id = pending.pop()
+        if not node_id or node_id in visited:
+            continue
+        visited.add(node_id)
+        for record in by_node_id.get(node_id, ()):
+            spec = browsergym_role_spec(record.role)
+            if record.role != "clickable" and record.bid and spec is not None and spec.executable:
+                native.add(record.bid)
+                continue
+            pending.extend(record.child_ids)
+    return frozenset(native)
 
 
 def _preferred_clickable_record(
@@ -560,9 +735,12 @@ def _canonical_control(
     spec: BrowserGymRoleSpec,
     option_records: tuple[_AxRecord, ...],
     physical: object,
+    dom_evidence: _DomSemanticEvidence | None,
 ) -> CanonicalBrowserControl:
     availability = _availability(physical)
     public_state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = list(record.state)
+    if dom_evidence is not None:
+        public_state.extend(dom_evidence.state)
     if isinstance(physical, dict) and isinstance(physical.get("selected"), bool):
         public_state.append(("selected", physical["selected"]))
     if isinstance(physical, dict) and isinstance(physical.get("color_family"), str):
@@ -596,6 +774,8 @@ def _canonical_control(
     private_options = _private_options(labels, physical)
     public_options = labels
     public_name = record.name or _private_label_hint(physical)
+    if spec.executable and not public_name:
+        public_state.append(("semantic.name_status", "unknown"))
     public_payload = (record.role, public_name, tuple(public_state), public_options)
     private_payload = (
         public_payload,
@@ -664,9 +844,16 @@ def _private_options(public_labels: tuple[str, ...], physical: object) -> tuple[
             return ()
         label = item.get("label")
         native = item.get("value")
-        if not isinstance(label, str) or not isinstance(native, str) or not label:
+        if not isinstance(label, str) or not isinstance(native, str):
             return ()
-        mapped.append((label[:MAX_SEMANTIC_TEXT], native))
+        public_label = label[:MAX_SEMANTIC_TEXT]
+        # Native selects commonly carry an unlabeled placeholder that the AX
+        # option domain intentionally omits.  It is not an agent-addressable
+        # choice, so exclude it from the private mapping while keeping exact
+        # equality for every named option.
+        if not public_label:
+            continue
+        mapped.append((public_label, native))
     labels = [label for label, _native in mapped]
     native_values = [native for _label, native in mapped]
     if (

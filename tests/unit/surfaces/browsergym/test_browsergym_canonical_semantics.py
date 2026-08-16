@@ -19,7 +19,12 @@ from affordance_runtime.surfaces.browsergym.semantics import (
     canonicalize_browsergym_controls,
 )
 from affordance_runtime.world import SemanticInventoryStatus
-from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
+from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+    ax_node,
+    dom_snapshot,
+    raw_observation,
+    reset_task_state,
+)
 from tests.support.surfaces.browsergym.projection_support import (
     project_browsergym_observation,
 )
@@ -103,13 +108,76 @@ def test_bidless_recognized_interactive_unit_is_not_empty_or_projected() -> None
     assert projection.world.targets == projection.world.bindings == ()
 
 
-def test_dom_heuristic_fields_cannot_change_canonical_ax_equality() -> None:
+def test_ax_name_remains_authoritative_while_dom_semantics_are_preserved() -> None:
     raw = raw_observation(ax_node("control", "link", "Canonical AX name"))
-    raw["dom_object"] = {"role": "button", "aria-label": "conflicting DOM label"}
-    first = canonical_control_for_bid(raw, "control")
-    raw["dom_object"] = {"role": "textbox", "innerText": "another heuristic"}
+    raw["dom_object"] = dom_snapshot((
+        "a",
+        "control",
+        {"class": "primary action", "aria-label": "conflicting DOM label"},
+    ))
 
-    assert canonical_control_for_bid(raw, "control") == first
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    assert control.accessible_name == "Canonical AX name"
+    assert dict(control.public_state) == {
+        "semantic.dom.tag": "a",
+        "semantic.dom.attribute.aria-label": "conflicting DOM label",
+        "semantic.dom.attribute.class_tokens": ("primary", "action"),
+    }
+
+
+@given(st.permutations(("class", "title", "type")))
+def test_dom_semantics_are_invariant_to_attribute_order(order: tuple[str, ...]) -> None:
+    values = {"class": "like active", "title": "Like", "type": "button"}
+    raw = raw_observation(ax_node("control", "generic", ""))
+    raw["extra_element_properties"]["control"]["clickable"] = True
+    raw["dom_object"] = dom_snapshot((
+        "span",
+        "control",
+        {name: values[name] for name in order},
+    ))
+
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    assert control.accessible_name == ""
+    assert dict(control.public_state) == {
+        "viewport.visible": True,
+        "semantic.dom.tag": "span",
+        "semantic.dom.attribute.title": "Like",
+        "semantic.dom.attribute.type": "button",
+        "semantic.dom.attribute.class_tokens": ("like", "active"),
+        "semantic.name_status": "unknown",
+    }
+
+
+def test_dom_class_change_is_public_effect_evidence_without_exposing_bid() -> None:
+    raw = raw_observation(ax_node("private-control", "generic", ""))
+    raw["extra_element_properties"]["private-control"]["clickable"] = True
+    raw["dom_object"] = dom_snapshot(("span", "private-control", {"class": "like"}),)
+    before = canonical_control_for_bid(raw, "private-control")
+    raw["dom_object"] = dom_snapshot(("span", "private-control", {"class": "like active"}),)
+    after = canonical_control_for_bid(raw, "private-control")
+
+    assert before is not None and after is not None
+    assert before.public_fingerprint != after.public_fingerprint
+    assert before.currentness_fingerprint != after.currentness_fingerprint
+    assert dict(after.public_state)["semantic.dom.attribute.class_tokens"] == ("like", "active")
+    assert "private-control" not in repr(_projection(raw).world)
+
+
+def test_malformed_dom_snapshot_fails_typed() -> None:
+    raw = raw_observation(ax_node("control", "button", "Save"))
+    raw["dom_object"] = {"strings": ["BUTTON"], "documents": [{"nodes": {
+        "nodeName": [0],
+        "attributes": [[99, 0]],
+    }}]}
+
+    with pytest.raises(BrowserGymSemanticError) as error:
+        analyze_browsergym_semantics(raw)
+
+    assert error.value.code is BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES
 
 
 def test_dom_clickable_svg_symbol_becomes_identity_bound_activate_control() -> None:
@@ -135,7 +203,7 @@ def test_dom_clickable_svg_symbol_becomes_identity_bound_activate_control() -> N
     assert "action_point_xy" not in public and "private_element_id" not in public
 
 
-def test_dom_clickable_drawing_nodes_are_hittable_filtered_and_deduplicated() -> None:
+def test_dom_clickable_inventory_preserves_off_viewport_capability_and_deduplicates() -> None:
     raw = raw_observation(
         ax_node("slice", "graphics-symbol", "", parent_id="svg-root"),
         ax_node("title", "generic", "", parent_id="svg-root", child_ids=("title-text",)),
@@ -159,18 +227,55 @@ def test_dom_clickable_drawing_nodes_are_hittable_filtered_and_deduplicated() ->
     controls = canonicalize_browsergym_controls(raw)
     clickables = [item for item in controls if item.role == "clickable"]
 
-    assert [(item.private_bid, item.accessible_name) for item in clickables] == [("title", "+")]
+    assert [(item.private_bid, item.accessible_name) for item in clickables] == [
+        ("title", "+"),
+        ("occluded", ""),
+    ]
+    assert dict(clickables[1].public_state) == {
+        "viewport.visible": True,
+        "semantic.name_status": "unknown",
+    }
     projection = _projection(raw)
     clickable_target_ids = {
         target.target_id for target in projection.world.targets if target.role == "clickable"
     }
-    assert len(clickable_target_ids) == 1
+    assert len(clickable_target_ids) == 2
     assert {binding.target_id for binding in projection.world.bindings} == clickable_target_ids
     structure_roles = {
         item.private_bid: item.role for item in analyze_browsergym_semantics(raw).structure
     }
     assert structure_roles["tiny"] == "generic"
-    assert structure_roles["occluded"] == "generic"
+    assert structure_roles["occluded"] == "clickable"
+
+
+@given(
+    visibility=st.floats(
+        min_value=0.0,
+        max_value=1.0,
+        allow_nan=False,
+        allow_infinity=False,
+    )
+)
+def test_dom_clickable_action_inventory_is_invariant_to_viewport_visibility(
+    visibility: float,
+) -> None:
+    raw = raw_observation(ax_node("control", "graphics-symbol", ""))
+    raw["extra_element_properties"]["control"].update({
+        "clickable": True,
+        "visibility": visibility,
+        "bbox": [20.0, 400.0, 24.0, 24.0],
+    })
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"]["bbox"] = [20.0, 400.0, 24.0, 24.0]
+
+    projection = _projection(raw)
+
+    assert len(projection.world.targets) == 1
+    assert len(projection.world.bindings) == 1
+    assert projection.world.bindings[0].primitive_action == "click"
+    assert projection.world.targets[0].state == {
+        "viewport.visible": visibility > 0.0,
+        "semantic.name_status": "unknown",
+    }
 
 
 def test_equal_unlabeled_dom_overlays_deduplicate_independently_of_ax_order() -> None:
@@ -193,6 +298,38 @@ def test_equal_unlabeled_dom_overlays_deduplicate_independently_of_ax_order() ->
 
     assert controls(("overlay-b", "overlay-a")) == ("overlay-a",)
     assert controls(("overlay-a", "overlay-b")) == ("overlay-a",)
+
+
+def test_dom_clickable_wrapper_does_not_duplicate_one_native_control() -> None:
+    raw = raw_observation(
+        ax_node("wrapper", "generic", "", child_ids=("check",)),
+        ax_node("check", "checkbox", "Remember me", parent_id="wrapper"),
+    )
+    raw["extra_element_properties"]["wrapper"]["clickable"] = True
+
+    analysis = analyze_browsergym_semantics(raw)
+
+    assert [(item.private_bid, item.role) for item in analysis.controls] == [
+        ("check", "checkbox")
+    ]
+    assert {item.private_bid: item.role for item in analysis.structure}["wrapper"] == "generic"
+
+
+def test_dom_clickable_wrapper_with_multiple_native_controls_is_not_collapsed() -> None:
+    raw = raw_observation(
+        ax_node("wrapper", "generic", "", child_ids=("one", "two")),
+        ax_node("one", "button", "One", parent_id="wrapper"),
+        ax_node("two", "button", "Two", parent_id="wrapper"),
+    )
+    raw["extra_element_properties"]["wrapper"]["clickable"] = True
+
+    controls = canonicalize_browsergym_controls(raw)
+
+    assert {(item.private_bid, item.role) for item in controls} == {
+        ("wrapper", "clickable"),
+        ("one", "button"),
+        ("two", "button"),
+    }
 
 
 def test_exact_duplicate_is_merged_and_conflicting_same_bid_fails_typed() -> None:
@@ -335,6 +472,23 @@ def test_duplicate_private_option_values_cannot_receive_select_binding() -> None
         {"label": "Alpha", "value": "same-native"},
         {"label": "Beta", "value": "same-native"},
     ]
+
+    control = canonical_control_for_bid(raw, "select")
+
+    assert control is not None and not control.executable
+    assert control.private_options == ()
+    assert not _projection(raw).world.bindings
+
+
+def test_named_physical_option_outside_public_domain_cannot_receive_select_binding() -> None:
+    raw = raw_observation(
+        ax_node("select", "combobox", "Choice"),
+        ax_node("alpha", "option", "Alpha"),
+        ax_node("beta", "option", "Beta"),
+    )
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["select"]["options"].append(
+        {"label": "Unprojected", "value": "private-unprojected"},
+    )
 
     control = canonical_control_for_bid(raw, "select")
 

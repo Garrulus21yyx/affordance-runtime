@@ -114,13 +114,18 @@ def _runtime(model) -> TargetRuntime:
 def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])
+        policy = _policy(scripted.build())
         environment = ScriptedEnvironment(
             initial_observation=shared_world("before", False),
             post_observations=(shared_world("after", True),),
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
         )
 
-        state = await _runtime(scripted.build()).run_task(environment, shared_task())
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionEvaluator(),
+            SharedTaskEvaluator(),
+        ).run_task(environment, shared_task())
 
         assert state.status is RunStatus.DONE
         assert state.execution_count == 1
@@ -129,6 +134,10 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert state.last_step.decision.tool_call_id == "pydantic-call:1"
         assert "ask_user" in scripted.offered_tools[0]
         assert "propose_done" not in scripted.offered_tools[0]
+        attempt = policy.port.last_generation_attempts[0]
+        assert attempt.phase == "initial"
+        assert attempt.transcript["llm.input_messages"][0]["parts"][0]["content"]
+        assert attempt.transcript["llm.output_messages"][0]["parts"][0]["tool_name"]
 
     asyncio.run(scenario())
 

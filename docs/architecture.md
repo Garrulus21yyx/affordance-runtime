@@ -40,6 +40,16 @@ capture, private bindings, currentness, and execution routes; it does not choose
 BrowserGym and Playwright are private execution backends, not model-visible tools. BrowserGym may use Playwright
 internally while publishing the same public world and semantic-action protocol as any other adapter.
 
+BrowserGym capture is one aligned source snapshot containing raw DOM, AXTree, rendering properties, and a screenshot.
+Its SurfaceAdapter performs the source-local canonical fusion exactly once, keyed by BrowserGym's stable private BID:
+AX role/name/state remain the higher-assurance accessible semantics, while bounded salient DOM attributes
+(`class`, `id`, `name`, `type`, `role`, `title`, `alt`, `placeholder`, `aria-label`, and `aria-description`) remain parallel public evidence
+under `semantic.dom.*` predicates. DOM evidence never overwrites an AX name and never becomes execution authority;
+the BID itself and BrowserGym rendering attributes remain private. Missing accessible names are represented as
+unknown rather than causing the DOM evidence or executable capability to disappear. Viewport visibility is a
+presentation fact, not authority over the action inventory. A malformed DOMSnapshot or conflicting semantic evidence
+for one BID fails with a typed adapter error instead of silently dropping that modality.
+
 ### SemanticActionRegistry
 
 The semantic capability registry defines the stable action algebra: verb, supported subject kinds, public parameters,
@@ -72,6 +82,11 @@ Public references are opaque current-snapshot handles, not values the model deri
 state. Unknown, invalid, ambiguous, or stale references fail without dispatch and receive the exact current schema
 for at most one repair. Hashes remain private integrity data and must never be model input.
 
+Presence in the observation means only that a reference is available as evidence. A reference is actionable for one
+operation only when that operation's current parameter schema lists it. The stable model instruction states this
+rule, and each generated action-tool description repeats it next to the exact current enum; neither the world adapter
+nor the execution adapter guesses actionability from a node's mere presence.
+
 ### Model and tool protocol
 
 PydanticAI owns provider clients, provider messages, native tool-call parsing, call IDs, and basic schema repair. The
@@ -103,6 +118,20 @@ model context.
 observation identities, action evaluation, task evaluation, and resulting status. A local result is stored once on
 its resolved call and exposed through `StepResult`, not copied into a second state field. `StepResult` is not a log,
 aggregate root, or reconstruction format.
+
+### Complete trace without a second state
+
+Observability consumes the existing model-turn result and `StepResult` at the two Core Loop boundaries. A local
+append-only `trace.jsonl` stores the exact public `AgentContext`, current tool schemas, typed decision, provider
+diagnostics, action/result/evaluation facts, and the complete call-ID/request-ID/observation-ID lineage. Each world
+observation is written once; steps reference its identity, and binary media is content-addressed under `artifacts/`.
+Every provider attempt is recorded at the provider boundary as an OpenInference-shaped LLM transcript containing its
+input messages, exact current tool schema, output message or typed error, token usage, response ID, and semantic phase
+(`initial`, `structured_output_repair`, `argument_repair`, or `tool_intent_repair`). Screenshot data URLs are replaced
+by content-addressed artifacts. Trace data never enters `RunState` or `AgentContext` and cannot affect control.
+Langfuse renders the same agent root, model-turn chain, LLM generations, and Runtime tool spans; it is an exporter,
+not an authority, queue, transcript owner, or second loop. The separate private capture remains an optional isolated
+copy for deployments that do not enable a local Runtime trace.
 
 ## Mechanical action/result identity
 
@@ -166,14 +195,48 @@ agent-world object.
 The model never receives remaining budgets, backend routes, selectors, coordinates, private bindings, acquisition
 attempts, reducers, old screenshots, old worlds, full traces, benchmark rewards, oracle values, or hidden state.
 
-Structured public facts are the default observation. Merely having a visual source in the fused world does not attach
-an image to the main model turn. Visual evidence is first converted into public semantic facts by the visual adapter;
-a raw current image is attached only when the active observation request explicitly requires unresolved visual
-evidence. Old images are never retained in recent steps.
+Structured public facts are always present. Under `structure-first.v1`, merely having a visual source in the fused
+world does not attach an image to the main model turn; a raw current image is attached only after an admitted explicit
+visual request. Under `screenshot-ax.v1`, the current screenshot accompanies the same AX-backed world on every model
+turn. Old images are never retained in recent steps.
+
+### GUI capability exposure and visual profiles
+
+The model-facing GUI contract is one high-level, snapshot-scoped action set such as `activate(target)`,
+`type_text(target, text)`, `select_option(target, options)`, and `drag_to(source, destination)`. BrowserGym BIDs,
+Playwright selectors, native events, and coordinates remain private execution details. DOM-clickable fallbacks are
+lower authority than native AX controls: a wrapper owning exactly one native executable control remains structural
+context but is not exposed as a second action. Prompt bounding happens only after the complete canonical inventory is
+built; paging or retrieval may limit one turn's projection, but the union of pages must conserve every current action.
+
+`structure-first.v1` and `screenshot-ax.v1` are perception profiles over this same world and action catalog, not
+separate execution paths. Screenshot+AX may help the main multimodal model interpret layout or open-world content,
+but it never creates coordinate authority; every dispatched GUI action still resolves through the current semantic
+binding. A model-backed visual grounder or disambiguator is an optional evidence provider. Failure of an
+automatically inferred visual enhancement does not invalidate an otherwise complete structured observation, while
+an explicit model request for visual evidence remains required and fails with its typed provider reason.
+
+Visual acquisition has four bounded admission conditions. A perception profile may attach the current raw screenshot
+to every main-model turn; an explicit `request_evidence` may require entity discovery, target disambiguation, or
+verification; Runtime may add optional entity discovery when the structural inventory reports typed truncation; and
+an unresolved declared postcondition may require visual diagnosis. The mere presence of multiple controls, duplicate
+labels, or a configured provider is not evidence and never triggers a specialist. Target disambiguation therefore
+starts only after the policy states a semantic intent. Its E-ref candidates are derived once from current executable
+bindings, restricted and clipped to the same screenshot coordinate space, and remain snapshot-scoped. Fewer than two
+visible candidates is a typed local capability-unavailable outcome, not a visual-provider failure and not a provider
+call.
+
+Action evaluation is projected once through the latest `StepResult`. Confirmed effect and confirmed no-effect map to
+`action_effect_confirmed` and `action_no_effect_change_strategy`; the latter tells the model to change target or
+strategy without adding a second progress ledger. Runtime does not infer page-specific task semantics when a model
+continues to make poor choices despite current state, screenshot, and effect feedback.
 
 A native-tool provider receives tools through PydanticAI rather than a duplicate menu in the context. A retained
 compact-JSON compatibility model may receive the same current catalog in the public context because it has no native
-tool field.
+tool field. Its provider-envelope normalizer projects only the operation and arguments (including their admitted
+aliases); provider commentary is discarded as non-authoritative metadata and can never become an action argument.
+Missing or conflicting action-bearing fields still fail closed, and Runtime validates the projected arguments against
+the selected current `ToolSpec` before dispatch.
 
 ## Current model prompt
 

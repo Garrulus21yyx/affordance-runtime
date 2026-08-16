@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from affordance_runtime.actions import (
     ActionBinding,
@@ -55,7 +56,7 @@ class CompleteEvaluator:
         )
 
 
-def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
+def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
     events = []
 
     class Environment(ScriptedEnvironment):
@@ -92,12 +93,15 @@ def test_runner_is_sequential_isolated_and_always_cleans_up() -> None:
                 "deterministic",
                 7,
                 (case("a"), case("b")),
-            )
+            ),
+            trace_dir=tmp_path,
         )
     )
     assert result.acceptance.accepted
     assert events == ["start:a", "close:a", "start:b", "close:b"]
     assert [item.case_id for item in result.cases] == ["a", "b"]
+    assert (tmp_path / "traces" / "a" / "trace.jsonl").is_file()
+    assert (tmp_path / "traces" / "b" / "trace.jsonl").is_file()
 
 
 def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:
@@ -114,6 +118,22 @@ def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> Non
     assert returned is marker
     assert instrumentation.environment_reset_acquisitions == 0
     assert instrumentation.failure_origin is CaseFailureOrigin.NONE
+
+
+def test_benchmark_policy_projection_does_not_mutate_persisted_trace_events() -> None:
+    instrumentation = BenchmarkInstrumentation()
+    context = SimpleNamespace(
+        context_id="context:test",
+        actions=SimpleNamespace(options=()),
+        actor_world=SimpleNamespace(sources=()),
+        recent_steps=SimpleNamespace(items=()),
+        image_inputs=(),
+    )
+
+    instrumentation.model_turn(context, object(), object())
+
+    assert len(instrumentation.policy_trace) == 1
+    assert "benchmark_policy" not in instrumentation.trace_recorder.events[-1]
 
 
 def _action_world(observation_id: str) -> WorldObservation:

@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.agent.decisions import LocalToolResult, RequestObservation, SelectAction
+from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
@@ -67,8 +68,46 @@ class BenchmarkInstrumentation:
     environment_capture_calls: int = 0
     environment_post_acquisitions: int = 0
     currentness_probe_count: int = 0
-    policy_trace: list[dict[str, object]] = field(default_factory=list)
+    trace_recorder: RunTraceRecorder = field(default_factory=RunTraceRecorder)
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
+    _policy_trace: list[dict[str, object]] = field(default_factory=list, repr=False)
+
+    @property
+    def policy_trace(self) -> list[dict[str, object]]:
+        return [dict(event) for event in self._policy_trace]
+
+    @property
+    def trace_path(self) -> str:
+        return str(self.trace_recorder.path) if self.trace_recorder.path is not None else ""
+
+    def run_started(self, task, state) -> None:
+        self.trace_recorder.run_started(task, state)
+
+    def run_start_failed(self, task, acquisition) -> None:
+        self.trace_recorder.run_start_failed(task, acquisition)
+
+    def model_turn(self, context, outcome, policy, *, exception: str = "") -> None:
+        self.trace_recorder.model_turn(context, outcome, policy, exception=exception)
+        self._policy_trace.append(
+            _policy_trace_event(
+                self.policy_calls, context, outcome, policy, exception=exception
+            )
+        )
+
+    def step_completed(self, step_number: int, result) -> None:
+        self.trace_recorder.step_completed(step_number, result)
+
+    def run_paused(self, state) -> None:
+        self.trace_recorder.run_paused(state)
+
+    def run_resumed(self, kind: str, details: Mapping[str, object]) -> None:
+        self.trace_recorder.run_resumed(kind, details)
+
+    def run_error(self, error: BaseException, state) -> None:
+        self.trace_recorder.run_error(error, state)
+
+    def run_finished(self, state) -> None:
+        self.trace_recorder.run_finished(state)
 
     def increment(self, name: str, value: int = 1) -> None:
         require_custom_metric_name(name)
@@ -118,16 +157,9 @@ class CountingPolicy:
         try:
             outcome = await self.wrapped.decide(context)
         except Exception as exc:
-            self.instrumentation.policy_trace.append(
-                _policy_trace_event(
-                    self.instrumentation.policy_calls,
-                    context,
-                    None,
-                    self.wrapped,
-                    exception=type(exc).__name__,
-                )
+            self.instrumentation.record_failure(
+                CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc
             )
-            self.instrumentation.record_failure(CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc)
             raise
         metadata = getattr(self.wrapped, "last_metadata", None)
         if isinstance(metadata, ModelMetadata):
@@ -136,14 +168,6 @@ class CountingPolicy:
             self.instrumentation.completion_tokens += metadata.completion_tokens
             self.instrumentation.total_tokens += metadata.total_tokens
             self.instrumentation.model_latency_ms += metadata.latency_ms
-        self.instrumentation.policy_trace.append(
-            _policy_trace_event(
-                self.instrumentation.policy_calls,
-                context,
-                outcome,
-                self.wrapped,
-            )
-        )
         return outcome
 
 
@@ -197,6 +221,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_routing_normalized_operation"] = str(getattr(adapter, "last_routing_normalized_operation", ""))
         event["model_image_input_count"] = image_input_count
         event["policy_model_call_count"] = int(getattr(adapter, "last_model_call_count", 0))
+        event["generation_attempts"] = to_json_compatible(
+            getattr(adapter, "last_generation_attempts", ())
+        )
         event["structured_output_validation_stage"] = "provider_response_to_grounded_command"
         event["structured_output_violations"] = tuple(
             {"field_path": item.field_path, "code": item.code}

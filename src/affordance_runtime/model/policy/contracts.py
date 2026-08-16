@@ -12,6 +12,24 @@ MAX_MODEL_RESPONSE_BYTES = 32 * 1024
 
 
 @dataclass(frozen=True)
+class ModelGenerationAttempt:
+    """One provider exchange, retained independently from the turn outcome."""
+
+    attempt: int
+    phase: str
+    schema_name: str
+    status: str
+    violations: tuple[object, ...] = ()
+    response_id: str = ""
+    latency_ms: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    exception_class: str = ""
+    transcript: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class ModelMetadata:
     provider_id: str = ""
     model_id: str = ""

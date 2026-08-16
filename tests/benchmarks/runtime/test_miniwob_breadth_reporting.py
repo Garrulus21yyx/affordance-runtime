@@ -362,12 +362,12 @@ def _manifest() -> MiniWobBreadthManifest:
     cases = tuple(
         MiniWobBreadthCase(
             f"miniwob-60-{index:02d}", f"browsergym/miniwob.fake-{index:02d}",
-            "current_primitives", ("activate",), 10, 120.0, 7,
+            "current_primitives", ("activate",), 10, 180.0, 7,
         )
         for index in range(1, 61)
     )
     return MiniWobBreadthManifest(
-        "miniwob-breadth-manifest.v1", "miniwob-60-seed7-v1", "browsergym-miniwob",
+        "miniwob-breadth-manifest.v1", "miniwob-60-seed7-v2", "browsergym-miniwob",
         "0.14.3", "source", "registry", "inventory", "selection", "mistral-medium-3-5",
         "format-only.v1", 7.5, cases,
     )
@@ -385,7 +385,7 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
         measurements,
         latest_task_status="" if failed else "complete",
         failure_facts=facts,
-        suite_id="miniwob-60-seed7-v1",
+        suite_id="miniwob-60-seed7-v2",
         profile_id="mistral-format-only-v1",
         seed=7,
         manifest_digest=expected_target_manifest_digest(_manifest()),
@@ -394,7 +394,7 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
 
 def _identity() -> BenchmarkRunIdentity:
     return BenchmarkRunIdentity(
-        "opaque-run", "0" * 40, False, "miniwob-60-seed7-v1",
+        "opaque-run", "0" * 40, False, "miniwob-60-seed7-v2",
         expected_target_manifest_digest(_manifest()),
         "mistral-format-only-v1", 7,
         "2026-08-10T00:00:00+00:00", "3.12", "test",

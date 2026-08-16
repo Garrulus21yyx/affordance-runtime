@@ -157,16 +157,18 @@ def _stale_reason(
         or captured.private_gesture_kind != live.private_gesture_kind
     ):
         return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
-    if (
-        len(tuple(
-            offer for offer in captured.executable_offers
-            if offer.primitive_action == context.requested_primitive
-        )) != 1
-        or not primitive_is_compatible(live.role, context.requested_primitive)
+    captured_offers = tuple(
+        offer for offer in captured.executable_offers
+        if offer.primitive_action == context.requested_primitive
+    )
+    if len(captured_offers) != 1 or not primitive_is_compatible(
+        live.role, context.requested_primitive,
     ):
         return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
-    if not live.executable:
+    live_offers = tuple(
+        offer for offer in live.executable_offers
+        if offer.primitive_action == context.requested_primitive
+    )
+    if len(live_offers) != 1:
         return BrowserGymCurrentnessReason.NOT_EXECUTABLE
-    if captured.availability != live.availability:
-        return BrowserGymCurrentnessReason.AVAILABILITY_CHANGED
     return None

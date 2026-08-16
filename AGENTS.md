@@ -10,6 +10,17 @@
 - benchmark 是泛化与鲁棒性的最终实证标准。单元测试、性质测试和架构审查用于保护主线，而不是取代真实 benchmark，或成为无限延迟 benchmark 的理由。
 - 当“进一步严谨”与“推进主线”冲突时，在不破坏已声明核心合同、事实 authority 和基本安全边界的前提下，选择最小、清晰、可测并能尽快回到 benchmark 的方案。
 
+## Owner-first change discipline
+
+任何修复、功能或可观测性改动都必须先确定事实 authority、合同 owner、转换 owner、执行 owner、观测 owner，以及它们的生产者和消费者，再修改对应 owner。不得以“最小改动”“边界补丁”或“先让测试通过”为理由，把职责塞进调用链中方便插入的位置。
+
+- Core Loop 只负责编排既有 typed ports、状态推进和终止；不得承接 provider 协议解析、Tool Schema、参数 normalize、binding、SurfaceAdapter、World projection、视觉语义、评估语义或 Trace 重建逻辑。
+- Registry/ToolCatalog 拥有模型可见工具合同；provider transport 只拥有 wire envelope 和 provider exchange；catalog-aware normalizer 只做有合同依据的表示规范化；binding owner 只在合法语义调用之后解析私有执行参数；executor 只执行已绑定请求。
+- SurfaceAdapter 拥有外部环境到 Unified World 的采集与来源语义；World projection 拥有统一公开事实；视觉 provider 拥有开放世界视觉推断并返回 typed outcome；任何下游模块不得重新猜测或重复投影这些事实。
+- Trace/Langfuse 只能观察各 owner 已产生的输入、输出、typed failure 和 lineage；不得成为第二状态、第二控制流，或在事后重建本应由 owner 直接记录的事实。每次 provider call 及 repair call 的输入和输出必须在 provider 边界直接进入 transcript。
+- “选择最小修复”只适用于已经确认正确 owner 之后，在该 owner 内选择最小完整改动；它不能用来绕过根因分析、authority 一致性或职责边界。
+- 验收必须覆盖 owner 之间的不变量和真实 benchmark；不得以单个字符串、case 或局部分支测试代替数据流、authority 和异常路径验证。
+
 ## Generalization-first implementation constraint
 
 所有产品实现都必须服务于跨任务、跨站点和跨 benchmark case 的泛化能力；测试与 benchmark 只能验证产品合同，不能反向塑造产品分支。

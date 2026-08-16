@@ -52,6 +52,7 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     task_state_from_transition,
 )
 from affordance_runtime.surfaces.browsergym.visual_disambiguation import (
+    BrowserGymVisualDisambiguationProjectionError,
     project_browsergym_visual_disambiguation_source,
 )
 from affordance_runtime.surfaces.browsergym.visual_projection import (
@@ -527,6 +528,7 @@ class BrowserGymSurfaceAdapter:
         projection: BrowserGymProjection,
     ) -> SelectedObservationResult:
         self.visual_gate_selected_count += 1
+        disambiguation_provider_invoked = False
         try:
             assert self._task is not None and self._pending_raw is not None
             visual_observation_id = f"{self._pending_observation_id}:visual"
@@ -546,7 +548,6 @@ class BrowserGymSurfaceAdapter:
                 target_disambiguated = visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION
             elif visual_purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
                 assert self.visual_candidate_disambiguator is not None
-                self.visual_disambiguator_calls += 1
                 disambiguation = project_browsergym_visual_disambiguation_source(
                     self._pending_raw,
                     observation_id=visual_observation_id,
@@ -556,6 +557,8 @@ class BrowserGymSurfaceAdapter:
                     disambiguator=self.visual_candidate_disambiguator,
                     evidence_need=VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
                 )
+                self.visual_disambiguator_calls += 1
+                disambiguation_provider_invoked = True
                 visual_source = disambiguation.source
                 visual_private_bindings = ()
                 target_disambiguated = bool(disambiguation.selected_target_id)
@@ -597,16 +600,29 @@ class BrowserGymSurfaceAdapter:
                 fulfilled_need_ids=fulfilled,
                 unfulfilled_reason_code="visual_need_unresolved",
             )
+        except BrowserGymVisualDisambiguationProjectionError as exc:
+            return SelectedObservationResult.failed(
+                request,
+                SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                exc.reason_code,
+            )
         except Exception as exc:
+            if (
+                self._visual_purpose(request) is ObservationPurpose.TARGET_DISAMBIGUATION
+                and self.visual_candidate_disambiguator is not None
+                and not disambiguation_provider_invoked
+            ):
+                self.visual_disambiguator_calls += 1
             stage = (
                 VisualProviderStage.CANDIDATE_DISAMBIGUATION
                 if self._visual_purpose(request) is ObservationPurpose.TARGET_DISAMBIGUATION
                 and self.visual_candidate_disambiguator is not None
                 else VisualProviderStage.REGION_PROPOSAL
             )
-            self._record_visual_provider_failure(classify_visual_provider_failure(stage, exc))
+            failure = classify_visual_provider_failure(stage, exc)
+            self._record_visual_provider_failure(failure)
             return SelectedObservationResult.failed(
-                request, SourceAcquisitionStatus.FAILED, "source_acquisition_failed"
+                request, SourceAcquisitionStatus.FAILED, failure.reason_code
             )
 
     @staticmethod

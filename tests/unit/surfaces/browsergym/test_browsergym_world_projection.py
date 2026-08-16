@@ -80,6 +80,37 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     assert (retained.option_value_count, retained.option_value_total_count) == (2, 2)
 
 
+def test_hidden_native_select_keeps_one_semantic_binding_on_existing_projection_path() -> None:
+    raw = raw_observation(
+        ax_node("private-select", "combobox", "Height", value="5ft 10in"),
+        ax_node("private-short", "option", "5ft 10in"),
+        ax_node("private-tall", "option", "6 ft"),
+    )
+    physical = raw[PRIVATE_CONTROL_PROPERTIES_KEY]["private-select"]
+    physical["visible"] = False
+    physical["editable"] = False
+    physical["options"].insert(0, {"label": "", "value": ""})
+
+    projected = project_browsergym_observation(
+        raw,
+        observation_id="obs:hidden-select",
+        source_revision="revision:1",
+        page_identity="page:opaque",
+        episode_identity="0",
+        task_state=reset_task_state("obs:hidden-select"),
+        entity_identity=_IDENTITY,
+    )
+
+    assert len(projected.world.targets) == 1
+    assert len(projected.world.bindings) == len(projected.private_bindings) == 1
+    binding = projected.world.bindings[0]
+    assert binding.semantic_action == binding.primitive_action == "select_option"
+    assert binding.parameter_schema["properties"]["value"]["enum"] == (
+        "5ft 10in", "6 ft",
+    )
+    assert "private-select" not in repr(projected.world)
+
+
 def test_entity_identity_is_stable_across_ax_order_and_unrelated_insertions() -> None:
     identity = BrowserGymEntityIdentityMap(b"stable-entity-identity-test-key")
     baseline = _project_with_identity(
@@ -485,6 +516,52 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
     assert context.actor_world.traversal is not None
     assert context.actor_world.traversal.next_cursor
     assert len(nodes) == 64
+
+
+def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None:
+    raw = raw_observation(
+        *(
+            node
+            for index in range(40)
+            for node in (
+                ax_node(f"control-{index}", "graphics-symbol", "", child_ids=(f"text-{index}",)),
+                ax_node(f"text-{index}", "StaticText", f"Control {index}", parent_id=f"control-{index}"),
+            )
+        ),
+        ax_node("submit", "button", "Submit"),
+    )
+    for index in range(40):
+        bid = f"control-{index}"
+        raw["extra_element_properties"][bid].update({
+            "clickable": True,
+            "visibility": 1.0 if index < 8 else 0.0,
+            "bbox": [20.0 + (index % 4) * 40.0, 40.0 + (index // 4) * 80.0, 24.0, 24.0],
+        })
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid]["bbox"] = raw["extra_element_properties"][bid]["bbox"]
+
+    world = _project(raw).world
+    task = TaskGoal(
+        "task:complete-action-paging",
+        "Activate the requested controls and submit.",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    action_space = ActionSpaceBuilder().build(task, world)
+    builder = ContextBuilder()
+    seen: set[str] = set()
+    cursor = ""
+    page_count = 0
+    while True:
+        page = builder.page(action_space, world, cursor=cursor)
+        seen.update(page.visible_action_ids)
+        page_count += 1
+        if not page.has_more:
+            break
+        cursor = page.next_cursor
+
+    assert page_count > 1
+    assert seen == {item.action_id for item in action_space.options}
+    assert len(seen) == len(world.bindings) == 41
 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:

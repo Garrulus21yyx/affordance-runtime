@@ -14,6 +14,7 @@ from affordance_runtime.agent.decision_capability import (
     UnsupportedCompositionError,
     normalize_decision_capabilities,
 )
+from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
@@ -58,6 +59,7 @@ class TargetRuntime:
     binder: ActionBinder = field(default_factory=ActionBinder)
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
+    trace_sink: RunTraceSink = field(default_factory=NullRunTraceSink)
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
@@ -91,6 +93,7 @@ class TargetRuntime:
             risk_policy=self.risk_policy,
             context_builder=self.context_builder,
             wait_controller=self.wait_controller,
+            trace_sink=self.trace_sink,
         )
 
     async def run_task(

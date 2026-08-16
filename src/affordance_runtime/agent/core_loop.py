@@ -25,6 +25,7 @@ from affordance_runtime.agent.evaluation_control import (
     validated_action_evaluation,
     validated_task_evaluation,
 )
+from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.policy import (
     ActionEvaluator,
     AgentDecisionPorts,
@@ -36,6 +37,7 @@ from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitController, WaitController
 from affordance_runtime.evaluation.contracts import (
+    ActionEvaluationStatus,
     CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
@@ -61,6 +63,14 @@ _ASSURANCE_RANK = {
 }
 
 
+def _action_feedback(status: ActionEvaluationStatus) -> str:
+    if status is ActionEvaluationStatus.EFFECT_CONFIRMED:
+        return "action_effect_confirmed"
+    if status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED:
+        return "action_no_effect_change_strategy"
+    return f"action_evaluated:{status}"
+
+
 class CoreLoopStartError(RuntimeError):
     def __init__(self, reason_code: str) -> None:
         self.reason_code = reason_code
@@ -77,6 +87,7 @@ class CoreAgentLoop:
     risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
+    trace_sink: RunTraceSink = field(default_factory=NullRunTraceSink)
 
     async def run(
         self,
@@ -95,6 +106,7 @@ class CoreAgentLoop:
 
         acquisition = await environment.reset(task)
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            self.trace_sink.run_start_failed(task, acquisition)
             raise CoreLoopStartError(acquisition.reason_code)
         initial = acquisition.observation
         evaluation = await validated_task_evaluation(self.task_evaluator, task, initial)
@@ -105,6 +117,7 @@ class CoreAgentLoop:
             status=self._status_for_task(task, evaluation),
             task_revision=task.revision,
         )
+        self.trace_sink.run_started(task, state)
         return state
 
     async def continue_run(
@@ -124,10 +137,19 @@ class CoreAgentLoop:
         state: RunState,
     ) -> RunState:
         while state.status is RunStatus.RUNNING:
-            result = await self.step(environment, task, state)
+            try:
+                result = await self.step(environment, task, state)
+            except BaseException as exc:
+                self.trace_sink.run_error(exc, state)
+                raise
+            self.trace_sink.step_completed(state.step_count + 1, result)
             state.apply(result)
             if state.status is RunStatus.RUNNING and not isinstance(result.decision, PolicyFailure):
                 state.remember_step(project_step_result(result))
+        if state.terminal:
+            self.trace_sink.run_finished(state)
+        else:
+            self.trace_sink.run_paused(state)
         return state
 
     async def resume_user(
@@ -149,6 +171,7 @@ class CoreAgentLoop:
         ):
             raise ValueError("core user resume requires one consecutive task revision")
         await environment.revise_task(task)
+        self.trace_sink.run_resumed("user", {"task_revision": task.revision})
         evaluation = await validated_task_evaluation(
             self.task_evaluator,
             task,
@@ -191,6 +214,7 @@ class CoreAgentLoop:
         ):
             raise ValueError("core confirmation task is stale")
         state.status = RunStatus.RUNNING
+        self.trace_sink.run_resumed("confirmation", {"approved": approved})
         if not approved:
             declined = replace(
                 pending,
@@ -199,6 +223,7 @@ class CoreAgentLoop:
                 feedback="confirmation_declined",
             )
             state.last_step = declined
+            self.trace_sink.step_completed(state.step_count, declined)
             state.remember_step(project_step_result(declined))
             return await self._run_until_pause(environment, task, state)
         action_space = self.action_space_builder.build(task, state.current_world)
@@ -213,6 +238,7 @@ class CoreAgentLoop:
             pending.decision,
             confirmed_subject_id=pending.confirmation.subject_id,
         )
+        self.trace_sink.step_completed(state.step_count, result)
         state.apply(result, consume_step=False)
         if state.status is RunStatus.RUNNING:
             state.remember_step(project_step_result(result))
@@ -251,6 +277,12 @@ class CoreAgentLoop:
                 ModelFailureKind.INTERNAL_ERROR,
                 "policy decision failed",
             )
+            self.trace_sink.model_turn(
+                context,
+                failure,
+                self.decision_ports.action_policy,
+                exception=type(exc).__name__,
+            )
             return StepResult(
                 failure,
                 state.current_world,
@@ -265,6 +297,11 @@ class CoreAgentLoop:
                     exception_class=type(exc).__name__,
                 ),
             )
+        self.trace_sink.model_turn(
+            context,
+            decision,
+            self.decision_ports.action_policy,
+        )
         if isinstance(decision, PolicyFailure):
             return StepResult(
                 decision,
@@ -556,7 +593,7 @@ class CoreAgentLoop:
             self._status_for_task(task, task_evaluation),
             execution,
             action_evaluation,
-            feedback=f"action_evaluated:{action_evaluation.status}",
+            feedback=_action_feedback(action_evaluation.status),
         )
 
     async def _refresh_stale_binding(self, environment, task, state, decision) -> StepResult:

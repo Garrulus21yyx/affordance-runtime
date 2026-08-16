@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from affordance_runtime.model.policy.grounded_tool_port_bridge import GroundedToolCommandPayload
 from affordance_runtime.model.providers.capture import PrivateModelCapture
 from affordance_runtime.model.providers.port import (
     ModelConfig,
@@ -119,6 +120,15 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
     assert port.last_call is not None
     assert port.last_call.provider == "openai-compatible"
     assert port.last_call.total_tokens == 11
+    assert port.last_transcript is not None
+    assert port.last_transcript["openinference.span.kind"] == "LLM"
+    assert port.last_transcript["llm.input_messages"] == [
+        {"role": "user", "content": "answer"}
+    ]
+    assert port.last_transcript["llm.output_messages"] == [
+        {"role": "assistant", "content": '{"value":"remote"}'}
+    ]
+    assert port.last_transcript["llm.token_count.total"] == 11
 
 
 def test_openai_compatible_adapter_serializes_multimodal_content_parts() -> None:
@@ -231,6 +241,36 @@ def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> 
         ("value", "missing"),
         ("wrong", "extra_forbidden"),
     }
+    assert port.last_transcript is not None
+    assert port.last_transcript["status"] == "schema_error"
+    assert port.last_transcript["llm.output_messages"] == [
+        {"role": "assistant", "content": '{"wrong":true}'}
+    ]
+
+
+def test_provider_transport_preserves_arguments_without_owning_tool_semantics() -> None:
+    payload_type = GroundedToolCommandPayload
+    server, thread, _ = _serve({
+        "id": "response-transport",
+        "choices": [{"message": {"content": '{"name":"activate","arguments":{"target":"E1","details":"x"}}'}}],
+        "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+    })
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="remote-test",
+        )
+        payload = asyncio.run(port.generate_structured([], payload_type, ModelConfig()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert payload.name == "activate"
+    assert payload.arguments == {"target": "E1", "details": "x"}
+    assert port.last_transcript is not None
+    assert port.last_transcript["llm.token_count.total"] == 7
 
 
 def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> None:
@@ -251,6 +291,28 @@ def test_openai_compatible_adapter_accepts_a_complete_json_markdown_fence() -> N
         thread.join(timeout=2)
 
     assert answer.value == "fenced"
+
+
+def test_openai_compatible_adapter_strips_only_surplus_closing_braces() -> None:
+    server, thread, _ = _serve(
+        {
+            "choices": [{"message": {"content": '{"value":"bounded"}\n}\n'}}],
+            "usage": {},
+        }
+    )
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="remote-test",
+        )
+        answer = asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "bounded"
 
 
 def test_openai_compatible_adapter_unwraps_one_exact_schema_named_object() -> None:
@@ -608,6 +670,7 @@ def test_zhipu_text_profile_requests_json_object_and_embeds_schema_in_prompt() -
     assert answer.value == "zhipu"
     request = requests[0]
     assert request["response_format"] == {"type": "json_object"}
+    assert "never the JSON Schema definition itself" in request["messages"][0]["content"]
     assert request["thinking"] == {"type": "disabled"}
     assert request["messages"][0]["role"] == "system"
     assert '"value"' in request["messages"][0]["content"]

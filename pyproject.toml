@@ -21,6 +21,9 @@ affordance-runtime-benchmark = "affordance_runtime.benchmarks.cli:main"
 web = [
   "playwright==1.61.0",
 ]
+observability = [
+  "langfuse>=3.3,<4",
+]
 pydantic-ai = [
   "pydantic-ai-slim[openai]>=2.31,<2.32",
 ]

@@ -7,9 +7,11 @@ import inspect
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 from affordance_runtime.agent.core_loop import CoreLoopStartError
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
+from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.run_state import RunState, RunStatus
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
@@ -35,6 +37,7 @@ from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
 async def run_suite(
     manifest: BenchmarkManifest,
     case_completed: Callable[[int, BenchmarkCaseResult], None] | None = None,
+    trace_dir: Path | None = None,
 ) -> BenchmarkSuiteResult:
     digest = manifest_digest(manifest)
     identity = BenchmarkRunIdentity.create(
@@ -46,7 +49,7 @@ async def run_suite(
     completed = []
     for index, case in enumerate(manifest.cases, 1):
         result = replace(
-            await _run_case(case),
+            await _run_case(case, trace_dir=trace_dir),
             suite_id=identity.suite_id,
             profile_id=identity.profile_id,
             seed=identity.seed,
@@ -88,8 +91,12 @@ async def run_suite(
     return BenchmarkSuiteResult(identity, results, accepted, rates)
 
 
-async def _run_case(case) -> BenchmarkCaseResult:
-    instrumentation = BenchmarkInstrumentation()
+async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResult:
+    instrumentation = BenchmarkInstrumentation(
+        trace_recorder=RunTraceRecorder(
+            trace_dir / "traces" / case.case_id if trace_dir is not None else None
+        )
+    )
     environment = None
     result = None
     partial = None
@@ -165,6 +172,11 @@ async def _run_case(case) -> BenchmarkCaseResult:
     state = state_holder.get("state")
     if state is not None:
         snapshot = snapshot_episode(state)
+    instrumentation.set_custom_metric(
+        "trace_recording_failures", len(instrumentation.trace_recorder.errors)
+    )
+    if instrumentation.trace_recorder.errors:
+        failure = _append_failure(failure, "trace recording failed")
     elapsed = (time.perf_counter() - started) * 1000
     return project_case_result(
         case.case_id,
@@ -184,6 +196,7 @@ def _build_runtime(composition, instrumentation):
         instrument_task_evaluator(composition.task_evaluator, instrumentation),
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,
+        trace_sink=instrumentation,
     )
 
 

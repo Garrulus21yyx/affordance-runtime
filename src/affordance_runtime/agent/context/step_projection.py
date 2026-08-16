@@ -18,6 +18,7 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.run_state import StepResult
+from affordance_runtime.evaluation.contracts import ActionEvaluation, ActionEvaluationStatus
 
 _MAX_STRING = 240
 
@@ -54,6 +55,8 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             str(result.task_evaluation.status),
             action.reason if action is not None else result.feedback,
             {"feedback_code": result.feedback},
+            target_snapshot=_target_snapshot(result, intent.target_id),
+            effect_summary=_effect_summary(action),
         )
     target_id = ""
     if isinstance(decision, RequestObservation | RequestActionPage):
@@ -98,6 +101,40 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
     if isinstance(decision, Abort):
         return {"category": decision.category, "reason": decision.reason}
     return {}
+
+
+def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]:
+    target = next(
+        (item for item in result.before_world.targets if item.target_id == target_id),
+        None,
+    )
+    if target is None:
+        return {}
+    return {
+        "role": _bounded(target.role, 80),
+        "label": _bounded(target.label),
+        "state": project_public_value(target.state),
+    }
+
+
+def _effect_summary(action: ActionEvaluation | None) -> Mapping[str, object]:
+    if action is None or action.status not in {
+        ActionEvaluationStatus.EFFECT_CONFIRMED,
+        ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+    }:
+        return {}
+    summary: dict[str, object] = {}
+    for key in (
+        "verification_profile",
+        "observed_effect",
+        "target_changed",
+        "structural_world_changed",
+        "screenshot_changed",
+        "fact_changes",
+    ):
+        if key in action.evidence:
+            summary[key] = project_public_value(action.evidence[key])
+    return summary
 
 
 def _control_tool_name(decision: AgentDecision) -> str:

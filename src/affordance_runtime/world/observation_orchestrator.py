@@ -65,6 +65,16 @@ class ObservationOrchestrator:
         *,
         route_source: str = "",
     ) -> ObservationSelectionResult:
+        return self._select(offers, request, route_source=route_source)
+
+    def _select(
+        self,
+        offers: tuple[ObservationOffer, ...],
+        request: WorldObservationRequest,
+        *,
+        route_source: str = "",
+        optional_need_ids: frozenset[str] = frozenset(),
+    ) -> ObservationSelectionResult:
         ordered = tuple(sorted(offers, key=_offer_rank))
         if not ordered:
             return ObservationSelectionResult(
@@ -92,7 +102,12 @@ class ObservationOrchestrator:
             )
             unresolved_needs = request.needs
         for need in sorted(unresolved_needs, key=lambda item: item.need_id):
-            if _selected_satisfies(selected, ordered, need):
+            requirement = (
+                SourceRequirement.OPTIONAL
+                if need.need_id in optional_need_ids
+                else SourceRequirement.REQUIRED
+            )
+            if _selected_satisfies(selected, ordered, need, requirement):
                 continue
             if (
                 need.required_modality is ObservationModality.VISUAL
@@ -151,6 +166,11 @@ class ObservationOrchestrator:
                 existing = selected[chosen.source]
                 selected[chosen.source] = replace(
                     existing,
+                    requirement=(
+                        SourceRequirement.REQUIRED
+                        if requirement is SourceRequirement.REQUIRED
+                        else existing.requirement
+                    ),
                     need_ids=tuple(sorted(set(existing.need_ids) | {need.need_id})),
                 )
                 continue
@@ -159,7 +179,7 @@ class ObservationOrchestrator:
                 chosen,
                 SourceSelection(
                     chosen.source,
-                    SourceRequirement.REQUIRED,
+                    requirement,
                     _selection_reason(need, chosen),
                     (need.need_id,),
                 ),
@@ -210,8 +230,11 @@ class ObservationOrchestrator:
             if any(_offer_satisfies(offer, need) for offer in offers)
         )
         needs = tuple(dict.fromkeys((request.needs or (_lifecycle_need(request),)) + residual))
-        return self.select(
-            offers, replace(request, needs=needs), route_source=route_source
+        return self._select(
+            offers,
+            replace(request, needs=needs),
+            route_source=route_source,
+            optional_need_ids=frozenset(item.need_id for item in residual),
         )
 
     def _add(
@@ -290,12 +313,18 @@ def _selected_satisfies(
     selected: dict[str, SourceSelection],
     offers: tuple[ObservationOffer, ...],
     need: ObservationNeed,
+    requirement: SourceRequirement,
 ) -> bool:
     for source, selection in tuple(selected.items()):
         if not _offer_satisfies(_offer(source, offers), need):
             continue
         selected[source] = replace(
             selection,
+            requirement=(
+                SourceRequirement.REQUIRED
+                if requirement is SourceRequirement.REQUIRED
+                else selection.requirement
+            ),
             need_ids=tuple(sorted(set(selection.need_ids) | {need.need_id})),
         )
         return True
