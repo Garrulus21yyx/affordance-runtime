@@ -100,6 +100,14 @@ _ROLE_SPECS = {
     "tab": _role("tab", "activate", "click", ("selected",), _COMMON_ACTIVATION_AVAILABILITY),
     "menuitem": _role("menuitem", "activate", "click", ("expanded", "checked"), _COMMON_ACTIVATION_AVAILABILITY),
     "clickable": _role("clickable", "activate", "click", (), _COMMON_ACTIVATION_AVAILABILITY),
+    "draggable": _role(
+        "draggable",
+        "drag_to",
+        "drag_and_drop",
+        (),
+        _COMMON_ACTIVATION_AVAILABILITY,
+    ),
+    "drop_target": BrowserGymRoleSpec("drop_target", True, ()),
     "slider": BrowserGymRoleSpec("slider", True, ()),
     "spinbutton": BrowserGymRoleSpec("spinbutton", True, ()),
     **{role: BrowserGymRoleSpec(role, True, ()) for role in _INFORMATIONAL_ROLES},
@@ -114,6 +122,7 @@ BROWSERGYM_INTERACTION_PROFILE = AdapterInteractionProfile(
         AdapterCapabilitySupport("activate", ("click",), (InteractionSubjectKind.ENTITY,)),
         AdapterCapabilitySupport("type_text", ("fill",), (InteractionSubjectKind.ENTITY,)),
         AdapterCapabilitySupport("select_option", ("select_option",), (InteractionSubjectKind.ENTITY,)),
+        AdapterCapabilitySupport("drag_to", ("drag_and_drop",), (InteractionSubjectKind.ENTITY,)),
     ),
 )
 
@@ -121,6 +130,7 @@ BROWSERGYM_PRIMITIVE_TRANSLATORS = (
     PrimitiveTranslator("activate", "click"),
     PrimitiveTranslator("type_text", "fill"),
     PrimitiveTranslator("select_option", "select_option"),
+    PrimitiveTranslator("drag_to", "drag_and_drop"),
 )
 
 BROWSERGYM_INTERACTION_CAPABILITIES = CapabilityComposer(

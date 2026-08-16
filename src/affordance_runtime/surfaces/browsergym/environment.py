@@ -9,6 +9,7 @@ from typing import Callable, Protocol
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymBindingStore,
+    BrowserGymDragBinding,
     BrowserGymElementBinding,
     BrowserGymVisualBinding,
 )
@@ -18,6 +19,7 @@ from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
     BrowserGymCurrentnessStatus,
     compare_browsergym_currentness,
+    compare_browsergym_drag_currentness,
     unavailable_currentness,
 )
 from affordance_runtime.surfaces.browsergym.diagnostics import (
@@ -701,7 +703,7 @@ class BrowserGymSurfaceAdapter:
         self.probe_calls += 1
         if isinstance(private, BrowserGymVisualBinding):
             return self._probe_visual_currentness(request, private)
-        assert isinstance(private, BrowserGymElementBinding)
+        assert isinstance(private, BrowserGymElementBinding | BrowserGymDragBinding)
         try:
             result = self.gym_environment.currentness_probe(private.private_element_id)
         except BaseException:
@@ -744,7 +746,22 @@ class BrowserGymSurfaceAdapter:
             done or self._terminated,
             request.binding.primitive_action,
         )
-        decision = compare_browsergym_currentness(private.canonical_control, live, context)
+        if isinstance(private, BrowserGymDragBinding):
+            try:
+                destination = private.destination(request.intent.destination_id)
+                live_destination = canonical_control_for_bid(raw, destination.private_element_id)
+            except (BrowserGymSemanticError, RuntimeError, ValueError):
+                self.last_currentness_decision = unavailable_currentness()
+                return ActionError.CURRENTNESS_UNAVAILABLE, 1
+            decision = compare_browsergym_drag_currentness(
+                private.canonical_control,
+                live,
+                destination.canonical_control,
+                live_destination,
+                context,
+            )
+        else:
+            decision = compare_browsergym_currentness(private.canonical_control, live, context)
         self.last_currentness_decision = decision
         if decision.status is BrowserGymCurrentnessStatus.CURRENT:
             return None, 1

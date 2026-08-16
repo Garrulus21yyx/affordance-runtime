@@ -45,7 +45,8 @@ does not call a separate completion tool.
 - source adapters with one shared observation contract;
 - cost- and need-aware observation selection;
 - provenance-preserving world fusion;
-- semantic actions with current private bindings;
+- semantic actions with current private bindings, including finite two-endpoint `drag_to` where an adapter can
+  honestly publish both endpoints;
 - one compact model context;
 - post-action effect and task evaluation;
 - BrowserGym benchmarks that measure success, observation cost, model cost, and recovery.

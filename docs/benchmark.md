@@ -42,10 +42,16 @@ The retained R2-era MiniWoB-60 runs are negative baselines, not performance clai
 | historical breadth | 6 / 60 |
 | post-attribution rerun | 4 / 60 |
 | later diagnostic | 8 / 60 |
+| simplified-core capability-covered structured-only | 13 / 15 |
+| simplified-core capability-covered adaptive | 13 / 15 |
 
 Those runs used different exact source revisions and must not be merged into a trend. They show that architecture
 verification was ahead of demonstrated task capability. The simplification branch must establish a new live baseline
 before adding another architecture layer.
+
+The two 15-case simplified-core arms used the same GLM-4.1V model and completed with valid evidence, but the adaptive
+arm acquired no visual source and sent no image to the model. Their equal success count therefore validates the shared
+Runtime path only; it does not establish an adaptive-observation benefit.
 
 ## Simplification acceptance
 

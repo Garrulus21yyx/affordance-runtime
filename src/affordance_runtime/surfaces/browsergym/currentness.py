@@ -76,6 +76,52 @@ def compare_browsergym_currentness(
     return BrowserGymCurrentnessDecision(BrowserGymCurrentnessStatus.STALE, reason)
 
 
+def compare_browsergym_drag_currentness(
+    captured_source: CanonicalBrowserControl,
+    live_source: CanonicalBrowserControl | None,
+    captured_destination: CanonicalBrowserControl,
+    live_destination: CanonicalBrowserControl | None,
+    context: BrowserGymCurrentnessContext,
+) -> BrowserGymCurrentnessDecision:
+    """Validate both endpoints against one read-only live snapshot."""
+
+    source = compare_browsergym_currentness(captured_source, live_source, context)
+    if source.status is not BrowserGymCurrentnessStatus.CURRENT:
+        return source
+    reason = _destination_stale_reason(captured_destination, live_destination)
+    if reason is None:
+        return source
+    return BrowserGymCurrentnessDecision(BrowserGymCurrentnessStatus.STALE, reason)
+
+
+def _destination_stale_reason(
+    captured: CanonicalBrowserControl,
+    live: CanonicalBrowserControl | None,
+) -> BrowserGymCurrentnessReason | None:
+    if live is None or captured.private_bid != live.private_bid:
+        return BrowserGymCurrentnessReason.ELEMENT_MISSING
+    if captured.role != live.role:
+        return BrowserGymCurrentnessReason.ROLE_CHANGED
+    if captured.accessible_name != live.accessible_name:
+        return BrowserGymCurrentnessReason.LABEL_CHANGED
+    if captured.public_state != live.public_state:
+        return BrowserGymCurrentnessReason.STATE_CHANGED
+    if (
+        captured.private_gesture_group != live.private_gesture_group
+        or captured.private_gesture_kind != live.private_gesture_kind
+    ):
+        return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
+    if captured.availability != live.availability:
+        return BrowserGymCurrentnessReason.AVAILABILITY_CHANGED
+    if not (
+        live.availability.attached is True
+        and live.availability.visible is True
+        and live.availability.enabled is True
+    ):
+        return BrowserGymCurrentnessReason.NOT_EXECUTABLE
+    return None
+
+
 def _stale_reason(
     captured: CanonicalBrowserControl,
     live: CanonicalBrowserControl | None,
@@ -106,6 +152,11 @@ def _stale_reason(
         or captured.private_options != live.private_options
     ):
         return BrowserGymCurrentnessReason.OPTION_DOMAIN_CHANGED
+    if (
+        captured.private_gesture_group != live.private_gesture_group
+        or captured.private_gesture_kind != live.private_gesture_kind
+    ):
+        return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
     if (
         len(tuple(
             offer for offer in captured.executable_offers

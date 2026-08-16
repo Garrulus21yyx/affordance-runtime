@@ -2,6 +2,7 @@ import asyncio
 import copy
 from dataclasses import replace
 
+from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
@@ -29,6 +30,27 @@ def _fixture(*, fail_step=False, fail_probe=False):
         ax_node("5", "option", "B"),
     )
     fake = FakeBrowserGym(raw, raw, fail_step=fail_step, fail_probe=fail_probe)
+    environment, task = open_fake(fake)
+    return fake, environment, task, start_environment(environment, task)
+
+
+def _drag_fixture():
+    raw = raw_observation(
+        ax_node("source", "generic", "Card"),
+        ax_node("destination", "generic", "Done column"),
+    )
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["source"].update({
+        "gesture_role": "draggable",
+        "gesture_group": "board",
+        "gesture_kind": "move",
+        "bbox": [10, 10, 40, 20],
+    })
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["destination"].update({
+        "gesture_role": "drop_target",
+        "gesture_group": "board",
+        "bbox": [80, 10, 60, 40],
+    })
+    fake = FakeBrowserGym(raw, raw)
     environment, task = open_fake(fake)
     return fake, environment, task, start_environment(environment, task)
 
@@ -70,6 +92,54 @@ def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
         assert len(fake.actions) == 1 and fake.actions[0].startswith(prefix)
         assert environment.probe_calls == 1 and environment.step_calls == 1
         asyncio.run(environment.close())
+
+
+def test_drag_dispatches_one_official_action_with_two_private_current_endpoints() -> None:
+    fake, environment, task, world = _drag_fixture()
+    option = next(
+        item for item in ActionSpaceBuilder().build(task, world).options
+        if item.semantic_action == "drag_to"
+    )
+    request = request_for(
+        world,
+        task,
+        "drag_to",
+        destination_id=option.eligible_destination_ids[0],
+    )
+
+    outcome = asyncio.run(environment.execute(request))
+
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ['drag_and_drop("source", "destination")']
+    assert environment.probe_calls == environment.step_calls == 1
+    assert outcome.post_acquisition is not None
+    asyncio.run(environment.close())
+
+
+def test_changed_drag_destination_is_stale_and_never_dispatched() -> None:
+    fake, environment, task, world = _drag_fixture()
+    option = next(
+        item for item in ActionSpaceBuilder().build(task, world).options
+        if item.semantic_action == "drag_to"
+    )
+    request = request_for(
+        world,
+        task,
+        "drag_to",
+        destination_id=option.eligible_destination_ids[0],
+    )
+    changed = copy.deepcopy(fake.post)
+    changed["axtree_object"]["nodes"][1]["name"]["value"] = "Changed"
+    fake.post = changed
+
+    result = asyncio.run(environment.execute(request)).result
+
+    assert (result.dispatch_status, result.error) == (
+        DispatchStatus.NOT_SENT,
+        ActionError.STALE_BINDING,
+    )
+    assert fake.actions == [] and environment.step_calls == 0
+    asyncio.run(environment.close())
 
 
 def test_stale_or_unavailable_currentness_is_not_sent_and_zero_step() -> None:

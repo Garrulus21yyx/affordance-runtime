@@ -244,10 +244,10 @@ def open_surface(task_id: str, seed: int, *, max_turns: int = 20, **kwargs):
     return environment, intake.task
 
 
-def request_for(world, task, semantic_action, parameters=None):
+def request_for(world, task, semantic_action, parameters=None, destination_id=""):
     space = ActionSpaceBuilder().build(task, world)
     option = next(item for item in space.options if item.semantic_action == semantic_action)
-    selection = ActionSpaceBuilder().admit(option, parameters or {})
+    selection = ActionSpaceBuilder().admit(option, parameters or {}, destination_id)
     return ActionBinder().bind(selection, world, "context:test")
 
 

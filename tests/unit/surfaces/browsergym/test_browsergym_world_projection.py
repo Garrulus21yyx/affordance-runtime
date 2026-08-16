@@ -169,6 +169,44 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     assert (inventory.recognized_target_count, inventory.projected_target_count) == (2, 2)
 
 
+def test_drag_source_publishes_one_finite_semantic_destination_domain() -> None:
+    raw = raw_observation(
+        ax_node("source-private", "generic", "Quarterly report"),
+        ax_node("destination-private", "generic", "Archive"),
+    )
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["source-private"].update({
+        "gesture_role": "draggable",
+        "gesture_group": "group-private",
+        "gesture_kind": "move",
+        "bbox": [10, 10, 40, 20],
+    })
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["destination-private"].update({
+        "gesture_role": "drop_target",
+        "gesture_group": "group-private",
+        "bbox": [80, 10, 60, 40],
+    })
+
+    projected = _project(raw)
+    by_role = {item.role: item for item in projected.world.targets}
+    source = by_role["draggable"]
+    destination = by_role["drop_target"]
+    binding = next(item for item in projected.world.bindings if item.semantic_action == "drag_to")
+
+    assert binding.target_id == source.target_id
+    assert binding.destination_required is True
+    assert binding.eligible_destination_ids == (destination.target_id,)
+    assert binding.parameter_schema == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    }
+    private = next(item for item in projected.private_bindings if item.binding_id == binding.binding_id)
+    assert private.destination(destination.target_id).private_element_id == "destination-private"
+    assert "source-private" not in repr(projected.world)
+    assert "destination-private" not in repr(projected.world)
+
+
 def test_static_text_is_projected_as_read_only_information() -> None:
     projected = _project(raw_observation(ax_node("static", "StaticText", "Information")))
     inventory = projected.world.sources[0].semantic_inventory

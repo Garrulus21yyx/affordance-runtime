@@ -34,6 +34,48 @@ class BrowserGymElementBinding:
 
 
 @dataclass(frozen=True)
+class BrowserGymDragDestination:
+    semantic_target_id: str
+    private_element_id: str
+    canonical_control: CanonicalBrowserControl
+
+    def __post_init__(self) -> None:
+        if not self.semantic_target_id.strip() or not self.private_element_id.strip():
+            raise ValueError("BrowserGym drag destination requires semantic and private identity")
+
+
+@dataclass(frozen=True)
+class BrowserGymDragBinding:
+    """One snapshot-bound source and its finite current destination domain."""
+
+    binding_id: str
+    source_observation_id: str
+    source_revision: str
+    page_identity: str
+    episode_identity: str
+    private_element_id: str
+    semantic_target_id: str
+    supported_primitive: str
+    canonical_control: CanonicalBrowserControl
+    destinations: tuple[BrowserGymDragDestination, ...]
+
+    def __post_init__(self) -> None:
+        values = tuple(self.destinations)
+        if not values or len({item.semantic_target_id for item in values}) != len(values):
+            raise ValueError("BrowserGym drag destinations must be finite and unique")
+        object.__setattr__(self, "destinations", values)
+
+    def destination(self, semantic_target_id: str) -> BrowserGymDragDestination:
+        match = next(
+            (item for item in self.destinations if item.semantic_target_id == semantic_target_id),
+            None,
+        )
+        if match is None:
+            raise ValueError("drag destination is outside the current private binding")
+        return match
+
+
+@dataclass(frozen=True)
 class BrowserGymVisualBinding:
     """Runtime-private screenshot-bound pointer route for BrowserGym."""
 
@@ -51,7 +93,7 @@ class BrowserGymVisualBinding:
         return self.region.source_revision
 
 
-BrowserGymPrivateBinding = BrowserGymElementBinding | BrowserGymVisualBinding
+BrowserGymPrivateBinding = BrowserGymElementBinding | BrowserGymDragBinding | BrowserGymVisualBinding
 
 
 @dataclass

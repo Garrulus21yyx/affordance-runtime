@@ -15,7 +15,10 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.surfaces.browsergym.binding import (
+    BrowserGymDragBinding,
+    BrowserGymDragDestination,
     BrowserGymElementBinding,
+    BrowserGymPrivateBinding,
 )
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
@@ -64,7 +67,7 @@ MAX_STRUCTURE_NODES = 512
 @dataclass(frozen=True)
 class BrowserGymProjection:
     source: SurfaceObservation
-    private_bindings: tuple[BrowserGymElementBinding, ...]
+    private_bindings: tuple[BrowserGymPrivateBinding, ...]
     target_count_total: int
     fact_count_total: int
     semantic_analysis: BrowserGymSemanticAnalysis
@@ -102,7 +105,7 @@ def project_browsergym_observation(
     targets: list[SemanticTarget] = []
     facts: list[StateFact] = []
     bindings: list[ActionBinding] = []
-    private: list[BrowserGymElementBinding] = []
+    private: list[BrowserGymPrivateBinding] = []
     fact_total = (
         sum(len(node.public_state) + bool(node.public_options) for node in candidates)
         + 3 * len(lattice.memberships)
@@ -212,6 +215,7 @@ def project_browsergym_observation(
             source_revision,
             page_identity,
             episode_identity,
+            drag_destinations=_drag_destinations(node, projected, target_ids),
             execution_allowed=not _is_tab_panel_container(node, controls_by_node_id),
         )
         for public, runtime in binding_pairs:
@@ -392,6 +396,7 @@ def _binding_pairs(
     page_identity: str,
     episode_identity: str,
     *,
+    drag_destinations: tuple[tuple[str, CanonicalBrowserControl], ...] = (),
     execution_allowed: bool = True,
 ):
     if not node.executable or not execution_allowed:
@@ -403,6 +408,8 @@ def _binding_pairs(
             offer.primitive_action
         )
         semantic = translator.semantic_action
+        if semantic == "drag_to" and not drag_destinations:
+            continue
         if semantic == "select_option" and len(options) > MAX_SELECT_OPTIONS:
             continue
         current_value_schema = (
@@ -433,20 +440,78 @@ def _binding_pairs(
             {},
             observation_barrier=True,
             risk=ActionRisk.LOW,
+            destination_required=semantic == "drag_to",
+            eligible_destination_ids=tuple(
+                destination_id for destination_id, _destination in drag_destinations
+            ) if semantic == "drag_to" else (),
         )
-        runtime = BrowserGymElementBinding(
-            binding_id,
-            observation_id,
-            revision,
-            page_identity,
-            episode_identity,
-            node.private_bid,
-            target_id,
-            translator.primitive_action,
-            node,
-        )
+        runtime: BrowserGymPrivateBinding
+        if semantic == "drag_to":
+            runtime = BrowserGymDragBinding(
+                binding_id,
+                observation_id,
+                revision,
+                page_identity,
+                episode_identity,
+                node.private_bid,
+                target_id,
+                translator.primitive_action,
+                node,
+                tuple(
+                    BrowserGymDragDestination(
+                        destination_id,
+                        destination.private_bid,
+                        destination,
+                    )
+                    for destination_id, destination in drag_destinations
+                ),
+            )
+        else:
+            runtime = BrowserGymElementBinding(
+                binding_id,
+                observation_id,
+                revision,
+                page_identity,
+                episode_identity,
+                node.private_bid,
+                target_id,
+                translator.primitive_action,
+                node,
+            )
         result.append((public, runtime))
     return tuple(result)
+
+
+def _drag_destinations(
+    source: CanonicalBrowserControl,
+    controls: list[CanonicalBrowserControl],
+    target_ids: dict[str, str],
+) -> tuple[tuple[str, CanonicalBrowserControl], ...]:
+    """Return only explicit current endpoints in the source's private gesture group."""
+
+    if source.role != "draggable" or not source.private_gesture_group:
+        return ()
+    same_group = tuple(
+        candidate
+        for candidate in controls
+        if candidate.private_bid != source.private_bid
+        and candidate.private_gesture_group == source.private_gesture_group
+        and candidate.private_node_id in target_ids
+        and candidate.availability.attached is True
+        and candidate.availability.visible is True
+        and candidate.availability.enabled is True
+    )
+    explicit = tuple(candidate for candidate in same_group if candidate.role == "drop_target")
+    if explicit:
+        candidates = explicit
+    elif source.private_gesture_kind in {"move", "sort"}:
+        candidates = tuple(candidate for candidate in same_group if candidate.role == "draggable")
+    else:
+        candidates = ()
+    return tuple(
+        (target_ids[candidate.private_node_id], candidate)
+        for candidate in candidates
+    )
 
 
 def _is_tab_panel_container(

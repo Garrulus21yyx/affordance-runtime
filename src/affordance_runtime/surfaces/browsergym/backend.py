@@ -20,7 +20,14 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     el.getAttribute('aria-checked') === 'true'
   ),
   colorFamily: (() => {
-    const raw = getComputedStyle(el).backgroundColor;
+    const style = getComputedStyle(el);
+    const background = style.backgroundColor;
+    const raw = (
+      el.namespaceURI === 'http://www.w3.org/2000/svg' &&
+      (!background || background === 'transparent' || background === 'rgba(0, 0, 0, 0)')
+        ? style.fill
+        : background
+    );
     const match = raw.match(/rgba?\(([^)]+)\)/);
     if (!match) return '';
     const values = match[1].split(',').map(value => Number.parseFloat(value.trim()));
@@ -50,11 +57,83 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
       const label = group.querySelector('label');
       if (label) return String(label.textContent || '').trim();
     }
+    const tag = el.tagName.toLowerCase();
+    const classes = el.classList;
+    const gestureCandidate = (
+      el.draggable === true ||
+      el.getAttribute('aria-grabbed') === 'true' ||
+      classes.contains('ui-draggable') ||
+      classes.contains('ui-sortable-handle') ||
+      classes.contains('ui-resizable-handle') ||
+      Object.keys(el).some(key => key.endsWith('.drag'))
+    );
+    const svgCandidate = (
+      el.namespaceURI === 'http://www.w3.org/2000/svg' &&
+      ['circle', 'rect', 'polygon'].includes(tag)
+    );
+    if (!gestureCandidate && !svgCandidate) return '';
+    const text = String(el.textContent || '').trim().replace(/\s+/g, ' ');
+    if (text && text.length <= 120) return text;
+    if (svgCandidate) {
+      const fill = String(el.getAttribute('fill') || '').trim();
+      const shape = tag === 'polygon' ? 'triangle' : tag === 'rect' ? 'rectangle' : tag;
+      return [!fill || fill === 'none' ? '' : fill, shape].filter(Boolean).join(' ');
+    }
     return '';
+  })(),
+  gesture: (() => {
+    const classes = el.classList;
+    const ownKeys = Object.keys(el);
+    const d3Drag = ownKeys.some(key => key.endsWith('.drag'));
+    const sortable = classes.contains('ui-sortable-handle');
+    const resizable = classes.contains('ui-resizable-handle');
+    const movable = (
+      el.draggable === true ||
+      el.getAttribute('aria-grabbed') === 'true' ||
+      classes.contains('ui-draggable') ||
+      sortable ||
+      resizable ||
+      d3Drag
+    );
+    const explicitDrop = (
+      Boolean(el.getAttribute('aria-dropeffect')) ||
+      classes.contains('ui-droppable')
+    );
+    const svgRect = (
+      el.namespaceURI === 'http://www.w3.org/2000/svg' &&
+      el.tagName.toLowerCase() === 'rect' &&
+      !movable
+    );
+    const group = sortable
+      ? el.closest('.ui-sortable')
+      : el.namespaceURI === 'http://www.w3.org/2000/svg'
+        ? el.ownerSVGElement
+        : el.parentElement;
+    return {
+      role: movable ? 'draggable' : explicitDrop ? 'drop_target' : '',
+      potentialSvgDrop: svgRect,
+      groupBid: group ? String(group.getAttribute('bid') || '') : '',
+      kind: sortable ? 'sort' : resizable ? 'resize' : d3Drag ? 'svg' : movable ? 'move' : '',
+    };
   })(),
   bbox: (() => {
     const rect = el.getBoundingClientRect();
     return [rect.x, rect.y, rect.width, rect.height];
+  })(),
+  spatialHint: (() => {
+    const rect = el.getBoundingClientRect();
+    const group = el.classList.contains('ui-sortable-handle')
+      ? el.closest('.ui-sortable')
+      : el.namespaceURI === 'http://www.w3.org/2000/svg'
+        ? el.ownerSVGElement
+        : el.parentElement;
+    const frame = group ? group.getBoundingClientRect() : {x: 0, y: 0, width: innerWidth, height: innerHeight};
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    return {
+      horizontal: centerX < frame.x + frame.width * 0.4 ? 'left' : centerX > frame.x + frame.width * 0.6 ? 'right' : 'center',
+      vertical: centerY < frame.y + frame.height * 0.4 ? 'top' : centerY > frame.y + frame.height * 0.6 ? 'bottom' : 'middle',
+    };
   })(),
   options: (el instanceof HTMLSelectElement) ? Array.from(el.options).map(option => ({
     label: String(option.label || option.textContent || '').trim(),
@@ -264,6 +343,10 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             if isinstance(snapshot_bbox, list):
                 bbox = snapshot_bbox
         label_hint = physical.get("labelHint")
+        gesture = physical.get("gesture")
+        gesture = gesture if isinstance(gesture, dict) else {}
+        spatial = physical.get("spatialHint")
+        spatial = spatial if isinstance(spatial, dict) else {}
         properties[bid] = {
             "attached": attached,
             "visible": _effective_visibility(visible, physical),
@@ -279,7 +362,35 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             "options": options if isinstance(options, list) else [],
             "bbox": bbox if isinstance(bbox, list) else [],
             "label_hint": label_hint if isinstance(label_hint, str) else "",
+            "gesture_role": (
+                gesture.get("role") if gesture.get("role") in {"draggable", "drop_target"} else ""
+            ),
+            "gesture_group": (
+                gesture.get("groupBid") if isinstance(gesture.get("groupBid"), str) else ""
+            ),
+            "gesture_kind": (
+                gesture.get("kind") if isinstance(gesture.get("kind"), str) else ""
+            ),
+            "potential_svg_drop": gesture.get("potentialSvgDrop") is True,
+            "spatial_horizontal": (
+                spatial.get("horizontal") if spatial.get("horizontal") in {"left", "center", "right"} else ""
+            ),
+            "spatial_vertical": (
+                spatial.get("vertical") if spatial.get("vertical") in {"top", "middle", "bottom"} else ""
+            ),
         }
+    drag_groups = {
+        item.get("gesture_group")
+        for item in properties.values()
+        if isinstance(item, dict) and item.get("gesture_role") == "draggable"
+    }
+    for item in properties.values():
+        if (
+            isinstance(item, dict)
+            and item.get("potential_svg_drop") is True
+            and item.get("gesture_group") in drag_groups
+        ):
+            item["gesture_role"] = "drop_target"
     enriched = dict(raw)
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
     return enriched

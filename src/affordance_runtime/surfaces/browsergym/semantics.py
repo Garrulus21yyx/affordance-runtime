@@ -81,6 +81,8 @@ class CanonicalBrowserControl:
     private_parent_id: str
     private_child_ids: tuple[str, ...]
     private_bbox: tuple[int, int, int, int] | None = None
+    private_gesture_group: str = ""
+    private_gesture_kind: str = ""
 
     @property
     def role_spec(self) -> BrowserGymRoleSpec:
@@ -306,9 +308,21 @@ def _normalized_records(
 ) -> tuple[_AxRecord, ...]:
     extra = raw.get("extra_element_properties")
     extra = extra if isinstance(extra, dict) else {}
+    physical = _physical_properties(raw)
     by_node_id = {item.node_id: item for item in records if item.node_id}
     normalized = []
     for record in records:
+        private = physical.get(record.bid)
+        gesture_role = private.get("gesture_role") if isinstance(private, dict) else None
+        if gesture_role in {"draggable", "drop_target"}:
+            normalized.append(
+                replace(
+                    record,
+                    role=gesture_role,
+                    name=record.name or _private_label_hint(private),
+                )
+            )
+            continue
         properties = extra.get(record.bid)
         clickable = (
             record.bid
@@ -559,6 +573,20 @@ def _canonical_control(
                 color if color in {"red", "yellow", "green", "cyan", "blue", "magenta", "gray"} else "other",
             )
         )
+    if spec.role in {"draggable", "drop_target"}:
+        bbox = _private_bbox(physical)
+        if bbox is not None:
+            public_state.extend((
+                ("size.width", bbox[2]),
+                ("size.height", bbox[3]),
+            ))
+        if isinstance(physical, dict):
+            horizontal = physical.get("spatial_horizontal")
+            vertical = physical.get("spatial_vertical")
+            if horizontal in {"left", "center", "right"}:
+                public_state.append(("position.horizontal", horizontal))
+            if vertical in {"top", "middle", "bottom"}:
+                public_state.append(("position.vertical", vertical))
     labels = tuple(sorted(item.name for item in option_records if item.name))
     selected = tuple(
         sorted(item.name for item in option_records if dict(item.state).get("selected") is True and item.name)
@@ -573,6 +601,8 @@ def _canonical_control(
         public_payload,
         availability.as_tuple(),
         private_options,
+        _private_gesture_group(physical),
+        _private_gesture_kind(physical),
         tuple((offer.semantic_action, offer.primitive_action) for offer in spec.offers),
     )
     return CanonicalBrowserControl(
@@ -589,6 +619,8 @@ def _canonical_control(
         record.parent_id,
         record.child_ids,
         _private_bbox(physical),
+        _private_gesture_group(physical),
+        _private_gesture_kind(physical),
     )
 
 
@@ -666,6 +698,20 @@ def _private_label_hint(physical: object) -> str:
         return ""
     value = physical.get("label_hint")
     return value[:MAX_SEMANTIC_TEXT] if isinstance(value, str) else ""
+
+
+def _private_gesture_group(physical: object) -> str:
+    if not isinstance(physical, dict):
+        return ""
+    value = physical.get("gesture_group")
+    return value if isinstance(value, str) else ""
+
+
+def _private_gesture_kind(physical: object) -> str:
+    if not isinstance(physical, dict):
+        return ""
+    value = physical.get("gesture_kind")
+    return value if isinstance(value, str) else ""
 
 
 def _properties(node: dict[str, object]) -> dict[str, object]:

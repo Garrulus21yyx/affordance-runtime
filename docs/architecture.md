@@ -43,8 +43,13 @@ internally while publishing the same public world and semantic-action protocol a
 ### SemanticActionRegistry
 
 The semantic capability registry defines the stable action algebra: verb, supported subject kinds, public parameters,
-effect class, destination semantics, and verification family. It contains reusable operations such as `click`,
-`type_text`, and `select_option`, never selectors, coordinates, benchmark cases, or backend APIs.
+effect class, destination semantics, and verification family. It contains reusable operations such as `activate`,
+`type_text`, `select_option`, and `drag_to`, never selectors, coordinates, benchmark cases, or backend APIs.
+
+BrowserGym publishes `drag_to(source, destination)` only when one current snapshot contains an executable draggable
+source and a finite compatible endpoint domain. Both private endpoints are checked together immediately before one
+official BrowserGym dispatch. Directional pointer gestures, text selection, and drawing gestures are not silently
+treated as element-to-element drag; they remain unoffered until they have their own honest semantic contract.
 
 ### PerTurnToolCatalog
 
@@ -288,7 +293,7 @@ validation:
 | 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
 | 8. Select model transport by actual wire capability | done | native tools use `pydantic-ai`; 4.1V uses `compact-json`; both pass the same real click-button Runtime witness and `propose_done` is not model-visible |
 | 9. Converge the model/tool/context boundary and delete superseded paths | done | one typed AgentContext, one Actor world projection, one provider binder, stable registry-owned tools, and no legacy structured decision/parser/serialization path |
-| 10. Run paired structured-only/adaptive cohorts | pending | capability and observation-cost claims use live benchmark evidence |
+| 10. Run paired structured-only/adaptive cohorts | pending | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 9 ends with the full test gate plus the frozen five-case visual witness (`miniwob-60-05`, `34`, `42`, `49`,
 and `60`) running through 4.1V and `CoreAgentLoop`; that witness precedes the paired cohort and cannot change product

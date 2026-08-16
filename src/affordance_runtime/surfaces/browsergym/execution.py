@@ -6,6 +6,7 @@ import json
 
 from affordance_runtime.execution import BoundActionRequest
 from affordance_runtime.surfaces.browsergym.binding import (
+    BrowserGymDragBinding,
     BrowserGymElementBinding,
     BrowserGymPrivateBinding,
     BrowserGymVisualBinding,
@@ -20,6 +21,13 @@ def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBin
             raise ValueError("BrowserGym visual binding uses an unsupported primitive")
         x, y = integer_click_point(private.region)
         return f"mouse_click({x}, {y})"
+    if isinstance(private, BrowserGymDragBinding):
+        if primitive != "drag_and_drop":
+            raise ValueError("BrowserGym drag binding uses an unsupported primitive")
+        destination = private.destination(request.intent.destination_id)
+        source_bid = json.dumps(private.private_element_id, ensure_ascii=False)
+        destination_bid = json.dumps(destination.private_element_id, ensure_ascii=False)
+        return f"drag_and_drop({source_bid}, {destination_bid})"
     assert isinstance(private, BrowserGymElementBinding)
     bid = json.dumps(private.private_element_id, ensure_ascii=False)
     if primitive == "click":
