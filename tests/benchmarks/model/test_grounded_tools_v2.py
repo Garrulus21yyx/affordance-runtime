@@ -334,6 +334,9 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert public["task"]["instruction"] == context.task.instruction
     assert "actions" not in public
     assert public["progress"]["status"] == "incomplete"
+    system_content = port.messages[0].content
+    assert isinstance(system_content, str)
+    assert "deterministic utility" in system_content
     assert set(public["progress"]) == {
         "status",
         "satisfied_criteria",
