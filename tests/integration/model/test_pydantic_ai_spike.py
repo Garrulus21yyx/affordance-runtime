@@ -9,7 +9,9 @@ import pytest
 pytest.importorskip("pydantic_ai")
 
 from pydantic_ai import DeferredToolRequests
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
@@ -20,6 +22,7 @@ from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import EvaluatedOutput
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
+from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
@@ -39,7 +42,7 @@ from tests.support.agent.core_loop_support import (
     shared_world,
 )
 
-DecisionScript = list[tuple[str, dict[str, object]] | str]
+DecisionScript = list[tuple[str, dict[str, object]] | str | Exception]
 
 
 @dataclass
@@ -48,13 +51,17 @@ class ScriptedModel:
     calls: int = 0
     messages: list[object] = field(default_factory=list)
     offered_tools: list[tuple[str, ...]] = field(default_factory=list)
+    model_settings: list[object] = field(default_factory=list)
 
     def build(self) -> FunctionModel:
         async def respond(messages, info: AgentInfo) -> ModelResponse:
             self.calls += 1
             self.messages.append(messages)
             self.offered_tools.append(tuple(tool.name for tool in info.function_tools))
+            self.model_settings.append(info.model_settings)
             scripted = self.decisions.pop(0)
+            if isinstance(scripted, Exception):
+                raise scripted
             if scripted == "final_response":
                 return ModelResponse(
                     parts=[TextPart("Shared state is enabled.")],
@@ -108,6 +115,7 @@ def _runtime(model) -> TargetRuntime:
         AgentDecisionPorts(_policy(model)),
         SharedActionEvaluator(),
         SharedTaskEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
     )
 
 
@@ -125,11 +133,21 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
             AgentDecisionPorts(policy),
             SharedActionEvaluator(),
             SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
         ).run_task(environment, shared_task())
 
         assert state.status is RunStatus.DONE
         assert state.execution_count == 1
         assert scripted.calls == 1
+        # FunctionModel strips unsupported thinking, while preserving the
+        # cross-model output/sampling budget. ZaiModel translates the same
+        # unified False value to extra_body.thinking.type=disabled.
+        assert scripted.model_settings == [{"max_tokens": 512, "temperature": 0.0}]
+        assert pydantic_bridge._ACTION_MODEL_SETTINGS == {
+            "thinking": False,
+            "max_tokens": 512,
+            "temperature": 0.0,
+        }
         assert state.last_step is not None
         assert state.last_step.decision.tool_call_id == "pydantic-call:1"
         assert "ask_user" in scripted.offered_tools[0]
@@ -138,6 +156,8 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert attempt.phase == "initial"
         assert attempt.transcript["llm.input_messages"][0]["parts"][0]["content"]
         assert attempt.transcript["llm.output_messages"][0]["parts"][0]["tool_name"]
+        assert policy.last_metadata is not None
+        assert policy.last_metadata.latency_ms >= attempt.latency_ms > 0
 
     asyncio.run(scenario())
 
@@ -166,6 +186,7 @@ def test_pydantic_ai_emits_native_final_response_only_after_verified_outputs() -
             AgentDecisionPorts(policy),
             SharedActionEvaluator(),
             OutputTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
         )
         task = replace(shared_task(), requested_outputs=("answer",))
         environment = ScriptedEnvironment(initial_observation=shared_world("complete", True))
@@ -235,6 +256,137 @@ def test_pydantic_ai_returns_invalid_arguments_for_one_bounded_repair() -> None:
     asyncio.run(scenario())
 
 
+def test_pydantic_ai_records_rate_limit_then_retries_once(monkeypatch) -> None:
+    async def scenario() -> None:
+        delays: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            delays.append(delay)
+
+        monkeypatch.setattr(pydantic_bridge.asyncio, "sleep", fake_sleep)
+        scripted = ScriptedModel(
+            [
+                ModelHTTPError(
+                    429,
+                    "scripted",
+                    {"error": "redacted fixture body"},
+                    headers={"Retry-After": "9"},
+                ),
+                "first_gui_action",
+            ]
+        )
+        policy = _policy(scripted.build())
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("before", False),
+            post_observations=(shared_world("after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionEvaluator(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE
+        assert scripted.calls == 2
+        assert delays == [5.0]
+        assert policy.port.last_model_call_count == 2
+        assert policy.port.last_provider_retry_count == 1
+        assert policy.last_metadata is not None
+        assert policy.last_metadata.rate_limit_retry_count == 1
+        assert policy.last_metadata.transient_retry_count == 0
+        attempts = policy.port.last_generation_attempts
+        assert [item.phase for item in attempts] == ["initial", "initial_provider_retry"]
+        assert [item.status for item in attempts] == ["failed", "accepted"]
+        assert attempts[0].exception_class == "ModelHTTPError"
+        assert attempts[0].transcript["error.code"] == "rate_limited"
+        assert attempts[0].transcript["error.http_status"] == 429
+        assert attempts[0].transcript["error.retry_after_s"] == 9.0
+        assert "redacted fixture body" not in repr(attempts[0].transcript)
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_provider_classification_keeps_nonretryable_failures_typed() -> None:
+    auth = pydantic_bridge._classify_provider_failure(ModelHTTPError(401, "scripted"))
+    invalid = pydantic_bridge._classify_provider_failure(ModelHTTPError(422, "scripted"))
+    unavailable = pydantic_bridge._classify_provider_failure(ModelHTTPError(503, "scripted"))
+
+    assert (auth.code.value, auth.retryable) == ("authentication", False)
+    assert (invalid.code.value, invalid.retryable) == ("invalid_request", False)
+    assert (unavailable.code.value, unavailable.retryable) == ("unavailable", True)
+
+
+def test_pydantic_ai_does_not_count_retry_cancelled_during_backoff(monkeypatch) -> None:
+    async def scenario() -> None:
+        port = PydanticAIGroundedDecisionPort(
+            model=object(),
+            provider_id="fixture",
+            model_id="scripted",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=2.0,
+        )
+
+        async def provider_call():
+            raise ModelHTTPError(503, "scripted")
+
+        async def cancelled_backoff(_delay: float) -> None:
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(pydantic_bridge.asyncio, "sleep", cancelled_backoff)
+        with pytest.raises(asyncio.CancelledError):
+            await port._run_provider_call(
+                provider_call,
+                phase="initial",
+                specs=(),
+                input_messages=(),
+                provider_error_type=ModelHTTPError,
+            )
+
+        assert port.last_model_call_count == 1
+        assert port.last_provider_retry_count == 0
+        assert len(port.last_generation_attempts) == 1
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_records_inflight_provider_cancellation() -> None:
+    async def scenario() -> None:
+        port = PydanticAIGroundedDecisionPort(
+            model=object(),
+            provider_id="fixture",
+            model_id="scripted",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=2.0,
+        )
+
+        async def provider_call():
+            raise asyncio.CancelledError
+
+        with pytest.raises(asyncio.CancelledError):
+            await port._run_provider_call(
+                provider_call,
+                phase="initial_provider_retry",
+                specs=(),
+                input_messages=({"role": "user", "content": "fixture"},),
+                provider_error_type=ModelHTTPError,
+            )
+
+        assert port.last_model_call_count == 1
+        attempt = port.last_generation_attempts[0]
+        assert attempt.phase == "initial_provider_retry"
+        assert attempt.status == "cancelled"
+        assert attempt.exception_class == "CancelledError"
+        assert attempt.transcript["network_dispatched"] is True
+        assert attempt.transcript["error.code"] == "cancelled"
+
+    asyncio.run(scenario())
+
+
 def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) -> None:
     normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
     monkeypatch.setattr(
@@ -281,6 +433,15 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
     assert policy.port.model_id == "glm-4.7-flash"
     assert policy.port.supports_multimodal is False
     assert type(policy.port.model).__name__ == "ZaiModel"
+    assert policy.port.transport_timeout_s == 2.0
+    assert policy.port.max_provider_retry_delay_s == 0.5
+    prepared, _ = policy.port.model.prepare_request(
+        pydantic_bridge._ACTION_MODEL_SETTINGS,
+        ModelRequestParameters(),
+    )
+    assert prepared["extra_body"]["thinking"]["type"] == "disabled"
+    assert prepared["max_tokens"] == 512
+    assert prepared["temperature"] == 0.0
 
     with pytest.raises(ValueError, match="LLM_MODEL_ADAPTER=compact-json"):
         zhipu_pydantic_ai_policy_from_environment(

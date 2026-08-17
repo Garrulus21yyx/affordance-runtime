@@ -22,6 +22,8 @@ from affordance_runtime.app.cli import (
 )
 from affordance_runtime.app.composition import compose_target_runtime_from_environment
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
+from affordance_runtime.goals import NotRequiredGoalCompiler, UnavailableGoalCompiler
+from affordance_runtime.model.policy import ConfiguredModelRoles
 from affordance_runtime.task import RiskProfile, TaskUnsupported, ThinTaskIntake
 from tests.support.agent.target_agent_loop_support import FirstOfferedActionPolicy
 
@@ -99,16 +101,16 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
             del context
             return PolicyFailure("fixture", "fixture", False)
 
-    def fake_policy(environment, *, call_timeout_s):
+    def fake_roles(environment, *, call_timeout_s):
         captured.update({
             "environment": environment,
             "call_timeout_s": call_timeout_s,
         })
-        return Policy()
+        return ConfiguredModelRoles(Policy(), UnavailableGoalCompiler())
 
     monkeypatch.setattr(
-        "affordance_runtime.app.composition.model_policy_from_environment",
-        fake_policy,
+        "affordance_runtime.app.composition.model_roles_from_environment",
+        fake_roles,
     )
 
     runtime = compose_target_runtime_from_environment({"PROFILE": "fixture"}, call_timeout_s=7)
@@ -187,6 +189,7 @@ def test_target_run_closes_browser_and_projects_nonready_outcome(tmp_path: Path)
         UnusedPolicy(),
         UnusedEvaluator(),
         UnusedEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("atomic_target_cli_test"),
     )
 
     def forbidden_session_factory(target, *, headless):
@@ -229,6 +232,7 @@ def test_target_run_executes_real_dom_through_product_runtime(tmp_path: Path) ->
         FirstOfferedActionPolicy(),
         ProductionActionEvaluator(),
         ProductionTaskEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("atomic_target_cli_test"),
     )
 
     payload = run_target_request(

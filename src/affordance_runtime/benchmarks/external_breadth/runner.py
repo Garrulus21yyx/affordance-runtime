@@ -48,6 +48,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ProductionActionEvaluator
+from affordance_runtime.goals import GoalCompiler
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
@@ -94,6 +95,12 @@ REQUIRED_METRICS = (
     "visual_binding_dispatch_count",
     "policy_calls",
     "policy_schema_repair_count",
+    "goal_compiler_calls",
+    "goal_compiler_provider_attempts",
+    "goal_compiler_schema_repair_count",
+    "goal_compiler_contract_repair_count",
+    "goal_compiler_ready_count",
+    "goal_compiler_unavailable_count",
     "tool_argument_repair_count",
     "valid_tool_call_count",
     "zero_tool_call_count",
@@ -134,6 +141,7 @@ async def run_breadth_campaign(
     visual_point_grounder: VisualGrounderPort | None = None,
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
     visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
+    goal_compiler: GoalCompiler | None = None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
         raise ValueError("formal breadth campaign requires exactly 60 frozen cases")
@@ -163,6 +171,7 @@ async def run_breadth_campaign(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
+        goal_compiler=goal_compiler,
     )
     harness_digest = target_manifest_digest(target_manifest)
     if harness_digest != expected_target_manifest_digest(manifest):
@@ -224,6 +233,7 @@ def _target_manifest(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    goal_compiler=None,
 ) -> BenchmarkManifest:
     cases = tuple(
         _target_case(
@@ -236,6 +246,7 @@ def _target_manifest(
             visual_point_grounder,
             visual_candidate_disambiguator,
             visual_predicate_classifier,
+            goal_compiler,
         )
         for item in manifest.cases
     )
@@ -258,6 +269,7 @@ def _target_case(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    goal_compiler=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
     admitted = frozenset(item.task_id for item in manifest.cases)
@@ -306,6 +318,7 @@ def _target_case(
             ProductionActionEvaluator(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
             required_decisions=PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
+            goal_compiler=goal_compiler,
         )
 
     return BenchmarkCase(

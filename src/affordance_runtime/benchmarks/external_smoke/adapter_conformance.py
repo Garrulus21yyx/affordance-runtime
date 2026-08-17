@@ -240,7 +240,7 @@ def _oracle_errors(ports: list[BrowserGymStructuredDecisionPort]) -> tuple[str, 
         for context in port.public_contexts:
             lowered = repr((
                 context.task,
-                context.progress,
+                context.goal,
                 context.actions,
                 context.recent_steps,
                 context.actor_world,

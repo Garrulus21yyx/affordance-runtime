@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.contracts import (
+    AgentCriterionEvaluationView,
+    AgentEvaluatedOutputView,
     AgentMaterialBindingView,
     AgentSuccessCriterionView,
+    AgentTaskEvaluationView,
     AgentTaskView,
 )
 from affordance_runtime.agent.context.projection import (
@@ -17,6 +21,8 @@ from affordance_runtime.agent.context.projection import (
     _model_private_key,
     project_public_value,
 )
+from affordance_runtime.agent.context.world_projection import PublicFactView
+from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 
 _MAX_ITEMS = 12
@@ -26,7 +32,15 @@ _MAX_INSTRUCTION = 1_024
 _SHA256_REFERENCE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 
 
-def project_task(task: TaskGoal) -> AgentTaskView:
+def project_task(
+    task: TaskGoal,
+    evaluation: TaskEvaluation | None = None,
+    facts: tuple[PublicFactView, ...] = (),
+    fact_refs: Mapping[str, str] | None = None,
+    target_refs: Mapping[str, str] | None = None,
+) -> AgentTaskView:
+    if evaluation is not None and evaluation.task_id != task.task_id:
+        raise ValueError("task projection evaluation belongs to another task")
     materials = []
     for item in task.material_bindings[:_MAX_ITEMS]:
         reference = item.public_reference or (item.digest if _SHA256_REFERENCE.fullmatch(item.digest) else "")
@@ -37,6 +51,26 @@ def project_task(task: TaskGoal) -> AgentTaskView:
         for item in task.success_criteria[:_MAX_ITEMS]
     )
     public_inputs, public_input_count = _project_public_inputs(task.inputs)
+    fact_refs = fact_refs or {}
+    target_refs = target_refs or {}
+    evidence_refs = (
+        {
+            *evaluation.completion_evidence_refs,
+            *(ref for item in evaluation.criteria for ref in item.evidence_refs),
+            *(ref for item in evaluation.outputs for ref in item.evidence_refs),
+        }
+        if evaluation is not None
+        else set()
+    )
+    verified_facts = tuple(
+        replace(
+            item,
+            fact_ref=fact_refs[item.fact_ref],
+            subject_id=target_refs.get(item.subject_id, "task"),
+        )
+        for item in facts
+        if item.fact_ref in evidence_refs and item.fact_ref in fact_refs
+    )
     return AgentTaskView(
         task.task_id,
         _bounded_string(task.instruction, _MAX_INSTRUCTION),
@@ -50,6 +84,27 @@ def project_task(task: TaskGoal) -> AgentTaskView:
         _section(tuple(materials), len(task.material_bindings)),
         public_input_count,
         public_input_count > len(public_inputs),
+        _evaluation_view(evaluation, verified_facts),
+    )
+
+
+def _evaluation_view(
+    evaluation: TaskEvaluation | None,
+    verified_facts: tuple[PublicFactView, ...],
+) -> AgentTaskEvaluationView:
+    if evaluation is None:
+        return AgentTaskEvaluationView("unknown")
+    return AgentTaskEvaluationView(
+        str(evaluation.status),
+        tuple(
+            AgentCriterionEvaluationView(item.criterion_id, str(item.status))
+            for item in evaluation.criteria
+        ),
+        tuple(
+            AgentEvaluatedOutputView(item.output_id, project_public_value(item.value))
+            for item in evaluation.outputs
+        ),
+        verified_facts,
     )
 
 

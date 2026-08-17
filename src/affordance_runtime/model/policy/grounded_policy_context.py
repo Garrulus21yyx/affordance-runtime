@@ -74,7 +74,7 @@ class GroundedPolicyContextBinder:
             "observation": to_json_compatible(
                 actor_world_for_delivery(context.actor_world, include_images=include_images)
             ),
-            "progress": _progress(context),
+            "goal_plan": _goal_plan(context),
             "recent_steps": _recent_steps(context.recent_steps.items, refs),
         }
         return public
@@ -142,41 +142,51 @@ def _task(context: AgentContext) -> dict[str, object]:
                 "public_reference": item.public_reference,
             },
         ),
+        "formal_evaluation": {
+            "status": str(task.evaluation.status),
+            "criteria": tuple(
+                {
+                    "criterion_id": item.criterion_id,
+                    "status": str(item.status),
+                }
+                for item in task.evaluation.criteria
+            ),
+            "outputs": tuple(
+                {
+                    "output_id": item.output_id,
+                    "value": project_public_value(item.value),
+                }
+                for item in task.evaluation.outputs
+            ),
+            "evidence": tuple(
+                {
+                    "evidence_ref": item.fact_ref,
+                    "subject": item.subject_id,
+                    "field": item.predicate,
+                    "value": project_public_value(item.value),
+                }
+                for item in task.evaluation.verified_public_facts
+            ),
+        },
     }
 
 
-def _progress(
-    context: AgentContext,
-) -> dict[str, object]:
-    progress = context.progress
-    unresolved_criteria = tuple(progress.unresolved_criteria.items)
-    unresolved_outputs = tuple(progress.unresolved_outputs.items)
-    satisfied_criteria = tuple(
-        item.criterion_id
-        for item in context.task.success_criteria.items
-        if item.criterion_id not in unresolved_criteria
-    )
-    confirmed_outputs = tuple(
-        item
-        for item in context.task.requested_output_ids.items
-        if item not in unresolved_outputs
-    )
+def _goal_plan(context: AgentContext) -> dict[str, object]:
+    plan = context.goal_plan
     return {
-        "status": progress.validated_task_status,
-        "satisfied_criteria": satisfied_criteria,
-        "unresolved_criteria": unresolved_criteria,
-        "confirmed_outputs": confirmed_outputs,
-        "unresolved_outputs": unresolved_outputs,
-        "evidence": tuple(
+        "resolution": plan.resolution,
+        "plan_version": plan.plan_version,
+        "plan_digest": plan.plan_digest,
+        "items": tuple(
             {
-                "evidence_ref": item.fact_ref,
-                "subject": item.subject_id,
-                "field": item.predicate,
-                "value": project_public_value(item.value),
+                "id": item.id,
+                "objective": item.objective,
+                "done_when": item.done_when,
+                "depends_on": item.depends_on,
+                "final": item.final,
             }
-            for item in progress.verified_public_facts
+            for item in plan.items
         ),
-        "truncated": progress.truncated,
     }
 
 

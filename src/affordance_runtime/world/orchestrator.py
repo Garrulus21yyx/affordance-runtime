@@ -14,6 +14,7 @@ from affordance_runtime.execution.contracts import (
     ExecutionCancelled,
     ExecutionOutcome,
 )
+from affordance_runtime.goals.contracts import GoalSemanticContract, merge_goal_semantic_contracts
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     AcquisitionCancelled,
@@ -915,6 +916,13 @@ class UnifiedWorldEnvironment:
     @property
     def observation_capabilities(self) -> ObservationCapabilities:
         return self.acquisition_coordinator.observation_capabilities
+
+    @property
+    def goal_semantic_contract(self) -> GoalSemanticContract:
+        return merge_goal_semantic_contracts(tuple(
+            getattr(adapter, "goal_semantic_contract", GoalSemanticContract())
+            for adapter in self.adapters
+        ))
 
     @property
     def last_acquisition(self) -> ObservationAcquisition | None:

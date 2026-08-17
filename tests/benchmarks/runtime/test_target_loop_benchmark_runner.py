@@ -76,7 +76,7 @@ def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
             lambda _metrics: Environment(
                 initial_observation=fused_world(identity, surface="static"),
             ),
-            lambda _metrics: BenchmarkComposition(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
+            lambda _metrics: BenchmarkComposition.atomic(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
             (RunStatus.BLOCKED,),
             2.0,
             7,
@@ -208,7 +208,7 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
             post_observations=(_action_world("observation:two"),),
             results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         ),
-        lambda _metrics: BenchmarkComposition(policy, ActionEvaluator(), IncompleteEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy, ActionEvaluator(), IncompleteEvaluator()),
         (RunStatus.FAILED,),
         0.05,
         7,
@@ -262,7 +262,7 @@ def test_component_timeout_error_is_not_classified_as_watchdog() -> None:
         "component timeout",
         lambda: TaskGoal("t", "t"),
         lambda _metrics: ScriptedEnvironment(initial_observation=_action_world("observation:one")),
-        lambda _metrics: BenchmarkComposition(RaisingPolicy(), ActionEvaluator(), IncompleteEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(RaisingPolicy(), ActionEvaluator(), IncompleteEvaluator()),
         (RunStatus.FAILED,),
         2.0,
         7,
@@ -322,7 +322,7 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
             observation_capabilities=ObservationCapabilities(False, True),
         ),
-        lambda _metrics: BenchmarkComposition(
+        lambda _metrics: BenchmarkComposition.atomic(
             Policy(),
             ActionEvaluator(),
             IncompleteEvaluator(),

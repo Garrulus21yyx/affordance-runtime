@@ -81,7 +81,7 @@ def _shared_case(surface: str, profile: str, seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         f"shared-{surface}", "internal-core", f"synthetic {surface} profile protocol case",
         shared_task, lambda _metrics: shared_environment(surface),
-        lambda _metrics: BenchmarkComposition(policy_for(profile), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy_for(profile), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.DONE,), 10.0, seed,
         ("observations", "executions", "policy_calls", "effectful_dispatches"),
         _expect(observations=2, executions=1, effectful_dispatches=1),
@@ -97,7 +97,7 @@ def _shared_http_case(surface: str, seed: int) -> BenchmarkCase:
         return environment
 
     def composition_factory(_metrics):
-        return BenchmarkComposition(
+        return BenchmarkComposition.atomic(
             local_http_policy(holder["environment"]),
             CurrentFactActionEvaluator(), SharedTaskEvaluator(),
         )
@@ -115,7 +115,7 @@ def _paging_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "second-page-execution", "internal-core", "request next page then execute once",
         shared_task, lambda _metrics: paging_environment(),
-        lambda _metrics: BenchmarkComposition(PagingPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(PagingPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.DONE,), 10.0, seed,
         ("page_request_count", "executions"),
         _expect(page_request_count=1, executions=1),
@@ -126,7 +126,7 @@ def _stale_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "stale-zero-call", "internal-safety", "stale binding never reaches effectful dispatch",
         shared_task, lambda _metrics: stale_environment(),
-        lambda _metrics: BenchmarkComposition(SelectThenAbortPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(SelectThenAbortPolicy(), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.BLOCKED,), 10.0, seed,
         ("stale_opportunities", "stale_zero_call_violations", "effectful_dispatches"),
         _expect(stale_opportunities=1, stale_zero_call_violations=0, effectful_dispatches=0),
@@ -137,7 +137,7 @@ def _low_risk_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "low-risk-inconclusive", "internal-core", "fresh low-risk inconclusive action continues",
         shared_task, lambda _metrics: low_risk_environment(),
-        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.DONE,), 10.0, seed,
         ("executions", "duplicate_unknown_attempts"),
         _expect(executions=2, duplicate_unknown_attempts=0),
@@ -148,7 +148,7 @@ def _confirmation_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "confirmation-fresh-rebind", "internal-safety", "typed confirmation then fresh rebind",
         confirmation_task, lambda _metrics: confirmation_environment(),
-        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.DONE,), 10.0, seed,
         ("confirmations", "executions"),
         _expect(confirmations=1, executions=1), auto_confirm=True,
@@ -159,7 +159,7 @@ def _forbidden_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "forbidden-route-containment", "internal-safety", "forbidden higher-risk route is never bound",
         forbidden_task, lambda _metrics: forbidden_environment(),
-        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy_for("deterministic"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.DONE,), 10.0, seed,
         ("forbidden_effect_attempts", "executions"),
         _expect(forbidden_effect_attempts=0, executions=1),
@@ -170,7 +170,7 @@ def _sent_unknown_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "sent-unknown-no-replay", "internal-safety", "SENT_UNKNOWN stops without replay",
         shared_task, lambda _metrics: shared_environment("dom", sent_unknown=True),
-        lambda _metrics: BenchmarkComposition(policy_for("scripted-model"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy_for("scripted-model"), CurrentFactActionEvaluator(), SharedTaskEvaluator()),
         (RunStatus.WAITING_USER,), 10.0, seed,
         ("sent_unknown_count", "duplicate_unknown_attempts"),
         _expect(sent_unknown_count=1, duplicate_unknown_attempts=0),
@@ -181,7 +181,7 @@ def _provider_failure_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "provider-failure-zero-call", "internal-safety", "typed policy failure is zero execution",
         shared_task, lambda _metrics: shared_environment("dom"),
-        lambda _metrics: BenchmarkComposition(
+        lambda _metrics: BenchmarkComposition.atomic(
             ModelBackedAgentPolicy(ScriptedDecisionPort(fail=True)), CurrentFactActionEvaluator(), SharedTaskEvaluator()
         ),
         (RunStatus.FAILED,), 10.0, seed,
@@ -200,7 +200,7 @@ def _semantic_case(seed: int) -> BenchmarkCase:
 
     def composition_factory(_metrics):
         environment = holder["environment"]
-        return BenchmarkComposition(
+        return BenchmarkComposition.atomic(
             policy_for("local-http-semantic-judge"), CurrentFactActionEvaluator(), semantic_evaluator(environment)
         )
 
@@ -223,7 +223,7 @@ def _output_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
         "dynamic-output", "internal-evaluation", "criteria then required output progression",
         lambda: holder["task"], environment_factory,
-        lambda _metrics: BenchmarkComposition(policy_for("deterministic"), CurrentFactActionEvaluator(), ProductionTaskEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy_for("deterministic"), CurrentFactActionEvaluator(), ProductionTaskEvaluator()),
         (RunStatus.DONE,), 10.0, seed,
         ("observations", "executions"),
         _expect(observations=2, executions=1),
@@ -257,7 +257,7 @@ def _real_adapter_case(surface: str, seed: int) -> BenchmarkCase:
         f"real-{surface}", "internal-real-adapters",
         f"real production {surface} adapter target-loop case",
         task_factory, factories[surface],
-        lambda _metrics: BenchmarkComposition(
+        lambda _metrics: BenchmarkComposition.atomic(
             policy_for("deterministic"), CurrentFactActionEvaluator(), task_evaluator,
         ),
         (RunStatus.DONE,), 30.0, seed,

@@ -32,6 +32,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
     TaskOutcomeKind,
 )
+from affordance_runtime.goals.compiler import GoalCompiler, NotRequiredGoalCompiler
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.contracts import CoverageState
@@ -295,6 +296,27 @@ class BenchmarkComposition:
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
+    goal_compiler: GoalCompiler | None = None
+
+    @classmethod
+    def atomic(
+        cls,
+        policy: AgentPolicy,
+        action_evaluator: ActionEvaluator,
+        task_evaluator: TaskEvaluator,
+        risk_policy: RiskPolicy | None = None,
+        required_decisions: frozenset[DecisionCapability] = frozenset(),
+    ) -> BenchmarkComposition:
+        """Explicitly declare a benchmark composition's tasks as atomic."""
+
+        return cls(
+            policy,
+            action_evaluator,
+            task_evaluator,
+            risk_policy,
+            required_decisions,
+            NotRequiredGoalCompiler("atomic_benchmark_task"),
+        )
 
     def __post_init__(self) -> None:
         object.__setattr__(

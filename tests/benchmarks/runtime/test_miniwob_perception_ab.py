@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ from affordance_runtime.benchmarks.external_breadth.perception_ab import (
     _write_progress,
     capability_covered_cases,
     readiness_cohorts,
+    run_provider_cohort_arm,
 )
 from affordance_runtime.model.policy import model_policy_from_environment
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
@@ -100,6 +102,25 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
     assert _adapter(policy, require_frozen_mistral=False).provider_id == "zhipu"
 
 
+def test_provider_cohort_accepts_native_tool_policy_without_weakening_frozen_ab() -> None:
+    from affordance_runtime.model.policy import ModelBackedAgentPolicy
+    from affordance_runtime.model.policy.pydantic_ai_bridge import PydanticAIGroundedDecisionPort
+
+    native = PydanticAIGroundedDecisionPort(
+        model=object(),
+        provider_id="zhipu",
+        model_id="glm-4.6",
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+        transport_timeout_s=1,
+    )
+    policy = ModelBackedAgentPolicy(native, call_timeout_s=2)
+
+    with __import__("pytest").raises(TypeError, match="frozen perception A/B"):
+        _adapter(policy)
+    assert _adapter(policy, require_frozen_mistral=False) is native
+
+
 def test_provider_cohort_progress_is_atomically_persisted_per_case(tmp_path) -> None:
     _write_progress(
         tmp_path,
@@ -114,3 +135,24 @@ def test_provider_cohort_progress_is_atomically_persisted_per_case(tmp_path) -> 
     assert payload["completed_cases"] == 1
     assert payload["completed_case_ids"] == ["01"]
     assert payload["complete"] is False
+
+
+def test_provider_cohort_forwards_goal_compiler_to_existing_target_composition(monkeypatch) -> None:
+    from affordance_runtime.benchmarks.external_breadth import perception_ab
+
+    captured = {}
+    sentinel = object()
+
+    async def fake_run_arm(*args, **kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(perception_ab, "_run_arm", fake_run_arm)
+    result = asyncio.run(run_provider_cohort_arm(
+        object(), object(), DecisionPerceptionProfile.STRUCTURE_FIRST,
+        goal_compiler="compiler",
+    ))
+
+    assert result is sentinel
+    assert captured["goal_compiler"] == "compiler"
+    assert captured["require_frozen_mistral"] is False

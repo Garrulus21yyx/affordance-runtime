@@ -331,10 +331,11 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "progress", "recent_steps", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
     assert public["task"]["instruction"] == context.task.instruction
     assert "actions" not in public
-    assert public["progress"]["status"] == "incomplete"
+    assert public["task"]["formal_evaluation"]["status"] == "incomplete"
+    assert public["goal_plan"]["resolution"] == "unavailable"
     system_content = port.messages[0].content
     assert isinstance(system_content, str)
     assert "deterministic utility" in system_content
@@ -346,14 +347,11 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "wait",
         "abort",
     }
-    assert set(public["progress"]) == {
-        "status",
-        "satisfied_criteria",
-        "unresolved_criteria",
-        "confirmed_outputs",
-        "unresolved_outputs",
-        "evidence",
-        "truncated",
+    assert set(public["goal_plan"]) == {
+        "resolution",
+        "plan_version",
+        "plan_digest",
+        "items",
     }
     trace = _policy_trace_event(1, context, outcome.decision, adapter)
     assert trace["model_image_input_count"] == 0
@@ -628,7 +626,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "progress", "recent_steps", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
@@ -648,7 +646,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         if item["name"] in {"type_text", "activate"}
     )
     assert all("memory" not in item["input_schema"]["properties"] for item in public["tools"])
-    assert tuple(public) == ("task", "observation", "progress", "recent_steps", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
 
 
 def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:

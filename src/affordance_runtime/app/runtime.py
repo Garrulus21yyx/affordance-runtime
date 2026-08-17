@@ -18,6 +18,7 @@ from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSin
 from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
+from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
@@ -61,6 +62,8 @@ class TargetRuntime:
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     trace_sink: RunTraceSink = field(default_factory=NullRunTraceSink)
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
+    goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
+    goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
@@ -71,6 +74,8 @@ class TargetRuntime:
             raise TypeError("TargetRuntime task evaluator is invalid")
         if not callable(getattr(self.intake, "compile", None)):
             raise TypeError("TargetRuntime intake is invalid")
+        if not callable(getattr(self.goal_compiler, "compile", None)):
+            raise TypeError("TargetRuntime goal compiler is invalid")
         required = normalize_decision_capabilities(
             self.required_decisions,
             field_name="TargetRuntime required_decisions",
@@ -94,6 +99,8 @@ class TargetRuntime:
             context_builder=self.context_builder,
             wait_controller=self.wait_controller,
             trace_sink=self.trace_sink,
+            goal_compiler=self.goal_compiler,
+            goal_plan_boundary=self.goal_plan_boundary,
         )
 
     async def run_task(

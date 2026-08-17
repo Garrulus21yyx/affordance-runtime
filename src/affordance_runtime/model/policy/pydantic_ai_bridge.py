@@ -7,8 +7,10 @@ execution, risk, observation, and evaluation.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -17,6 +19,7 @@ from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
     ProviderAttemptOrigin,
+    ProviderFailureCode,
 )
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
@@ -49,6 +52,31 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 
+_MAX_PROVIDER_RETRIES = 1
+_DEFAULT_PROVIDER_BACKOFF_S = 1.0
+_MAX_PROVIDER_BACKOFF_S = 5.0
+_ACTION_MODEL_SETTINGS = {
+    "thinking": False,
+    "max_tokens": 512,
+    "temperature": 0.0,
+}
+
+
+@dataclass(frozen=True)
+class _ProviderFailureDetail:
+    code: ProviderFailureCode
+    retryable: bool
+    reason: str
+    exception_class: str
+    status_code: int | None = None
+    retry_after_s: float | None = None
+
+
+class _ProviderCallExhausted(RuntimeError):
+    def __init__(self, detail: _ProviderFailureDetail) -> None:
+        super().__init__(detail.reason)
+        self.detail = detail
+
 
 @dataclass(frozen=True)
 class PydanticAIGroundedDecisionPort:
@@ -60,12 +88,15 @@ class PydanticAIGroundedDecisionPort:
     supports_multimodal: bool
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
     transport_timeout_s: float = 85.0
+    provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
+    max_provider_retry_delay_s: float = _MAX_PROVIDER_BACKOFF_S
     context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
     last_catalog_specs: tuple[object, ...] = field(default=(), init=False, compare=False)
     last_image_input_count: int = field(default=0, init=False, compare=False)
     last_model_call_count: int = field(default=0, init=False, compare=False)
+    last_provider_retry_count: int = field(default=0, init=False, compare=False)
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
         default=(), init=False, compare=False
     )
@@ -75,6 +106,10 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("PydanticAI model identity is required")
         if not 0 < self.transport_timeout_s <= 300:
             raise ValueError("PydanticAI transport timeout must be in (0, 300]")
+        if not 0 <= self.provider_retry_backoff_s <= self.max_provider_retry_delay_s:
+            raise ValueError("provider retry backoff must fit its bounded delay")
+        if not 0 < self.max_provider_retry_delay_s <= _MAX_PROVIDER_BACKOFF_S:
+            raise ValueError("provider retry delay must be in (0, 5]")
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
 
     @property
@@ -101,11 +136,13 @@ class PydanticAIGroundedDecisionPort:
         self,
         request: ModelDecisionRequest,
     ) -> ResolvedModelDecision | ModelFailure:
+        semantic_started = time.perf_counter()
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
         object.__setattr__(self, "last_catalog_specs", ())
         object.__setattr__(self, "last_image_input_count", 0)
         object.__setattr__(self, "last_model_call_count", 0)
+        object.__setattr__(self, "last_provider_retry_count", 0)
         object.__setattr__(self, "last_generation_attempts", ())
         try:
             from pydantic_ai import (
@@ -166,15 +203,23 @@ class PydanticAIGroundedDecisionPort:
                 output_type=str if final_ready else [str, DeferredToolRequests],
             )
             usage = RunUsage()
-            limits = UsageLimits(request_limit=2)
-            object.__setattr__(self, "last_model_call_count", 1)
-            result = await agent.run(
-                user_prompt,
-                toolsets=[] if final_ready else [toolset],
-                usage=usage,
-                usage_limits=limits,
+            # Initial decision and tool repair may each make one explicit
+            # provider retry. SDK-level retry stays disabled so none of those
+            # physical attempts disappear from the trace.
+            limits = UsageLimits(request_limit=4)
+            result = await self._run_provider_call(
+                lambda: agent.run(
+                    user_prompt,
+                    toolsets=[] if final_ready else [toolset],
+                    usage=usage,
+                    usage_limits=limits,
+                    model_settings=_ACTION_MODEL_SETTINGS,
+                ),
+                phase="initial",
+                specs=catalog.specs,
+                input_messages=_initial_input_transcript(instructions, user_prompt),
+                provider_error_type=ModelAPIError,
             )
-            self._record_generation(result, "initial", catalog.specs)
             decision = (
                 _resolve_final_response(result.output, request.context_id)
                 if final_ready
@@ -193,15 +238,22 @@ class PydanticAIGroundedDecisionPort:
                     if isinstance(repair, DeferredToolResults)
                     else {"user_prompt": repair}
                 )
-                object.__setattr__(self, "last_model_call_count", 2)
-                result = await agent.run(
-                    message_history=result.all_messages(),
-                    toolsets=[toolset],
-                    usage=usage,
-                    usage_limits=limits,
-                    **repair_kwargs,
+                repair_history = result.all_messages()
+                repair_transcript = _repair_input_transcript(result, repair_kwargs)
+                result = await self._run_provider_call(
+                    lambda: agent.run(
+                        message_history=repair_history,
+                        toolsets=[toolset],
+                        usage=usage,
+                        usage_limits=limits,
+                        model_settings=_ACTION_MODEL_SETTINGS,
+                        **repair_kwargs,
+                    ),
+                    phase="tool_call_repair",
+                    specs=catalog.specs,
+                    input_messages=repair_transcript,
+                    provider_error_type=ModelAPIError,
                 )
-                self._record_generation(result, "tool_call_repair", catalog.specs)
                 decision = _resolve_deferred(result.output, catalog, request.context_id)
             if decision is None:
                 return _failure(
@@ -215,22 +267,31 @@ class PydanticAIGroundedDecisionPort:
             )
         except UnexpectedModelBehavior:
             return _failure(ModelFailureKind.SCHEMA_ERROR, "model tool response violated the grounded contract")
-        except ModelAPIError:
+        except _ProviderCallExhausted as error:
+            detail = error.detail
             return _failure(
                 ModelFailureKind.PROVIDER_UNAVAILABLE,
-                "PydanticAI model provider is unavailable",
-                retryable=True,
+                detail.reason,
+                retryable=detail.retryable,
+                provider_code=detail.code,
+                retry_after_s=detail.retry_after_s,
             )
         except (GroundedToolResolutionError, ValueError, TypeError):
             return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded tool response could not be resolved")
-        except Exception:
+        except Exception as error:
+            self._record_local_failure(error, "local_runtime", catalog.specs)
             return _failure(
-                ModelFailureKind.PROVIDER_UNAVAILABLE,
-                "PydanticAI decision request failed",
-                retryable=True,
+                ModelFailureKind.INTERNAL_ERROR,
+                "PydanticAI decision adapter failed locally",
             )
 
         run_usage = result.usage
+        rate_limit_retries = sum(
+            1
+            for item in self.last_generation_attempts
+            if isinstance(item.transcript, dict)
+            and item.transcript.get("error.code") == ProviderFailureCode.RATE_LIMITED.value
+        )
         return ResolvedModelDecision(
             decision,
             ModelMetadata(
@@ -239,15 +300,83 @@ class PydanticAIGroundedDecisionPort:
                 endpoint_class="openai-compatible",
                 prompt_version=self.context_binder.prompts.version,
                 schema_version=GROUNDED_TOOLS_PROTOCOL,
+                latency_ms=(time.perf_counter() - semantic_started) * 1000,
                 prompt_tokens=run_usage.input_tokens,
                 completion_tokens=run_usage.output_tokens,
                 total_tokens=run_usage.input_tokens + run_usage.output_tokens,
+                rate_limit_retry_count=rate_limit_retries,
+                transient_retry_count=max(0, self.last_provider_retry_count - rate_limit_retries),
                 grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
                 perception_profile=self.perception_profile.value,
             ),
         )
 
-    def _record_generation(self, result: object, phase: str, specs: tuple[object, ...]) -> None:
+    async def _run_provider_call(
+        self,
+        call,
+        *,
+        phase: str,
+        specs: tuple[object, ...],
+        input_messages: object,
+        provider_error_type: type[Exception],
+    ) -> object:
+        for retry_index in range(_MAX_PROVIDER_RETRIES + 1):
+            attempt_phase = phase if retry_index == 0 else f"{phase}_provider_retry"
+            if retry_index:
+                object.__setattr__(
+                    self,
+                    "last_provider_retry_count",
+                    self.last_provider_retry_count + 1,
+                )
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
+            started = time.perf_counter()
+            try:
+                result = await call()
+            except asyncio.CancelledError:
+                self._record_cancelled_attempt(
+                    attempt_phase,
+                    specs,
+                    input_messages,
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                )
+                raise
+            except provider_error_type as error:
+                detail = _classify_provider_failure(error)
+                self._record_provider_failure(
+                    detail,
+                    attempt_phase,
+                    specs,
+                    input_messages,
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                )
+                if retry_index >= _MAX_PROVIDER_RETRIES or not detail.retryable:
+                    raise _ProviderCallExhausted(detail) from error
+                delay_s = min(
+                    detail.retry_after_s
+                    if detail.retry_after_s is not None
+                    else self.provider_retry_backoff_s * (2**retry_index),
+                    self.max_provider_retry_delay_s,
+                )
+                if delay_s:
+                    await asyncio.sleep(delay_s)
+                continue
+            self._record_generation(
+                result,
+                attempt_phase,
+                specs,
+                latency_ms=(time.perf_counter() - started) * 1000,
+            )
+            return result
+        raise AssertionError("bounded provider retry loop did not resolve")
+
+    def _record_generation(
+        self,
+        result: object,
+        phase: str,
+        specs: tuple[object, ...],
+        *,
+        latency_ms: float = 0.0,
+    ) -> None:
         messages = json.loads(result.new_messages_json())
         requests = [message for message in messages if message.get("kind") == "request"]
         responses = [message for message in messages if message.get("kind") == "response"]
@@ -280,6 +409,7 @@ class PydanticAIGroundedDecisionPort:
             schema_name=GROUNDED_TOOLS_PROTOCOL,
             status="accepted",
             response_id=str(response.get("provider_response_id") or ""),
+            latency_ms=latency_ms,
             prompt_tokens=usage.input_tokens,
             completion_tokens=usage.output_tokens,
             total_tokens=usage.input_tokens + usage.output_tokens,
@@ -290,6 +420,95 @@ class PydanticAIGroundedDecisionPort:
             "last_generation_attempts",
             (*self.last_generation_attempts, attempt),
         )
+
+    def _record_cancelled_attempt(
+        self,
+        phase: str,
+        specs: tuple[object, ...],
+        input_messages: object,
+        *,
+        latency_ms: float,
+    ) -> None:
+        transcript = {
+            "openinference.span.kind": "LLM",
+            "llm.system": self.provider_id,
+            "llm.model_name": self.model_id,
+            "llm.input_messages": input_messages,
+            "llm.output_messages": [],
+            "llm.tools": _tool_transcript(specs),
+            "status": "cancelled",
+            "network_dispatched": True,
+            "error.code": "cancelled",
+            "error.exception_class": "CancelledError",
+        }
+        attempt = ModelGenerationAttempt(
+            attempt=len(self.last_generation_attempts) + 1,
+            phase=phase,
+            schema_name=GROUNDED_TOOLS_PROTOCOL,
+            status="cancelled",
+            latency_ms=latency_ms,
+            exception_class="CancelledError",
+            transcript=transcript,
+        )
+        object.__setattr__(
+            self,
+            "last_generation_attempts",
+            (*self.last_generation_attempts, attempt),
+        )
+
+    def _record_provider_failure(
+        self,
+        detail: _ProviderFailureDetail,
+        phase: str,
+        specs: tuple[object, ...],
+        input_messages: object,
+        *,
+        latency_ms: float,
+    ) -> None:
+        transcript = {
+            "openinference.span.kind": "LLM",
+            "llm.system": self.provider_id,
+            "llm.model_name": self.model_id,
+            "llm.input_messages": input_messages,
+            "llm.output_messages": [],
+            "llm.tools": _tool_transcript(specs),
+            "status": "failed",
+            "error.code": detail.code.value,
+            "error.exception_class": detail.exception_class,
+            "error.http_status": detail.status_code,
+            "error.retryable": detail.retryable,
+            "error.retry_after_s": detail.retry_after_s,
+        }
+        attempt = ModelGenerationAttempt(
+            attempt=len(self.last_generation_attempts) + 1,
+            phase=phase,
+            schema_name=GROUNDED_TOOLS_PROTOCOL,
+            status="failed",
+            latency_ms=latency_ms,
+            exception_class=detail.exception_class,
+            transcript=transcript,
+        )
+        object.__setattr__(
+            self,
+            "last_generation_attempts",
+            (*self.last_generation_attempts, attempt),
+        )
+
+    def _record_local_failure(
+        self,
+        error: Exception,
+        phase: str,
+        specs: tuple[object, ...],
+    ) -> None:
+        if self.last_generation_attempts and self.last_generation_attempts[-1].status == "failed":
+            return
+        detail = _ProviderFailureDetail(
+            ProviderFailureCode.UNAVAILABLE,
+            False,
+            "PydanticAI decision adapter failed locally",
+            type(error).__name__,
+        )
+        self._record_provider_failure(detail, phase, specs, (), latency_ms=0.0)
 
 
 def zhipu_pydantic_ai_policy_from_environment(
@@ -323,10 +542,14 @@ def zhipu_pydantic_ai_policy_from_environment(
         perception_profile
         or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
+    retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
+    transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
+    if transport_timeout_s <= 0:
+        raise ValueError("PydanticAI policy timeout cannot fit bounded provider recovery")
     client = AsyncOpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=call_timeout_s - 1,
+        timeout=transport_timeout_s,
         max_retries=0,
     )
     model = ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
@@ -336,7 +559,9 @@ def zhipu_pydantic_ai_policy_from_environment(
         model_id=model_id,
         supports_multimodal=_zhipu_supports_multimodal(model_id),
         perception_profile=selected_perception,
-        transport_timeout_s=call_timeout_s - 0.5,
+        transport_timeout_s=transport_timeout_s,
+        provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
+        max_provider_retry_delay_s=retry_delay_budget_s,
     )
     return ModelBackedAgentPolicy(port, call_timeout_s=call_timeout_s)
 
@@ -368,12 +593,12 @@ def _resolve_deferred(output, catalog, context_id: str):
 
 def _final_response_ready(context) -> bool:
     requested = context.task.requested_output_ids
-    unresolved = context.progress.unresolved_outputs
+    confirmed = {item.output_id for item in context.task.evaluation.outputs}
     return (
-        context.progress.validated_task_status == "complete"
+        context.task.evaluation.status == "complete"
         and requested.total_count > 0
         and not requested.truncated
-        and unresolved.total_count == 0
+        and all(item in confirmed for item in requested.items)
     )
 
 
@@ -458,11 +683,164 @@ def _pydantic_prompt(messages, image_inputs: Sequence[AgentImageInput], binary_c
     return instructions, prompt
 
 
-def _failure(kind: ModelFailureKind, reason: str, *, retryable: bool = False) -> ModelFailure:
+def _initial_input_transcript(instructions: str, user_prompt: object) -> list[dict[str, object]]:
+    return [
+        {"role": "system", "content": instructions},
+        {"role": "user", "content": _safe_prompt_projection(user_prompt)},
+    ]
+
+
+def _repair_input_transcript(result: object, repair_kwargs: Mapping[str, object]) -> object:
+    try:
+        history = json.loads(result.all_messages_json())
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        history = [{"history": "retained_by_pydantic_ai"}]
+    repair = repair_kwargs.get("user_prompt") or repair_kwargs.get("deferred_tool_results")
+    return [*history, {"role": "repair", "content": _safe_prompt_projection(repair)}]
+
+
+def _safe_prompt_projection(value: object) -> object:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        projected = []
+        for item in value:
+            data = getattr(item, "data", None)
+            if isinstance(data, (bytes, bytearray)):
+                projected.append(
+                    {
+                        "type": "binary",
+                        "media_type": str(getattr(item, "media_type", "")),
+                        "byte_count": len(data),
+                    }
+                )
+            else:
+                projected.append(to_json_compatible(item))
+        return projected
+    try:
+        return to_json_compatible(value)
+    except (TypeError, ValueError):
+        return {"type": type(value).__name__}
+
+
+def _tool_transcript(specs: tuple[object, ...]) -> list[dict[str, object]]:
+    return [
+        {
+            "tool.name": getattr(spec, "name", ""),
+            "tool.description": getattr(spec, "description", ""),
+            "tool.json_schema": to_json_compatible(getattr(spec, "input_schema", {})),
+        }
+        for spec in specs
+    ]
+
+
+def _classify_provider_failure(error: Exception) -> _ProviderFailureDetail:
+    status_code = _provider_status_code(error)
+    retry_after_s = _provider_retry_after_s(error)
+    exception_class = type(error).__name__
+    names = " ".join(type(item).__name__.casefold() for item in _exception_chain(error))
+    if status_code == 429:
+        return _ProviderFailureDetail(
+            ProviderFailureCode.RATE_LIMITED,
+            True,
+            "model provider rate limited the decision request",
+            exception_class,
+            status_code,
+            retry_after_s,
+        )
+    if status_code in {401, 403}:
+        return _ProviderFailureDetail(
+            ProviderFailureCode.AUTHENTICATION,
+            False,
+            "model provider authentication failed",
+            exception_class,
+            status_code,
+        )
+    if status_code is not None and 400 <= status_code < 500 and status_code not in {408, 409}:
+        return _ProviderFailureDetail(
+            ProviderFailureCode.INVALID_REQUEST,
+            False,
+            "model provider rejected the decision request",
+            exception_class,
+            status_code,
+        )
+    if status_code == 408 or "timeout" in names:
+        return _ProviderFailureDetail(
+            ProviderFailureCode.TIMEOUT,
+            True,
+            "model provider decision request timed out",
+            exception_class,
+            status_code,
+            retry_after_s,
+        )
+    if "connection" in names or "transport" in names:
+        return _ProviderFailureDetail(
+            ProviderFailureCode.TRANSPORT,
+            True,
+            "model provider transport failed",
+            exception_class,
+            status_code,
+            retry_after_s,
+        )
+    return _ProviderFailureDetail(
+        ProviderFailureCode.UNAVAILABLE,
+        status_code is None or status_code == 409 or status_code >= 500,
+        "model provider is unavailable",
+        exception_class,
+        status_code,
+        retry_after_s,
+    )
+
+
+def _exception_chain(error: Exception) -> tuple[BaseException, ...]:
+    chain: list[BaseException] = []
+    current: BaseException | None = error
+    while current is not None and current not in chain:
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return tuple(chain)
+
+
+def _provider_status_code(error: Exception) -> int | None:
+    for item in _exception_chain(error):
+        status = getattr(item, "status_code", None)
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status
+    return None
+
+
+def _provider_retry_after_s(error: Exception) -> float | None:
+    for item in _exception_chain(error):
+        headers = getattr(item, "headers", None)
+        if not isinstance(headers, Mapping):
+            response = getattr(item, "response", None)
+            headers = getattr(response, "headers", None)
+        if not isinstance(headers, Mapping):
+            continue
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        try:
+            delay = float(value)
+        except (TypeError, ValueError):
+            continue
+        if delay >= 0:
+            return delay
+    return None
+
+
+def _failure(
+    kind: ModelFailureKind,
+    reason: str,
+    *,
+    retryable: bool = False,
+    provider_code: ProviderFailureCode | None = None,
+    retry_after_s: float | None = None,
+) -> ModelFailure:
     return ModelFailure(
         kind,
         reason,
         retryable,
+        provider_code,
+        retry_after_s,
         attempt_origin=ProviderAttemptOrigin.NETWORK,
     )
 

@@ -3,6 +3,7 @@
 from typing import Protocol, runtime_checkable
 
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
+from affordance_runtime.goals.contracts import GoalSemanticContract
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationOffer,
@@ -13,6 +14,9 @@ from affordance_runtime.world.acquisition import (
 
 class SurfaceAdapter(Protocol):
     surface: str
+
+    @property
+    def goal_semantic_contract(self) -> GoalSemanticContract: ...
 
     @property
     def physical_environment_id(self) -> str: ...

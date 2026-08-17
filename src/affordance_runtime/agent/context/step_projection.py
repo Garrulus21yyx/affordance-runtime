@@ -104,16 +104,21 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
 
 
 def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]:
-    target = next(
+    before = next(
         (item for item in result.before_world.targets if item.target_id == target_id),
         None,
     )
-    if target is None:
+    if before is None:
         return {}
+    after = next(
+        (item for item in result.after_world.targets if item.target_id == target_id),
+        None,
+    )
     return {
-        "role": _bounded(target.role, 80),
-        "label": _bounded(target.label),
-        "state": project_public_value(target.state),
+        "role": _bounded(before.role, 80),
+        "label": _bounded(before.label),
+        "before_state": project_public_value(before.state),
+        "after_state": project_public_value(after.state) if after is not None else None,
     }
 
 

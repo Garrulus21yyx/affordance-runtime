@@ -34,6 +34,38 @@
 - 本项目不单独训练、微调或 RL 后训练模型，也不建设训练数据飞轮。agent/specialist 指通过 typed port 使用现成通用多模态、computer-use 或 grounding 模型；不同认知职责可以复用同一模型/provider。能力不足时返回 typed `unsupported/unknown/needs_input`，不得退回手写 benchmark 规则。
 - 架构选择应与当前通用 GUI agent 的主流思路一致：agent 负责基于统一公开世界进行感知、推理、规划和语义动作选择，必要时路由到独立的模型-backed grounding/verifier 角色；Runtime 拥有能力路由、合法性、私有绑定、执行、观测、证据 lineage 和最终控制状态。benchmark 提升是结果证据，不是生产代码的条件输入。
 
+## Goal-plan convergence constraints
+
+任务语义能力必须留在现有单一 `CoreAgentLoop` 中，并保持“认知增强不接管控制”的边界：
+
+- 用户目标 authority 只有可修订 `TaskGoal`；当前环境 authority 只有 fresh `WorldObservation`。
+- task start/revision 各调用一次 model-backed GoalCompiler。模型只输出有界、静态、非权威的 `GoalPlan`；每项只有
+  `id | objective | done_when | depends_on | final`。Runtime 只校验 1..8 items、ID 唯一、依赖存在且无环、文本长度和
+  最多一个 final，不解释 GUI 语义，不生成 relation/predicate/entity query AST，也不计算 plan progress。
+- `GoalPlan` 直接投影进 `AgentContext`。唯一 ActionPolicy 每 step 根据 `TaskGoal + GoalPlan + fresh World + bounded
+  recent steps + tools` 重新判断当前应推进的 item，并只选择一个动作。它必须保留已满足状态、不得重复点击已 active
+  toggle（除非目标要求撤销），优先推进依赖已满足的未完成 item，且只有所有依赖从 fresh World 明显满足后才执行 final item。
+- `GoalPlan` 不是 mutable milestone/todo、状态机、权限、确认、完成证明或第二真相；Runtime 不存 item status、frontier、
+  per-subject progress、GoalBinding、GoalSnapshot 或 achievement record。
+- compiler 结果仅为 `Ready|NotRequired|NeedsInput|Unsupported|Failed`。`Unsupported|Failed` 记录 unavailable 后继续普通
+  GUI loop；只有确实缺少用户拥有事实的 `NeedsInput` 才复用 `AskUser/waiting_user`。provider/schema failure 不得映射为
+  run `failed|blocked`。
+- 不自动 recompile。用户修订 `TaskGoal` 时旧 plan 失效并重新编译；URL/layout 变化、重复动作、unchanged/regressed 和
+  “撞墙”只进入 ActionPolicy 可见的 World/recent-step feedback。
+- provider envelope 对未知的有界描述字段宽容忽略；必填字段缺失、类型错误、重复/悬空/循环依赖、超界内容和多个 final
+  typed fail，并最多允许一次 schema repair 和一次 Boundary contract repair。每次 initial/repair transcript 必须立即保存。
+- `SelectAction -> Binder -> BoundActionRequest -> Executor` 不变。动作合法性、currentness、binding、风险与确认保持严格；
+  GoalPlan 不能隐藏、拒绝或授权动作。
+- `ActionEffect` 只证明局部 UI 效果；只有 `TaskEvaluator`/native verifier 可以终止任务。
+- VLM 只能经 SurfaceAdapter/Fusion 为同一 World 补充当前证据，不是 repetition/long-task fallback。
+- 不引入 Manager/Worker、每步 planner/compiler、单独 LLM goal evaluator、mutable TaskPlan、memory、RAG、ArgMin、
+  achievement record、第二 Binder 或第二 Runtime loop。只能由已命名 benchmark 缺口另行触发。
+
+设计解释、SOTA 对齐和实施/验收状态只维护在 `docs/architecture.md` 与 `docs/benchmark.md`。当前状态：
+`Goal semantics architecture reopened / Simple GoalPlan implementation complete / Ready delivered / policy behavior failed`。
+2026-08-17 的第二次正式 Like run 中 GoalCompiler 首次调用成功并向每 turn 投影三项 Ready plan；ActionPolicy 先激活
+三个 Like，随后反复撤销已 active Like，十步耗尽且未 Submit，official success=0。不得继续案例特化或写作 G1/G2 closed。
+
 ## MiniWoB / BrowserGym runtime facts
 
 这些是项目中已经确认的本地运行事实。执行 MiniWoB benchmark 时必须先复用，禁止仅因当前 shell 没有 export 环境变量就宣称 runtime、URL、source 或 provider 配置缺失。

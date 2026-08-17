@@ -131,7 +131,7 @@ def test_current_benchmark_primary_protocol_is_grounded_tools() -> None:
     assert PRIMARY_BENCHMARK_ACTION_PROTOCOL == GROUNDED_TOOLS_PROTOCOL
     assert PRIMARY_BENCHMARK_PERCEPTION_PROFILE is DecisionPerceptionProfile.STRUCTURE_FIRST
     assert PRIMARY_BENCHMARK_REQUIRED_DECISIONS == GROUNDED_ACTION_DECISION_CAPABILITIES
-    composition = BenchmarkComposition(
+    composition = BenchmarkComposition.atomic(
         _DeclaredPolicy(GROUNDED_ACTION_DECISION_CAPABILITIES),
         _Evaluator(),
         _Evaluator(),

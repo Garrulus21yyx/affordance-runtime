@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
     from affordance_runtime.agent.context.context import (
         AgentContext,
-        AgentProgressView,
         ContextIdentity,
     )
     from affordance_runtime.agent.context.context_builder import ContextBuilder
@@ -48,7 +47,6 @@ _EXPORTS = {
     "AgentContext": ("affordance_runtime.agent.context.context", "AgentContext"),
     "AgentDestinationView": ("affordance_runtime.agent.context.contracts", "AgentDestinationView"),
     "AgentMaterialBindingView": ("affordance_runtime.agent.context.contracts", "AgentMaterialBindingView"),
-    "AgentProgressView": ("affordance_runtime.agent.context.context", "AgentProgressView"),
     "AgentSuccessCriterionView": ("affordance_runtime.agent.context.contracts", "AgentSuccessCriterionView"),
     "AgentTaskView": ("affordance_runtime.agent.context.contracts", "AgentTaskView"),
     "AgentTurnView": ("affordance_runtime.agent.context.contracts", "AgentTurnView"),

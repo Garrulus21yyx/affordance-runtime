@@ -11,6 +11,7 @@ from affordance_runtime.execution.contracts import (
     BoundActionRequest,
     DispatchStatus,
 )
+from affordance_runtime.goals import GoalPredicateValueType, GoalSemanticContract
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationCapabilities,
@@ -74,6 +75,50 @@ class ScriptedSurfaceAdapter:
     @property
     def physical_environment_id(self) -> str:
         return f"scripted:{id(self)}"
+
+    @property
+    def goal_semantic_contract(self) -> GoalSemanticContract:
+        worlds = (
+            self.initial_observation,
+            *self.independent_observations,
+            *self.post_observations,
+        )
+        predicates: dict[str, GoalPredicateValueType] = {
+            "label": GoalPredicateValueType.STRING,
+            "kind": GoalPredicateValueType.STRING,
+            "role": GoalPredicateValueType.STRING,
+        }
+        for world in worlds:
+            for target in world.targets:
+                for name, value in target.state.items():
+                    value_type = (
+                        GoalPredicateValueType.BOOLEAN
+                        if type(value) is bool
+                        else GoalPredicateValueType.STRING
+                        if isinstance(value, str)
+                        else None
+                    )
+                    if value_type is not None:
+                        previous = predicates.setdefault(name, value_type)
+                        if previous is not value_type:
+                            raise ValueError(f"scripted goal predicate type conflict: {name}")
+        return GoalSemanticContract(
+            entity_kinds=frozenset(
+                target.role for world in worlds for target in world.targets
+            ),
+            predicates=predicates,
+            relations=frozenset(
+                edge
+                for world in worlds
+                for target in world.targets
+                for edge in target.relations
+            ),
+            finalizer_capabilities=frozenset(
+                binding.semantic_action
+                for world in worlds
+                for binding in world.bindings
+            ),
+        )
 
     @property
     def owns_physical_reset(self) -> bool:

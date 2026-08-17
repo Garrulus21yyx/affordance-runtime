@@ -743,6 +743,8 @@ def _canonical_control(
         public_state.extend(dom_evidence.state)
     if isinstance(physical, dict) and isinstance(physical.get("selected"), bool):
         public_state.append(("selected", physical["selected"]))
+    if isinstance(physical, dict) and isinstance(physical.get("active"), bool):
+        public_state.append(("active", physical["active"]))
     if isinstance(physical, dict) and isinstance(physical.get("color_family"), str):
         color = physical["color_family"]
         public_state.append(

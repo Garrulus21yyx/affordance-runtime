@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
-from affordance_runtime.agent.context.world_projection import PublicFactView
+from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
 
 if TYPE_CHECKING:
@@ -25,15 +25,27 @@ class ContextIdentity:
     action_space_id: str
     action_page_id: str
     context_generation: int = 0
+    goal_plan_disposition: str = "unavailable"
+    goal_plan_version: int | None = None
+    goal_plan_digest: str = ""
+    tool_catalog_digest: str = ""
 
     def __post_init__(self) -> None:
-        if (
-            self.task_revision <= 0
-            or self.context_generation < 0
-        ):
+        if self.task_revision <= 0 or self.context_generation < 0:
             raise ValueError("context revisions are invalid")
         if not all(value.strip() for value in (self.observation_id, self.action_space_id, self.action_page_id)):
             raise ValueError("context identity requires current observation, action space, and page")
+        if self.goal_plan_disposition not in {"ready", "not_required", "unavailable"}:
+            raise ValueError("context identity goal disposition is invalid")
+        if self.goal_plan_disposition == "ready":
+            if self.goal_plan_version is None or self.goal_plan_version < 1:
+                raise ValueError("ready context identity requires a goal plan version")
+            if re.fullmatch(r"[0-9a-f]{64}", self.goal_plan_digest) is None:
+                raise ValueError("ready context identity requires a goal plan digest")
+        elif self.goal_plan_version is not None or self.goal_plan_digest:
+            raise ValueError("empty goal guidance cannot invent plan identity")
+        if re.fullmatch(r"[0-9a-f]{64}", self.tool_catalog_digest) is None:
+            raise ValueError("context identity requires a current tool catalog digest")
 
     @property
     def context_id(self) -> str:
@@ -43,18 +55,13 @@ class ContextIdentity:
             self.action_space_id,
             self.action_page_id,
             self.context_generation,
+            self.goal_plan_disposition,
+            self.goal_plan_version,
+            self.goal_plan_digest,
+            self.tool_catalog_digest,
         )
         digest = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
         return f"context:{digest}"
-
-
-@dataclass(frozen=True)
-class AgentProgressView:
-    validated_task_status: str
-    verified_public_facts: tuple[PublicFactView, ...]
-    unresolved_criteria: BoundedSection[str]
-    unresolved_outputs: BoundedSection[str]
-    truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -120,7 +127,7 @@ class AgentGroundingIndexView:
 class AgentContext:
     context_id: str
     task: AgentTaskView
-    progress: AgentProgressView
+    goal_plan: AgentGoalPlanView
     actions: AgentActionPageView
     recent_steps: BoundedSection[AgentTurnView]
     actor_world: ActorWorldSnapshot

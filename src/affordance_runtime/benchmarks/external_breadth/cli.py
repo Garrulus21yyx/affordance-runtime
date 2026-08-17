@@ -7,7 +7,7 @@ import asyncio
 import json
 import os
 import subprocess
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from affordance_runtime.benchmarks.external_breadth.attestation import validate_campaign_tree
@@ -22,12 +22,17 @@ from affordance_runtime.benchmarks.external_breadth.manifest import (
     breadth_manifest_digest,
     build_breadth_manifest,
 )
+from affordance_runtime.benchmarks.external_breadth.perception_ab import (
+    run_provider_cohort_arm,
+    write_provider_cohort_arm,
+)
 from affordance_runtime.benchmarks.external_breadth.registry import SOURCE_COMMIT, load_registry_census
 from affordance_runtime.benchmarks.external_breadth.reporting import write_campaign_reports
 from affordance_runtime.benchmarks.external_breadth.runner import run_breadth_campaign
 from affordance_runtime.benchmarks.external_breadth.selection import selection_key
 from affordance_runtime.benchmarks.external_smoke.adapter_reporting import _atomic_json
-from affordance_runtime.model.policy import model_policy_from_environment
+from affordance_runtime.model.policy import model_policy_from_environment, model_roles_from_environment
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 
 
 def main() -> int:
@@ -43,12 +48,63 @@ def main() -> int:
     run.add_argument("--seed", type=int, required=True)
     run.add_argument("--min-policy-call-interval-s", type=float, required=True)
     run.add_argument("--output-dir", type=Path, required=True)
+    run_case = commands.add_parser("run-case")
+    run_case.add_argument("--manifest", choices=(CAMPAIGN_ID,), required=True)
+    run_case.add_argument("--case-id", required=True)
+    run_case.add_argument("--profile", required=True)
+    run_case.add_argument("--seed", type=int, required=True)
+    run_case.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     census = load_registry_census()
     manifest = build_breadth_manifest(census)
     if args.command == "freeze-manifest":
         _write_frozen_evidence(args.output, census, manifest)
         return 0
+    if args.command == "run-case":
+        selected = tuple(case for case in manifest.cases if case.case_id == args.case_id)
+        errors = []
+        if len(selected) != 1:
+            errors.append("case ID is not uniquely present in the frozen manifest")
+        elif args.seed != selected[0].seed:
+            errors.append("case seed must match the frozen manifest")
+        if not args.profile.strip():
+            errors.append("case profile must be nonblank")
+        if args.output_dir.exists():
+            errors.append("case output directory must be new")
+        if errors:
+            print(json.dumps({"status": "NOT_RUN_INVALID_ARGUMENT", "errors": errors}, sort_keys=True))
+            return 1
+        roles = model_roles_from_environment()
+        arm = asyncio.run(run_provider_cohort_arm(
+            replace(manifest, cases=selected),
+            roles.action_policy,
+            DecisionPerceptionProfile(
+                os.environ.get(
+                    "LLM_DECISION_PERCEPTION",
+                    DecisionPerceptionProfile.STRUCTURE_FIRST.value,
+                )
+            ),
+            progress_dir=args.output_dir,
+            progress_profile=args.profile,
+            goal_compiler=roles.goal_compiler,
+        ))
+        report = write_provider_cohort_arm(
+            args.output_dir,
+            implementation_sha=subprocess.check_output(
+                ("git", "rev-parse", "HEAD"), text=True,
+            ).strip(),
+            profile=args.profile,
+            arm=arm,
+        )
+        evidence = json.loads(report.read_text(encoding="utf-8"))
+        print(json.dumps({
+            "report": str(report),
+            "success_count": evidence["success_count"],
+            "outcome_counts": evidence["outcome_counts"],
+            "run_evidence_valid": evidence["run_evidence_valid"],
+            "errors": evidence["errors"],
+        }, sort_keys=True))
+        return 0 if arm.success_count == 1 else 1
     errors = _configuration_errors(manifest)
     capacity = _provider_capacity(manifest)
     if not capacity.sufficient:
@@ -64,9 +120,13 @@ def main() -> int:
     if errors:
         print(json.dumps({"status": "NOT_RUN_UNAVAILABLE_CONFIG", "errors": errors}, sort_keys=True))
         return 1
-    policy = model_policy_from_environment()
+    model_roles = model_roles_from_environment()
     outcome = asyncio.run(run_breadth_campaign(
-        manifest, policy, args.output_dir, provider_capacity=capacity,
+        manifest,
+        model_roles.action_policy,
+        args.output_dir,
+        provider_capacity=capacity,
+        goal_compiler=model_roles.goal_compiler,
     ))
     attestation = write_campaign_reports(outcome, args.output_dir)
     tree_errors = validate_campaign_tree(args.output_dir, manifest)

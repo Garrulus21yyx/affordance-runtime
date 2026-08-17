@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 
+from affordance_runtime.goals.compiler import GoalCompiler, UnavailableGoalCompiler
+from affordance_runtime.model.goal_compiler import (
+    model_goal_compiler_from_environment,
+)
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
 )
@@ -16,7 +21,15 @@ from affordance_runtime.model.policy.perception import (
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
-from affordance_runtime.model.providers.port import ModelConfig, model_port_from_environment
+from affordance_runtime.model.providers.port import ModelConfig, ModelPort, model_port_from_environment
+
+
+@dataclass(frozen=True)
+class ConfiguredModelRoles:
+    """The two cognitive roles sharing one configured provider transport."""
+
+    action_policy: ModelBackedAgentPolicy
+    goal_compiler: GoalCompiler
 
 
 def model_policy_from_environment(
@@ -24,12 +37,15 @@ def model_policy_from_environment(
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    model_port: ModelPort | None = None,
 ) -> ModelBackedAgentPolicy:
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("model policy profile forbids provider fallback")
     model_adapter = env.get("LLM_MODEL_ADAPTER", "compact-json").strip().casefold()
     if model_adapter == "pydantic-ai":
+        if model_port is not None:
+            raise ValueError("PydanticAI policy does not accept a compact-json model port")
         from affordance_runtime.model.policy.pydantic_ai_bridge import (
             zhipu_pydantic_ai_policy_from_environment,
         )
@@ -41,7 +57,7 @@ def model_policy_from_environment(
         )
     if model_adapter != "compact-json":
         raise ValueError(f"unsupported LLM_MODEL_ADAPTER: {model_adapter}")
-    port = model_port_from_environment(environment)
+    port = model_port or model_port_from_environment(environment)
     configured_perception = perception_profile
     if configured_perception is None:
         configured_perception = env.get(
@@ -73,6 +89,75 @@ def model_policy_from_environment(
         adapter,
         call_timeout_s=call_timeout_s,
     )
+
+
+def model_roles_from_environment(
+    environment: Mapping[str, str] | None = None,
+    *,
+    call_timeout_s: float = 90.0,
+    perception_profile: DecisionPerceptionProfile | str | None = None,
+) -> ConfiguredModelRoles:
+    """Compose ActionPolicy and GoalCompiler from one selected model profile."""
+
+    env = os.environ if environment is None else environment
+    goal_compiler_mode = env.get("LLM_GOAL_COMPILER_MODE", "model").strip().casefold()
+    if goal_compiler_mode not in {"model", "disabled"}:
+        raise ValueError("LLM_GOAL_COMPILER_MODE must be model or disabled")
+    model_adapter = env.get("LLM_MODEL_ADAPTER", "compact-json").strip().casefold()
+    if model_adapter == "compact-json":
+        shared_port = model_port_from_environment(env)
+        policy = model_policy_from_environment(
+            env,
+            call_timeout_s=call_timeout_s,
+            perception_profile=perception_profile,
+            model_port=shared_port,
+        )
+        compiler_model = env.get("LLM_GOAL_COMPILER_MODEL", "").strip()
+        if goal_compiler_mode == "disabled":
+            compiler = UnavailableGoalCompiler()
+        elif compiler_model:
+            compiler = model_goal_compiler_from_environment(
+                _goal_compiler_environment(env),
+                call_timeout_s=call_timeout_s,
+            )
+        else:
+            compiler = model_goal_compiler_from_environment(
+                env,
+                port=shared_port,
+                call_timeout_s=call_timeout_s,
+            )
+    else:
+        policy = model_policy_from_environment(
+            env,
+            call_timeout_s=call_timeout_s,
+            perception_profile=perception_profile,
+        )
+        compiler = (
+            UnavailableGoalCompiler()
+            if goal_compiler_mode == "disabled"
+            else model_goal_compiler_from_environment(
+                _goal_compiler_environment(env),
+                call_timeout_s=call_timeout_s,
+            )
+        )
+    return ConfiguredModelRoles(policy, compiler)
+
+
+def _goal_compiler_environment(environment: Mapping[str, str]) -> Mapping[str, str]:
+    compiler_model = environment.get("LLM_GOAL_COMPILER_MODEL", "").strip()
+    if not compiler_model:
+        return environment
+    model_key = {
+        "zhipu": "LLM_ZHIPU_MODEL",
+        "mistral": "LLM_MISTRAL_MODEL",
+        "gemini": "LLM_GEMINI_MODEL",
+        "local": "LLM_LOCAL_MODEL",
+    }.get(environment.get("LLM_ACTIVE_PROFILE", "local").strip().casefold())
+    if model_key is None:
+        raise ValueError("goal compiler model override requires a supported profile")
+    compiler_environment = dict(environment)
+    compiler_environment[model_key] = compiler_model
+    return compiler_environment
 
 
 def _enabled(value: str) -> bool:

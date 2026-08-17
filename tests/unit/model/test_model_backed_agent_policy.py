@@ -13,6 +13,7 @@ from affordance_runtime.agent.context import ContextBuilder, ModelFailure, Model
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
     ModelMetadata,
@@ -88,7 +89,7 @@ def test_private_binding_route_and_credentials_never_enter_model_request() -> No
 
         request = repr((
             port.request.agent_context.task,
-            port.request.agent_context.progress,
+            port.request.agent_context.goal_plan,
             port.request.agent_context.actions,
             port.request.agent_context.actor_world,
         ))
@@ -173,6 +174,7 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
             ),
             SharedActionEvaluator(),
             SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("atomic_model_policy_test"),
         ).run_task(environment, _task())
 
         assert result.status is RunStatus.FAILED

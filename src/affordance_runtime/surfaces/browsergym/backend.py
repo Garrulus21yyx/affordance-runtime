@@ -14,11 +14,20 @@ from affordance_runtime.surfaces.browsergym.semantics import (
 
 _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
-  selected: Boolean(
-    el.classList.contains('selected') ||
-    el.getAttribute('aria-selected') === 'true' ||
-    el.getAttribute('aria-checked') === 'true'
-  ),
+  selected: (() => {
+    if (el.classList.contains('selected')) return true;
+    for (const name of ['aria-selected', 'aria-checked', 'aria-pressed']) {
+      const value = el.getAttribute(name);
+      if (value === 'true') return true;
+      if (value === 'false') return false;
+    }
+    if ('checked' in el && ['checkbox', 'radio'].includes(String(el.type || '').toLowerCase())) {
+      return Boolean(el.checked);
+    }
+    if (el.tagName.toLowerCase() === 'option') return Boolean(el.selected);
+    return null;
+  })(),
+  active: el.classList.contains('active') ? true : null,
   colorFamily: (() => {
     const style = getComputedStyle(el);
     const background = style.backgroundColor;
@@ -48,6 +57,8 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
   labelHint: (() => {
     const explicit = String(el.getAttribute('aria-label') || '').trim();
     if (explicit) return explicit;
+    const title = String(el.getAttribute('title') || '').trim();
+    if (title) return title;
     if ('labels' in el && el.labels && el.labels.length) {
       const value = Array.from(el.labels).map(label => label.textContent || '').join(' ').trim();
       if (value) return value;
@@ -352,7 +363,16 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             "visible": _effective_visibility(visible, physical),
             "enabled": enabled,
             "readonly": readonly if isinstance(readonly, bool) else None,
-            "selected": physical.get("selected") is True,
+            "selected": (
+                physical.get("selected")
+                if isinstance(physical.get("selected"), bool)
+                else None
+            ),
+            "active": (
+                physical["active"]
+                if isinstance(physical.get("active"), bool)
+                else None
+            ),
             "color_family": (
                 physical.get("colorFamily")
                 if isinstance(physical.get("colorFamily"), str)

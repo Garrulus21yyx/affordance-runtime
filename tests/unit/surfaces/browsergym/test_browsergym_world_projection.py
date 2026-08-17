@@ -579,7 +579,7 @@ def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() 
     task = TaskGoal("task:opaque", raw["goal"], allowed_effects=("external_ui_interaction",))
     evaluation = TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
     context = ContextBuilder().build(task, world, ActionSpaceBuilder().build(task, world), evaluation)
-    serialized = repr((context.task, context.progress, context.actions, context.actor_world))
+    serialized = repr((context.task, context.goal_plan, context.actions, context.actor_world))
     for forbidden in ("private-1", "browsergym/miniwob", "selector", "expected_answer", "RAW_REWARD_GLOBAL"):
         assert forbidden not in serialized
     assert context.task.instruction == raw["goal"]

@@ -26,6 +26,12 @@ from affordance_runtime.world import AcquisitionStatus, ObservationAcquisition
 class BenchmarkInstrumentation:
     policy_calls: int = 0
     policy_schema_repair_count: int = 0
+    goal_compiler_calls: int = 0
+    goal_compiler_provider_attempts: int = 0
+    goal_compiler_schema_repair_count: int = 0
+    goal_compiler_contract_repair_count: int = 0
+    goal_compiler_ready_count: int = 0
+    goal_compiler_unavailable_count: int = 0
     tool_argument_repair_count: int = 0
     valid_tool_call_count: int = 0
     zero_tool_call_count: int = 0
@@ -85,6 +91,24 @@ class BenchmarkInstrumentation:
 
     def run_start_failed(self, task, acquisition) -> None:
         self.trace_recorder.run_start_failed(task, acquisition)
+
+    def goal_compiler_completed(self, diagnostic) -> None:
+        self.trace_recorder.goal_compiler_completed(diagnostic)
+        self.goal_compiler_calls += 1
+        self.goal_compiler_provider_attempts += int(
+            diagnostic.get("provider_attempt_count", 0)
+        )
+        self.goal_compiler_schema_repair_count += int(
+            diagnostic.get("schema_repair_count", 0)
+        )
+        self.goal_compiler_contract_repair_count += int(
+            diagnostic.get("contract_repair_count", 0)
+        )
+        disposition = diagnostic.get("final_disposition")
+        self.goal_compiler_ready_count += int(disposition == "ready")
+        self.goal_compiler_unavailable_count += int(
+            disposition in {"unsupported", "failed"}
+        )
 
     def model_turn(self, context, outcome, policy, *, exception: str = "") -> None:
         self.trace_recorder.model_turn(context, outcome, policy, exception=exception)
@@ -394,7 +418,12 @@ class CountingDecisionPort:
             self.instrumentation.provider_attempts += max(model_calls, attempt_count + schema_repairs)
             self.instrumentation.policy_schema_repair_count += schema_repairs
             _record_dynamic_tool_metrics(self.instrumentation, self.wrapped)
-            self.instrumentation.provider_retry_count += max(0, attempt_count - 1)
+            explicit_retries = getattr(self.wrapped, "last_provider_retry_count", None)
+            self.instrumentation.provider_retry_count += (
+                int(explicit_retries)
+                if explicit_retries is not None
+                else max(0, attempt_count - 1)
+            )
             self.instrumentation.fallback_count += int(getattr(self.wrapped, "last_fallback_count", 0))
 
 

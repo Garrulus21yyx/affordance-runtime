@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from itertools import permutations
 
 from affordance_runtime.actions import ActionSpace
@@ -130,6 +130,21 @@ def test_corresponded_structure_retains_one_canonical_entity_with_all_source_ref
     assert entity_nodes[0].state_evidence
     assert entity_nodes[0].source_refs == ("S1", "S2")
     assert len(snapshot.documents) == 1
+
+
+def test_blank_semantic_label_falls_back_to_the_structure_label() -> None:
+    source = _source(
+        "dom:1", "dom-target", profile=ObservationSourceProfile.dom(), structure_prefix="dom"
+    )
+    source = replace(
+        source,
+        targets=(replace(source.targets[0], label=""),),
+    )
+
+    _, snapshot = _snapshot((source,))
+
+    target = next(item for item in _nodes(snapshot) if item.ref.startswith("E"))
+    assert target.label == "Save"
 
 
 def test_actor_semantic_payload_is_source_permutation_invariant() -> None:

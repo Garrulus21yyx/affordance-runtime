@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
@@ -25,7 +26,12 @@ from affordance_runtime.agent.evaluation_control import (
     validated_action_evaluation,
     validated_task_evaluation,
 )
-from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
+from affordance_runtime.agent.observability import (
+    NullRunTraceSink,
+    RunTraceSink,
+    goal_compiler_trace_diagnostic,
+    goal_guidance_trace_payload,
+)
 from affordance_runtime.agent.policy import (
     ActionEvaluator,
     AgentDecisionPorts,
@@ -44,6 +50,13 @@ from affordance_runtime.evaluation.contracts import (
 )
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.execution.contracts import DispatchStatus
+from affordance_runtime.goals.compiler import (
+    GoalCompiler,
+    GoalCompileTrigger,
+    GoalPlanBoundary,
+    UnavailableGoalCompiler,
+)
+from affordance_runtime.goals.plan import NeedsInput, Ready
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
@@ -88,6 +101,8 @@ class CoreAgentLoop:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     trace_sink: RunTraceSink = field(default_factory=NullRunTraceSink)
+    goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
+    goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
 
     async def run(
         self,
@@ -110,14 +125,47 @@ class CoreAgentLoop:
             raise CoreLoopStartError(acquisition.reason_code)
         initial = acquisition.observation
         evaluation = await validated_task_evaluation(self.task_evaluator, task, initial)
+        resolution = await self.goal_plan_boundary.resolve(
+            self.goal_compiler,
+            task,
+            initial,
+            next_plan_version=1,
+            trigger=GoalCompileTrigger.TASK_START,
+        )
         state = RunState(
             initial,
             evaluation,
             task.loop_budget.max_turns,
-            status=self._status_for_task(task, evaluation),
+            status=self._status_for_goal_resolution(task, evaluation, resolution),
             task_revision=task.revision,
+            goal_resolution=resolution,
+            goal_plan_version_counter=(
+                resolution.accepted_plan.plan_version if isinstance(resolution, Ready) else 0
+            ),
         )
+        if isinstance(resolution, NeedsInput) and state.status is RunStatus.WAITING_USER:
+            state.last_step = StepResult(
+                AskUser(
+                    f"context:goal-compiler:{task.revision}",
+                    resolution.question,
+                    resolution.fields,
+                ),
+                initial,
+                initial,
+                evaluation,
+                RunStatus.WAITING_USER,
+                feedback="goal_compiler_needs_input",
+            )
         self.trace_sink.run_started(task, state)
+        self.trace_sink.goal_compiler_completed(
+            goal_compiler_trace_diagnostic(
+                self.goal_compiler,
+                resolution,
+                task_revision=task.revision,
+                trigger=GoalCompileTrigger.TASK_START,
+                initial_evidence=initial,
+            )
+        )
         return state
 
     async def continue_run(
@@ -171,23 +219,64 @@ class CoreAgentLoop:
         ):
             raise ValueError("core user resume requires one consecutive task revision")
         await environment.revise_task(task)
-        self.trace_sink.run_resumed("user", {"task_revision": task.revision})
+        state.goal_resolution = None
         evaluation = await validated_task_evaluation(
             self.task_evaluator,
             task,
             state.current_world,
         )
+        resolution = await self.goal_plan_boundary.resolve(
+            self.goal_compiler,
+            task,
+            state.current_world,
+            next_plan_version=state.goal_plan_version_counter + 1,
+            trigger=GoalCompileTrigger.TASK_REVISION,
+        )
+        status = self._status_for_goal_resolution(task, evaluation, resolution)
+        decision = (
+            AskUser(
+                f"context:goal-compiler:{task.revision}",
+                resolution.question,
+                resolution.fields,
+            )
+            if isinstance(resolution, NeedsInput) and status is RunStatus.WAITING_USER
+            else pending.decision
+        )
         resumed = replace(
             pending,
+            decision=decision,
             task_evaluation=evaluation,
-            status_after=self._status_for_task(task, evaluation),
-            feedback="user_input_received",
+            status_after=status,
+            feedback=(
+                "goal_compiler_needs_input"
+                if isinstance(resolution, NeedsInput) and status is RunStatus.WAITING_USER
+                else "user_input_received"
+            ),
         )
         state.current_task_evaluation = evaluation
         state.task_revision = task.revision
+        state.goal_resolution = resolution
+        if isinstance(resolution, Ready):
+            state.goal_plan_version_counter = resolution.accepted_plan.plan_version
         state.status = resumed.status_after
         state.last_step = resumed
         state.action_page = None
+        self.trace_sink.run_resumed(
+            "user",
+            {
+                "task_revision": task.revision,
+                "goal_guidance": goal_guidance_trace_payload(resolution),
+            },
+        )
+        self.trace_sink.goal_compiler_completed(
+            goal_compiler_trace_diagnostic(
+                self.goal_compiler,
+                resolution,
+                task_revision=task.revision,
+                trigger=GoalCompileTrigger.TASK_REVISION,
+                initial_evidence=state.current_world,
+            )
+        )
         if state.status is RunStatus.RUNNING:
             state.remember_step(project_step_result(resumed))
         return await self._run_until_pause(environment, task, state)
@@ -265,13 +354,28 @@ class CoreAgentLoop:
             action_space,
             state.current_task_evaluation,
             state.recent_steps,
-            state.step_count,
+            max(state.step_count, len(state.recent_steps)),
             action_page=action_page,
             context_generation=state.next_context_generation(),
             observation_capabilities=environment.observation_capabilities,
+            goal_resolution=state.goal_resolution,
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)
+        except asyncio.CancelledError as exc:
+            # Preserve provider attempts already captured by the adapter before
+            # propagating an orchestrator/watchdog cancellation unchanged.
+            failure = PolicyFailure(
+                ModelFailureKind.TIMEOUT,
+                "policy decision was cancelled by its enclosing deadline",
+            )
+            self.trace_sink.model_turn(
+                context,
+                failure,
+                self.decision_ports.action_policy,
+                exception=type(exc).__name__,
+            )
+            raise
         except Exception as exc:
             failure = PolicyFailure(
                 ModelFailureKind.INTERNAL_ERROR,
@@ -612,6 +716,12 @@ class CoreAgentLoop:
             self._status_for_task(task, task_evaluation),
             feedback="binding_refreshed",
         )
+
+    def _status_for_goal_resolution(self, task, evaluation, resolution) -> RunStatus:
+        task_status = self._status_for_task(task, evaluation)
+        if task_status is not RunStatus.RUNNING:
+            return task_status
+        return RunStatus.WAITING_USER if isinstance(resolution, NeedsInput) else task_status
 
     def _status_for_task(self, task: TaskGoal, evaluation: TaskEvaluation) -> RunStatus:
         if (

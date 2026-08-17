@@ -197,6 +197,7 @@ def _build_runtime(composition, instrumentation):
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,
         trace_sink=instrumentation,
+        goal_compiler=composition.goal_compiler,
     )
 
 

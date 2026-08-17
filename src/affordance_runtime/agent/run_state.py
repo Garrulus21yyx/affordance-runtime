@@ -14,6 +14,7 @@ from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
 from affordance_runtime.execution.contracts import ExecutionOutcome
+from affordance_runtime.goals.plan import GoalPlanResolution, Ready
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -105,6 +106,8 @@ class RunState:
     action_page: InternalActionPage | None = None
     waited_ms: int = 0
     task_revision: int = 1
+    goal_resolution: GoalPlanResolution | None = None
+    goal_plan_version_counter: int = 0
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -117,6 +120,14 @@ class RunState:
             raise ValueError("run wait duration cannot be negative")
         if self.task_revision < 1:
             raise ValueError("run task revision must be positive")
+        if self.goal_plan_version_counter < 0:
+            raise ValueError("goal plan version counter cannot be negative")
+        if isinstance(self.goal_resolution, Ready):
+            plan = self.goal_resolution.accepted_plan
+            if plan.task_revision != self.task_revision:
+                raise ValueError("ready run goal plan must match the current task")
+            if self.goal_plan_version_counter < plan.plan_version:
+                raise ValueError("goal plan counter cannot precede the accepted plan")
         self.recent_steps = tuple(self.recent_steps)
         if len(self.recent_steps) > MAX_RECENT_STEPS or any(
             not isinstance(item, AgentTurnView) for item in self.recent_steps

@@ -7,6 +7,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.surfaces.browsergym import backend as browsergym_backend
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
@@ -150,6 +151,53 @@ def test_dom_semantics_are_invariant_to_attribute_order(order: tuple[str, ...]) 
         "semantic.dom.attribute.class_tokens": ("like", "active"),
         "semantic.name_status": "unknown",
     }
+
+
+def test_physical_capture_uses_unknown_for_an_absent_active_class() -> None:
+    assert (
+        "active: el.classList.contains('active') ? true : null"
+        in browsergym_backend._PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
+    )
+    raw = raw_observation(ax_node("control", "generic", ""))
+    raw["extra_element_properties"]["control"]["clickable"] = True
+    raw["dom_object"] = dom_snapshot(("span", "control", {"class": "like"}),)
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"]["active"] = None
+
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    assert "active" not in dict(control.public_state)
+
+
+def test_physical_active_class_is_public_true_without_inventing_selected_state() -> None:
+    raw = raw_observation(ax_node("control", "generic", ""))
+    raw["extra_element_properties"]["control"]["clickable"] = True
+    raw["dom_object"] = dom_snapshot(("span", "control", {"class": "like active"}),)
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"].update({
+        "active": True,
+        "selected": None,
+        "label_hint": "Like",
+    })
+
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    assert control.accessible_name == "Like"
+    assert dict(control.public_state)["active"] is True
+    assert "selected" not in dict(control.public_state)
+
+
+def test_explicit_toggle_convention_active_false_reaches_public_world() -> None:
+    raw = raw_observation(ax_node("control", "button", "Like"))
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"]["active"] = False
+    projection = _projection(raw)
+
+    assert any(
+        item.subject_id == projection.world.targets[0].target_id
+        and item.predicate == "active"
+        and item.value is False
+        for item in projection.world.facts
+    )
 
 
 def test_dom_class_change_is_public_effect_evidence_without_exposing_bid() -> None:

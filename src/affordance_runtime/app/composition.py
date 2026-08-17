@@ -26,7 +26,8 @@ from affordance_runtime.agent.policy import (
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
-from affordance_runtime.model.policy import model_policy_from_environment
+from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
+from affordance_runtime.model.policy import model_roles_from_environment
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.intake import TaskIntake, ThinTaskIntake
 
@@ -44,6 +45,8 @@ def compose_target_runtime(
     context_builder: ContextBuilder | None = None,
     wait_controller: WaitController | None = None,
     trace_sink: RunTraceSink | None = None,
+    goal_compiler: GoalCompiler | None = None,
+    goal_plan_boundary: GoalPlanBoundary | None = None,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -59,6 +62,8 @@ def compose_target_runtime(
         wait_controller=wait_controller or SystemWaitController(),
         trace_sink=trace_sink if trace_sink is not None else NullRunTraceSink(),
         required_decisions=required_decisions,
+        goal_compiler=goal_compiler or UnavailableGoalCompiler(),
+        goal_plan_boundary=goal_plan_boundary or GoalPlanBoundary(),
     )
 
 
@@ -70,14 +75,15 @@ def compose_target_runtime_from_environment(
     """Compose the configured model against the supported product GUI control set."""
 
     runtime_environment = os.environ if environment is None else environment
-    policy = model_policy_from_environment(
+    model_roles = model_roles_from_environment(
         runtime_environment,
         call_timeout_s=call_timeout_s,
     )
     return compose_target_runtime(
-        policy,
+        model_roles.action_policy,
         ProductionActionEvaluator(),
         ProductionTaskEvaluator(),
         required_decisions=GROUNDED_ACTION_DECISION_CAPABILITIES,
         trace_sink=trace_recorder_from_environment(runtime_environment),
+        goal_compiler=model_roles.goal_compiler,
     )

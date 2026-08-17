@@ -78,6 +78,11 @@ class ModelConfig(BaseModel):
     transient_retries: int = Field(default=1, ge=0, le=3)
     transient_backoff_s: float = Field(default=0.5, ge=0.0, le=5.0)
     prompt_version: str = "1.0"
+    structured_output_mode: Literal[
+        "native_json_schema",
+        "json_object_prompt_schema",
+        "prompt_json_local_validation",
+    ] | None = None
 
 
 class ModelCallRecord(BaseModel):
@@ -232,10 +237,15 @@ class OpenAICompatibleModelPort:
         self.last_call = None
         self.last_transcript = None
         schema = output_schema.model_json_schema()
+        selected_output_mode = (
+            self.structured_output_mode
+            if config.structured_output_mode is None
+            else StructuredOutputMode(config.structured_output_mode)
+        )
         request_messages = _messages_with_structured_output_contract(
             messages,
             schema,
-            self.structured_output_mode,
+            selected_output_mode,
         )
         serialized_messages = _serialize_openai_compatible_messages(
             request_messages,
@@ -247,7 +257,7 @@ class OpenAICompatibleModelPort:
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
         }
-        if self.structured_output_mode is StructuredOutputMode.NATIVE_JSON_SCHEMA:
+        if selected_output_mode is StructuredOutputMode.NATIVE_JSON_SCHEMA:
             body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
@@ -256,7 +266,7 @@ class OpenAICompatibleModelPort:
                     "schema": schema,
                 },
             }
-        elif self.structured_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA:
+        elif selected_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA:
             body["response_format"] = {"type": "json_object"}
         if self.thinking_mode is not None:
             body["thinking"] = {"type": self.thinking_mode}

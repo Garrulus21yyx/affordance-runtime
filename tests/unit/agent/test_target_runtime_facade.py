@@ -17,6 +17,7 @@ from affordance_runtime.app import (
 )
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.task import ReadyTask, RiskProfile, TaskInputRequired
 from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
 from tests.support.world import fused_world
@@ -69,6 +70,7 @@ def _runtime(policy: AskForAccountPolicy | None = None):
         policy or AskForAccountPolicy(),
         UnusedActionEvaluator(),
         InputAwareTaskEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("atomic_runtime_facade_test"),
     )
 
 

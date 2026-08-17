@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Affordance Flight Recorder</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="wordmark">
+        <span class="wordmark-kicker">AFFORDANCE / RUNTIME</span>
+        <h1>Flight recorder</h1>
+      </div>
+      <div class="system-state" aria-live="polite">
+        <span class="signal" id="systemSignal"></span>
+        <div><b id="systemLabel">Connecting</b><small id="systemDetail">Reading local configuration</small></div>
+      </div>
+    </header>
+
+    <main class="console-grid">
+      <aside class="configuration panel" aria-labelledby="configurationTitle">
+        <div class="panel-heading">
+          <span class="section-code">CONTROL</span>
+          <h2 id="configurationTitle">Compose one run</h2>
+        </div>
+
+        <form id="runForm">
+          <label class="field">
+            <span>MiniWoB task</span>
+            <select id="caseSelect" name="case_id"></select>
+            <small id="caseMeta">Frozen manifest</small>
+          </label>
+
+          <div class="role-block action-role">
+            <div class="role-title"><span>A</span><b>Action policy</b></div>
+            <label class="field">
+              <span>Model</span>
+              <select id="actionModel" name="action_model"></select>
+            </label>
+            <div class="inline-readout">
+              <span>Adapter</span><b id="adapterReadout">—</b>
+              <span>Thinking</span><b id="thinkingReadout">—</b>
+            </div>
+          </div>
+
+          <div class="role-block goal-role">
+            <div class="role-title"><span>G</span><b>Goal compiler</b></div>
+            <div class="segmented" role="group" aria-label="Goal compiler mode">
+              <button type="button" data-mode="model" class="active">Model</button>
+              <button type="button" data-mode="disabled">Disabled</button>
+            </div>
+            <label class="field" id="goalModelField">
+              <span>Model</span>
+              <select id="goalModel" name="goal_compiler_model"></select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Perception</span>
+            <select id="perceptionSelect" name="perception_profile"></select>
+          </label>
+
+          <label class="field">
+            <span>Evidence profile</span>
+            <input id="profileInput" value="CONSOLE_EXPERIMENT" maxlength="80" pattern="[A-Z][A-Z0-9_]{2,79}" />
+          </label>
+
+          <div class="launch-row">
+            <button class="launch" id="launchButton" type="submit"><span>Launch formal run</span><i>↗</i></button>
+            <button class="stop" id="stopButton" type="button" disabled>Stop</button>
+          </div>
+          <p class="form-error" id="formError" role="alert"></p>
+        </form>
+      </aside>
+
+      <section class="trajectory panel" aria-labelledby="trajectoryTitle">
+        <div class="panel-heading trajectory-heading">
+          <div><span class="section-code">LIVE LINEAGE</span><h2 id="trajectoryTitle">Run trajectory</h2></div>
+          <div class="run-clock"><span id="runStatus">IDLE</span><b id="runClock">00:00</b></div>
+        </div>
+        <div class="metric-strip">
+          <div><span>Events</span><b id="eventCount">0</b></div>
+          <div><span>Policy turns</span><b id="turnCount">0</b></div>
+          <div><span>Executions</span><b id="executionCount">0</b></div>
+          <div><span>Outcome</span><b id="outcomeReadout">—</b></div>
+        </div>
+        <div class="rail" id="eventRail" aria-live="polite">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-orbit"><span></span></div>
+            <h3>No run in flight</h3>
+            <p>Choose two cognitive roles and one frozen task. Events will appear in Runtime order.</p>
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector panel" aria-labelledby="inspectorTitle">
+        <div class="panel-heading inspector-heading">
+          <div><span class="section-code">EVIDENCE</span><h2 id="inspectorTitle">Trace inspector</h2></div>
+          <button id="copyButton" type="button" disabled>Copy JSON</button>
+        </div>
+        <div class="inspector-summary" id="inspectorSummary">
+          <span>Select an event</span>
+          <p>Provider attempts, compiler output, action decisions and verifier facts remain separate.</p>
+        </div>
+        <pre id="jsonInspector" tabindex="0">{}</pre>
+        <div class="stdout-drawer">
+          <button id="stdoutToggle" type="button">Runner output <span>＋</span></button>
+          <pre id="stdoutOutput" hidden></pre>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <span>Local only · formal runner · append-only evidence</span>
+      <span id="evidencePath">No evidence directory</span>
+    </footer>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

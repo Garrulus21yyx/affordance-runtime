@@ -3,6 +3,7 @@
 from typing import Protocol
 
 from affordance_runtime.execution.contracts import BoundActionRequest, ExecutionOutcome
+from affordance_runtime.goals.contracts import GoalSemanticContract
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationAcquisition,
@@ -12,6 +13,9 @@ from affordance_runtime.world.acquisition import (
 
 
 class WorldEnvironment(Protocol):
+    @property
+    def goal_semantic_contract(self) -> GoalSemanticContract: ...
+
     @property
     def observation_capabilities(self) -> ObservationCapabilities: ...
 

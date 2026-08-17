@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.goals import GoalPredicateValueType, GoalSemanticContract
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymBindingStore,
     BrowserGymDragBinding,
@@ -30,6 +31,10 @@ from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
 from affordance_runtime.surfaces.browsergym.execution import browsergym_action
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
+    BROWSERGYM_INTERACTION_CAPABILITIES,
+    observable_browsergym_roles,
+)
 from affordance_runtime.surfaces.browsergym.lifecycle_identity import (
     episode_identity,
     page_identity,
@@ -168,6 +173,28 @@ class BrowserGymSurfaceAdapter:
     _pending_raw: dict[str, object] | None = field(default=None, init=False, repr=False)
     _pending_snapshot: BrowserGymTaskStateSnapshot | None = field(default=None, init=False, repr=False)
     _pending_observation_id: str = field(default="", init=False, repr=False)
+
+    @property
+    def goal_semantic_contract(self) -> GoalSemanticContract:
+        return GoalSemanticContract(
+            entity_kinds=observable_browsergym_roles(),
+            predicates={
+                "label": GoalPredicateValueType.STRING,
+                "kind": GoalPredicateValueType.STRING,
+                "role": GoalPredicateValueType.STRING,
+                "active": GoalPredicateValueType.BOOLEAN,
+                "checked": GoalPredicateValueType.BOOLEAN,
+                "expanded": GoalPredicateValueType.BOOLEAN,
+                "required": GoalPredicateValueType.BOOLEAN,
+                "selected": GoalPredicateValueType.BOOLEAN,
+                "value": GoalPredicateValueType.STRING,
+            },
+            relations=frozenset({"child_ids", "parent_id"}),
+            finalizer_capabilities=frozenset(
+                capability.semantic_definition.semantic_action
+                for capability in BROWSERGYM_INTERACTION_CAPABILITIES.capabilities
+            ),
+        )
     _pending_revision: str = field(default="", init=False, repr=False)
     _pending_acquisition_id: str = field(default="", init=False, repr=False)
     _pending_projection: BrowserGymProjection | None = field(default=None, init=False, repr=False)

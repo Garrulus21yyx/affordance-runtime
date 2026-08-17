@@ -15,6 +15,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
+from affordance_runtime.goals.plan import Failed, NeedsInput, NotRequired, Ready, Unsupported
+
 
 class RunTraceSink(Protocol):
     """Observe Runtime facts without participating in Runtime control."""
@@ -22,6 +24,8 @@ class RunTraceSink(Protocol):
     def run_started(self, task: object, state: object) -> None: ...
 
     def run_start_failed(self, task: object, acquisition: object) -> None: ...
+
+    def goal_compiler_completed(self, diagnostic: object) -> None: ...
 
     def model_turn(
         self,
@@ -48,6 +52,9 @@ class NullRunTraceSink:
         return None
 
     def run_start_failed(self, task: object, acquisition: object) -> None:
+        return None
+
+    def goal_compiler_completed(self, diagnostic: object) -> None:
         return None
 
     def model_turn(
@@ -107,6 +114,7 @@ class RunTraceRecorder:
             task=_json_value(task, self.directory),
             initial_status=_enum_value(getattr(state, "status", "")),
             max_steps=getattr(state, "remaining_steps", None),
+            goal_guidance=_goal_guidance_payload(state),
         )
         self._observation(getattr(state, "current_world", None))
 
@@ -117,6 +125,12 @@ class RunTraceRecorder:
             acquisition=_json_value(acquisition, self.directory),
         )
         self._export_flush()
+
+    def goal_compiler_completed(self, diagnostic: object) -> None:
+        self._emit(
+            "goal_compiler_completed",
+            diagnostic=_json_value(diagnostic, self.directory),
+        )
 
     def model_turn(
         self,
@@ -225,6 +239,107 @@ class RunTraceRecorder:
             self.errors.append(f"flush:{type(exc).__name__}")
 
 
+def _goal_guidance_payload(state: object) -> dict[str, object]:
+    """Project optional goal guidance for tracing without creating control state."""
+
+    return goal_guidance_trace_payload(
+        getattr(state, "goal_resolution", None),
+    )
+
+
+def goal_guidance_trace_payload(
+    resolution: object,
+) -> dict[str, object]:
+    """Mechanically project a resolution for run-start or revision tracing."""
+
+    if isinstance(resolution, Ready):
+        return {
+            "disposition": "ready",
+            "plan_version": resolution.accepted_plan.plan_version,
+            "plan_digest": resolution.accepted_plan.digest,
+        }
+    if isinstance(resolution, NotRequired):
+        return {"disposition": "not_required", "reason": resolution.reason}
+    if isinstance(resolution, Failed):
+        return {
+            "disposition": "unavailable",
+            "outcome": "failed",
+            "reason": resolution.reason,
+        }
+    if isinstance(resolution, Unsupported):
+        return {
+            "disposition": "unavailable",
+            "outcome": "unsupported",
+            "reason": resolution.reason,
+        }
+    if isinstance(resolution, NeedsInput):
+        return {"disposition": "needs_input"}
+    return {"disposition": "unavailable", "reason": "goal_guidance_not_resolved"}
+
+
+def goal_compiler_trace_diagnostic(
+    compiler: object,
+    resolution: object,
+    *,
+    task_revision: int,
+    trigger: object,
+    initial_evidence: object | None,
+) -> dict[str, object]:
+    """Project one completed compilation lineage without creating Runtime state."""
+
+    attempts = tuple(getattr(compiler, "last_generation_attempts", ()))
+    if isinstance(resolution, Ready):
+        disposition = "ready"
+        reason = ""
+        question = ""
+        fields: tuple[str, ...] = ()
+        plan_version: int | None = resolution.accepted_plan.plan_version
+    elif isinstance(resolution, NotRequired):
+        disposition, reason, question, fields, plan_version = (
+            "not_required", resolution.reason, "", (), None,
+        )
+    elif isinstance(resolution, NeedsInput):
+        disposition, reason, question, fields, plan_version = (
+            "needs_input", "", resolution.question, resolution.fields, None,
+        )
+    elif isinstance(resolution, Unsupported):
+        disposition, reason, question, fields, plan_version = (
+            "unsupported", resolution.reason, "", (), None,
+        )
+    elif isinstance(resolution, Failed):
+        disposition, reason, question, fields, plan_version = (
+            "failed", resolution.reason, "", (), None,
+        )
+    else:
+        disposition, reason, question, fields, plan_version = (
+            "failed", "invalid_goal_compiler_outcome", "", (), None,
+        )
+    port = getattr(compiler, "port", None)
+    config = getattr(compiler, "config", None)
+    return {
+        "task_revision": task_revision,
+        "trigger": _enum_value(trigger),
+        "final_disposition": disposition,
+        "accepted_plan_version": plan_version,
+        "reason": reason,
+        "question": question,
+        "missing_fields": tuple(fields),
+        "schema_repair_count": int(getattr(compiler, "last_schema_repair_count", 0)),
+        "contract_repair_count": sum(
+            getattr(item, "phase", "") == "goal_compile_contract_repair"
+            for item in attempts
+        ),
+        "provider_attempt_count": len(attempts),
+        "generation_attempts": attempts,
+        "compiler_prompt_version": str(getattr(config, "prompt_version", "")),
+        "provider_id": str(getattr(port, "provider", "")),
+        "model_id": str(getattr(port, "model", "")),
+        "initial_evidence_observation_id": str(
+            getattr(initial_evidence, "observation_id", "")
+        ),
+    }
+
+
 @dataclass
 class LangfuseTraceExporter:
     """Optional Langfuse viewer for the same local trace facts."""
@@ -256,7 +371,51 @@ class LangfuseTraceExporter:
             return
         if self.root is None:
             return
-        if event_type == "model_turn":
+        if event_type == "goal_compiler_completed":
+            diagnostic = event.get("diagnostic", {})
+            diagnostic = diagnostic if isinstance(diagnostic, Mapping) else {}
+            turn = self.root.start_observation(
+                name="goal-compiler",
+                as_type="chain",
+                input={
+                    "task_revision": diagnostic.get("task_revision"),
+                    "trigger": diagnostic.get("trigger"),
+                    "initial_evidence_observation_id": diagnostic.get("initial_evidence_observation_id"),
+                },
+                output={
+                    "final_disposition": diagnostic.get("final_disposition"),
+                    "accepted_plan_version": diagnostic.get("accepted_plan_version"),
+                    "reason": diagnostic.get("reason"),
+                },
+                metadata=_external_projection({
+                    key: diagnostic.get(key)
+                    for key in (
+                        "compiler_prompt_version", "provider_id", "model_id",
+                        "schema_repair_count", "contract_repair_count",
+                    )
+                }),
+            )
+            for attempt in diagnostic.get("generation_attempts", ()):
+                if not isinstance(attempt, Mapping):
+                    continue
+                transcript = attempt.get("transcript")
+                transcript = transcript if isinstance(transcript, Mapping) else {}
+                child = turn.start_observation(
+                    name=str(attempt.get("phase") or "goal-compiler-generation"),
+                    as_type="generation",
+                    input=_external_projection(transcript.get("llm.input_messages")),
+                    output=_external_projection(transcript.get("llm.output_messages")),
+                    model=transcript.get("llm.model_name"),
+                    usage_details={
+                        "input": transcript.get("llm.token_count.prompt", 0),
+                        "output": transcript.get("llm.token_count.completion", 0),
+                        "total": transcript.get("llm.token_count.total", 0),
+                    },
+                    metadata=_external_projection(attempt),
+                )
+                child.end()
+            turn.end()
+        elif event_type == "model_turn":
             turn = self.root.start_observation(
                 name="model-turn",
                 as_type="chain",

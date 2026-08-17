@@ -717,7 +717,7 @@ def _structure_documents(
             return ActorWorldNodeView(
                 actor_refs[structure_id],
                 target.role if target is not None else item.role,
-                target.label if target is not None else item.label,
+                (target.label or item.label) if target is not None else item.label,
                 target.state if target is not None else item.state,
                 evidence_by_subject.get(canonical_id or "", {}),
                 tuple(facts_by_subject.get(canonical_id or "", ())),

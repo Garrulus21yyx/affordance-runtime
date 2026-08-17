@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 
@@ -28,6 +29,34 @@ class AgentMaterialBindingView:
 
 
 @dataclass(frozen=True)
+class AgentCriterionEvaluationView:
+    criterion_id: str
+    status: str
+
+
+@dataclass(frozen=True)
+class AgentEvaluatedOutputView:
+    output_id: str
+    value: object
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", freeze_json(self.value))
+
+
+@dataclass(frozen=True)
+class AgentTaskEvaluationView:
+    status: str
+    criteria: tuple[AgentCriterionEvaluationView, ...] = ()
+    outputs: tuple[AgentEvaluatedOutputView, ...] = ()
+    verified_public_facts: tuple[PublicFactView, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "criteria", tuple(self.criteria))
+        object.__setattr__(self, "outputs", tuple(self.outputs))
+        object.__setattr__(self, "verified_public_facts", tuple(self.verified_public_facts))
+
+
+@dataclass(frozen=True)
 class AgentTaskView:
     task_id: str
     instruction: str
@@ -43,6 +72,9 @@ class AgentTaskView:
     )
     public_inputs_total_count: int = 0
     public_inputs_truncated: bool = False
+    evaluation: AgentTaskEvaluationView = field(
+        default_factory=lambda: AgentTaskEvaluationView("unknown")
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))

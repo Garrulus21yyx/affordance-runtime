@@ -17,6 +17,7 @@ from affordance_runtime.app import (
     compose_target_runtime,
 )
 from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
+from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
 from affordance_runtime.surfaces.http_json import (
@@ -83,6 +84,7 @@ def test_target_settings_confirms_action_then_completes_from_unified_authoritati
             policy,
             ProductionActionEvaluator(),
             ProductionTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("atomic_reference_target_test"),
         )
         registration = HttpJsonSourceRegistration(
             "reference-settings-state",

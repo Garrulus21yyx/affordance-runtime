@@ -9,9 +9,19 @@ from affordance_runtime.agent.observability import (
     RunTraceRecorder,
     trace_recorder_from_environment,
 )
+from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
-from tests.integration.agent.test_core_loop import _runtime, _task, _world
+from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
+from tests.integration.agent.test_core_loop import (
+    CoreActionEvaluator,
+    CoreTaskEvaluator,
+    _runtime,
+    _task,
+    _world,
+)
 
 
 def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -> None:
@@ -31,12 +41,18 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert [item["event"] for item in persisted] == [
             "run_started",
             "observation",
+            "goal_compiler_completed",
             "model_turn",
             "observation",
             "step_completed",
             "run_finished",
         ]
         model_turn = next(item for item in persisted if item["event"] == "model_turn")
+        run_started = next(item for item in persisted if item["event"] == "run_started")
+        assert run_started["goal_guidance"] == {
+            "disposition": "not_required",
+            "reason": "atomic_core_loop_test",
+        }
         assert model_turn["selected_grounding"]["source"]["target_id"] == "shared-toggle"
         step = next(item for item in persisted if item["event"] == "step_completed")
         assert step["lineage"]["tool_call_id"] == "provider-call:test"
@@ -51,6 +67,84 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
 
     asyncio.run(scenario())
 
+
+def test_cancelled_policy_turn_projects_already_captured_provider_attempts(tmp_path) -> None:
+    class CancelledPolicy:
+        last_catalog_count = 0
+        last_generation_attempts = (
+            ModelGenerationAttempt(
+                1,
+                "initial",
+                "grounded_tools.v2",
+                "failed",
+                exception_class="ModelAPIError",
+                transcript={"error.code": "unavailable"},
+            ),
+        )
+
+        async def decide(self, _context):
+            raise asyncio.CancelledError
+
+    async def scenario() -> None:
+        recorder = RunTraceRecorder(tmp_path)
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CancelledPolicy()),
+            CoreActionEvaluator(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("cancelled_trace_test"),
+            trace_sink=recorder,
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await runtime.run_task(
+                ScriptedEnvironment(initial_observation=_world("before", False)),
+                _task(),
+            )
+
+        events = [json.loads(line) for line in recorder.path.read_text().splitlines()]
+        turn = next(item for item in events if item["event"] == "model_turn")
+        assert turn["exception"] == "CancelledError"
+        assert turn["generation_attempts"][0]["transcript"]["error.code"] == "unavailable"
+        assert events[-1]["event"] == "run_error"
+
+    asyncio.run(scenario())
+
+
+
+def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tmp_path) -> None:
+    from affordance_runtime.agent.observability import goal_compiler_trace_diagnostic
+    from affordance_runtime.goals import Failed
+    from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
+
+    class Compiler:
+        last_schema_repair_count = 1
+        last_generation_attempts = (
+            ModelGenerationAttempt(
+                1, "goal_compile_initial", "GoalCompilerModelResponse",
+                "schema_error", transcript={"llm.output_messages": [{"content": "raw one"}]},
+            ),
+            ModelGenerationAttempt(
+                2, "goal_compile_schema_repair", "GoalCompilerModelResponse",
+                "accepted", transcript={"llm.output_messages": [{"content": "raw two"}]},
+            ),
+        )
+        port = type("Port", (), {"provider": "fixture", "model": "model"})()
+        config = type("Config", (), {"prompt_version": "prompt.v1"})()
+
+    diagnostic = goal_compiler_trace_diagnostic(
+        Compiler(), Failed(1, "invalid_goal_proposal"), task_revision=1,
+        trigger="task_start", initial_evidence=None,
+    )
+    recorder = RunTraceRecorder(tmp_path)
+    recorder.goal_compiler_completed(diagnostic)
+    event = json.loads(recorder.path.read_text())
+
+    assert event["event"] == "goal_compiler_completed"
+    assert [item["transcript"]["llm.output_messages"][0]["content"] for item in event["diagnostic"]["generation_attempts"]] == [
+        "raw one", "raw two",
+    ]
+    assert event["diagnostic"]["schema_repair_count"] == 1
+    assert "run_state" not in event["diagnostic"]
 
 def test_binary_payloads_are_content_addressed_and_not_inlined(tmp_path) -> None:
     @dataclass(frozen=True)

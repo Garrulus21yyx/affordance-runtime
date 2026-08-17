@@ -65,7 +65,7 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
         assert private not in representation
 
 
-def test_verified_progress_contains_only_evaluator_supported_facts() -> None:
+def test_task_view_contains_only_evaluator_supported_facts() -> None:
     observation = fused_world(
         "world:progress",
         (SemanticTarget("target:1", "status", "Status"),),
@@ -107,9 +107,10 @@ def test_verified_progress_contains_only_evaluator_supported_facts() -> None:
         evaluation,
     )
 
-    assert tuple(item.fact_ref for item in context.progress.verified_public_facts) == ("F1",)
-    assert tuple(item.subject_id for item in context.progress.verified_public_facts) == ("E1",)
-    verified = context.progress.verified_public_facts[0]
+    verified_facts = context.task.evaluation.verified_public_facts
+    assert tuple(item.fact_ref for item in verified_facts) == ("F1",)
+    assert tuple(item.subject_id for item in verified_facts) == ("E1",)
+    verified = verified_facts[0]
     matching = tuple(
         fact
         for document in context.actor_world.documents

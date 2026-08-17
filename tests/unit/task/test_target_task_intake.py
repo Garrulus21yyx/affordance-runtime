@@ -9,6 +9,7 @@ from affordance_runtime.app import (
 )
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.task import (
     LoopBudget,
     NaturalLanguageTaskRequest,
@@ -117,6 +118,7 @@ def test_target_runtime_runs_a_natural_language_request_through_intake() -> None
         AgentDecisionPorts(NeverPolicy()),
         UnusedActionEvaluator(),
         BlockedTaskEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("atomic_task_intake_test"),
     )
 
     outcome = asyncio.run(
@@ -147,6 +149,7 @@ def test_target_runtime_does_not_touch_environment_for_nonready_intake() -> None
         AgentDecisionPorts(NeverPolicy()),
         UnusedActionEvaluator(),
         BlockedTaskEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("atomic_task_intake_test"),
     )
     outcome = asyncio.run(
         runtime.run_request(

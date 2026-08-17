@@ -138,6 +138,7 @@ async def run_provider_cohort_arm(
     visual_predicate_classifier=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
+    goal_compiler=None,
 ) -> PerceptionArmOutcome:
     """Run one explicitly named provider cohort without weakening frozen A/B."""
 
@@ -152,6 +153,7 @@ async def run_provider_cohort_arm(
         visual_predicate_classifier=visual_predicate_classifier,
         progress_dir=progress_dir,
         progress_profile=progress_profile,
+        goal_compiler=goal_compiler,
     )
 
 
@@ -167,15 +169,12 @@ async def _run_arm(
     visual_predicate_classifier=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
+    goal_compiler=None,
 ):
     adapter = _adapter(policy, require_frozen_mistral=require_frozen_mistral)
     if adapter.perception_profile is not perception_profile:
         raise ValueError("perception A/B policy profile does not match its arm")
-    configured_identity = (
-        getattr(adapter.port, "provider", ""),
-        getattr(adapter.port, "model", ""),
-        adapter.grounding_profile_version,
-    )
+    configured_identity = _adapter_identity(adapter)
     instrumentations: list[BenchmarkInstrumentation] = []
     target = _target_manifest(
         manifest,
@@ -186,6 +185,7 @@ async def _run_arm(
         visual_point_grounder,
         visual_candidate_disambiguator,
         visual_predicate_classifier,
+        goal_compiler,
     )
     target = replace(
         target,
@@ -418,21 +418,40 @@ def _adapter(
     policy: ModelBackedAgentPolicy,
     *,
     require_frozen_mistral: bool = True,
-) -> CompactJsonDecisionPort:
+) -> object:
     adapter = policy.port
-    if not isinstance(adapter, CompactJsonDecisionPort):
-        raise TypeError("perception A/B requires the compact 4.1V decision adapter")
-    if require_frozen_mistral and (
-        getattr(adapter.port, "provider", "") != "mistral"
-        or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
+    if require_frozen_mistral:
+        if not isinstance(adapter, CompactJsonDecisionPort):
+            raise TypeError("frozen perception A/B requires the compact decision adapter")
+        if (
+            getattr(adapter.port, "provider", "") != "mistral"
+            or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
+        ):
+            raise ValueError("perception A/B requires the frozen Mistral model identity")
+    elif not all(hasattr(adapter, name) for name in ("perception_profile", "last_catalog_count")):
+        raise TypeError("provider cohort requires a grounded decision adapter")
+    if (
+        adapter.perception_profile is DecisionPerceptionProfile.SCREENSHOT_AX
+        and not _adapter_supports_multimodal(adapter)
     ):
-        raise ValueError("perception A/B requires the frozen Mistral model identity")
-    if adapter.perception_profile in {
-        DecisionPerceptionProfile.SCREENSHOT_AX,
-        DecisionPerceptionProfile.STRUCTURE_FIRST,
-    } and not getattr(adapter.port, "supports_multimodal", False):
         raise ValueError("image-capable perception requires a multimodal model port")
     return adapter
+
+
+def _adapter_identity(adapter: object) -> tuple[str, str, str]:
+    provider_port = getattr(adapter, "port", None)
+    provider = getattr(provider_port, "provider", "") or getattr(adapter, "provider_id", "")
+    model = getattr(provider_port, "model", "") or getattr(adapter, "model_id", "")
+    grounding = getattr(adapter, "grounding_profile_version", "") or "grounded_tools.v2"
+    return str(provider), str(model), str(grounding)
+
+
+def _adapter_supports_multimodal(adapter: object) -> bool:
+    provider_port = getattr(adapter, "port", None)
+    return bool(
+        getattr(provider_port, "supports_multimodal", False)
+        or getattr(adapter, "supports_multimodal", False)
+    )
 
 
 def _arm_errors(records, initial_sha: str, initial_dirty: bool) -> list[str]:

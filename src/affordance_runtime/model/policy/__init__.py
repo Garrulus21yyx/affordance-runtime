@@ -5,7 +5,11 @@ from affordance_runtime.model.policy.contracts import (
     ModelMetadata,
     ResolvedModelDecision,
 )
-from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.factory import (
+    ConfiguredModelRoles,
+    model_policy_from_environment,
+    model_roles_from_environment,
+)
 from affordance_runtime.model.policy.grounded_tool_compiler import (
     CompiledGroundedTool,
     ConcreteActionCandidateRow,
@@ -26,6 +30,8 @@ __all__ = [
     "ModelMetadata",
     "ResolvedModelDecision",
     "model_policy_from_environment",
+    "model_roles_from_environment",
+    "ConfiguredModelRoles",
     "GROUNDED_TOOLS_PROTOCOL",
     "GroundedToolCompiler",
     "ConcreteActionCandidateRow",

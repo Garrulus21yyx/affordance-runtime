@@ -1,0 +1,160 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: AFFORDANCE / RUNTIME
+      - heading "Flight recorder" [level=1] [ref=e5]
+    - generic [ref=e8]:
+      - generic [ref=e9]: Provider ready
+      - generic [ref=e10]: zhipu · miniwob-60-seed7-v2
+  - main [ref=e11]:
+    - complementary [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: CONTROL
+        - heading "Compose one run" [level=2] [ref=e15]
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: MiniWoB task
+          - combobox "MiniWoB task seed 7 · 10 turns · 180s watchdog" [ref=e19] [cursor=pointer]:
+            - option "miniwob-60-01 · login-user" [selected]
+            - option "miniwob-60-02 · stock-market"
+            - option "miniwob-60-03 · click-collapsible-nodelay"
+            - option "miniwob-60-04 · email-inbox-forward-nl"
+            - option "miniwob-60-05 · grid-coordinate"
+            - option "miniwob-60-06 · form-sequence-2"
+            - option "miniwob-60-07 · tic-tac-toe"
+            - option "miniwob-60-08 · phone-book"
+            - option "miniwob-60-09 · click-checkboxes-large"
+            - option "miniwob-60-10 · click-button-sequence"
+            - option "miniwob-60-11 · read-table"
+            - option "miniwob-60-12 · simple-algebra"
+            - option "miniwob-60-13 · text-transform"
+            - option "miniwob-60-14 · order-food"
+            - option "miniwob-60-15 · enter-text-2"
+            - option "miniwob-60-16 · unicode-test"
+            - option "miniwob-60-17 · social-media-all"
+            - option "miniwob-60-18 · click-tab"
+            - option "miniwob-60-19 · click-test-2"
+            - option "miniwob-60-20 · find-greatest"
+            - option "miniwob-60-21 · click-option"
+            - option "miniwob-60-22 · click-checkboxes-transfer"
+            - option "miniwob-60-23 · click-test"
+            - option "miniwob-60-24 · buy-ticket"
+            - option "miniwob-60-25 · generate-number"
+            - option "miniwob-60-26 · email-inbox-noscroll"
+            - option "miniwob-60-27 · copy-paste"
+            - option "miniwob-60-28 · click-link"
+            - option "miniwob-60-29 · enter-text-dynamic"
+            - option "miniwob-60-30 · click-test-transfer"
+            - option "miniwob-60-31 · click-button"
+            - option "miniwob-60-32 · multi-layouts"
+            - option "miniwob-60-33 · email-inbox"
+            - option "miniwob-60-34 · click-pie-nodelay"
+            - option "miniwob-60-35 · login-user-popup"
+            - option "miniwob-60-36 · click-menu"
+            - option "miniwob-60-37 · focus-text-2"
+            - option "miniwob-60-38 · hot-cold"
+            - option "miniwob-60-39 · read-table-2"
+            - option "miniwob-60-40 · choose-list"
+            - option "miniwob-60-41 · number-checkboxes"
+            - option "miniwob-60-42 · click-shades"
+            - option "miniwob-60-43 · social-media-some"
+            - option "miniwob-60-44 · social-media"
+            - option "miniwob-60-45 · click-menu-2"
+            - option "miniwob-60-46 · form-sequence-3"
+            - option "miniwob-60-47 · email-inbox-nl-turk"
+            - option "miniwob-60-48 · click-tab-2"
+            - option "miniwob-60-49 · click-pie"
+            - option "miniwob-60-50 · book-flight"
+            - option "miniwob-60-51 · focus-text"
+            - option "miniwob-60-52 · ascending-numbers"
+            - option "miniwob-60-53 · copy-paste-2"
+            - option "miniwob-60-54 · use-spinner"
+            - option "miniwob-60-55 · click-tab-2-hard"
+            - option "miniwob-60-56 · choose-date-nodelay"
+            - option "miniwob-60-57 · email-inbox-forward-nl-turk"
+            - option "miniwob-60-58 · click-tab-2-easy"
+            - option "miniwob-60-59 · click-collapsible"
+            - option "miniwob-60-60 · visual-addition"
+          - generic [ref=e20]: seed 7 · 10 turns · 180s watchdog
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - generic [ref=e23]: A
+            - generic [ref=e24]: Action policy
+          - generic [ref=e25]:
+            - generic [ref=e26]: Model
+            - combobox "Model" [ref=e27] [cursor=pointer]:
+              - option "glm-4.6" [selected]
+              - option "glm-4.1v-thinking-flashx"
+              - option "glm-4.7-flash"
+          - generic [ref=e28]:
+            - generic [ref=e29]: Adapter
+            - generic [ref=e30]: pydantic-ai
+            - generic [ref=e31]: Thinking
+            - generic [ref=e32]: disabled · 512
+        - generic [ref=e33]:
+          - generic [ref=e34]:
+            - generic [ref=e35]: G
+            - generic [ref=e36]: Goal compiler
+          - group "Goal compiler mode" [ref=e37]:
+            - button "Model" [ref=e38] [cursor=pointer]
+            - button "Disabled" [active] [ref=e39] [cursor=pointer]
+          - generic [ref=e40]:
+            - generic [ref=e41]: Model
+            - combobox "Model" [ref=e42] [cursor=pointer]:
+              - option "glm-4.7-flash" [selected]
+              - option "glm-4.6"
+        - generic [ref=e43]:
+          - generic [ref=e44]: Perception
+          - combobox "Perception" [ref=e45] [cursor=pointer]:
+            - option "text-only.v1"
+            - option "screenshot-ax.v1"
+            - option "structure-first.v1" [selected]
+        - generic [ref=e46]:
+          - generic [ref=e47]: Evidence profile
+          - textbox "Evidence profile" [ref=e48]: CONSOLE_EXPERIMENT
+        - generic [ref=e49]:
+          - button "Launch formal run ↗" [ref=e50] [cursor=pointer]:
+            - generic [ref=e51]: Launch formal run
+            - generic [ref=e52]: ↗
+          - button "Stop" [disabled] [ref=e53]
+        - alert [ref=e54]
+    - region [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]: LIVE LINEAGE
+          - heading "Run trajectory" [level=2] [ref=e59]
+        - generic [ref=e60]:
+          - generic [ref=e61]: IDLE
+          - generic [ref=e62]: 00:00
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - generic [ref=e65]: Events
+          - generic [ref=e66]: "0"
+        - generic [ref=e67]:
+          - generic [ref=e68]: Policy turns
+          - generic [ref=e69]: "0"
+        - generic [ref=e70]:
+          - generic [ref=e71]: Executions
+          - generic [ref=e72]: "0"
+        - generic [ref=e73]:
+          - generic [ref=e74]: Outcome
+          - generic [ref=e75]: —
+      - generic [ref=e77]:
+        - heading "No run in flight" [level=3] [ref=e80]
+        - paragraph [ref=e81]: Choose two cognitive roles and one frozen task. Events will appear in Runtime order.
+    - complementary [ref=e82]:
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - generic [ref=e85]: EVIDENCE
+          - heading "Trace inspector" [level=2] [ref=e86]
+        - button "Copy JSON" [disabled] [ref=e87] [cursor=pointer]
+      - generic [ref=e88]:
+        - text: Select an event
+        - paragraph [ref=e89]: Provider attempts, compiler output, action decisions and verifier facts remain separate.
+      - generic [ref=e90]: "{}"
+      - button "Runner output ＋" [ref=e92] [cursor=pointer]:
+        - text: Runner output
+        - generic [ref=e93]: ＋
+  - contentinfo [ref=e94]:
+    - generic [ref=e95]: Local only · formal runner · append-only evidence
+    - generic [ref=e96]: No evidence directory

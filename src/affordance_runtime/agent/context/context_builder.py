@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from affordance_runtime.actions.paging import ActionPager, InternalActionPage
 from affordance_runtime.actions.space_contracts import ActionSpace
@@ -12,11 +12,7 @@ from affordance_runtime.agent.context.acquisition_projection import project_acqu
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
 from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
-from affordance_runtime.agent.context.context import (
-    AgentContext,
-    AgentProgressView,
-    ContextIdentity,
-)
+from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
@@ -26,13 +22,14 @@ from affordance_runtime.agent.context.projection import project_action_page
 from affordance_runtime.agent.context.task_projection import project_task
 from affordance_runtime.agent.context.world_projection import (
     ModelWorldView,
-    PublicFactView,
     fit_model_world,
     project_model_world,
 )
-from affordance_runtime.evaluation.contracts import CriterionEvaluationStatus, TaskEvaluation
+from affordance_runtime.evaluation.contracts import TaskEvaluation
+from affordance_runtime.goals.plan import Failed, GoalPlanResolution, NeedsInput
+from affordance_runtime.goals.projection import project_agent_goal_plan
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.task.contracts import TaskGoal, criterion_id
+from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -56,7 +53,10 @@ class ContextBuilder:
         action_page: InternalActionPage | None = None,
         context_generation: int = 0,
         observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
+        goal_resolution: GoalPlanResolution | None = None,
     ) -> AgentContext:
+        if task_evaluation.observation_id != observation.observation_id:
+            raise ValueError("context task evaluation belongs to a previous observation")
         default_page = self.page(action_space, observation)
         page = action_page or default_page
         if page.action_space_id != action_space.action_space_id:
@@ -101,17 +101,31 @@ class ContextBuilder:
         history_total = len(recent_steps) if recent_step_total_count is None else recent_step_total_count
         if history_total < len(recent_steps):
             raise ValueError("recent step total cannot be smaller than the retained steps")
-        identity = _context_identity(task.revision, observation, action_space, page, context_generation)
         grounding = self.grounding_projection.project(
             observation,
             world,
             actions,
+        )
+        goal_plan = _current_goal_plan(
+            task,
+            goal_resolution,
+            max_items=self.budget.max_unresolved_items,
+        )
+        identity = _context_identity(
+            task.revision,
+            observation,
+            action_space,
+            page,
+            context_generation,
+            goal_plan,
+            _tool_catalog_digest(actions, world, grounding),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         return _fit_context(
             identity.context_id,
             task,
             task_evaluation,
+            goal_plan,
             observation,
             world,
             actions,
@@ -157,14 +171,53 @@ class ContextBuilder:
         )
 
 
-def _context_identity(task_revision, observation, action_space, page, generation: int) -> ContextIdentity:
+def _context_identity(
+    task_revision,
+    observation,
+    action_space,
+    page,
+    generation: int,
+    goal_plan,
+    tool_catalog_digest: str,
+) -> ContextIdentity:
     return ContextIdentity(
         task_revision,
         observation.observation_id,
         action_space.action_space_id,
         page.page_id,
         generation,
+        goal_plan.resolution,
+        goal_plan.plan_version,
+        goal_plan.plan_digest,
+        tool_catalog_digest,
     )
+
+
+def _current_goal_plan(
+    task: TaskGoal,
+    resolution: GoalPlanResolution | None,
+    *,
+    max_items: int,
+):
+    effective = resolution or Failed(task.revision, "goal_guidance_unavailable")
+    if isinstance(effective, NeedsInput):
+        raise ValueError("NeedsInput cannot enter an ActionPolicy context")
+    if effective.task_revision != task.revision:
+        raise ValueError("goal plan resolution belongs to a previous task revision")
+    return project_agent_goal_plan(effective, max_items=max_items)
+
+
+def _tool_catalog_digest(actions, world, grounding: GroundingProjectionResult) -> str:
+    """Bind identity to the exact current inputs that determine the public tool catalog."""
+
+    payload = to_json_compatible({
+        "actions": actions,
+        "observation_capabilities": world.observation_capabilities,
+        "world_targets": world.targets,
+        "grounding_entities": grounding.index.entities,
+    })
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def _pinned_targets(actions, observation, limit: int) -> tuple[str, ...]:
@@ -177,59 +230,11 @@ def _pinned_targets(actions, observation, limit: int) -> tuple[str, ...]:
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
 
-def _progress_view(
-    task: TaskGoal,
-    evaluation: TaskEvaluation,
-    facts: tuple[PublicFactView, ...],
-    fact_refs: Mapping[str, str],
-    target_refs: Mapping[str, str],
-    max_unresolved: int,
-) -> AgentProgressView:
-    statuses = {item.criterion_id: item.status for item in evaluation.criteria}
-    unresolved = tuple(
-        criterion_id(item)
-        for item in task.success_criteria
-        if statuses.get(criterion_id(item)) != CriterionEvaluationStatus.SATISFIED
-    )
-    unresolved_outputs = tuple(
-        item for item in task.requested_outputs if item not in {output.output_id for output in evaluation.outputs}
-    )
-    evidence_refs = {
-        *evaluation.completion_evidence_refs,
-        *(ref for item in evaluation.criteria for ref in item.evidence_refs),
-        *(ref for item in evaluation.outputs for ref in item.evidence_refs),
-    }
-    verified = tuple(
-        replace(
-            item,
-            fact_ref=fact_refs[item.fact_ref],
-            subject_id=target_refs.get(item.subject_id, "task"),
-        )
-        for item in facts
-        if item.fact_ref in evidence_refs
-    )
-    return AgentProgressView(
-        validated_task_status=evaluation.status,
-        verified_public_facts=verified,
-        unresolved_criteria=BoundedSection(
-            unresolved[:max_unresolved], len(unresolved), len(unresolved) > max_unresolved
-        ),
-        unresolved_outputs=BoundedSection(
-            unresolved_outputs[:max_unresolved],
-            len(unresolved_outputs),
-            len(unresolved_outputs) > max_unresolved,
-        ),
-        truncated=(
-            len(unresolved) > max_unresolved
-            or len(unresolved_outputs) > max_unresolved
-        ),
-    )
-
-
 def _fit_context(
     context_id: str,
     task: TaskGoal,
     task_evaluation: TaskEvaluation,
+    goal_plan,
     observation: WorldObservation,
     world: ModelWorldView,
     actions: AgentActionPageView,
@@ -238,25 +243,19 @@ def _fit_context(
     budget: ContextProjectionBudget,
     pinned_target_ids: tuple[str, ...],
 ) -> AgentContext:
-    include_verified_facts = True
-    task_view = project_task(task)
     fact_refs = {item.fact_ref: f"F{index}" for index, item in enumerate(world.facts.items, 1)}
-    progress_basis = _progress_view(
+    task_view = project_task(
         task,
         task_evaluation,
         world.facts.items,
         fact_refs,
         grounding.index.target_refs,
-        budget.max_unresolved_items,
     )
     while True:
-        progress = progress_basis
-        if not include_verified_facts and progress.verified_public_facts:
-            progress = replace(progress, verified_public_facts=(), truncated=True)
         context = AgentContext(
             context_id,
             task_view,
-            progress,
+            goal_plan,
             actions,
             history,
             project_actor_world_snapshot(
@@ -284,9 +283,6 @@ def _fit_context(
         if smaller_world != world:
             world = smaller_world
             continue
-        if include_verified_facts and progress.verified_public_facts:
-            include_verified_facts = False
-            continue
         if len(history.items) > 1:
             history = BoundedSection(
                 history.items[1:],
@@ -301,7 +297,7 @@ def _semantic_serialized_size(context: AgentContext) -> int:
     payload = to_json_compatible({
         "task": context.task,
         "observation": context.actor_world,
-        "progress": context.progress,
+        "goal_plan": context.goal_plan,
         "recent_steps": context.recent_steps,
     })
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
