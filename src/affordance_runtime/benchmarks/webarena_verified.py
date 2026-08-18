@@ -21,6 +21,30 @@ from typing import Any, Iterable, Mapping
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
 )
+from affordance_runtime.evaluation import (
+    TaskEvaluation,
+    TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
+)
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
+    BrowserGymTaskStateSnapshot,
+)
+from affordance_runtime.task import (
+    LoopBudget,
+    NaturalLanguageTaskRequest,
+    ReadyTask,
+    RiskProfile,
+    TaskBoundary,
+    TaskGoal,
+    ThinTaskIntake,
+)
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref
+from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 WA_BROWSERGYM_COMMIT = "9e779f087de9a65668b6974d11f9ce9816026e96"
 WA_VERIFIED_COMMIT = "6473f72db5dcefc97b5725b59e734504edc28a21"
@@ -208,6 +232,160 @@ print(json.dumps(report, sort_keys=True))
 
 def webarena_gym_task_id(task: WebArenaVerifiedCaseRef | WebArenaVerifiedTaskRef) -> str:
     return f"browsergym/webarena_verified.{task.intent_template_id}.{task.task_id}.{task.revision}"
+
+
+@dataclass
+class WebArenaVerifiedCaseEnvironment:
+    """Official BrowserGym WebArena-Verified case facade."""
+
+    case_ref: WebArenaVerifiedCaseRef
+    surface: BrowserGymSurfaceAdapter
+    world: UnifiedWorldEnvironment
+    native_evaluator_queries: int = 0
+    final_delivery_attempted: bool = False
+    final_delivery_confirmed: bool = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.surface, name)
+
+    @property
+    def observation_capabilities(self):
+        return self.world.observation_capabilities
+
+    @property
+    def supports_finalization(self) -> bool:
+        return self.world.supports_finalization
+
+    async def reset(self, task):
+        return await self.world.reset(task)
+
+    async def revise_task(self, task):
+        return await self.world.revise_task(task)
+
+    async def capture(self, request):
+        return await self.world.capture(request)
+
+    async def execute(self, request):
+        return await self.world.execute(request)
+
+    async def finalize(self, content: str):
+        self.final_delivery_attempted = True
+        result = await self.world.finalize(content)
+        if result.result.dispatch_status is DispatchStatus.SENT:
+            self.final_delivery_confirmed = True
+        return result
+
+    def is_current(self, request):
+        return self.world.is_current(request)
+
+    async def close(self) -> None:
+        await self.surface.close()
+
+    def current_native_result(self) -> tuple[TaskOutcomeKind, str, tuple[str, ...]]:
+        self.native_evaluator_queries += 1
+        if not self.final_delivery_confirmed:
+            return TaskOutcomeKind.RUNNING_INCOMPLETE, "stop_not_confirmed", ()
+        return classify_webarena_terminal_snapshot(self.surface.current_task_state())
+
+
+@dataclass(frozen=True)
+class WebArenaVerifiedNativeEvaluator:
+    """Map the official BrowserGym terminal state into TaskEvaluation."""
+
+    environment: WebArenaVerifiedCaseEnvironment
+
+    async def evaluate(self, task, observation) -> TaskEvaluation:
+        outcome_kind, code, refs = self.environment.current_native_result()
+        evidence_index = WorldEvidenceIndex.from_observation(observation)
+        if refs and not all(evidence_index.resolve_record(ref) is not None for ref in refs):
+            outcome_kind, code, refs = (
+                TaskOutcomeKind.VERIFIER_UNAVAILABLE,
+                "source_insufficient",
+                (),
+            )
+        status = {
+            TaskOutcomeKind.TERMINAL_SUCCESS: TaskEvaluationStatus.COMPLETE,
+            TaskOutcomeKind.TERMINAL_FAILURE: TaskEvaluationStatus.BLOCKED,
+            TaskOutcomeKind.RUNNING_INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
+            TaskOutcomeKind.VERIFIER_UNAVAILABLE: TaskEvaluationStatus.UNKNOWN,
+        }[outcome_kind]
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            status,
+            f"webarena-verified native evaluator: {code}",
+            completion_evidence_refs=refs if outcome_kind is TaskOutcomeKind.TERMINAL_SUCCESS else (),
+            outcome=TaskOutcomeFact(outcome_kind, code, refs),
+        )
+
+
+def open_webarena_verified_case(
+    case_ref: WebArenaVerifiedCaseRef,
+    seed: int = WA_SELECTION_SEED,
+    *,
+    gym_factory: Any | None = None,
+    max_turns: int = 100,
+) -> tuple[WebArenaVerifiedCaseEnvironment, TaskGoal, WebArenaVerifiedNativeEvaluator]:
+    """Open one official case using only public BrowserGym task intake."""
+
+    if case_ref not in WA_W0_REQUIRED_CASES:
+        raise ValueError("WebArena-Verified case is outside the reviewed W1/W2 manifest")
+    surface = BrowserGymSurfaceAdapter.open(
+        case_ref.gym_id,
+        seed,
+        gym_factory=gym_factory,
+        registration_modules=(WA_REGISTRATION_MODULE,),
+    )
+    try:
+        intake = ThinTaskIntake().compile(
+            NaturalLanguageTaskRequest(
+                f"task:webarena_verified:{case_ref.task_id}",
+                surface.goal_instruction,
+                TaskBoundary(
+                    allowed_effects=("external_ui_interaction",),
+                    forbidden_effects=("credential_use",),
+                    inputs={
+                        "official_registered_task_id": case_ref.gym_id,
+                        "sites": case_ref.sites,
+                        "task_type": case_ref.task_type,
+                        "public_final_response_requirement": "send one final response through BrowserGym send_msg_to_user/STOP",
+                    },
+                    requested_outputs=(WA_FINAL_OUTPUT_ID,),
+                    risk_profile=RiskProfile.LOW,
+                    loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+                ),
+                source_ref=f"browsergym:{case_ref.gym_id}:goal",
+            )
+        )
+        if not isinstance(intake, ReadyTask):
+            raise RuntimeError(f"WebArena task intake rejected public profile: {intake.status.value}")
+        environment = WebArenaVerifiedCaseEnvironment(
+            case_ref,
+            surface,
+            UnifiedWorldEnvironment((surface,)),
+        )
+        return environment, intake.task, WebArenaVerifiedNativeEvaluator(environment)
+    except BaseException:
+        surface.gym_environment.close()
+        raise
+
+
+def classify_webarena_terminal_snapshot(
+    snapshot: BrowserGymTaskStateSnapshot,
+) -> tuple[TaskOutcomeKind, str, tuple[str, ...]]:
+    terminal = snapshot.value("terminated", False) is True or snapshot.value("truncated", False) is True
+    reward = snapshot.value("reward", None)
+    raw_reward = snapshot.value("raw_reward", None)
+    done = snapshot.value("done", None)
+    if not terminal and done is not True:
+        return TaskOutcomeKind.RUNNING_INCOMPLETE, "verified_running", ()
+    score = reward if type(reward) in {int, float} else raw_reward
+    refs = (canonical_artifact_ref(snapshot.source_observation_id, BROWSERGYM_TASK_STATE_EVIDENCE_KEY),)
+    if type(score) in {int, float} and score > 0:
+        return TaskOutcomeKind.TERMINAL_SUCCESS, "verified_success", refs
+    if type(score) in {int, float}:
+        return TaskOutcomeKind.TERMINAL_FAILURE, "verified_terminal_task_failure", refs
+    return TaskOutcomeKind.VERIFIER_UNAVAILABLE, "missing_terminal_score", ()
 
 
 def write_webarena_verified_w0_manifest(

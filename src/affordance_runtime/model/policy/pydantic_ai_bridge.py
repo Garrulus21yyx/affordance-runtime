@@ -698,6 +698,10 @@ def _resolve_deferred(output, catalog, context_id: str):
 
 
 def _final_response_ready(context) -> bool:
+    if "final_response" in context.runtime_controls:
+        return context.task.requested_output_ids.total_count > 0
+    if "yield_subtask" in context.runtime_controls:
+        return False
     requested = context.task.requested_output_ids
     confirmed = {item.output_id for item in context.task.evaluation.outputs}
     return (

@@ -116,12 +116,22 @@ def raw_observation(*nodes, goal='Click the "okay" button.', url="file:///fixed/
 
 
 class FakeBrowserGym:
-    def __init__(self, initial, post=None, *, fail_step=False, fail_probe=False):
+    def __init__(
+        self,
+        initial,
+        post=None,
+        *,
+        fail_step=False,
+        fail_probe=False,
+        fail_final=False,
+    ):
         self.initial = initial
         self.post = post or initial
         self.fail_step = fail_step
         self.fail_probe = fail_probe
+        self.fail_final = fail_final
         self.actions = []
+        self.final_messages = []
         self.reset_count = 0
         self.close_count = 0
         self.browser = object()
@@ -153,6 +163,23 @@ class FakeBrowserGym:
         self.actions.append(action)
         if self.fail_step:
             raise RuntimeError("after dispatch")
+        return (
+            self.post,
+            self.step_reward,
+            self.step_terminated,
+            self.step_truncated,
+            {
+                "task_info": task_info(
+                    reward=self.step_raw_reward,
+                    done=self.step_done,
+                )
+            },
+        )
+
+    def send_msg_to_user(self, content):
+        self.final_messages.append(content)
+        if self.fail_final:
+            raise RuntimeError("final after dispatch")
         return (
             self.post,
             self.step_reward,
@@ -242,6 +269,13 @@ class BrowserGymTestEnvironment:
 
     async def execute(self, request):
         return await self.world.execute(request)
+
+    @property
+    def supports_finalization(self):
+        return self.world.supports_finalization
+
+    async def finalize(self, content):
+        return await self.world.finalize(content)
 
     def is_current(self, request):
         return self.world.is_current(request)

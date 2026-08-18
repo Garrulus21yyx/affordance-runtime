@@ -542,6 +542,21 @@ class CountingEnvironment:
             state._unknown_attempts.add(identity)
         return outcome
 
+    @property
+    def supports_finalization(self):
+        return bool(getattr(self.wrapped, "supports_finalization", False))
+
+    async def finalize(self, content: str):
+        state = self.instrumentation
+        before = _executed_count(self.wrapped)
+        outcome = await self.wrapped.finalize(content)
+        result = getattr(outcome, "result", None)
+        if isinstance(result, ActionResult):
+            state.effectful_dispatches += _dispatch_count(self.wrapped, before, result)
+            if result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
+                state._unknown_attempts.add("final-response")
+        return outcome
+
     def is_current(self, request):
         self.instrumentation.currentness_probe_count += 1
         return self.wrapped.is_current(request)

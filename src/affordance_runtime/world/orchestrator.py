@@ -38,6 +38,7 @@ from affordance_runtime.world.acquisition import (
     WorldObservationRequest,
     selected_observation_requests,
 )
+from affordance_runtime.world.finalization import EnvironmentFinalization
 from affordance_runtime.world.fusion import FusionStatus, WorldFusion
 from affordance_runtime.world.observation_orchestrator import ObservationOrchestrator
 from affordance_runtime.world.source_profile import ObservationModality
@@ -887,6 +888,61 @@ class ObservationAcquisitionCoordinator:
     ) -> ExecutionOutcome:
         return ExecutionOutcome(request, result, None)
 
+    @property
+    def supports_finalization(self) -> bool:
+        return len(self._finalization_adapters()) == 1
+
+    async def finalize(self, content: str) -> EnvironmentFinalization:
+        adapters = self._finalization_adapters()
+        if len(adapters) != 1:
+            return EnvironmentFinalization(
+                ActionResult(
+                    "final-response",
+                    DispatchStatus.NOT_SENT,
+                    "environment",
+                    False,
+                    ActionError.UNSUPPORTED_ACTION,
+                )
+            )
+        adapter = adapters[0]
+        finalize = getattr(adapter, "finalize", None)
+        result = await finalize(content)
+        if not isinstance(result, ActionResult):
+            raise ValueError("finalization result lineage mismatch")
+        if result.dispatch_status is DispatchStatus.NOT_SENT:
+            return EnvironmentFinalization(result)
+        post_request = WorldObservationRequest(
+            ObservationRequestKind.POST_ACTION_FALLBACK,
+            "post final response",
+        )
+        post_plan = self.observation_orchestrator.select(
+            self._offers,
+            post_request,
+            route_source=adapter.surface,
+        )
+        if post_plan.plan is None:
+            post = self._pre_selection(
+                self._next_acquisition_id(),
+                AcquisitionOrigin.POST_ACTION,
+                post_request,
+                post_plan.reason_code,
+            )
+        else:
+            post = await self._acquire(
+                post_request,
+                AcquisitionOrigin.POST_ACTION,
+                post_plan.plan,
+            )
+        return EnvironmentFinalization(result, post)
+
+    def _finalization_adapters(self) -> tuple[SurfaceAdapter, ...]:
+        return tuple(
+            adapter
+            for adapter in self.adapters
+            if bool(getattr(adapter, "supports_finalization", False))
+            and callable(getattr(adapter, "finalize", None))
+        )
+
 
 @dataclass(frozen=True)
 class _ProviderCancellation(Exception):
@@ -942,3 +998,10 @@ class UnifiedWorldEnvironment:
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:
         return await self.acquisition_coordinator.execute(request)
+
+    @property
+    def supports_finalization(self) -> bool:
+        return self.acquisition_coordinator.supports_finalization
+
+    async def finalize(self, content: str) -> EnvironmentFinalization:
+        return await self.acquisition_coordinator.finalize(content)

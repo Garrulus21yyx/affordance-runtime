@@ -1,0 +1,337 @@
+from __future__ import annotations
+
+import asyncio
+import inspect
+from dataclasses import replace
+
+from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.decision_capability import DecisionCapability
+from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.run_state import RunStatus
+from affordance_runtime.app import compose_target_runtime
+from affordance_runtime.benchmarks.webarena_verified import (
+    WA_W1_SMOKE_CASES,
+    WebArenaVerifiedNativeEvaluator,
+    open_webarena_verified_case,
+)
+from affordance_runtime.evaluation import (
+    EvaluatedOutput,
+    ProductionActionOutcomeProjector,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
+from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.mission import (
+    AuditDelta,
+    AuditDeltaStatus,
+    AuditorRoleRequest,
+    ManagerDecision,
+    ManagerRoute,
+    MissionSupervisor,
+    OutcomeProposal,
+    PromoteFactProposal,
+    SubtaskContract,
+)
+from affordance_runtime.model.policy.contracts import ModelInvocationResult
+from affordance_runtime.model.policy.grounded_tool_catalog import (
+    GroundedToolPhase,
+    compile_grounded_tool_catalog,
+)
+from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
+from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+    FakeBrowserGym,
+    ax_node,
+    open_fake,
+    raw_observation,
+)
+from tests.unit.mission.test_episode_lifecycle import ManagerScript, YieldPolicy
+
+
+class YieldThenFinalPolicy:
+    def __init__(self):
+        self.contexts = []
+
+    @property
+    def supported_decisions(self):
+        return frozenset({DecisionCapability.YIELD_SUBTASK})
+
+    @property
+    def supports_final_response(self):
+        return True
+
+    async def decide(self, context):
+        self.contexts.append(context)
+        if "final_response" in context.runtime_controls:
+            return FinalResponse(context.context_id, "Done")
+        return await YieldPolicy([]).decide(context)
+
+
+class PrematureFinalPolicy:
+    @property
+    def supported_decisions(self):
+        return frozenset({DecisionCapability.YIELD_SUBTASK})
+
+    @property
+    def supports_final_response(self):
+        return True
+
+    async def decide(self, context):
+        return FinalResponse(context.context_id, "too soon")
+
+
+class UnknownEvaluator:
+    async def evaluate(self, task, observation):
+        return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown")
+
+
+class CompleteEvaluator:
+    async def evaluate(self, task, observation):
+        ref = observation.facts[0].fact_id
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.COMPLETE,
+            "complete",
+            completion_evidence_refs=(ref,),
+            outputs=(EvaluatedOutput("answer", "Done", (ref,)),),
+        )
+
+
+class FinalAuditAuditor:
+    def __init__(self, *, accept_final: bool):
+        self.accept_final = accept_final
+        self.requests: list[AuditorRoleRequest] = []
+
+    async def audit(self, request):
+        self.requests.append(request)
+        record = next(item for item in request.audit_bundle.evidence_records if item.kind == "fact")
+        if len(self.requests) == 1:
+            return ModelInvocationResult(
+                output=AuditDelta(
+                    AuditDeltaStatus.AUDITED_SATISFIED,
+                    0,
+                    (OutcomeProposal("audit:first", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "answer"),),
+                    (PromoteFactProposal("answer", record.evidence_ref, record.value, "answer"),),
+                )
+            )
+        if not self.accept_final:
+            return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.UNKNOWN, 1, missing_evidence=("readiness",)))
+        return ModelInvocationResult(
+            output=AuditDelta(
+                AuditDeltaStatus.AUDITED_SATISFIED,
+                1,
+                (OutcomeProposal("audit:final", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "ready"),),
+            )
+        )
+
+
+def _browsergym_env_task(*, fail_final=False):
+    raw = raw_observation(
+        ax_node("input", "textbox", "Answer", value="Done"),
+        ax_node("button", "button", "Continue"),
+        goal="Complete the long task.",
+    )
+    fake = FakeBrowserGym(raw, fail_final=fail_final)
+    env, task = open_fake(fake)
+    return fake, env, task
+
+
+def test_ordinary_episode_catalog_exposes_yield_but_not_final_response_or_stop() -> None:
+    _, env, task = _browsergym_env_task()
+    world = asyncio.run(env.reset(task)).observation
+    assert world is not None
+    evaluation = asyncio.run(UnknownEvaluator().evaluate(task, world))
+    action_space = ActionSpaceBuilder().build(task, world)
+    context = ContextBuilder().build(
+        task,
+        world,
+        action_space,
+        evaluation,
+        observation_capabilities=env.observation_capabilities,
+        runtime_controls=("yield_subtask",),
+    )
+
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    names = {tool.spec.name for tool in catalog.tools}
+
+    assert "yield_subtask" in names
+    assert "final_response" not in names
+    assert "STOP" not in names
+
+
+def test_unaccepted_global_final_audit_cannot_send_stop() -> None:
+    fake, env, task = _browsergym_env_task()
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+        ],
+        [],
+    )
+    auditor = FinalAuditAuditor(accept_final=False)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.finalization is None
+    assert fake.final_messages == []
+
+
+def test_accepted_final_audit_sends_stop_once() -> None:
+    fake, env, task = _browsergym_env_task()
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+        ],
+        [],
+    )
+    auditor = FinalAuditAuditor(accept_final=True)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+    second = asyncio.run(env.finalize("again"))
+
+    assert result.finalization is not None
+    assert result.finalization.result.dispatch_status is DispatchStatus.SENT
+    assert second.result.dispatch_status is DispatchStatus.NOT_SENT
+    assert fake.final_messages == ["Done"]
+    assert [context.runtime_controls for context in policy.contexts] == [
+        ("yield_subtask",),
+        ("final_response",),
+    ]
+
+
+def test_premature_final_response_is_rejected_in_ordinary_episode() -> None:
+    fake, env, task = _browsergym_env_task()
+    runtime = compose_target_runtime(
+        PrematureFinalPolicy(),
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+
+    state = asyncio.run(runtime.run_task(env, task))
+
+    assert state.status is RunStatus.FAILED
+    assert state.last_step is not None
+    assert state.last_step.feedback == "final_response_not_available"
+    assert fake.final_messages == []
+
+
+def test_completed_ordinary_long_horizon_episode_still_rejects_final_response() -> None:
+    fake, env, task = _browsergym_env_task()
+    task = replace(task, requested_outputs=("answer",))
+    runtime = compose_target_runtime(
+        PrematureFinalPolicy(),
+        ProductionActionOutcomeProjector(),
+        CompleteEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+
+    state = asyncio.run(runtime.run_task(env, task))
+
+    assert state.status is RunStatus.FAILED
+    assert state.last_step is not None
+    assert state.last_step.feedback == "final_response_not_available"
+    assert fake.final_messages == []
+
+
+def test_sent_unknown_final_response_is_not_retried() -> None:
+    fake, env, _task = _browsergym_env_task(fail_final=True)
+
+    first = asyncio.run(env.finalize("answer"))
+    second = asyncio.run(env.finalize("answer"))
+
+    assert first.result.dispatch_status is DispatchStatus.SENT_UNKNOWN
+    assert second.result.dispatch_status is DispatchStatus.NOT_SENT
+    assert fake.final_messages == ["answer"]
+
+
+def test_webarena_native_evaluator_is_incomplete_before_stop_and_authoritative_after_stop() -> None:
+    raw = raw_observation(ax_node("button", "button", "Continue"), goal="Official public instruction")
+    fake = FakeBrowserGym(raw)
+    env, task, evaluator = open_webarena_verified_case(
+        WA_W1_SMOKE_CASES[0],
+        gym_factory=lambda *_args, **_kwargs: fake,
+    )
+    initial = asyncio.run(env.reset(task)).observation
+    assert initial is not None
+
+    before = asyncio.run(evaluator.evaluate(task, initial))
+    finalization = asyncio.run(env.finalize("answer"))
+    assert finalization.post_acquisition is not None
+    after_world = finalization.post_acquisition.observation
+    assert after_world is not None
+    after = asyncio.run(evaluator.evaluate(task, after_world))
+
+    assert before.status is TaskEvaluationStatus.INCOMPLETE
+    assert after.status is TaskEvaluationStatus.COMPLETE
+    assert isinstance(evaluator, WebArenaVerifiedNativeEvaluator)
+
+
+def test_webarena_native_success_is_stop_gated_even_if_probe_reports_done() -> None:
+    raw = raw_observation(ax_node("button", "button", "Continue"), goal="Official public instruction")
+    fake = FakeBrowserGym(raw)
+    fake.probe_task = {
+        "ready": True,
+        "done": True,
+        "raw_reward": 1,
+        "episode": "0",
+    }
+    env, task, evaluator = open_webarena_verified_case(
+        WA_W1_SMOKE_CASES[0],
+        gym_factory=lambda *_args, **_kwargs: fake,
+    )
+    initial = asyncio.run(env.reset(task)).observation
+    assert initial is not None
+    capture = asyncio.run(env.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "probe")))
+    assert capture.observation is not None
+
+    evaluation = asyncio.run(evaluator.evaluate(task, capture.observation))
+
+    assert evaluation.status is TaskEvaluationStatus.INCOMPLETE
+    assert evaluation.outcome is not None
+    assert evaluation.outcome.code == "stop_not_confirmed"
+
+
+def test_webarena_public_intake_does_not_project_hidden_expected_or_evaluator_data() -> None:
+    raw = raw_observation(ax_node("button", "button", "Continue"), goal="Official public instruction")
+    fake = FakeBrowserGym(raw)
+    env, task, _evaluator = open_webarena_verified_case(
+        WA_W1_SMOKE_CASES[0],
+        gym_factory=lambda *_args, **_kwargs: fake,
+    )
+
+    serialized = str(task).casefold()
+    assert "expected_answer" not in serialized
+    assert "hidden" not in serialized
+    assert "reward" not in serialized
+    assert "evaluator" not in serialized
+    assert task.requested_outputs == ("webarena_final_response",)
+    asyncio.run(env.close())
+
+
+def test_offline_eval_tasks_helper_is_not_wired_into_formal_runner() -> None:
+    import affordance_runtime.benchmarks.target_loop.runner as runner
+
+    source = inspect.getsource(runner)
+    assert "eval-tasks" not in source
+    assert "evaluate_webarena_verified_manifest" not in source

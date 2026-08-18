@@ -21,6 +21,7 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     SelectAction,
     Wait,
+    YieldSubtask,
 )
 from affordance_runtime.agent.evaluation_control import (
     validated_action_outcome,
@@ -107,6 +108,8 @@ class CoreAgentLoop:
     trace_sink: RunTraceSink = field(default_factory=NullRunTraceSink)
     goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
     goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
+    runtime_controls: tuple[str, ...] = ()
+    episode_monitor: object | None = None
 
     async def run(
         self,
@@ -161,6 +164,7 @@ class CoreAgentLoop:
         *,
         max_turns: int,
         yield_on_budget_exhaustion: bool,
+        working_facts=(),
     ) -> RunState:
         """Create a fresh executor episode from an already acquired world."""
 
@@ -178,6 +182,7 @@ class CoreAgentLoop:
                 goal_resolution.accepted_plan.plan_version if isinstance(goal_resolution, Ready) else 0
             ),
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
+            working_facts=working_facts,
         )
         if isinstance(goal_resolution, NeedsInput) and state.status is RunStatus.WAITING_USER:
             state.last_step = StepResult(
@@ -216,6 +221,7 @@ class CoreAgentLoop:
             except BaseException as exc:
                 self.trace_sink.run_error(exc, state)
                 raise
+            result = self._apply_episode_monitor(result, state)
             self.trace_sink.step_completed(state.step_count + 1, result)
             state.apply(result)
             if state.status in {RunStatus.RUNNING, RunStatus.YIELDED} and not isinstance(
@@ -316,6 +322,27 @@ class CoreAgentLoop:
             )
         return await self._run_until_pause(environment, task, state)
 
+    def _apply_episode_monitor(self, result: StepResult, state: RunState) -> StepResult:
+        monitor = self.episode_monitor
+        if monitor is None or result.status_after is not RunStatus.RUNNING:
+            return result
+        evaluate = getattr(monitor, "evaluate", None)
+        if not callable(evaluate):
+            return result
+        transition = evaluate(result, state.recent_steps, _world_fingerprint(result.after_world))
+        if getattr(transition, "recommendation", "") != "yield":
+            return result
+        reason = getattr(transition, "reason", "stalled")
+        try:
+            from affordance_runtime.agent.run_state import EpisodeYieldReason
+
+            yield_reason = EpisodeYieldReason(reason)
+        except ValueError:
+            yield_reason = None
+        if yield_reason is None:
+            return result
+        return replace(result, status_after=RunStatus.YIELDED, feedback=f"episode_monitor:{yield_reason.value}")
+
     async def resume_confirmation(
         self,
         environment: WorldEnvironment,
@@ -401,6 +428,7 @@ class CoreAgentLoop:
             observation_capabilities=environment.observation_capabilities,
             goal_resolution=state.goal_resolution,
             working_facts=state.working_facts,
+            runtime_controls=self.runtime_controls,
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)
@@ -465,6 +493,7 @@ class CoreAgentLoop:
                 RequestActionPage,
                 AskUser,
                 LocalToolResult,
+                YieldSubtask,
                 FinalResponse,
                 Wait,
                 Abort,
@@ -496,17 +525,26 @@ class CoreAgentLoop:
                 RunStatus.RUNNING,
                 feedback="local_tool_result",
             )
-        elif isinstance(decision, Wait):
-            result = await self._wait(environment, task, state, decision)
-        elif isinstance(decision, FinalResponse):
-            ready = bool(task.requested_outputs) and (
-                state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
-            )
+        elif isinstance(decision, YieldSubtask):
             result = _same_world_step(
                 state,
                 decision,
-                RunStatus.DONE if ready else RunStatus.RUNNING,
-                "final_response" if ready else "final_response_not_ready",
+                RunStatus.YIELDED,
+                f"yield_subtask:{decision.kind}",
+            )
+            result = replace(
+                result,
+                runtime_failure=None,
+            )
+        elif isinstance(decision, Wait):
+            result = await self._wait(environment, task, state, decision)
+        elif isinstance(decision, FinalResponse):
+            ready = _final_response_available(task, state, self.runtime_controls)
+            result = _same_world_step(
+                state,
+                decision,
+                RunStatus.DONE if ready else RunStatus.FAILED,
+                "final_response" if ready else "final_response_not_available",
             )
         elif isinstance(decision, AskUser):
             result = _same_world_step(state, decision, RunStatus.WAITING_USER, "user_input_required")
@@ -799,6 +837,24 @@ def _same_world_step(
         status,
         feedback=feedback,
     )
+
+
+def _final_response_available(
+    task: TaskGoal,
+    state: RunState,
+    runtime_controls: tuple[str, ...],
+) -> bool:
+    if "final_response" in runtime_controls:
+        return bool(task.requested_outputs)
+    if "yield_subtask" in runtime_controls:
+        return False
+    return bool(task.requested_outputs) and (
+        state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
+    )
+
+
+def _world_fingerprint(world: WorldObservation) -> str:
+    return world.observation_id
 
 
 def _criterion_assurance(

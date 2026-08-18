@@ -212,6 +212,7 @@ class BrowserGymSurfaceAdapter:
     _pending_acquisition_id: str = field(default="", init=False, repr=False)
     _pending_projection: BrowserGymProjection | None = field(default=None, init=False, repr=False)
     _pending_error_code: str = field(default="", init=False, repr=False)
+    _final_response_sent: bool = field(default=False, init=False, repr=False)
 
     surface: str = field(default="browsergym", init=False)
 
@@ -226,6 +227,10 @@ class BrowserGymSurfaceAdapter:
     @property
     def supports_independent_capture(self) -> bool:
         return bool(getattr(self.gym_environment, "supports_capture_current", False))
+
+    @property
+    def supports_finalization(self) -> bool:
+        return callable(getattr(self.gym_environment, "send_msg_to_user", None))
 
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
@@ -462,6 +467,61 @@ class BrowserGymSurfaceAdapter:
             self._prepare_frame(raw, snapshot, observation_id, revision)
         except Exception:
             self._pending_error_code = "post_action_projection_failed"
+        return result
+
+    async def finalize(self, content: str) -> ActionResult:
+        if self._final_response_sent:
+            return ActionResult(
+                "final-response",
+                DispatchStatus.NOT_SENT,
+                "browsergym",
+                False,
+                ActionError.UNSUPPORTED_ACTION,
+                {"effectful_dispatch_count": 0},
+            )
+        self._final_response_sent = True
+        self._pending_raw = None
+        self._pending_snapshot = None
+        self._pending_projection = None
+        self._pending_acquisition_id = ""
+        try:
+            raw, reward, terminated, truncated, info = self.gym_environment.send_msg_to_user(content)
+        except BaseException:
+            self._pending_error_code = "final_response_failed_after_dispatch"
+            return ActionResult(
+                "final-response",
+                DispatchStatus.SENT_UNKNOWN,
+                "browsergym",
+                False,
+                ActionError.EXECUTION_FAILED,
+                {"effectful_dispatch_count": 1},
+            )
+        result = ActionResult(
+            "final-response",
+            DispatchStatus.SENT,
+            "browsergym",
+            True,
+            adapter_evidence={"effectful_dispatch_count": 1},
+        )
+        try:
+            current_task_info = task_info(info)
+            self._terminated = terminated is True or truncated is True
+            self._page_identity = page_identity(raw)
+            self._episode_identity = episode_identity(current_task_info)
+            observation_id, revision = self._next_identity()
+            snapshot = task_state_from_transition(
+                task_run_id=self.task_run_id,
+                observation_id=observation_id,
+                source_observation_id=observation_id,
+                source=BrowserGymTaskStateSource.POST_ACTION,
+                reward=reward,
+                terminated=terminated,
+                truncated=truncated,
+                task_info=current_task_info,
+            )
+            self._prepare_frame(raw, snapshot, observation_id, revision)
+        except Exception:
+            self._pending_error_code = "post_final_projection_failed"
         return result
 
     def is_current(self, request: BoundActionRequest) -> bool:

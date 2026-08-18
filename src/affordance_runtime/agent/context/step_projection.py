@@ -24,6 +24,7 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     SelectAction,
     Wait,
+    YieldSubtask,
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import ActionOutcome
@@ -43,6 +44,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             RequestActionPage,
             AskUser,
             LocalToolResult,
+            YieldSubtask,
             FinalResponse,
             Wait,
             Abort,
@@ -189,6 +191,8 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         return {"question": decision.question, "requested_fields": decision.requested_fields}
     if isinstance(decision, LocalToolResult):
         return project_public_value(decision.arguments)
+    if isinstance(decision, YieldSubtask):
+        return {"kind": decision.kind, "reason": _bounded(decision.reason)}
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
     if isinstance(decision, Wait):
@@ -237,6 +241,7 @@ def _control_tool_name(decision: AgentDecision) -> str:
         AskUser: "ask_user",
         FinalResponse: "final_response",
         Wait: "wait",
+        YieldSubtask: "yield_subtask",
         Abort: "abort",
         SelectAction: "select_action",
     }[type(decision)]

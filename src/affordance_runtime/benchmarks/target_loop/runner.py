@@ -32,6 +32,8 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
+from affordance_runtime.goals.compiler import UnavailableGoalCompiler
+from affordance_runtime.mission import EpisodeMonitor, MissionSupervisor
 
 
 async def run_suite(
@@ -142,10 +144,12 @@ async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResu
                 exc,
             )
             raise _CaseStageError("CoreAgentLoop construction", exc) from exc
-        result = await _run_with_watchdog(
-            _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder),
-            case.timeout_s,
+        run = (
+            _run_mission(case, runtime, counted_environment, task, composition, state_holder)
+            if composition.long_horizon
+            else _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder)
         )
+        result = await _run_with_watchdog(run, case.timeout_s)
     except _HarnessWatchdogTimeout as exc:
         failure = "case timeout"
         instrumentation.record_watchdog("case_timeout", exc)
@@ -197,7 +201,9 @@ def _build_runtime(composition, instrumentation):
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,
         trace_sink=instrumentation,
-        goal_compiler=composition.goal_compiler,
+        goal_compiler=UnavailableGoalCompiler() if composition.long_horizon else composition.goal_compiler,
+        runtime_controls=("yield_subtask",) if composition.long_horizon else (),
+        episode_monitor=EpisodeMonitor() if composition.long_horizon else None,
     )
 
 
@@ -221,6 +227,15 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
             approved=True,
         )
     return result
+
+
+async def _run_mission(case, runtime, environment, task, composition, state_holder):
+    del case
+    supervisor = MissionSupervisor(composition.mission_manager, composition.mission_auditor)
+    result = await supervisor.run(runtime, environment, task)
+    if result.state is not None:
+        state_holder["state"] = result.state
+    return result.state
 
 
 async def _close(environment) -> None:

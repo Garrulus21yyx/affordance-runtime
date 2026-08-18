@@ -299,6 +299,9 @@ class BenchmarkComposition:
     risk_policy: RiskPolicy | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler | None = None
+    mission_manager: object | None = None
+    mission_auditor: object | None = None
+    long_horizon: bool = False
 
     @classmethod
     def atomic(
@@ -321,6 +324,10 @@ class BenchmarkComposition:
         )
 
     def __post_init__(self) -> None:
+        if type(self.long_horizon) is not bool:
+            raise TypeError("long_horizon flag must be boolean")
+        if self.long_horizon != bool(self.mission_manager and self.mission_auditor):
+            raise ValueError("long-horizon composition requires Manager and Auditor ports")
         object.__setattr__(
             self,
             "required_decisions",

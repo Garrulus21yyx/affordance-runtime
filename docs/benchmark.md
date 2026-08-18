@@ -224,7 +224,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
 | Model invocation boundary convergence — implemented / locally verified | shared provider/model invocation exit for current model roles | `ModelInvocationResult[T]` carries typed output/failure, `ModelMetadata`, physical attempts, repair diagnostics, role diagnostics, and lineage; production policy ports return only this envelope; PydanticAI remains native-tool transport; compact-json remains a compatibility shim | focused/unit/integration tests prove attempts are retained, retry and role repair stay distinct, instrumentation reads the explicit result, and GUI Runtime authority is unchanged; W1/W2 benchmark verification remains pending |
-| G5. WebArena-Verified long horizon — episode foundation/context implemented, mission layer pending | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; site smokes; frozen 12-case cohort | `YIELDED` no-reset episode lifecycle, all-turn `AgentTurnView` history, 16 KiB compact/detailed rendering, private F bindings and evidence-backed `pin_fact` are implemented; thin Supervisor/Auditor/MissionState and official long-horizon composition remain next | ownership gates and fresh-context audit pass, then official evaluator success on at least 6/12 including each stratum; no benchmark-specific branch or cross-case memory |
+| G5. WebArena-Verified long horizon — W1a implemented / local contract verification passed / independent audit passed | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; site smokes; frozen 12-case cohort | `YIELDED`, no-reset episode lifecycle, all-turn `AgentTurnView` history, 16 KiB compact/detailed rendering, private F bindings, evidence-backed `pin_fact`, thin Supervisor/Auditor/MissionState, `yield_subtask`, official finalization, and native result mapping are implemented | W1b official site smokes, then official evaluator success on at least 6/12 including each W2 stratum; no benchmark-specific branch or cross-case memory |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
 
@@ -506,27 +506,28 @@ model smoke, implement and verify these product contracts without task-specific 
    `WorkingFact` wrapper around that immutable `EvidenceRecord`. The model cannot supply the value and the tool causes
    no BrowserGym dispatch. Test current/public/scalar admission, bounds, idempotence, conflicts, and later retrieval.
 
-The 2026-08-18 implementation checkpoint for the no-reset/YIELDED lifecycle foundation plus items 2–3 passes
-`1189 passed, 18 skipped`, repository-wide Ruff, and `git diff --check`. This is local contract evidence only:
-`yield_subtask`, the outer mission roles, audit/state promotion, and WebArena smokes remain unimplemented.
+The 2026-08-18 W1a implementation checkpoint passes local mission contracts, episode lifecycle, audit/admission,
+finalization/native mapping, model invocation boundary, MiniWoB/CoreLoop regressions, repository-wide Ruff, and
+`git diff --check`. The final full local gate is `1216 passed, 18 skipped`. This is local contract evidence only:
+W1b official site compatibility smokes and the W2 frozen cohort remain pending.
 
-4. **Thin mission roles — next implementation gate.** Manager reads original TaskGoal, accepted MissionState, last typed exit/audit/failure, and
+4. **Thin mission roles — implemented locally.** Manager reads original TaskGoal, accepted MissionState, last typed exit/audit/failure, and
    remaining budget; it emits one bounded SubtaskContract. Long-horizon mode deterministically projects that contract
    to one GoalPlan item and disables the optional model GoalCompiler. ActionPolicy continues to own rolling GUI
    progress and receives only selected carry facts, current-episode history, fresh World/screenshot, and current tools.
-5. **Audit and accepted state.** Operational stall/oscillation rules may yield but never infer semantic completion.
+5. **Audit and accepted state — implemented locally.** Operational stall/oscillation rules may yield but never infer semantic completion.
    Existing typed criteria close what they can; otherwise a read-only Auditor proposes a cited AuditDelta from a
    bounded AuditBundle. AuditBoundary alone admits cited public `EvidenceRecord`s into versioned MissionState. One
    UNKNOWN may request one extra read-only capture; unsupported claims leave MissionState unchanged.
-6. **One terminal authority.** Ordinary episodes cannot offer STOP/FinalResponse. Only an accepted global-final route
+6. **One terminal authority — implemented locally.** Ordinary episodes cannot offer STOP/FinalResponse. Only an accepted global-final route
    may deliver once through BrowserGym's official `send_msg_to_user` capability. Reuse
    `DispatchStatus.NOT_SENT|SENT|SENT_UNKNOWN` plus one case latch, reacquire fresh state, and accept only the integrated
    WebArena-Verified result. Quarantine the offline `eval-tasks` helper from W1b/W2 composition.
-7. **Isolation and bounded failures.** Every official reset starts with empty in-memory MissionState, working facts,
+7. **Isolation and bounded failures — implemented locally.** Every official reset starts with empty in-memory MissionState, working facts,
    and episode history; none crosses a case boundary and W2 performs no checkpoint resume. Manager/Auditor use the
    existing provider bridge, bounded repair/retry, and typed failure routing; exhaustion returns control or fails the
    case without an implicit state write or unbounded role loop.
-8. **Reuse constraint.** Do not import or fork LongHorizon-Harness's generic Environment/orchestrator. Adapt only its
+8. **Reuse constraint — preserved locally.** Do not import or fork LongHorizon-Harness's generic Environment/orchestrator. Adapt only its
    MEA role prompts, bounded routes/rounds, repair/failure routing, and human-gate pattern with attribution. Do not add
    `CompactStep`, `HistoryProjector`, `CaseSession`, another provider, another GUI loop, or another evaluator.
 
@@ -779,12 +780,15 @@ These black-box fixtures never define Runtime recovery, authorization, or comple
 The public Runtime, CLI, and target benchmark harness now exclusively run `CoreAgentLoop`; there is no second
 legacy-engine path. Every serialized run identity records `runtime=core`. This establishes runtime provenance but
 makes no new live MiniWoB performance claim until the paired cohorts below have run. The outer mission layer described
-for G5 is not yet an executable product path; the no-reset/YIELDED lifecycle foundation and W1a items 2–3 are
-implemented locally, while explicit `yield_subtask`, items 4–8, and their ownership tests still precede any W2 run. The current
-executable gate is:
+for G5 is now an executable W1a product path for local contracts: thin mission roles, accepted MissionState, bounded
+episodes, `yield_subtask`, official BrowserGym finalization, and native terminal mapping are implemented and verified
+locally. W1b official site compatibility smokes and W2 frozen cohort evidence still precede any long-horizon
+capability claim. The current executable gate is:
 
 ```bash
-pytest -q tests/unit tests/integration tests/conformance
+pytest -q
+ruff check src tests
+git diff --check
 ```
 
 The first paired live run must use the frozen JSON manifest above, write raw per-case JSON under an artifact directory,

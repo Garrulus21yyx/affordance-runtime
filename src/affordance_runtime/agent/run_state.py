@@ -14,7 +14,7 @@ from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
 )
-from affordance_runtime.agent.decisions import AgentDecision, LocalToolResult, SelectAction
+from affordance_runtime.agent.decisions import AgentDecision, LocalToolResult, SelectAction, YieldSubtask
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
@@ -47,6 +47,11 @@ class RunStatus(StrEnum):
 class EpisodeYieldReason(StrEnum):
     BUDGET = "budget"
     CONTEXT_CAPACITY = "context_capacity"
+    READY_FOR_AUDIT = "ready_for_audit"
+    STALLED = "stalled"
+    BLOCKED = "blocked"
+    CAPABILITY_GAP = "capability_gap"
+    OSCILLATION = "oscillation"
 
 
 @dataclass(frozen=True)
@@ -235,6 +240,10 @@ class RunState:
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result
         self.status = result.status_after
+        if isinstance(result.decision, YieldSubtask) and self.status is RunStatus.YIELDED:
+            self.yield_reason = EpisodeYieldReason(result.decision.kind)
+        elif self.status is RunStatus.YIELDED and result.feedback.startswith("episode_monitor:"):
+            self.yield_reason = EpisodeYieldReason(result.feedback.removeprefix("episode_monitor:"))
         if consume_step:
             self.remaining_steps = max(0, self.remaining_steps - 1)
         self.observation_count += int(acquired_new_world)

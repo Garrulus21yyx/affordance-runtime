@@ -10,6 +10,7 @@ from affordance_runtime.world.acquisition import (
     ObservationCapabilities,
     WorldObservationRequest,
 )
+from affordance_runtime.world.finalization import EnvironmentFinalization
 
 
 class WorldEnvironment(Protocol):
@@ -28,3 +29,8 @@ class WorldEnvironment(Protocol):
     def is_current(self, request: BoundActionRequest) -> bool: ...
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome: ...
+
+    @property
+    def supports_finalization(self) -> bool: ...
+
+    async def finalize(self, content: str) -> EnvironmentFinalization: ...

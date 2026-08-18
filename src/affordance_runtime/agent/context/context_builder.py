@@ -60,6 +60,7 @@ class ContextBuilder:
         observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
         goal_resolution: GoalPlanResolution | None = None,
         working_facts: tuple[WorkingFact, ...] = (),
+        runtime_controls: tuple[str, ...] = (),
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -124,7 +125,7 @@ class ContextBuilder:
             page,
             context_generation,
             goal_plan,
-            _tool_catalog_digest(actions, world, grounding),
+            _tool_catalog_digest(actions, world, grounding, runtime_controls),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         return _fit_context(
@@ -145,6 +146,7 @@ class ContextBuilder:
             pinned_targets,
             working_facts,
             history_total,
+            runtime_controls,
         )
 
     def page(
@@ -211,7 +213,12 @@ def _current_goal_plan(
     return project_agent_goal_plan(effective, max_items=max_items)
 
 
-def _tool_catalog_digest(actions, world, grounding: GroundingProjectionResult) -> str:
+def _tool_catalog_digest(
+    actions,
+    world,
+    grounding: GroundingProjectionResult,
+    runtime_controls: tuple[str, ...],
+) -> str:
     """Bind identity to the exact current inputs that determine the public tool catalog."""
 
     payload = to_json_compatible({
@@ -219,6 +226,7 @@ def _tool_catalog_digest(actions, world, grounding: GroundingProjectionResult) -
         "observation_capabilities": world.observation_capabilities,
         "world_targets": world.targets,
         "grounding_entities": grounding.index.entities,
+        "runtime_controls": tuple(runtime_controls),
     })
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode()).hexdigest()
@@ -248,6 +256,7 @@ def _fit_context(
     pinned_target_ids: tuple[str, ...],
     working_facts: tuple[WorkingFact, ...],
     current_step_index: int,
+    runtime_controls: tuple[str, ...],
 ) -> AgentContext:
     evidence_index = WorldEvidenceIndex.from_observation(observation)
     while True:
@@ -289,6 +298,7 @@ def _fit_context(
             evidence_index,
             current_step_index,
             budget.max_history_serialized_bytes,
+            runtime_controls,
         )
         if _semantic_serialized_size(context) <= budget.max_total_serialized_bytes:
             return context

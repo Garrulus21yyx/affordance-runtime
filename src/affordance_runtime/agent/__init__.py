@@ -18,6 +18,8 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     SelectAction,
     Wait,
+    YieldSubtask,
+    YieldSubtaskKind,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus, StepResult
@@ -50,4 +52,6 @@ __all__ = [
     "UnsupportedCompositionError",
     "Wait",
     "WorkingFact",
+    "YieldSubtask",
+    "YieldSubtaskKind",
 ]

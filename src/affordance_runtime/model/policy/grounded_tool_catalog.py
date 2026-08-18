@@ -18,6 +18,7 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     Wait,
+    YieldSubtask,
 )
 from affordance_runtime.agent.working_facts import (
     WorkingFact,
@@ -143,6 +144,13 @@ class _ControlBinding:
                 context_id,
                 str(arguments["reason"]),
                 str(arguments["category"]),
+                tool_call_id,
+            )
+        if self.kind == "yield_subtask":
+            return YieldSubtask(
+                context_id,
+                str(arguments["kind"]),
+                str(arguments["reason"]),
                 tool_call_id,
             )
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -358,6 +366,25 @@ def compile_grounded_tool_catalog(
                 context.actions.active_relevance_filter,
                 context.actions.next_cursor,
             ),
+        ))
+
+    if "yield_subtask" in context.runtime_controls:
+        registered.append(RegisteredGroundedTool(
+            ToolSpec(
+                "yield_subtask",
+                "End only this executor episode for Manager/Auditor review. This sends no browser action and does not claim task success.",
+                _object_schema(
+                    {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["ready_for_audit", "stalled", "blocked", "capability_gap"],
+                        },
+                        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+                    },
+                    ("kind", "reason"),
+                ),
+            ),
+            _ControlBinding("yield_subtask"),
         ))
 
     registered.extend((

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
@@ -66,6 +66,8 @@ class TargetRuntime:
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
     goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
+    runtime_controls: tuple[str, ...] = ()
+    episode_monitor: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
@@ -103,6 +105,20 @@ class TargetRuntime:
             trace_sink=self.trace_sink,
             goal_compiler=self.goal_compiler,
             goal_plan_boundary=self.goal_plan_boundary,
+            runtime_controls=self.runtime_controls,
+            episode_monitor=self.episode_monitor,
+        )
+
+    def with_runtime_controls(
+        self,
+        runtime_controls: tuple[str, ...],
+        *,
+        episode_monitor: object | None = None,
+    ) -> TargetRuntime:
+        return replace(
+            self,
+            runtime_controls=tuple(runtime_controls),
+            episode_monitor=episode_monitor,
         )
 
     async def run_task(
@@ -127,6 +143,7 @@ class TargetRuntime:
         *,
         max_turns: int,
         yield_on_budget_exhaustion: bool,
+        working_facts=(),
     ) -> RunState:
         return await self.build_loop().initialize_from_world(
             task,
@@ -134,6 +151,7 @@ class TargetRuntime:
             goal_resolution,
             max_turns=max_turns,
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
+            working_facts=working_facts,
         )
 
     async def continue_task(

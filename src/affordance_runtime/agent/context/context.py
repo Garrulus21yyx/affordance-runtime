@@ -145,6 +145,7 @@ class AgentContext:
     evidence_index: WorldEvidenceIndex | None = field(default=None, repr=False, compare=False)
     current_step_index: int = field(default=0, repr=False, compare=False)
     history_byte_budget: int = field(default=16 * 1024, repr=False, compare=False)
+    runtime_controls: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -170,6 +171,13 @@ class AgentContext:
         object.__setattr__(self, "private_fact_bindings", freeze_json(bindings))
         if self.current_step_index < 0 or self.history_byte_budget <= 0:
             raise ValueError("AgentContext episode bounds are invalid")
+        controls = tuple(self.runtime_controls)
+        if len(set(controls)) != len(controls) or any(
+            not isinstance(item, str) or not item.strip() or len(item) > 64
+            for item in controls
+        ):
+            raise ValueError("AgentContext runtime controls must be bounded and unique")
+        object.__setattr__(self, "runtime_controls", controls)
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 

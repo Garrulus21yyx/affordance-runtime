@@ -36,12 +36,13 @@ held-out generalization evidence, so G4 remains non-closed and its cohort is ret
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
-across fresh executor episodes. The inner episode foundation, context retention, working-fact contracts, and model
-invocation boundary convergence are now implemented and locally verified. ActionPolicy and GoalCompiler expose one
-explicit `ModelInvocationResult` carrying metadata, physical attempts, repair diagnostics, and lineage, while
-compact-json remains a feature-frozen compatibility shim. The outer Manager/Auditor/MissionState path remains
-deliberately unimplemented.
-No WebArena capability claim follows from these local contracts alone.
+across fresh executor episodes. The inner episode foundation, context retention, working-fact contracts, model
+invocation boundary convergence, thin Manager/Auditor/MissionState layer, `yield_subtask`, and official BrowserGym
+finalization/native-evaluator path are now implemented and locally verified. ActionPolicy, GoalCompiler, Manager, and
+Auditor expose explicit `ModelInvocationResult` envelopes carrying metadata, physical attempts, repair diagnostics,
+and lineage, while compact-json remains a feature-frozen compatibility shim. No WebArena long-horizon benchmark
+capability claim follows from these local contracts alone; W1b official site compatibility smokes and the W2 frozen
+cohort remain pending.
 
 ## One GUI loop, two time scales
 
@@ -991,7 +992,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | episode lifecycle, Episode Context, WorkingFact, and model invocation boundary implemented locally; outer mission layer pending | thin outer Manager/Auditor/MissionState must enter through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a thin mission layer and official terminal path implemented; local contract verification passed; independent audit passed | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; W1b smokes and W2 cohort remain pending |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:
@@ -1076,6 +1077,7 @@ and summaries that existed only to support the old ledger-shaped context are no 
   after-only postcondition proof, target-scoped transition evidence, non-blocking unknown, and private-field non-leakage.
 - The second 2026-08-17 formal Like run reports Ready-plan delivery, all policy actions, official failure, and separate
   compiler breadth metrics without a case-specific branch; it witnesses delivery but falsifies the behavioral claim.
-- The frozen WebArena-Verified cohort and an independent fresh-context audit remain required before any long-horizon
+- The W1a independent fresh-context audit passed after FinalResponse/finalizing and STOP-gating fixes. The W1b
+  WebArena-Verified official site compatibility smokes and frozen W2 cohort remain required before any long-horizon
   capability claim; the deferred Like cohort remains required only for a short-loop generalization claim.
 - Code, tests, maintained documents, and benchmark reports describe the same one-GUI-loop/two-time-scale architecture.

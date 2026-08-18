@@ -67,7 +67,7 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
     assert {item.value for item in grounded.supported_decisions} == {
         "select_action", "request_evidence", "request_action_page", "ask_user",
-        "count_children", "wait", "abort",
+        "count_children", "wait", "abort", "yield_subtask",
     }
 
 

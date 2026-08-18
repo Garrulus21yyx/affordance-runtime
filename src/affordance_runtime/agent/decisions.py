@@ -36,6 +36,13 @@ class AbortCategory(StrEnum):
     INTERNAL = "internal"
 
 
+class YieldSubtaskKind(StrEnum):
+    READY_FOR_AUDIT = "ready_for_audit"
+    STALLED = "stalled"
+    BLOCKED = "blocked"
+    CAPABILITY_GAP = "capability_gap"
+
+
 def _require_context(context_id: str) -> None:
     if not context_id.strip():
         raise ValueError("decision requires context identity")
@@ -163,6 +170,25 @@ class LocalToolResult:
 
 
 @dataclass(frozen=True)
+class YieldSubtask:
+    """Local episode exit request; never dispatches to the environment."""
+
+    context_id: str
+    kind: str
+    reason: str
+    tool_call_id: str = ""
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        _require_tool_call_id(self.tool_call_id)
+        try:
+            YieldSubtaskKind(self.kind)
+        except ValueError as exc:
+            raise ValueError("yield_subtask kind is unsupported") from exc
+        _require_bounded(self.reason, _MAX_REASON, "yield reason")
+
+
+@dataclass(frozen=True)
 class FinalResponse:
     """Native user-facing result emitted only after Runtime-verified completion."""
 
@@ -211,6 +237,7 @@ AgentDecision: TypeAlias = (
     | RequestActionPage
     | AskUser
     | LocalToolResult
+    | YieldSubtask
     | FinalResponse
     | Wait
     | Abort

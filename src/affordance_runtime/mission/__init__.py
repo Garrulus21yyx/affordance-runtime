@@ -1,0 +1,59 @@
+"""Thin mission layer around the existing CoreAgentLoop."""
+
+from affordance_runtime.mission.boundary import AuditBoundary
+from affordance_runtime.mission.contracts import (
+    AcceptedFact,
+    AuditBoundaryResult,
+    AuditBundle,
+    AuditDelta,
+    AuditDeltaStatus,
+    AuditedOutcome,
+    AuditorPort,
+    AuditorRoleRequest,
+    EpisodeMonitorEvent,
+    EpisodeMonitorRecommendation,
+    EpisodeMonitorTransition,
+    ManagerDecision,
+    ManagerPort,
+    ManagerRoleRequest,
+    ManagerRoute,
+    MissionState,
+    OutcomeProposal,
+    PromoteFactProposal,
+    SubtaskContract,
+    SupervisorPhase,
+    SupervisorState,
+)
+from affordance_runtime.mission.goal_projection import subtask_goal_resolution
+from affordance_runtime.mission.monitor import EpisodeMonitor, EpisodeMonitorConfig
+from affordance_runtime.mission.supervisor import MissionRunResult, MissionSupervisor
+
+__all__ = [
+    "AcceptedFact",
+    "AuditBoundary",
+    "AuditBoundaryResult",
+    "AuditBundle",
+    "AuditDelta",
+    "AuditDeltaStatus",
+    "AuditedOutcome",
+    "AuditorPort",
+    "AuditorRoleRequest",
+    "EpisodeMonitor",
+    "EpisodeMonitorConfig",
+    "EpisodeMonitorEvent",
+    "EpisodeMonitorRecommendation",
+    "EpisodeMonitorTransition",
+    "ManagerDecision",
+    "ManagerPort",
+    "ManagerRoleRequest",
+    "ManagerRoute",
+    "MissionState",
+    "MissionRunResult",
+    "MissionSupervisor",
+    "OutcomeProposal",
+    "PromoteFactProposal",
+    "SubtaskContract",
+    "SupervisorPhase",
+    "SupervisorState",
+    "subtask_goal_resolution",
+]

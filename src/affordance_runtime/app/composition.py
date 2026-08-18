@@ -47,6 +47,8 @@ def compose_target_runtime(
     trace_sink: RunTraceSink | None = None,
     goal_compiler: GoalCompiler | None = None,
     goal_plan_boundary: GoalPlanBoundary | None = None,
+    runtime_controls: tuple[str, ...] = (),
+    episode_monitor: object | None = None,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -64,6 +66,8 @@ def compose_target_runtime(
         required_decisions=required_decisions,
         goal_compiler=goal_compiler or UnavailableGoalCompiler(),
         goal_plan_boundary=goal_plan_boundary or GoalPlanBoundary(),
+        runtime_controls=runtime_controls,
+        episode_monitor=episode_monitor,
     )
 
 
