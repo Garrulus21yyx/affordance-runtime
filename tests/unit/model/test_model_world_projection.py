@@ -221,7 +221,7 @@ def test_action_page_reports_runtime_membership_and_truncation_truthfully() -> N
     assert context.actions.truncated and context.actions.has_more
 
 
-def test_recent_steps_keep_only_the_latest_eight_mechanically() -> None:
+def test_recent_steps_keep_the_complete_episode_history() -> None:
     observation = fused_world("world:history", surface="dom")
     task = TaskGoal("history", "Inspect recent steps")
     steps = tuple(
@@ -238,7 +238,7 @@ def test_recent_steps_keep_only_the_latest_eight_mechanically() -> None:
     )
 
     assert context.recent_steps.total_count == 10
-    assert context.recent_steps.truncated
+    assert not context.recent_steps.truncated
     assert tuple(item.reason for item in context.recent_steps.items) == tuple(
-        f"step:{index}" for index in range(2, 10)
+        f"step:{index}" for index in range(10)
     )

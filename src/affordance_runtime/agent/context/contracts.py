@@ -11,6 +11,25 @@ from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 
+_GENERATION_REF = re.compile(r"\b[EF][1-9][0-9]{0,2}\b")
+_PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
+
+
+def sanitize_history_value(value: object) -> object:
+    """Remove observation-generation identity before a value enters episode history."""
+
+    if isinstance(value, str):
+        return _GENERATION_REF.sub("<expired-ref>", value)
+    if isinstance(value, Mapping):
+        return {
+            str(sanitize_history_value(str(key))): sanitize_history_value(item)
+            for key, item in value.items()
+            if str(key) not in _PRIVATE_HISTORY_KEYS and not str(key).endswith("_ref")
+        }
+    if isinstance(value, tuple | list):
+        return tuple(sanitize_history_value(item) for item in value)
+    return value
+
 
 @dataclass(frozen=True)
 class AgentSuccessCriterionView:

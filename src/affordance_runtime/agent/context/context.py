@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
+from affordance_runtime.agent.working_facts import WorkingFact, validate_working_fact_collection
 from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,16 @@ class AgentContext:
     actor_world: ActorWorldSnapshot
     image_inputs: tuple[AgentImageInput, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
+    working_facts: tuple[WorkingFact, ...] = ()
+    private_fact_bindings: Mapping[str, str] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    evidence_index: WorldEvidenceIndex | None = field(default=None, repr=False, compare=False)
+    current_step_index: int = field(default=0, repr=False, compare=False)
+    history_byte_budget: int = field(default=16 * 1024, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -142,7 +154,30 @@ class AgentContext:
             raise TypeError("AgentContext image inputs must be bounded and typed")
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")
+        object.__setattr__(
+            self,
+            "working_facts",
+            validate_working_fact_collection(self.working_facts),
+        )
+        bindings = dict(self.private_fact_bindings)
+        if any(
+            re.fullmatch(r"F[1-9][0-9]{0,2}", ref) is None
+            or not isinstance(canonical, str)
+            or not canonical.startswith("fact:")
+            for ref, canonical in bindings.items()
+        ):
+            raise ValueError("AgentContext fact bindings must be current public fact refs")
+        object.__setattr__(self, "private_fact_bindings", freeze_json(bindings))
+        if self.current_step_index < 0 or self.history_byte_budget <= 0:
+            raise ValueError("AgentContext episode bounds are invalid")
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+        from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 
         if not isinstance(self.actor_world, ActorWorldSnapshot):
             raise TypeError("AgentContext actor world must be a typed snapshot")
+        if self.evidence_index is not None and not isinstance(self.evidence_index, WorldEvidenceIndex):
+            raise TypeError("AgentContext evidence index must be typed")
+        if self.evidence_index is not None and any(
+            self.evidence_index.resolve(canonical) is False for canonical in bindings.values()
+        ):
+            raise ValueError("AgentContext fact bindings must resolve in the current evidence index")

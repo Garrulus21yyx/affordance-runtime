@@ -20,8 +20,9 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
+from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
+from affordance_runtime.agent.working_facts import WorkingFact
 
 __all__ = [
     "ALL_DECISION_CAPABILITIES",
@@ -32,6 +33,7 @@ __all__ = [
     "CoreAgentLoop",
     "CoreLoopStartError",
     "DecisionCapability",
+    "EpisodeYieldReason",
     "FailureKind",
     "FailureStage",
     "FinalResponse",
@@ -47,4 +49,5 @@ __all__ = [
     "UnsupportedComposition",
     "UnsupportedCompositionError",
     "Wait",
+    "WorkingFact",
 ]

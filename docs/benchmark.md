@@ -220,7 +220,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G2. Advisory prompt/context convergence | compact GoalCompiler and ActionPolicy prompts in the existing five-kind context | no internal locate/inspect items; dependency is semantic order, not a visibility gate; semantic groups are byte-bounded atomically; typed World renders as compact AX text; older summaries plus four ref-free semantic turns; stable tools with searchable overflow | real snapshot is complete at 16.2% of typed bytes; provider history contains no old E-ref, old World, generic incomplete progress, or old screenshot; generalization remains non-closed pending the G4 cohort |
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
-| G5. WebArena-Verified long horizon — architecture approved / implementation pending | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; site smokes; frozen 12-case cohort | existing `AgentTurnView` history extended beyond eight turns; evidence-backed working facts; a thin local Supervisor adapted from public MEA patterns; unchanged GUI action chain; accepted MissionState; existing runner/native evaluator | ownership gates and fresh-context audit pass, then official evaluator success on at least 6/12 including each stratum; no benchmark-specific branch or cross-case memory |
+| G5. WebArena-Verified long horizon — episode foundation/context implemented, mission layer pending | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; site smokes; frozen 12-case cohort | `YIELDED` no-reset episode lifecycle, all-turn `AgentTurnView` history, 16 KiB compact/detailed rendering, private F bindings and evidence-backed `pin_fact` are implemented; thin Supervisor/Auditor/MissionState and official long-horizon composition remain next | ownership gates and fresh-context audit pass, then official evaluator success on at least 6/12 including each stratum; no benchmark-specific branch or cross-case memory |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
 
@@ -483,23 +483,30 @@ aggregation.
 The former plan to use static GoalPlan plus eight recent turns as the W2 baseline is withdrawn. Before a WebArena
 model smoke, implement and verify these product contracts without task-specific logic:
 
-1. **Episode boundary foundation.** Add episode-only `RunStatus.YIELDED` plus `yield_subtask`, and reuse the same
+1. **Episode boundary foundation — implemented locally.** `RunStatus.YIELDED`, initialization from a supplied fresh
+   World/GoalPlanResolution, and the no-second-reset lifecycle witness are implemented. The explicit `yield_subtask`
+   control belongs with the thin mission-role increment and is not silently emulated in CoreLoop. Reuse the same
    `BrowserGymSurfaceAdapter` opened by the existing `_run_case` scope. Later episodes initialize from a fresh capture
    without another reset. User/confirmation pauses resume the same episode; cancellation closes the case. This typed
    exit exists before history overflow can route to it.
-2. **Episode Context.** Extend the existing `RunState.recent_steps -> project_step_result() -> AgentTurnView ->
+2. **Episode Context — implemented locally.** The existing `RunState.recent_steps -> project_step_result() -> AgentTurnView ->
    GroundedPolicyContextBinder` path beyond eight turns. Keep the latest four views detailed, render older views
    compactly within a frozen 16 KiB history budget, and deterministically fold only repeated wait/search/no-effect
    runs. Make `project_step_result()` sanitize generation-local refs in every stored string/nested value so ActionPolicy
    and Auditor share the same safe record. No old World, screenshot, E/F ref, duplicate history record, or model
    summary enters the baseline; overflow yields `context_capacity` instead of silently discarding causal history.
-3. **Working facts.** Add `AgentContext.private_fact_bindings` as one private, non-serialized
+3. **Working facts — implemented locally.** `AgentContext.private_fact_bindings` is one private, non-serialized
    F-ref-to-canonical-fact mapping, then add `pin_fact`
    to the current local ToolCatalog/resolver. It closes one current public scalar F ref through that mapping and
    `WorldEvidenceIndex.resolve_record()`, then stores only a bounded
    `WorkingFact` wrapper around that immutable `EvidenceRecord`. The model cannot supply the value and the tool causes
    no BrowserGym dispatch. Test current/public/scalar admission, bounds, idempotence, conflicts, and later retrieval.
-4. **Thin mission roles.** Manager reads original TaskGoal, accepted MissionState, last typed exit/audit/failure, and
+
+The 2026-08-18 implementation checkpoint for the no-reset/YIELDED lifecycle foundation plus items 2–3 passes
+`1189 passed, 18 skipped`, repository-wide Ruff, and `git diff --check`. This is local contract evidence only:
+`yield_subtask`, the outer mission roles, audit/state promotion, and WebArena smokes remain unimplemented.
+
+4. **Thin mission roles — next implementation gate.** Manager reads original TaskGoal, accepted MissionState, last typed exit/audit/failure, and
    remaining budget; it emits one bounded SubtaskContract. Long-horizon mode deterministically projects that contract
    to one GoalPlan item and disables the optional model GoalCompiler. ActionPolicy continues to own rolling GUI
    progress and receives only selected carry facts, current-episode history, fresh World/screenshot, and current tools.
@@ -767,7 +774,8 @@ These black-box fixtures never define Runtime recovery, authorization, or comple
 The public Runtime, CLI, and target benchmark harness now exclusively run `CoreAgentLoop`; there is no second
 legacy-engine path. Every serialized run identity records `runtime=core`. This establishes runtime provenance but
 makes no new live MiniWoB performance claim until the paired cohorts below have run. The outer mission layer described
-for G5 is not yet an executable product path; W1a implementation and ownership tests precede any W2 run. The current
+for G5 is not yet an executable product path; the no-reset/YIELDED lifecycle foundation and W1a items 2–3 are
+implemented locally, while explicit `yield_subtask`, items 4–8, and their ownership tests still precede any W2 run. The current
 executable gate is:
 
 ```bash

@@ -41,6 +41,8 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOL_CALL_ENVELOPE,
     GroundedActionResolution,
     GroundedToolPhase,
+    GroundedToolResolutionCode,
+    GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
     _TOOL_INTENT_REPAIR_CODES,
@@ -335,6 +337,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert {item["name"] for item in public["tools"]} == {
         "type_text",
         "activate",
+        "pin_fact",
         "ask_user",
         "wait",
         "abort",
@@ -647,6 +650,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
+        "pin",
         "ask",
         "wait",
         "abort",
@@ -771,6 +775,145 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     }
     assert tuple(item.spec for item in catalog.tools) == catalog.specs
     assert tuple(item.binding for item in catalog.tools) == catalog.bindings
+
+
+def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
+    context = _context()
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in catalog.specs if item.name == "pin_fact")
+    evidence_ref = spec.input_schema["properties"]["evidence_ref"]["enum"][0]
+
+    assert "value" not in spec.input_schema["properties"]
+    resolution = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "pin_fact",
+            {
+                "key": "login_field_value",
+                "evidence_ref": evidence_ref,
+                "purpose": "reuse after navigating away",
+            },
+            "provider-call:pin",
+        ),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(resolution.decision, LocalToolResult)
+    assert resolution.decision.working_fact is not None
+    canonical = context.private_fact_bindings[evidence_ref]
+    record = context.evidence_index.resolve_record(canonical)
+    assert record is not None
+    assert resolution.decision.working_fact.value == record.value
+    assert "value" not in resolution.decision.result
+
+    next_context = replace(context, working_facts=(resolution.decision.working_fact,))
+    public = _bound_public_context(next_context)
+    assert public["working_set"] == [{
+        "key": "login_field_value",
+        "value": record.value,
+        "purpose": "reuse after navigating away",
+        "acquired_at_step": context.current_step_index,
+    }]
+    assert canonical not in json.dumps(public)
+
+
+def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
+    context = _context()
+    first_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
+    refs = tuple(spec.input_schema["properties"]["evidence_ref"]["enum"])
+    assert len(refs) >= 2
+    first = resolve_grounded_tool_call(
+        first_catalog,
+        ToolCall(
+            "pin_fact",
+            {"key": "saved_value", "evidence_ref": refs[0], "purpose": "later use"},
+            "provider-call:first-pin",
+        ),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(first, LocalToolResult) and first.working_fact is not None
+    pinned = replace(context, working_facts=(first.working_fact,))
+    catalog = compile_grounded_tool_catalog(pinned, GroundedToolPhase.ACTION_SELECTION)
+
+    same = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "pin_fact",
+            {"key": "saved_value", "evidence_ref": refs[0], "purpose": "later use"},
+            "provider-call:same-pin",
+        ),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(same, LocalToolResult)
+    assert same.working_fact is None
+    assert same.result["status"] == "already_pinned"
+
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall(
+                "pin_fact",
+                {"key": "saved_value", "evidence_ref": refs[1], "purpose": "later use"},
+                "provider-call:conflicting-pin",
+            ),
+            expected_context_id=context.context_id,
+        )
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+
+def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
+    context = _context()
+    first_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
+    evidence_ref = spec.input_schema["properties"]["evidence_ref"]["enum"][0]
+    first = resolve_grounded_tool_call(
+        first_catalog,
+        ToolCall(
+            "pin_fact",
+            {"key": "value_0", "evidence_ref": evidence_ref, "purpose": "later use"},
+            "provider-call:capacity-basis",
+        ),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(first, LocalToolResult) and first.working_fact is not None
+    full = replace(
+        context,
+        working_facts=tuple(
+            replace(first.working_fact, key=f"value_{index}")
+            for index in range(16)
+        ),
+    )
+    catalog = compile_grounded_tool_catalog(full, GroundedToolPhase.ACTION_SELECTION)
+
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall(
+                "pin_fact",
+                {"key": "overflow", "evidence_ref": evidence_ref, "purpose": "later use"},
+                "provider-call:capacity",
+            ),
+            expected_context_id=context.context_id,
+        )
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+
+def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema() -> None:
+    context = _context()
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    for invalid in ("F999", next(iter(context.private_fact_bindings.values()))):
+        with pytest.raises(GroundedToolResolutionError) as captured:
+            resolve_grounded_tool_call(
+                catalog,
+                ToolCall(
+                    "pin_fact",
+                    {"key": "saved_value", "evidence_ref": invalid, "purpose": "later use"},
+                    "provider-call:invalid-pin",
+                ),
+                expected_context_id=context.context_id,
+            )
+        assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_find_actions_exposes_search_filters_and_maps_current_refs_privately() -> None:
@@ -1258,7 +1401,7 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
     assert "Runtime admits the need" in descriptions["request_evidence"]
 
 
-def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> None:
+def test_grounded_recent_steps_keep_all_compact_and_latest_four_detailed() -> None:
     context = _context()
     target = AgentHistoricalTargetView("textbox", "Value", ("Form",))
     turns = tuple(
@@ -1271,7 +1414,7 @@ def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> N
             local_postcondition="satisfied",
             transition={"observed_change": "changed", "evidence_method": "native"},
             task_evaluation_status="incomplete",
-            reason=f"step-{index}",
+            reason=f"step-{index} used F{index + 1}",
         )
         for index in range(10)
     )
@@ -1279,9 +1422,9 @@ def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> N
 
     recent_steps = _bound_public_context(context)["recent_steps"]
 
-    assert recent_steps["retained_count"] == 8
-    assert len(recent_steps["earlier_actions"]) == 4
-    assert recent_steps["earlier_actions"][0]["outcome"] == "step-2"
+    assert recent_steps["retained_count"] == 10
+    assert len(recent_steps["earlier_actions"]) == 6
+    assert recent_steps["earlier_actions"][0]["outcome"] == "step-0 used <expired-ref>"
     assert len(recent_steps["recent_trajectory"]) == 4
     assert recent_steps["recent_trajectory"][-1]["action"]["arguments"] == {"text": "9"}
 
@@ -1308,7 +1451,7 @@ def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
     assert "observation" not in history["earlier_actions"][0]
     assert len(history["recent_trajectory"]) == 4
     assert all("observation" not in item for item in history["recent_trajectory"])
-    assert not re.search(r"\bE[1-9][0-9]{0,2}\b", json.dumps(history))
+    assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", json.dumps(history))
     assert history["recent_trajectory"][0]["action"]["target"] == {
         "role": "button",
         "label": "Like",

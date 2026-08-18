@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -12,8 +11,9 @@ from typing import Any
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context import AgentContext
-from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
+from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.projection import project_public_value
+from affordance_runtime.agent.working_facts import public_working_facts
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_tool_contracts import MAX_GROUNDED_WORKSPACE_BYTES
@@ -77,13 +77,18 @@ class GroundedPolicyContextBinder:
                 include_images=include_images,
             ),
             "goal_plan": _goal_plan(context),
-            "recent_steps": _recent_steps(context.recent_steps.items),
+            "recent_steps": render_episode_history(
+                context.recent_steps.items,
+                context.history_byte_budget,
+            ),
             "affordances": tuple(
                 {"ref": item.ref, "verbs": item.verbs}
                 for item in context.grounding.entities
                 if item.verbs
             ),
         }
+        if context.working_facts:
+            public["working_set"] = public_working_facts(context.working_facts)
         return public
 
     @staticmethod
@@ -194,76 +199,14 @@ def _goal_plan(context: AgentContext) -> dict[str, object]:
         "items": tuple(
             {
                 "id": item.id,
-                "objective": _redact_expired_refs(item.objective),
-                "done_when": _redact_expired_refs(item.done_when),
+                "objective": item.objective,
+                "done_when": item.done_when,
                 "depends_on": item.depends_on,
                 "final": item.final,
             }
             for item in plan.items
         ),
     }
-
-
-def _recent_steps(
-    items: tuple[AgentTurnView, ...],
-) -> dict[str, object]:
-    visible = items[-8:]
-    recent = visible[-4:]
-    earlier = visible[:-4]
-    return {
-        "earlier_actions": tuple(_earlier_action(item) for item in earlier),
-        "recent_trajectory": tuple(_turn(item, detailed=True) for item in recent),
-        "retained_count": len(visible),
-    }
-
-
-def _earlier_action(item: AgentTurnView) -> dict[str, object]:
-    result: dict[str, object] = {
-        "tool": _redact_expired_refs(item.semantic_action),
-        "outcome": _redact_expired_refs(item.reason),
-    }
-    if item.target is not None:
-        result["target"] = _historical_target(item.target)
-    return result
-
-
-def _turn(
-    item: AgentTurnView,
-    *,
-    detailed: bool,
-) -> dict[str, object]:
-    action: dict[str, object] = {
-        "kind": item.decision_kind,
-        "tool": _redact_expired_refs(item.semantic_action),
-    }
-    if item.target is not None:
-        action["target"] = _historical_target(item.target)
-    result_details = None
-    if detailed:
-        action["arguments"] = _historical_value(project_public_value(item.public_parameters))
-        if item.expected_outcome:
-            action["expected_outcome"] = _redact_expired_refs(item.expected_outcome)
-        if item.destination is not None:
-            action["destination"] = _historical_target(item.destination)
-        if item.semantic_summary:
-            details = _historical_value(project_public_value(item.semantic_summary))
-            if isinstance(details, Mapping):
-                details = dict(details)
-                result_details = details.pop("result", None)
-            if details:
-                action["details"] = details
-    result: dict[str, object] = {
-        "dispatch": _redact_expired_refs(item.dispatch_status),
-        "local_postcondition": _redact_expired_refs(item.local_postcondition),
-        "reason": _redact_expired_refs(item.reason),
-    }
-    if item.task_evaluation_status not in {"", "unknown", "incomplete"}:
-        result["task"] = item.task_evaluation_status
-    if item.transition:
-        result["transition"] = _historical_value(item.transition)
-    if result_details is not None:
-        result["details"] = result_details
-    return {"action": action, "result": result}
 
 
 def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
@@ -286,32 +229,3 @@ def _section(
         "total_count": section.total_count,
         "truncated": section.truncated,
     }
-
-
-def _historical_target(value: AgentHistoricalTargetView) -> dict[str, object]:
-    result: dict[str, object] = {
-        "role": _redact_expired_refs(value.role),
-        "label": _redact_expired_refs(value.label),
-    }
-    if value.context:
-        result["context"] = tuple(_redact_expired_refs(item) for item in value.context)
-    return result
-
-
-def _historical_value(value: object) -> object:
-    if isinstance(value, str):
-        return _redact_expired_refs(value)
-    if isinstance(value, Mapping):
-        return {
-            _redact_expired_refs(str(key)): _historical_value(item)
-            for key, item in value.items()
-            if str(key) not in {"subject_id", "target_id", "destination_id"}
-            and not str(key).endswith("_ref")
-        }
-    if isinstance(value, tuple | list):
-        return tuple(_historical_value(item) for item in value)
-    return value
-
-
-def _redact_expired_refs(value: str) -> str:
-    return re.sub(r"\bE[1-9][0-9]{0,2}\b", "<expired-ref>", value)

@@ -8,11 +8,21 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import InternalActionPage
+from affordance_runtime.agent.context.budgets import DEFAULT_MAX_HISTORY_SERIALIZED_BYTES
 from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.episode_history import (
+    EpisodeHistoryCapacityError,
+    render_episode_history,
+)
 from affordance_runtime.agent.decisions import AgentDecision, LocalToolResult, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
+from affordance_runtime.agent.working_facts import (
+    MAX_WORKING_FACTS,
+    WorkingFact,
+    validate_working_fact_collection,
+)
 from affordance_runtime.evaluation.contracts import ActionOutcome, TaskEvaluation
 from affordance_runtime.execution.contracts import ExecutionOutcome
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
@@ -21,8 +31,6 @@ from affordance_runtime.world.contracts import WorldObservation
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
-
-MAX_RECENT_STEPS = 8
 
 
 class RunStatus(StrEnum):
@@ -34,6 +42,11 @@ class RunStatus(StrEnum):
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+class EpisodeYieldReason(StrEnum):
+    BUDGET = "budget"
+    CONTEXT_CAPACITY = "context_capacity"
 
 
 @dataclass(frozen=True)
@@ -116,6 +129,8 @@ class RunState:
     goal_resolution: GoalPlanResolution | None = None
     goal_plan_version_counter: int = 0
     yield_on_budget_exhaustion: bool = False
+    working_facts: tuple[WorkingFact, ...] = ()
+    yield_reason: EpisodeYieldReason | None = None
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -137,10 +152,11 @@ class RunState:
             if self.goal_plan_version_counter < plan.plan_version:
                 raise ValueError("goal plan counter cannot precede the accepted plan")
         self.recent_steps = tuple(self.recent_steps)
-        if len(self.recent_steps) > MAX_RECENT_STEPS or any(
-            not isinstance(item, AgentTurnView) for item in self.recent_steps
-        ):
-            raise ValueError("recent step context must be bounded and public")
+        if any(not isinstance(item, AgentTurnView) for item in self.recent_steps):
+            raise ValueError("recent step context must be public")
+        self.working_facts = validate_working_fact_collection(self.working_facts)
+        if self.yield_reason is not None and not isinstance(self.yield_reason, EpisodeYieldReason):
+            raise TypeError("episode yield reason must be typed")
 
     @property
     def terminal(self) -> bool:
@@ -181,10 +197,33 @@ class RunState:
         self.context_generation += 1
         return self.context_generation
 
-    def remember_step(self, step: AgentTurnView) -> None:
+    def remember_step(
+        self,
+        step: AgentTurnView,
+        *,
+        max_bytes: int = DEFAULT_MAX_HISTORY_SERIALIZED_BYTES,
+    ) -> None:
         if not isinstance(step, AgentTurnView):
             raise TypeError("run step memory must be model-safe")
-        self.recent_steps = (*self.recent_steps, step)[-MAX_RECENT_STEPS:]
+        candidate = (*self.recent_steps, step)
+        try:
+            render_episode_history(candidate, max_bytes)
+        except EpisodeHistoryCapacityError:
+            if self.status is RunStatus.RUNNING:
+                self.status = RunStatus.YIELDED
+                self.yield_reason = EpisodeYieldReason.CONTEXT_CAPACITY
+            return
+        self.recent_steps = candidate
+
+    def remember_working_fact(self, fact: WorkingFact) -> None:
+        previous = next((item for item in self.working_facts if item.key == fact.key), None)
+        if previous is not None:
+            if previous.record.evidence_ref == fact.record.evidence_ref:
+                return
+            raise ValueError("working fact key already identifies different evidence")
+        if len(self.working_facts) >= MAX_WORKING_FACTS:
+            raise ValueError("episode working fact capacity is exhausted")
+        self.working_facts = validate_working_fact_collection((*self.working_facts, fact))
 
     def apply(self, result: StepResult, *, consume_step: bool = True) -> None:
         if self.status is not RunStatus.RUNNING:
@@ -203,9 +242,13 @@ class RunState:
         self.step_count += int(consume_step)
         self.action_page = result.action_page
         self.waited_ms += result.waited_ms
+        if isinstance(result.decision, LocalToolResult) and result.decision.working_fact is not None:
+            self.remember_working_fact(result.decision.working_fact)
         if self.status is RunStatus.RUNNING and self.remaining_steps == 0:
             self.status = (
                 RunStatus.YIELDED
                 if self.yield_on_budget_exhaustion
                 else RunStatus.BLOCKED
             )
+            if self.status is RunStatus.YIELDED:
+                self.yield_reason = EpisodeYieldReason.BUDGET

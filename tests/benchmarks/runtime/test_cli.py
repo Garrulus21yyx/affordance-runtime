@@ -23,6 +23,8 @@ def test_benchmark_cli_exposes_only_retained_independent_commands() -> None:
         "evaluate-webarena-verified",
         "prepare-wasp-subset",
         "provider-preflight-ollama",
+        "write-webarena-verified-w0-manifest",
+        "preflight-webarena-verified-w0",
     }
 
 

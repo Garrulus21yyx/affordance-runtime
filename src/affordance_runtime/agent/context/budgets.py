@@ -10,6 +10,7 @@ from typing import Generic, TypeVar
 
 T = TypeVar("T")
 DEFAULT_MAX_TOTAL_WAIT_MS = 120_000
+DEFAULT_MAX_HISTORY_SERIALIZED_BYTES = 16 * 1024
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ class ContextProjectionBudget:
     max_conflicts: int = 16
     max_action_options: int = 128
     max_destinations_per_option: int = 16
-    max_history_turns: int = 8
+    max_history_serialized_bytes: int = DEFAULT_MAX_HISTORY_SERIALIZED_BYTES
     max_transition_progress_changes: int = 32
     max_transition_evidence_refs: int = 16
     max_artifact_summaries: int = 16

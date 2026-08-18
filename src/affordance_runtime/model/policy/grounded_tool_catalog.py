@@ -19,6 +19,12 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     Wait,
 )
+from affordance_runtime.agent.working_facts import (
+    WorkingFact,
+    is_public_scalar,
+    validate_working_fact_collection,
+)
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
@@ -170,6 +176,62 @@ class _CountChildrenBinding:
         )
 
 
+@dataclass(frozen=True)
+class _PinFactBinding:
+    public_to_canonical: Mapping[str, str]
+    evidence_index: WorldEvidenceIndex
+    existing: Mapping[str, WorkingFact]
+    current_step_index: int
+
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        key = str(arguments["key"])
+        public_ref = str(arguments["evidence_ref"])
+        purpose = str(arguments["purpose"])
+        try:
+            canonical = self.public_to_canonical[public_ref]
+        except KeyError as exc:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                "evidence_ref is not a current public scalar fact",
+            ) from exc
+        record = self.evidence_index.resolve_record(canonical)
+        if record is None:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                "evidence_ref is stale",
+            )
+        fact = WorkingFact(key, record, self.current_step_index, purpose)
+        previous = self.existing.get(key)
+        if previous is not None:
+            if previous.record.evidence_ref != fact.record.evidence_ref:
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                    "working fact key already identifies different evidence",
+                )
+            return LocalToolResult(
+                context_id,
+                "pin_fact",
+                {"key": key, "evidence_ref": public_ref, "purpose": purpose},
+                {"status": "already_pinned", "key": key},
+                tool_call_id,
+            )
+        try:
+            validate_working_fact_collection((*self.existing.values(), fact))
+        except ValueError as exc:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                str(exc),
+            ) from exc
+        return LocalToolResult(
+            context_id,
+            "pin_fact",
+            {"key": key, "evidence_ref": public_ref, "purpose": purpose},
+            {"status": "pinned", "key": key},
+            tool_call_id,
+            working_fact=fact,
+        )
+
+
 def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
@@ -224,6 +286,47 @@ def compile_grounded_tool_catalog(
             ),
             _CountChildrenBinding(child_counts),
         ))
+
+    if context.evidence_index is not None:
+        eligible = {
+            public: canonical
+            for public, canonical in context.private_fact_bindings.items()
+            if (
+                (record := context.evidence_index.resolve_record(canonical)) is not None
+                and is_public_scalar(record.value)
+            )
+        }
+        if eligible:
+            registered.append(RegisteredGroundedTool(
+                ToolSpec(
+                    "pin_fact",
+                    "Retain one exact scalar value from current observation public evidence for use later in this executor episode. Runtime reads the value; never provide it yourself.",
+                    _object_schema(
+                        {
+                            "key": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                            },
+                            "evidence_ref": {
+                                "type": "string",
+                                "enum": list(eligible),
+                            },
+                            "purpose": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 240,
+                            },
+                        },
+                        ("key", "evidence_ref", "purpose"),
+                    ),
+                ),
+                _PinFactBinding(
+                    eligible,
+                    context.evidence_index,
+                    {item.key: item for item in context.working_facts},
+                    context.current_step_index,
+                ),
+            ))
 
     if context.actions.has_more:
         registered.append(RegisteredGroundedTool(

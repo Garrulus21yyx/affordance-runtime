@@ -8,7 +8,11 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldNodeView,
     ActorWorldSnapshot,
 )
-from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
+from affordance_runtime.agent.context.contracts import (
+    AgentHistoricalTargetView,
+    AgentTurnView,
+    sanitize_history_value,
+)
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -50,16 +54,16 @@ def project_step_result(result: StepResult) -> AgentTurnView:
         action = result.action_outcome
         return AgentTurnView(
             "selectaction",
-            intent.semantic_action,
+            str(sanitize_history_value(intent.semantic_action)),
             _historical_target(result, intent.target_id),
             _historical_target(result, intent.destination_id),
             _historical_value(project_public_value(intent.parameters)),
-            intent.expected_outcome,
-            str(result.execution.result.dispatch_status),
-            str(action.local_postcondition) if action is not None else "",
+            str(sanitize_history_value(intent.expected_outcome)),
+            str(sanitize_history_value(str(result.execution.result.dispatch_status))),
+            str(sanitize_history_value(str(action.local_postcondition))) if action is not None else "",
             _transition(result, action),
             str(result.task_evaluation.status),
-            action.reason if action is not None else result.feedback,
+            str(sanitize_history_value(action.reason if action is not None else result.feedback)),
             {"feedback_code": result.feedback},
         )
     target_id = ""
@@ -74,7 +78,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
         _control_tool_name(decision),
         _historical_target(result, target_id),
         task_evaluation_status=str(result.task_evaluation.status),
-        reason=result.feedback,
+        reason=str(sanitize_history_value(result.feedback)),
         semantic_summary=_historical_value(summary),
     )
 
@@ -163,16 +167,7 @@ def _class_tokens(value: object) -> tuple[str, ...]:
 def _historical_value(value: object) -> object:
     """Drop private identity/lineage fields before a value becomes model history."""
 
-    if isinstance(value, Mapping):
-        return {
-            str(key): _historical_value(item)
-            for key, item in value.items()
-            if str(key) not in {"subject_id", "target_id", "destination_id"}
-            and not str(key).endswith("_ref")
-        }
-    if isinstance(value, tuple | list):
-        return tuple(_historical_value(item) for item in value)
-    return value
+    return sanitize_history_value(value)
 
 
 def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:

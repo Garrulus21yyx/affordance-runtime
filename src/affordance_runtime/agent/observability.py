@@ -155,7 +155,11 @@ class RunTraceRecorder:
         )
 
     def run_paused(self, state: object) -> None:
-        self._emit("run_paused", status=_enum_value(getattr(state, "status", "")))
+        self._emit(
+            "run_paused",
+            status=_enum_value(getattr(state, "status", "")),
+            reason=_enum_value(getattr(state, "yield_reason", "")),
+        )
         self._export_flush()
 
     def run_resumed(self, kind: str, details: Mapping[str, object]) -> None:
@@ -658,7 +662,11 @@ def _json_value(value: Any, directory: Path | None) -> Any:
     if isinstance(value, Path):
         return str(value)
     if is_dataclass(value) and not isinstance(value, type):
-        return {item.name: _json_value(getattr(value, item.name), directory) for item in fields(value)}
+        return {
+            item.name: _json_value(getattr(value, item.name), directory)
+            for item in fields(value)
+            if item.metadata.get("serialize", True)
+        }
     if isinstance(value, Mapping):
         return {str(key): _json_value(item, directory) for key, item in value.items()}
     if isinstance(value, (tuple, list, set, frozenset)):

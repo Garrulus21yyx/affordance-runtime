@@ -25,16 +25,20 @@ compact rendering with the same public E-refs, hierarchy, state, and verbs. Its 
 gate. The subsequent formal G4 Like witness exposed a temporal reference defect: call-local E-refs were regenerated
 from each fresh World while complete historical observations retained former E-refs. Model-facing Recent Steps now
 renders only semantic targets, actions, and local transitions with expired refs removed; prior World renderings and
-marked screenshots never enter DOM/BrowserGym history, and generic `task=incomplete` is omitted. The stored
-`AgentTurnView.expected_outcome` is only bounded today and may still contain a generation-local ref; projection-level
-sanitation before Auditor reuse remains explicit W1 work. A fresh GLM-5.2 witness selected seven distinct
+marked screenshots never enter DOM/BrowserGym history, and generic `task=incomplete` is omitted. The Episode Context
+increment now sanitizes generation-local E/F refs in `project_step_result()`, retains every current-episode
+`AgentTurnView`, renders the latest four in detail and all earlier turns compactly under a 16 KiB byte budget, and
+yields with typed `context_capacity` rather than silently dropping irreducible history. Exact cross-page scalar values
+remain separate in bounded `WorkingFact` wrappers created only by the local `pin_fact` resolver from current public
+`WorldEvidenceIndex` records; the model cannot submit a value and no BrowserGym dispatch occurs. A fresh GLM-5.2 witness selected seven distinct
 inactive Likes and then Submit, reaching official success. This is one diagnostic witness in a dirty worktree, not
 held-out generalization evidence, so G4 remains non-closed and its cohort is retained as a short-loop regression gate.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
-across fresh executor episodes. The long-horizon target architecture below is approved but not implemented. The final
-verified short-loop gate before this design revision remains 1,173 passed with 18 skipped, plus repository-wide Ruff.
+across fresh executor episodes. The inner episode foundation, context retention, and working-fact contracts are now
+implemented and locally verified; the outer Manager/Auditor/MissionState path remains deliberately unimplemented.
+No WebArena capability claim follows from these local contracts alone.
 
 ## One GUI loop, two time scales
 
@@ -210,14 +214,14 @@ may query it to recover a fact that should have been captured by Episode Context
 The existing `project_step_result()` already produces one semantic `AgentTurnView` after every `StepResult`; no
 `CompactStep` or `HistoryProjector` is added. `AgentTurnView` already contains semantic operation and target,
 public arguments, dispatch, observable transition, formal evaluation status, and typed reason while excluding old
-World, screenshot, selector, BrowserGym BID, and provider transcript. Today the ActionPolicy renderer redacts expired
-E-refs, but the raw bounded `expected_outcome` string can still contain one. Before Auditor consumes this shared
-record, W1 makes `project_step_result()` apply the same generation-local ref/key sanitation to every stored string and
-nested value. The single stored `AgentTurnView` then becomes the safe source for both renderers; no second sanitized
-history type is introduced.
+World, screenshot, selector, BrowserGym BID, and provider transcript. `project_step_result()` now removes
+generation-local E/F refs and private identity keys from every stored string and nested value. The provider renderer
+applies the same sanitation as a final boundary defense for externally assembled fixtures. The single stored
+`AgentTurnView` is therefore the safe source for the future Auditor and ActionPolicy; no second sanitized history type
+is introduced.
 
-The change is confined to the existing `RunState.recent_steps` retention and
-`GroundedPolicyContextBinder._recent_steps()` rendering. RunState retains the episode's `AgentTurnView` records. The
+The implementation is confined to the existing `RunState.recent_steps` retention and one shared deterministic episode
+history renderer consumed by `ContextBuilder` and `GroundedPolicyContextBinder`. RunState retains the episode's `AgentTurnView` records. The
 latest four are rendered in the current detailed form; only earlier records use the existing compact earlier-action
 form and consume the frozen 16 KiB history budget. The two views never duplicate a turn. First overflow handling folds
 only repeated waits, unchanged searches, and identical no-effect records. If irreducible earlier history still cannot
@@ -231,17 +235,17 @@ Compact history answers what happened. Exact values needed after navigation use 
 pin_fact(key, current_evidence_ref, purpose)
 ```
 
-The model supplies no value. Context construction already creates observation-local F refs for presentation, but does
-not currently retain their inverse mapping. W1 adds one private, non-serialized
+The model supplies no value. Context construction creates observation-local F refs for presentation and now retains
+one private, non-serialized
 `AgentContext.private_fact_bindings` mapping from public F ref to canonical fact ref. The local resolver closes
 through that map, and the
-existing `WorldEvidenceIndex.resolve_record()` returns the immutable public `EvidenceRecord`. W2 admits only a
+existing `WorldEvidenceIndex.resolve_record()` returns the immutable public `EvidenceRecord`. The local contract admits only a
 record with one bounded JSON scalar value (`string`, `number`, or `boolean`), never null/unknown, a target/node, or an
 arbitrary subtree. Existing RunState stores a bounded tuple of
 `WorkingFact(key, record, acquired_at_step, purpose)` wrappers; each wrapper does not duplicate the record's value,
 observation ID, or provenance. Keys use one bounded identifier grammar; a
-new key inserts, the same key/record value is idempotent, and a different value for an existing key returns a typed
-conflict until the model chooses another key or explicitly replaces it through a later audited episode. Secret/private
+new key inserts, the same key/evidence record is idempotent, and different evidence for an existing key returns a typed
+conflict until the model chooses another key. Secret/private
 facts and oversized strings are ineligible. `pin_fact` is an existing local-tool/resolver extension, performs no GUI
 dispatch, and cannot read hidden benchmark state. Automatically captured outputs are admitted only when an existing
 typed evaluator or adapter already publishes that public scalar output; Runtime never infers an output from task prose.
@@ -938,7 +942,7 @@ validation:
 |---|---|---|
 | 1. Freeze architecture, prompt, context, non-goals, and migration order in the maintained authority documents | done | documents agree and historical plan files are removed |
 | 2. Preserve `call_id` and use strict provider tool schemas where supported | done | call/result lineage and provider tests pass; current admitted native providers rely on Runtime strict validation because their documented wire schemas do not expose a strict-tool flag |
-| 3. Introduce the thin model workspace and eight nested `StepView` records | done | no budget, duplicate world, transition, event, or feedback channels reach the grounded model boundary |
+| 3. Introduce the thin model workspace and bounded nested `StepView` records | done; eight-turn cap superseded by Phase 13 episode history | no budget, duplicate world, transition, event, or feedback channels reach the grounded model boundary |
 | 4. Migrate observation, action paging, wait, ask/resume, done, confirmation, abort, and error paths | done | supported decisions have typed core-loop integration tests; confirmation continuations preserve one model-step count |
 | 5. Connect benchmark runners to the core loop | done | target benchmark exclusively executes `CoreAgentLoop`; reports persist `runtime=core` and raw per-case evidence |
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
@@ -948,7 +952,7 @@ validation:
 | 10. Replace symbolic goal guidance with Simple GoalPlan | implementation complete; Ready delivered / behavior failed / non-closed | five-field plan is directly projected and compiler attempts are traced; live evidence includes both reversal of satisfied Likes and a Ready-plan zero-action stall |
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | architecture approved / implementation pending | episode lifecycle foundation + sanitized extended AgentTurnView history + evidence pin + thin outer Manager/Auditor/MissionState pass ownership gates; official site smokes then a frozen 12-case cross-site hard cohort run through the unchanged inner GUI chain and official evaluator |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | episode lifecycle, Episode Context, and WorkingFact implemented locally; outer mission layer pending | thin outer Manager/Auditor/MissionState must pass ownership gates; official site smokes then a frozen 12-case cross-site hard cohort run through the unchanged inner GUI chain and official evaluator |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:

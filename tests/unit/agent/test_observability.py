@@ -162,6 +162,21 @@ def test_binary_payloads_are_content_addressed_and_not_inlined(tmp_path) -> None
     assert b"image-bytes" not in recorder.path.read_bytes()
 
 
+def test_dataclass_projection_skips_explicit_non_serialized_fields(tmp_path) -> None:
+    from dataclasses import field
+
+    @dataclass(frozen=True)
+    class Payload:
+        public: str
+        private: str = field(metadata={"serialize": False})
+
+    from affordance_runtime.agent.observability import _json_value
+
+    assert _json_value(Payload("visible", "secret-binding"), tmp_path) == {
+        "public": "visible",
+    }
+
+
 def test_transcript_data_urls_are_content_addressed(tmp_path) -> None:
     from affordance_runtime.agent.observability import _json_value
 

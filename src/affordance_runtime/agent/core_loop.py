@@ -57,7 +57,7 @@ from affordance_runtime.goals.compiler import (
     GoalPlanBoundary,
     UnavailableGoalCompiler,
 )
-from affordance_runtime.goals.plan import NeedsInput, Ready
+from affordance_runtime.goals.plan import GoalPlanResolution, NeedsInput, Ready
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
@@ -127,46 +127,64 @@ class CoreAgentLoop:
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
             self.trace_sink.run_start_failed(task, acquisition)
             raise CoreLoopStartError(acquisition.reason_code)
-        state = await self.initialize_from_world(task, acquisition.observation)
+        resolution = await self.goal_plan_boundary.resolve(
+            self.goal_compiler,
+            task,
+            acquisition.observation,
+            next_plan_version=1,
+            trigger=GoalCompileTrigger.TASK_START,
+        )
+        state = await self.initialize_from_world(
+            task,
+            acquisition.observation,
+            resolution,
+            max_turns=task.loop_budget.max_turns,
+            yield_on_budget_exhaustion=False,
+        )
         self.trace_sink.run_started(task, state)
+        self.trace_sink.goal_compiler_completed(
+            goal_compiler_trace_diagnostic(
+                self.goal_compiler,
+                resolution,
+                task_revision=task.revision,
+                trigger=GoalCompileTrigger.TASK_START,
+                initial_evidence=acquisition.observation,
+            )
+        )
         return state
 
     async def initialize_from_world(
         self,
         task: TaskGoal,
         initial: WorldObservation,
+        goal_resolution: GoalPlanResolution,
         *,
-        max_turns: int | None = None,
-        yield_on_budget_exhaustion: bool = False,
+        max_turns: int,
+        yield_on_budget_exhaustion: bool,
     ) -> RunState:
         """Create a fresh executor episode from an already acquired world."""
 
+        if goal_resolution.task_revision != task.revision:
+            raise ValueError("episode goal resolution belongs to a previous task revision")
         evaluation = await validated_task_evaluation(self.task_evaluator, task, initial)
-        resolution = await self.goal_plan_boundary.resolve(
-            self.goal_compiler,
-            task,
-            initial,
-            next_plan_version=1,
-            trigger=GoalCompileTrigger.TASK_START,
-        )
         state = RunState(
             initial,
             evaluation,
-            task.loop_budget.max_turns if max_turns is None else max_turns,
-            status=self._status_for_goal_resolution(task, evaluation, resolution),
+            max_turns,
+            status=self._status_for_goal_resolution(task, evaluation, goal_resolution),
             task_revision=task.revision,
-            goal_resolution=resolution,
+            goal_resolution=goal_resolution,
             goal_plan_version_counter=(
-                resolution.accepted_plan.plan_version if isinstance(resolution, Ready) else 0
+                goal_resolution.accepted_plan.plan_version if isinstance(goal_resolution, Ready) else 0
             ),
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
         )
-        if isinstance(resolution, NeedsInput) and state.status is RunStatus.WAITING_USER:
+        if isinstance(goal_resolution, NeedsInput) and state.status is RunStatus.WAITING_USER:
             state.last_step = StepResult(
                 AskUser(
                     f"context:goal-compiler:{task.revision}",
-                    resolution.question,
-                    resolution.fields,
+                    goal_resolution.question,
+                    goal_resolution.fields,
                 ),
                 initial,
                 initial,
@@ -174,15 +192,6 @@ class CoreAgentLoop:
                 RunStatus.WAITING_USER,
                 feedback="goal_compiler_needs_input",
             )
-        self.trace_sink.goal_compiler_completed(
-            goal_compiler_trace_diagnostic(
-                self.goal_compiler,
-                resolution,
-                task_revision=task.revision,
-                trigger=GoalCompileTrigger.TASK_START,
-                initial_evidence=initial,
-            )
-        )
         return state
 
     async def continue_run(
@@ -213,7 +222,10 @@ class CoreAgentLoop:
                 result.decision,
                 PolicyFailure,
             ):
-                state.remember_step(project_step_result(result))
+                state.remember_step(
+                    project_step_result(result),
+                    max_bytes=self.context_builder.budget.max_history_serialized_bytes,
+                )
         if state.terminal:
             self.trace_sink.run_finished(state)
         else:
@@ -298,7 +310,10 @@ class CoreAgentLoop:
             )
         )
         if state.status is RunStatus.RUNNING:
-            state.remember_step(project_step_result(resumed))
+            state.remember_step(
+                project_step_result(resumed),
+                max_bytes=self.context_builder.budget.max_history_serialized_bytes,
+            )
         return await self._run_until_pause(environment, task, state)
 
     async def resume_confirmation(
@@ -333,7 +348,10 @@ class CoreAgentLoop:
             )
             state.last_step = declined
             self.trace_sink.step_completed(state.step_count, declined)
-            state.remember_step(project_step_result(declined))
+            state.remember_step(
+                project_step_result(declined),
+                max_bytes=self.context_builder.budget.max_history_serialized_bytes,
+            )
             return await self._run_until_pause(environment, task, state)
         action_space = self.action_space_builder.build(task, state.current_world)
         action_page = self.context_builder.page(action_space, state.current_world)
@@ -350,7 +368,10 @@ class CoreAgentLoop:
         self.trace_sink.step_completed(state.step_count, result)
         state.apply(result, consume_step=False)
         if state.status is RunStatus.RUNNING:
-            state.remember_step(project_step_result(result))
+            state.remember_step(
+                project_step_result(result),
+                max_bytes=self.context_builder.budget.max_history_serialized_bytes,
+            )
         return await self._run_until_pause(environment, task, state)
 
     async def step(
@@ -379,6 +400,7 @@ class CoreAgentLoop:
             context_generation=state.next_context_generation(),
             observation_capabilities=environment.observation_capabilities,
             goal_resolution=state.goal_resolution,
+            working_facts=state.working_facts,
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)

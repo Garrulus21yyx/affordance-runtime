@@ -19,6 +19,7 @@ from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisio
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
+from affordance_runtime.goals.plan import GoalPlanResolution
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
@@ -28,8 +29,8 @@ from affordance_runtime.task.intake import (
     TaskIntakeOutcome,
     ThinTaskIntake,
 )
-from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.environment import WorldEnvironment
 
 
 @dataclass(frozen=True)
@@ -122,13 +123,15 @@ class TargetRuntime:
         self,
         task: TaskGoal,
         initial: WorldObservation,
+        goal_resolution: GoalPlanResolution,
         *,
-        max_turns: int | None = None,
-        yield_on_budget_exhaustion: bool = False,
+        max_turns: int,
+        yield_on_budget_exhaustion: bool,
     ) -> RunState:
         return await self.build_loop().initialize_from_world(
             task,
             initial,
+            goal_resolution,
             max_turns=max_turns,
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
         )

@@ -18,6 +18,7 @@ from affordance_runtime.agent.context.budgets import (
 )
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
+from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
@@ -29,13 +30,15 @@ from affordance_runtime.agent.context.world_projection import (
     fit_model_world,
     project_model_world,
 )
+from affordance_runtime.agent.working_facts import WorkingFact, public_working_facts
 from affordance_runtime.evaluation.contracts import TaskEvaluation
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.goals.plan import Failed, GoalPlanResolution, NeedsInput
 from affordance_runtime.goals.projection import project_agent_goal_plan
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationCapabilities
-from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.contracts import CoverageState, WorldObservation
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,7 @@ class ContextBuilder:
         context_generation: int = 0,
         observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
         goal_resolution: GoalPlanResolution | None = None,
+        working_facts: tuple[WorkingFact, ...] = (),
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -99,7 +103,7 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        history_items = tuple(recent_steps[-self.budget.max_history_turns :])
+        history_items = tuple(recent_steps)
         history_total = len(recent_steps) if recent_step_total_count is None else recent_step_total_count
         if history_total < len(recent_steps):
             raise ValueError("recent step total cannot be smaller than the retained steps")
@@ -133,12 +137,14 @@ class ContextBuilder:
             actions,
             BoundedSection(
                 history_items,
-                history_total,
-                history_total > len(history_items),
+                len(history_items),
+                False,
             ),
             grounding,
             self.budget,
             pinned_targets,
+            working_facts,
+            history_total,
         )
 
     def page(
@@ -240,16 +246,24 @@ def _fit_context(
     grounding: GroundingProjectionResult,
     budget: ContextProjectionBudget,
     pinned_target_ids: tuple[str, ...],
+    working_facts: tuple[WorkingFact, ...],
+    current_step_index: int,
 ) -> AgentContext:
-    fact_refs = {item.fact_ref: f"F{index}" for index, item in enumerate(world.facts.items, 1)}
-    task_view = project_task(
-        task,
-        task_evaluation,
-        world.facts.items,
-        fact_refs,
-        grounding.index.target_refs,
-    )
+    evidence_index = WorldEvidenceIndex.from_observation(observation)
     while True:
+        fact_refs = {item.fact_ref: f"F{index}" for index, item in enumerate(world.facts.items, 1)}
+        task_view = project_task(
+            task,
+            task_evaluation,
+            world.facts.items,
+            fact_refs,
+            grounding.index.target_refs,
+        )
+        private_fact_bindings = _current_public_fact_bindings(
+            observation,
+            evidence_index,
+            fact_refs,
+        )
         context = AgentContext(
             context_id,
             task_view,
@@ -270,6 +284,11 @@ def _fit_context(
             ),
             grounding.images,
             grounding.index,
+            working_facts,
+            private_fact_bindings,
+            evidence_index,
+            current_step_index,
+            budget.max_history_serialized_bytes,
         )
         if _semantic_serialized_size(context) <= budget.max_total_serialized_bytes:
             return context
@@ -285,13 +304,6 @@ def _fit_context(
         if smaller_world != world:
             world = smaller_world
             continue
-        if len(history.items) > 1:
-            history = BoundedSection(
-                history.items[1:],
-                history.total_count,
-                history.total_count > len(history.items) - 1,
-            )
-            continue
         raise ValueError("AgentContext fixed sections exceed the total serialized byte budget")
 
 
@@ -300,6 +312,31 @@ def _semantic_serialized_size(context: AgentContext) -> int:
         "task": context.task,
         "observation": context.actor_world,
         "goal_plan": context.goal_plan,
-        "recent_steps": context.recent_steps,
+        "recent_steps": render_episode_history(
+            context.recent_steps.items,
+            context.history_byte_budget,
+        ),
+        "working_set": public_working_facts(context.working_facts),
     })
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+
+
+def _current_public_fact_bindings(
+    observation: WorldObservation,
+    evidence_index: WorldEvidenceIndex,
+    canonical_to_public: dict[str, str],
+) -> dict[str, str]:
+    sources = {item.observation_id: item for item in observation.sources}
+    result: dict[str, str] = {}
+    for canonical, public in canonical_to_public.items():
+        record = evidence_index.resolve_record(canonical)
+        source = sources.get(record.source_observation_id) if record is not None else None
+        if (
+            record is not None
+            and record.kind == "fact"
+            and record.observation_id == observation.observation_id
+            and source is not None
+            and source.coverage is not CoverageState.STALE
+        ):
+            result[public] = canonical
+    return result

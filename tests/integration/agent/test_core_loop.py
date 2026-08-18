@@ -13,9 +13,9 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import AgentDecisionPorts
-from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
@@ -29,7 +29,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
-from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.goals import NotRequired, NotRequiredGoalCompiler
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
@@ -526,18 +526,29 @@ def test_executor_episode_can_yield_and_reinitialize_from_fresh_world_without_re
             self.seen_observation_ids.append(observation.observation_id)
             return super().build(task, observation, action_space, task_evaluation, *args, **kwargs)
 
+    @dataclass
+    class ExplodingGoalCompiler:
+        calls: int = 0
+
+        async def compile(self, request):
+            del request
+            self.calls += 1
+            raise AssertionError("episode initialization must not call GoalCompiler")
+
     async def scenario() -> None:
         policy = EpisodePolicy(["activate", "abort"])
         context_builder = RecordingContextBuilder()
+        compiler = ExplodingGoalCompiler()
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
             CoreActionOutcomeProjector(),
             CoreTaskEvaluator(),
             context_builder=context_builder,
-            goal_compiler=NotRequiredGoalCompiler("episode_lifecycle_test"),
+            goal_compiler=compiler,
         )
         loop = runtime.build_loop()
         task = _task()
+        goal_resolution = NotRequired(task.revision, "manager_supplied_episode_goal")
         environment = ScriptedEnvironment(
             initial_observation=_world("before", False),
             post_observations=(_world("after-action", False),),
@@ -550,6 +561,7 @@ def test_executor_episode_can_yield_and_reinitialize_from_fresh_world_without_re
         first = await loop.initialize_from_world(
             task,
             initial.observation,
+            goal_resolution,
             max_turns=1,
             yield_on_budget_exhaustion=True,
         )
@@ -570,6 +582,7 @@ def test_executor_episode_can_yield_and_reinitialize_from_fresh_world_without_re
         second = await loop.initialize_from_world(
             task,
             refreshed.observation,
+            goal_resolution,
             max_turns=1,
             yield_on_budget_exhaustion=True,
         )
@@ -579,5 +592,6 @@ def test_executor_episode_can_yield_and_reinitialize_from_fresh_world_without_re
         assert resumed.current_world.observation_id == "fresh-current"
         assert environment.reset_calls == 1
         assert context_builder.seen_observation_ids == ["before", "fresh-current"]
+        assert compiler.calls == 0
 
     asyncio.run(scenario())
