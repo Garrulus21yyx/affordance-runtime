@@ -413,6 +413,17 @@ class MissionSupervisor:
                 SupervisorState(SupervisorPhase.TERMINAL),
                 MissionOutcome.FINAL_AUDIT_NOT_READY,
             )
+        acquisition = await environment.capture(
+            WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh final audit capture")
+        )
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            return MissionRunResult(
+                state,
+                mission,
+                SupervisorState(SupervisorPhase.MANAGER, last_ref=f"final_audit_capture:{acquisition.status.value}"),
+                MissionOutcome.FINAL_AUDIT_NOT_READY,
+            )
+        state.current_world = acquisition.observation
         bundle = AuditBundle.from_world(state.current_world)
         final_contract = SubtaskContract(
             "Audit whether the mission is ready for the single final response.",
@@ -474,7 +485,10 @@ class MissionSupervisor:
             )
         response = final_state.last_step.decision
         finalization = await environment.finalize(response.content)
-        if finalization.result.dispatch_status is not DispatchStatus.SENT or finalization.post_acquisition is None:
+        if (
+            finalization.result.dispatch_status is DispatchStatus.NOT_SENT
+            or finalization.post_acquisition is None
+        ):
             return MissionRunResult(
                 final_state,
                 mission,

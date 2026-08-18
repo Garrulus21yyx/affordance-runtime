@@ -22,7 +22,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.mission import (
     AuditDelta,
     AuditDeltaStatus,
@@ -43,7 +43,9 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     GroundedToolPhase,
     compile_grounded_tool_catalog,
 )
-from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
+from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationRequestKind, WorldObservationRequest
+from affordance_runtime.world.finalization import EnvironmentFinalization
+from tests.support.observation_acquisition import acquired_acquisition
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
     ax_node,
@@ -100,6 +102,25 @@ class CompleteEvaluator:
             "complete",
             completion_evidence_refs=(ref,),
             outputs=(EvaluatedOutput("answer", "Done", (ref,)),),
+        )
+
+
+class PostStopCompleteEvaluator:
+    def __init__(self, finalizing_environment):
+        self.finalizing_environment = finalizing_environment
+        self.calls = 0
+
+    async def evaluate(self, task, observation):
+        self.calls += 1
+        if not self.finalizing_environment.finalize_calls:
+            return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "pre-stop")
+        ref = observation.facts[0].fact_id
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.COMPLETE,
+            "post-stop complete",
+            completion_evidence_refs=(ref,),
         )
 
 
@@ -198,6 +219,59 @@ def _browsergym_env_task(*, fail_final=False):
     fake = FakeBrowserGym(raw, fail_final=fail_final)
     env, task = open_fake(fake)
     return fake, env, task
+
+
+class SentUnknownWithPostWorldEnvironment:
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+        self.finalize_calls = 0
+        self.final_messages: list[str] = []
+        self.last_world = None
+
+    def __getattr__(self, name):
+        return getattr(self.wrapped, name)
+
+    @property
+    def supports_finalization(self):
+        return True
+
+    async def reset(self, task):
+        acquisition = await self.wrapped.reset(task)
+        self.last_world = acquisition.observation
+        return acquisition
+
+    async def capture(self, request):
+        acquisition = await self.wrapped.capture(request)
+        if acquisition.observation is not None:
+            self.last_world = acquisition.observation
+        return acquisition
+
+    async def execute(self, request):
+        return await self.wrapped.execute(request)
+
+    def is_current(self, request):
+        return self.wrapped.is_current(request)
+
+    async def finalize(self, content):
+        self.finalize_calls += 1
+        self.final_messages.append(content)
+        assert self.last_world is not None
+        return EnvironmentFinalization(
+            ActionResult(
+                "final-response",
+                DispatchStatus.SENT_UNKNOWN,
+                "browsergym",
+                False,
+                ActionError.EXECUTION_FAILED,
+                {"effectful_dispatch_count": 1},
+            ),
+            acquired_acquisition(
+                self.last_world,
+                AcquisitionOrigin.POST_ACTION,
+                kind=ObservationRequestKind.POST_ACTION_FALLBACK,
+                acquisition_id="test:post-final-response",
+            ),
+        )
 
 
 def test_all_mission_outcomes_have_closed_non_yielded_run_status() -> None:
@@ -327,6 +401,39 @@ def test_contradictory_satisfied_final_audit_cannot_send_stop() -> None:
     assert result.mission_state.audited_outcomes[-1].audit_id == "audit:first"
 
 
+def test_final_audit_requires_fresh_capture_before_auditor_or_stop() -> None:
+    fake, env, task = _browsergym_env_task()
+    fake.supports_capture_current = False
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="fresh evidence missing"),
+        ],
+        [],
+    )
+    auditor = FinalAuditAuditor(accept_final=True)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert auditor.requests == []
+    assert result.finalization is None
+    assert fake.final_messages == []
+    assert len(manager.requests) == 3
+    assert manager.requests[1].last_typed_exit == "audit:evidence_gap"
+    assert manager.requests[2].last_typed_exit == "final_audit:not_ready"
+    assert manager.requests[2].last_audit_or_failure_ref == "final_audit_capture:capability_unavailable"
+
+
 def test_final_audit_not_ready_returns_to_manager_when_budget_remains() -> None:
     fake, env, task = _browsergym_env_task()
     policy = YieldThenFinalPolicy()
@@ -384,6 +491,42 @@ def test_accepted_unsatisfied_final_audit_is_carried_back_to_manager() -> None:
     assert [item.audit_id for item in result.mission_state.audited_outcomes] == ["audit:first", "audit:final"]
     assert result.mission_state.audited_outcomes[-1].status is AuditDeltaStatus.AUDITED_UNSATISFIED
     assert manager.requests[2].mission_state.version == 2
+
+
+def test_sent_unknown_final_response_reads_acquired_post_world_once() -> None:
+    fake, base_env, task = _browsergym_env_task()
+    env = SentUnknownWithPostWorldEnvironment(base_env)
+    policy = YieldThenFinalPolicy()
+    evaluator = PostStopCompleteEvaluator(env)
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        evaluator,
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+        ],
+        [],
+    )
+    auditor = FinalAuditAuditor(accept_final=True)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.finalization is not None
+    assert result.finalization.result.dispatch_status is DispatchStatus.SENT_UNKNOWN
+    assert result.finalization.post_acquisition is not None
+    assert result.finalization.post_acquisition.observation is not None
+    assert env.finalize_calls == 1
+    assert env.final_messages == ["Done"]
+    assert fake.final_messages == []
+    assert evaluator.calls == 3
+    assert result.state is not None
+    assert result.state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
+    assert result.status is RunStatus.DONE
 
 
 def test_accepted_final_audit_sends_stop_once() -> None:
