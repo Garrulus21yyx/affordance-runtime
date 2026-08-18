@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib.resources import files
 from typing import Literal
@@ -11,7 +11,13 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.episode_history import (
+    EpisodeHistoryCapacityError,
+    render_episode_history,
+)
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
     AuditDelta,
@@ -33,12 +39,16 @@ from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
     ModelPort,
+    ProviderFailureKind,
+    ProviderModelError,
     StructuredOutputError,
     model_port_from_environment,
     structured_output_repair_contract,
 )
 
 _MAX_ROLE_INPUT_BYTES = 24 * 1024
+_AUDIT_WORLD_BYTES = 12 * 1024
+_AUDIT_HISTORY_BYTES = 8 * 1024
 
 
 def _load_prompt(name: str, key: str) -> tuple[str, str]:
@@ -120,6 +130,106 @@ class AuditDeltaModel(BaseModel):
     recovery_hint: str = Field(default="", max_length=500)
 
 
+class RoleInputCapacityError(ValueError):
+    """A role input cannot fit the declared bounded model context."""
+
+
+@dataclass(frozen=True)
+class _StructuredRoleInvocation:
+    output: BaseModel | None
+    failure: ModelFailure | None
+    attempts: tuple[ModelGenerationAttempt, ...] = ()
+
+
+async def _invoke_structured_role(
+    port: ModelPort,
+    config: ModelConfig,
+    message_factory: Callable[[], tuple[ModelMessage, ...]],
+    schema: type[BaseModel],
+    initial_phase: str,
+    repair_phase: str,
+) -> _StructuredRoleInvocation:
+    attempts: tuple[ModelGenerationAttempt, ...] = ()
+    try:
+        messages = message_factory()
+    except RoleInputCapacityError:
+        return _StructuredRoleInvocation(None, ModelFailure(ModelFailureKind.INTERNAL_ERROR, "context_capacity", False))
+    except Exception:
+        return _StructuredRoleInvocation(None, ModelFailure(ModelFailureKind.INTERNAL_ERROR, "role input construction failed", False))
+    try:
+        response, attempts = await _generate_structured_role(port, config, messages, schema, initial_phase, attempts)
+    except StructuredOutputError as exc:
+        attempts = getattr(exc, "_mission_role_attempts", attempts)
+        try:
+            response, attempts = await _generate_structured_role(
+                port,
+                config,
+                _repair_messages(messages, exc),
+                schema,
+                repair_phase,
+                attempts,
+            )
+        except StructuredOutputError as repair_exc:
+            attempts = getattr(repair_exc, "_mission_role_attempts", attempts)
+            return _StructuredRoleInvocation(
+                None,
+                ModelFailure(ModelFailureKind.SCHEMA_ERROR, "role output invalid", False),
+                attempts,
+            )
+        except Exception as repair_exc:
+            attempts = getattr(repair_exc, "_mission_role_attempts", attempts)
+            return _StructuredRoleInvocation(None, _provider_failure(repair_exc), attempts)
+    except Exception as exc:
+        attempts = getattr(exc, "_mission_role_attempts", attempts)
+        return _StructuredRoleInvocation(None, _provider_failure(exc), attempts)
+    return _StructuredRoleInvocation(response, None, attempts)
+
+
+async def _generate_structured_role(
+    port: ModelPort,
+    config: ModelConfig,
+    messages: tuple[ModelMessage, ...],
+    schema: type[BaseModel],
+    phase: str,
+    attempts: tuple[ModelGenerationAttempt, ...],
+) -> tuple[BaseModel, tuple[ModelGenerationAttempt, ...]]:
+    number = len(attempts) + 1
+    try:
+        result = await port.generate_structured(messages, schema, config)
+    except Exception as exc:
+        status = "schema_error" if isinstance(exc, StructuredOutputError) else "failed"
+        return _raise_with_attempt(exc, (*attempts, _attempt(number, phase, schema.__name__, status, exc)))
+    return result, (*attempts, _attempt(number, phase, schema.__name__, "accepted"))
+
+
+def _raise_with_attempt(exc: Exception, attempts: tuple[ModelGenerationAttempt, ...]):
+    exc.__dict__["_mission_role_attempts"] = attempts
+    raise exc
+
+
+def _attempt(
+    number: int,
+    phase: str,
+    schema_name: str,
+    status: str,
+    exc: Exception | None = None,
+) -> ModelGenerationAttempt:
+    return ModelGenerationAttempt(
+        number,
+        phase,
+        schema_name,
+        status,
+        tuple(getattr(exc, "violations", ())),
+        exception_class=type(exc).__name__ if exc else "",
+    )
+
+
+def _provider_failure(exc: Exception) -> ModelFailure:
+    if isinstance(exc, ProviderModelError) and exc.kind is ProviderFailureKind.QUOTA_EXHAUSTED:
+        return ModelFailure(ModelFailureKind.PROVIDER_EXHAUSTED, "mission role provider exhausted", False)
+    return ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "mission role provider failed", True)
+
+
 @dataclass(frozen=True)
 class ModelBackedMissionManager:
     port: ModelPort
@@ -127,9 +237,6 @@ class ModelBackedMissionManager:
         temperature=0.0,
         max_tokens=2048,
         timeout_s=45.0,
-        rate_limit_retries=0,
-        transient_retries=0,
-        provider_circuit_break_s=0.0,
         prompt_version=MISSION_MANAGER_PROMPT_VERSION,
     ))
     last_invocation_result: ModelInvocationResult[ManagerDecision] | None = field(
@@ -141,20 +248,19 @@ class ModelBackedMissionManager:
 
     async def decide(self, request: ManagerRoleRequest) -> ModelInvocationResult[ManagerDecision]:
         object.__setattr__(self, "last_generation_attempts", ())
-        messages = _manager_messages(request)
-        try:
-            response = await self._generate(messages, ManagerDecisionModel, "manager_initial")
-        except StructuredOutputError as exc:
-            try:
-                response = await self._generate(
-                    _repair_messages(messages, exc),
-                    ManagerDecisionModel,
-                    "manager_schema_repair",
-                )
-            except Exception:
-                return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "manager output invalid", False))
-        except Exception:
-            return self._finish_failure(ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "manager provider failed", True))
+        invocation = await _invoke_structured_role(
+            self.port,
+            self.config,
+            lambda: _manager_messages(request),
+            ManagerDecisionModel,
+            "manager_initial",
+            "manager_schema_repair",
+        )
+        object.__setattr__(self, "last_generation_attempts", invocation.attempts)
+        if invocation.failure is not None:
+            return self._finish_failure(invocation.failure)
+        response = invocation.output
+        assert isinstance(response, ManagerDecisionModel)
         try:
             subtask = (
                 SubtaskContract(**response.subtask.model_dump())
@@ -170,33 +276,6 @@ class ModelBackedMissionManager:
         except (TypeError, ValueError):
             return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "manager contract invalid", False))
         return self._finish_output(output, "Manager")
-
-    async def _generate(self, messages, schema, phase: str):
-        attempt_no = len(self.last_generation_attempts) + 1
-        try:
-            result = await self.port.generate_structured(messages, schema, self.config)
-        except Exception as exc:
-            self._append_attempt(attempt_no, phase, schema.__name__, "schema_error" if isinstance(exc, StructuredOutputError) else "failed", exc)
-            raise
-        self._append_attempt(attempt_no, phase, schema.__name__, "accepted")
-        return result
-
-    def _append_attempt(self, number: int, phase: str, schema_name: str, status: str, exc: Exception | None = None) -> None:
-        record = getattr(self.port, "last_call", None)
-        object.__setattr__(self, "last_generation_attempts", (*self.last_generation_attempts, ModelGenerationAttempt(
-            number,
-            phase,
-            schema_name,
-            status,
-            tuple(getattr(exc, "violations", ())),
-            response_id=str(getattr(record, "response_id", "")),
-            latency_ms=float(getattr(record, "latency_ms", 0.0)),
-            prompt_tokens=int(getattr(record, "prompt_tokens", 0)),
-            completion_tokens=int(getattr(record, "completion_tokens", 0)),
-            total_tokens=int(getattr(record, "total_tokens", 0)),
-            exception_class=type(exc).__name__ if exc else "",
-            transcript=getattr(self.port, "last_transcript", None),
-        )))
 
     def _finish_output(self, output: ManagerDecision, role: str) -> ModelInvocationResult[ManagerDecision]:
         invocation = ModelInvocationResult(
@@ -227,9 +306,6 @@ class ModelBackedMissionAuditor:
         temperature=0.0,
         max_tokens=2048,
         timeout_s=45.0,
-        rate_limit_retries=0,
-        transient_retries=0,
-        provider_circuit_break_s=0.0,
         prompt_version=MISSION_AUDITOR_PROMPT_VERSION,
     ))
     last_invocation_result: ModelInvocationResult[AuditDelta] | None = field(
@@ -241,20 +317,19 @@ class ModelBackedMissionAuditor:
 
     async def audit(self, request: AuditorRoleRequest) -> ModelInvocationResult[AuditDelta]:
         object.__setattr__(self, "last_generation_attempts", ())
-        messages = _auditor_messages(request)
-        try:
-            response = await self._generate(messages, AuditDeltaModel, "auditor_initial")
-        except StructuredOutputError as exc:
-            try:
-                response = await self._generate(
-                    _repair_messages(messages, exc),
-                    AuditDeltaModel,
-                    "auditor_schema_repair",
-                )
-            except Exception:
-                return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "auditor output invalid", False))
-        except Exception:
-            return self._finish_failure(ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "auditor provider failed", True))
+        invocation = await _invoke_structured_role(
+            self.port,
+            self.config,
+            lambda: _auditor_messages(request),
+            AuditDeltaModel,
+            "auditor_initial",
+            "auditor_schema_repair",
+        )
+        object.__setattr__(self, "last_generation_attempts", invocation.attempts)
+        if invocation.failure is not None:
+            return self._finish_failure(invocation.failure)
+        response = invocation.output
+        assert isinstance(response, AuditDeltaModel)
         try:
             output = AuditDelta(
                 AuditDeltaStatus(response.status),
@@ -284,33 +359,6 @@ class ModelBackedMissionAuditor:
         except (TypeError, ValueError):
             return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "auditor contract invalid", False))
         return self._finish_output(output, "Auditor")
-
-    async def _generate(self, messages, schema, phase: str):
-        attempt_no = len(self.last_generation_attempts) + 1
-        try:
-            result = await self.port.generate_structured(messages, schema, self.config)
-        except Exception as exc:
-            self._append_attempt(attempt_no, phase, schema.__name__, "schema_error" if isinstance(exc, StructuredOutputError) else "failed", exc)
-            raise
-        self._append_attempt(attempt_no, phase, schema.__name__, "accepted")
-        return result
-
-    def _append_attempt(self, number: int, phase: str, schema_name: str, status: str, exc: Exception | None = None) -> None:
-        record = getattr(self.port, "last_call", None)
-        object.__setattr__(self, "last_generation_attempts", (*self.last_generation_attempts, ModelGenerationAttempt(
-            number,
-            phase,
-            schema_name,
-            status,
-            tuple(getattr(exc, "violations", ())),
-            response_id=str(getattr(record, "response_id", "")),
-            latency_ms=float(getattr(record, "latency_ms", 0.0)),
-            prompt_tokens=int(getattr(record, "prompt_tokens", 0)),
-            completion_tokens=int(getattr(record, "completion_tokens", 0)),
-            total_tokens=int(getattr(record, "total_tokens", 0)),
-            exception_class=type(exc).__name__ if exc else "",
-            transcript=getattr(self.port, "last_transcript", None),
-        )))
 
     def _finish_output(self, output: AuditDelta, role: str) -> ModelInvocationResult[AuditDelta]:
         invocation = ModelInvocationResult(
@@ -351,21 +399,37 @@ def _manager_messages(request: ManagerRoleRequest) -> tuple[ModelMessage, ...]:
 
 
 def _auditor_messages(request: AuditorRoleRequest) -> tuple[ModelMessage, ...]:
+    audit_world = _audit_world_payload(request)
+    visible_refs = _visible_audit_refs(audit_world)
+    try:
+        episode_history = render_episode_history(request.episode_history, _AUDIT_HISTORY_BYTES)
+    except EpisodeHistoryCapacityError as exc:
+        raise RoleInputCapacityError("audit history exceeds bounded context") from exc
     payload = {
         "task": _task_payload(request.original_task),
         "subtask": to_json_compatible(request.subtask),
         "pre_mission_state": _mission_payload(request.pre_mission_state),
-        "after_world": {
-            "observation_id": request.after_world.observation_id,
-            "target_count": len(request.after_world.targets),
-            "fact_count": len(request.after_world.facts),
-        },
-        "working_facts": to_json_compatible(request.working_facts),
+        "audit_world": audit_world,
+        "working_facts": tuple(
+            {
+                "key": item.key,
+                "value": item.record.value,
+                "evidence_ref": item.record.evidence_ref,
+                "purpose": item.purpose,
+            }
+            for item in request.working_facts
+        ),
         "yield_reason": request.yield_reason,
-        "episode_history": to_json_compatible(request.episode_history),
+        "episode_history": episode_history,
         "audit_bundle": {
             "observation_id": request.audit_bundle.observation_id,
-            "evidence": tuple(_evidence_payload(item) for item in request.audit_bundle.evidence_records),
+            "total_evidence_count": request.audit_bundle.total_evidence_count or len(request.audit_bundle.evidence_records),
+            "truncated": request.audit_bundle.truncated,
+            "evidence": tuple(
+                _evidence_payload(item)
+                for item in request.audit_bundle.evidence_records
+                if item.evidence_ref in visible_refs
+            ),
         },
         "related_audit_ids": request.related_audit_ids,
     }
@@ -375,7 +439,7 @@ def _auditor_messages(request: AuditorRoleRequest) -> tuple[ModelMessage, ...]:
 def _messages(instructions: str, payload: Mapping[str, object]) -> tuple[ModelMessage, ...]:
     encoded = json.dumps(to_json_compatible(payload), separators=(",", ":"), ensure_ascii=False)
     if len(encoded.encode()) > _MAX_ROLE_INPUT_BYTES:
-        raise ValueError("mission role input exceeds bounded workspace")
+        raise RoleInputCapacityError("mission role input exceeds bounded workspace")
     return (
         ModelMessage(role="system", content=instructions),
         ModelMessage(role="user", content=encoded),
@@ -392,7 +456,6 @@ def _repair_messages(messages: tuple[ModelMessage, ...], error: StructuredOutput
 
 def _task_payload(task) -> Mapping[str, object]:
     return {
-        "task_id": task.task_id,
         "instruction": task.instruction,
         "constraints": task.constraints,
         "allowed_effects": task.allowed_effects,
@@ -402,6 +465,65 @@ def _task_payload(task) -> Mapping[str, object]:
         "requested_outputs": task.requested_outputs,
         "risk_profile": task.risk_profile.value,
     }
+
+
+def _audit_world_payload(request: AuditorRoleRequest) -> Mapping[str, object]:
+    try:
+        view = project_model_world(
+            request.after_world,
+            ContextProjectionBudget(
+                max_facts=64,
+                max_artifact_summaries=8,
+                max_history_serialized_bytes=_AUDIT_HISTORY_BYTES,
+                max_total_serialized_bytes=_AUDIT_WORLD_BYTES * 2,
+            ),
+        )
+    except ValueError as exc:
+        raise RoleInputCapacityError("audit world exceeds bounded context") from exc
+    target_labels = {item.target_id: item.label for item in view.targets.items}
+    retained_refs = {item.evidence_ref for item in request.audit_bundle.evidence_records}
+    facts = tuple(item for item in view.facts.items if item.fact_ref in retained_refs)
+    artifacts = tuple(item for item in view.artifact_summaries.items if item.evidence_ref in retained_refs)
+    return {
+        "observation_id": request.after_world.observation_id,
+        "targets": tuple(to_json_compatible(item) for item in view.targets.items),
+        "facts": tuple(
+            {
+                "evidence_ref": item.fact_ref,
+                "subject_id": item.subject_id,
+                "subject_label": target_labels.get(item.subject_id, ""),
+                "predicate": item.predicate,
+                "value": item.value,
+            }
+            for item in facts
+        ),
+        "artifacts": tuple(to_json_compatible(item) for item in artifacts),
+        "sources": tuple(to_json_compatible(item) for item in view.sources),
+        "target_total_count": view.targets.total_count,
+        "fact_total_count": view.facts.total_count,
+        "artifact_total_count": view.artifact_summaries.total_count,
+        "truncated": (
+            view.targets.truncated
+            or view.facts.truncated
+            or view.artifact_summaries.truncated
+            or len(facts) < len(view.facts.items)
+            or len(artifacts) < len(view.artifact_summaries.items)
+        ),
+    }
+
+
+def _visible_audit_refs(audit_world: Mapping[str, object]) -> frozenset[str]:
+    refs: set[str] = set()
+    for section in ("facts", "artifacts"):
+        value = audit_world.get(section)
+        if not isinstance(value, tuple):
+            continue
+        for item in value:
+            if isinstance(item, Mapping):
+                ref = item.get("evidence_ref")
+                if isinstance(ref, str) and ref:
+                    refs.add(ref)
+    return frozenset(refs)
 
 
 def _mission_payload(mission) -> Mapping[str, object]:

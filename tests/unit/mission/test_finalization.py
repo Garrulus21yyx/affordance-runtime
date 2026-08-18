@@ -6,6 +6,7 @@ from dataclasses import replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.task_projection import project_task
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.run_state import RunStatus
@@ -28,6 +29,7 @@ from affordance_runtime.mission import (
     AuditorRoleRequest,
     ManagerDecision,
     ManagerRoute,
+    MissionOutcome,
     MissionSupervisor,
     OutcomeProposal,
     PromoteFactProposal,
@@ -126,6 +128,21 @@ class FinalAuditAuditor:
         )
 
 
+class EmptySatisfiedFinalAuditAuditor(FinalAuditAuditor):
+    async def audit(self, request):
+        self.requests.append(request)
+        record = next(item for item in request.audit_bundle.evidence_records if item.kind == "fact")
+        if len(self.requests) == 1:
+            return ModelInvocationResult(
+                output=AuditDelta(
+                    AuditDeltaStatus.AUDITED_SATISFIED,
+                    0,
+                    (OutcomeProposal("audit:first", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "answer"),),
+                )
+            )
+        return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.AUDITED_SATISFIED, 1))
+
+
 def _browsergym_env_task(*, fail_final=False):
     raw = raw_observation(
         ax_node("input", "textbox", "Answer", value="Done"),
@@ -181,6 +198,33 @@ def test_unaccepted_global_final_audit_cannot_send_stop() -> None:
 
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
 
+    assert result.finalization is None
+    assert fake.final_messages == []
+
+
+def test_empty_satisfied_global_final_audit_cannot_send_stop() -> None:
+    fake, env, task = _browsergym_env_task()
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+        ],
+        [],
+    )
+    auditor = EmptySatisfiedFinalAuditAuditor(accept_final=True)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.FINAL_AUDIT_NOT_READY
+    assert result.boundary_rejections == 1
     assert result.finalization is None
     assert fake.final_messages == []
 
@@ -313,7 +357,13 @@ def test_webarena_native_success_is_stop_gated_even_if_probe_reports_done() -> N
 
 
 def test_webarena_public_intake_does_not_project_hidden_expected_or_evaluator_data() -> None:
-    raw = raw_observation(ax_node("button", "button", "Continue"), goal="Official public instruction")
+    raw = raw_observation(
+        ax_node("button", "button", "Continue"),
+        goal=(
+            "Official public instruction\n\n---\nFinal response format: "
+            "use send_msg_to_user with STOP schema"
+        ),
+    )
     fake = FakeBrowserGym(raw)
     env, task, _evaluator = open_webarena_verified_case(
         WA_W1_SMOKE_CASES[0],
@@ -321,10 +371,17 @@ def test_webarena_public_intake_does_not_project_hidden_expected_or_evaluator_da
     )
 
     serialized = str(task).casefold()
+    projected = project_task(task)
+    projected_serialized = str(projected).casefold()
     assert "expected_answer" not in serialized
     assert "hidden" not in serialized
     assert "reward" not in serialized
     assert "evaluator" not in serialized
+    assert task.instruction == "Official public instruction"
+    assert task.task_id == "task:webarena_verified"
+    assert task.inputs == {}
+    for leaked in ("browsergym/webarena_verified", "shopping_admin", "smoke", "send_msg_to_user", "stop"):
+        assert leaked not in projected_serialized
     assert task.requested_outputs == ("webarena_final_response",)
     asyncio.run(env.close())
 

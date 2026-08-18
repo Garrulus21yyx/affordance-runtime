@@ -35,6 +35,7 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from affordance_runtime.goals.compiler import GoalCompiler, NotRequiredGoalCompiler
+from affordance_runtime.mission.contracts import MissionOutcome
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.contracts import CoverageState
@@ -445,6 +446,8 @@ class BenchmarkCaseResult:
     watchdog_triggered: bool = False
     harness_integrity_code: str = ""
     harness_integrity_failures: int = 0
+    mission_outcome: str = ""
+    mission_last_ref: str = ""
     failure_facts: FailureFacts = field(default_factory=FailureFacts)
     case_schema_version: str = CASE_SCHEMA_VERSION
     suite_id: str = ""
@@ -477,6 +480,8 @@ class BenchmarkCaseResult:
             self.cleanup_failure_code,
             self.cleanup_exception_class,
             self.harness_integrity_code,
+            self.mission_outcome,
+            self.mission_last_ref,
             self.case_schema_version,
             self.suite_id,
             self.profile_id,
@@ -541,6 +546,8 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark action postcondition status is outside the closed vocabulary")
         if self.latest_action_evidence_method not in {"", *(str(item) for item in EvidenceMethod)}:
             raise ValueError("benchmark action verification method is outside the closed vocabulary")
+        if self.mission_outcome and self.mission_outcome not in {str(item) for item in MissionOutcome}:
+            raise ValueError("benchmark mission outcome is outside the closed vocabulary")
         if self.last_decision_type not in {
             "",
             "Abort",
@@ -551,6 +558,7 @@ class BenchmarkCaseResult:
             "RequestObservation",
             "SelectAction",
             "Wait",
+            "YieldSubtask",
         }:
             raise ValueError("benchmark decision type is outside the closed vocabulary")
         if self.last_progress_event_type not in {

@@ -455,10 +455,12 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             assert previous[0].reason == "state did not change"
             assert previous[0].semantic_summary["feedback_code"] == "action_unchanged_change_strategy"
             assert previous[0].transition == {
-                "role": "button",
-                "label": "Enable shared state",
-                "before_state": {"enabled": False},
-                "after_state": {"enabled": False},
+                    "role": "button",
+                    "label": "Enable shared state",
+                    "before_world": "before",
+                    "after_world": "after",
+                    "before_state": {"enabled": False},
+                    "after_state": {"enabled": False},
                 "observed_change": "unchanged",
                 "evidence_method": "structural",
             }

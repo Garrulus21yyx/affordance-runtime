@@ -11,15 +11,14 @@ from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.mission.boundary import AuditBoundary
 from affordance_runtime.mission.contracts import (
     AuditBundle,
-    AuditDelta,
     AuditDeltaStatus,
     AuditorPort,
     AuditorRoleRequest,
     ManagerPort,
     ManagerRoleRequest,
     ManagerRoute,
+    MissionOutcome,
     MissionState,
-    OutcomeProposal,
     SubtaskContract,
     SupervisorPhase,
     SupervisorState,
@@ -40,9 +39,65 @@ class MissionRunResult:
     state: RunState | None
     mission_state: MissionState
     supervisor_state: SupervisorState
+    outcome: MissionOutcome = MissionOutcome.RUNNING
     manager_calls: int = 0
     auditor_calls: int = 0
+    boundary_rejections: int = 0
+    user_question: str = ""
     finalization: EnvironmentFinalization | None = None
+
+    @property
+    def status(self) -> RunStatus:
+        outer = {
+            MissionOutcome.NEEDS_USER_INPUT: RunStatus.WAITING_USER,
+            MissionOutcome.BLOCKED: RunStatus.BLOCKED,
+            MissionOutcome.MANAGER_FAILURE: RunStatus.FAILED,
+            MissionOutcome.AUDITOR_FAILURE: RunStatus.FAILED,
+            MissionOutcome.CANCELLED: RunStatus.CANCELLED,
+            MissionOutcome.TASK_COMPLETE: RunStatus.DONE,
+            MissionOutcome.TASK_BLOCKED: RunStatus.BLOCKED,
+        }.get(self.outcome)
+        if outer is not None:
+            return outer
+        if self.state is not None:
+            return self.state.status
+        return RunStatus.FAILED
+
+    @property
+    def observation_count(self) -> int:
+        return self.state.observation_count if self.state is not None else 0
+
+    @property
+    def execution_count(self) -> int:
+        return self.state.execution_count if self.state is not None else 0
+
+    @property
+    def step_count(self) -> int:
+        return self.state.step_count if self.state is not None else 0
+
+    @property
+    def last_step(self):
+        return self.state.last_step if self.state is not None else None
+
+    @property
+    def policy_failure(self):
+        return self.state.policy_failure if self.state is not None else None
+
+    @property
+    def failure_code(self):
+        return self.state.failure_code if self.state is not None else None
+
+    @property
+    def runtime_failure(self):
+        return self.state.runtime_failure if self.state is not None else None
+
+    @property
+    def task_outcome(self):
+        return self.state.task_outcome if self.state is not None else None
+
+    @property
+    def sent_unknown_count(self) -> int:
+        return self.state.sent_unknown_count if self.state is not None else 0
 
 
 @dataclass(frozen=True)
@@ -67,9 +122,17 @@ class MissionSupervisor:
         state: RunState | None = None
         manager_calls = 0
         auditor_calls = 0
+        boundary_rejections = 0
         acquisition = await environment.reset(task)
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            return MissionRunResult(None, mission, supervisor, manager_calls, auditor_calls)
+            return MissionRunResult(
+                None,
+                mission,
+                supervisor,
+                MissionOutcome.TASK_BLOCKED,
+                manager_calls=manager_calls,
+                auditor_calls=auditor_calls,
+            )
         current_world = acquisition.observation
         last_exit = "task_start"
         last_ref = ""
@@ -86,18 +149,35 @@ class MissionSupervisor:
                     mission_round_budget=self.max_rounds - round_index,
                     opened_environment_ref=_environment_ref(environment),
                 )
-                return MissionRunResult(state, mission, supervisor, manager_calls, auditor_calls)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    supervisor,
+                    MissionOutcome.MANAGER_FAILURE,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
             decision = decision_result.output
             assert decision is not None
             if decision.route is ManagerRoute.ASK_USER:
                 supervisor = SupervisorState(
-                    SupervisorPhase.TERMINAL,
+                    SupervisorPhase.WAITING_USER,
                     last_typed_episode_exit="manager_ask_user",
                     last_ref="manager_ask_user",
                     mission_round_budget=self.max_rounds - round_index,
                     opened_environment_ref=_environment_ref(environment),
                 )
-                return MissionRunResult(state, mission, supervisor, manager_calls, auditor_calls)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    supervisor,
+                    MissionOutcome.NEEDS_USER_INPUT,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                    user_question=decision.question,
+                )
             if decision.route is ManagerRoute.BLOCKED:
                 supervisor = SupervisorState(
                     SupervisorPhase.TERMINAL,
@@ -106,7 +186,15 @@ class MissionSupervisor:
                     mission_round_budget=self.max_rounds - round_index,
                     opened_environment_ref=_environment_ref(environment),
                 )
-                return MissionRunResult(state, mission, supervisor, manager_calls, auditor_calls)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    supervisor,
+                    MissionOutcome.BLOCKED,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
             if decision.route is ManagerRoute.REQUEST_FINAL_AUDIT:
                 final = await self._finalize_if_ready(runtime, environment, task, state, mission)
                 supervisor = SupervisorState(
@@ -124,9 +212,11 @@ class MissionSupervisor:
                     final.state,
                     final.mission_state,
                     supervisor,
-                    manager_calls,
-                    auditor_calls + final.auditor_calls,
-                    final.finalization,
+                    final.outcome,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls + final.auditor_calls,
+                    boundary_rejections=boundary_rejections + final.boundary_rejections,
+                    finalization=final.finalization,
                 )
             assert decision.subtask is not None
             state = await runtime.initialize_from_world(
@@ -139,9 +229,25 @@ class MissionSupervisor:
             )
             state = await runtime.continue_task(environment, task, state)
             if state.status is RunStatus.CANCELLED:
-                return MissionRunResult(state, mission, SupervisorState(SupervisorPhase.TERMINAL), manager_calls, auditor_calls)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.TERMINAL),
+                    MissionOutcome.CANCELLED,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
             if state.status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
-                return MissionRunResult(state, mission, SupervisorState(SupervisorPhase.EXECUTING, decision.subtask), manager_calls, auditor_calls)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.EXECUTING, decision.subtask),
+                    MissionOutcome.NEEDS_USER_INPUT,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
             current_world = state.current_world
             audit_result = await self._audit_episode(
                 environment,
@@ -151,11 +257,34 @@ class MissionSupervisor:
                 state,
             )
             auditor_calls += audit_result.auditor_calls
+            boundary_rejections += audit_result.boundary_rejections
+            if audit_result.outcome in {MissionOutcome.TASK_COMPLETE, MissionOutcome.TASK_BLOCKED}:
+                return MissionRunResult(
+                    audit_result.state,
+                    mission,
+                    audit_result.supervisor_state,
+                    audit_result.outcome,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
             mission = audit_result.mission_state
             current_world = audit_result.state.current_world if audit_result.state is not None else current_world
-            last_exit = f"episode:{state.status.value}:{state.yield_reason.value if state.yield_reason else ''}"
+            last_exit = (
+                "audit:rejected"
+                if audit_result.boundary_rejections
+                else f"episode:{state.status.value}:{state.yield_reason.value if state.yield_reason else ''}"
+            )
             last_ref = audit_result.supervisor_state.last_ref
-        return MissionRunResult(state, mission, SupervisorState(SupervisorPhase.TERMINAL), manager_calls, auditor_calls)
+        return MissionRunResult(
+            state,
+            mission,
+            SupervisorState(SupervisorPhase.TERMINAL),
+            MissionOutcome.ROUND_BUDGET_EXHAUSTED,
+            manager_calls=manager_calls,
+            auditor_calls=auditor_calls,
+            boundary_rejections=boundary_rejections,
+        )
 
     async def _audit_episode(
         self,
@@ -166,14 +295,17 @@ class MissionSupervisor:
         state: RunState,
     ) -> MissionRunResult:
         deterministic = state.current_task_evaluation
-        if deterministic.status is not TaskEvaluationStatus.UNKNOWN:
-            delta = _delta_from_task_evaluation(mission, deterministic.status, deterministic.completion_evidence_refs)
-            bundle = AuditBundle.from_world(state.current_world)
-            accepted = self.boundary.accept(mission, delta, bundle)
+        if deterministic.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
+            state.status = _status_for_terminal_evaluation(deterministic.status)
             return MissionRunResult(
                 state,
-                accepted.mission_state,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "deterministic_audit"),
+                mission,
+                SupervisorState(SupervisorPhase.TERMINAL, last_ref=f"task_evaluator:{deterministic.status.value}"),
+                (
+                    MissionOutcome.TASK_COMPLETE
+                    if deterministic.status is TaskEvaluationStatus.COMPLETE
+                    else MissionOutcome.TASK_BLOCKED
+                ),
             )
         acquisition = await environment.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh audit capture"))
         if acquisition.status is AcquisitionStatus.ACQUIRED and acquisition.observation is not None:
@@ -196,10 +328,12 @@ class MissionSupervisor:
                 state,
                 mission,
                 SupervisorState(SupervisorPhase.MANAGER, last_ref="auditor_failure"),
+                MissionOutcome.AUDITOR_FAILURE,
                 auditor_calls=1,
             )
         delta = result.output
         assert delta is not None
+        calls = 1
         if delta.status is AuditDeltaStatus.UNKNOWN and delta.missing_evidence:
             recaptured = await environment.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh audit recapture"))
             if recaptured.status is AcquisitionStatus.ACQUIRED and recaptured.observation is not None:
@@ -218,18 +352,33 @@ class MissionSupervisor:
                     subtask.related_audit_ids,
                 )
             )
+            calls = 2
             if retry.failure is not None:
-                return MissionRunResult(state, mission, SupervisorState(SupervisorPhase.MANAGER, last_ref="auditor_failure"), auditor_calls=2)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.MANAGER, last_ref="auditor_failure"),
+                    MissionOutcome.AUDITOR_FAILURE,
+                    auditor_calls=2,
+                )
             delta = retry.output
             assert delta is not None
             if delta.status is AuditDeltaStatus.UNKNOWN:
-                return MissionRunResult(state, mission, SupervisorState(SupervisorPhase.MANAGER, last_ref="evidence_gap"), auditor_calls=2)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.MANAGER, last_ref="evidence_gap"),
+                    MissionOutcome.EVIDENCE_GAP,
+                    auditor_calls=2,
+                )
         accepted = self.boundary.accept(mission, delta, bundle)
         return MissionRunResult(
             state,
             accepted.mission_state,
             SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "audit_accepted"),
-            auditor_calls=1,
+            MissionOutcome.BOUNDARY_REJECTED if not accepted.accepted else MissionOutcome.RUNNING,
+            auditor_calls=calls,
+            boundary_rejections=int(not accepted.accepted),
         )
 
     async def _finalize_if_ready(
@@ -241,7 +390,12 @@ class MissionSupervisor:
         mission: MissionState,
     ) -> MissionRunResult:
         if state is None or not getattr(environment, "supports_finalization", False):
-            return MissionRunResult(state, mission, SupervisorState(SupervisorPhase.TERMINAL))
+            return MissionRunResult(
+                state,
+                mission,
+                SupervisorState(SupervisorPhase.TERMINAL),
+                MissionOutcome.FINAL_AUDIT_NOT_READY,
+            )
         bundle = AuditBundle.from_world(state.current_world)
         final_contract = SubtaskContract(
             "Audit whether the mission is ready for the single final response.",
@@ -265,6 +419,7 @@ class MissionSupervisor:
                 state,
                 mission,
                 SupervisorState(SupervisorPhase.MANAGER, last_ref="final_audit_failed"),
+                MissionOutcome.AUDITOR_FAILURE,
                 auditor_calls=1,
             )
         accepted = self.boundary.accept(mission, audit.output, bundle)
@@ -276,7 +431,9 @@ class MissionSupervisor:
                 state,
                 mission,
                 SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "final_audit_not_ready"),
+                MissionOutcome.FINAL_AUDIT_NOT_READY,
                 auditor_calls=1,
+                boundary_rejections=int(not accepted.accepted),
             )
         mission = accepted.mission_state
         finalizing_runtime = runtime.with_runtime_controls(("final_response",), episode_monitor=None)
@@ -294,6 +451,7 @@ class MissionSupervisor:
                 final_state,
                 mission,
                 SupervisorState(SupervisorPhase.MANAGER, last_ref="final_response_not_produced"),
+                MissionOutcome.FINAL_AUDIT_NOT_READY,
                 auditor_calls=1,
             )
         response = final_state.last_step.decision
@@ -303,6 +461,7 @@ class MissionSupervisor:
                 final_state,
                 mission,
                 SupervisorState(SupervisorPhase.TERMINAL),
+                MissionOutcome.FINALIZED,
                 auditor_calls=1,
                 finalization=finalization,
             )
@@ -315,21 +474,10 @@ class MissionSupervisor:
             final_state,
             mission,
             SupervisorState(SupervisorPhase.TERMINAL),
+            MissionOutcome.FINALIZED,
             auditor_calls=1,
             finalization=finalization,
         )
-
-
-def _delta_from_task_evaluation(mission: MissionState, status: TaskEvaluationStatus, refs: tuple[str, ...]) -> AuditDelta:
-    if status is TaskEvaluationStatus.COMPLETE:
-        delta_status = AuditDeltaStatus.AUDITED_SATISFIED
-    else:
-        delta_status = AuditDeltaStatus.AUDITED_UNSATISFIED
-    return AuditDelta(
-        delta_status,
-        mission.version,
-        (OutcomeProposal(f"audit:{mission.version + 1}", delta_status, refs, status.value),),
-    )
 
 
 def _status_for_terminal_evaluation(status: TaskEvaluationStatus) -> RunStatus:

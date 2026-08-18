@@ -38,6 +38,22 @@ class UnknownEvaluator:
         return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown")
 
 
+class IncompleteEvaluator:
+    async def evaluate(self, task, observation):
+        return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.INCOMPLETE, "pre-stop incomplete")
+
+
+class CompleteEvaluator:
+    async def evaluate(self, task, observation):
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.COMPLETE,
+            "terminal complete",
+            completion_evidence_refs=(observation.facts[0].fact_id,),
+        )
+
+
 @dataclass
 class YieldPolicy:
     contexts: list[object]
@@ -120,6 +136,24 @@ class PromoteFirstAuditor:
         return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.UNKNOWN, 1))
 
 
+@dataclass
+class UnknownThenSatisfiedAuditor:
+    requests: list[AuditorRoleRequest]
+
+    async def audit(self, request):
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.UNKNOWN, 0, missing_evidence=("fresh_value",)))
+        record = next(item for item in request.audit_bundle.evidence_records if item.kind == "fact")
+        return ModelInvocationResult(
+            output=AuditDelta(
+                AuditDeltaStatus.AUDITED_SATISFIED,
+                0,
+                (OutcomeProposal("audit:recaptured", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "recaptured"),),
+            )
+        )
+
+
 def _runtime(policy, evaluator=None):
     return compose_target_runtime(
         policy,
@@ -176,6 +210,53 @@ def test_same_browsergym_adapter_spans_two_episodes_without_trajectory_leak() ->
     assert env.surface.logical_reset_calls == 1
     assert len(policy.contexts) == 2
     assert [len(context.recent_steps.items) for context in policy.contexts] == [0, 0]
+
+
+def test_pre_stop_incomplete_task_evaluation_does_not_become_subtask_unsatisfied() -> None:
+    _, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy, IncompleteEvaluator())
+    contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    manager = ManagerScript([ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)], [])
+    auditor = PromoteFirstAuditor([])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=1).run(runtime, env, task))
+
+    assert len(auditor.requests) == 1
+    assert result.mission_state.version == 1
+    assert result.mission_state.audited_outcomes[0].status is AuditDeltaStatus.AUDITED_SATISFIED
+
+
+def test_terminal_task_evaluation_ends_case_without_writing_subtask_mission_outcome() -> None:
+    _, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy, CompleteEvaluator())
+    contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    manager = ManagerScript([ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)], [])
+    auditor = AuditorScript([], [])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=1).run(runtime, env, task))
+
+    assert result.state is not None
+    assert result.state.status is RunStatus.DONE
+    assert result.mission_state.version == 0
+    assert auditor.requests == []
+
+
+def test_unknown_missing_evidence_retry_success_counts_both_auditor_calls() -> None:
+    fake, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy)
+    contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    manager = ManagerScript([ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)], [])
+    auditor = UnknownThenSatisfiedAuditor([])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=1).run(runtime, env, task))
+
+    assert len(auditor.requests) == 2
+    assert result.auditor_calls == 2
+    assert fake.capture_count == 2
+    assert result.mission_state.version == 1
 
 
 def test_accepted_carry_fact_enters_later_episode_without_becoming_fresh_world_fact() -> None:

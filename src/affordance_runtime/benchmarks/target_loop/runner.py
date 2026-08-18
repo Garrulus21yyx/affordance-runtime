@@ -145,7 +145,7 @@ async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResu
             )
             raise _CaseStageError("CoreAgentLoop construction", exc) from exc
         run = (
-            _run_mission(case, runtime, counted_environment, task, composition, state_holder)
+            _run_mission(case, runtime, counted_environment, task, composition, instrumentation, state_holder)
             if composition.long_horizon
             else _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder)
         )
@@ -229,13 +229,21 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
     return result
 
 
-async def _run_mission(case, runtime, environment, task, composition, state_holder):
+async def _run_mission(case, runtime, environment, task, composition, instrumentation, state_holder):
     del case
     supervisor = MissionSupervisor(composition.mission_manager, composition.mission_auditor)
     result = await supervisor.run(runtime, environment, task)
+    state_holder["mission_result"] = result
     if result.state is not None:
         state_holder["state"] = result.state
-    return result.state
+    instrumentation.set_custom_metric("mission_manager_calls", result.manager_calls)
+    instrumentation.set_custom_metric("mission_auditor_calls", result.auditor_calls)
+    instrumentation.set_custom_metric("mission_state_version", result.mission_state.version)
+    instrumentation.set_custom_metric("mission_audited_outcomes", len(result.mission_state.audited_outcomes))
+    instrumentation.set_custom_metric("mission_accepted_facts", len(result.mission_state.accepted_facts))
+    instrumentation.set_custom_metric("mission_boundary_rejections", result.boundary_rejections)
+    instrumentation.set_custom_metric("mission_final_response_delivered", int(result.supervisor_state.final_response_delivered))
+    return result
 
 
 async def _close(environment) -> None:

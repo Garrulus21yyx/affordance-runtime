@@ -21,6 +21,8 @@ from affordance_runtime.mission.contracts import (
     EpisodeMonitorTransition,
 )
 
+_WORLD_OSCILLATION_WINDOW = 4
+
 
 @dataclass(frozen=True)
 class EpisodeMonitorConfig:
@@ -42,7 +44,6 @@ class EpisodeMonitor:
         recent_steps: tuple[AgentTurnView, ...],
         fresh_world_fingerprint: str,
     ) -> EpisodeMonitorTransition:
-        del fresh_world_fingerprint
         events: list[EpisodeMonitorEvent] = []
         if isinstance(result.decision, PolicyFailure):
             events.append(EpisodeMonitorEvent.PROVIDER_FAILURE)
@@ -101,6 +102,11 @@ class EpisodeMonitor:
                 and EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events
             ):
                 events.append(EpisodeMonitorEvent.OSCILLATION)
+            if _returns_to_recent_world(recent_steps, fresh_world_fingerprint):
+                events.append(EpisodeMonitorEvent.OSCILLATION)
+        if _unchanged_streak(recent_steps) + int(EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events) >= self.config.no_change_threshold:
+            events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
+            events.append(EpisodeMonitorEvent.REPEATED_ACTION)
         if EpisodeMonitorEvent.OSCILLATION in events:
             return EpisodeMonitorTransition(tuple(events), EpisodeMonitorRecommendation.YIELD, "oscillation")
         if EpisodeMonitorEvent.REPEATED_ACTION in events:
@@ -135,3 +141,26 @@ def _turn_key(turn: AgentTurnView) -> str:
         "parameters": to_json_compatible(turn.public_parameters),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _returns_to_recent_world(recent_steps: tuple[AgentTurnView, ...], fresh_world_fingerprint: str) -> bool:
+    if not fresh_world_fingerprint:
+        return False
+    seen = []
+    for step in recent_steps[-_WORLD_OSCILLATION_WINDOW:]:
+        before = step.transition.get("before_world")
+        after = step.transition.get("after_world")
+        for value in (before, after):
+            if isinstance(value, str) and value and value not in seen:
+                seen.append(value)
+    return len(seen) >= 2 and fresh_world_fingerprint in set(seen[:-1])
+
+
+def _unchanged_streak(recent_steps: tuple[AgentTurnView, ...]) -> int:
+    streak = 0
+    for step in reversed(recent_steps):
+        transition = step.transition
+        if transition.get("observed_change") not in {"unchanged", "no_effect"}:
+            break
+        streak += 1
+    return streak

@@ -1,10 +1,4 @@
-"""Dataset-manifest preparation for the official WebArena-Verified evaluator.
-
-The scored evaluator remains the upstream ``webarena-verified eval-tasks``
-command.  This module only selects a reproducible 30--50 task stratified
-subset and records the exact source-data digest needed for a later official
-offline trace evaluation.
-"""
+"""Official WebArena-Verified intake, STOP-gated native evaluation, and diagnostics."""
 
 from __future__ import annotations
 
@@ -339,17 +333,13 @@ def open_webarena_verified_case(
     try:
         intake = ThinTaskIntake().compile(
             NaturalLanguageTaskRequest(
-                f"task:webarena_verified:{case_ref.task_id}",
-                surface.goal_instruction,
+                "task:webarena_verified",
+                _public_webarena_instruction(surface.goal_instruction),
                 TaskBoundary(
                     allowed_effects=("external_ui_interaction",),
                     forbidden_effects=("credential_use",),
-                    inputs={
-                        "official_registered_task_id": case_ref.gym_id,
-                        "sites": case_ref.sites,
-                        "task_type": case_ref.task_type,
-                        "public_final_response_requirement": "send one final response through BrowserGym send_msg_to_user/STOP",
-                    },
+                    constraints=("Provide exactly one final response matching the public task format when ready.",),
+                    inputs={},
                     requested_outputs=(WA_FINAL_OUTPUT_ID,),
                     risk_profile=RiskProfile.LOW,
                     loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
@@ -386,6 +376,13 @@ def classify_webarena_terminal_snapshot(
     if type(score) in {int, float}:
         return TaskOutcomeKind.TERMINAL_FAILURE, "verified_terminal_task_failure", refs
     return TaskOutcomeKind.VERIFIER_UNAVAILABLE, "missing_terminal_score", ()
+
+
+def _public_webarena_instruction(goal: str) -> str:
+    for marker in ("\n\n---\nFinal response format:", "\n---\nFinal response format:"):
+        if marker in goal:
+            return goal.split(marker, 1)[0].strip()
+    return goal.strip()
 
 
 def write_webarena_verified_w0_manifest(

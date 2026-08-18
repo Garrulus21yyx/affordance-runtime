@@ -35,9 +35,12 @@ class AuditBoundary:
             AuditDeltaStatus.AUDITED_UNSATISFIED,
         }:
             return AuditBoundaryResult(False, mission, "audit_status_not_promotable")
-        outcome_issue = _validate_outcomes(delta, bundle)
+        outcome_issue = _validate_outcomes(mission, delta, bundle)
         if outcome_issue:
             return AuditBoundaryResult(False, mission, outcome_issue)
+        invalidation_issue = _validate_invalidations(mission, delta)
+        if invalidation_issue:
+            return AuditBoundaryResult(False, mission, invalidation_issue)
         fact_issue = _validate_fact_promotions(mission, delta, bundle)
         if fact_issue:
             return AuditBoundaryResult(False, mission, fact_issue)
@@ -54,6 +57,8 @@ class AuditBoundary:
             for item in delta.promote_facts
             if item.key not in {existing.key for existing in retained_facts}
         )
+        if not accepted_outcomes and not new_facts and retained_facts == mission.accepted_facts:
+            return AuditBoundaryResult(False, mission, "audit_delta_noop")
         next_state = MissionState(
             mission.version + 1,
             (*mission.audited_outcomes, *accepted_outcomes),
@@ -63,8 +68,15 @@ class AuditBoundary:
         return AuditBoundaryResult(True, next_state)
 
 
-def _validate_outcomes(delta: AuditDelta, bundle: AuditBundle) -> str:
+def _validate_outcomes(mission: MissionState, delta: AuditDelta, bundle: AuditBundle) -> str:
+    if not delta.completed_outcomes:
+        return "audit_outcome_required"
+    existing = {item.audit_id for item in mission.audited_outcomes}
+    seen: set[str] = set()
     for item in delta.completed_outcomes:
+        if item.audit_id in seen or item.audit_id in existing:
+            return "audit_id_conflict"
+        seen.add(item.audit_id)
         try:
             validate_evidence_refs(item.evidence_refs, allow_empty=False)
         except ValueError:
@@ -73,6 +85,22 @@ def _validate_outcomes(delta: AuditDelta, bundle: AuditBundle) -> str:
             record = bundle.resolve(evidence_ref)
             if not _public_current_record(record, bundle):
                 return "evidence_lineage_invalid"
+    return ""
+
+
+def _validate_invalidations(mission: MissionState, delta: AuditDelta) -> str:
+    if not delta.invalidate_fact_keys:
+        return ""
+    cited = {
+        evidence_ref
+        for outcome in delta.completed_outcomes
+        for evidence_ref in outcome.evidence_refs
+    }
+    if not cited:
+        return "invalidation_evidence_required"
+    existing = {item.key for item in mission.accepted_facts}
+    if not any(key in existing for key in delta.invalidate_fact_keys):
+        return "audit_delta_noop"
     return ""
 
 

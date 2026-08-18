@@ -204,6 +204,8 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
 
 def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str, object]:
     transition = dict(_target_snapshot(result, result.execution.request.intent.target_id if result.execution else ""))
+    transition["before_world"] = result.before_world.observation_id
+    transition["after_world"] = result.after_world.observation_id
     if action is not None:
         transition["observed_change"] = action.observed_change.value
         transition["evidence_method"] = action.evidence_method.value

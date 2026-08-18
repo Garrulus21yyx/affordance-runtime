@@ -20,6 +20,7 @@ _KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _ID = re.compile(r"^[a-z][a-z0-9_:-]{0,95}$")
 _MAX_TEXT = 500
 _MAX_COLLECTION = 32
+_MAX_AUDIT_EVIDENCE_RECORDS = 128
 
 
 class ManagerRoute(StrEnum):
@@ -41,7 +42,24 @@ class SupervisorPhase(StrEnum):
     EXECUTING = "executing"
     AUDITING = "auditing"
     FINALIZING = "finalizing"
+    WAITING_USER = "waiting_user"
     TERMINAL = "terminal"
+
+
+class MissionOutcome(StrEnum):
+    RUNNING = "running"
+    NEEDS_USER_INPUT = "needs_user_input"
+    BLOCKED = "blocked"
+    MANAGER_FAILURE = "manager_failure"
+    AUDITOR_FAILURE = "auditor_failure"
+    BOUNDARY_REJECTED = "boundary_rejected"
+    EVIDENCE_GAP = "evidence_gap"
+    FINAL_AUDIT_NOT_READY = "final_audit_not_ready"
+    FINALIZED = "finalized"
+    CANCELLED = "cancelled"
+    TASK_COMPLETE = "task_complete"
+    TASK_BLOCKED = "task_blocked"
+    ROUND_BUDGET_EXHAUSTED = "round_budget_exhausted"
 
 
 class EpisodeMonitorEvent(StrEnum):
@@ -212,17 +230,20 @@ class AuditBundle:
     source_observation_ids: tuple[str, ...]
     evidence_records: tuple[EvidenceRecord, ...]
     source_coverages: Mapping[str, str] | None = None
+    total_evidence_count: int = 0
 
     @classmethod
     def from_world(cls, world: WorldObservation) -> AuditBundle:
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 
         index = WorldEvidenceIndex.from_observation(world)
+        records = index.records[:_MAX_AUDIT_EVIDENCE_RECORDS]
         return cls(
             world.observation_id,
             tuple(source.observation_id for source in world.sources),
-            index.records,
+            records,
             {source.observation_id: source.coverage.value for source in world.sources},
+            len(index.records),
         )
 
     def __post_init__(self) -> None:
@@ -231,13 +252,19 @@ class AuditBundle:
         object.__setattr__(self, "source_observation_ids", _bounded_unique(self.source_observation_ids, "sources"))
         object.__setattr__(self, "evidence_records", tuple(self.evidence_records))
         object.__setattr__(self, "source_coverages", dict(self.source_coverages or {}))
-        if len(self.evidence_records) > 128:
+        if len(self.evidence_records) > _MAX_AUDIT_EVIDENCE_RECORDS:
             raise ValueError("audit bundle evidence records exceed bound")
+        if self.total_evidence_count and self.total_evidence_count < len(self.evidence_records):
+            raise ValueError("audit bundle total cannot be smaller than retained evidence")
         if any(not isinstance(item, EvidenceRecord) for item in self.evidence_records):
             raise TypeError("audit bundle evidence must be typed")
 
     def resolve(self, evidence_ref: str) -> EvidenceRecord | None:
         return next((item for item in self.evidence_records if item.evidence_ref == evidence_ref), None)
+
+    @property
+    def truncated(self) -> bool:
+        return bool(self.total_evidence_count and self.total_evidence_count > len(self.evidence_records))
 
 
 @dataclass(frozen=True)

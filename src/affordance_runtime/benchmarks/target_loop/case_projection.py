@@ -100,6 +100,9 @@ def project_case_result(
     ):
         public_runtime_failure = "runtime_failure"
     status = str(result.status) if result else str(RunStatus.FAILED)
+    mission_outcome = str(getattr(result, "outcome", ""))
+    supervisor_state = getattr(result, "supervisor_state", None)
+    mission_last_ref = str(getattr(supervisor_state, "last_ref", "") or "")
     task_outcome = getattr(result, "task_outcome", None) if result is not None else None
     candidate_task_outcome_kind = (
         str(task_outcome.kind)
@@ -156,7 +159,13 @@ def project_case_result(
         last_action_space_option_count=(metadata.last_action_space_option_count if metadata else 0),
         last_world_target_count=metadata.last_world_target_count if metadata else 0,
         last_world_coverage=metadata.last_world_coverage if metadata else "",
-        pending_kind=metadata.pending_kind if metadata else "",
+        pending_kind=(
+            "user_question"
+            if mission_outcome == "needs_user_input" and getattr(result, "user_question", "")
+            else metadata.pending_kind
+            if metadata
+            else ""
+        ),
         latest_task_status=metadata.latest_task_status if metadata else "",
         latest_action_observed_change=(metadata.latest_action_observed_change if metadata else ""),
         latest_action_local_postcondition=(metadata.latest_action_local_postcondition if metadata else ""),
@@ -169,6 +178,8 @@ def project_case_result(
         watchdog_triggered=(bool(instrumentation.watchdog_code)),
         harness_integrity_code=integrity_code,
         harness_integrity_failures=int(bool(metric_collisions)),
+        mission_outcome=mission_outcome,
+        mission_last_ref=mission_last_ref,
         failure_facts=facts,
     )
 

@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from affordance_runtime.actions import (
     ActionBinding,
 )
-from affordance_runtime.agent import RunStatus, SelectAction
+from affordance_runtime.agent import RunStatus, SelectAction, YieldSubtask
+from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -27,6 +28,14 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.mission import (
+    AuditDelta,
+    AuditDeltaStatus,
+    ManagerDecision,
+    ManagerRoute,
+    SubtaskContract,
+)
+from affordance_runtime.model.policy.contracts import ModelInvocationResult
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationCapabilities,
@@ -66,6 +75,13 @@ class CompleteEvaluator:
     async def evaluate(self, task, observation):
         return TaskEvaluation(
             task.task_id, observation.observation_id, TaskEvaluationStatus.BLOCKED, "fixture terminal"
+        )
+
+
+class UnknownEvaluator:
+    async def evaluate(self, task, observation):
+        return TaskEvaluation(
+            task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"
         )
 
 
@@ -115,6 +131,82 @@ def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
     assert [item.case_id for item in result.cases] == ["a", "b"]
     assert (tmp_path / "traces" / "a" / "trace.jsonl").is_file()
     assert (tmp_path / "traces" / "b" / "trace.jsonl").is_file()
+
+
+def test_long_horizon_runner_projects_outer_mission_outcome_and_metrics() -> None:
+    class YieldPolicy:
+        @property
+        def supported_decisions(self):
+            return frozenset({DecisionCapability.YIELD_SUBTASK})
+
+        async def decide(self, context):
+            return YieldSubtask(context.context_id, "ready_for_audit", "ready")
+
+    class Manager:
+        def __init__(self):
+            self.requests = []
+            self.decisions = [
+                ManagerDecision(
+                    ManagerRoute.EXECUTE_SUBTASK,
+                    SubtaskContract("Read current value", "Current value is known", episode_turn_budget=1),
+                ),
+                ManagerDecision(ManagerRoute.ASK_USER, question="Which account should be used?"),
+            ]
+
+        async def decide(self, request):
+            self.requests.append(request)
+            return ModelInvocationResult(output=self.decisions.pop(0))
+
+    class Auditor:
+        async def audit(self, request):
+            del request
+            return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.UNKNOWN, 0))
+
+    manager = Manager()
+
+    case = BenchmarkCase(
+        "mission-ask",
+        "suite",
+        "mission ask projection",
+        lambda: TaskGoal("mission", "Complete a long task."),
+        lambda _metrics: ScriptedEnvironment(initial_observation=fused_world("mission")),
+        lambda _metrics: BenchmarkComposition(
+            YieldPolicy(),
+            ActionOutcomeProjector(),
+            UnknownEvaluator(),
+            required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+            mission_manager=manager,
+            mission_auditor=Auditor(),
+            long_horizon=True,
+        ),
+        (RunStatus.WAITING_USER,),
+        2.0,
+        7,
+        ("observations",),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            )
+        )
+    ).cases[0]
+
+    assert result.status == "waiting_user"
+    assert result.pending_kind == "user_question"
+    assert result.mission_outcome == "needs_user_input"
+    assert result.mission_last_ref == "manager_ask_user"
+    assert result.measurements["mission_manager_calls"].value == 2
+    assert result.measurements["mission_auditor_calls"].value == 1
+    assert result.measurements["mission_state_version"].value == 0
+    assert result.measurements["mission_boundary_rejections"].value == 1
+    assert len(manager.requests) == 2
 
 
 def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:
