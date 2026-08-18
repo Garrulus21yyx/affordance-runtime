@@ -36,6 +36,8 @@ class RunTraceSink(Protocol):
         exception: str = "",
     ) -> None: ...
 
+    def mission_role_invocation(self, role: str, call_index: int, request: object, result: object) -> None: ...
+
     def step_completed(self, step_number: int, result: object) -> None: ...
     def run_paused(self, state: object) -> None: ...
 
@@ -65,6 +67,10 @@ class NullRunTraceSink:
         *,
         exception: str = "",
     ) -> None:
+        return None
+
+    def mission_role_invocation(self, role: str, call_index: int, request: object, result: object) -> None:
+        del role, call_index, request, result
         return None
 
     def step_completed(self, step_number: int, result: object) -> None:
@@ -143,6 +149,15 @@ class RunTraceRecorder:
         payload = model_turn_payload(context, outcome, policy, exception=exception)
         payload["agent_context"] = _json_value(context, self.directory)
         self._emit("model_turn", **payload)
+
+    def mission_role_invocation(self, role: str, call_index: int, request: object, result: object) -> None:
+        self._emit(
+            "mission_role_invocation",
+            role=role,
+            call_index=call_index,
+            role_request=_json_value(request, self.directory),
+            model_invocation=_json_value(result, self.directory),
+        )
 
     def step_completed(self, step_number: int, result: object) -> None:
         self._observation(getattr(result, "before_world", None))

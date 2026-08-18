@@ -30,10 +30,13 @@ from affordance_runtime.mission import (
     ManagerDecision,
     ManagerRoute,
     MissionOutcome,
+    MissionRunResult,
+    MissionState,
     MissionSupervisor,
     OutcomeProposal,
     PromoteFactProposal,
     SubtaskContract,
+    SupervisorState,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
 from affordance_runtime.model.policy.grounded_tool_catalog import (
@@ -143,6 +146,49 @@ class EmptySatisfiedFinalAuditAuditor(FinalAuditAuditor):
         return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.AUDITED_SATISFIED, 1))
 
 
+class ContradictoryFinalAuditAuditor(FinalAuditAuditor):
+    async def audit(self, request):
+        self.requests.append(request)
+        record = next(item for item in request.audit_bundle.evidence_records if item.kind == "fact")
+        if len(self.requests) == 1:
+            return ModelInvocationResult(
+                output=AuditDelta(
+                    AuditDeltaStatus.AUDITED_SATISFIED,
+                    0,
+                    (OutcomeProposal("audit:first", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "answer"),),
+                    (PromoteFactProposal("answer", record.evidence_ref, record.value, "answer"),),
+                )
+            )
+        return ModelInvocationResult(
+            output=AuditDelta(
+                AuditDeltaStatus.AUDITED_SATISFIED,
+                1,
+                (OutcomeProposal("audit:final", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "not ready"),),
+            )
+        )
+
+
+class UnsatisfiedFinalAuditAuditor(FinalAuditAuditor):
+    async def audit(self, request):
+        self.requests.append(request)
+        record = next(item for item in request.audit_bundle.evidence_records if item.kind == "fact")
+        if len(self.requests) == 1:
+            return ModelInvocationResult(
+                output=AuditDelta(
+                    AuditDeltaStatus.AUDITED_SATISFIED,
+                    0,
+                    (OutcomeProposal("audit:first", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "answer"),),
+                )
+            )
+        return ModelInvocationResult(
+            output=AuditDelta(
+                AuditDeltaStatus.AUDITED_UNSATISFIED,
+                1,
+                (OutcomeProposal("audit:final", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "not ready"),),
+            )
+        )
+
+
 def _browsergym_env_task(*, fail_final=False):
     raw = raw_observation(
         ax_node("input", "textbox", "Answer", value="Done"),
@@ -152,6 +198,29 @@ def _browsergym_env_task(*, fail_final=False):
     fake = FakeBrowserGym(raw, fail_final=fail_final)
     env, task = open_fake(fake)
     return fake, env, task
+
+
+def test_all_mission_outcomes_have_closed_non_yielded_run_status() -> None:
+    statuses = {
+        outcome: MissionRunResult(None, MissionState.empty(), SupervisorState(), outcome).status
+        for outcome in MissionOutcome
+    }
+
+    assert statuses == {
+        MissionOutcome.RUNNING: RunStatus.RUNNING,
+        MissionOutcome.NEEDS_USER_INPUT: RunStatus.WAITING_USER,
+        MissionOutcome.BLOCKED: RunStatus.BLOCKED,
+        MissionOutcome.MANAGER_FAILURE: RunStatus.FAILED,
+        MissionOutcome.AUDITOR_FAILURE: RunStatus.FAILED,
+        MissionOutcome.BOUNDARY_REJECTED: RunStatus.RUNNING,
+        MissionOutcome.EVIDENCE_GAP: RunStatus.BLOCKED,
+        MissionOutcome.FINAL_AUDIT_NOT_READY: RunStatus.RUNNING,
+        MissionOutcome.FINALIZED: RunStatus.FAILED,
+        MissionOutcome.CANCELLED: RunStatus.CANCELLED,
+        MissionOutcome.TASK_COMPLETE: RunStatus.DONE,
+        MissionOutcome.TASK_BLOCKED: RunStatus.BLOCKED,
+        MissionOutcome.ROUND_BUDGET_EXHAUSTED: RunStatus.BLOCKED,
+    }
 
 
 def test_ordinary_episode_catalog_exposes_yield_but_not_final_response_or_stop() -> None:
@@ -223,10 +292,98 @@ def test_empty_satisfied_global_final_audit_cannot_send_stop() -> None:
 
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
 
-    assert result.outcome is MissionOutcome.FINAL_AUDIT_NOT_READY
+    assert result.outcome is MissionOutcome.ROUND_BUDGET_EXHAUSTED
+    assert result.status is RunStatus.BLOCKED
     assert result.boundary_rejections == 1
     assert result.finalization is None
     assert fake.final_messages == []
+
+
+def test_contradictory_satisfied_final_audit_cannot_send_stop() -> None:
+    fake, env, task = _browsergym_env_task()
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+        ],
+        [],
+    )
+    auditor = ContradictoryFinalAuditAuditor(accept_final=True)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.ROUND_BUDGET_EXHAUSTED
+    assert result.boundary_rejections == 1
+    assert result.finalization is None
+    assert fake.final_messages == []
+    assert result.mission_state.audited_outcomes[-1].audit_id == "audit:first"
+
+
+def test_final_audit_not_ready_returns_to_manager_when_budget_remains() -> None:
+    fake, env, task = _browsergym_env_task()
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="repair needed"),
+        ],
+        [],
+    )
+    auditor = FinalAuditAuditor(accept_final=False)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert result.finalization is None
+    assert fake.final_messages == []
+    assert len(manager.requests) == 3
+    assert manager.requests[2].last_typed_exit == "final_audit:not_ready"
+    assert manager.requests[2].last_audit_or_failure_ref == "audit_status_not_promotable"
+
+
+def test_accepted_unsatisfied_final_audit_is_carried_back_to_manager() -> None:
+    fake, env, task = _browsergym_env_task()
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="repair needed"),
+        ],
+        [],
+    )
+    auditor = UnsatisfiedFinalAuditAuditor(accept_final=False)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert fake.final_messages == []
+    assert [item.audit_id for item in result.mission_state.audited_outcomes] == ["audit:first", "audit:final"]
+    assert result.mission_state.audited_outcomes[-1].status is AuditDeltaStatus.AUDITED_UNSATISFIED
+    assert manager.requests[2].mission_state.version == 2
 
 
 def test_accepted_final_audit_sends_stop_once() -> None:

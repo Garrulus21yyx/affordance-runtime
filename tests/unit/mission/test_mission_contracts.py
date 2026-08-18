@@ -232,6 +232,12 @@ def test_audit_boundary_accepts_public_evidence_and_rejects_bad_lineage_value_an
     assert accepted.accepted is True
     assert accepted.mission_state.version == 1
     assert accepted.mission_state.accepted_facts[0].record.value == "42"
+    conflict = AuditDelta(
+        AuditDeltaStatus.AUDITED_SATISFIED,
+        0,
+        (OutcomeProposal("audit:conflict", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "conflict"),),
+    )
+    assert AuditBoundary().accept(mission, conflict, bundle).reason_code == "audit_status_conflict"
     assert AuditBoundary().accept(accepted.mission_state, delta, bundle).accepted is False
     wrong_value = AuditDelta(
         AuditDeltaStatus.AUDITED_SATISFIED,

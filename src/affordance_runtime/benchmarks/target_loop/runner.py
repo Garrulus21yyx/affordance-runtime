@@ -231,7 +231,11 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
 
 async def _run_mission(case, runtime, environment, task, composition, instrumentation, state_holder):
     del case
-    supervisor = MissionSupervisor(composition.mission_manager, composition.mission_auditor)
+    supervisor = MissionSupervisor(
+        composition.mission_manager,
+        composition.mission_auditor,
+        trace_sink=instrumentation.trace_recorder,
+    )
     result = await supervisor.run(runtime, environment, task)
     state_holder["mission_result"] = result
     if result.state is not None:

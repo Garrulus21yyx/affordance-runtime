@@ -1005,7 +1005,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implementation present; local contract verification passed; fresh-context audit failed and convergence repair is implemented locally pending re-audit; W1b blocked | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; W1b smokes and W2 cohort remain pending until re-audit accepts the repaired contracts |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a convergence repair incomplete; fresh-context re-audit failed; current repair implemented locally pending re-audit; W1b blocked | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; W1b smokes and W2 cohort remain blocked until re-audit accepts the repaired contracts |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:
@@ -1090,9 +1090,11 @@ and summaries that existed only to support the old ledger-shaped context are no 
   after-only postcondition proof, target-scoped transition evidence, non-blocking unknown, and private-field non-leakage.
 - The second 2026-08-17 formal Like run reports Ready-plan delivery, all policy actions, official failure, and separate
   compiler breadth metrics without a case-specific branch; it witnesses delivery but falsifies the behavioral claim.
-- The W1a fresh-context audit failed on 2026-08-18 after the initial local pass. The repaired implementation now
-  treats whole-task `INCOMPLETE` as non-authoritative for subtasks, requires cited non-noop AuditDelta admission,
-  projects outer mission outcomes into benchmark results, bounds Auditor context with public world/evidence views,
-  removes WebArena case metadata from model-facing TaskGoal context, shares Manager/Auditor role invocation glue, and
-  keeps W1b official site compatibility smokes blocked until a fresh re-audit accepts these contracts.
+- The W1a fresh-context audit failed again on 2026-08-18 after the initial convergence repair. The current local repair
+  keeps whole-task `INCOMPLETE` non-authoritative for subtasks, makes AuditBoundary reject contradictory top-level and
+  outcome verdicts, derives stored AuditedOutcome status from the accepted AuditDelta status, returns failed final
+  audits to Manager while budget remains, maps every MissionOutcome to an explicit non-YIELDED RunStatus, uses the
+  existing public semantic World digest for oscillation checks, filters carry facts by `SubtaskContract.relevant_fact_keys`,
+  fails closed when fresh audit capture cannot acquire a World, and records Manager/Auditor role invocations in the same
+  trace recorder. W1b official site compatibility smokes remain blocked until a fresh re-audit accepts these contracts.
 - Code, tests, maintained documents, and benchmark reports describe the same one-GUI-loop/two-time-scale architecture.

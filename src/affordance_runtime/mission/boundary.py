@@ -47,7 +47,7 @@ class AuditBoundary:
         invalidated = set(delta.invalidate_fact_keys)
         existing_outcomes = {item.audit_id: item for item in mission.audited_outcomes}
         accepted_outcomes = tuple(
-            AuditedOutcome(item.audit_id, item.status, item.evidence_refs, item.summary)
+            AuditedOutcome(item.audit_id, delta.status, item.evidence_refs, item.summary)
             for item in delta.completed_outcomes
             if item.audit_id not in existing_outcomes
         )
@@ -74,6 +74,8 @@ def _validate_outcomes(mission: MissionState, delta: AuditDelta, bundle: AuditBu
     existing = {item.audit_id for item in mission.audited_outcomes}
     seen: set[str] = set()
     for item in delta.completed_outcomes:
+        if item.status is not delta.status:
+            return "audit_status_conflict"
         if item.audit_id in seen or item.audit_id in existing:
             return "audit_id_conflict"
         seen.add(item.audit_id)

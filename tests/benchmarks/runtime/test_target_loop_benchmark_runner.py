@@ -169,7 +169,10 @@ def test_long_horizon_runner_projects_outer_mission_outcome_and_metrics() -> Non
         "suite",
         "mission ask projection",
         lambda: TaskGoal("mission", "Complete a long task."),
-        lambda _metrics: ScriptedEnvironment(initial_observation=fused_world("mission")),
+        lambda _metrics: ScriptedEnvironment(
+            initial_observation=fused_world("mission"),
+            independent_observations=(fused_world("mission-capture"),),
+        ),
         lambda _metrics: BenchmarkComposition(
             YieldPolicy(),
             ActionOutcomeProjector(),

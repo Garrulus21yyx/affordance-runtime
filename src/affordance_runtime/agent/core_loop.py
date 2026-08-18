@@ -70,6 +70,7 @@ from affordance_runtime.world.acquisition import (
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
+from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 _ASSURANCE_RANK = {
@@ -854,7 +855,7 @@ def _final_response_available(
 
 
 def _world_fingerprint(world: WorldObservation) -> str:
-    return world.observation_id
+    return public_world_semantic_digest(world)
 
 
 def _criterion_assurance(

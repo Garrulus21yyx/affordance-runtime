@@ -187,8 +187,13 @@ class MissionState:
     def empty(cls) -> MissionState:
         return cls()
 
-    def carry_working_facts(self) -> tuple[WorkingFact, ...]:
-        return tuple(item.as_working_fact() for item in self.accepted_facts)
+    def carry_working_facts(self, relevant_keys: tuple[str, ...] = ()) -> tuple[WorkingFact, ...]:
+        selected = set(_keys(relevant_keys, "relevant_fact_keys"))
+        return tuple(
+            item.as_working_fact()
+            for item in self.accepted_facts
+            if item.key in selected
+        )
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,9 @@ from dataclasses import dataclass
 
 from affordance_runtime.agent import Abort, AskUser, YieldSubtask
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.core_loop import _world_fingerprint
 from affordance_runtime.agent.decision_capability import DecisionCapability
+from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, TaskEvaluation, TaskEvaluationStatus
@@ -16,12 +18,14 @@ from affordance_runtime.mission import (
     ManagerDecision,
     ManagerRoleRequest,
     ManagerRoute,
+    MissionOutcome,
     MissionSupervisor,
     OutcomeProposal,
     PromoteFactProposal,
     SubtaskContract,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
+from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
     ax_node,
@@ -264,10 +268,16 @@ def test_accepted_carry_fact_enters_later_episode_without_becoming_fresh_world_f
     policy = YieldPolicy([])
     runtime = _runtime(policy)
     contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    followup = SubtaskContract(
+        "Use carried value",
+        "Carried value is used",
+        relevant_fact_keys=("answer",),
+        episode_turn_budget=1,
+    )
     manager = ManagerScript(
         [
             ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
-            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, followup),
             ManagerDecision(ManagerRoute.BLOCKED, reason="stop"),
         ],
         [],
@@ -282,6 +292,86 @@ def test_accepted_carry_fact_enters_later_episode_without_becoming_fresh_world_f
     carried = policy.contexts[1].working_facts[0]
     current_source_refs = {source.source_ref for source in policy.contexts[1].actor_world.sources}
     assert carried.record.source_observation_id not in current_source_refs
+
+
+def test_irrelevant_carry_facts_do_not_enter_later_episode() -> None:
+    _, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy)
+    first = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    second = SubtaskContract(
+        "Continue without carry",
+        "No carry fact is needed",
+        relevant_fact_keys=("missing",),
+        episode_turn_budget=1,
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, first),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, second),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="stop"),
+        ],
+        [],
+    )
+    auditor = PromoteFirstAuditor([])
+
+    asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+
+    assert len(policy.contexts) == 2
+    assert policy.contexts[1].working_facts == ()
+
+
+def test_fresh_audit_capture_failure_does_not_audit_or_write_old_world() -> None:
+    fake, env, task = _env_task()
+    fake.supports_capture_current = False
+    policy = YieldPolicy([])
+    runtime = _runtime(policy)
+    contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="stop"),
+        ],
+        [],
+    )
+    auditor = PromoteFirstAuditor([])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert result.mission_state.version == 0
+    assert auditor.requests == []
+    assert manager.requests[1].last_typed_exit == "audit:evidence_gap"
+    assert manager.requests[1].last_audit_or_failure_ref == "audit_capture:capability_unavailable"
+
+
+def test_world_fingerprint_uses_stable_public_semantics_not_observation_id() -> None:
+    fake, env, task = _env_task()
+    first = asyncio.run(env.reset(task)).observation
+    second = asyncio.run(env.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "same public page"))).observation
+
+    assert first is not None
+    assert second is not None
+    assert first.observation_id != second.observation_id
+    assert _world_fingerprint(first) == _world_fingerprint(second)
+
+
+def test_mission_role_invocations_enter_trace_sink() -> None:
+    _, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy)
+    contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    manager = ManagerScript([ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)], [])
+    auditor = PromoteFirstAuditor([])
+    trace = RunTraceRecorder()
+
+    asyncio.run(MissionSupervisor(manager, auditor, max_rounds=1, trace_sink=trace).run(runtime, env, task))
+
+    events = [item for item in trace.events if item["event"] == "mission_role_invocation"]
+    assert [item["role"] for item in events] == ["manager", "auditor"]
+    assert events[0]["role_request"]["remaining_rounds"] == 1
+    assert events[1]["role_request"]["yield_reason"] == "ready_for_audit"
+    assert events[1]["model_invocation"]["output"]["status"] == "audited_satisfied"
 
 
 def test_waiting_user_preserves_episode_and_does_not_call_auditor_or_replan() -> None:
