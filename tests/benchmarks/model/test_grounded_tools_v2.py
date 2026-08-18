@@ -574,11 +574,19 @@ def test_failed_argument_repair_preserves_response_and_violation_in_trace() -> N
     trace = _policy_trace_event(1, context, outcome, adapter)
 
     assert outcome.failure is not None
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
-    assert tuple(item.status for item in adapter.last_generation_attempts) == ("accepted",)
-    assert adapter.last_structured_output_repair_failed is False
-    assert len(trace["generation_attempts"]) == 1
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == (
+        "initial", "argument_repair",
+    )
+    assert tuple(item.status for item in adapter.last_generation_attempts) == (
+        "accepted", "schema_error",
+    )
+    assert adapter.last_structured_output_repair_failed is True
+    assert len(trace["generation_attempts"]) == 2
     assert trace["generation_attempts"][0]["status"] == "accepted"
+    assert trace["generation_attempts"][1]["status"] == "schema_error"
+    assert trace["generation_attempts"][1]["violations"] == [
+        {"field_path": "name", "code": "missing"}
+    ]
 
 
 def test_compact_bridge_normalizes_nested_parameters_without_model_repair() -> None:
@@ -1197,7 +1205,7 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
     assert "actions" not in public
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     tool = next(item for item in catalog.specs if item.name == "activate")
-    assert tool.input_schema["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
+    assert tool.input_schema["properties"]["target"]["enum"] == ("E1", "E2")
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall("activate", {"target": "E2"}),
@@ -1237,9 +1245,9 @@ def test_invalid_compact_target_gets_one_bounded_repair_then_fails_closed() -> N
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert outcome.failure is not None
-    assert port.calls == 1
-    assert adapter.last_argument_repair_count == 0
-    assert adapter.last_argument_violation_paths == ()
+    assert port.calls == 2
+    assert adapter.last_argument_repair_count == 1
+    assert adapter.last_argument_violation_paths == ("arguments.target",)
 
 
 def test_compact_argument_repair_may_explicitly_reemit_a_different_current_target() -> None:
@@ -1562,7 +1570,9 @@ def test_single_target_action_still_requires_the_current_public_reference() -> N
     activate = next(item for item in catalog.specs if item.name == "activate")
 
     assert to_json_compatible(activate.input_schema)["required"] == ["target"]
-    assert to_json_compatible(activate.input_schema)["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
+    assert to_json_compatible(activate.input_schema)["properties"]["target"]["enum"] == [
+        item.target_ref for item in context.actions.options if item.operation == "activate"
+    ]
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall("activate", {"target": "E3"}),

@@ -74,8 +74,9 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     }
     const tag = el.tagName.toLowerCase();
     const classes = el.classList;
+    const explicitHtmlDrag = el.getAttribute('draggable') === 'true';
     const gestureCandidate = (
-      el.draggable === true ||
+      explicitHtmlDrag ||
       el.getAttribute('aria-grabbed') === 'true' ||
       classes.contains('ui-draggable') ||
       classes.contains('ui-sortable-handle') ||
@@ -102,8 +103,9 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     const d3Drag = ownKeys.some(key => key.endsWith('.drag'));
     const sortable = classes.contains('ui-sortable-handle');
     const resizable = classes.contains('ui-resizable-handle');
+    const explicitHtmlDrag = el.getAttribute('draggable') === 'true';
     const movable = (
-      el.draggable === true ||
+      explicitHtmlDrag ||
       el.getAttribute('aria-grabbed') === 'true' ||
       classes.contains('ui-draggable') ||
       sortable ||

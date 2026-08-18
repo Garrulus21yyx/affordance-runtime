@@ -288,7 +288,11 @@ def _fit_context(
                 # budget.  Do not cut a short document at an arbitrary node
                 # prefix before that measurement occurs.
                 max_structure_nodes=None,
-                max_structure_bytes=budget.max_total_serialized_bytes // 2,
+                max_structure_bytes=(
+                    budget.max_total_serialized_bytes // 2
+                    if budget.max_total_serialized_bytes < 64 * 1024
+                    else budget.max_total_serialized_bytes * 3 // 4
+                ),
                 fact_refs=fact_refs,
             ),
             grounding.images,

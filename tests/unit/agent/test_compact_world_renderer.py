@@ -55,6 +55,29 @@ def test_compact_world_drops_projection_scaffolding_but_not_public_semantics() -
     assert "active=false" in rendered
 
 
+def test_compact_world_discloses_partial_node_state() -> None:
+    node = ActorWorldNodeView(
+        "E1",
+        "combobox",
+        "Country",
+        {"value": "China", "selected_options": ("China",)},
+        state_total_count=5,
+        state_truncated=True,
+    )
+
+    rendered = render_compact_actor_world(
+        _snapshot((node,)),
+        AgentGroundingIndexView(
+            (AgentGroundingEntityView("E1", "combobox", "Country"),),
+            {"target:country": "E1"},
+        ),
+        include_images=False,
+    )
+
+    assert 'value="China"' in rendered
+    assert "state_coverage=2/5" in rendered
+
+
 def _post(index: int) -> ActorWorldNodeView:
     base = (index - 1) * 3 + 1
     return ActorWorldNodeView(

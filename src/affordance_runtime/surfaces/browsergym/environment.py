@@ -288,16 +288,17 @@ class BrowserGymSurfaceAdapter:
             goal = raw.get("goal") if isinstance(raw, dict) else None
             if not isinstance(goal, str) or not goal.strip():
                 raise RuntimeError("BrowserGym reset omitted the public task instruction")
+            task_run_id = f"run:{uuid.uuid4().hex}"
             environment = cls(
                 task_id=task_id,
                 seed=seed,
                 gym_environment=gym_environment,
-                task_run_id=f"run:{uuid.uuid4().hex}",
+                task_run_id=task_run_id,
                 goal_instruction=goal,
                 _prepared_initial_raw=raw,
                 _prepared_task_info=prepared_info,
                 _page_identity=page_identity(raw),
-                _episode_identity=episode_identity(prepared_info),
+                _episode_identity=episode_identity(prepared_info, fallback=task_run_id),
                 visual_region_proposer=visual_region_proposer,
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
@@ -452,7 +453,7 @@ class BrowserGymSurfaceAdapter:
             current_task_info = task_info(info)
             self._terminated = terminated is True or truncated is True
             self._page_identity = page_identity(raw)
-            self._episode_identity = episode_identity(current_task_info)
+            self._episode_identity = episode_identity(current_task_info, fallback=self._episode_identity)
             observation_id, revision = self._next_identity()
             snapshot = task_state_from_transition(
                 task_run_id=self.task_run_id,
@@ -507,7 +508,7 @@ class BrowserGymSurfaceAdapter:
             current_task_info = task_info(info)
             self._terminated = terminated is True or truncated is True
             self._page_identity = page_identity(raw)
-            self._episode_identity = episode_identity(current_task_info)
+            self._episode_identity = episode_identity(current_task_info, fallback=self._episode_identity)
             observation_id, revision = self._next_identity()
             snapshot = task_state_from_transition(
                 task_run_id=self.task_run_id,

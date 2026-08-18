@@ -20,8 +20,9 @@ separately, the action path collapsed an observed UI change and satisfaction of 
 result. Phase 11 now converges that boundary: local action feedback is an observational transition projection, not a
 second evaluator of task meaning. `TaskEvaluator`/the native verifier remains the only formal evaluator and no
 Runtime-owned progress state returns. The Context delivery increment now also separates internal truth from model
-expression: Runtime and trace retain the complete typed `ActorWorldSnapshot`, while ActionPolicy receives an AX-style
-compact rendering with the same public E-refs, hierarchy, state, and verbs. Its real seed-7 snapshot passed the local
+expression: Runtime and trace retain the full typed `WorldObservation` plus the exact bounded `ActorWorldSnapshot`
+projection, while ActionPolicy receives that projection's AX-style compact rendering with public E-refs, hierarchy,
+state, verbs, and truthful coverage. Its real seed-7 snapshot passed the local
 gate. The subsequent formal G4 Like witness exposed a temporal reference defect: call-local E-refs were regenerated
 from each fresh World while complete historical observations retained former E-refs. Model-facing Recent Steps now
 renders only semantic targets, actions, and local transitions with expired refs removed; prior World renderings and
@@ -33,6 +34,18 @@ remain separate in bounded `WorkingFact` wrappers created only by the local `pin
 `WorldEvidenceIndex` records; the model cannot submit a value and no BrowserGym dispatch occurs. A fresh GLM-5.2 witness selected seven distinct
 inactive Likes and then Submit, reaching official success. This is one diagnostic witness in a dirty worktree, not
 held-out generalization evidence, so G4 remains non-closed and its cohort is retained as a short-loop regression gate.
+The 2026-08-18 W1b diagnostic then exposed a shared projection invariant rather than a drag-only defect: a target's
+bounded eight-field model state could silently drop an action-decision field such as a combobox `value` behind
+unrelated metadata. Fresh World and Recent Steps could therefore report the successful transition while the current
+ActionSpace omitted the resulting value and encouraged repetition. `WorldProjection` now prioritizes the existing
+supported action-decision fields before metadata, and `ActorWorldSnapshot` carries truthful per-node state counts so
+`compact_ax.v1` emits `state_coverage=retained/total` whenever state is partial. T0 then closed the real-web
+source/projection contract without adding tools: BrowserGym drag evidence now depends on explicit supported authored
+semantics rather than browser-default properties; source structure retains projected controls with ancestors; bounded
+World/Actor projection preserves current tool targets, verbs, action-decision state, and truthful action overflow; and
+the W1b-World read-only diagnostic passed all six frozen site categories under `evidence/w1b-world-t0/`. This does not
+establish support for BrowserGym primitives outside the declared semantic action algebra; T1 begins with
+`scroll`/`press_key`, and W1b-Agent/W2 remain pending.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
@@ -152,6 +165,8 @@ SurfaceAdapter/Fusion as evidence in the same World; it is not a repetition- or 
 | [Glass Browser](https://github.com/lzw12w/glass-browser) and its [compactor](https://github.com/lzw12w/glass-browser/blob/master/browser_agent/agent/compact.py) | current DOM refs are snapshot-scoped; older snapshots are elided, older tool results shrink structurally, and model summary is a last-resort overflow mechanism while full trace remains separate | reuse the elide-then-fold-then-optional-summary order, not its provider-message compactor or `LLMClient`; this project already has typed `AgentTurnView` history and a provider boundary |
 | [TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) [offload client](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/97f94654280b2932c35ba4806a491999ed244cc9/MemoryCore/src/offload-client/offload-api-client.ts) | generic tool-pair ingest, JSONL/raw-result offload, node summaries, and synchronous message compaction support progressive disclosure but do not understand GUI evidence authority or currentness | keep it out of the WebArena control path; after W2 it may implement a fail-open `HistoryOffloadPort`, with no MissionState writes or cross-case recall |
 | [BrowserGym](https://github.com/ServiceNow/BrowserGym) and [OSWorld](https://github.com/xlang-ai/OSWorld) | environment/native evaluators score formal task success separately from the policy's rolling interpretation | keep native/TaskEvaluator completion authority separate from action feedback |
+| [BrowserGym action space](https://browsergym.readthedocs.io/latest/core/action_space.html), [AgentLab GenericAgent](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/agents/generic_agent/generic_agent.py), and [Playwright actionability](https://playwright.dev/docs/actionability) | BrowserGym supplies a broader maintained primitive set; AgentLab fits observations to a model-aware prompt-token limit; Playwright owns live-element actionability and retry behavior | keep the small typed public action algebra, reuse BrowserGym/Playwright underneath it, and add model-aware admission at the provider boundary before widening capabilities; do not duplicate browser actionability or treat byte-only rendering as token admission |
+| [BrowserGym observation](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/observation.py), [AgentLab dynamic prompting](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/agents/dynamic_prompting.py), [browser-use serializer](https://github.com/browser-use/browser-use/blob/main/browser_use/dom/serializer/serializer.py), and [Region4Web](https://arxiv.org/abs/2605.07134) | BrowserGym already acquires aligned DOM/AX/rendering/screenshot evidence; AgentLab reuses BrowserGym flattening and adds prompt/token fitting; browser-use and Region4Web show structure-aware cleanup and region-level progressive disclosure | keep BrowserGym as the only source acquisition owner and perform compact, structurally closed projection only after `WorldObservation`; borrow pure filtering/serialization ideas behind the existing projection seam, not another browser tree, selector map, agent loop, or mandatory region model. Region4Web's claimed repository was unavailable on 2026-08-18, so it is a design signal rather than a reusable dependency |
 | [BrowserGym WebArena-Verified](https://github.com/ServiceNow/BrowserGym/tree/main/browsergym/webarena_verified) and [WebArena-Verified](https://github.com/ServiceNow/webarena-verified) | BrowserGym already owns task registration, login, start-page setup, Playwright tracing, STOP/final-response dispatch, and invocation of the audited deterministic evaluator | directly use the already pinned packages and existing `BrowserGymSurfaceAdapter`; do not build another physical CaseSession, WebArena driver, HAR recorder, task loader, evaluator, or agent loop |
 
 The 2026-08-18 source audit inspected LongHorizon-Harness `be2e7b4`, OSWorld/Qwen3-VL `091f5ef`, Agent S
@@ -469,8 +484,11 @@ cohort begins before the W1b smokes and independent audit pass:
    the existing generic benchmark contracts. Reuse `run_suite`, instrumentation, progress writing, case persistence,
    cleanup, and reporting; add no WebArena scheduler or retry owner. Remove or quarantine the existing offline
    `webarena-verified eval-tasks` helper from W1b/W2 composition so it cannot become a second official evaluator.
-10. **Verification.** Run focused ownership/property tests, independent fresh-context reader/code audit, official site
-   smokes, then the frozen W2 cohort described in `docs/benchmark.md`.
+10. **Real-web World and verification.** Before treating the six site runs as agent smokes, run the real-page
+   World/Actor-View gate in `docs/benchmark.md`: source semantics, offered-target conservation, action-decision state,
+   structural closure, truthful coverage/recovery, request-token metrics, and private-data isolation. Then run the
+   official site smokes, independent fresh-context reader/code audit, and frozen W2 cohort. MiniWoB remains a
+   regression surface and cannot substitute for this gate.
 
 `FinalResponse` remains the sole model decision for terminal content, but its lifecycle meaning becomes explicit. For
 an environment without finalization capability, the existing rule remains: requested outputs are returned only after
@@ -540,6 +558,94 @@ unknown rather than causing the DOM evidence or executable capability to disappe
 presentation fact, not authority over the action inventory. A malformed DOMSnapshot or conflicting semantic evidence
 for one BID fails with a typed adapter error instead of silently dropping that modality.
 
+### Real-web World and Actor View governance
+
+MiniWoB is a useful deterministic regression surface, but its small, regular pages cannot close the World contract for
+real websites. WebArena pages contain nested navigation, repeated wrappers, tables, menus, tabs, icons, lazy content,
+iframes, and browser-default DOM properties whose meaning differs from an explicit author attribute. The governing
+chain is therefore:
+
+```text
+BrowserGym raw source snapshot
+  -> BrowserGymSurfaceAdapter source interpretation
+  -> full current WorldObservation authority
+  -> deterministic ActorWorldSnapshot projection
+  -> compact_ax.v1 model rendering + current tool schemas
+  -> ActionPolicy
+
+full typed World / source evidence / provider request
+  -> trace only; never reconstructed from the compact prompt
+```
+
+These layers answer different questions and must not be collapsed:
+
+| Layer | Owner and purpose | May omit? | Authority |
+|---|---|---:|---|
+| raw source snapshot | BrowserGym supplies aligned DOM, AX, rendering, screenshot, frame, and private BID evidence | only as declared by the upstream source | source evidence, not the public world |
+| `WorldObservation` | SurfaceAdapter plus World fusion normalize public entities, facts, relations, capabilities, provenance, freshness, and truthful source coverage | no silent task-directed pruning; source truncation remains explicit | sole current environment authority |
+| `ActorWorldSnapshot` / `compact_ax.v1` | existing World projection and renderer make a bounded, public, model-readable view | yes, only with structural closure, coverage, and a recovery route | disposable non-authoritative projection |
+| current tool schemas | ActionSpace/PerTurnToolCatalog expose exactly which current refs support which verbs | may page a complete current inventory through the existing action pager | sole model-callability contract for this turn |
+| trace | existing observability stores complete typed inputs, source lineage, model exchange, and metrics | binary media may be content-addressed | audit evidence only; never control state |
+
+The projection owner performs deterministic presentation cleanup, structural closure, budget fitting, and coverage
+reporting. It always retains every target present in the offered tool schemas, that target's current verbs and
+action-decision state (`value`, selected options, checked/selected/active/expanded, required, option domain, and grid
+coordinate), and enough surrounding structure to interpret it. Structural closure includes the necessary ancestor
+chain, accessible label, current/focused state, enclosing dialog/form/card, table headers with complete retained rows,
+and any region that changed in the latest transition. A target, table cell, or field must not survive as an orphan.
+
+The same owner may collapse empty generic/group wrappers, duplicate `StaticText -> InlineTextBox` content, icon-font
+glyphs, redundant parent/child text, and low-value appearance/CSS/size/position metadata when none of those facts is
+required for an admitted visual or spatial decision. This is presentation normalization, not deletion from
+`WorldObservation`. It cannot inspect task IDs, expected answers, benchmark labels, private selectors, or hidden
+evaluator state, and it cannot create or remove an executable binding.
+
+Coverage is model-visible and measurable. Each rendered world states retained/total structural groups and fields,
+whether source or projection coverage is partial, whether the action inventory is paged, and which recovery operation
+is available. Partial means "not currently projected", never "absent from the page". The existing `find_actions`
+route owns action-inventory retrieval. If held-out real pages prove that omitted non-action content is needed, add at
+most one read-only search/read operation through the same context/catalog boundary; it returns current public evidence
+from the same World and creates neither a second selector authority nor a second observation loop.
+
+Screenshot routing remains owned by the existing `DecisionPerceptionProfile`. Structured World stays the baseline;
+the current screenshot or a typed visual provider supplements it for the already declared profiles and evidence
+needs. Page size, repetition, long-horizon duration, or a policy stall alone does not activate a VLM and cannot replace
+the structured world.
+
+Token control is a model-delivery concern, not a World-authority concern. Provider admission measures the complete
+request—stable prompt, Task/GoalPlan, Actor View, episode history, current native tool schemas, and image estimate—using
+the provider tokenizer when available and a conservative estimate otherwise; the existing byte bounds remain a
+safety backstop. Initial engineering targets are 3k–8k observation tokens on ordinary pages, 8k–12k on complex
+WebArena pages, and roughly 16k p95 for the whole action request. They are cost/attention targets, not correctness
+limits: a request may exceed them when atomic semantic groups are necessary, while an over-budget request must page,
+retrieve, or yield typed `context_capacity` rather than slice a group or silently lose an offered target.
+
+The first WebArena task-0 diagnostic illustrates why both source semantics and projection quality are governed. The
+model received the task, `REPORTS`, and the Bestsellers table in a 512/583-node partial Actor View and selected
+`activate(E59)`. No browser action was dispatched because the adapter had classified that navigation element as
+`draggable`, based on the DOM property's browser default rather than an explicit `draggable=true` attribute, so
+`activate` was not a legal current verb. That is a SurfaceAdapter/action-capability defect, not proof that the relevant
+region was missing. Separately, the 11.6k-token initial action request, 23.4k-token repair amplification, generic
+wrappers, duplicate text, icon glyphs, and presentation metadata expose a real Actor View signal-to-noise problem.
+The two mechanisms receive separate failure codes and gates; neither may be repaired by a task-specific selector or
+prompt hint.
+
+External code is reused only at its valid boundary. BrowserGym remains the acquisition/execution dependency;
+AgentLab's token fitting and BrowserGym-backed flattening, browser-use's pure serializer/filter ideas, Glass's
+on-demand read pattern, and Region4Web's region-summary/view-all design are reference implementations. None is
+installed as another Agent, browser session, DOM authority, selector map, history owner, or control path. An optional
+model-backed region selector is admissible only after deterministic projection fails a frozen real-page cohort; it
+must implement the same projection port, select existing public region IDs, report coverage, fail open to the
+deterministic/view-all path, and never mutate World or tools.
+
+Current implementation has the full typed World, bounded semantic-group projection, action-state priority, per-node
+state coverage, current action paging, compact renderer, perception profiles, complete trace seam, and the T0
+W1b-World diagnostic. The six-site T0 gate verified source capability semantics, offered-target conservation,
+action-decision state, structural closure, truthful action overflow recovery through `find_actions`, and private-data
+isolation. Remaining work is T1 capability installation (`scroll`/`press_key` first), complete-request token admission,
+and W1b-Agent/W2 model/evaluator evidence; a non-action read route is still deferred unless measurements demonstrate a
+retrieval gap.
+
 ### SemanticActionRegistry
 
 The semantic capability registry defines the stable action algebra: verb, supported subject kinds, public parameters,
@@ -557,6 +663,86 @@ BrowserGym publishes `drag_to(source, destination)` only when one current snapsh
 source and a finite compatible endpoint domain. Both private endpoints are checked together immediately before one
 official BrowserGym dispatch. Directional pointer gestures, text selection, and drawing gestures are not silently
 treated as element-to-element drag; they remain unoffered until they have their own honest semantic contract.
+
+#### Capability installation and the current BrowserGym gap
+
+GUI tools follow one operation/operand split. A tool names a small stable operation such as `activate(target)` or
+`type_text(target, text)`; a button, field, viewport, or drag endpoint is a current operand represented by a public
+E-ref or a closed scalar argument. The Runtime never registers one tool per page element. This matches the fixed
+operation plus current BID/index/coordinate pattern used by BrowserGym/AgentLab, browser-use, UI-TARS, Qwen GUI
+agents, and Agent S2, while retaining this project's stricter currentness and private-binding boundary.
+
+Registration and per-turn exposure are two parts of one chain:
+
+```text
+SemanticActionRegistry
+  -> Surface InteractionProfile + primitive translator + executor route
+  -> installed surface capability
+  -> fresh World bindings
+  -> current ActionSpace
+  -> ActionPager / find_actions
+  -> PerTurnToolCatalog
+  -> model tool call
+  -> resolver -> admission/risk/confirmation -> Binder -> Executor
+  -> fresh World -> ActionOutcomeProjector -> TaskEvaluator/native verifier
+```
+
+The four named layers remain distinct:
+
+| Layer | Meaning | Currentness |
+|---|---|---|
+| semantic registry | closed vocabulary and public parameter/effect contract | code/version scoped; a name here does not mean a surface implements it |
+| surface profile | operations whose adapter offer, primitive translation, private binding, and executor route are implemented | surface/version scoped |
+| `ActionSpace` | concrete operations currently legal for fresh World subjects | observation scoped |
+| `PerTurnToolCatalog` | the current action page and local/control utilities actually callable by the model | context/catalog scoped |
+
+The global registry currently defines ten semantic operations:
+`activate`, `type_text`, `select_option`, `read`, `scroll`, `press_key`, `focus`, `drag_to`, `set_value`, and `hover`.
+The BrowserGym profile currently installs only four:
+`activate -> click`, `type_text -> fill`, `select_option -> select_option`, and
+`drag_to -> drag_and_drop`. Therefore the registry is presently a vocabulary superset, not an installed-capability
+claim. BrowserGym already supplies maintained primitives for the first missing tranche; this project should reuse
+those primitives rather than implement raw Playwright replacements.
+
+The bounded remediation order is:
+
+1. correct real-page affordance classification so authored click/edit/drag semantics are not confused with browser
+   defaults and every offered operation has truthful current evidence;
+2. install `scroll` and `press_key` end to end, including viewport/focused-context subjects, current bindings,
+   BrowserGym translation, dispatch, fresh capture, model exposure, and real conformance;
+3. install `hover` and `focus` through the same chain;
+4. add `set_value` only when a declared benchmark page exposes a slider/spinbutton/value control that cannot be
+   handled honestly by the installed operations; keep `read` in the observation/evidence path unless real-page
+   measurements prove a separate read-only retrieval operation is necessary;
+5. add a diagnostic capability census and then strengthen `find_actions` with operation and region/role filtering
+   only where W1b demonstrates a retrieval failure.
+
+An installed operation does not require Runtime to understand its task-level value. Exact value actions may produce a
+mechanically closed local postcondition; event, navigation, hover, and other open actions may legitimately produce
+`unknown` or `not_applicable` after a fresh observation. This does not make them uninstalled and must not turn the
+action-outcome projector into a semantic evaluator.
+
+The capability census is an observability projection, not another registry or control state. For every registry
+operation and current action instance it records:
+
+```text
+registry_defined
+adapter_supported
+currently_eligible
+model_exposed | paged_searchable
+hidden_or_absent_reason
+selected
+dispatched
+```
+
+Its governing invariant is: every currently eligible `ActionOption` is either present in the current tool catalog or
+reachable through the current `find_actions` inventory; every model-exposed call resolves to exactly one current
+option before admission. Unsupported operations remain explicitly unsupported rather than silently disappearing.
+
+This increment does not add a second Tool Registry, one tool per element, raw Playwright/Python escape, a model tool
+evaluator, or MCP/tool search. `search_tools` is reserved for a future large external MCP/WoT/SaaS catalog; it is not
+the discovery mechanism for current GUI elements. GoalCompiler and the outer Manager never register, hide, authorize,
+or execute GUI tools.
 
 ### Local action outcome projection
 
@@ -601,9 +787,10 @@ semantic local outcome enter the supported projection algebra.
 ### PerTurnToolCatalog
 
 The per-turn catalog is the single model-visible Tool Registry. It compiles currently executable semantic actions,
-local deterministic utilities such as `count_children`, and the closed control set `request_evidence`, `next_actions`,
-`ask_user`, `wait`, and `abort`. `propose_done` is not published by the grounded product catalog and is not part of
-the target control algebra. Each registered entry pairs one name, description, and strict input schema with one
+local deterministic utilities such as `count_children` and `pin_fact`, and the bounded control/retrieval set
+`request_evidence`, `find_actions`, `ask_user`, `wait`, `abort`, and, in executor-episode mode, `yield_subtask`.
+Conditional tools appear only when their Runtime precondition exists. `propose_done` is not published by the grounded
+product catalog and is not part of the target control algebra. Each registered entry pairs one name, description, and strict input schema with one
 opaque Runtime binding whose uniform `resolve` contract performs private binding or its local deterministic handler.
 The semantic registry defines what a GUI action means; the per-turn registry defines what is callable now. Neither is
 a backend plugin registry.
@@ -763,8 +950,9 @@ Current Tools
   stable operation schemas; current E-refs and verbs remain in Observation/affordances
 ```
 
-The latest observation is the only complete world. ActionPolicy interprets the current task/subtask against that fresh
-world; Runtime neither computes nor persists GoalPlan item status or a frontier. MissionState supplies audited
+The latest `WorldObservation` is the only current environment authority; its fresh Actor projection is the only
+model-visible current-world view. ActionPolicy interprets the current task/subtask against that view; Runtime neither
+computes nor persists GoalPlan item status or a frontier. MissionState supplies audited
 cross-stage working evidence, not current UI state. Formal completion remains in TaskEvaluator/native evaluation. No
 model summary, Manager, Auditor, or separate progress-evaluator call is made per GUI step.
 
@@ -806,6 +994,17 @@ non-tree relations, facts, coverage, traversal, and current verbs remain explici
 empty arrays, repeated contract keys, appearance decoration, Runtime IDs, and private binding data stay in typed trace
 rather than consuming model attention. This renderer is surface-neutral and never reads raw AX, DOM, private handles,
 task text, or benchmark identity.
+
+The bounded state projection preserves action-decision fields (`value`, selected options, Boolean control states,
+option domain, and semantic grid coordinate) ahead of unrelated metadata. If any remaining public state is omitted,
+the Actor node reports its retained and total field counts and the renderer exposes that partial coverage. Missing and
+not-projected are therefore distinct model-visible conditions; projection metadata never becomes page truth.
+
+Real-page projection follows the governance contract above: all targets named by the current tool schemas and their
+decision state are conserved; retained table/form/dialog/card content is structurally closed; omitted regions remain
+truthfully marked and recoverable; and token measurement covers the complete provider request rather than only the
+serialized World. MiniWoB full-retention witnesses protect regressions but do not prove these properties on complex
+pages.
 
 ```text
 WorldObservation -> ActorWorldSnapshot
@@ -959,6 +1158,9 @@ reasoning until benchmark evidence demonstrates a different shared failure after
 | What did a source observe? | SurfaceAdapter |
 | Which evidence should be acquired? | ObservationPolicy |
 | What is the current unified world? | WorldFusion / WorldObservation |
+| What bounded public subset is shown to a model, with structural closure and truthful coverage? | existing World projection / `ActorWorldSnapshot`; this projection is disposable and cannot alter World or tool authority |
+| Which current actions are visible or retrievable? | existing ActionSpace pager and PerTurnToolCatalog; every offered target must also appear in the Actor View |
+| Should the current screenshot accompany the structured World? | existing `DecisionPerceptionProfile` and observation orchestration |
 | What did the user request? | caller / revisioned TaskGoal |
 | What semantic skeleton may help in standalone mode? | GoalCompiler proposes; GoalPlanBoundary validates and versions |
 | Which bounded subtask should run next in long-horizon mode? | Manager proposes from TaskGoal + accepted MissionState; Supervisor admits one SubtaskContract |
@@ -1005,7 +1207,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implementation almost converged; fresh-context re-audit failed on finalization freshness; finalization freshness repair implemented locally pending re-audit; W1b blocked | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; W1b smokes and W2 cohort remain blocked until re-audit accepts the repaired contracts |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0 real-web World/Actor contract implemented and verified; T1 scroll/press_key active next / W1b-Agent and W2 non-closed | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; install missing first-tranche capabilities, rerun all W1b smokes, then run W2 |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:
@@ -1067,6 +1269,12 @@ and summaries that existed only to support the old ledger-shaped context are no 
   those contracts but must not own another scheduler, retry loop, progress store, or result authority.
 - Keep official task IDs, revisions, expected state, answers, and evaluator details outside model Context. Only the
   public task instruction and official response schema may reach TaskGoal/ActionPolicy.
+- Keep BrowserGym raw capture and complete `WorldObservation` upstream of any model-facing cleanup. Deterministic
+  cleanup, structural closure, token fitting, coverage, and optional future region selection stay behind the existing
+  World-to-Actor projection seam; do not add a second DOM walker, browser tree, selector map, `ModalityRouter`, or
+  task-aware pruning authority.
+- Keep every currently offered target, verb, and action-decision state in Actor View. When other content is omitted,
+  report partial coverage and provide the existing paging/retrieval path rather than silent prefix truncation.
 - Keep generic memory/offload frameworks fail-open and outside W2 control; never permit cross-case recall.
 - Add a type only when it owns one non-duplicated invariant required by an episode or mission boundary.
 
@@ -1085,6 +1293,9 @@ and summaries that existed only to support the old ledger-shaped context are no 
   existing benchmark case scope reuses one BrowserGymSurfaceAdapter, starts later episodes from captured current World,
   withholds STOP until finalizing, and closes through its existing `finally` path.
 - Every dispatched action has one matching result, fresh observation, and optional local outcome; stale calls never execute.
+- Held-out real WebArena pages, not only MiniWoB fixtures, prove that source semantics are correct, every offered
+  action target and its decision state survives projection, retained regions are structurally closed, omission is
+  truthful/recoverable, no hidden/private data leaks, and complete request-token metrics are persisted.
 - Tests cover tolerant response parsing, plan/DAG invariants, revision invalidation, advisory failures, transcript
   preservation, five-section context, current-world precedence, single-owner verification-contract conservation,
   after-only postcondition proof, target-scoped transition evidence, non-blocking unknown, and private-field non-leakage.
@@ -1096,6 +1307,7 @@ and summaries that existed only to support the old ledger-shaped context are no 
   every MissionOutcome to an explicit non-YIELDED RunStatus, uses the existing public semantic World digest for
   oscillation checks, filters carry facts by `SubtaskContract.relevant_fact_keys`, fails closed when fresh episode or
   final-audit capture cannot acquire a World, records Manager/Auditor role invocations in the same trace recorder, and
-  evaluates acquired post-STOP World evidence for both `SENT` and `SENT_UNKNOWN` without retrying STOP. W1b official
-  site compatibility smokes remain blocked until a fresh re-audit accepts these contracts.
+  evaluates acquired post-STOP World evidence for both `SENT` and `SENT_UNKNOWN` without retrying STOP. A later W1b
+  task-0 diagnostic reached ActionPolicy and exposed source-semantics/projection issues, but neither that case nor the
+  local repairs close the real-web World gate or the six site smokes.
 - Code, tests, maintained documents, and benchmark reports describe the same one-GUI-loop/two-time-scale architecture.

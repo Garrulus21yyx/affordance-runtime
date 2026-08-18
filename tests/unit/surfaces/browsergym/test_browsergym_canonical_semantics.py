@@ -169,6 +169,59 @@ def test_physical_capture_preserves_false_for_an_absent_active_class() -> None:
     assert dict(control.public_state)["active"] is False
 
 
+def test_physical_capture_requires_explicit_html_drag_evidence() -> None:
+    script = browsergym_backend._PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
+
+    assert "el.draggable === true" not in script
+    assert script.count("el.getAttribute('draggable') === 'true'") == 2
+
+
+def test_native_link_role_is_not_replaced_without_explicit_drag_evidence() -> None:
+    raw = raw_observation(ax_node("reports", "link", "REPORTS"))
+    raw["dom_object"] = dom_snapshot(("a", "reports", {"title": "Reports"}),)
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["reports"].update({
+        "gesture_role": "",
+        "gesture_group": "",
+        "gesture_kind": "",
+    })
+
+    projection = _projection(raw)
+
+    assert [(item.role, item.label) for item in projection.world.targets] == [
+        ("link", "REPORTS")
+    ]
+    assert len(projection.world.bindings) == 1
+    assert projection.world.bindings[0].semantic_action == "activate"
+    assert projection.world.bindings[0].primitive_action == "click"
+
+
+def test_browser_default_draggable_like_value_does_not_generate_drag_binding() -> None:
+    raw = raw_observation(
+        ax_node("reports", "link", "REPORTS"),
+        ax_node("drop", "generic", "Drop zone"),
+    )
+    raw["dom_object"] = dom_snapshot(
+        ("a", "reports", {"title": "Reports"}),
+        ("div", "drop", {"class": "drop-zone"}),
+    )
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["reports"].update({
+        "draggable": True,
+        "gesture_role": "",
+        "gesture_group": "",
+        "gesture_kind": "",
+    })
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["drop"].update({
+        "gesture_role": "drop_target",
+        "gesture_group": "group:1",
+        "gesture_kind": "",
+    })
+
+    projection = _projection(raw)
+
+    assert "drag_to" not in {item.semantic_action for item in projection.world.bindings}
+    assert "activate" in {item.semantic_action for item in projection.world.bindings}
+
+
 def test_physical_active_class_is_public_true_without_inventing_selected_state() -> None:
     raw = raw_observation(ax_node("control", "generic", ""))
     raw["extra_element_properties"]["control"]["clickable"] = True

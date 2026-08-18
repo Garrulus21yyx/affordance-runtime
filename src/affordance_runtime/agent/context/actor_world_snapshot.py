@@ -58,6 +58,8 @@ class ActorWorldNodeView:
     marked: bool = False
     children: tuple[ActorWorldNodeView, ...] = ()
     parent_outside_snapshot: bool = False
+    state_total_count: int = 0
+    state_truncated: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", freeze_json(self.state))
@@ -66,6 +68,11 @@ class ActorWorldNodeView:
         object.__setattr__(self, "relations", freeze_json(self.relations))
         object.__setattr__(self, "source_refs", tuple(self.source_refs))
         object.__setattr__(self, "children", tuple(self.children))
+        retained = len(self.state)
+        total = self.state_total_count or retained
+        if total < retained or self.state_truncated != (total > retained):
+            raise ValueError("Actor world node state truncation is untruthful")
+        object.__setattr__(self, "state_total_count", total)
 
 
 @dataclass(frozen=True)
@@ -221,6 +228,8 @@ def actor_world_for_delivery(
             item.marked if include_images else False,
             tuple(node(child) for child in item.children),
             item.parent_outside_snapshot,
+            item.state_total_count,
+            item.state_truncated,
         )
 
     documents = tuple(
@@ -352,6 +361,8 @@ def project_actor_world_snapshot(
                 if allowed is None or child_id in allowed
             ),
             bool(parent_by_id.get(target_id) and parent_by_id[target_id] not in visible),
+            target.state_total_count,
+            target.state_truncated,
         )
 
     summaries = tuple(world.sources)
@@ -389,28 +400,23 @@ def project_actor_world_snapshot(
         max_structure_nodes,
         max_structure_bytes,
     )
-    if documents:
+    if documents and max_structure_nodes is None:
         represented = {
             item.ref
             for document in documents
             for root in document.roots
             for item in _walk_nodes(root)
         }
-        structured_ids = {
-            link.canonical_target_id
-            for link in observation.entity_source_links
-            if any(
-                source.observation_id == link.source_observation_id
-                and any(node.semantic_target_id == link.source_target_id for node in source.structure)
-                for source in observation.sources
-            )
-        }
         missing_ids = {
             target_id
             for target_id, ref in refs.items()
-            if ref not in represented and target_id not in structured_ids
+            if ref not in represented
         }
-        remaining_nodes = max(0, (max_structure_nodes or len(visible)) - len(represented))
+        remaining_nodes = (
+            len(missing_ids)
+            if max_structure_nodes is None
+            else max(0, max_structure_nodes - len(represented))
+        )
         for source in sources:
             all_source_ids = tuple(
                 target_id
@@ -763,6 +769,8 @@ def _structure_documents(
                 children,
                 item.parent_outside_structure
                 or bool(item.parent_structure_id and item.parent_structure_id not in retained_ids),
+                target.state_total_count if target is not None else 0,
+                target.state_truncated if target is not None else False,
             )
 
         roots = tuple(

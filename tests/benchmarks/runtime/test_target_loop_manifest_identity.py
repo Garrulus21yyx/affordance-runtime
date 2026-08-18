@@ -2,12 +2,14 @@ from dataclasses import replace
 
 import pytest
 
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkManifest,
     MetricExpectation,
     MetricExpectationOperator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
+from affordance_runtime.benchmarks.webarena_verified import WA_W1_SMOKE_CASES
 
 
 def test_manifest_digest_covers_profile_seed_and_expectations() -> None:
@@ -37,3 +39,16 @@ def test_manifest_rejects_duplicate_or_mismatched_cases() -> None:
         )
     with pytest.raises(ValueError):
         replace(manifest, cases=(replace(manifest.cases[0], suite_id="wrong"),))
+
+
+def test_webarena_verified_w1b_manifest_is_registered_thin_long_horizon_entry() -> None:
+    manifest = get_manifest("webarena-verified-w1b", "model-long-horizon", 20260818)
+
+    assert manifest.suite_id == "webarena-verified-w1b"
+    assert manifest.profile_id == "model-long-horizon"
+    assert [case.case_id for case in manifest.cases] == [
+        f"webarena-verified-w1b-task-{case.task_id}" for case in WA_W1_SMOKE_CASES
+    ]
+    assert all(case.expected_terminal_statuses == (RunStatus.DONE,) for case in manifest.cases)
+    assert all(case.timeout_s == 900.0 for case in manifest.cases)
+    assert all("mission_manager_calls" in case.required_measurements for case in manifest.cases)

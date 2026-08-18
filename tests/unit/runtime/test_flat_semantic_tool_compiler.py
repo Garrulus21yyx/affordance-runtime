@@ -3,6 +3,8 @@ from __future__ import annotations
 import itertools
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
@@ -107,7 +109,7 @@ def test_single_target_uses_stable_operation_and_explicit_target() -> None:
     assert tool.public_spec.name == "activate"
     assert tool.selector_mode is SelectorMode.CURRENT_TARGET
     assert tool.public_spec.input_schema["required"] == ("target",)
-    assert tool.public_spec.input_schema["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
+    assert tool.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
 
 
 def test_one_stable_tool_contains_all_current_targets() -> None:
@@ -115,8 +117,30 @@ def test_one_stable_tool_contains_all_current_targets() -> None:
 
     assert len(tools) == 1
     assert tools[0].public_spec.name == "activate"
-    assert tools[0].public_spec.input_schema["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
+    assert tools[0].public_spec.input_schema["properties"]["target"]["enum"] == (
+        "E1", "E2", "E3",
+    )
     assert len(tools[0].private_resolutions) == 3
+
+
+@given(st.integers(min_value=1, max_value=64))
+def test_unary_selector_schema_is_referentially_closed(count: int) -> None:
+    tool = _compile(*(_candidate(index) for index in range(1, count + 1)))[0]
+    catalog = _catalog(tool)
+    offered = tuple(
+        item.selector_values["target"] for item in tool.private_resolutions
+    )
+
+    assert tool.public_spec.input_schema["properties"]["target"]["enum"] == offered
+    assert len(set(offered)) == len(offered)
+    for resolution in tool.private_resolutions:
+        target = resolution.selector_values["target"]
+        outcome = resolve_grounded_tool_call(
+            catalog,
+            ToolCall("activate", {"target": target}),
+            expected_context_id=_CONTEXT,
+        )
+        assert outcome.decision.action_id == resolution.action_id
 
 
 def test_tool_name_and_shape_do_not_depend_on_state_or_candidate_order() -> None:
@@ -187,6 +211,8 @@ def test_required_destination_uses_source_and_destination_and_resolves_exact_pai
     assert tool.selector_mode is SelectorMode.CURRENT_ENDPOINTS
     assert set(tool.public_spec.input_schema["properties"]) == {"source", "destination", "expected_outcome"}
     assert tuple(tool.public_spec.input_schema["required"]) == ("source", "destination")
+    assert tool.public_spec.input_schema["properties"]["source"]["enum"] == ("E1", "E2")
+    assert tool.public_spec.input_schema["properties"]["destination"]["enum"] == ("E8", "E9")
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall("drag_to", {"source": "E2", "destination": "E9"}),

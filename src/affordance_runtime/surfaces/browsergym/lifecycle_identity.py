@@ -19,9 +19,11 @@ def page_identity(raw: object) -> str:
     return digest_text(url)
 
 
-def episode_identity(info: dict[str, object]) -> str:
+def episode_identity(info: dict[str, object], *, fallback: str = "") -> str:
     episode = info.get("EPISODE_ID")
     if not isinstance(episode, int | str) or isinstance(episode, bool):
+        if fallback:
+            return fallback
         raise RuntimeError("BrowserGym task status omitted episode identity")
     return str(episode)
 

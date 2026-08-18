@@ -1,4 +1,6 @@
-"""Explicit fixed internal target-loop manifests; no plugin discovery."""
+"""Explicit fixed target-loop manifests; no plugin discovery."""
+
+import os
 
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -43,12 +45,26 @@ from affordance_runtime.benchmarks.target_loop.support import (
     shared_task,
     stale_environment,
 )
+from affordance_runtime.benchmarks.webarena_verified import (
+    WA_SELECTION_SEED,
+    WA_W1_SMOKE_CASES,
+    open_webarena_verified_case,
+)
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.model.mission_roles import mission_roles_from_environment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.factory import model_policy_from_environment
+
+WA_W1B_CASE_TIMEOUT_S = 900.0
+WA_W1B_MAX_TURNS = 100
+WA_W1B_MODEL_CALL_TIMEOUT_S = 90.0
 
 
 def build_manifest(suite_id: str, profile_id: str, seed: int):
-    if suite_id == "internal-core" and profile_id in {"deterministic", "scripted-model"}:
+    if suite_id == "webarena-verified-w1b" and profile_id == "model-long-horizon":
+        cases = tuple(_webarena_verified_w1b_case(case_ref, seed) for case_ref in WA_W1_SMOKE_CASES)
+    elif suite_id == "internal-core" and profile_id in {"deterministic", "scripted-model"}:
         cases = (
             *(_shared_case(surface, profile_id, seed) for surface in ("dom", "visual", "wot")),
             _paging_case(seed),
@@ -74,6 +90,61 @@ def _expect(**values: int) -> tuple[MetricExpectation, ...]:
     return tuple(
         MetricExpectation(name, MetricExpectationOperator.EQ, value)
         for name, value in values.items()
+    )
+
+
+def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
+    holder: dict[str, object] = {}
+
+    def environment_factory(_metrics):
+        environment, task, evaluator = open_webarena_verified_case(
+            case_ref,
+            seed=seed,
+            max_turns=WA_W1B_MAX_TURNS,
+        )
+        holder["task"] = task
+        holder["evaluator"] = evaluator
+        return environment
+
+    def task_factory():
+        task = holder.get("task")
+        if task is None:
+            raise RuntimeError("WebArena-Verified W1b task requested before environment setup")
+        return task
+
+    def composition_factory(_metrics):
+        evaluator = holder.get("evaluator")
+        if evaluator is None:
+            raise RuntimeError("WebArena-Verified W1b evaluator requested before environment setup")
+        manager, auditor = mission_roles_from_environment(os.environ)
+        return BenchmarkComposition(
+            model_policy_from_environment(os.environ, call_timeout_s=WA_W1B_MODEL_CALL_TIMEOUT_S),
+            ProductionActionOutcomeProjector(),
+            evaluator,
+            mission_manager=manager,
+            mission_auditor=auditor,
+            long_horizon=True,
+        )
+
+    return BenchmarkCase(
+        f"webarena-verified-w1b-task-{case_ref.task_id}",
+        "webarena-verified-w1b",
+        f"official WebArena-Verified W1b smoke task {case_ref.task_id}",
+        task_factory,
+        environment_factory,
+        composition_factory,
+        (RunStatus.DONE,),
+        WA_W1B_CASE_TIMEOUT_S,
+        seed or WA_SELECTION_SEED,
+        (
+            "observations",
+            "policy_calls",
+            "provider_attempts",
+            "mission_manager_calls",
+            "mission_auditor_calls",
+            "mission_final_response_delivered",
+        ),
+        (),
     )
 
 

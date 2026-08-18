@@ -355,7 +355,7 @@ class BenchmarkCase:
     auto_confirm: bool = False
 
     def __post_init__(self) -> None:
-        if not self.case_id or not self.suite_id or not 0 < self.timeout_s <= 300:
+        if not self.case_id or not self.suite_id or not 0 < self.timeout_s <= 900:
             raise ValueError("benchmark case identity and timeout are required")
         names = tuple(item.metric for item in self.metric_expectations)
         if len(names) != len(set(names)):
@@ -817,6 +817,13 @@ _KNOWN_METRICS = (
             "completion_tokens",
             "total_tokens",
             "model_latency_ms",
+            "mission_manager_calls",
+            "mission_auditor_calls",
+            "mission_state_version",
+            "mission_audited_outcomes",
+            "mission_accepted_facts",
+            "mission_boundary_rejections",
+            "mission_final_response_delivered",
             "click_calls",
             "already_satisfied_suppressions",
             "no_progress_terminations",

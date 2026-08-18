@@ -23,6 +23,23 @@ from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canon
 
 _MAX_STRING = 240
 _MAX_STATE_FIELDS = 8
+# State used to choose or avoid a currently offered semantic action must survive
+# generic metadata pressure.  This is a projection priority, not a second state
+# definition: values still come only from the authoritative SemanticTarget.
+_ACTION_DECISION_STATE_PRIORITY = {
+    key: index
+    for index, key in enumerate((
+        "value",
+        "selected_options",
+        "checked",
+        "selected",
+        "active",
+        "expanded",
+        "required",
+        "option_domain",
+        "grid_coordinate",
+    ))
+}
 _PRIVATE_KEYS = (
     "backend",
     "bbox",
@@ -182,9 +199,14 @@ def project_model_world(
             None if provisional_traversal.status is ObservationTraversalStatus.COMPLETE else provisional_traversal
         ),
     )
+    fit_bytes = (
+        budget.max_total_serialized_bytes // 2
+        if budget.max_total_serialized_bytes < 64 * 1024
+        else budget.max_total_serialized_bytes * 3 // 4
+    )
     fitted = fit_model_world(
         view,
-        budget.max_total_serialized_bytes // 2,
+        fit_bytes,
         pinned_target_ids,
         pinned_output_ids,
         target_groups=_semantic_target_groups(observation),
@@ -335,7 +357,7 @@ def _resize(section: BoundedSection[Any], items: tuple[Any, ...]) -> BoundedSect
 
 def _project_target(target, relation_limit: int) -> ModelTargetView:
     public_state = _public_items(target.state)
-    public_state.sort(key=lambda item: 0 if item[0].casefold() == "grid_coordinate" else 1)
+    public_state.sort(key=_state_projection_priority)
     public_relations = _public_items(target.relations)
     state = dict(public_state[:_MAX_STATE_FIELDS])
     relations = dict(public_relations[:relation_limit])
@@ -350,6 +372,11 @@ def _project_target(target, relation_limit: int) -> ModelTargetView:
         len(public_relations),
         len(public_relations) > len(relations),
     )
+
+
+def _state_projection_priority(item: tuple[str, object]) -> tuple[int, str]:
+    key = item[0].casefold()
+    return (_ACTION_DECISION_STATE_PRIORITY.get(key, len(_ACTION_DECISION_STATE_PRIORITY)), key)
 
 
 def _public_items(value: Mapping[str, Any]) -> list[tuple[str, object]]:

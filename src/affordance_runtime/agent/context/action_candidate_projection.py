@@ -105,12 +105,12 @@ def _candidate_state(state: Mapping[str, object]) -> dict[str, object]:
     """Expose semantic coordinates, never lattice-construction coordinates."""
 
     result = dict(state)
-    coordinate = result.pop("grid_coordinate", None)
+    coordinate = result.get("grid_coordinate")
     if isinstance(coordinate, Mapping):
         x = coordinate.get("x")
         y = coordinate.get("y")
         if isinstance(x, int | float) and not isinstance(x, bool) and isinstance(y, int | float) and not isinstance(y, bool):
-            result["semantic_grid_coordinate"] = (x, y)
+            result["grid_coordinate"] = {"x": x, "y": y}
             result.pop("grid_membership", None)
             result.pop("grid_coordinate_confidence", None)
     return result

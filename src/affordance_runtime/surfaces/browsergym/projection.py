@@ -61,7 +61,7 @@ MAX_INVENTORY_TARGETS = 512
 MAX_INVENTORY_FACTS = 4_096
 MAX_INVENTORY_OPTIONS_PER_TARGET = 512
 MAX_SELECT_OPTIONS = 16
-MAX_STRUCTURE_NODES = 512
+MAX_STRUCTURE_NODES = 2_048
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ def project_browsergym_observation(
         )
         for node in projected
     }
-    retained_structure = analysis.structure[:MAX_STRUCTURE_NODES]
+    retained_structure = _retain_source_structure(analysis.structure, tuple(projected))
     structure_ids = {
         structure_node.private_node_id: entity_identity.structure_id(
             structure_node,
@@ -344,6 +344,42 @@ def _visible_numeric_labels(raw: dict[str, object]) -> tuple[VisibleNumericLabel
             f"label:{label_digest}", str(parent), normalized, bbox,
         ))
     return tuple(result)
+
+
+def _retain_source_structure(
+    structure: tuple[object, ...],
+    projected_controls: tuple[CanonicalBrowserControl, ...],
+) -> tuple[object, ...]:
+    """Keep projected controls structurally attached before adding bounded context."""
+
+    by_node = {node.private_node_id: node for node in structure if node.private_node_id}
+    structure_index = {
+        node.private_node_id: index
+        for index, node in enumerate(structure)
+        if node.private_node_id
+    }
+    required: set[str] = set()
+    for control in projected_controls:
+        current_id = control.private_node_id
+        while current_id and current_id in by_node and current_id not in required:
+            required.add(current_id)
+            current_id = by_node[current_id].private_parent_id
+    limit = max(MAX_STRUCTURE_NODES, len(required))
+    retained_ids: set[str] = set()
+    retained: list[object] = []
+    for node in structure:
+        if node.private_node_id in required:
+            retained.append(node)
+            retained_ids.add(node.private_node_id)
+    for node in structure:
+        if len(retained) >= limit:
+            break
+        if node.private_node_id in retained_ids:
+            continue
+        retained.append(node)
+        retained_ids.add(node.private_node_id)
+    retained.sort(key=lambda item: structure_index[item.private_node_id])
+    return tuple(retained)
 
 
 def _descendant_numeric_text(

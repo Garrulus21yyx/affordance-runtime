@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from affordance_runtime.actions import ActionOption, ActionRisk, ActionSpace
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget, serialized_size
+from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.world_projection import project_model_world
@@ -11,6 +12,8 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
+from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
@@ -67,6 +70,62 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
     representation = repr(view)
     for private in ("world:private-observation", "source:private", "selector", "#private", "conflict:private"):
         assert private not in representation
+
+
+def test_action_decision_state_survives_unrelated_metadata_pressure() -> None:
+    state = {
+        **{f"semantic.metadata.{index:02d}": f"value-{index}" for index in range(20)},
+        "value": "China",
+        "selected_options": ("China",),
+        "option_domain": ("China", "France", "Japan"),
+        "expanded": False,
+        "required": True,
+    }
+    observation = fused_world(
+        "world:select-state",
+        (SemanticTarget("target:country", "combobox", "Country", state),),
+        surface="dom",
+    )
+
+    target = project_model_world(observation, ContextProjectionBudget()).targets.items[0]
+
+    assert target.state_truncated
+    assert {
+        "value": "China",
+        "selected_options": ("China",),
+        "option_domain": ("China", "France", "Japan"),
+        "expanded": False,
+        "required": True,
+    }.items() <= target.state.items()
+
+
+def test_each_supported_decision_state_field_has_projection_priority() -> None:
+    decision_values = {
+        "value": "current",
+        "selected_options": ("current",),
+        "checked": True,
+        "selected": True,
+        "active": True,
+        "expanded": True,
+        "required": True,
+        "option_domain": ("current", "other"),
+        "grid_coordinate": {"x": 2, "y": 3},
+    }
+    metadata = {f"semantic.metadata.{index:02d}": index for index in range(32)}
+
+    for field, value in decision_values.items():
+        observation = fused_world(
+            f"world:priority:{field}",
+            (SemanticTarget("target:1", "control", "Control", {**metadata, field: value}),),
+            surface="dom",
+        )
+
+        target = project_model_world(observation, ContextProjectionBudget()).targets.items[0]
+
+        assert target.state[field] == value
+        assert len(target.state) == 8
+        assert target.state_total_count == 33
+        assert target.state_truncated
 
 
 def test_task_view_contains_only_evaluator_supported_facts() -> None:
@@ -221,6 +280,106 @@ def test_action_page_reports_runtime_membership_and_truncation_truthfully() -> N
     assert context.actions.truncated and context.actions.has_more
 
 
+def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string", "enum": ["China", "France"]}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    target = SemanticTarget(
+        "target:country",
+        "combobox",
+        "Country",
+        {
+            **{f"semantic.metadata.{index:02d}": index for index in range(20)},
+            "value": "China",
+            "selected_options": ("China",),
+            "option_domain": ("China", "France"),
+            "expanded": False,
+            "required": True,
+        },
+    )
+    observation = fused_world("world:country", (target,), surface="dom")
+    option = ActionOption(
+        "action:country",
+        observation.observation_id,
+        "select_option",
+        target.target_id,
+        "external_ui_interaction",
+        schema,
+        schema_digest(schema),
+        ("binding:country",),
+        "select country",
+        ("external_ui_interaction",),
+        ActionRisk.LOW,
+        **verification_kwargs("select_option", schema_digest(schema), ("external_ui_interaction",)),
+    )
+    task = TaskGoal("country", "Select a country")
+
+    context = ContextBuilder().build(
+        task,
+        observation,
+        ActionSpace(observation.observation_id, (option,)),
+        _evaluation(task, observation.observation_id),
+    )
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    rendered = render_compact_actor_world(context.actor_world, context.grounding, include_images=False)
+
+    tool = next(item for item in catalog.specs if item.name == "select_option")
+    target_ref = tool.input_schema["properties"]["target"]["enum"][0]
+    actor_nodes = {
+        node.ref: node
+        for document in context.actor_world.documents
+        for root in document.roots
+        for node in _walk_actor(root)
+    }
+    node = actor_nodes[target_ref]
+    assert context.actions.options[0].target_ref == target_ref
+    assert context.actions.options[0].operation in next(
+        item.verbs for item in context.grounding.entities if item.ref == target_ref
+    )
+    for field in ("value", "selected_options", "option_domain", "expanded", "required"):
+        assert node.state[field] == context.actions.options[0].target_state[field]
+    assert "state_coverage=" in rendered
+    assert target_ref in rendered
+    assert "binding:country" not in rendered
+
+
+def test_complete_action_inventory_does_not_offer_find_actions() -> None:
+    observation = fused_world(
+        "world:single-action",
+        (SemanticTarget("target:1", "button", "Submit"),),
+        surface="dom",
+    )
+    option = ActionOption(
+        "action:submit",
+        observation.observation_id,
+        "activate",
+        "target:1",
+        "external_ui_interaction",
+        _EMPTY_SCHEMA,
+        schema_digest(_EMPTY_SCHEMA),
+        ("binding:submit",),
+        "activate submit",
+        ("external_ui_interaction",),
+        ActionRisk.LOW,
+        **verification_kwargs("activate", schema_digest(_EMPTY_SCHEMA), ("external_ui_interaction",)),
+    )
+    task = TaskGoal("single-action", "Submit")
+
+    context = ContextBuilder().build(
+        task,
+        observation,
+        ActionSpace(observation.observation_id, (option,)),
+        _evaluation(task, observation.observation_id),
+    )
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+
+    assert not context.actions.has_more
+    assert "find_actions" not in {item.name for item in catalog.specs}
+
+
 def test_recent_steps_keep_the_complete_episode_history() -> None:
     observation = fused_world("world:history", surface="dom")
     task = TaskGoal("history", "Inspect recent steps")
@@ -242,3 +401,9 @@ def test_recent_steps_keep_the_complete_episode_history() -> None:
     assert tuple(item.reason for item in context.recent_steps.items) == tuple(
         f"step:{index}" for index in range(10)
     )
+
+
+def _walk_actor(root):
+    yield root
+    for child in root.children:
+        yield from _walk_actor(child)

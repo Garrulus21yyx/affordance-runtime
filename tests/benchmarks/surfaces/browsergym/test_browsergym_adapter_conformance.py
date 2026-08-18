@@ -42,7 +42,9 @@ def _assert_case(conformance, case_id: str, *, steps: int, policy_calls: int):
     assert case.measurements["browsergym_step_calls"].value == steps
     assert case.measurements["browsergym_probe_calls"].value == steps
     assert case.measurements["policy_calls"].value == policy_calls
-    assert case.measurements["provider_attempts"].value == policy_calls
+    # This conformance profile is a scripted structured decision port.  It
+    # exercises the product Runtime without calling an external model provider.
+    assert case.measurements["provider_attempts"].value == 0
     assert case.measurements["official_success_count"].value == 1
     for name in (
         "provider_retry_count", "fallback_count", "sent_unknown_count",

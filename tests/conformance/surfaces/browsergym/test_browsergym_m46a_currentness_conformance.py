@@ -44,20 +44,16 @@ def test_pinned_currentness_uses_actual_read_only_and_frame_safe_helpers() -> No
 def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: str) -> None:
     async def scenario() -> None:
         task_id = f"browsergym/miniwob.{slug}"
-        environment, task = open_surface(
-            task_id,
-            7,
-            admitted_task_ids=frozenset({task_id}),
-        )
+        environment, task = open_surface(task_id, 7)
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
             world = initial.observation
             action = world.bindings[0].semantic_action
             parameters = {}
-            if action == "fill":
-                parameters = {"value": "focused-currentness-witness"}
-            elif action == "select":
+            if action == "type_text":
+                parameters = {"text": "focused-currentness-witness"}
+            elif action == "select_option":
                 enum = world.bindings[0].parameter_schema["properties"]["value"]["enum"]
                 parameters = {"value": enum[0]}
             request = request_for(world, task, action, parameters)
@@ -66,7 +62,7 @@ def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: s
             before = (
                 environment._observation_serial,  # noqa: SLF001 - side-effect conformance
                 environment.bindings.count,
-                environment._verifier,  # noqa: SLF001
+                environment.current_task_state,
                 environment.full_observation_count,
                 environment.capture_calls,
                 environment.step_calls,
@@ -78,7 +74,7 @@ def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: s
             after = (
                 environment._observation_serial,  # noqa: SLF001
                 environment.bindings.count,
-                environment._verifier,  # noqa: SLF001
+                environment.current_task_state,
                 environment.full_observation_count,
                 environment.capture_calls,
                 environment.step_calls,
@@ -103,11 +99,7 @@ def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: s
 def test_real_login_user_popup_terminal_reentry_is_stale_and_zero_step() -> None:
     async def scenario() -> None:
         task_id = "browsergym/miniwob.login-user-popup"
-        environment, task = open_surface(
-            task_id,
-            7,
-            admitted_task_ids=frozenset({task_id}),
-        )
+        environment, task = open_surface(task_id, 7)
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None

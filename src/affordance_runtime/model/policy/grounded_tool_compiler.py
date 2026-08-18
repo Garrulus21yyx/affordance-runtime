@@ -231,13 +231,14 @@ def _current_reference_selectors(
     SelectorMode,
 ]:
     if rows[0].destination is None:
+        targets = tuple(dict.fromkeys(row.option.target_ref for row in rows))
         field = CompiledSelectorField(
             "target",
             ("target.ref",),
             {
                 "type": "string",
-                "description": "current target reference from observation",
-                "pattern": "^E[1-9][0-9]{0,2}$",
+                "description": "currently offered target reference",
+                "enum": list(targets),
             },
         )
         return (
@@ -245,14 +246,20 @@ def _current_reference_selectors(
             tuple({"target": row.option.target_ref} for row in rows),
             SelectorMode.CURRENT_TARGET,
         )
+    sources = tuple(dict.fromkeys(row.option.target_ref for row in rows))
+    destinations = tuple(dict.fromkeys(
+        row.destination.grounding_ref
+        for row in rows
+        if row.destination is not None
+    ))
     fields = (
         CompiledSelectorField(
             "source",
             ("source.ref",),
             {
                 "type": "string",
-                "description": "current source reference from observation",
-                "pattern": "^E[1-9][0-9]{0,2}$",
+                "description": "currently offered source reference",
+                "enum": list(sources),
             },
         ),
         CompiledSelectorField(
@@ -260,8 +267,8 @@ def _current_reference_selectors(
             ("destination.ref",),
             {
                 "type": "string",
-                "description": "current destination reference from observation",
-                "pattern": "^E[1-9][0-9]{0,2}$",
+                "description": "currently offered destination reference",
+                "enum": list(destinations),
             },
         ),
     )

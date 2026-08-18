@@ -15,6 +15,8 @@ from affordance_runtime.immutable import to_json_compatible
 
 _DROPPED_STATE_PREFIXES = ("appearance.",)
 _DROPPED_STATE_FIELDS = {
+    "grid_coordinate_confidence",
+    "grid_membership",
     "semantic.dom.tag",
     "semantic.dom.attribute.id",
     "semantic.name_status",
@@ -142,6 +144,8 @@ def _render_node(
             attributes.append("marked=true")
         if node.parent_outside_snapshot:
             attributes.append("parent=outside_snapshot")
+        if node.state_truncated:
+            attributes.append(f"state_coverage={len(node.state)}/{node.state_total_count}")
         attributes.extend(f"fact.{_short_field(item.field)}={_value(item.value)}" for item in node.facts)
         attributes.extend(
             f"relation.{_short_field(key)}={_value(value)}"

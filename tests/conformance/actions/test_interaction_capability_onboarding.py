@@ -261,7 +261,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
 
     assert binding.parameter_schema == option.parameter_schema == projected.parameter_schema
     assert compiled.public_spec.input_schema["properties"]["text"] == binding.parameter_schema["properties"]["text"]
-    assert compiled.public_spec.input_schema["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
+    assert compiled.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
     assert compiled.public_spec.input_schema["required"] == ("target", "text")
     assert admitted is not None
     assert admitted.parameters == {"text": "beta"}
