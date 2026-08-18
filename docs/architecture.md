@@ -155,7 +155,10 @@ SurfaceAdapter/Fusion as evidence in the same World; it is not a repetition- or 
 | [BrowserGym WebArena-Verified](https://github.com/ServiceNow/BrowserGym/tree/main/browsergym/webarena_verified) and [WebArena-Verified](https://github.com/ServiceNow/webarena-verified) | BrowserGym already owns task registration, login, start-page setup, Playwright tracing, STOP/final-response dispatch, and invocation of the audited deterministic evaluator | directly use the already pinned packages and existing `BrowserGymSurfaceAdapter`; do not build another physical CaseSession, WebArena driver, HAR recorder, task loader, evaluator, or agent loop |
 
 The 2026-08-18 source audit inspected LongHorizon-Harness `be2e7b4`, OSWorld/Qwen3-VL `091f5ef`, Agent S
-`bffdb59`, Glass Browser `1d59503`, TencentDB Agent Memory `97f9465`, and BrowserGym `9e779f0`. A subsequent
+`bffdb59`, Glass Browser `1d59503`, TencentDB Agent Memory `97f9465`, and BrowserGym `9e779f0`. Prompt adaptation
+then re-read LongHorizon-Harness `role_prompts.py`, `prompt_texts.py`, `manager.py`, `auditor_agent.py`, and
+`types.py`; Agent S2 `manager.py`, `worker.py`, and `procedural_memory.py`; and BrowserGym
+`action/functions.py`, `webarena_verified/task.py`, and `webarena_verified/evaluators.py` at those fixed commits. A subsequent
 repository reuse audit confirmed that this project already owns `AgentTurnView` projection and model-facing history
 sanitation, World evidence resolution, BrowserGym environment lifetime, terminal dispatch states, provider transport,
 and benchmark execution.
@@ -168,6 +171,16 @@ trajectory, exact values deliberately retained for later use, and audited cross-
 framework owns all four. The common per-turn inference remains `task + current observation + episode history + current
 actions -> next action`; long-horizon direction is added outside that loop as accepted mission state and one current
 subtask. These are research architecture signals, not production-assurance or benchmark-parity claims.
+
+The Manager/Auditor prompts adopt LongHorizon-Harness' audited-state authority, independent audit principle,
+one-route-per-round shape, explicit remaining-budget input, ask/blocked routes, and final-audit guard. They replace
+LongHorizon-Harness' natural-language task state, auditor report injection, control-header parser, `gui/cli/done`
+routes, and harness completion authority with typed `MissionState`, cited `AuditDelta`/`EvidenceRecord` lineage,
+`execute_subtask`/`request_final_audit`, and STOP-gated native evaluation. They adopt Agent S2's bounded replanning and
+current-subtask-only executor boundary, while rejecting screenshot-based Manager planning, mutable DAG translation,
+RAG/cross-task experience, per-step reflection, Worker SUCCESS/FAILURE completion writes, and Manager-chosen GUI
+actions. BrowserGym contributes only the official `send_msg_to_user`/STOP and native WebArena-Verified evaluator
+boundary; the prompts never expose hidden evaluator state, expected answers, reward, or terminal success authority.
 
 ## WebArena-Verified long-horizon boundary
 
