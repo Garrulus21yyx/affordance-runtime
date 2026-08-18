@@ -10,7 +10,12 @@ from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.benchmarks.external_smoke.case_environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
-from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model.policy import (
+    ModelBackedAgentPolicy,
+    ModelInvocationResult,
+    ModelMetadata,
+    ResolvedModelDecision,
+)
 
 
 @dataclass
@@ -25,14 +30,16 @@ class BrowserGymStructuredDecisionPort:
         context = request.agent_context
         self.public_contexts.append(context)
         decision = _public_decision(context)
-        return ResolvedModelDecision(
-            decision,
-            ModelMetadata(
-                provider_id="conformance", model_id="scripted-structured",
-                response_id=f"response:{self.calls}", endpoint_class="in-process",
-                prompt_version="browsergym-adapter-conformance.v1",
-                schema_version="typed-agent-context.v1",
-            ),
+        metadata = ModelMetadata(
+            provider_id="conformance", model_id="scripted-structured",
+            response_id=f"response:{self.calls}", endpoint_class="in-process",
+            prompt_version="browsergym-adapter-conformance.v1",
+            schema_version="typed-agent-context.v1",
+        )
+        return ModelInvocationResult(
+            output=ResolvedModelDecision(decision, metadata),
+            metadata=metadata,
+            lineage={"role": "ActionPolicy", "adapter": "conformance"},
         )
 
 
