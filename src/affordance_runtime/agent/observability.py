@@ -291,7 +291,11 @@ def goal_compiler_trace_diagnostic(
 ) -> dict[str, object]:
     """Project one completed compilation lineage without creating Runtime state."""
 
-    attempts = tuple(getattr(compiler, "last_generation_attempts", ()))
+    invocation = getattr(compiler, "last_invocation_result", None)
+    attempts = tuple(
+        getattr(invocation, "attempts", ())
+        or getattr(compiler, "last_generation_attempts", ())
+    )
     if isinstance(resolution, Ready):
         disposition = "ready"
         reason = ""
@@ -519,13 +523,24 @@ def model_turn_payload(
 
     adapter = _dynamic_tool_adapter(policy)
     backed = _model_backed_policy(policy)
-    metadata = getattr(backed, "last_metadata", None)
-    attempts = getattr(backed, "last_provider_attempts", ())
+    invocation = getattr(backed, "last_invocation_result", None)
+    metadata = getattr(invocation, "metadata", None) or getattr(backed, "last_metadata", None)
+    attempts = tuple(
+        getattr(invocation, "attempts", ())
+        or getattr(backed, "last_provider_attempts", ())
+        or (
+            getattr(adapter, "last_generation_attempts", ())
+            if adapter is not None
+            else ()
+        )
+    )
     payload: dict[str, object] = {
         "context_id": getattr(context, "context_id", ""),
         "visible_action_count": len(getattr(getattr(context, "actions", None), "options", ())),
         "provider_attempts": _json_value(attempts, None),
+        "generation_attempts": _json_value(attempts, None),
         "model_metadata": _json_value(metadata, None),
+        "model_invocation": _json_value(invocation, None),
         "exception": exception,
         "decision": _json_value(outcome, None),
         "outcome": type(outcome).__name__ if not exception else "exception",
@@ -560,9 +575,6 @@ def model_turn_payload(
             ),
             "model_call_count": int(getattr(adapter, "last_model_call_count", 0)),
         }
-        payload["generation_attempts"] = _json_value(
-            getattr(adapter, "last_generation_attempts", ()), None
-        )
     return payload
 
 

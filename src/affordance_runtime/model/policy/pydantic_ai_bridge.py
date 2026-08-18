@@ -31,6 +31,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelGenerationAttempt,
+    ModelInvocationResult,
     ModelMetadata,
     ResolvedModelDecision,
 )
@@ -102,6 +103,9 @@ class PydanticAIGroundedDecisionPort:
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
         default=(), init=False, compare=False
     )
+    last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
+        default=None, init=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
@@ -138,7 +142,7 @@ class PydanticAIGroundedDecisionPort:
     async def generate(
         self,
         request: ModelDecisionRequest,
-    ) -> ResolvedModelDecision | ModelFailure:
+    ) -> ModelInvocationResult[ResolvedModelDecision]:
         semantic_started = time.perf_counter()
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
@@ -147,6 +151,7 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_model_call_count", 0)
         object.__setattr__(self, "last_provider_retry_count", 0)
         object.__setattr__(self, "last_generation_attempts", ())
+        object.__setattr__(self, "last_invocation_result", None)
         try:
             from pydantic_ai import (
                 Agent,
@@ -164,9 +169,12 @@ class PydanticAIGroundedDecisionPort:
             )
             from pydantic_ai.usage import RunUsage, UsageLimits
         except ImportError:
-            return _failure(
-                ModelFailureKind.INTERNAL_ERROR,
-                "PydanticAI optional dependency is not installed",
+            return self._invocation_failure(
+                _failure(
+                    ModelFailureKind.INTERNAL_ERROR,
+                    "PydanticAI optional dependency is not installed",
+                ),
+                request,
             )
 
         try:
@@ -260,34 +268,52 @@ class PydanticAIGroundedDecisionPort:
                 )
                 decision = _resolve_deferred(result.output, catalog, request.context_id)
             if decision is None:
-                return _failure(
-                    ModelFailureKind.SCHEMA_ERROR,
-                    "model did not produce one valid current tool call after bounded repair",
+                return self._invocation_failure(
+                    _failure(
+                        ModelFailureKind.SCHEMA_ERROR,
+                        "model did not produce one valid current tool call after bounded repair",
+                    ),
+                    request,
                 )
         except UsageLimitExceeded:
-            return _failure(
-                ModelFailureKind.SCHEMA_ERROR,
-                "model exceeded the bounded decision repair allowance",
+            return self._invocation_failure(
+                _failure(
+                    ModelFailureKind.SCHEMA_ERROR,
+                    "model exceeded the bounded decision repair allowance",
+                ),
+                request,
             )
         except UnexpectedModelBehavior as error:
             self._record_local_failure(error, "pydantic_ai_output_validation", catalog.specs)
-            return _failure(ModelFailureKind.SCHEMA_ERROR, "model tool response violated the grounded contract")
+            return self._invocation_failure(
+                _failure(ModelFailureKind.SCHEMA_ERROR, "model tool response violated the grounded contract"),
+                request,
+            )
         except _ProviderCallExhausted as error:
             detail = error.detail
-            return _failure(
-                ModelFailureKind.PROVIDER_UNAVAILABLE,
-                detail.reason,
-                retryable=detail.retryable,
-                provider_code=detail.code,
-                retry_after_s=detail.retry_after_s,
+            return self._invocation_failure(
+                _failure(
+                    ModelFailureKind.PROVIDER_UNAVAILABLE,
+                    detail.reason,
+                    retryable=detail.retryable,
+                    provider_code=detail.code,
+                    retry_after_s=detail.retry_after_s,
+                ),
+                request,
             )
         except (GroundedToolResolutionError, ValueError, TypeError):
-            return _failure(ModelFailureKind.SCHEMA_ERROR, "grounded tool response could not be resolved")
+            return self._invocation_failure(
+                _failure(ModelFailureKind.SCHEMA_ERROR, "grounded tool response could not be resolved"),
+                request,
+            )
         except Exception as error:
             self._record_local_failure(error, "local_runtime", catalog.specs)
-            return _failure(
-                ModelFailureKind.INTERNAL_ERROR,
-                "PydanticAI decision adapter failed locally",
+            return self._invocation_failure(
+                _failure(
+                    ModelFailureKind.INTERNAL_ERROR,
+                    "PydanticAI decision adapter failed locally",
+                ),
+                request,
             )
 
         run_usage = result.usage
@@ -297,24 +323,63 @@ class PydanticAIGroundedDecisionPort:
             if isinstance(item.transcript, dict)
             and item.transcript.get("error.code") == ProviderFailureCode.RATE_LIMITED.value
         )
-        return ResolvedModelDecision(
-            decision,
-            ModelMetadata(
-                provider_id=self.provider_id,
-                model_id=self.model_id,
-                endpoint_class="openai-compatible",
-                prompt_version=self.context_binder.prompts.version,
-                schema_version=GROUNDED_TOOLS_PROTOCOL,
-                latency_ms=(time.perf_counter() - semantic_started) * 1000,
-                prompt_tokens=run_usage.input_tokens,
-                completion_tokens=run_usage.output_tokens,
-                total_tokens=run_usage.input_tokens + run_usage.output_tokens,
-                rate_limit_retry_count=rate_limit_retries,
-                transient_retry_count=max(0, self.last_provider_retry_count - rate_limit_retries),
-                grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
-                perception_profile=self.perception_profile.value,
-                endpoint_host=self.endpoint_host,
-            ),
+        metadata = ModelMetadata(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            endpoint_class="openai-compatible",
+            prompt_version=self.context_binder.prompts.version,
+            schema_version=GROUNDED_TOOLS_PROTOCOL,
+            latency_ms=(time.perf_counter() - semantic_started) * 1000,
+            prompt_tokens=run_usage.input_tokens,
+            completion_tokens=run_usage.output_tokens,
+            total_tokens=run_usage.input_tokens + run_usage.output_tokens,
+            rate_limit_retry_count=rate_limit_retries,
+            transient_retry_count=max(0, self.last_provider_retry_count - rate_limit_retries),
+            grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
+            perception_profile=self.perception_profile.value,
+            endpoint_host=self.endpoint_host,
+        )
+        invocation = ModelInvocationResult(
+            output=ResolvedModelDecision(decision, metadata),
+            metadata=metadata,
+            attempts=self.last_generation_attempts,
+            repair_diagnostics=self._repair_diagnostics(),
+            lineage=self._lineage(request),
+        )
+        object.__setattr__(self, "last_invocation_result", invocation)
+        return invocation
+
+    def _invocation_failure(
+        self,
+        failure: ModelFailure,
+        request: ModelDecisionRequest,
+    ) -> ModelInvocationResult[ResolvedModelDecision]:
+        invocation = ModelInvocationResult(
+            failure=failure,
+            attempts=self.last_generation_attempts,
+            repair_diagnostics=self._repair_diagnostics(),
+            lineage=self._lineage(request),
+        )
+        object.__setattr__(self, "last_invocation_result", invocation)
+        return invocation
+
+    def _lineage(self, request: ModelDecisionRequest) -> Mapping[str, object]:
+        return {
+            "role": "ActionPolicy",
+            "adapter": "pydantic-ai",
+            "request_id": request.request_id,
+            "context_id": request.context_id,
+        }
+
+    def _repair_diagnostics(self) -> tuple[Mapping[str, object], ...]:
+        return tuple(
+            {
+                "kind": "tool_call_repair",
+                "phase": item.phase,
+                "status": item.status,
+            }
+            for item in self.last_generation_attempts
+            if item.phase == "tool_call_repair"
         )
 
     async def _run_provider_call(

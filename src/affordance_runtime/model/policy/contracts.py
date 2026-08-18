@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Generic, Mapping, TypeVar
 
 from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
+from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.agent.decisions import AgentDecision
 
 _SAFE_METADATA = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 MAX_MODEL_RESPONSE_BYTES = 32 * 1024
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -108,3 +111,46 @@ class ResolvedModelDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("resolved model outcome requires one typed AgentDecision")
+
+
+@dataclass(frozen=True)
+class ModelInvocationResult(Generic[T]):
+    """The single formal result of one role-owned model invocation.
+
+    Provider adapters own wire transport, physical attempts, transcripts, basic
+    parsing, and transport retry. Role boundaries own the typed output contract
+    and bounded semantic/schema repair. Runtime authority consumes only the
+    role output or typed failure; trace observes this result.
+    """
+
+    output: T | None = None
+    failure: ModelFailure | None = None
+    metadata: ModelMetadata = field(default_factory=ModelMetadata)
+    attempts: tuple[ModelGenerationAttempt, ...] = ()
+    repair_diagnostics: tuple[Mapping[str, object], ...] = ()
+    lineage: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if (self.output is None) == (self.failure is None):
+            raise ValueError("model invocation result requires exactly one output or typed failure")
+        if self.failure is not None and not isinstance(self.failure, ModelFailure):
+            raise TypeError("model invocation failure must be typed")
+        if not isinstance(self.metadata, ModelMetadata):
+            raise TypeError("model invocation metadata must be typed")
+        if any(not isinstance(item, ModelGenerationAttempt) for item in self.attempts):
+            raise TypeError("model invocation attempts must be typed")
+        if any(not isinstance(item, Mapping) for item in self.repair_diagnostics):
+            raise TypeError("repair diagnostics must be mappings")
+        if not isinstance(self.lineage, Mapping):
+            raise TypeError("model invocation lineage must be a mapping")
+
+    @property
+    def accepted(self) -> bool:
+        return self.output is not None
+
+    @property
+    def decision(self) -> AgentDecision:
+        output = self.output
+        if isinstance(output, ResolvedModelDecision):
+            return output.decision
+        raise AttributeError("model invocation output has no decision")

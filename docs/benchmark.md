@@ -36,9 +36,10 @@ oracle values, expected answers, or benchmark reward payloads exposed to the mod
 Local per-case evidence additionally contains a private complete `traces/<case-id>/trace.jsonl` plus
 content-addressed media artifacts. This operational trace is not copied into the public report: it records the exact
 public model context and tool catalog, typed decision, provider diagnostics, execution, local outcome, and formal
-task-evaluation facts, plus causal IDs needed to diagnose a failure. Each provider attempt contributes its complete
-OpenInference-shaped local transcript, including repair-phase input and output; screenshot payloads remain
-content-addressed. Trace-write failure
+task-evaluation facts, plus causal IDs needed to diagnose a failure. `ModelInvocationResult` is the formal source for
+model metadata, all physical attempts, repair diagnostics, and lineage. Each provider attempt contributes its complete
+OpenInference-shaped local transcript, including retry, repair-phase, failure, and cancellation input/output where a
+physical request began; screenshot payloads remain content-addressed. Trace-write failure
 invalidates benchmark evidence but never changes Runtime behavior. Langfuse export is optional and projects these
 same spans rather than replacing the local trace.
 
@@ -156,8 +157,10 @@ more, then emitted an invalid `request_evidence` target; its one tool-call repai
 run ended after five policy turns with one GUI execution, `structured_output_failure`, no Submit, and official success
 0. Compared with the Ready-plan run's zero executions and repeated page/wait loop, removing guidance changed behavior
 and allowed immediate task progress, but one stochastic case cannot establish that the plan caused the regression.
-The report correctly records 13,070.3 ms successful-call model latency; its schema-repair metric remains zero despite
-the visible PydanticAI tool-call repair and is therefore a separate benchmark-metric projection defect.
+The report correctly records 13,070.3 ms successful-call model latency. The earlier schema-repair metric projection
+defect is addressed by the model invocation boundary convergence: policy attempts now come from
+`ModelInvocationResult.attempts`, while role repair count is tracked separately and no longer double-counts as a
+transport attempt.
 
 This is a short-loop task-semantics failure, not a demonstrated memory-window failure. The retained runs expose two
 different mechanisms: one Ready plan described an internal locating activity and the policy treated ordering as a
@@ -220,6 +223,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G2. Advisory prompt/context convergence | compact GoalCompiler and ActionPolicy prompts in the existing five-kind context | no internal locate/inspect items; dependency is semantic order, not a visibility gate; semantic groups are byte-bounded atomically; typed World renders as compact AX text; older summaries plus four ref-free semantic turns; stable tools with searchable overflow | real snapshot is complete at 16.2% of typed bytes; provider history contains no old E-ref, old World, generic incomplete progress, or old screenshot; generalization remains non-closed pending the G4 cohort |
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
+| Model invocation boundary convergence — implemented / locally verified | shared provider/model invocation exit for current model roles | `ModelInvocationResult[T]` carries typed output/failure, `ModelMetadata`, physical attempts, repair diagnostics, and lineage; PydanticAI remains native-tool transport; compact-json remains a compatibility shim | focused/unit/integration tests prove attempts are retained, retry and role repair stay distinct, instrumentation reads the explicit result, and GUI Runtime authority is unchanged; W1/W2 benchmark verification remains pending |
 | G5. WebArena-Verified long horizon — episode foundation/context implemented, mission layer pending | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; site smokes; frozen 12-case cohort | `YIELDED` no-reset episode lifecycle, all-turn `AgentTurnView` history, 16 KiB compact/detailed rendering, private F bindings and evidence-backed `pin_fact` are implemented; thin Supervisor/Auditor/MissionState and official long-horizon composition remain next | ownership gates and fresh-context audit pass, then official evaluator success on at least 6/12 including each stratum; no benchmark-specific branch or cross-case memory |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
@@ -639,7 +643,8 @@ contains only bounded metrics, classifications, identities, and redacted summari
 - official task identity/revision/sites/type and official score;
 - exact terminal status and WebArena-Verified evaluator status, with private expected values omitted;
 - goal compiler disposition, attempts, item count, and plan text delivered to policy;
-- every model request/response, selected tool, action target semantics, dispatch, fresh transition, and control repair;
+- every `ModelInvocationResult`, provider request/response attempt, selected tool, action target semantics, dispatch,
+  fresh transition, and control repair;
 - every ManagerDecision, SubtaskContract, episode boundary/yield reason, AuditDelta, accepted/rejected MissionState
   update, selected carry-fact key, and role-specific model identity/cost;
 - every pin request and Runtime-resolved public value/evidence lineage, with sensitive values redacted in aggregate

@@ -24,7 +24,11 @@ from affordance_runtime.goals.plan import (
     Unsupported,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
+from affordance_runtime.model.policy.contracts import (
+    ModelGenerationAttempt,
+    ModelInvocationResult,
+    ModelMetadata,
+)
 from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
@@ -133,6 +137,9 @@ class ModelBackedGoalCompiler:
     ))
     last_model_call_count: int = field(default=0, init=False, compare=False)
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(default=(), init=False, compare=False)
+    last_invocation_result: ModelInvocationResult[GoalCompilerOutcome] | None = field(
+        default=None, init=False, compare=False
+    )
     last_schema_repair_count: int = field(default=0, init=False, compare=False)
 
     async def _generate_structured(
@@ -204,6 +211,7 @@ class ModelBackedGoalCompiler:
     async def compile(self, request: GoalCompilerRequest) -> GoalCompilerOutcome:
         if request.attempt == 0:
             object.__setattr__(self, "last_generation_attempts", ())
+            object.__setattr__(self, "last_invocation_result", None)
             object.__setattr__(self, "last_schema_repair_count", 0)
             object.__setattr__(self, "last_model_call_count", 0)
         messages = _compiler_messages(request)
@@ -212,7 +220,10 @@ class ModelBackedGoalCompiler:
             response = await self._generate_with_provider_retry(messages, phase)
         except StructuredOutputError as error:
             if request.attempt != 0:
-                return Failed(request.task.revision, "goal_compiler_model_failed")
+                return self._finish_invocation(
+                    Failed(request.task.revision, "goal_compiler_model_failed"),
+                    request,
+                )
             object.__setattr__(self, "last_schema_repair_count", 1)
             try:
                 response = await self._generate_with_provider_retry(
@@ -220,25 +231,66 @@ class ModelBackedGoalCompiler:
                     "goal_compile_schema_repair",
                 )
             except StructuredModelError:
-                return Failed(request.task.revision, "goal_compiler_model_failed")
+                return self._finish_invocation(
+                    Failed(request.task.revision, "goal_compiler_model_failed"),
+                    request,
+                )
             except Exception:
-                return Failed(request.task.revision, "goal_compiler_call_failed")
+                return self._finish_invocation(
+                    Failed(request.task.revision, "goal_compiler_call_failed"),
+                    request,
+                )
         except StructuredModelError:
-            return Failed(request.task.revision, "goal_compiler_model_failed")
+            return self._finish_invocation(
+                Failed(request.task.revision, "goal_compiler_model_failed"),
+                request,
+            )
         except Exception:
-            return Failed(request.task.revision, "goal_compiler_call_failed")
+            return self._finish_invocation(
+                Failed(request.task.revision, "goal_compiler_call_failed"),
+                request,
+            )
         if response.disposition == "ready":
-            return GoalPlanProposal(
-                request.task.revision,
-                tuple(item.model_dump() for item in response.items),
+            return self._finish_invocation(
+                GoalPlanProposal(
+                    request.task.revision,
+                    tuple(item.model_dump() for item in response.items),
+                ),
+                request,
             )
         if response.disposition == "not_required":
-            return NotRequired(request.task.revision, response.reason)
+            return self._finish_invocation(NotRequired(request.task.revision, response.reason), request)
         if response.disposition == "needs_input":
-            return NeedsInput(request.task.revision, response.question, response.missing_fields)
+            return self._finish_invocation(
+                NeedsInput(request.task.revision, response.question, response.missing_fields),
+                request,
+            )
         if response.disposition == "unsupported":
-            return Unsupported(request.task.revision, response.reason)
-        return Failed(request.task.revision, response.reason)
+            return self._finish_invocation(Unsupported(request.task.revision, response.reason), request)
+        return self._finish_invocation(Failed(request.task.revision, response.reason), request)
+
+    def _finish_invocation(
+        self,
+        outcome: GoalCompilerOutcome,
+        request: GoalCompilerRequest,
+    ) -> GoalCompilerOutcome:
+        result = ModelInvocationResult(
+            output=outcome,
+            metadata=_metadata(self.port, self.config, self.last_generation_attempts),
+            attempts=self.last_generation_attempts,
+            repair_diagnostics=_repair_diagnostics(
+                self.last_generation_attempts,
+                self.last_schema_repair_count,
+            ),
+            lineage={
+                "role": "GoalCompiler",
+                "trigger": request.trigger.value,
+                "task_revision": request.task.revision,
+                "attempt": request.attempt,
+            },
+        )
+        object.__setattr__(self, "last_invocation_result", result)
+        return outcome
 
 
 def model_goal_compiler_from_environment(
@@ -325,6 +377,59 @@ def _project_public_task_value(value: object) -> object:
     if isinstance(compatible, list):
         return tuple(_project_public_task_value(item) for item in compatible)
     return compatible
+
+
+def _metadata(
+    port: ModelPort,
+    config: ModelConfig,
+    attempts: tuple[ModelGenerationAttempt, ...],
+) -> ModelMetadata:
+    prompt_tokens = sum(item.prompt_tokens for item in attempts)
+    completion_tokens = sum(item.completion_tokens for item in attempts)
+    total_tokens = sum(item.total_tokens for item in attempts)
+    rate_limit_retries = sum("provider_retry" in item.phase for item in attempts)
+    last = attempts[-1] if attempts else None
+    return ModelMetadata(
+        provider_id=port.provider,
+        model_id=port.model,
+        response_id=last.response_id if last is not None else "",
+        endpoint_class=port.endpoint_class,
+        prompt_version=config.prompt_version,
+        schema_version=GoalCompilerModelResponse.__name__,
+        latency_ms=sum(item.latency_ms for item in attempts),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        rate_limit_retry_count=rate_limit_retries,
+    )
+
+
+def _repair_diagnostics(
+    attempts: tuple[ModelGenerationAttempt, ...],
+    schema_repair_count: int,
+) -> tuple[Mapping[str, object], ...]:
+    diagnostics: list[Mapping[str, object]] = []
+    if schema_repair_count:
+        diagnostics.append({"kind": "structured_output_repair", "count": schema_repair_count})
+    diagnostics.extend(
+        {
+            "kind": "transport_retry",
+            "phase": item.phase,
+            "status": item.status,
+        }
+        for item in attempts
+        if "provider_retry" in item.phase
+    )
+    diagnostics.extend(
+        {
+            "kind": "contract_repair",
+            "phase": item.phase,
+            "status": item.status,
+        }
+        for item in attempts
+        if item.phase == "goal_compile_contract_repair"
+    )
+    return tuple(diagnostics)
 
 
 __all__ = [

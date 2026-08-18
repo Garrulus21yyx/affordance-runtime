@@ -36,8 +36,11 @@ held-out generalization evidence, so G4 remains non-closed and its cohort is ret
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
-across fresh executor episodes. The inner episode foundation, context retention, and working-fact contracts are now
-implemented and locally verified; the outer Manager/Auditor/MissionState path remains deliberately unimplemented.
+across fresh executor episodes. The inner episode foundation, context retention, working-fact contracts, and model
+invocation boundary convergence are now implemented and locally verified. ActionPolicy and GoalCompiler expose one
+explicit `ModelInvocationResult` carrying metadata, physical attempts, repair diagnostics, and lineage, while
+compact-json remains a feature-frozen compatibility shim. The outer Manager/Auditor/MissionState path remains
+deliberately unimplemented.
 No WebArena capability claim follows from these local contracts alone.
 
 ## One GUI loop, two time scales
@@ -609,6 +612,30 @@ nor the execution adapter guesses actionability from a node's mere presence.
 
 ### Model and tool protocol
 
+The current model-role invocation chain is:
+
+```text
+Role request
+  -> role adapter (`ModelBackedAgentPolicy` or `ModelBackedGoalCompiler`)
+  -> model invocation adapter (`PydanticAIGroundedDecisionPort`, `CompactJsonDecisionPort`, or GoalCompiler port)
+  -> provider transport
+  -> one or more physical provider attempts
+  -> parsed output or typed provider/schema failure
+  -> role contract validation plus at most one bounded role repair
+  -> Runtime semantic validation where the role output asks for GUI work
+```
+
+The provider/model invocation boundary owns wire envelopes, provider request/response shape, provider call IDs,
+transport retry, physical attempt transcripts, and basic schema parsing. The role boundary owns the
+ActionPolicy/GoalCompiler typed output contract and its single bounded schema/semantic repair. GUI Runtime authority
+stays with the current tool catalog, action legality, target currentness, argument validity, admission, private
+binding, dispatch, and task completion. PydanticAI cannot authorize GUI execution or completion.
+
+`ModelInvocationResult[T]` is the single formal model-call exit for existing model roles. It carries either a typed
+role output or typed failure, `ModelMetadata`, every physical `ModelGenerationAttempt`, bounded repair diagnostics,
+and lineage. Adapters may keep `last_*` fields as compatibility mirrors for old tests and probes, but trace and new
+benchmark code read the invocation result first and do not reconstruct attempts from adapter-private mutable state.
+
 PydanticAI owns provider clients, provider messages, native tool-call parsing, call IDs, and basic schema repair. The
 current `PerTurnToolCatalog` is exposed as a PydanticAI `ExternalToolset`, so a model proposes one deferred semantic
 tool call but never executes Python or GUI code inside the framework. Runtime resolves that call against the opaque
@@ -621,7 +648,11 @@ overall deadline for at most two transport attempts plus bounded `Retry-After`/e
 remain distinct in attempt evidence even though the public Agent failure is deliberately safe and compact. A watchdog
 cancellation projects attempts already captured by the adapter before cancellation propagates. The remaining custom
 HTTP and structured-response code is reduced to the bounded compact path plus historical conformance callers before
-superseded pieces are removed. The compact exception currently applies to `glm-4.1v-thinking-flashx`, whose
+superseded pieces are removed. The compact-json path is a feature-frozen compatibility shim: it maps one provider
+response into the same public ToolCall/typed-decision representation as native tools, then enters the same Runtime
+catalog, admission, resolver, Binder, Executor, and TaskEvaluator path. It owns no ActionSpace, binding, dispatch,
+risk, task progress, task completion, or alternate loop. The compact exception currently applies to
+`glm-4.1v-thinking-flashx`, whose
 OpenAI-compatible response envelope is not a standard chat-completion/tool-call response;
 `LLM_MODEL_ADAPTER=compact-json` selects it.
 
@@ -665,8 +696,10 @@ diagnostics, action/result/outcome/evaluation facts, and the complete call-ID/re
 observation is written once; steps reference its identity, and binary media is content-addressed under `artifacts/`.
 Every provider attempt is recorded at the provider boundary as an OpenInference-shaped LLM transcript containing its
 input messages, exact current tool schema, output message or typed error, token usage, response ID, and semantic phase
-(`initial`, `structured_output_repair`, `argument_repair`, or `tool_intent_repair`). Screenshot data URLs are replaced
-by content-addressed artifacts. Trace data never enters `RunState` or `AgentContext` and cannot affect control.
+(`initial`, transport retry phases, `structured_output_repair`, `argument_repair`, or `tool_intent_repair`).
+`ModelInvocationResult` is the trace authority for attempts, metadata, repairs, and lineage; `last_*` mirrors are
+temporary compatibility only. Screenshot data URLs are replaced by content-addressed artifacts. Trace data never
+enters `RunState` or `AgentContext` and cannot affect control.
 Langfuse renders the same agent root, model-turn chain, LLM generations, and Runtime tool spans; it is an exporter,
 not an authority, queue, transcript owner, or second loop. The separate private capture remains an optional isolated
 copy for deployments that do not enable a local Runtime trace.
@@ -952,7 +985,8 @@ validation:
 | 10. Replace symbolic goal guidance with Simple GoalPlan | implementation complete; Ready delivered / behavior failed / non-closed | five-field plan is directly projected and compiler attempts are traced; live evidence includes both reversal of satisfied Likes and a Ready-plan zero-action stall |
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | episode lifecycle, Episode Context, and WorkingFact implemented locally; outer mission layer pending | thin outer Manager/Auditor/MissionState must pass ownership gates; official site smokes then a frozen 12-case cross-site hard cohort run through the unchanged inner GUI chain and official evaluator |
+| Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result first; GUI authority is unchanged |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | episode lifecycle, Episode Context, WorkingFact, and model invocation boundary implemented locally; outer mission layer pending | thin outer Manager/Auditor/MissionState must enter through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:

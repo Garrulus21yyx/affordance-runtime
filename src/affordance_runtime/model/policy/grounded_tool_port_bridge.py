@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -23,6 +24,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelGenerationAttempt,
+    ModelInvocationResult,
     ModelMetadata,
     ResolvedModelDecision,
 )
@@ -130,6 +132,9 @@ class CompactJsonDecisionPort:
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
         default=(), init=False, compare=False
     )
+    last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
+        default=None, init=False, compare=False
+    )
     last_attempt_origin: ProviderAttemptOrigin = field(
         default=ProviderAttemptOrigin.UNKNOWN,
         init=False,
@@ -186,6 +191,7 @@ class CompactJsonDecisionPort:
         object.__setattr__(self, "last_structured_output_repair_attempted", False)
         object.__setattr__(self, "last_structured_output_repair_failed", False)
         object.__setattr__(self, "last_generation_attempts", ())
+        object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
 
     def _compile_catalog(self, request: ModelDecisionRequest, catalog_builder):
@@ -522,7 +528,7 @@ class CompactJsonDecisionPort:
     async def generate(
         self,
         request: ModelDecisionRequest,
-    ) -> ResolvedModelDecision | ModelFailure:
+    ) -> ModelInvocationResult[ResolvedModelDecision]:
         self._reset_diagnostics()
         try:
             catalog = self._compile_catalog(request, compile_grounded_action_catalog)
@@ -547,13 +553,67 @@ class CompactJsonDecisionPort:
             TypeError,
             ValueError,
         ) as exc:
-            return self._failure_from_exception(exc)
+            return self._invocation_failure(self._failure_from_exception(exc), request)
         if not isinstance(resolution, GroundedActionResolution):
-            return _failure(ModelFailureKind.INTERNAL_ERROR, "action adapter resolved an objective")
-        return ResolvedModelDecision(
-            resolution.decision,
-            metadata,
+            return self._invocation_failure(
+                _failure(ModelFailureKind.INTERNAL_ERROR, "action adapter resolved an objective"),
+                request,
+            )
+        invocation = ModelInvocationResult(
+            output=ResolvedModelDecision(resolution.decision, metadata),
+            metadata=metadata,
+            attempts=self.last_generation_attempts,
+            repair_diagnostics=self._repair_diagnostics(),
+            lineage=self._lineage(request),
         )
+        object.__setattr__(self, "last_invocation_result", invocation)
+        return invocation
+
+    def _invocation_failure(
+        self,
+        failure: ModelFailure,
+        request: ModelDecisionRequest,
+    ) -> ModelInvocationResult[ResolvedModelDecision]:
+        invocation = ModelInvocationResult(
+            failure=failure,
+            attempts=self.last_generation_attempts,
+            repair_diagnostics=self._repair_diagnostics(),
+            lineage=self._lineage(request),
+        )
+        object.__setattr__(self, "last_invocation_result", invocation)
+        return invocation
+
+    def _lineage(self, request: ModelDecisionRequest) -> Mapping[str, object]:
+        return {
+            "role": "ActionPolicy",
+            "adapter": "compact-json",
+            "request_id": request.request_id,
+            "context_id": request.context_id,
+            "compatibility_shim": True,
+        }
+
+    def _repair_diagnostics(self) -> tuple[Mapping[str, object], ...]:
+        diagnostics: list[Mapping[str, object]] = []
+        if self.last_structured_output_repair_attempted:
+            diagnostics.append({
+                "kind": "structured_output_repair",
+                "failed": self.last_structured_output_repair_failed,
+            })
+        if self.last_argument_repair_count:
+            diagnostics.append({
+                "kind": "argument_repair",
+                "selected_operation": self.last_selected_operation,
+                "violation_code": self.last_argument_violation_code,
+                "field_paths": self.last_argument_violation_paths,
+            })
+        if self.last_tool_intent_repair_count:
+            diagnostics.append({
+                "kind": "tool_intent_repair",
+                "normalization": self.last_routing_normalization,
+                "original_operation": self.last_routing_original_operation,
+                "normalized_operation": self.last_routing_normalized_operation,
+            })
+        return tuple(diagnostics)
 
 
 def _with_call_id(call: ToolCall, request_id: str, phase: str) -> ToolCall:

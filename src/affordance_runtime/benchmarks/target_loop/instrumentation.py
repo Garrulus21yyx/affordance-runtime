@@ -18,7 +18,7 @@ from affordance_runtime.execution import ActionError, ActionResult, DispatchStat
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.contracts import ModelMetadata
+from affordance_runtime.model.policy.contracts import ModelInvocationResult, ModelMetadata
 from affordance_runtime.world import AcquisitionStatus, ObservationAcquisition
 
 
@@ -185,7 +185,8 @@ class CountingPolicy:
                 CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc
             )
             raise
-        metadata = getattr(self.wrapped, "last_metadata", None)
+        invocation = getattr(self.wrapped, "last_invocation_result", None)
+        metadata = getattr(invocation, "metadata", None) or getattr(self.wrapped, "last_metadata", None)
         if isinstance(metadata, ModelMetadata):
             self.instrumentation.model_metadata = metadata
             self.instrumentation.prompt_tokens += metadata.prompt_tokens
@@ -196,26 +197,19 @@ class CountingPolicy:
 
 
 def _policy_trace_event(call: int, context, outcome, policy, *, exception: str = ""):
+    backed = _model_backed_policy(policy)
+    invocation = getattr(backed, "last_invocation_result", None)
+    generation_attempts = tuple(
+        getattr(invocation, "attempts", ())
+        or getattr(backed, "last_provider_attempts", ())
+    )
     event: dict[str, object] = {
         "policy_call": call,
         "context_id": context.context_id,
         "visible_action_count": len(context.actions.options),
         "selected_source_modalities": tuple(source.modality for source in context.actor_world.sources),
         "recent_step_count": len(context.recent_steps.items),
-        "provider_attempts": tuple(
-            {
-                "attempt_number": item.attempt_number,
-                "profile_index": item.profile_index,
-                "status": item.status.value,
-                "failure_kind": item.failure_kind.value if item.failure_kind is not None else "",
-                "failure_code": item.failure_code.value if item.failure_code is not None else "",
-                "origin": item.origin.value,
-                "network_dispatched": item.origin.value == "network",
-                "scheduled_delay_s": item.scheduled_delay_s,
-                "response_id": item.response_id,
-            }
-            for item in getattr(_model_backed_policy(policy), "last_provider_attempts", ())
-        ),
+        "provider_attempts": tuple(_attempt_trace(item) for item in generation_attempts),
         "exception": exception,
     }
     if context.recent_steps.items:
@@ -245,8 +239,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_routing_normalized_operation"] = str(getattr(adapter, "last_routing_normalized_operation", ""))
         event["model_image_input_count"] = image_input_count
         event["policy_model_call_count"] = int(getattr(adapter, "last_model_call_count", 0))
+        event["model_invocation"] = to_json_compatible(invocation)
         event["generation_attempts"] = to_json_compatible(
-            getattr(adapter, "last_generation_attempts", ())
+            generation_attempts or getattr(adapter, "last_generation_attempts", ())
         )
         event["structured_output_validation_stage"] = "provider_response_to_grounded_command"
         event["structured_output_violations"] = tuple(
@@ -359,6 +354,37 @@ def _decision_trace(decision):
     return value
 
 
+def _attempt_trace(item: object) -> dict[str, object]:
+    if hasattr(item, "attempt"):
+        transcript = getattr(item, "transcript", None)
+        transcript = transcript if isinstance(transcript, Mapping) else {}
+        status = getattr(item, "status", "")
+        return {
+            "attempt_number": int(getattr(item, "attempt", 0)),
+            "phase": str(getattr(item, "phase", "")),
+            "status": status.value if hasattr(status, "value") else str(status),
+            "failure_kind": "",
+            "failure_code": str(transcript.get("error.code", "")),
+            "origin": "network" if transcript.get("network_dispatched", True) else "local_runtime",
+            "network_dispatched": bool(transcript.get("network_dispatched", True)),
+            "scheduled_delay_s": 0.0,
+            "response_id": str(getattr(item, "response_id", "")),
+        }
+    status = getattr(item, "status", "")
+    origin = getattr(item, "origin", "")
+    return {
+        "attempt_number": int(getattr(item, "attempt_number", 0)),
+        "profile_index": int(getattr(item, "profile_index", 0)),
+        "status": status.value if hasattr(status, "value") else str(status),
+        "failure_kind": getattr(getattr(item, "failure_kind", None), "value", ""),
+        "failure_code": getattr(getattr(item, "failure_code", None), "value", ""),
+        "origin": origin.value if hasattr(origin, "value") else str(origin),
+        "network_dispatched": getattr(origin, "value", origin) == "network",
+        "scheduled_delay_s": getattr(item, "scheduled_delay_s", 0.0),
+        "response_id": str(getattr(item, "response_id", "")),
+    }
+
+
 @dataclass
 class CountingActionOutcomeProjector:
     wrapped: object
@@ -408,14 +434,21 @@ class CountingDecisionPort:
         return getattr(self.wrapped, "transport_timeout_s", None)
 
     async def generate(self, request):
+        outcome = None
         try:
-            return await self.wrapped.generate(request)
+            outcome = await self.wrapped.generate(request)
+            return outcome
         finally:
-            attempts = tuple(getattr(self.wrapped, "last_attempts", ()))
-            attempt_count = len(attempts) or 1
+            invocation = outcome if isinstance(outcome, ModelInvocationResult) else None
+            attempts = tuple(
+                getattr(invocation, "attempts", ())
+                or getattr(self.wrapped, "last_generation_attempts", ())
+                or getattr(self.wrapped, "last_attempts", ())
+            )
+            attempt_count = len(attempts) if invocation is not None else (len(attempts) or 1)
             schema_repairs = _decision_schema_repair_count(self.wrapped)
             model_calls = _decision_model_call_count(self.wrapped)
-            self.instrumentation.provider_attempts += max(model_calls, attempt_count + schema_repairs)
+            self.instrumentation.provider_attempts += max(model_calls, attempt_count)
             self.instrumentation.policy_schema_repair_count += schema_repairs
             _record_dynamic_tool_metrics(self.instrumentation, self.wrapped)
             explicit_retries = getattr(self.wrapped, "last_provider_retry_count", None)

@@ -2,6 +2,8 @@
 
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
+    ModelGenerationAttempt,
+    ModelInvocationResult,
     ModelMetadata,
     ResolvedModelDecision,
 )
@@ -27,6 +29,8 @@ __all__ = [
     "ModelBackedAgentPolicy",
     "DecisionPerceptionProfile",
     "ModelDecisionRequest",
+    "ModelGenerationAttempt",
+    "ModelInvocationResult",
     "ModelMetadata",
     "ResolvedModelDecision",
     "model_policy_from_environment",

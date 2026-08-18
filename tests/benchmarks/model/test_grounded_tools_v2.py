@@ -22,7 +22,7 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
-from affordance_runtime.agent.context import ContextBuilder, ModelFailure
+from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
 from affordance_runtime.agent.context.budgets import BoundedSection
@@ -316,7 +316,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     assert outcome.metadata.perception_profile == "structure-first.v1"
     assert adapter.compatibility_key.split(":")[2] == "structure-first.v1"
     assert adapter.compatibility_key.endswith(f":{GROUNDED_TOOL_CALL_ENVELOPE}")
@@ -376,7 +376,7 @@ def test_structure_first_does_not_attach_image_just_because_world_has_visual_sou
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     assert adapter.last_image_input_count == 0
@@ -424,7 +424,7 @@ def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_r
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     user_content = port.messages[1].content
     assert isinstance(user_content, tuple)
     assert isinstance(user_content[0], ModelTextPart)
@@ -511,7 +511,7 @@ def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     assert isinstance(outcome.decision, RequestObservation)
     assert outcome.decision.purpose == "entity_discovery"
     assert port.calls == 2
@@ -573,7 +573,7 @@ def test_failed_argument_repair_preserves_response_and_violation_in_trace() -> N
     outcome = asyncio.run(adapter.generate(_action_request(context)))
     trace = _policy_trace_event(1, context, outcome, adapter)
 
-    assert isinstance(outcome, ModelFailure)
+    assert outcome.failure is not None
     assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
     assert tuple(item.status for item in adapter.last_generation_attempts) == ("accepted",)
     assert adapter.last_structured_output_repair_failed is False
@@ -608,7 +608,7 @@ def test_compact_bridge_normalizes_nested_parameters_without_model_repair() -> N
 
     outcome = asyncio.run(adapter.generate(_action_request(_context())))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     assert isinstance(outcome.decision, SelectAction)
     assert port.calls == 1
     assert adapter.last_argument_repair_count == 0
@@ -642,7 +642,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
@@ -701,7 +701,7 @@ def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     assert port.calls == 2
     assert adapter.last_model_call_count == 2
     assert adapter.last_tool_intent_repair_count == 1
@@ -744,7 +744,7 @@ def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> 
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert isinstance(outcome, ModelFailure)
+    assert outcome.failure is not None
     assert port.calls == 2
     assert adapter.last_tool_intent_repair_count == 1
     assert adapter.last_argument_repair_count == 0
@@ -1236,7 +1236,7 @@ def test_invalid_compact_target_gets_one_bounded_repair_then_fails_closed() -> N
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert isinstance(outcome, ModelFailure)
+    assert outcome.failure is not None
     assert port.calls == 1
     assert adapter.last_argument_repair_count == 0
     assert adapter.last_argument_violation_paths == ()
@@ -1280,7 +1280,7 @@ def test_compact_argument_repair_may_explicitly_reemit_a_different_current_targe
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     assert port.calls == 2
     assert adapter.last_argument_repair_count == 1
     assert adapter.last_argument_violation_paths == ("arguments.text",)
@@ -1601,7 +1601,7 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert not isinstance(outcome, ModelFailure)
+    assert outcome.failure is None
     assert port.calls == 2
     assert adapter.last_schema_repair_count == 1
     assert adapter.last_structured_output_violations == (StructuredOutputViolation("target", "string_type"),)
@@ -1646,9 +1646,9 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repa
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert isinstance(outcome, ModelFailure)
-    assert outcome.kind.value == "schema_error"
-    assert outcome.attempt_origin.value == "network"
+    assert outcome.failure is not None
+    assert outcome.failure.kind.value == "schema_error"
+    assert outcome.failure.attempt_origin.value == "network"
     assert adapter.last_model_call_count == 2
     assert adapter.last_structured_output_repair_attempted is True
     assert adapter.last_structured_output_repair_failed is True

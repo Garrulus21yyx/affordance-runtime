@@ -16,6 +16,8 @@ from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy import (
     ModelBackedAgentPolicy,
+    ModelGenerationAttempt,
+    ModelInvocationResult,
     ModelMetadata,
     ResolvedModelDecision,
 )
@@ -114,6 +116,42 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
         assert decision.context_id == context.context_id
         assert port.calls == 1
         assert port.request.agent_context is context
+
+    asyncio.run(scenario())
+
+
+def test_model_backed_policy_records_explicit_invocation_result_as_trace_authority() -> None:
+    async def scenario() -> None:
+        context = await _context()
+        option = context.actions.options[0]
+        attempts = (
+            ModelGenerationAttempt(1, "initial", "grounded_tools.v2", "failed"),
+            ModelGenerationAttempt(2, "initial_provider_retry", "grounded_tools.v2", "accepted"),
+        )
+        metadata = ModelMetadata(
+            provider_id="fixture",
+            model_id="scripted",
+            rate_limit_retry_count=1,
+        )
+        port = ScriptedPort(
+            ModelInvocationResult(
+                output=_resolved(SelectAction(context.context_id, option.action_id), metadata),
+                metadata=metadata,
+                attempts=attempts,
+                repair_diagnostics=({"kind": "transport_retry", "phase": "initial_provider_retry"},),
+                lineage={"role": "ActionPolicy"},
+            )
+        )
+
+        policy = ModelBackedAgentPolicy(port)
+        decision = await policy.decide(context)
+
+        assert isinstance(decision, SelectAction)
+        assert port.calls == 1
+        assert policy.last_invocation_result is not None
+        assert policy.last_invocation_result.attempts == attempts
+        assert policy.last_provider_attempts == attempts
+        assert policy.last_metadata == metadata
 
     asyncio.run(scenario())
 

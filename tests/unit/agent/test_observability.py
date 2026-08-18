@@ -110,6 +110,51 @@ def test_cancelled_policy_turn_projects_already_captured_provider_attempts(tmp_p
     asyncio.run(scenario())
 
 
+def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirrors(tmp_path) -> None:
+    del tmp_path
+
+    from types import SimpleNamespace
+
+    from affordance_runtime.agent import Abort
+    from affordance_runtime.agent.observability import model_turn_payload
+    from affordance_runtime.model.policy import ModelInvocationResult, ModelMetadata, ResolvedModelDecision
+
+    context = SimpleNamespace(
+        context_id="context:trace",
+        actions=SimpleNamespace(options=()),
+        image_inputs=(),
+    )
+    attempts = (
+        ModelGenerationAttempt(
+            1,
+            "initial",
+            "grounded_tools.v2",
+            "accepted",
+            transcript={"llm.output_messages": [{"content": "from-result"}]},
+        ),
+    )
+
+    class Policy:
+        last_invocation_result = ModelInvocationResult(
+            output=ResolvedModelDecision(Abort(context.context_id, "done", "policy")),
+            metadata=ModelMetadata(provider_id="fixture", model_id="scripted"),
+            attempts=attempts,
+        )
+        last_provider_attempts = (
+            ModelGenerationAttempt(
+                1,
+                "stale",
+                "grounded_tools.v2",
+                "accepted",
+                transcript={"llm.output_messages": [{"content": "from-last"}]},
+            ),
+        )
+
+    payload = model_turn_payload(context, Abort(context.context_id, "done", "policy"), Policy())
+
+    assert payload["generation_attempts"][0]["phase"] == "initial"
+    assert payload["generation_attempts"][0]["transcript"]["llm.output_messages"][0]["content"] == "from-result"
+
 
 def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tmp_path) -> None:
     from affordance_runtime.agent.observability import goal_compiler_trace_diagnostic
