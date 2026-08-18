@@ -13,10 +13,12 @@ from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
-    ActionEvaluation,
-    ActionEvaluationStatus,
+    ActionOutcome,
     CriterionEvaluation,
     CriterionEvaluationStatus,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
@@ -106,24 +108,28 @@ class SharedTaskEvaluator:
         )
 
 
-class CurrentFactActionEvaluator:
+class CurrentFactActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
         del task, result
         before_values = {fact.predicate: fact.value for fact in before.facts}
         changed = next((fact for fact in after.facts if before_values.get(fact.predicate) != fact.value), None)
         if changed is None:
-            return ActionEvaluation(
+            return ActionOutcome(
                 request.request_id,
                 before.observation_id,
                 after.observation_id,
-                ActionEvaluationStatus.UNKNOWN,
+                ObservedChange.UNKNOWN,
+                LocalPostconditionStatus.UNKNOWN,
+                EvidenceMethod.NONE,
                 "no exact obligation",
             )
-        return ActionEvaluation(
+        return ActionOutcome(
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED,
+            ObservedChange.CHANGED,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.STRUCTURAL,
             "relevant state changed",
             (changed.fact_id,),
         )

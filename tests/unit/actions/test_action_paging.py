@@ -9,6 +9,8 @@ from affordance_runtime.actions import (
     ActionRisk,
     ActionSpace,
 )
+from affordance_runtime.schema_digest import schema_digest
+from tests.support.action_contracts import verification_kwargs
 
 
 @dataclass(frozen=True)
@@ -20,18 +22,21 @@ class _Objective:
 
 
 def _option(index: int, *, action: str = "activate", effect: str = "changed") -> ActionOption:
+    schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    effects = () if action == "read" else (effect,)
     return ActionOption(
         f"action:{index:02}",
         "obs:1",
         action,
         f"target:{index:02}",
         "observation" if action == "read" else "local_reversible",
-        {"type": "object", "properties": {}, "additionalProperties": False},
-        "schema:1",
+        schema,
+        schema_digest(schema),
         (f"binding:{index:02}",),
         f"{action} public target {index:02}",
-        () if action == "read" else (effect,),
+        effects,
         ActionRisk.LOW,
+        **verification_kwargs(action, schema_digest(schema), effects),
     )
 
 
@@ -98,12 +103,14 @@ def test_single_oversized_option_fails_closed_at_the_page_budget() -> None:
 
 def test_page_weight_counts_only_the_visible_destination_slice() -> None:
     destinations = tuple(f"destination:{index:04}" for index in range(500))
+    base = _option(0)
     option = replace(
-        _option(0),
+        base,
         semantic_action="drag_to",
+        semantic_effects=("changed",),
         destination_required=True,
         eligible_destination_ids=destinations,
-        verification_contract_digest="",
+        **verification_kwargs("drag_to", base.schema_digest, ("changed",)),
     )
 
     page = ActionPager(max_projected_bytes=600).page(

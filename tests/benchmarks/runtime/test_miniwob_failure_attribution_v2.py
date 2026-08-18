@@ -19,7 +19,9 @@ def test_waiting_user_effect_is_typed_and_task_status_cannot_invent_outcome() ->
     effect = _result(
         status="waiting_user",
         pending_kind="unknown_effect",
-        latest_action_evaluation_status="unknown",
+        latest_action_observed_change="unknown",
+        latest_action_local_postcondition="unknown",
+        latest_action_evidence_method="none",
     )
     task = _result(status="waiting_user", latest_task_status="unknown")
     assert classify_case(effect).outcome is MiniWobTaskOutcome.WAITING_USER_EFFECT_UNKNOWN
@@ -58,7 +60,7 @@ def test_policy_abort_provider_and_no_action_are_typed() -> None:
 
 def test_component_origins_are_classified_without_exception_text() -> None:
     cases = (
-        (CaseFailureOrigin.ACTION_EVALUATION, MiniWobTaskOutcome.ACTION_EVALUATOR_FAILURE),
+        (CaseFailureOrigin.ACTION_EVALUATION, MiniWobTaskOutcome.ACTION_OUTCOME_PROJECTOR_FAILURE),
         (CaseFailureOrigin.TASK_EVALUATION, MiniWobTaskOutcome.TASK_EVALUATOR_FAILURE),
         (CaseFailureOrigin.EXECUTION, MiniWobTaskOutcome.EXECUTION_FAILURE),
         (CaseFailureOrigin.POST_ACTION_OBSERVATION, MiniWobTaskOutcome.POST_OBSERVATION_FAILURE),

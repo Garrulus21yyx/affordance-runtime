@@ -1,9 +1,8 @@
 """Deterministic validation of evaluator proposals against Runtime authority."""
 
 from affordance_runtime.evaluation.action_applicability import apply_action_evidence_profile
-from affordance_runtime.evaluation.action_verification import derive_action_verification_obligations
 from affordance_runtime.evaluation.contracts import (
-    ActionEvaluation,
+    ActionOutcome,
     CriterionEvaluationStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
@@ -19,29 +18,26 @@ from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.world.contracts import WorldObservation
 
 
-def validate_action_evaluation(
-    evaluation: ActionEvaluation,
+def validate_action_outcome(
+    evaluation: ActionOutcome,
     task: TaskGoal,
     request: BoundActionRequest,
     before: WorldObservation,
     after: WorldObservation,
     evidence_index: WorldEvidenceIndex,
-) -> ActionEvaluation:
+) -> ActionOutcome:
     if (
         evaluation.request_id != request.request_id
         or evaluation.before_observation_id != before.observation_id
         or evaluation.after_observation_id != after.observation_id
     ):
-        raise ValueError("action evaluation lineage mismatch")
+        raise ValueError("action outcome lineage mismatch")
     if evidence_index.observation_id != after.observation_id:
-        raise ValueError("action evaluation evidence index is not current")
+        raise ValueError("action outcome evidence index is not current")
     unresolved = tuple(item for item in evaluation.evidence_refs if not evidence_index.resolve(item))
     if unresolved:
-        raise ValueError("action evaluation evidence does not resolve in the after observation")
-    obligations = derive_action_verification_obligations(task, request, before)
-    return apply_action_evidence_profile(
-        evaluation, task, request, before, after, evidence_index, obligations
-    )
+        raise ValueError("action outcome evidence does not resolve in the after observation")
+    return apply_action_evidence_profile(evaluation, request, before, after, evidence_index)
 
 
 def validate_task_evaluation(

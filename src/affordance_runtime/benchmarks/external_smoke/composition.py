@@ -9,7 +9,7 @@ from affordance_runtime.agent import SelectAction
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.benchmarks.external_smoke.case_environment import ExternalEnvironmentTaskEvaluator
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
-from affordance_runtime.evaluation import ProductionActionEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
 
 
@@ -39,7 +39,7 @@ class BrowserGymStructuredDecisionPort:
 def adapter_conformance_composition(environment, port) -> BenchmarkComposition:
     return BenchmarkComposition(
         ModelBackedAgentPolicy(port, call_timeout_s=10),
-        ProductionActionEvaluator(),
+        ProductionActionOutcomeProjector(),
         ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
     )
 

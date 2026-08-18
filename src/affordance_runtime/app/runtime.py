@@ -15,7 +15,7 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
-from affordance_runtime.agent.policy import ActionEvaluator, AgentDecisionPorts, TaskEvaluator
+from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
@@ -29,6 +29,7 @@ from affordance_runtime.task.intake import (
     ThinTaskIntake,
 )
 from affordance_runtime.world.environment import WorldEnvironment
+from affordance_runtime.world.contracts import WorldObservation
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ class TargetRuntime:
     """Own the only product loop; adapters and benchmarks inject ports."""
 
     decision_ports: AgentDecisionPorts
-    action_evaluator: ActionEvaluator
+    action_outcome_projector: ActionOutcomeProjector
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
     intake: TaskIntake = field(default_factory=ThinTaskIntake)
@@ -68,8 +69,8 @@ class TargetRuntime:
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
             raise TypeError("TargetRuntime requires explicit AgentDecisionPorts")
-        if not callable(getattr(self.action_evaluator, "evaluate", None)):
-            raise TypeError("TargetRuntime action evaluator is invalid")
+        if not callable(getattr(self.action_outcome_projector, "evaluate", None)):
+            raise TypeError("TargetRuntime action outcome projector is invalid")
         if not callable(getattr(self.task_evaluator, "evaluate", None)):
             raise TypeError("TargetRuntime task evaluator is invalid")
         if not callable(getattr(self.intake, "compile", None)):
@@ -91,7 +92,7 @@ class TargetRuntime:
     def build_loop(self) -> CoreAgentLoop:
         return CoreAgentLoop(
             self.decision_ports,
-            self.action_evaluator,
+            self.action_outcome_projector,
             self.task_evaluator,
             action_space_builder=self.action_space_builder,
             binder=self.binder,
@@ -116,6 +117,21 @@ class TargetRuntime:
         task: TaskGoal,
     ) -> RunState:
         return await self.build_loop().initialize(environment, task)
+
+    async def initialize_from_world(
+        self,
+        task: TaskGoal,
+        initial: WorldObservation,
+        *,
+        max_turns: int | None = None,
+        yield_on_budget_exhaustion: bool = False,
+    ) -> RunState:
+        return await self.build_loop().initialize_from_world(
+            task,
+            initial,
+            max_turns=max_turns,
+            yield_on_budget_exhaustion=yield_on_budget_exhaustion,
+        )
 
     async def continue_task(
         self,

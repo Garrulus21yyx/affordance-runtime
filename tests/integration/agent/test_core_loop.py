@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import pytest
 
@@ -15,13 +15,16 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
-    ActionEvaluation,
-    ActionEvaluationStatus,
+    ActionOutcome,
     CriterionEvaluation,
     CriterionEvaluationStatus,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
@@ -38,6 +41,7 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 
 
 def _world(observation_id: str, enabled: bool) -> WorldObservation:
@@ -169,7 +173,7 @@ class CorePolicy:
             if self.turns == 1:
                 return RequestActionPage(context.context_id, query="toggle")
             assert context.actions.active_query == "toggle"
-            assert context.recent_steps.items[-1].semantic_action == "next_actions"
+            assert context.recent_steps.items[-1].semantic_action == "find_actions"
             return Abort(context.context_id, "page observed", AbortCategory.USER_REQUEST)
         if self.choice == "wait":
             if self.turns == 1:
@@ -232,14 +236,16 @@ class CoreTaskEvaluator:
         )
 
 
-class CoreActionEvaluator:
+class CoreActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
         del task, result
-        return ActionEvaluation(
+        return ActionOutcome(
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED,
+            ObservedChange.CHANGED,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.STRUCTURAL,
             "state changed",
             (after.facts[0].fact_id,),
         )
@@ -248,7 +254,7 @@ class CoreActionEvaluator:
 def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
     return TargetRuntime(
         AgentDecisionPorts(CorePolicy(choice)),
-        CoreActionEvaluator(),
+        CoreActionOutcomeProjector(),
         CoreTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_core_loop_test"),
         **({"wait_controller": wait_controller} if wait_controller is not None else {}),
@@ -279,15 +285,15 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
         assert state.last_step.decision.tool_call_id == "provider-call:test"
         assert state.last_step.execution is not None
         assert state.last_step.execution.request.tool_call_id == "provider-call:test"
-        assert state.last_step.action_evaluation is not None
-        assert state.last_step.action_evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+        assert state.last_step.action_outcome is not None
+        assert state.last_step.action_outcome.observed_change is ObservedChange.CHANGED
         assert environment.execute_calls == 1
 
         with pytest.raises(ValueError, match="does not match"):
             replace(
                 state.last_step,
-                action_evaluation=replace(
-                    state.last_step.action_evaluation,
+                action_outcome=replace(
+                    state.last_step.action_outcome,
                     request_id="request:wrong",
                 ),
             )
@@ -438,27 +444,36 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             previous = context.recent_steps.items
             assert len(previous) == 1
             assert previous[0].semantic_action == "activate"
+            assert previous[0].target is not None
+            assert previous[0].target.role == "button"
+            assert previous[0].target.label == "Enable shared state"
             assert previous[0].dispatch_status == DispatchStatus.SENT
-            assert previous[0].action_evaluation_status == ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+            assert previous[0].local_postcondition == LocalPostconditionStatus.UNKNOWN
+            assert previous[0].transition["observed_change"] == ObservedChange.UNCHANGED
+            assert previous[0].transition["evidence_method"] == EvidenceMethod.STRUCTURAL
             assert previous[0].task_evaluation_status == TaskEvaluationStatus.INCOMPLETE
             assert previous[0].reason == "state did not change"
-            assert previous[0].semantic_summary["feedback_code"] == "action_no_effect_change_strategy"
-            assert previous[0].target_snapshot == {
+            assert previous[0].semantic_summary["feedback_code"] == "action_unchanged_change_strategy"
+            assert previous[0].transition == {
                 "role": "button",
                 "label": "Enable shared state",
                 "before_state": {"enabled": False},
                 "after_state": {"enabled": False},
+                "observed_change": "unchanged",
+                "evidence_method": "structural",
             }
             return Abort(context.context_id, "feedback projection verified", AbortCategory.USER_REQUEST)
 
-    class NoEffectActionEvaluator:
+    class NoEffectActionOutcomeProjector:
         async def evaluate(self, task, before, request, result, after):
             del task, result
-            return ActionEvaluation(
+            return ActionOutcome(
                 request.request_id,
                 before.observation_id,
                 after.observation_id,
-                ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+                ObservedChange.UNCHANGED,
+                LocalPostconditionStatus.UNKNOWN,
+                EvidenceMethod.STRUCTURAL,
                 "state did not change",
                 (after.facts[0].fact_id,),
             )
@@ -467,7 +482,7 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
         policy = FeedbackAwarePolicy()
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
-            NoEffectActionEvaluator(),
+            NoEffectActionOutcomeProjector(),
             CoreTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("atomic_core_loop_test"),
         )
@@ -481,6 +496,88 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
         assert state.status is RunStatus.CANCELLED
         assert policy.turns == 2
         assert len(state.recent_steps) == 1
+        assert state.last_step is not None
+        assert state.last_step.policy_observation is not None
         assert environment.execute_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_executor_episode_can_yield_and_reinitialize_from_fresh_world_without_reset() -> None:
+    @dataclass
+    class EpisodePolicy:
+        actions: list[str]
+
+        async def decide(self, context):
+            action = self.actions.pop(0)
+            if action == "activate":
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    tool_call_id="provider-call:episode-1",
+                )
+            return Abort(context.context_id, "episode observed fresh world", AbortCategory.USER_REQUEST)
+
+    @dataclass(frozen=True)
+    class RecordingContextBuilder(ContextBuilder):
+        seen_observation_ids: list[str] = field(default_factory=list)
+
+        def build(self, task, observation, action_space, task_evaluation, *args, **kwargs):
+            self.seen_observation_ids.append(observation.observation_id)
+            return super().build(task, observation, action_space, task_evaluation, *args, **kwargs)
+
+    async def scenario() -> None:
+        policy = EpisodePolicy(["activate", "abort"])
+        context_builder = RecordingContextBuilder()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            context_builder=context_builder,
+            goal_compiler=NotRequiredGoalCompiler("episode_lifecycle_test"),
+        )
+        loop = runtime.build_loop()
+        task = _task()
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after-action", False),),
+            independent_observations=(_world("fresh-current", False),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        initial = await environment.reset(task)
+        assert initial.observation is not None
+        first = await loop.initialize_from_world(
+            task,
+            initial.observation,
+            max_turns=1,
+            yield_on_budget_exhaustion=True,
+        )
+        yielded = await loop.continue_run(environment, task, first)
+
+        assert yielded.status is RunStatus.YIELDED
+        assert yielded.current_world.observation_id == "after-action"
+        assert yielded.recent_steps[-1].semantic_action == "activate"
+        assert environment.reset_calls == 1
+
+        refreshed = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "fresh world before next executor episode",
+            )
+        )
+        assert refreshed.observation is not None
+        second = await loop.initialize_from_world(
+            task,
+            refreshed.observation,
+            max_turns=1,
+            yield_on_budget_exhaustion=True,
+        )
+        resumed = await loop.continue_run(environment, task, second)
+
+        assert resumed.status is RunStatus.CANCELLED
+        assert resumed.current_world.observation_id == "fresh-current"
+        assert environment.reset_calls == 1
+        assert context_builder.seen_observation_ids == ["before", "fresh-current"]
 
     asyncio.run(scenario())

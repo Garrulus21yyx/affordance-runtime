@@ -66,7 +66,7 @@ def test_ready_goal_plan_is_direct_static_context_without_progress_projection() 
     world = _world("world:before", False)
     plan = _plan()
     public = _public(_context(world, Ready(1, plan)))
-    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "affordances", "tools")
     assert "progress" not in public
     goal_plan = public["goal_plan"]
     assert goal_plan["resolution"] == "ready"
@@ -118,8 +118,12 @@ def test_plan_identity_is_static_while_fresh_world_still_changes_context_identit
 
 def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_dependency_order() -> None:
     system = GroundedPolicyContextBinder().prompts.actor
-    assert "reassess every visible goal_plan item" in system
-    assert "already active toggle" in system
-    assert "final=true item" in system
-    assert "every dependency is visibly satisfied" in system
+    assert "Reassess progress from task, fresh observation, and semantic recent_steps on every turn" in system
+    assert "Only refs in the current observation and current" in system
+    assert "Preserve outcomes already supported by evidence" in system
+    assert "Treat final=true only as an ordering hint" in system
+    assert "dependencies express semantic order, not an action gate" in system
+    assert "Outcomes need not remain simultaneously visible" in system
+    assert "earliest dependency-ready" not in system
+    assert "visibly satisfied" not in system
     assert "exactly one" in system

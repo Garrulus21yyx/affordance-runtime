@@ -14,6 +14,7 @@ from affordance_runtime.actions.capabilities import (
     InteractionCapabilityError,
     InteractionCapabilityIssueCode,
     VerificationContract,
+    VerificationFamily,
     verification_contract_for_action,
 )
 from affordance_runtime.immutable import freeze_json, to_json_compatible
@@ -53,6 +54,7 @@ class ActionOption:
     batchable: bool = False
     observation_barrier: bool = True
     verification_contract_digest: str = ""
+    verification_family: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -75,6 +77,10 @@ class ActionOption:
             self.semantic_action,
             self.parameter_schema,
         )
+        if not self.verification_family or not self.verification_contract_digest:
+            raise ValueError("action option requires a binding-selected verification contract")
+        if VerificationFamily(self.verification_family) not in definition.verification_families:
+            raise ValueError("option verification family is not supported by the action")
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
@@ -98,9 +104,9 @@ class ActionOption:
                 self.semantic_action,
             )
         contract = self.verification_contract
-        if not self.verification_contract_digest:
-            object.__setattr__(self, "verification_contract_digest", contract.digest)
-        elif self.verification_contract_digest != contract.digest:
+        if self.verification_family != contract.family.value:
+            raise ValueError("option verification family does not match sealed contract")
+        if self.verification_contract_digest != contract.digest:
             raise ValueError("option verification contract does not match sealed contract")
 
     @property
@@ -110,6 +116,7 @@ class ActionOption:
             self.schema_digest,
             self.semantic_effects,
             self.observation_barrier,
+            family=VerificationFamily(self.verification_family) if self.verification_family else None,
         )
 
 
@@ -130,6 +137,8 @@ class AdmittedActionSelection:
     destination_required: bool = False
     eligible_destination_ids: tuple[str, ...] = ()
     verification_contract_digest: str = ""
+    verification_family: str = ""
+    expected_outcome: str = ""
 
     def __post_init__(self) -> None:
         required = (
@@ -145,6 +154,9 @@ class AdmittedActionSelection:
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        if not isinstance(self.expected_outcome, str) or len(self.expected_outcome) > 240:
+            raise ValueError("admitted selection expected outcome must be one bounded string")
+        object.__setattr__(self, "expected_outcome", self.expected_outcome.strip())
         object.__setattr__(
             self,
             "eligible_destination_ids",
@@ -155,11 +167,15 @@ class AdmittedActionSelection:
             self.destination_required,
             self.eligible_destination_ids,
         )
-        INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(self.semantic_action)
+        if not self.verification_family or not self.verification_contract_digest:
+            raise ValueError("admitted selection requires an option verification contract")
+        if VerificationFamily(self.verification_family) not in definition.verification_families:
+            raise ValueError("selection verification family is not supported by the action")
         contract = self.verification_contract
-        if not self.verification_contract_digest:
-            object.__setattr__(self, "verification_contract_digest", contract.digest)
-        elif self.verification_contract_digest != contract.digest:
+        if self.verification_family != contract.family.value:
+            raise ValueError("selection verification family does not match sealed contract")
+        if self.verification_contract_digest != contract.digest:
             raise ValueError("selection verification contract does not match sealed contract")
 
     @property
@@ -169,6 +185,7 @@ class AdmittedActionSelection:
             self.schema_digest,
             self.semantic_effects,
             self.observation_barrier,
+            family=VerificationFamily(self.verification_family) if self.verification_family else None,
         )
 
 
@@ -199,6 +216,7 @@ class ActionSpace:
                 option.destination_required,
                 option.eligible_destination_ids,
                 option.observation_barrier,
+                option.verification_family,
                 option.verification_contract_digest,
                 to_json_compatible(option.parameter_schema),
             )

@@ -34,7 +34,7 @@ class ProgressEventObserver:
         section = getattr(progress, "events", None)
         items = tuple(getattr(section, "items", ()))
         current = tuple(
-            (str(item.event_type), str(item.attempt_key_digest), str(item.effect_status))
+            (str(item.event_type), str(item.attempt_key_digest), str(item.observed_change))
             for item in items
         )
         overlap = _overlap(self.previous, current)

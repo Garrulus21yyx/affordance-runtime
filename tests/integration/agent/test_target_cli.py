@@ -21,7 +21,7 @@ from affordance_runtime.app.cli import (
     task_boundary_from_mapping,
 )
 from affordance_runtime.app.composition import compose_target_runtime_from_environment
-from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
 from affordance_runtime.goals import NotRequiredGoalCompiler, UnavailableGoalCompiler
 from affordance_runtime.model.policy import ConfiguredModelRoles
 from affordance_runtime.task import RiskProfile, TaskUnsupported, ThinTaskIntake
@@ -230,7 +230,7 @@ def test_target_run_executes_real_dom_through_product_runtime(tmp_path: Path) ->
     """
     runtime = compose_target_runtime(
         FirstOfferedActionPolicy(),
-        ProductionActionEvaluator(),
+        ProductionActionOutcomeProjector(),
         ProductionTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_target_cli_test"),
     )

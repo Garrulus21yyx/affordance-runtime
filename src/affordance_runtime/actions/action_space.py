@@ -48,7 +48,7 @@ _FORBIDDEN_PARAMETER_KEYS = frozenset(
         "y",
     }
 )
-_GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...], str]
+_GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...], str, str]
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,7 @@ class ActionSpaceBuilder:
                 binding.observation_barrier,
                 binding.destination_required,
                 binding.eligible_destination_ids,
+                binding.verification_family,
                 binding.verification_contract_digest,
             )
             grouped.setdefault(group_key, []).append(binding)
@@ -99,6 +100,7 @@ class ActionSpaceBuilder:
                 barrier,
                 destination_required,
                 destinations,
+                verification_family,
                 verification_digest,
             ) = group_key
             risk = max((binding.risk for binding in bindings), key=_risk_rank)
@@ -117,6 +119,7 @@ class ActionSpaceBuilder:
                         barrier,
                         destination_required,
                         destinations,
+                        verification_family,
                         verification_digest,
                     ],
                     separators=(",", ":"),
@@ -138,6 +141,7 @@ class ActionSpaceBuilder:
                     destination_required=bool(destination_required),
                     eligible_destination_ids=tuple(str(item) for item in destinations),
                     observation_barrier=barrier,
+                    verification_family=verification_family,
                     verification_contract_digest=verification_digest,
                 )
             )
@@ -154,8 +158,9 @@ class ActionSpaceBuilder:
         option: ActionOption,
         parameters: dict[str, Any],
         destination_id: str = "",
+        expected_outcome: str = "",
     ) -> AdmittedActionSelection:
-        result = self.try_admit(option, parameters, destination_id)
+        result = self.try_admit(option, parameters, destination_id, expected_outcome)
         if result.admitted is not None:
             return result.admitted
         assert result.issue is not None
@@ -170,6 +175,7 @@ class ActionSpaceBuilder:
         option: ActionOption,
         parameters: dict[str, Any],
         destination_id: str = "",
+        expected_outcome: str = "",
     ) -> ActionAdmissionResult:
         issue = self.parameter_issue(option, parameters)
         if issue is None:
@@ -193,6 +199,8 @@ class ActionSpaceBuilder:
                 option.destination_required,
                 option.eligible_destination_ids,
                 option.verification_contract_digest,
+                option.verification_family,
+                _expected_outcome(expected_outcome),
             )
         )
 
@@ -202,6 +210,7 @@ class ActionSpaceBuilder:
         action_id: str,
         parameters: dict[str, Any],
         destination_id: str = "",
+        expected_outcome: str = "",
     ) -> ActionAdmissionResult:
         """Admit by public selection identity without throwing or parsing prose."""
 
@@ -215,7 +224,7 @@ class ActionSpaceBuilder:
                     actual={"action_id_offered": False},
                 )
             )
-        return self.try_admit(option, parameters, destination_id)
+        return self.try_admit(option, parameters, destination_id, expected_outcome)
 
     def parameter_issue(
         self,
@@ -248,6 +257,14 @@ def _binding_is_current(binding: ActionBinding, observation: WorldObservation) -
         and binding.surface == source.surface
         and binding.source_revision == source.revision
     )
+
+
+def _expected_outcome(value: object) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str) or len(value) > 240:
+        raise ValueError("expected outcome must be one bounded string")
+    return value.strip()
 
 
 def _effects_allowed(task: TaskGoal, binding: ActionBinding) -> bool:

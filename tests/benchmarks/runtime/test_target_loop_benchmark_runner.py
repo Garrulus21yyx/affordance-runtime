@@ -18,7 +18,14 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     CountingEnvironment,
 )
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
-from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
@@ -42,10 +49,16 @@ class NeverPolicy:
         raise AssertionError("complete task must not call policy")
 
 
-class ActionEvaluator:
+class ActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
-        return ActionEvaluation(
-            request.request_id, before.observation_id, after.observation_id, ActionEvaluationStatus.UNKNOWN, "unused"
+        return ActionOutcome(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
+            ObservedChange.UNKNOWN,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.NONE,
+            "unused",
         )
 
 
@@ -76,7 +89,7 @@ def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
             lambda _metrics: Environment(
                 initial_observation=fused_world(identity, surface="static"),
             ),
-            lambda _metrics: BenchmarkComposition.atomic(NeverPolicy(), ActionEvaluator(), CompleteEvaluator()),
+            lambda _metrics: BenchmarkComposition.atomic(NeverPolicy(), ActionOutcomeProjector(), CompleteEvaluator()),
             (RunStatus.BLOCKED,),
             2.0,
             7,
@@ -208,7 +221,7 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
             post_observations=(_action_world("observation:two"),),
             results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
         ),
-        lambda _metrics: BenchmarkComposition.atomic(policy, ActionEvaluator(), IncompleteEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(policy, ActionOutcomeProjector(), IncompleteEvaluator()),
         (RunStatus.FAILED,),
         0.05,
         7,
@@ -237,7 +250,9 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
     assert result.measurements["executions"].value == 1
     assert result.measurements["turns"].value == 1
     assert result.latest_task_status == "incomplete"
-    assert result.latest_action_evaluation_status == "unknown"
+    assert result.latest_action_observed_change == "unknown"
+    assert result.latest_action_local_postcondition == "unknown"
+    assert result.latest_action_evidence_method == "none"
     assert policy.calls == 2
 
 
@@ -262,7 +277,7 @@ def test_component_timeout_error_is_not_classified_as_watchdog() -> None:
         "component timeout",
         lambda: TaskGoal("t", "t"),
         lambda _metrics: ScriptedEnvironment(initial_observation=_action_world("observation:one")),
-        lambda _metrics: BenchmarkComposition.atomic(RaisingPolicy(), ActionEvaluator(), IncompleteEvaluator()),
+        lambda _metrics: BenchmarkComposition.atomic(RaisingPolicy(), ActionOutcomeProjector(), IncompleteEvaluator()),
         (RunStatus.FAILED,),
         2.0,
         7,
@@ -324,7 +339,7 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
         ),
         lambda _metrics: BenchmarkComposition.atomic(
             Policy(),
-            ActionEvaluator(),
+            ActionOutcomeProjector(),
             IncompleteEvaluator(),
         ),
         (RunStatus.WAITING_USER,),

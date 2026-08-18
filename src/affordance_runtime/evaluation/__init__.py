@@ -6,9 +6,9 @@ from importlib import import_module
 from typing import Any
 
 _EXPORTS = {
-    "ProductionActionEvaluator": (
-        "affordance_runtime.evaluation.action_evaluator",
-        "ProductionActionEvaluator",
+    "ProductionActionOutcomeProjector": (
+        "affordance_runtime.evaluation.action_outcome_projector",
+        "ProductionActionOutcomeProjector",
     ),
     "ProductionTaskEvaluator": (
         "affordance_runtime.evaluation.composition",
@@ -25,8 +25,10 @@ _EXPORTS = {
 }
 
 for _name in (
-    "ActionEvaluation",
-    "ActionEvaluationStatus",
+    "ActionOutcome",
+    "ObservedChange",
+    "LocalPostconditionStatus",
+    "EvidenceMethod",
     "CriterionEvaluation",
     "CriterionEvaluationStatus",
     "EvaluatedOutput",

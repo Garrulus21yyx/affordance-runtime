@@ -16,7 +16,9 @@ class PartialEpisodeSnapshot:
     currentness_probe_count: int
     completed_turn_count: int
     latest_task_status: str
-    latest_action_evaluation_status: str
+    latest_action_observed_change: str
+    latest_action_local_postcondition: str
+    latest_action_evidence_method: str
     latest_semantic_attempt_key_digest: str
     same_attempt_streak: int
     no_progress_count: int
@@ -49,8 +51,14 @@ def snapshot_episode(state: RunState) -> PartialEpisodeSnapshot:
         0,
         state.step_count,
         str(task_evaluation.status),
-        str(latest.action_evaluation.status)
-        if latest is not None and latest.action_evaluation is not None
+        str(latest.action_outcome.observed_change)
+        if latest is not None and latest.action_outcome is not None
+        else "",
+        str(latest.action_outcome.local_postcondition)
+        if latest is not None and latest.action_outcome is not None
+        else "",
+        str(latest.action_outcome.evidence_method)
+        if latest is not None and latest.action_outcome is not None
         else "",
         "",
         0,

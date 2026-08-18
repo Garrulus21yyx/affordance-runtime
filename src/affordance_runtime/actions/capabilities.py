@@ -149,7 +149,11 @@ def verification_contract_for_action(
     family: VerificationFamily | None = None,
 ) -> VerificationContract:
     definition = INTERACTION_CAPABILITY_REGISTRY.require(semantic_action)
-    selected_family = family or definition.verification_families[0]
+    selected_family = family or (
+        VerificationFamily.NAVIGATION_CONTEXT
+        if semantic_action == "activate"
+        else definition.verification_families[0]
+    )
     return VerificationContract(
         semantic_action,
         selected_family,

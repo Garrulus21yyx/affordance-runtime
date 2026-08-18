@@ -62,6 +62,7 @@ class SelectAction:
     parameters: dict[str, Any] = field(default_factory=dict)
     destination_id: str = ""
     tool_call_id: str = ""
+    expected_outcome: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -69,6 +70,9 @@ class SelectAction:
             raise ValueError("selection requires an offered action id")
         _require_tool_call_id(self.tool_call_id)
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
+        if not isinstance(self.expected_outcome, str) or len(self.expected_outcome) > 240:
+            raise ValueError("selection expected outcome must be one bounded string")
+        object.__setattr__(self, "expected_outcome", self.expected_outcome.strip())
 
 
 @dataclass(frozen=True)

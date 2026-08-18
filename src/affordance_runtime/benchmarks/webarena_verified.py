@@ -11,11 +11,391 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import subprocess
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
+
+from affordance_runtime.benchmarks.browsergym_runtime import (
+    DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
+)
+
+WA_BROWSERGYM_COMMIT = "9e779f087de9a65668b6974d11f9ce9816026e96"
+WA_VERIFIED_COMMIT = "6473f72db5dcefc97b5725b59e734504edc28a21"
+WA_HARD_SUBSET_SHA256 = "d20872f9894e4e8ffc250155fe0ad5c797c640f40d3094404654a8b1dab14e68"
+WA_SELECTION_SEED = 20260818
+WA_DEFAULT_TIMEOUT_S = 0.0
+WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
+WA_FINAL_OUTPUT_ID = "webarena_final_response"
+WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
+WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v1"
+
+@dataclass(frozen=True)
+class WebArenaVerifiedCaseRef:
+    task_id: int
+    intent_template_id: int
+    revision: int
+    sites: tuple[str, ...]
+    task_type: str
+    cohort: str
+
+    @property
+    def gym_id(self) -> str:
+        return webarena_gym_task_id(self)
+
+    def public_payload(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["gym_id"] = self.gym_id
+        payload["public_intent_digest"] = ""
+        return payload
+
+
+WA_W1_SMOKE_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
+    WebArenaVerifiedCaseRef(0, 279, 2, ("shopping_admin",), "smoke", "w1"),
+    WebArenaVerifiedCaseRef(7, 79, 2, ("map",), "smoke", "w1"),
+    WebArenaVerifiedCaseRef(21, 222, 2, ("shopping",), "smoke", "w1"),
+    WebArenaVerifiedCaseRef(27, 33, 2, ("reddit",), "smoke", "w1"),
+    WebArenaVerifiedCaseRef(44, 303, 2, ("gitlab",), "smoke", "w1"),
+    WebArenaVerifiedCaseRef(266, 85, 4, ("wikipedia", "map"), "smoke", "w1"),
+)
+
+WA_W2_COHORT_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
+    WebArenaVerifiedCaseRef(267, 85, 4, ("wikipedia", "map"), "retrieve", "w2"),
+    WebArenaVerifiedCaseRef(97, 120, 2, ("map", "wikipedia"), "retrieve", "w2"),
+    WebArenaVerifiedCaseRef(265, 85, 4, ("wikipedia", "map"), "retrieve", "w2"),
+    WebArenaVerifiedCaseRef(268, 85, 4, ("wikipedia", "map"), "retrieve", "w2"),
+    WebArenaVerifiedCaseRef(740, 94, 2, ("wikipedia", "map"), "navigate", "w2"),
+    WebArenaVerifiedCaseRef(759, 42, 2, ("map", "shopping_admin"), "navigate", "w2"),
+    WebArenaVerifiedCaseRef(424, 371, 2, ("wikipedia", "map"), "navigate", "w2"),
+    WebArenaVerifiedCaseRef(426, 371, 2, ("wikipedia", "map"), "navigate", "w2"),
+    WebArenaVerifiedCaseRef(681, 116, 2, ("reddit", "gitlab"), "mutate", "w2"),
+    WebArenaVerifiedCaseRef(672, 101, 2, ("shopping", "reddit"), "mutate", "w2"),
+    WebArenaVerifiedCaseRef(556, 87, 3, ("gitlab", "wikipedia"), "mutate", "w2"),
+    WebArenaVerifiedCaseRef(554, 84, 2, ("gitlab", "reddit"), "mutate", "w2"),
+)
+
+WA_W0_REQUIRED_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (*WA_W1_SMOKE_CASES, *WA_W2_COHORT_CASES)
+
+_W0_PREFLIGHT_PROGRAM = r"""
+import importlib
+import importlib.metadata as metadata
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+payload = json.loads(sys.stdin.read())
+task_ids = tuple(payload["task_ids"])
+probe_task_id = payload["probe_task_id"]
+exercise = bool(payload["exercise"])
+
+def package(name):
+    try:
+        version = metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return {"installed": False, "version": "", "direct_url": {}}
+    direct = {}
+    try:
+        dist = metadata.distribution(name)
+        text = dist.read_text("direct_url.json")
+        direct = json.loads(text) if text else {}
+    except Exception:
+        direct = {}
+    return {"installed": True, "version": version, "direct_url": direct}
+
+def redacted_url(value):
+    from urllib.parse import urlsplit, urlunsplit
+    parts = urlsplit(value)
+    host = parts.hostname or ""
+    if not host:
+        return value
+    netloc = host
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/") + "/", "", ""))
+
+def health(url):
+    started = time.perf_counter()
+    try:
+        request = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return {"status": "ok", "http_status": int(response.status), "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
+    except urllib.error.HTTPError as exc:
+        return {"status": "http_error", "http_status": int(exc.code), "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
+    except Exception as exc:
+        return {"status": "failed", "error": type(exc).__name__, "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
+
+report = {
+    "sys_executable": sys.executable,
+    "python_version": ".".join(str(part) for part in sys.version_info[:3]),
+    "packages": {
+        "playwright": package("playwright"),
+        "browsergym-miniwob": package("browsergym-miniwob"),
+        "browsergym-webarena": package("browsergym-webarena"),
+        "browsergym-webarena-verified": package("browsergym-webarena-verified"),
+        "nltk": package("nltk"),
+        "webarena-verified": package("webarena-verified"),
+    },
+    "registration": {"imported": False, "missing_task_ids": list(task_ids), "registered_task_ids": []},
+    "sites": [],
+    "exercise": {"attempted": exercise, "reset": "not_attempted", "evaluator": "not_attempted"},
+}
+
+try:
+    importlib.import_module("browsergym.webarena_verified")
+    import gymnasium as gym
+    registry = {str(key) for key in gym.envs.registry.keys()}
+    registered = sorted(task_id for task_id in task_ids if task_id in registry)
+    report["registration"] = {
+        "imported": True,
+        "missing_task_ids": sorted(set(task_ids) - set(registered)),
+        "registered_task_ids": registered,
+    }
+except Exception as exc:
+    report["registration"]["error"] = type(exc).__name__
+
+for key in sorted(os.environ):
+    if not key.startswith("WA_"):
+        continue
+    upper = key.upper()
+    if any(secret in upper for secret in ("KEY", "TOKEN", "SECRET", "PASSWORD", "HEADER", "COOKIE")):
+        continue
+    value = os.environ[key].strip()
+    if not value:
+        continue
+    item = {"env": key, "value_sha256": "sha256:" + __import__("hashlib").sha256(value.encode()).hexdigest()}
+    if value.startswith(("http://", "https://")):
+        item["redacted_url"] = redacted_url(value)
+        item["health"] = health(value)
+    elif "DIGEST" in upper or value.startswith("sha256:"):
+        item["image_digest"] = value
+    report["sites"].append(item)
+
+if exercise and not report["registration"]["missing_task_ids"]:
+    try:
+        import gymnasium as gym
+        env = gym.make(probe_task_id, headless=True, tags_to_mark="all")
+        try:
+            obs, info = env.reset(seed=payload["seed"])
+            report["exercise"]["reset"] = {
+                "status": "ok",
+                "goal_present": isinstance(obs, dict) and isinstance(obs.get("goal"), str) and bool(obs.get("goal", "").strip()),
+                "info_keys": sorted(str(key) for key in info.keys()) if isinstance(info, dict) else [],
+            }
+            obs, reward, terminated, truncated, info = env.step('send_msg_to_user("W0 readiness probe")')
+            report["exercise"]["evaluator"] = {
+                "status": "ok",
+                "terminated": terminated is True,
+                "truncated": truncated is True,
+                "reward_type": type(reward).__name__,
+                "info_keys": sorted(str(key) for key in info.keys()) if isinstance(info, dict) else [],
+            }
+        finally:
+            env.close()
+    except Exception as exc:
+        if report["exercise"]["reset"] == "not_attempted":
+            report["exercise"]["reset"] = {"status": "failed", "error": type(exc).__name__}
+        else:
+            report["exercise"]["evaluator"] = {"status": "failed", "error": type(exc).__name__}
+
+print(json.dumps(report, sort_keys=True))
+"""
+
+
+def webarena_gym_task_id(task: WebArenaVerifiedCaseRef | WebArenaVerifiedTaskRef) -> str:
+    return f"browsergym/webarena_verified.{task.intent_template_id}.{task.task_id}.{task.revision}"
+
+
+def write_webarena_verified_w0_manifest(
+    output_path: Path,
+    *,
+    timeout_s: float = WA_DEFAULT_TIMEOUT_S,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Write the frozen W0/W1/W2 public identity manifest without private evaluator data."""
+
+    env = os.environ if environment is None else environment
+    manifest = {
+        "schema_version": WA_MANIFEST_SCHEMA,
+        "stage": "w0",
+        "browsergym_commit": WA_BROWSERGYM_COMMIT,
+        "webarena_verified_commit": WA_VERIFIED_COMMIT,
+        "hard_subset_sha256": f"sha256:{WA_HARD_SUBSET_SHA256}",
+        "selection_seed": WA_SELECTION_SEED,
+        "case_timeout_s": timeout_s,
+        "timeout_frozen": timeout_s > 0,
+        "final_output_id": WA_FINAL_OUTPUT_ID,
+        "registration_module": WA_REGISTRATION_MODULE,
+        "smoke_cases": [case.public_payload() for case in WA_W1_SMOKE_CASES],
+        "proof_cohort_cases": [case.public_payload() for case in WA_W2_COHORT_CASES],
+        "configured_sites": _site_config_from_environment(env),
+        "site_environment_frozen": _site_environment_frozen(env),
+        "official_expected_values_included": False,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def inspect_webarena_verified_w0_readiness(
+    *,
+    runtime_python: Path = DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
+    output_path: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+    exercise_environment: bool = True,
+) -> dict[str, Any]:
+    """Inspect official package/site/reset/evaluator readiness in the BrowserGym runtime."""
+
+    env = dict(os.environ if environment is None else environment)
+    program_input = {
+        "task_ids": [case.gym_id for case in WA_W0_REQUIRED_CASES],
+        "probe_task_id": WA_W1_SMOKE_CASES[0].gym_id,
+        "seed": WA_SELECTION_SEED,
+        "exercise": exercise_environment,
+    }
+    completed = subprocess.run(
+        [str(runtime_python), "-c", _W0_PREFLIGHT_PROGRAM],
+        input=json.dumps(program_input),
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if completed.returncode != 0:
+        payload: dict[str, Any] = {
+            "subprocess_returncode": completed.returncode,
+            "stderr_digest": f"sha256:{hashlib.sha256(completed.stderr.encode()).hexdigest()}",
+        }
+    else:
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            payload = {"invalid_stdout_digest": f"sha256:{hashlib.sha256(completed.stdout.encode()).hexdigest()}"}
+    report = _w0_report(payload, runtime_python=runtime_python)
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    return report
+
+
+def _w0_report(payload: dict[str, Any], *, runtime_python: Path) -> dict[str, Any]:
+    errors: list[str] = []
+    packages = payload.get("packages") if isinstance(payload.get("packages"), dict) else {}
+    for package_name in (
+        "playwright",
+        "browsergym-webarena",
+        "browsergym-webarena-verified",
+        "nltk",
+        "webarena-verified",
+    ):
+        package = packages.get(package_name) if isinstance(packages, dict) else None
+        if not isinstance(package, dict) or package.get("installed") is not True:
+            errors.append(f"environment:{package_name}_missing")
+    registration = payload.get("registration") if isinstance(payload.get("registration"), dict) else {}
+    if registration.get("imported") is not True:
+        errors.append("environment:registration_import_failed")
+    missing = registration.get("missing_task_ids")
+    if isinstance(missing, list) and missing:
+        errors.append(f"environment:registered_task_ids_missing:{len(missing)}")
+    sites = payload.get("sites") if isinstance(payload.get("sites"), list) else []
+    required_sites = {"shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia"}
+    configured_site_names = _configured_site_names(sites)
+    missing_sites = sorted(required_sites - configured_site_names)
+    if missing_sites:
+        errors.append(f"environment:wa_sites_missing:{','.join(missing_sites)}")
+    unhealthy = [
+        str(item.get("env"))
+        for item in sites
+        if isinstance(item, dict)
+        and isinstance(item.get("health"), dict)
+        and item["health"].get("status") != "ok"
+    ]
+    if unhealthy:
+        errors.append(f"environment:wa_site_health_failed:{','.join(sorted(unhealthy))}")
+    exercise = payload.get("exercise") if isinstance(payload.get("exercise"), dict) else {}
+    if exercise.get("attempted") is True:
+        reset = exercise.get("reset") if isinstance(exercise.get("reset"), dict) else {}
+        evaluator = exercise.get("evaluator") if isinstance(exercise.get("evaluator"), dict) else {}
+        if reset.get("status") != "ok" or reset.get("goal_present") is not True:
+            errors.append("environment:official_reset_failed")
+        if evaluator.get("status") != "ok":
+            errors.append("environment:official_evaluator_invocation_failed")
+    report = {
+        "schema_version": WA_SCHEMA_W0,
+        "ready": not errors,
+        "failure_origin": "none" if not errors else "environment",
+        "acceptance_errors": errors,
+        "runtime_python": str(runtime_python),
+        "pins": {
+            "browsergym_commit": WA_BROWSERGYM_COMMIT,
+            "webarena_verified_commit": WA_VERIFIED_COMMIT,
+            "hard_subset_sha256": f"sha256:{WA_HARD_SUBSET_SHA256}",
+        },
+        "required_task_ids": [case.gym_id for case in WA_W0_REQUIRED_CASES],
+        "smoke_task_ids": [case.gym_id for case in WA_W1_SMOKE_CASES],
+        "proof_cohort_task_ids": [case.gym_id for case in WA_W2_COHORT_CASES],
+        "subprocess": payload,
+    }
+    return report
+
+
+def _configured_site_names(sites: list[object]) -> set[str]:
+    names: set[str] = set()
+    for item in sites:
+        if not isinstance(item, dict):
+            continue
+        env_name = str(item.get("env") or "")
+        suffix = env_name.removeprefix("WA_").casefold()
+        for ending in ("_url", "_base_url", "_image_digest", "_digest"):
+            suffix = suffix.removesuffix(ending)
+        if suffix:
+            names.add(suffix)
+    return names
+
+
+def _site_config_from_environment(environment: Mapping[str, str]) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for key, value in sorted(environment.items()):
+        if not key.startswith("WA_") or not value.strip():
+            continue
+        upper = key.upper()
+        if any(secret in upper for secret in ("KEY", "TOKEN", "SECRET", "PASSWORD", "HEADER", "COOKIE")):
+            continue
+        record = {
+            "env": key,
+            "value_sha256": f"sha256:{hashlib.sha256(value.strip().encode()).hexdigest()}",
+        }
+        if value.startswith(("http://", "https://")):
+            record["redacted_url"] = _redact_url(value.strip())
+        elif "DIGEST" in upper or value.startswith("sha256:"):
+            record["image_digest"] = value.strip()
+        records.append(record)
+    return records
+
+
+def _site_environment_frozen(environment: Mapping[str, str]) -> bool:
+    records = _site_config_from_environment(environment)
+    site_urls = _configured_site_names([
+        item for item in records if "redacted_url" in item
+    ])
+    has_digest = any("image_digest" in item for item in records)
+    return {"shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia"}.issubset(site_urls) and has_digest
+
+
+def _redact_url(value: str) -> str:
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(value)
+    host = parts.hostname or ""
+    if not host:
+        return value
+    netloc = host if parts.port is None else f"{host}:{parts.port}"
+    path = parts.path.rstrip("/") + "/"
+    return urlunsplit((parts.scheme, netloc, path, "", ""))
 
 
 @dataclass(frozen=True)

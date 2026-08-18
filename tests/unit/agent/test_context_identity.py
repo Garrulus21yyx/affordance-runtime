@@ -7,6 +7,10 @@ from affordance_runtime.actions import (
     ActionSpace,
 )
 from affordance_runtime.agent.context.context import ContextIdentity
+from affordance_runtime.schema_digest import schema_digest
+from tests.support.action_contracts import verification_kwargs
+
+_EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 def test_context_identity_is_deterministic_and_revision_sensitive() -> None:
@@ -51,10 +55,11 @@ def test_action_space_identity_binds_exact_semantic_membership() -> None:
         "read",
         "target:1",
         "observation",
-        {"type": "object", "properties": {}, "additionalProperties": False},
-        "schema:1",
+        _EMPTY_SCHEMA,
+        schema_digest(_EMPTY_SCHEMA),
         ("binding:private",),
         "read target",
+        **verification_kwargs("read", schema_digest(_EMPTY_SCHEMA), ()),
     )
     first = ActionSpace("obs:1", (option,))
     same = ActionSpace("obs:1", (option,))

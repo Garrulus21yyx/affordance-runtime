@@ -47,6 +47,7 @@ class ModelMetadata:
     grounding_profile_version: str = ""
     result_summary_max_chars: int = 0
     perception_profile: str = ""
+    endpoint_host: str = ""
 
     def __post_init__(self) -> None:
         for value in (
@@ -59,6 +60,7 @@ class ModelMetadata:
             self.grounding_variant,
             self.grounding_profile_version,
             self.perception_profile,
+            self.endpoint_host,
         ):
             if value and (_SAFE_METADATA.fullmatch(value) is None or "://" in value):
                 raise ValueError("model metadata must contain only bounded public identifiers")

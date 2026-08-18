@@ -146,7 +146,7 @@ _ORIGIN_OUTCOMES = {
     CaseFailureOrigin.CURRENTNESS: MiniWobTaskOutcome.CURRENTNESS_FAILURE,
     CaseFailureOrigin.EXECUTION: MiniWobTaskOutcome.EXECUTION_FAILURE,
     CaseFailureOrigin.POST_ACTION_OBSERVATION: MiniWobTaskOutcome.POST_OBSERVATION_FAILURE,
-    CaseFailureOrigin.ACTION_EVALUATION: MiniWobTaskOutcome.ACTION_EVALUATOR_FAILURE,
+    CaseFailureOrigin.ACTION_EVALUATION: MiniWobTaskOutcome.ACTION_OUTCOME_PROJECTOR_FAILURE,
     CaseFailureOrigin.TASK_EVALUATION: MiniWobTaskOutcome.TASK_EVALUATOR_FAILURE,
     CaseFailureOrigin.HARNESS_WATCHDOG: MiniWobTaskOutcome.CASE_TIMEOUT,
     CaseFailureOrigin.CLEANUP: MiniWobTaskOutcome.CLEANUP_FAILURE,

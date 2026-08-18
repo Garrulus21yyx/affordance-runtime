@@ -54,6 +54,21 @@ def build_parser() -> argparse.ArgumentParser:
     webarena_evaluate.add_argument("--executable", default="webarena-verified")
     webarena_evaluate.add_argument("--output", type=Path, default=Path("webarena-verified-evaluation.json"))
 
+    webarena_w0_manifest = subcommands.add_parser(
+        "write-webarena-verified-w0-manifest",
+        help="write the frozen WebArena-Verified W0 public identity manifest",
+    )
+    webarena_w0_manifest.add_argument("--output", type=Path, default=Path("webarena-verified-w0-manifest.json"))
+    webarena_w0_manifest.add_argument("--timeout-s", type=float, default=0.0)
+
+    webarena_w0 = subcommands.add_parser(
+        "preflight-webarena-verified-w0",
+        help="verify WebArena-Verified package registration, WA_* sites, reset, and evaluator invocation",
+    )
+    webarena_w0.add_argument("--output", type=Path, default=Path("webarena-verified-w0-readiness.json"))
+    webarena_w0.add_argument("--runtime-python", type=Path)
+    webarena_w0.add_argument("--skip-exercise", action="store_true")
+
     wasp = subcommands.add_parser(
         "prepare-wasp-subset",
         help="write a digest-bound WASP security subset without copying malicious prompt content",
@@ -112,6 +127,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "write-webarena-verified-w0-manifest":
+        from affordance_runtime.benchmarks.webarena_verified import write_webarena_verified_w0_manifest
+
+        manifest = write_webarena_verified_w0_manifest(args.output, timeout_s=args.timeout_s)
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
+    if args.command == "preflight-webarena-verified-w0":
+        from affordance_runtime.benchmarks.browsergym_runtime import configured_browsergym_python
+        from affordance_runtime.benchmarks.webarena_verified import inspect_webarena_verified_w0_readiness
+
+        report = inspect_webarena_verified_w0_readiness(
+            runtime_python=args.runtime_python or configured_browsergym_python(),
+            output_path=args.output,
+            exercise_environment=not args.skip_exercise,
+        )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["ready"] else 1
     if args.command == "prepare-wasp-subset":
         from affordance_runtime.benchmarks.wasp import write_wasp_subset
 
@@ -130,3 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(ollama_report.to_dict(), indent=2, sort_keys=True))
         return 0 if ollama_report.ready else 1
     return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

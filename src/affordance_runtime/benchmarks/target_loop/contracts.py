@@ -21,14 +21,16 @@ from affordance_runtime.agent.decision_capability import (
 )
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.policy import (
-    ActionEvaluator,
+    ActionOutcomeProjector,
     AgentPolicy,
     TaskEvaluator,
 )
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.benchmarks.target_loop.metric_registry import CANONICAL_METRICS
 from affordance_runtime.evaluation import (
-    ActionEvaluationStatus,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluationStatus,
     TaskOutcomeKind,
 )
@@ -149,7 +151,7 @@ class CaseFailureOrigin(StrEnum):
     CURRENTNESS = "currentness"
     EXECUTION = "execution"
     POST_ACTION_OBSERVATION = "post_action_observation"
-    ACTION_EVALUATION = "action_evaluation"
+    ACTION_EVALUATION = "action_outcome"
     TASK_EVALUATION = "task_evaluation"
     HARNESS_WATCHDOG = "harness_watchdog"
     CLEANUP = "cleanup"
@@ -292,7 +294,7 @@ class MetricExpectation:
 @dataclass(frozen=True)
 class BenchmarkComposition:
     policy: AgentPolicy
-    action_evaluator: ActionEvaluator
+    action_outcome_projector: ActionOutcomeProjector
     task_evaluator: TaskEvaluator
     risk_policy: RiskPolicy | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
@@ -302,7 +304,7 @@ class BenchmarkComposition:
     def atomic(
         cls,
         policy: AgentPolicy,
-        action_evaluator: ActionEvaluator,
+        action_outcome_projector: ActionOutcomeProjector,
         task_evaluator: TaskEvaluator,
         risk_policy: RiskPolicy | None = None,
         required_decisions: frozenset[DecisionCapability] = frozenset(),
@@ -311,7 +313,7 @@ class BenchmarkComposition:
 
         return cls(
             policy,
-            action_evaluator,
+            action_outcome_projector,
             task_evaluator,
             risk_policy,
             required_decisions,
@@ -412,7 +414,9 @@ class BenchmarkCaseResult:
     case_failure_code: str = ""
     partial_episode_available: bool = False
     latest_task_status: str = ""
-    latest_action_evaluation_status: str = ""
+    latest_action_observed_change: str = ""
+    latest_action_local_postcondition: str = ""
+    latest_action_evidence_method: str = ""
     latest_semantic_attempt_key_digest: str = ""
     same_attempt_streak: int = 0
     no_progress_count: int = 0
@@ -450,7 +454,9 @@ class BenchmarkCaseResult:
             self.termination_origin,
             self.case_failure_code,
             self.latest_task_status,
-            self.latest_action_evaluation_status,
+            self.latest_action_observed_change,
+            self.latest_action_local_postcondition,
+            self.latest_action_evidence_method,
             self.latest_semantic_attempt_key_digest,
             self.last_progress_event_type,
             self.failure_code,
@@ -522,8 +528,12 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark waiting status lacks its typed pending fact")
         if self.latest_task_status not in {"", *(str(item) for item in TaskEvaluationStatus)}:
             raise ValueError("benchmark task status is outside the closed vocabulary")
-        if self.latest_action_evaluation_status not in {"", *(str(item) for item in ActionEvaluationStatus)}:
-            raise ValueError("benchmark action status is outside the closed vocabulary")
+        if self.latest_action_observed_change not in {"", *(str(item) for item in ObservedChange)}:
+            raise ValueError("benchmark action effect status is outside the closed vocabulary")
+        if self.latest_action_local_postcondition not in {"", *(str(item) for item in LocalPostconditionStatus)}:
+            raise ValueError("benchmark action postcondition status is outside the closed vocabulary")
+        if self.latest_action_evidence_method not in {"", *(str(item) for item in EvidenceMethod)}:
+            raise ValueError("benchmark action verification method is outside the closed vocabulary")
         if self.last_decision_type not in {
             "",
             "Abort",
@@ -540,6 +550,10 @@ class BenchmarkCaseResult:
             "",
             "already_satisfied_selection",
             "action_effect_evaluated",
+            "action_postcondition_satisfied",
+            "action_postcondition_unsatisfied_change_strategy",
+            "action_unchanged_change_strategy",
+            "action_outcome_unknown",
             "repeated_no_progress_selection",
         }:
             raise ValueError("benchmark progress event is outside the closed vocabulary")

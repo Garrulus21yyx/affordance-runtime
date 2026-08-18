@@ -16,7 +16,7 @@ from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
 from tests.integration.agent.test_core_loop import (
-    CoreActionEvaluator,
+    CoreActionOutcomeProjector,
     CoreTaskEvaluator,
     _runtime,
     _task,
@@ -62,7 +62,7 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert "before_world" not in step["result"]
         assert "after_world" not in step["result"]
         assert step["result"]["execution"] is not None
-        assert step["result"]["action_evaluation"] is not None
+        assert step["result"]["action_outcome"] is not None
         assert step["result"]["task_evaluation"]["status"] == "complete"
 
     asyncio.run(scenario())
@@ -89,7 +89,7 @@ def test_cancelled_policy_turn_projects_already_captured_provider_attempts(tmp_p
         recorder = RunTraceRecorder(tmp_path)
         runtime = TargetRuntime(
             AgentDecisionPorts(CancelledPolicy()),
-            CoreActionEvaluator(),
+            CoreActionOutcomeProjector(),
             CoreTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("cancelled_trace_test"),
             trace_sink=recorder,

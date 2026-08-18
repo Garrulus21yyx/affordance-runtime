@@ -18,14 +18,14 @@ from affordance_runtime.agent.observability import (
     trace_recorder_from_environment,
 )
 from affordance_runtime.agent.policy import (
-    ActionEvaluator,
+    ActionOutcomeProjector,
     AgentDecisionPorts,
     AgentPolicy,
     TaskEvaluator,
 )
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.app.runtime import TargetRuntime
-from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
 from affordance_runtime.model.policy import model_roles_from_environment
 from affordance_runtime.risk.policy import RiskPolicy
@@ -34,7 +34,7 @@ from affordance_runtime.task.intake import TaskIntake, ThinTaskIntake
 
 def compose_target_runtime(
     action_policy: AgentPolicy,
-    action_evaluator: ActionEvaluator,
+    action_outcome_projector: ActionOutcomeProjector,
     task_evaluator: TaskEvaluator,
     *,
     required_decisions: frozenset[DecisionCapability] = frozenset(),
@@ -52,7 +52,7 @@ def compose_target_runtime(
 
     return TargetRuntime(
         AgentDecisionPorts(action_policy),
-        action_evaluator,
+        action_outcome_projector,
         task_evaluator,
         risk_policy=risk_policy or RiskPolicy(),
         intake=intake or ThinTaskIntake(),
@@ -81,7 +81,7 @@ def compose_target_runtime_from_environment(
     )
     return compose_target_runtime(
         model_roles.action_policy,
-        ProductionActionEvaluator(),
+        ProductionActionOutcomeProjector(),
         ProductionTaskEvaluator(),
         required_decisions=GROUNDED_ACTION_DECISION_CAPABILITIES,
         trace_sink=trace_recorder_from_environment(runtime_environment),

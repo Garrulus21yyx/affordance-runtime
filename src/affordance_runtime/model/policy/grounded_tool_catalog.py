@@ -36,20 +36,44 @@ from affordance_runtime.world.observation_needs import ObservationPurpose
 
 
 @dataclass(frozen=True)
-class _NextActionsBinding:
-    query: str
-    target_id: str
-    relevance_role: str
-    cursor: str
+class _FindActionsBinding:
+    target_ids_by_ref: Mapping[str, str]
+    active_query: str
+    active_target_id: str
+    active_relevance_role: str
+    next_cursor: str
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        del arguments
+        query = str(arguments.get("query", ""))
+        target_ref = str(arguments.get("target", ""))
+        relevance_role = str(arguments.get("relevance_role", ""))
+        cursor = str(arguments.get("cursor", ""))
+        continuing = bool(cursor)
+        if target_ref:
+            try:
+                target_id = self.target_ids_by_ref[target_ref]
+            except KeyError as exc:
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                    "target is not present in the current observation",
+                ) from exc
+        else:
+            target_id = ""
+        if continuing:
+            query = query or self.active_query
+            target_id = target_id or self.active_target_id
+            relevance_role = relevance_role or self.active_relevance_role
+        elif not arguments:
+            query = self.active_query
+            target_id = self.active_target_id
+            relevance_role = self.active_relevance_role
+            cursor = self.next_cursor
         return RequestActionPage(
             context_id,
-            self.query,
-            self.target_id,
-            self.relevance_role,
-            self.cursor,
+            query,
+            target_id,
+            relevance_role,
+            cursor,
             tool_call_id,
         )
 
@@ -74,7 +98,8 @@ class _EvidenceBinding:
             )
         except (KeyError, ValueError) as exc:
             raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                str(exc),
             ) from exc
 
 
@@ -165,17 +190,7 @@ def compile_grounded_tool_catalog(
             ToolSpec(
                 "request_evidence",
                 "Declare a semantic evidence gap. Runtime admits the need and chooses the provider, source, assurance, and acquisition mode.",
-                _object_schema(
-                    {
-                        "purpose": {"type": "string", "enum": list(ordered_purposes)},
-                        "subject": {"type": "string", "enum": list(subjects)},
-                        "property": {
-                            "type": "string",
-                            "enum": ["color", "icon", "visual_state", "appearance"],
-                        },
-                    },
-                    ("purpose", "subject"),
-                ),
+                _evidence_request_schema(ordered_purposes, subjects),
             ),
             _EvidenceBinding(ordered_purposes, subjects),
         ))
@@ -213,11 +228,28 @@ def compile_grounded_tool_catalog(
     if context.actions.has_more:
         registered.append(RegisteredGroundedTool(
             ToolSpec(
-                "next_actions",
-                "Inspect the next in-memory page of currently legal actions.",
-                _object_schema({}),
+                "find_actions",
+                "Search currently legal actions by semantic text or current target. Use cursor only to continue the same search.",
+                _object_schema({
+                    "query": {"type": "string", "maxLength": 120},
+                    "target": {"type": "string", "pattern": "^E[1-9][0-9]{0,2}$"},
+                    "relevance_role": {
+                        "type": "string",
+                        "enum": ["direct", "enabling", "information", "other"],
+                    },
+                    "cursor": {"type": "string", "maxLength": 512},
+                }),
             ),
-            _NextActionsBinding(
+            _FindActionsBinding(
+                {
+                    ref: target_id
+                    for option in context.actions.options
+                    for ref, target_id in (
+                        (option.target_ref, option.target_id),
+                        *((item.grounding_ref, item.destination_id) for item in option.destinations.items),
+                    )
+                    if ref
+                },
                 context.actions.active_query,
                 context.actions.active_target_filter,
                 context.actions.active_relevance_filter,
@@ -326,7 +358,10 @@ def resolve_grounded_tool_call(
     try:
         validate_value(call.arguments, spec.input_schema, path="command")
     except ValueError as exc:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.INVALID_ARGUMENTS,
+            str(exc),
+        ) from exc
     resolver = getattr(binding, "resolve", None)
     if not callable(resolver):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -336,7 +371,8 @@ def resolve_grounded_tool_call(
         if isinstance(exc, GroundedToolResolutionError):
             raise
         raise GroundedToolResolutionError(
-            GroundedToolResolutionCode.INVALID_ARGUMENTS
+            GroundedToolResolutionCode.INVALID_ARGUMENTS,
+            str(exc),
         ) from exc
     return GroundedActionResolution(decision)
 
@@ -361,6 +397,40 @@ def resolve_grounded_action_call(
 
 def _object_schema(properties: Mapping[str, object], required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
+
+
+def _evidence_request_schema(
+    purposes: tuple[str, ...],
+    subjects: Mapping[str, str],
+) -> Mapping[str, object]:
+    visual_property = ObservationPurpose.VISUAL_PROPERTY.value
+    subject_schema = {"type": "string", "enum": list(subjects)}
+    property_schema = {
+        "type": "string",
+        "enum": ["color", "icon", "visual_state", "appearance"],
+    }
+    variants: list[Mapping[str, object]] = []
+    non_property_purposes = tuple(item for item in purposes if item != visual_property)
+    if non_property_purposes:
+        variants.append(_object_schema(
+            {
+                "purpose": {"type": "string", "enum": list(non_property_purposes)},
+                "subject": subject_schema,
+            },
+            ("purpose", "subject"),
+        ))
+    if visual_property in purposes:
+        variants.append(_object_schema(
+            {
+                "purpose": {"type": "string", "enum": [visual_property]},
+                "subject": subject_schema,
+                "property": property_schema,
+            },
+            ("purpose", "subject", "property"),
+        ))
+    if len(variants) == 1:
+        return variants[0]
+    return {"oneOf": variants}
 
 
 def _observation_tool_needed(context: AgentContext, capability) -> bool:

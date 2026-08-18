@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.budgets import BoundedSection, serialized_size
 from affordance_runtime.agent.context.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import (
@@ -264,7 +264,8 @@ def project_actor_world_snapshot(
     world: ModelWorldView,
     grounding: AgentGroundingIndexView,
     image_inputs: tuple[AgentImageInput, ...],
-    max_structure_nodes: int = 128,
+    max_structure_nodes: int | None = None,
+    max_structure_bytes: int | None = None,
     fact_refs: Mapping[str, str] | None = None,
 ) -> ActorWorldSnapshot:
     """Close one Actor view without consulting ActionSpace or ToolSpec."""
@@ -386,6 +387,7 @@ def project_actor_world_snapshot(
         facts_by_subject,
         evidence_by_subject,
         max_structure_nodes,
+        max_structure_bytes,
     )
     if documents:
         represented = {
@@ -394,8 +396,21 @@ def project_actor_world_snapshot(
             for root in document.roots
             for item in _walk_nodes(root)
         }
-        missing_ids = {target_id for target_id, ref in refs.items() if ref not in represented}
-        remaining_nodes = max(0, max_structure_nodes - len(represented))
+        structured_ids = {
+            link.canonical_target_id
+            for link in observation.entity_source_links
+            if any(
+                source.observation_id == link.source_observation_id
+                and any(node.semantic_target_id == link.source_target_id for node in source.structure)
+                for source in observation.sources
+            )
+        }
+        missing_ids = {
+            target_id
+            for target_id, ref in refs.items()
+            if ref not in represented and target_id not in structured_ids
+        }
+        remaining_nodes = max(0, (max_structure_nodes or len(visible)) - len(represented))
         for source in sources:
             all_source_ids = tuple(
                 target_id
@@ -422,7 +437,7 @@ def project_actor_world_snapshot(
             remaining_nodes -= len(source_ids)
     if not documents:
         fallback_documents: list[ActorWorldDocumentView] = []
-        remaining_nodes = max_structure_nodes
+        remaining_nodes = max_structure_nodes or len(visible)
         for source in sources:
             all_source_ids = tuple(
                 target_id
@@ -609,10 +624,13 @@ def _structure_documents(
     entity_by_ref,
     facts_by_subject,
     evidence_by_subject,
-    max_structure_nodes: int,
+    max_structure_nodes: int | None,
+    max_structure_bytes: int | None,
 ) -> tuple[ActorWorldDocumentView, ...]:
-    if max_structure_nodes < 1:
+    if max_structure_nodes is not None and max_structure_nodes < 1:
         raise ValueError("Actor structure node bound must be positive")
+    if max_structure_bytes is not None and max_structure_bytes < 1:
+        raise ValueError("Actor structure byte bound must be positive")
     canonical_by_endpoint = {
         SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.canonical_target_id
         for item in observation.entity_source_links
@@ -623,7 +641,6 @@ def _structure_documents(
     }
     next_context_ref = 1
     documents: list[ActorWorldDocumentView] = []
-    remaining = max_structure_nodes
     emitted_entities: set[str] = set()
     structural_sources = sorted(
         (
@@ -637,6 +654,8 @@ def _structure_documents(
             item[1].observation_id,
         ),
     )
+    remaining = max_structure_nodes or sum(len(source.structure) for _, source in structural_sources)
+    remaining_bytes = max_structure_bytes
     for lens_index, (index, source) in enumerate(structural_sources):
         if not source.structure or remaining <= 0:
             continue
@@ -683,7 +702,12 @@ def _structure_documents(
                 required.add(current.parent_structure_id)
                 current = by_id[current.parent_structure_id]
         ordered = _forest_order(source.structure, required)
-        retained = tuple(ordered[:remaining])
+        retained = _retain_complete_structure_groups(
+            ordered,
+            by_id,
+            remaining_nodes=remaining,
+            remaining_bytes=remaining_bytes,
+        )
         retained_ids = {item.structure_id for item in retained}
         actor_refs: dict[str, str] = {}
         for item in retained:
@@ -755,7 +779,90 @@ def _structure_documents(
             len(retained) < (source.structure_total_count if lens_index == 0 else len(ordered)),
         ))
         remaining -= len(retained)
+        if remaining_bytes is not None:
+            remaining_bytes -= serialized_size(retained)
     return tuple(documents)
+
+
+def _retain_complete_structure_groups(
+    ordered,
+    by_id,
+    *,
+    remaining_nodes: int,
+    remaining_bytes: int | None,
+):
+    """Pack structural scaffolding and repeated semantic siblings atomically."""
+
+    ordered_ids = {item.structure_id for item in ordered}
+    repeated_roots: set[str] = set()
+    for parent in ordered:
+        children = [by_id[item] for item in parent.child_structure_ids if item in ordered_ids]
+        by_signature: dict[tuple[object, ...], list[object]] = defaultdict(list)
+        for child in children:
+            by_signature[_structure_signature(child)].append(child)
+        for siblings in by_signature.values():
+            if len(siblings) >= 2:
+                repeated_roots.update(item.structure_id for item in siblings)
+
+    # Nested repeated controls remain part of their outer repeated card/row.
+    repeated_roots = {
+        root
+        for root in repeated_roots
+        if not any(ancestor in repeated_roots for ancestor in _structure_ancestors(root, by_id))
+    }
+    descendants_by_root = {
+        root: _structure_descendants(root, by_id) & ordered_ids for root in repeated_roots
+    }
+    grouped_ids = set().union(*descendants_by_root.values()) if descendants_by_root else set()
+    units = [tuple(item for item in ordered if item.structure_id not in grouped_ids)]
+    units.extend(
+        tuple(item for item in ordered if item.structure_id in descendants_by_root[root])
+        for root in sorted(repeated_roots, key=lambda item: next(
+            index for index, node in enumerate(ordered) if node.structure_id == item
+        ))
+    )
+    retained: list[object] = []
+    used_bytes = 0
+    for unit in units:
+        if not unit:
+            continue
+        unit_bytes = serialized_size(unit)
+        if len(retained) + len(unit) > remaining_nodes:
+            continue
+        if remaining_bytes is not None and used_bytes + unit_bytes > remaining_bytes:
+            continue
+        retained.extend(unit)
+        used_bytes += unit_bytes
+    return tuple(retained)
+
+
+def _structure_signature(item) -> tuple[object, ...]:
+    state = dict(item.state)
+    classes = state.get("semantic.dom.attribute.class_tokens", ())
+    if isinstance(classes, list | tuple):
+        classes = tuple(classes)
+    return item.role, state.get("semantic.dom.tag", ""), classes
+
+
+def _structure_ancestors(structure_id: str, by_id) -> tuple[str, ...]:
+    values: list[str] = []
+    current = by_id[structure_id]
+    while current.parent_structure_id and current.parent_structure_id in by_id:
+        values.append(current.parent_structure_id)
+        current = by_id[current.parent_structure_id]
+    return tuple(values)
+
+
+def _structure_descendants(structure_id: str, by_id) -> set[str]:
+    values: set[str] = set()
+    pending = [structure_id]
+    while pending:
+        current = pending.pop()
+        if current in values:
+            continue
+        values.add(current)
+        pending.extend(item for item in by_id[current].child_structure_ids if item in by_id)
+    return values
 
 
 def _forest_order(structure, allowed: set[str]) -> list:

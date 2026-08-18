@@ -5,10 +5,12 @@ from dataclasses import dataclass, replace
 from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.agent import Abort, RequestObservation, SelectAction
 from affordance_runtime.evaluation import (
-    ActionEvaluation,
-    ActionEvaluationStatus,
+    ActionOutcome,
     CriterionEvaluation,
     CriterionEvaluationStatus,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
@@ -111,23 +113,27 @@ class SharedTaskEvaluator:
         )
 
 
-class SharedActionEvaluator:
+class SharedActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
         del task
         changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN and not changed:
-            return ActionEvaluation(
+            return ActionOutcome(
                 request.request_id,
                 before.observation_id,
                 after.observation_id,
-                ActionEvaluationStatus.UNKNOWN,
+                ObservedChange.UNKNOWN,
+                LocalPostconditionStatus.UNKNOWN,
+                EvidenceMethod.NONE,
                 "effect remains unknown",
             )
-        return ActionEvaluation(
+        return ActionOutcome(
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED if changed else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+            ObservedChange.CHANGED if changed else ObservedChange.UNCHANGED,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.STRUCTURAL,
             "state changed" if changed else "state did not change",
             (after.facts[0].fact_id,),
         )

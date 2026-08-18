@@ -133,6 +133,7 @@ def _project_action_options(
                 subject_kind=INTERACTION_CAPABILITY_REGISTRY.require(
                     option.semantic_action
                 ).subject_kinds[0].value,
+                verification_family=option.verification_family,
                 verification_contract_digest=option.verification_contract_digest,
             )
             for action_id in visible_action_ids

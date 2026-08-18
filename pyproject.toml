@@ -34,6 +34,12 @@ visual = [
 browsergym = [
   "browsergym-miniwob==0.14.3",
 ]
+webarena-verified = [
+  "browsergym-webarena @ git+https://github.com/ServiceNow/BrowserGym.git@9e779f087de9a65668b6974d11f9ce9816026e96#subdirectory=browsergym/webarena",
+  "browsergym-webarena-verified @ git+https://github.com/ServiceNow/BrowserGym.git@9e779f087de9a65668b6974d11f9ce9816026e96#subdirectory=browsergym/webarena_verified",
+  "nltk>=3.9,<4",
+  "webarena-verified @ git+https://github.com/ServiceNow/webarena-verified.git@6473f72db5dcefc97b5725b59e734504edc28a21",
+]
 external-smoke = [
   "browsergym-miniwob==0.14.3",
 ]

@@ -36,7 +36,7 @@ class ModelActionResultView:
 
 
 @dataclass(frozen=True)
-class ModelActionEvaluationView:
+class ModelActionOutcomeView:
     task: AgentTaskView
     before: ModelWorldView
     after: ModelWorldView
@@ -107,7 +107,7 @@ class SemanticJudgeRequest:
         return tuple(item.evidence_ref for item in self.evidence_catalog.items)
 
 
-def build_model_action_evaluation_view(
+def build_model_action_outcome_view(
     task: TaskGoal,
     before: WorldObservation,
     after: WorldObservation,
@@ -115,8 +115,8 @@ def build_model_action_evaluation_view(
     result: ActionResult,
     evidence_index: WorldEvidenceIndex,
     budget: ContextProjectionBudget = ContextProjectionBudget(),
-) -> ModelActionEvaluationView:
-    return ModelActionEvaluationView(
+) -> ModelActionOutcomeView:
+    return ModelActionOutcomeView(
         project_task(task),
         project_model_world(before, budget),
         project_model_world(after, budget),

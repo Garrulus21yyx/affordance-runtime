@@ -19,7 +19,11 @@ from affordance_runtime.agent.context import (
     project_task,
 )
 from affordance_runtime.agent.context.step_projection import project_decision_summary
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
+from tests.support.action_contracts import verification_kwargs
+
+_EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 def _task() -> TaskGoal:
@@ -53,14 +57,15 @@ def _space() -> ActionSpace:
                 "drag_to",
                 "message",
                 "external",
-                {"type": "object", "properties": {}, "additionalProperties": False},
-                "private-schema-digest",
+                _EMPTY_SCHEMA,
+                schema_digest(_EMPTY_SCHEMA),
                 ("binding:private",),
                 "send message",
                 ("message_sent",),
                 ActionRisk.HIGH,
                 True,
                 ("alice",),
+                **verification_kwargs("drag_to", schema_digest(_EMPTY_SCHEMA), ("message_sent",)),
             ),
         ),
     )
@@ -218,9 +223,10 @@ def test_internal_action_contract_rejects_private_parameter_names(contract: str)
                 "target:1",
                 "local_reversible",
                 schema,
-                "schema:1",
+                schema_digest(schema),
                 ("binding:1",),
                 "invalid private schema",
+                **verification_kwargs("activate", schema_digest(schema), ()),
             )
         else:
             ActionBinding(

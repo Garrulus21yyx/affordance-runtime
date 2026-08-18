@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
@@ -24,6 +25,12 @@ from affordance_runtime.evaluation import EvaluatedOutput
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.grounded_tool_contracts import (
+    GroundedToolCatalog,
+    GroundedToolResolutionCode,
+    GroundedToolResolutionError,
+    RegisteredGroundedTool,
+)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -34,9 +41,9 @@ from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
     zhipu_pydantic_ai_policy_from_environment,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from tests.support.agent.core_loop_support import (
-    SharedActionEvaluator,
+    SharedActionOutcomeProjector,
     SharedTaskEvaluator,
     shared_task,
     shared_world,
@@ -72,15 +79,19 @@ class ScriptedModel:
                     "ask_user",
                     "wait",
                     "abort",
-                    "next_actions",
+                    "find_actions",
                     "request_evidence",
                 }
                 name = next(tool.name for tool in info.function_tools if tool.name not in controls)
                 selected = next(tool for tool in info.function_tools if tool.name == name)
                 target_schema = selected.parameters_json_schema["properties"].get("target", {})
-                arguments: dict[str, object] = {
-                    "target": target_schema["enum"][0]
-                } if target_schema else {}
+                public = json.loads(messages[-1].parts[0].content)
+                target = next(
+                    item["ref"]
+                    for item in public["affordances"]
+                    if name in item["verbs"]
+                )
+                arguments: dict[str, object] = {"target": target} if target_schema else {}
             else:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
@@ -103,6 +114,7 @@ def _policy(model) -> ModelBackedAgentPolicy:
         model=model,
         provider_id="fixture",
         model_id="scripted",
+        endpoint_host="fixture.invalid",
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
         transport_timeout_s=4.0,
@@ -113,7 +125,7 @@ def _policy(model) -> ModelBackedAgentPolicy:
 def _runtime(model) -> TargetRuntime:
     return TargetRuntime(
         AgentDecisionPorts(_policy(model)),
-        SharedActionEvaluator(),
+        SharedActionOutcomeProjector(),
         SharedTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
     )
@@ -131,7 +143,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
 
         state = await TargetRuntime(
             AgentDecisionPorts(policy),
-            SharedActionEvaluator(),
+            SharedActionOutcomeProjector(),
             SharedTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
         ).run_task(environment, shared_task())
@@ -142,10 +154,10 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         # FunctionModel strips unsupported thinking, while preserving the
         # cross-model output/sampling budget. ZaiModel translates the same
         # unified False value to extra_body.thinking.type=disabled.
-        assert scripted.model_settings == [{"max_tokens": 512, "temperature": 0.0}]
+        assert scripted.model_settings == [{"max_tokens": 1024, "temperature": 0.0}]
         assert pydantic_bridge._ACTION_MODEL_SETTINGS == {
             "thinking": False,
-            "max_tokens": 512,
+            "max_tokens": 1024,
             "temperature": 0.0,
         }
         assert state.last_step is not None
@@ -184,7 +196,7 @@ def test_pydantic_ai_emits_native_final_response_only_after_verified_outputs() -
         policy = _policy(scripted.build())
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
-            SharedActionEvaluator(),
+            SharedActionOutcomeProjector(),
             OutputTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
         )
@@ -284,7 +296,7 @@ def test_pydantic_ai_records_rate_limit_then_retries_once(monkeypatch) -> None:
 
         state = await TargetRuntime(
             AgentDecisionPorts(policy),
-            SharedActionEvaluator(),
+            SharedActionOutcomeProjector(),
             SharedTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
         ).run_task(environment, shared_task())
@@ -325,6 +337,7 @@ def test_pydantic_ai_does_not_count_retry_cancelled_during_backoff(monkeypatch) 
             model=object(),
             provider_id="fixture",
             model_id="scripted",
+            endpoint_host="fixture.invalid",
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             transport_timeout_s=2.0,
@@ -359,6 +372,7 @@ def test_pydantic_ai_records_inflight_provider_cancellation() -> None:
             model=object(),
             provider_id="fixture",
             model_id="scripted",
+            endpoint_host="fixture.invalid",
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             transport_timeout_s=2.0,
@@ -417,6 +431,59 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     assert captured["resolution"].decision == normalized
 
 
+def test_pydantic_ai_repair_message_preserves_runtime_rejection_reason() -> None:
+    class RejectingBinding:
+        def resolve(self, arguments, context_id: str, tool_call_id: str):
+            del arguments, context_id, tool_call_id
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                "visual property requests require exactly one evidence property",
+            )
+
+    catalog = GroundedToolCatalog(
+        "grounded-catalog:test",
+        "context:test",
+        (
+            RegisteredGroundedTool(
+                ToolSpec(
+                    "request_evidence",
+                    "Request evidence.",
+                    {
+                        "type": "object",
+                        "properties": {
+                            "purpose": {"type": "string", "enum": ["target_disambiguation"]},
+                            "subject": {"type": "string", "enum": ["current_world"]},
+                        },
+                        "required": ["purpose", "subject"],
+                        "additionalProperties": False,
+                    },
+                ),
+                RejectingBinding(),
+            ),
+        ),
+        1,
+    )
+    output = DeferredToolRequests(
+        calls=[
+            ToolCallPart(
+                "request_evidence",
+                {"purpose": "target_disambiguation", "subject": "current_world"},
+                "call:1",
+            )
+        ]
+    )
+
+    message = pydantic_bridge._repair_message(
+        output,
+        catalog,
+        DeferredToolRequests,
+        "context:test",
+    )
+
+    assert "Runtime rejection" in message
+    assert "visual property requests require exactly one evidence property" in message
+
+
 def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> None:
     base = {
         "LLM_ACTIVE_PROFILE": "zhipu",
@@ -440,7 +507,7 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
         ModelRequestParameters(),
     )
     assert prepared["extra_body"]["thinking"]["type"] == "disabled"
-    assert prepared["max_tokens"] == 512
+    assert prepared["max_tokens"] == 1024
     assert prepared["temperature"] == 0.0
 
     with pytest.raises(ValueError, match="LLM_MODEL_ADAPTER=compact-json"):
@@ -454,3 +521,23 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
         call_timeout_s=5.0,
     )
     assert isinstance(selected.port, PydanticAIGroundedDecisionPort)
+
+
+def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
+    policy = zhipu_pydantic_ai_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "aliyun",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
+            "LLM_ALIYUN_API_KEY": "fixture-secret",
+            "LLM_ALIYUN_MODEL": "glm-5.2",
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
+        call_timeout_s=5.0,
+    )
+
+    assert policy.port.provider_id == "aliyun"
+    assert policy.port.model_id == "glm-5.2"
+    assert policy.port.endpoint_host == "aliyun.invalid"
+    assert policy.port.supports_multimodal is False
+    assert type(policy.port.model).__name__ == "ZaiModel"

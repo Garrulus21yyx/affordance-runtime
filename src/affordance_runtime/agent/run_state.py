@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import InternalActionPage
 from affordance_runtime.agent.context.contracts import AgentTurnView
@@ -12,17 +13,21 @@ from affordance_runtime.agent.decisions import AgentDecision, LocalToolResult, S
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
-from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
+from affordance_runtime.evaluation.contracts import ActionOutcome, TaskEvaluation
 from affordance_runtime.execution.contracts import ExecutionOutcome
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
 
 MAX_RECENT_STEPS = 8
 
 
 class RunStatus(StrEnum):
     RUNNING = "running"
+    YIELDED = "yielded"
     WAITING_USER = "waiting_user"
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
@@ -41,13 +46,15 @@ class StepResult:
     task_evaluation: TaskEvaluation
     status_after: RunStatus = RunStatus.RUNNING
     execution: ExecutionOutcome | None = None
-    action_evaluation: ActionEvaluation | None = None
+    action_outcome: ActionOutcome | None = None
     confirmation: RiskAssessment | None = None
     feedback: str = ""
     action_page: InternalActionPage | None = None
     waited_ms: int = 0
     failure_code: AgentFailureCode | None = None
     runtime_failure: RuntimeFailure | None = None
+    policy_observation: ActorWorldSnapshot | None = None
+    policy_target_refs: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.status_after, RunStatus):
@@ -56,15 +63,15 @@ class StepResult:
             raise ValueError("step wait duration cannot be negative")
         if self.task_evaluation.observation_id != self.after_world.observation_id:
             raise ValueError("step task evaluation must describe the after-world")
-        if self.action_evaluation is not None:
+        if self.action_outcome is not None:
             if self.execution is None:
-                raise ValueError("action evaluation requires an execution")
+                raise ValueError("action outcome requires an execution")
             if (
-                self.action_evaluation.request_id != self.execution.request.request_id
-                or self.action_evaluation.before_observation_id != self.before_world.observation_id
-                or self.action_evaluation.after_observation_id != self.after_world.observation_id
+                self.action_outcome.request_id != self.execution.request.request_id
+                or self.action_outcome.before_observation_id != self.before_world.observation_id
+                or self.action_outcome.after_observation_id != self.after_world.observation_id
             ):
-                raise ValueError("step action evaluation does not match its worlds and execution")
+                raise ValueError("step action outcome does not match its worlds and execution")
         if self.confirmation is not None and self.execution is not None:
             raise ValueError("a pending confirmation cannot already contain execution")
         if (
@@ -108,6 +115,7 @@ class RunState:
     task_revision: int = 1
     goal_resolution: GoalPlanResolution | None = None
     goal_plan_version_counter: int = 0
+    yield_on_budget_exhaustion: bool = False
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -196,4 +204,8 @@ class RunState:
         self.action_page = result.action_page
         self.waited_ms += result.waited_ms
         if self.status is RunStatus.RUNNING and self.remaining_steps == 0:
-            self.status = RunStatus.BLOCKED
+            self.status = (
+                RunStatus.YIELDED
+                if self.yield_on_budget_exhaustion
+                else RunStatus.BLOCKED
+            )

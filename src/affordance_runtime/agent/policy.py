@@ -12,7 +12,7 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.decisions import AgentDecision
-from affordance_runtime.evaluation.contracts import ActionEvaluation, TaskEvaluation
+from affordance_runtime.evaluation.contracts import ActionOutcome, TaskEvaluation
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
@@ -60,7 +60,7 @@ class AgentDecisionPorts:
         )
 
 
-class ActionEvaluator(Protocol):
+class ActionOutcomeProjector(Protocol):
     async def evaluate(
         self,
         task: TaskGoal,
@@ -68,7 +68,7 @@ class ActionEvaluator(Protocol):
         request: BoundActionRequest,
         result: ActionResult,
         after: WorldObservation,
-    ) -> ActionEvaluation: ...
+    ) -> ActionOutcome: ...
 
 
 class TaskEvaluator(Protocol):

@@ -39,37 +39,53 @@ class BoundedSection(Generic[T]):
 class ContextProjectionBudget:
     max_intent_excerpts: int = 6
     max_intent_chars: int = 2_400
-    max_targets: int = 64
+    # None means that target capacity is governed by the serialized workspace
+    # budget.  A numeric value remains available for deliberately bounded
+    # tests/callers, but the product path must not truncate a short GUI by an
+    # arbitrary object count before measuring its actual context size.
+    max_targets: int | None = None
     min_observation_exploration_targets: int = 8
     max_facts: int = 128
     max_facts_per_target: int = 8
     max_relations_per_target: int = 8
     max_conflicts: int = 16
-    max_action_options: int = 32
+    max_action_options: int = 128
     max_destinations_per_option: int = 16
     max_history_turns: int = 8
     max_transition_progress_changes: int = 32
     max_transition_evidence_refs: int = 16
     max_artifact_summaries: int = 16
     max_unresolved_items: int = 32
-    max_total_serialized_bytes: int = 64 * 1024
+    # Roughly 64k text tokens at the existing JSON-heavy projection density;
+    # short GUI trajectories therefore remain lossless. Older action summaries
+    # are compacted before this bound is approached.
+    max_total_serialized_bytes: int = 384 * 1024
 
     def __post_init__(self) -> None:
-        if any(value <= 0 for value in self.__dict__.values()):
+        if any(value <= 0 for value in self.__dict__.values() if value is not None):
             raise ValueError("context projection budgets must be positive")
 
-    @property
-    def observation_exploration_slots(self) -> int:
+    def observation_target_capacity(self, total_count: int) -> int:
+        if total_count < 0:
+            raise ValueError("observation target count cannot be negative")
+        if self.max_targets is None:
+            return max(1, total_count)
+        return self.max_targets
+
+    def observation_exploration_slots(self, total_count: int) -> int:
+        capacity = self.observation_target_capacity(total_count)
         return min(
             self.min_observation_exploration_targets,
-            max(1, self.max_targets // 4),
+            max(1, capacity // 4),
         )
 
-    @property
-    def observation_pinned_capacity(self) -> int:
-        if self.max_targets == 1:
+    def observation_pinned_capacity(self, total_count: int) -> int:
+        if self.max_targets is None:
+            return max(1, total_count)
+        capacity = self.observation_target_capacity(total_count)
+        if capacity == 1:
             return 1
-        return self.max_targets - self.observation_exploration_slots
+        return capacity - self.observation_exploration_slots(total_count)
 
 
 def serialized_size(value: object) -> int:

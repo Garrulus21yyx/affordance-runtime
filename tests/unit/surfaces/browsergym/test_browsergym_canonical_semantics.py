@@ -153,20 +153,20 @@ def test_dom_semantics_are_invariant_to_attribute_order(order: tuple[str, ...]) 
     }
 
 
-def test_physical_capture_uses_unknown_for_an_absent_active_class() -> None:
+def test_physical_capture_preserves_false_for_an_absent_active_class() -> None:
     assert (
-        "active: el.classList.contains('active') ? true : null"
+        "active: el.classList.contains('active')"
         in browsergym_backend._PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
     )
     raw = raw_observation(ax_node("control", "generic", ""))
     raw["extra_element_properties"]["control"]["clickable"] = True
     raw["dom_object"] = dom_snapshot(("span", "control", {"class": "like"}),)
-    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"]["active"] = None
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"]["active"] = False
 
     control = canonical_control_for_bid(raw, "control")
 
     assert control is not None
-    assert "active" not in dict(control.public_state)
+    assert dict(control.public_state)["active"] is False
 
 
 def test_physical_active_class_is_public_true_without_inventing_selected_state() -> None:

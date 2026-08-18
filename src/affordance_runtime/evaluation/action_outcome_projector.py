@@ -1,4 +1,4 @@
-"""Production mechanical action-effect evaluation from current public world state."""
+"""Production mechanical action-outcome projection from current public world state."""
 
 from dataclasses import replace
 
@@ -7,7 +7,12 @@ from affordance_runtime.actions.capabilities import (
     ParameterContractKind,
     VerificationFamily,
 )
-from affordance_runtime.evaluation.contracts import ActionEvaluation, ActionEvaluationStatus
+from affordance_runtime.evaluation.contracts import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+)
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world import CoverageState
@@ -16,40 +21,51 @@ from affordance_runtime.world.public_semantic_digest import target_semantics
 from affordance_runtime.world.source_profile import assurance_satisfies
 
 
-class ProductionActionEvaluator:
-    """Evaluate fill, select, and activate effects using public before/after evidence."""
+class ProductionActionOutcomeProjector:
+    """Project observable local transitions; never infer task progress."""
 
-    async def evaluate(self, task, before, request, result, after) -> ActionEvaluation:
+    async def evaluate(self, task, before, request, result, after) -> ActionOutcome:
         del task, result
-        definition = INTERACTION_CAPABILITY_REGISTRY.require(
-            request.intent.semantic_action
-        )
-        if VerificationFamily.NAVIGATION_CONTEXT in definition.verification_families:
+        definition = INTERACTION_CAPABILITY_REGISTRY.require(request.intent.semantic_action)
+        family = request.selection.verification_contract.family
+        if family is VerificationFamily.NAVIGATION_CONTEXT:
             return _evaluate_activate(before, request, after)
+        if family is not VerificationFamily.VALUE_STATE:
+            return _evaluation(request, before, after)
         if definition.parameter_contract not in {
             ParameterContractKind.TEXT,
             ParameterContractKind.OPTION_VALUE,
         }:
-            return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
+            return _evaluation(request, before, after)
         parameter_name = definition.parameter_names[0]
         requested = request.intent.parameters.get(parameter_name)
         if not isinstance(requested, str):
-            return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
+            return _evaluation(request, before, after)
         current = _current_value_evidence(after, request.intent.target_id)
         if current is None:
-            return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
+            return _evaluation(request, before, after)
         after_value, evidence_ref = current
         before_value = _single_value(before, request.intent.target_id)
-        if before_value is _MISSING:
-            return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
-        if after_value == requested and before_value != requested:
-            status = ActionEvaluationStatus.EFFECT_CONFIRMED
-        elif after_value == before_value:
-            status = ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+        if after_value == requested:
+            postcondition = LocalPostconditionStatus.SATISFIED
         else:
-            status = ActionEvaluationStatus.UNKNOWN
-        refs = (evidence_ref,) if status != ActionEvaluationStatus.UNKNOWN else ()
-        return _evaluation(request, before, after, status, refs)
+            postcondition = LocalPostconditionStatus.UNSATISFIED
+        effect = (
+            ObservedChange.UNKNOWN
+            if before_value is _MISSING
+            else ObservedChange.UNCHANGED
+            if after_value == before_value
+            else ObservedChange.CHANGED
+        )
+        return _evaluation(
+            request,
+            before,
+            after,
+            effect,
+            postcondition,
+            EvidenceMethod.NATIVE,
+            (evidence_ref,),
+        )
 
 
 _MISSING = object()
@@ -98,28 +114,39 @@ def _current_value_evidence(observation, target_id: str) -> tuple[object, str] |
     return record.value, record.evidence_ref
 
 
-def _evaluation(request, before, after, status, refs=()) -> ActionEvaluation:
-    reason = {
-        ActionEvaluationStatus.EFFECT_CONFIRMED: "public postcondition changed to requested value",
-        ActionEvaluationStatus.NO_EFFECT_CONFIRMED: "public postcondition did not change",
-        ActionEvaluationStatus.UNKNOWN: "public postcondition is not mechanically resolved",
-    }[status]
+def _evaluation(
+    request,
+    before,
+    after,
+    observed_change=ObservedChange.UNKNOWN,
+    local_postcondition=LocalPostconditionStatus.UNKNOWN,
+    evidence_method=EvidenceMethod.NONE,
+    refs=(),
+) -> ActionOutcome:
+    reason = _reason(observed_change, local_postcondition, evidence_method)
     evidence: dict[str, object] = {}
-    if status in {
-        ActionEvaluationStatus.EFFECT_CONFIRMED,
-        ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
-    }:
-        evidence["observed_effect"] = status.value
+    if observed_change is not ObservedChange.UNKNOWN:
+        evidence["observed_change"] = observed_change.value
+    if local_postcondition is not LocalPostconditionStatus.UNKNOWN:
+        evidence["local_postcondition"] = local_postcondition.value
+    if evidence_method is not EvidenceMethod.NONE:
+        evidence["evidence_method"] = evidence_method.value
     changes = _fact_changes(before, after, tuple(refs))
     if changes:
         evidence["fact_changes"] = changes
-    return ActionEvaluation(
+    return ActionOutcome(
         request.request_id, before.observation_id, after.observation_id,
-        status, reason, tuple(refs), evidence,
+        observed_change, local_postcondition, evidence_method, reason, tuple(refs), evidence,
     )
 
 
-def _evaluate_activate(before, request, after) -> ActionEvaluation:
+def _reason(effect, postcondition, method) -> str:
+    if effect is ObservedChange.UNKNOWN and postcondition is LocalPostconditionStatus.UNKNOWN:
+        return "local action outcome is not mechanically resolved"
+    return f"local action outcome: effect={effect.value}, postcondition={postcondition.value}, method={method.value}"
+
+
+def _evaluate_activate(before, request, after) -> ActionOutcome:
     target_changed = _target_semantics(before, request.intent.target_id) != _target_semantics(
         after, request.intent.target_id,
     )
@@ -131,11 +158,17 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
     structural_refs = target_refs or _changed_world_fact_refs(before, after)
     if structural_refs:
         fact_changes = _fact_changes(before, after, structural_refs)
-        return ActionEvaluation(
+        return ActionOutcome(
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED,
+            ObservedChange.CHANGED,
+            (
+                LocalPostconditionStatus.UNKNOWN
+                if request.intent.expected_outcome
+                else LocalPostconditionStatus.NOT_APPLICABLE
+            ),
+            EvidenceMethod.STRUCTURAL,
             (
                 "public target semantics changed with current structural evidence"
                 if target_refs
@@ -149,7 +182,7 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
                     else "structural_world_diff_v1"
                 ),
                 "expected_effects": request.selection.semantic_effects,
-                "observed_effect": ActionEvaluationStatus.EFFECT_CONFIRMED.value,
+                "observed_change": ObservedChange.CHANGED.value,
                 "target_changed": bool(target_refs),
                 "structural_world_changed": True,
                 "fact_changes": fact_changes,
@@ -159,29 +192,37 @@ def _evaluate_activate(before, request, after) -> ActionEvaluation:
     after_digests = _screenshot_digests(after)
     evidence_ref = _screenshot_evidence_ref(after)
     if not before_digests or not after_digests or evidence_ref is None:
-        return _evaluation(request, before, after, ActionEvaluationStatus.UNKNOWN)
+        return _evaluation(request, before, after)
     screenshot_changed = before_digests != after_digests
-    status = (
-        ActionEvaluationStatus.EFFECT_CONFIRMED
+    observed_change = (
+        ObservedChange.CHANGED
         if screenshot_changed or target_changed
-        else ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+        else ObservedChange.UNCHANGED
+    )
+    local_postcondition = (
+        LocalPostconditionStatus.UNKNOWN
+        if request.intent.expected_outcome
+        else LocalPostconditionStatus.NOT_APPLICABLE
     )
     reason = (
         "public screenshot or target semantics changed after activation"
-        if status is ActionEvaluationStatus.EFFECT_CONFIRMED
+        if observed_change is ObservedChange.CHANGED
         else "public screenshot and target semantics did not change after activation"
     )
-    return ActionEvaluation(
+    return ActionOutcome(
         request.request_id,
         before.observation_id,
         after.observation_id,
-        status,
+        observed_change,
+        local_postcondition,
+        EvidenceMethod.VISUAL_DIFF,
         reason,
         (evidence_ref,),
         {
             "verification_profile": "visual_diff_v1",
             "expected_effects": request.selection.semantic_effects,
-            "observed_effect": status.value,
+            "observed_change": observed_change.value,
+            "local_postcondition": local_postcondition.value,
             "screenshot_changed": screenshot_changed,
             "target_changed": target_changed,
         },

@@ -18,7 +18,7 @@ from affordance_runtime.goals import (
     Ready,
     Unsupported,
 )
-from tests.integration.agent.test_core_loop import CoreActionEvaluator, CoreTaskEvaluator, _task, _world
+from tests.integration.agent.test_core_loop import CoreActionOutcomeProjector, CoreTaskEvaluator, _task, _world
 
 
 def _proposal(revision: int):
@@ -57,7 +57,7 @@ class InspectPolicy:
 def _runtime(policy, compiler, trace=None):
     return TargetRuntime(
         AgentDecisionPorts(policy),
-        CoreActionEvaluator(),
+        CoreActionOutcomeProjector(),
         CoreTaskEvaluator(),
         goal_compiler=compiler,
         **({"trace_sink": trace} if trace is not None else {}),

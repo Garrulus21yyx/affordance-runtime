@@ -5,7 +5,11 @@ from affordance_runtime.actions import (
 from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
+from tests.support.action_contracts import verification_kwargs
+
+_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 def _selection() -> AdmittedActionSelection:
@@ -16,7 +20,7 @@ def _selection() -> AdmittedActionSelection:
         "message:quarterly",
         "external",
         ("message_sent",),
-        "sha256:schema",
+        schema_digest(_SCHEMA),
         ("binding:private",),
         ActionRisk.LOW,
         True,
@@ -28,6 +32,7 @@ def _selection() -> AdmittedActionSelection:
         "person:alice",
         True,
         ("person:alice",),
+        **verification_kwargs("drag_to", schema_digest(_SCHEMA), ("message_sent",)),
     )
 
 

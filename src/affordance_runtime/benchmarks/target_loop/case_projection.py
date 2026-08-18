@@ -22,6 +22,7 @@ from affordance_runtime.benchmarks.target_loop.legacy_case_projection import (
     project_legacy_case_fields,
 )
 from affordance_runtime.benchmarks.target_loop.metric_registry import canonical_metric_collisions
+from affordance_runtime.evaluation import TaskOutcomeKind
 
 __all__ = (
     "decode_public_case_evidence",
@@ -98,16 +99,23 @@ def project_case_result(
         and not integrity_code
     ):
         public_runtime_failure = "runtime_failure"
+    status = str(result.status) if result else str(RunStatus.FAILED)
     task_outcome = getattr(result, "task_outcome", None) if result is not None else None
-    task_outcome_kind = (
+    candidate_task_outcome_kind = (
         str(task_outcome.kind)
         if task_outcome is not None
         else metadata.task_outcome_kind
         if metadata is not None
         else ""
     )
-    task_outcome_code = (
+    candidate_task_outcome_code = (
         task_outcome.code if task_outcome is not None else metadata.task_outcome_code if metadata is not None else ""
+    )
+    task_outcome_kind, task_outcome_code = (
+        (candidate_task_outcome_kind, candidate_task_outcome_code)
+        if candidate_task_outcome_kind
+        and _task_outcome_matches_status(candidate_task_outcome_kind, status)
+        else ("", "")
     )
     facts = FailureFacts(
         public_runtime_failure,
@@ -124,7 +132,6 @@ def project_case_result(
         task_outcome_kind,
         task_outcome_code,
     )
-    status = str(result.status) if result else str(RunStatus.FAILED)
     legacy = project_legacy_case_fields(status, facts)
     return BenchmarkCaseResult(
         case_id=case_id,
@@ -151,7 +158,9 @@ def project_case_result(
         last_world_coverage=metadata.last_world_coverage if metadata else "",
         pending_kind=metadata.pending_kind if metadata else "",
         latest_task_status=metadata.latest_task_status if metadata else "",
-        latest_action_evaluation_status=(metadata.latest_action_evaluation_status if metadata else ""),
+        latest_action_observed_change=(metadata.latest_action_observed_change if metadata else ""),
+        latest_action_local_postcondition=(metadata.latest_action_local_postcondition if metadata else ""),
+        latest_action_evidence_method=(metadata.latest_action_evidence_method if metadata else ""),
         runtime_reason_code=public_runtime_failure,
         agent_failure_code=agent_failure,
         cleanup_failure_code=cleanup_code,
@@ -162,6 +171,15 @@ def project_case_result(
         harness_integrity_failures=int(bool(metric_collisions)),
         failure_facts=facts,
     )
+
+
+def _task_outcome_matches_status(kind: str, status: str) -> bool:
+    return {
+        TaskOutcomeKind.TERMINAL_SUCCESS.value: RunStatus.DONE.value,
+        TaskOutcomeKind.TERMINAL_FAILURE.value: RunStatus.BLOCKED.value,
+        TaskOutcomeKind.VERIFIER_UNAVAILABLE.value: RunStatus.WAITING_USER.value,
+        TaskOutcomeKind.RUNNING_INCOMPLETE.value: RunStatus.RUNNING.value,
+    }.get(kind) == status
 
 
 def _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot):

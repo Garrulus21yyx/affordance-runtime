@@ -228,11 +228,11 @@ def test_typed_evaluation_origin_specializes_canonical_call_failure() -> None:
     failure = RuntimeFailure(
         FailureStage.EVALUATION,
         FailureKind.CALL_FAILED,
-        "action_evaluation_call_failed",
+        "action_outcome_call_failed",
     )
     facts = FailureFacts(
         component_origin=CaseFailureOrigin.ACTION_EVALUATION,
-        component_code="action_evaluator_exception",
+        component_code="action_outcome_projector_exception",
         component_exception_class="RuntimeError",
         runtime_failure=failure,
     )
@@ -244,7 +244,7 @@ def test_typed_evaluation_origin_specializes_canonical_call_failure() -> None:
         termination_origin="component",
         failure_facts=facts,
     ))
-    assert classified.outcome is MiniWobTaskOutcome.ACTION_EVALUATOR_FAILURE
+    assert classified.outcome is MiniWobTaskOutcome.ACTION_OUTCOME_PROJECTOR_FAILURE
 
 
 def test_timeout_and_runtime_rejection_do_not_use_free_text() -> None:

@@ -26,7 +26,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
-    CountingActionEvaluator,
+    CountingActionOutcomeProjector,
     CountingEnvironment,
     instrument_policy,
     instrument_task_evaluator,
@@ -192,7 +192,7 @@ async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResu
 def _build_runtime(composition, instrumentation):
     return compose_target_runtime(
         instrument_policy(composition.policy, instrumentation),
-        CountingActionEvaluator(composition.action_evaluator, instrumentation),
+        CountingActionOutcomeProjector(composition.action_outcome_projector, instrumentation),
         instrument_task_evaluator(composition.task_evaluator, instrumentation),
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,

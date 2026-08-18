@@ -294,16 +294,15 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
         context,
         False,
     )
-    roots = public["observation"]["documents"][0]["roots"]
-    panel = next(item for item in roots if item["label"] == "Products")
-    row = panel["children"][0]
-    button = row["children"][0]
     option = next(item for item in context.actions.options if item.target_label == "Add to cart")
+    observation = public["observation"]
 
-    assert row["label"] == "MacBook Pro"
-    assert button["label"] == "Add to cart"
-    assert button["ref"] == option.target_ref
-    encoded = json.dumps(public["observation"])
+    assert 'group "Products"' in observation
+    assert 'row "MacBook Pro"' in observation
+    assert f'[{option.target_ref}] button "Add to cart" verbs=["activate"]' in observation
+    assert observation.index('group "Products"') < observation.index('row "MacBook Pro"')
+    assert observation.index('row "MacBook Pro"') < observation.index('button "Add to cart"')
+    encoded = json.dumps(observation)
     assert "entity:" not in encoded
     assert "observation:" not in encoded
 
@@ -474,10 +473,9 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
     assert len(action_space.options) == 65
     document = context.actor_world.documents[0]
     assert document.total_node_count == 65
-    assert document.retained_node_count == 64
-    assert document.truncated is True
-    assert context.actor_world.traversal is not None
-    assert context.actor_world.traversal.status == "partial"
+    assert document.retained_node_count == 65
+    assert document.truncated is False
+    assert context.actor_world.traversal is None
 
 
 def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> None:
@@ -513,9 +511,8 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
         for node in _walk(root)
     )
     assert any(item.label == "Continue task" for item in nodes)
-    assert context.actor_world.traversal is not None
-    assert context.actor_world.traversal.next_cursor
-    assert len(nodes) == 64
+    assert context.actor_world.traversal is None
+    assert len(nodes) == 71
 
 
 def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None:
@@ -559,7 +556,7 @@ def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None
             break
         cursor = page.next_cursor
 
-    assert page_count > 1
+    assert page_count == 1
     assert seen == {item.action_id for item in action_space.options}
     assert len(seen) == len(world.bindings) == 41
 

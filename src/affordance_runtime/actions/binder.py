@@ -52,6 +52,7 @@ class ActionBinder:
             selection.target_id,
             dict(selection.parameters),
             selection.destination_id,
+            getattr(selection, "expected_outcome", "") or "",
         )
         return BoundActionRequest(
             f"request:{uuid.uuid4().hex}",
@@ -91,6 +92,6 @@ class ActionBinder:
         )
         needs = observation_needs_for_verification(
             request.request_id,
-            derive_action_verification_obligations(task, request, observation),
+            derive_action_verification_obligations(request),
         )
         return replace(request, verification_needs=needs)

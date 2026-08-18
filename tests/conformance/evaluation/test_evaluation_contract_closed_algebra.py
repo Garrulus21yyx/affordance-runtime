@@ -6,21 +6,37 @@ import pytest
 
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.evaluation_control import (
-    validated_action_evaluation,
+    validated_action_outcome,
     validated_task_evaluation,
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.evaluation import (
-    ActionEvaluation,
+    ActionOutcome,
     CriterionEvaluation,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
 
 
 def test_public_evaluation_statuses_require_enum_instances() -> None:
-    with pytest.raises(TypeError, match="action evaluation status"):
-        ActionEvaluation("request", "before", "after", "unknown", "reason")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="action outcome effect status"):
+        ActionOutcome(  # type: ignore[arg-type]
+            "request", "before", "after", "unknown",
+            LocalPostconditionStatus.UNKNOWN, EvidenceMethod.NONE, "reason",
+        )
+    with pytest.raises(TypeError, match="action outcome postcondition status"):
+        ActionOutcome(  # type: ignore[arg-type]
+            "request", "before", "after", ObservedChange.UNKNOWN,
+            "unknown", EvidenceMethod.NONE, "reason",
+        )
+    with pytest.raises(TypeError, match="action outcome verification method"):
+        ActionOutcome(  # type: ignore[arg-type]
+            "request", "before", "after", ObservedChange.UNKNOWN,
+            LocalPostconditionStatus.UNKNOWN, "none", "reason",
+        )
     with pytest.raises(TypeError, match="criterion evaluation status"):
         CriterionEvaluation("criterion", "unknown", (), "reason")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="task evaluation status"):
@@ -44,9 +60,9 @@ def test_evaluator_boundaries_reject_noncontract_results_before_projection() -> 
     malformed = MalformedEvaluator()
     with pytest.raises(ValueError, match="task evaluator returned a malformed result"):
         asyncio.run(validated_task_evaluation(malformed, object(), object()))  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="action evaluator returned a malformed result"):
+    with pytest.raises(ValueError, match="action outcome projector returned a malformed result"):
         asyncio.run(
-            validated_action_evaluation(
+            validated_action_outcome(
                 malformed, object(), object(), object(), object(), object(),  # type: ignore[arg-type]
             )
         )

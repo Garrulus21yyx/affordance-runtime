@@ -116,7 +116,9 @@ class InternalActionPage:
 
 @dataclass(frozen=True)
 class ActionPager:
-    page_size: int = 32
+    # Normal GUI slices are admitted by the byte budget, not split into tiny
+    # fixed pages.  The count remains only a defensive upper bound.
+    page_size: int = 128
     relevance_policy: ActionRelevancePolicy = ActionRelevancePolicy()
     max_projected_bytes: int = 24 * 1024
 

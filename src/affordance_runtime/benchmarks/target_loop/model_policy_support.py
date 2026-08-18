@@ -33,6 +33,12 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                     for name in option["input_schema"]["required"]
                     if properties[name].get("enum")
                 }
+                if "target" in option["input_schema"]["required"] and "target" not in arguments:
+                    arguments["target"] = next(
+                        item["ref"]
+                        for item in context["affordances"]
+                        if option["name"] in item["verbs"]
+                    )
                 decision = {"name": option["name"], "arguments": arguments}
                 payload = json.dumps(
                     {

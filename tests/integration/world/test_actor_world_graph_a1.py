@@ -194,7 +194,7 @@ def test_complementary_lens_does_not_repeat_primary_tree_and_bounds_are_truthful
     primary, complementary = snapshot.documents
     assert primary.retained_node_count == primary.total_node_count == 2
     assert not primary.truncated
-    assert complementary.retained_node_count == 1
+    assert complementary.retained_node_count == 0
     assert complementary.total_node_count == 2
     assert complementary.truncated
     assert all(not item.ref.startswith("E") for item in _nodes(type("S", (), {"documents": (complementary,)})()))

@@ -104,12 +104,13 @@ def project_model_world(
     observation_cursor: str = "",
     observation_pager: ObservationPager = ObservationPager(),
 ) -> ModelWorldView:
+    target_capacity = budget.observation_target_capacity(len(observation.targets))
     basis = observation_pager.begin(
         observation,
         pinned_target_ids=pinned_target_ids,
         cursor=observation_cursor,
-        page_size=budget.max_targets,
-        min_exploration_slots=budget.observation_exploration_slots,
+        page_size=target_capacity,
+        min_exploration_slots=budget.observation_exploration_slots(len(observation.targets)),
     )
     by_id = {item.target_id: item for item in observation.targets}
     ordered_targets = tuple(by_id[target_id] for target_id in basis.target_ids)
@@ -181,7 +182,13 @@ def project_model_world(
             None if provisional_traversal.status is ObservationTraversalStatus.COMPLETE else provisional_traversal
         ),
     )
-    fitted = fit_model_world(view, budget.max_total_serialized_bytes // 2, pinned_target_ids, pinned_output_ids)
+    fitted = fit_model_world(
+        view,
+        budget.max_total_serialized_bytes // 2,
+        pinned_target_ids,
+        pinned_output_ids,
+        target_groups=_semantic_target_groups(observation),
+    )
     traversal = observation_pager.finish(
         basis,
         tuple(item.target_id for item in fitted.targets.items),
@@ -199,6 +206,7 @@ def fit_model_world(
     pinned_output_ids: tuple[str, ...] = (),
     *,
     allow_target_removal: bool = True,
+    target_groups: tuple[frozenset[str], ...] = (),
 ) -> ModelWorldView:
     pinned = set(pinned_target_ids)
     pinned_outputs = set(pinned_output_ids)
@@ -241,13 +249,72 @@ def fit_model_world(
             None,
         )
         if removable is not None:
-            targets = tuple(item for item in view.targets.items if item.target_id != removable.target_id)
+            removable_ids = next(
+                (group for group in target_groups if removable.target_id in group),
+                frozenset({removable.target_id}),
+            )
+            if removable_ids & pinned:
+                # A semantic group containing a pinned target is atomic.
+                removable = next(
+                    (
+                        item
+                        for item in reversed(view.targets.items)
+                        if item.target_id not in pinned
+                        and not any(item.target_id in group and group & pinned for group in target_groups)
+                    ),
+                    None,
+                )
+                if removable is None:
+                    raise ValueError("model world pinned semantic groups exceed its byte budget")
+                removable_ids = next(
+                    (group for group in target_groups if removable.target_id in group),
+                    frozenset({removable.target_id}),
+                )
+            targets = tuple(item for item in view.targets.items if item.target_id not in removable_ids)
             visible = {item.target_id for item in targets}
             facts = tuple(item for item in view.facts.items if item.subject_id in visible)
             view = replace(view, targets=_resize(view.targets, targets), facts=_resize(view.facts, facts))
             continue
         raise ValueError("model world fixed metadata exceeds its byte budget")
     return view
+
+
+def _semantic_target_groups(observation: WorldObservation) -> tuple[frozenset[str], ...]:
+    canonical = {
+        (item.source_observation_id, item.source_target_id): item.canonical_target_id
+        for item in observation.entity_source_links
+    }
+    groups: list[frozenset[str]] = []
+    for source in observation.sources:
+        by_id = {item.structure_id: item for item in source.structure}
+        for parent in source.structure:
+            children = [by_id[item] for item in parent.child_structure_ids if item in by_id]
+            signatures: dict[tuple[object, ...], list[object]] = {}
+            for child in children:
+                state = dict(child.state)
+                classes = state.get("semantic.dom.attribute.class_tokens", ())
+                if isinstance(classes, list | tuple):
+                    classes = tuple(classes)
+                signature = (child.role, state.get("semantic.dom.tag", ""), classes)
+                signatures.setdefault(signature, []).append(child)
+            for siblings in signatures.values():
+                if len(siblings) < 2:
+                    continue
+                for sibling in siblings:
+                    pending = [sibling.structure_id]
+                    target_ids: set[str] = set()
+                    while pending:
+                        current = by_id[pending.pop()]
+                        if current.semantic_target_id:
+                            target_id = canonical.get((source.observation_id, current.semantic_target_id))
+                            if target_id:
+                                target_ids.add(target_id)
+                        pending.extend(item for item in current.child_structure_ids if item in by_id)
+                    if target_ids:
+                        groups.append(frozenset(target_ids))
+    # Outermost repeated card/row groups subsume nested repeated control sets.
+    unique = tuple(dict.fromkeys(groups))
+    return tuple(group for group in unique if not any(group < other for other in unique))
 
 
 def _section(items: tuple[Any, ...], total: int) -> BoundedSection[Any]:

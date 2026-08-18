@@ -467,6 +467,7 @@ class ActionBinding:
     destination_required: bool = False
     eligible_destination_ids: tuple[str, ...] = ()
     verification_contract_digest: str = ""
+    verification_family: str = ""
 
     def __post_init__(self) -> None:
         required = (
@@ -508,7 +509,16 @@ class ActionBinding:
                 InteractionCapabilityIssueCode.DESTINATION_MODE_MISMATCH,
                 self.semantic_action,
             )
+        if self.verification_family:
+            from affordance_runtime.actions.capabilities import VerificationFamily
+
+            if VerificationFamily(self.verification_family) not in definition.verification_families:
+                raise ValueError("binding verification family is not supported by the action")
         contract = self.verification_contract
+        if not self.verification_family:
+            object.__setattr__(self, "verification_family", contract.family.value)
+        elif self.verification_family != contract.family.value:
+            raise ValueError("binding verification family does not match sealed contract")
         if not self.verification_contract_digest:
             object.__setattr__(
                 self,
@@ -530,11 +540,14 @@ class ActionBinding:
 
     @property
     def verification_contract(self) -> VerificationContract:
+        from affordance_runtime.actions.capabilities import VerificationFamily
+
         return verification_contract_for_action(
             self.semantic_action,
             schema_digest(self.parameter_schema),
             self.semantic_effects,
             self.observation_barrier,
+            family=VerificationFamily(self.verification_family) if self.verification_family else None,
         )
 
 

@@ -1,8 +1,13 @@
 import asyncio
 
-from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.evaluation.action_applicability import apply_action_evidence_profile
-from affordance_runtime.evaluation.action_verification import derive_action_verification_obligations
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionIntent
@@ -28,13 +33,16 @@ def test_orphan_fact_cannot_resolve_task_or_action_claim() -> None:
         "after", (), (StateFact("fact:after", "target:1", "enabled", True, "orphan"),),
         (), (),
     )
-    proposal = ActionEvaluation(
-        "request", "before", "after", ActionEvaluationStatus.EFFECT_CONFIRMED,
+    proposal = ActionOutcome(
+        "request", "before", "after",
+        ObservedChange.CHANGED,
+        LocalPostconditionStatus.UNKNOWN,
+        EvidenceMethod.STRUCTURAL,
         "changed", ("fact:after",),
     )
     result = apply_action_evidence_profile(
-        proposal, task, _Request(), before, after, WorldEvidenceIndex.from_observation(after),
-        derive_action_verification_obligations(task, _Request(), before),
+        proposal, _Request(), before, after, WorldEvidenceIndex.from_observation(after),
     )
-    assert result.status == ActionEvaluationStatus.UNKNOWN
+    assert result.observed_change == ObservedChange.UNKNOWN
+    assert result.local_postcondition == LocalPostconditionStatus.UNKNOWN
     assert asyncio.run(ProductionTaskEvaluator().evaluate(task, after)).status == TaskEvaluationStatus.UNKNOWN

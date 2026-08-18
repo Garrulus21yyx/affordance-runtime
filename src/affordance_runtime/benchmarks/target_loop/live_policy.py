@@ -25,7 +25,7 @@ from affordance_runtime.benchmarks.target_loop.real_adapter_support import (
     real_dom_environment,
 )
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
-from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionEvaluator
+from affordance_runtime.benchmarks.target_loop.support import CurrentFactActionOutcomeProjector
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.model.policy import (
     GROUNDED_TOOLS_PROTOCOL,
@@ -114,7 +114,7 @@ async def run_live_model_policy_attestation(
         "live existing-ModelPort policy on the safe internal real DOM task",
         real_adapter_task, environment_factory,
         lambda _metrics: BenchmarkComposition(
-            policy, CurrentFactActionEvaluator(), ProductionTaskEvaluator(),
+            policy, CurrentFactActionOutcomeProjector(), ProductionTaskEvaluator(),
         ),
         (RunStatus.DONE,), 120.0, 7,
         ("observations", "executions", "policy_calls", "provider_attempts"),

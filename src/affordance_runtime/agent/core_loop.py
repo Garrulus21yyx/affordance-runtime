@@ -23,7 +23,7 @@ from affordance_runtime.agent.decisions import (
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import (
-    validated_action_evaluation,
+    validated_action_outcome,
     validated_task_evaluation,
 )
 from affordance_runtime.agent.observability import (
@@ -33,7 +33,7 @@ from affordance_runtime.agent.observability import (
     goal_guidance_trace_payload,
 )
 from affordance_runtime.agent.policy import (
-    ActionEvaluator,
+    ActionOutcomeProjector,
     AgentDecisionPorts,
     PolicyFailure,
     TaskEvaluator,
@@ -43,8 +43,9 @@ from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitController, WaitController
 from affordance_runtime.evaluation.contracts import (
-    ActionEvaluationStatus,
     CriterionEvaluationStatus,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
@@ -65,6 +66,7 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
+from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
@@ -76,12 +78,14 @@ _ASSURANCE_RANK = {
 }
 
 
-def _action_feedback(status: ActionEvaluationStatus) -> str:
-    if status is ActionEvaluationStatus.EFFECT_CONFIRMED:
-        return "action_effect_confirmed"
-    if status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED:
-        return "action_no_effect_change_strategy"
-    return f"action_evaluated:{status}"
+def _action_feedback(effect: ObservedChange, postcondition: LocalPostconditionStatus) -> str:
+    if postcondition is LocalPostconditionStatus.SATISFIED:
+        return "action_postcondition_satisfied"
+    if postcondition is LocalPostconditionStatus.UNSATISFIED:
+        return "action_postcondition_unsatisfied_change_strategy"
+    if effect is ObservedChange.UNCHANGED:
+        return "action_unchanged_change_strategy"
+    return "action_outcome_unknown"
 
 
 class CoreLoopStartError(RuntimeError):
@@ -93,7 +97,7 @@ class CoreLoopStartError(RuntimeError):
 @dataclass(frozen=True)
 class CoreAgentLoop:
     decision_ports: AgentDecisionPorts
-    action_evaluator: ActionEvaluator
+    action_outcome_projector: ActionOutcomeProjector
     task_evaluator: TaskEvaluator
     action_space_builder: ActionSpaceBuilder = field(default_factory=ActionSpaceBuilder)
     binder: ActionBinder = field(default_factory=ActionBinder)
@@ -123,7 +127,20 @@ class CoreAgentLoop:
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
             self.trace_sink.run_start_failed(task, acquisition)
             raise CoreLoopStartError(acquisition.reason_code)
-        initial = acquisition.observation
+        state = await self.initialize_from_world(task, acquisition.observation)
+        self.trace_sink.run_started(task, state)
+        return state
+
+    async def initialize_from_world(
+        self,
+        task: TaskGoal,
+        initial: WorldObservation,
+        *,
+        max_turns: int | None = None,
+        yield_on_budget_exhaustion: bool = False,
+    ) -> RunState:
+        """Create a fresh executor episode from an already acquired world."""
+
         evaluation = await validated_task_evaluation(self.task_evaluator, task, initial)
         resolution = await self.goal_plan_boundary.resolve(
             self.goal_compiler,
@@ -135,13 +152,14 @@ class CoreAgentLoop:
         state = RunState(
             initial,
             evaluation,
-            task.loop_budget.max_turns,
+            task.loop_budget.max_turns if max_turns is None else max_turns,
             status=self._status_for_goal_resolution(task, evaluation, resolution),
             task_revision=task.revision,
             goal_resolution=resolution,
             goal_plan_version_counter=(
                 resolution.accepted_plan.plan_version if isinstance(resolution, Ready) else 0
             ),
+            yield_on_budget_exhaustion=yield_on_budget_exhaustion,
         )
         if isinstance(resolution, NeedsInput) and state.status is RunStatus.WAITING_USER:
             state.last_step = StepResult(
@@ -156,7 +174,6 @@ class CoreAgentLoop:
                 RunStatus.WAITING_USER,
                 feedback="goal_compiler_needs_input",
             )
-        self.trace_sink.run_started(task, state)
         self.trace_sink.goal_compiler_completed(
             goal_compiler_trace_diagnostic(
                 self.goal_compiler,
@@ -192,7 +209,10 @@ class CoreAgentLoop:
                 raise
             self.trace_sink.step_completed(state.step_count + 1, result)
             state.apply(result)
-            if state.status is RunStatus.RUNNING and not isinstance(result.decision, PolicyFailure):
+            if state.status in {RunStatus.RUNNING, RunStatus.YIELDED} and not isinstance(
+                result.decision,
+                PolicyFailure,
+            ):
                 state.remember_step(project_step_result(result))
         if state.terminal:
             self.trace_sink.run_finished(state)
@@ -432,7 +452,7 @@ class CoreAgentLoop:
         if decision.context_id != context.context_id:
             return _same_world_step(state, decision, RunStatus.FAILED, "decision_context_is_stale")
         if isinstance(decision, SelectAction):
-            return await self._select(
+            result = await self._select(
                 environment,
                 task,
                 state,
@@ -441,12 +461,12 @@ class CoreAgentLoop:
                 action_page,
                 decision,
             )
-        if isinstance(decision, RequestObservation):
-            return await self._observe(environment, task, state, decision)
-        if isinstance(decision, RequestActionPage):
-            return self._action_page(task, state, action_space, decision)
-        if isinstance(decision, LocalToolResult):
-            return StepResult(
+        elif isinstance(decision, RequestObservation):
+            result = await self._observe(environment, task, state, decision)
+        elif isinstance(decision, RequestActionPage):
+            result = self._action_page(task, state, action_space, decision)
+        elif isinstance(decision, LocalToolResult):
+            result = StepResult(
                 decision,
                 state.current_world,
                 state.current_world,
@@ -454,24 +474,30 @@ class CoreAgentLoop:
                 RunStatus.RUNNING,
                 feedback="local_tool_result",
             )
-        if isinstance(decision, Wait):
-            return await self._wait(environment, task, state, decision)
-        if isinstance(decision, FinalResponse):
+        elif isinstance(decision, Wait):
+            result = await self._wait(environment, task, state, decision)
+        elif isinstance(decision, FinalResponse):
             ready = bool(task.requested_outputs) and (
                 state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
             )
-            return _same_world_step(
+            result = _same_world_step(
                 state,
                 decision,
                 RunStatus.DONE if ready else RunStatus.RUNNING,
                 "final_response" if ready else "final_response_not_ready",
             )
-        if isinstance(decision, AskUser):
-            return _same_world_step(state, decision, RunStatus.WAITING_USER, "user_input_required")
-        if isinstance(decision, Abort):
+        elif isinstance(decision, AskUser):
+            result = _same_world_step(state, decision, RunStatus.WAITING_USER, "user_input_required")
+        elif isinstance(decision, Abort):
             status = RunStatus.CANCELLED if decision.category == AbortCategory.USER_REQUEST else RunStatus.BLOCKED
-            return _same_world_step(state, decision, status, f"agent_aborted:{decision.category}")
-        raise TypeError("core decision dispatch is incomplete")
+            result = _same_world_step(state, decision, status, f"agent_aborted:{decision.category}")
+        else:
+            raise TypeError("core decision dispatch is incomplete")
+        return replace(
+            result,
+            policy_observation=context.actor_world,
+            policy_target_refs=context.grounding.target_refs,
+        )
 
     def _action_page(self, task, state, action_space, decision: RequestActionPage) -> StepResult:
         try:
@@ -597,6 +623,7 @@ class CoreAgentLoop:
             decision.action_id,
             dict(decision.parameters),
             decision.destination_id,
+            decision.expected_outcome,
         )
         if admission.admitted is None:
             assert admission.issue is not None
@@ -680,8 +707,8 @@ class CoreAgentLoop:
                 failure_code=failure_code,
             )
         after = post.observation
-        action_evaluation = await validated_action_evaluation(
-            self.action_evaluator,
+        action_outcome = await validated_action_outcome(
+            self.action_outcome_projector,
             task,
             state.current_world,
             request,
@@ -696,8 +723,11 @@ class CoreAgentLoop:
             task_evaluation,
             self._status_for_task(task, task_evaluation),
             execution,
-            action_evaluation,
-            feedback=_action_feedback(action_evaluation.status),
+            action_outcome,
+            feedback=_action_feedback(
+                action_outcome.observed_change,
+                action_outcome.local_postcondition,
+            ),
         )
 
     async def _refresh_stale_binding(self, environment, task, state, decision) -> StepResult:

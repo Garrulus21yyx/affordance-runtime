@@ -109,8 +109,10 @@ class ObservationOrchestrator:
             )
             if _selected_satisfies(selected, ordered, need, requirement):
                 continue
+            adequate = tuple(item for item in ordered if _offer_satisfies(item, need))
             if (
-                need.required_modality is ObservationModality.VISUAL
+                adequate
+                and all(item.modality is ObservationModality.VISUAL for item in adequate)
                 and not any(
                     _offer(item.source, ordered).modality is ObservationModality.STRUCTURAL
                     for item in selected.values()
@@ -147,7 +149,6 @@ class ObservationOrchestrator:
                     )
                     if failure is not None:
                         return failure
-            adequate = tuple(item for item in ordered if _offer_satisfies(item, need))
             if not adequate:
                 reason = (
                     "requested_assurance_unavailable"

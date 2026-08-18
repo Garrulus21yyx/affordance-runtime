@@ -9,7 +9,11 @@ from affordance_runtime.actions import (
 from affordance_runtime.confirmation import build_confirmation_request
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskAssessment, RiskDecisionKind, RiskPolicy, semantic_subject_id
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
+from tests.support.action_contracts import verification_kwargs
+
+_SCHEMA = {"type": "object", "properties": {"mode": {"type": "string"}}, "additionalProperties": False}
 
 
 @pytest.mark.parametrize(
@@ -29,11 +33,12 @@ def _selection(**changes) -> AdmittedActionSelection:
         "target:shared",
         "local_reversible",
         ("shared_state_enabled",),
-        "sha256:schema",
+        schema_digest(_SCHEMA),
         ("binding:selector:#old",),
         ActionRisk.MEDIUM,
         True,
         {"mode": "normal"},
+        **verification_kwargs("activate", schema_digest(_SCHEMA), ("shared_state_enabled",)),
     )
     if {
         "semantic_action",
@@ -41,7 +46,11 @@ def _selection(**changes) -> AdmittedActionSelection:
         "schema_digest",
         "observation_barrier",
     }.intersection(changes):
-        changes.setdefault("verification_contract_digest", "")
+        semantic_action = changes.get("semantic_action", selection.semantic_action)
+        semantic_effects = changes.get("semantic_effects", selection.semantic_effects)
+        digest = changes.get("schema_digest", selection.schema_digest)
+        barrier = changes.get("observation_barrier", selection.observation_barrier)
+        changes.update(verification_kwargs(semantic_action, digest, semantic_effects, barrier))
     return replace(selection, **changes)
 
 
@@ -75,14 +84,14 @@ def test_semantic_subject_changes_for_each_confirmed_semantic_field() -> None:
         replace(
             original,
             semantic_action="set_value",
-            verification_contract_digest="",
+            **verification_kwargs("set_value", original.schema_digest, original.semantic_effects),
         ),
         replace(original, target_id="target:other"),
         replace(original, parameters={"mode": "other"}),
         replace(
             original,
             semantic_effects=("other_effect",),
-            verification_contract_digest="",
+            **verification_kwargs(original.semantic_action, original.schema_digest, ("other_effect",)),
         ),
         replace(original, risk=ActionRisk.HIGH),
     )
@@ -186,6 +195,6 @@ def test_read_only_risk_policy_allows_only_effect_free_low_risk_interaction() ->
         replace(
             interaction,
             semantic_effects=("update",),
-            verification_contract_digest="",
+            **verification_kwargs(interaction.semantic_action, interaction.schema_digest, ("update",)),
         ),
     ).decision == RiskDecisionKind.BLOCK

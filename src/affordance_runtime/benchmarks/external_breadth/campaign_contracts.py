@@ -41,7 +41,7 @@ class MiniWobTaskOutcome(StrEnum):
     CURRENTNESS_FAILURE = "currentness_failure"
     EXECUTION_FAILURE = "execution_failure"
     POST_OBSERVATION_FAILURE = "post_observation_failure"
-    ACTION_EVALUATOR_FAILURE = "action_evaluator_failure"
+    ACTION_OUTCOME_PROJECTOR_FAILURE = "action_outcome_projector_failure"
     TASK_EVALUATOR_FAILURE = "task_evaluator_failure"
     UNSUPPORTED_PRIMITIVE = "unsupported_primitive"
     OBSERVATION_COVERAGE_FAILURE = "observation_coverage_failure"

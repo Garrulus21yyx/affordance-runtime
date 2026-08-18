@@ -18,6 +18,7 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     SemanticTarget,
 )
+from tests.support.action_contracts import verification_kwargs
 from tests.support.world import fused_world
 
 SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
@@ -38,6 +39,7 @@ def _option(**changes) -> ActionOption:
         ActionRisk.HIGH,
         destination_required=True,
         eligible_destination_ids=("person:alice", "person:bob"),
+        **verification_kwargs("drag_to", schema_digest(SCHEMA), ("message_sent",)),
     )
     return replace(option, **changes)
 
@@ -63,7 +65,8 @@ def test_destination_admission_requires_one_current_offered_semantic_id() -> Non
         semantic_action="activate",
         destination_required=False,
         eligible_destination_ids=(),
-        verification_contract_digest="",
+        semantic_effects=(),
+        **verification_kwargs("activate", schema_digest(SCHEMA), ()),
     )
     with pytest.raises(ValueError, match="does not accept"):
         builder.admit(forbidden, {}, "person:alice")
@@ -184,6 +187,7 @@ def test_direct_selection_and_request_revalidate_destination_membership() -> Non
         observation_barrier=True,
         destination_required=True,
         eligible_destination_ids=("person:alice",),
+        **verification_kwargs("drag_to", schema_digest(SCHEMA), ("message_sent",)),
     )
     with pytest.raises(ValueError, match="destination is required"):
         AdmittedActionSelection(**values)

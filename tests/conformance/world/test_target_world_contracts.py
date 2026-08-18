@@ -18,6 +18,7 @@ from affordance_runtime.execution.contracts import (
     BoundActionRequest,
     DispatchStatus,
 )
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.dom.interaction_profile import DOM_INTERACTION_CAPABILITIES
 from affordance_runtime.surfaces.visual.interaction_profile import VISUAL_INTERACTION_CAPABILITIES
 from affordance_runtime.surfaces.wot.interaction_profile import WOT_INTERACTION_CAPABILITIES
@@ -29,6 +30,7 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+from tests.support.action_contracts import verification_kwargs
 
 
 def _world() -> WorldObservation:
@@ -148,21 +150,24 @@ def test_parameter_schema_validates_type_and_range(value: object) -> None:
         TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW),
         _world(),
     ).options[0]
+    ranged_schema = {
+        "type": "object",
+        "properties": {"value": {"type": "number", "minimum": 16, "maximum": 30}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
     ranged = type(option)(
         option.action_id,
         option.observation_id,
         "set_value",
         option.target_id,
         option.effect_category,
-        {
-            "type": "object",
-            "properties": {"value": {"type": "number", "minimum": 16, "maximum": 30}},
-            "required": ["value"],
-        },
-        option.schema_digest,
+        ranged_schema,
+        schema_digest(ranged_schema),
         option.eligible_binding_ids,
         option.description,
         option.semantic_effects,
+        **verification_kwargs("set_value", schema_digest(ranged_schema), option.semantic_effects),
     )
 
     with pytest.raises(ValueError):
@@ -196,29 +201,31 @@ def test_selected_option_only_binds_its_exact_allowed_group() -> None:
 
 
 def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
+    first_schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string", "enum": ["one"]}},
+        "required": ["text"],
+        "additionalProperties": False,
+    }
     first = replace(
         _world().bindings[0],
         binding_id="string-route",
         semantic_action="type_text",
         primitive_action="fill",
-        verification_contract_digest="",
-        parameter_schema={
-            "type": "object",
-            "properties": {"text": {"type": "string", "enum": ["one"]}},
-            "required": ["text"],
-            "additionalProperties": False,
-        },
+        parameter_schema=first_schema,
+        **verification_kwargs("type_text", schema_digest(first_schema), ("shared_state_enabled",)),
     )
+    second_schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string", "enum": ["two"]}},
+        "required": ["text"],
+        "additionalProperties": False,
+    }
     second = replace(
         first,
         binding_id="other-string-route",
-        verification_contract_digest="",
-        parameter_schema={
-            "type": "object",
-            "properties": {"text": {"type": "string", "enum": ["two"]}},
-            "required": ["text"],
-            "additionalProperties": False,
-        },
+        parameter_schema=second_schema,
+        **verification_kwargs("type_text", schema_digest(second_schema), ("shared_state_enabled",)),
     )
     world = replace(_world(), bindings=(first, second))
     task = TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW)
@@ -294,11 +301,13 @@ def test_bound_request_rejects_mismatched_selection_invariants(mutation: str) ->
     elif mutation == "parameters":
         intent = replace(intent, parameters={"unexpected": True})
     elif mutation == "schema_digest":
-        selection = replace(
-            selection,
-            schema_digest="sha256:wrong",
-            verification_contract_digest="",
-        )
+        with pytest.raises(ValueError, match="verification contract"):
+            replace(
+                selection,
+                schema_digest="sha256:wrong",
+                verification_contract_digest="sha256:wrong-contract",
+            )
+        return
     elif mutation == "higher_risk":
         binding = replace(binding, risk=ActionRisk.MEDIUM)
     elif mutation == "observation_barrier":

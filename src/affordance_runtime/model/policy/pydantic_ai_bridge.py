@@ -13,6 +13,7 @@ import os
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 from affordance_runtime.agent.context.context import AgentImageInput
 from affordance_runtime.agent.context.failures import (
@@ -57,7 +58,7 @@ _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 _ACTION_MODEL_SETTINGS = {
     "thinking": False,
-    "max_tokens": 512,
+    "max_tokens": 1024,
     "temperature": 0.0,
 }
 
@@ -85,6 +86,7 @@ class PydanticAIGroundedDecisionPort:
     model: object
     provider_id: str
     model_id: str
+    endpoint_host: str
     supports_multimodal: bool
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
     transport_timeout_s: float = 85.0
@@ -102,7 +104,7 @@ class PydanticAIGroundedDecisionPort:
     )
 
     def __post_init__(self) -> None:
-        if not self.provider_id.strip() or not self.model_id.strip():
+        if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
             raise ValueError("PydanticAI model identity is required")
         if not 0 < self.transport_timeout_s <= 300:
             raise ValueError("PydanticAI transport timeout must be in (0, 300]")
@@ -128,6 +130,7 @@ class PydanticAIGroundedDecisionPort:
                 "pydantic-ai",
                 self.provider_id,
                 self.model_id,
+                self.endpoint_host,
                 self.perception_profile.value,
             )
         )
@@ -232,6 +235,7 @@ class PydanticAIGroundedDecisionPort:
                     DeferredToolRequests,
                     DeferredToolResults,
                     ModelRetry,
+                    request.context_id,
                 )
                 repair_kwargs = (
                     {"deferred_tool_results": repair}
@@ -265,7 +269,8 @@ class PydanticAIGroundedDecisionPort:
                 ModelFailureKind.SCHEMA_ERROR,
                 "model exceeded the bounded decision repair allowance",
             )
-        except UnexpectedModelBehavior:
+        except UnexpectedModelBehavior as error:
+            self._record_local_failure(error, "pydantic_ai_output_validation", catalog.specs)
             return _failure(ModelFailureKind.SCHEMA_ERROR, "model tool response violated the grounded contract")
         except _ProviderCallExhausted as error:
             detail = error.detail
@@ -308,6 +313,7 @@ class PydanticAIGroundedDecisionPort:
                 transient_retry_count=max(0, self.last_provider_retry_count - rate_limit_retries),
                 grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
                 perception_profile=self.perception_profile.value,
+                endpoint_host=self.endpoint_host,
             ),
         )
 
@@ -386,6 +392,7 @@ class PydanticAIGroundedDecisionPort:
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
             "llm.model_name": self.model_id,
+            "llm.configured_endpoint_host": self.endpoint_host,
             "llm.input_messages": requests,
             "llm.output_messages": responses,
             "llm.tools": [
@@ -433,6 +440,7 @@ class PydanticAIGroundedDecisionPort:
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
             "llm.model_name": self.model_id,
+            "llm.configured_endpoint_host": self.endpoint_host,
             "llm.input_messages": input_messages,
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(specs),
@@ -469,11 +477,13 @@ class PydanticAIGroundedDecisionPort:
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
             "llm.model_name": self.model_id,
+            "llm.configured_endpoint_host": self.endpoint_host,
             "llm.input_messages": input_messages,
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(specs),
             "status": "failed",
             "error.code": detail.code.value,
+            "error.reason": detail.reason,
             "error.exception_class": detail.exception_class,
             "error.http_status": detail.status_code,
             "error.retryable": detail.retryable,
@@ -505,7 +515,7 @@ class PydanticAIGroundedDecisionPort:
         detail = _ProviderFailureDetail(
             ProviderFailureCode.UNAVAILABLE,
             False,
-            "PydanticAI decision adapter failed locally",
+            str(error)[:500] or "PydanticAI decision adapter failed locally",
             type(error).__name__,
         )
         self._record_provider_failure(detail, phase, specs, (), latency_ms=0.0)
@@ -517,7 +527,7 @@ def zhipu_pydantic_ai_policy_from_environment(
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
 ) -> ModelBackedAgentPolicy:
-    """Build the PydanticAI policy for Zhipu's OpenAI-compatible endpoint."""
+    """Build the PydanticAI policy for Zhipu or Aliyun OpenAI-compatible endpoints."""
 
     if not 1 < call_timeout_s <= 300:
         raise ValueError("PydanticAI policy timeout must be in (1, 300]")
@@ -529,13 +539,15 @@ def zhipu_pydantic_ai_policy_from_environment(
         raise RuntimeError("install the pydantic-ai project extra") from exc
 
     env = os.environ if environment is None else environment
-    if env.get("LLM_ACTIVE_PROFILE", "").strip().casefold() != "zhipu":
-        raise ValueError("PydanticAI model adapter currently supports only the zhipu profile")
+    profile = env.get("LLM_ACTIVE_PROFILE", "").strip().casefold()
+    if profile not in {"zhipu", "aliyun"}:
+        raise ValueError("PydanticAI model adapter supports only zhipu or aliyun profiles")
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("PydanticAI model adapter forbids provider fallback")
-    base_url = _required(env, "LLM_ZHIPU_BASE_URL")
-    api_key = _required(env, "LLM_ZHIPU_API_KEY")
-    model_id = _required(env, "LLM_ZHIPU_MODEL")
+    prefix = "LLM_ZHIPU" if profile == "zhipu" else "LLM_ALIYUN"
+    base_url = _required(env, f"{prefix}_BASE_URL")
+    api_key = _required(env, f"{prefix}_API_KEY")
+    model_id = _required(env, f"{prefix}_MODEL")
     if model_id.casefold() == "glm-4.1v-thinking-flashx":
         raise ValueError("glm-4.1v-thinking-flashx requires LLM_MODEL_ADAPTER=compact-json")
     selected_perception = DecisionPerceptionProfile(
@@ -555,15 +567,21 @@ def zhipu_pydantic_ai_policy_from_environment(
     model = ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
     port = PydanticAIGroundedDecisionPort(
         model=model,
-        provider_id="zhipu",
+        provider_id=profile,
         model_id=model_id,
-        supports_multimodal=_zhipu_supports_multimodal(model_id),
+        endpoint_host=_endpoint_host(base_url),
+        supports_multimodal=profile == "zhipu" and _zhipu_supports_multimodal(model_id),
         perception_profile=selected_perception,
         transport_timeout_s=transport_timeout_s,
         provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
         max_provider_retry_delay_s=retry_delay_budget_s,
     )
     return ModelBackedAgentPolicy(port, call_timeout_s=call_timeout_s)
+
+
+def _endpoint_host(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    return (parsed.netloc or parsed.path.split("/", 1)[0]).strip().casefold()
 
 
 def _resolve_deferred(output, catalog, context_id: str):
@@ -611,8 +629,8 @@ def _resolve_final_response(output, context_id: str) -> FinalResponse | None:
         return None
 
 
-def _repair_input(output, catalog, deferred_type, deferred_results_type, model_retry_type):
-    message = _repair_message(output, catalog, deferred_type)
+def _repair_input(output, catalog, deferred_type, deferred_results_type, model_retry_type, context_id: str):
+    message = _repair_message(output, catalog, deferred_type, context_id)
     if isinstance(output, deferred_type) and output.calls:
         return deferred_results_type(
             calls={call.tool_call_id: model_retry_type(message) for call in output.calls}
@@ -620,7 +638,7 @@ def _repair_input(output, catalog, deferred_type, deferred_results_type, model_r
     return message
 
 
-def _repair_message(output, catalog, deferred_type) -> str:
+def _repair_message(output, catalog, deferred_type, context_id: str) -> str:
     if isinstance(output, deferred_type) and len(output.calls) == 1:
         call = output.calls[0]
         spec = next((item for item in catalog.specs if item.name == call.tool_name), None)
@@ -653,6 +671,17 @@ def _repair_message(output, catalog, deferred_type) -> str:
                         + json.dumps(candidates, separators=(",", ":"), ensure_ascii=False)
                         + "."
                     )
+                elif reconciliation.status is ToolCallReconciliationStatus.EXACT:
+                    assert reconciliation.exact_call is not None
+                    try:
+                        resolve_grounded_action_call(
+                            catalog,
+                            reconciliation.exact_call,
+                            expected_context_id=context_id,
+                            expected_catalog_id=catalog.catalog_id,
+                        )
+                    except GroundedToolResolutionError as exc:
+                        guidance = f" Runtime rejection: {str(exc)}."
             except (ValueError, TypeError):
                 pass
             return (

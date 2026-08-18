@@ -24,11 +24,11 @@ def test_bounded_section_rejects_untruthful_metadata(section) -> None:
         section()
 
 
-def test_projection_budget_defaults_are_fixed_and_bounded() -> None:
+def test_projection_budget_defaults_are_byte_bounded_without_early_target_cap() -> None:
     budget = ContextProjectionBudget()
 
     assert budget.max_intent_excerpts == 6
-    assert budget.max_targets == 64
+    assert budget.max_targets is None
     assert budget.max_facts == 128
-    assert budget.max_action_options == 32
-    assert budget.max_total_serialized_bytes == 64 * 1024
+    assert budget.max_action_options == 128
+    assert budget.max_total_serialized_bytes == 384 * 1024

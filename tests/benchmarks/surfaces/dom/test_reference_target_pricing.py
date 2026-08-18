@@ -15,7 +15,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.app import (
     compose_target_runtime,
 )
-from affordance_runtime.evaluation import ProductionActionEvaluator, ProductionTaskEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
@@ -76,7 +76,7 @@ def test_target_pricing_reveals_records_and_returns_current_structured_dom_outpu
         policy = PricingPolicy()
         runtime = compose_target_runtime(
             policy,
-            ProductionActionEvaluator(),
+            ProductionActionOutcomeProjector(),
             ProductionTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("atomic_reference_target_test"),
         )

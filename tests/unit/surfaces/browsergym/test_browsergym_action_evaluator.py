@@ -3,10 +3,12 @@ from dataclasses import replace
 
 import numpy as np
 
-from affordance_runtime.agent.evaluation_control import validated_action_evaluation
+from affordance_runtime.agent.evaluation_control import validated_action_outcome
 from affordance_runtime.evaluation import (
-    ActionEvaluationStatus,
-    ProductionActionEvaluator,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+    ProductionActionOutcomeProjector,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionResult, DispatchStatus
@@ -93,33 +95,40 @@ def _evaluate(before, after, semantic: str, requested: str, *, adapter_evidence=
         request.request_id, DispatchStatus.SENT, "browsergym", True,
         adapter_evidence=adapter_evidence or {},
     )
-    return asyncio.run(validated_action_evaluation(
-        ProductionActionEvaluator(), task, before, request, result, after,
+    return asyncio.run(validated_action_outcome(
+        ProductionActionOutcomeProjector(), task, before, request, result, after,
     ))
 
 
-def test_fill_empty_or_different_to_desired_is_effect_confirmed() -> None:
+def test_fill_empty_or_different_to_desired_is_changed_and_satisfied() -> None:
     for current in ("", "old"):
         before = _world("obs:before", "type_text", current)
         after = _world("obs:after", "type_text", "desired")
         evaluation = _evaluate(before, after, "type_text", "desired")
-        assert evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+        assert evaluation.observed_change is ObservedChange.CHANGED
+        assert evaluation.local_postcondition is LocalPostconditionStatus.SATISFIED
+        assert evaluation.evidence_method is EvidenceMethod.NATIVE
         assert WorldEvidenceIndex.from_observation(after).resolve(evaluation.evidence_refs[0])
         assert "obs:after" in evaluation.evidence_refs[0]
 
 
-def test_fill_already_desired_or_unchanged_wrong_is_no_effect_confirmed() -> None:
+def test_fill_already_desired_or_unchanged_wrong_splits_effect_and_postcondition() -> None:
     desired_before = _world("obs:before", "type_text", "desired")
     desired_after = _world("obs:after", "type_text", "desired")
     assert _evaluate(
         desired_before, desired_after, "type_text", "desired",
-    ).status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+    ).observed_change is ObservedChange.UNCHANGED
+    assert _evaluate(
+        desired_before, desired_after, "type_text", "desired",
+    ).local_postcondition is LocalPostconditionStatus.SATISFIED
 
     wrong_before = _world("obs:before", "type_text", "wrong")
     wrong_after = _world("obs:after", "type_text", "wrong")
-    assert _evaluate(
+    wrong = _evaluate(
         wrong_before, wrong_after, "type_text", "desired",
-    ).status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+    )
+    assert wrong.observed_change is ObservedChange.UNCHANGED
+    assert wrong.local_postcondition is LocalPostconditionStatus.UNSATISFIED
 
 
 def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
@@ -130,7 +139,9 @@ def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
         _world("obs:after", "type_text", "desired", weak=True),
     )
     for after in cases:
-        assert _evaluate(before, after, "type_text", "desired").status is ActionEvaluationStatus.UNKNOWN
+        evaluation = _evaluate(before, after, "type_text", "desired")
+        assert evaluation.observed_change is ObservedChange.UNKNOWN
+        assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
 
     missing = project_browsergym_observation(
         raw_observation(ax_node("private-button", "button", "Submit")),
@@ -139,19 +150,25 @@ def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
         task_state=reset_task_state("obs:after"),
         entity_identity=_IDENTITY,
     ).world
-    assert _evaluate(before, missing, "type_text", "desired").status is ActionEvaluationStatus.UNKNOWN
+    evaluation = _evaluate(before, missing, "type_text", "desired")
+    assert evaluation.observed_change is ObservedChange.UNKNOWN
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
 
 
 def test_select_transition_and_already_selected_are_symmetric() -> None:
     before = _world("obs:before", "select_option", "A")
     after = _world("obs:after", "select_option", "B")
-    assert _evaluate(before, after, "select_option", "B").status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    selected = _evaluate(before, after, "select_option", "B")
+    assert selected.observed_change is ObservedChange.CHANGED
+    assert selected.local_postcondition is LocalPostconditionStatus.SATISFIED
 
     satisfied_before = _world("obs:before", "select_option", "B")
     satisfied_after = _world("obs:after", "select_option", "B")
-    assert _evaluate(
+    already = _evaluate(
         satisfied_before, satisfied_after, "select_option", "B",
-    ).status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+    )
+    assert already.observed_change is ObservedChange.UNCHANGED
+    assert already.local_postcondition is LocalPostconditionStatus.SATISFIED
 
 
 def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it() -> None:
@@ -161,8 +178,9 @@ def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it()
         before, after, "type_text", "desired",
         adapter_evidence={"value": "desired", "receipt": "private"},
     )
-    assert evaluation.status is ActionEvaluationStatus.UNKNOWN
-    assert not evaluation.evidence_refs
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+    assert evaluation.evidence_refs
     assert "private" not in repr(evaluation)
 
 
@@ -184,10 +202,11 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
     ).world
     request = request_for(before, task, "activate")
     result = ActionResult(request.request_id, DispatchStatus.SENT, "browsergym", True)
-    evaluation = asyncio.run(ProductionActionEvaluator().evaluate(
+    evaluation = asyncio.run(ProductionActionOutcomeProjector().evaluate(
         task, before, request, result, after,
     ))
-    assert evaluation.status is ActionEvaluationStatus.UNKNOWN
+    assert evaluation.observed_change is ObservedChange.UNKNOWN
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
     assert not evaluation.evidence_refs
 
 
@@ -240,21 +259,24 @@ def _evaluate_activate(before, after):
     task = _task()
     request = request_for(before, task, "activate")
     result = ActionResult(request.request_id, DispatchStatus.SENT, "browsergym", True)
-    return asyncio.run(validated_action_evaluation(
-        ProductionActionEvaluator(), task, before, request, result, after,
+    return asyncio.run(validated_action_outcome(
+        ProductionActionOutcomeProjector(), task, before, request, result, after,
     ))
 
 
-def test_activate_visual_change_is_effect_confirmed_with_public_diff_evidence() -> None:
+def test_activate_visual_change_is_changed_with_public_diff_evidence() -> None:
     evaluation = _evaluate_activate(
         _activate_world("obs:before", 255),
         _activate_world("obs:after", 0),
     )
-    assert evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
+    assert evaluation.evidence_method is EvidenceMethod.VISUAL_DIFF
     assert evaluation.evidence == {
         "verification_profile": "visual_diff_v1",
         "expected_effects": ["external_ui_interaction"],
-        "observed_effect": "effect_confirmed",
+        "observed_change": "changed",
+        "local_postcondition": "not_applicable",
         "screenshot_changed": True,
         "target_changed": False,
     }
@@ -266,7 +288,9 @@ def test_activate_target_state_change_keeps_public_before_after_fact_delta() -> 
 
     evaluation = _evaluate_activate(before, after)
 
-    assert evaluation.status is ActionEvaluationStatus.EFFECT_CONFIRMED
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
+    assert evaluation.evidence_method is EvidenceMethod.STRUCTURAL
     assert evaluation.evidence["verification_profile"] == "structural_target_diff_v1"
     assert evaluation.evidence["fact_changes"] == (
         {
@@ -358,11 +382,12 @@ def test_activate_target_feedback_excludes_unrelated_world_changes() -> None:
     )
 
 
-def test_activate_unchanged_visual_state_is_no_effect_confirmed() -> None:
+def test_activate_unchanged_visual_state_reports_unchanged_not_applicable() -> None:
     evaluation = _evaluate_activate(
         _activate_world("obs:before", 255),
         _activate_world("obs:after", 255),
     )
-    assert evaluation.status is ActionEvaluationStatus.NO_EFFECT_CONFIRMED
+    assert evaluation.observed_change is ObservedChange.UNCHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
     assert evaluation.evidence["screenshot_changed"] is False
     assert evaluation.evidence["target_changed"] is False

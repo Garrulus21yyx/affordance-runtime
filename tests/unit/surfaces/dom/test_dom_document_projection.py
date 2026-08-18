@@ -9,9 +9,9 @@ from affordance_runtime.actions import (
     ActionBinder,
     ActionSpaceBuilder,
 )
-from affordance_runtime.evaluation import ProductionActionEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.evaluation.validation import validate_action_evaluation
+from affordance_runtime.evaluation.validation import validate_action_outcome
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter, project_structured_document
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import TaskGoal
@@ -111,10 +111,10 @@ def test_read_only_dom_interaction_requires_registered_operation_and_structural_
         after = execution.post_acquisition.observation
         assert after is not None
 
-        proposed = await ProductionActionEvaluator().evaluate(
+        proposed = await ProductionActionOutcomeProjector().evaluate(
             task, before, request, execution.result, after,
         )
-        validated = validate_action_evaluation(
+        validated = validate_action_outcome(
             proposed,
             task,
             request,
@@ -122,7 +122,9 @@ def test_read_only_dom_interaction_requires_registered_operation_and_structural_
             after,
             WorldEvidenceIndex.from_observation(after),
         )
-        assert validated.status.value == "effect_confirmed"
+        assert validated.observed_change.value == "changed"
+        assert validated.local_postcondition.value == "not_applicable"
+        assert validated.evidence_method.value == "structural"
         assert all("focused" not in ref for ref in validated.evidence_refs)
         document = next(item for item in after.targets if item.target_id == "dom_document")
         assert document.state["visible_record_count"] == 1

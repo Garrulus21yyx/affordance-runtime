@@ -11,7 +11,11 @@ from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
-from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.agent.context.budgets import (
+    BoundedSection,
+    ContextProjectionBudget,
+    serialized_size,
+)
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
 from affordance_runtime.agent.context.grounding_projection import (
@@ -32,8 +36,6 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.contracts import WorldObservation
-
-_PINNED_ACTION_WORLD_RESERVE_BYTES = 4_096
 
 
 @dataclass(frozen=True)
@@ -73,7 +75,7 @@ class ContextBuilder:
         pinned_targets = _pinned_targets(
             shown_actions,
             observation,
-            self.budget.observation_pinned_capacity,
+            self.budget.observation_pinned_capacity(len(observation.targets)),
         )
         world = project_model_world(
             observation,
@@ -91,7 +93,7 @@ class ContextBuilder:
             len(shown_actions),
             page.total_count > len(shown_actions),
             page.has_more,
-            ("target_id", "relevance_role", "query"),
+            ("target", "relevance_role", "query", "cursor"),
             page.query,
             page.target_id,
             page.relevance_role.value if page.relevance_role else "",
@@ -160,14 +162,10 @@ class ContextBuilder:
             cursor=cursor,
             page_size=min(
                 self.budget.max_action_options,
-                max(
-                    1,
-                    self.budget.max_total_serialized_bytes
-                    // _PINNED_ACTION_WORLD_RESERVE_BYTES,
-                ),
+                self.pager.page_size,
             ),
             max_destinations_per_option=self.budget.max_destinations_per_option,
-            max_targets=self.budget.observation_pinned_capacity,
+            max_targets=self.budget.observation_pinned_capacity(len(observation.targets)),
         )
 
 
@@ -263,7 +261,11 @@ def _fit_context(
                 world,
                 grounding.index,
                 grounding.images,
-                max_structure_nodes=budget.max_targets * 2,
+                # Actor structure is measured by the enclosing serialized-byte
+                # budget.  Do not cut a short document at an arbitrary node
+                # prefix before that measurement occurs.
+                max_structure_nodes=None,
+                max_structure_bytes=budget.max_total_serialized_bytes // 2,
                 fact_refs=fact_refs,
             ),
             grounding.images,

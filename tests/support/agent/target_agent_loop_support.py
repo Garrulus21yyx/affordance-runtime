@@ -1,9 +1,11 @@
 from affordance_runtime.agent import SelectAction
 from affordance_runtime.evaluation import (
-    ActionEvaluation,
-    ActionEvaluationStatus,
+    ActionOutcome,
     CriterionEvaluation,
     CriterionEvaluationStatus,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
@@ -62,7 +64,7 @@ class SharedStateTaskEvaluator:
         )
 
 
-class SharedStateActionEvaluator:
+class SharedStateActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
         del task, result
         was_expanded = any(target.state.get("expanded") is True for target in before.targets)
@@ -72,20 +74,24 @@ class SharedStateActionEvaluator:
             item.coverage == CoverageState.COMPLETE for item in after.source_manifest
         )
         if not changed and not coverage_complete:
-            return ActionEvaluation(
+            return ActionOutcome(
                 request.request_id,
                 before.observation_id,
                 after.observation_id,
-                ActionEvaluationStatus.UNKNOWN,
+                ObservedChange.UNKNOWN,
+                LocalPostconditionStatus.UNKNOWN,
+                EvidenceMethod.NONE,
                 "fresh observation does not establish authoritative effect absence",
             )
-        return ActionEvaluation(
+        return ActionOutcome(
             request.request_id,
             before.observation_id,
             after.observation_id,
-            ActionEvaluationStatus.EFFECT_CONFIRMED
+            ObservedChange.CHANGED
             if changed
-            else ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+            else ObservedChange.UNCHANGED,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.STRUCTURAL,
             "shared state changed" if changed else "shared state did not change",
             (next(fact.fact_id for fact in after.facts if fact.predicate == "expanded"),),
         )

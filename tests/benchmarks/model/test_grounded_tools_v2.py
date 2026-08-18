@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -16,15 +17,18 @@ from affordance_runtime.agent import (
     Abort,
     AskUser,
     LocalToolResult,
+    RequestActionPage,
     RequestObservation,
     SelectAction,
     Wait,
 )
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
+from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
-from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
+from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
@@ -230,13 +234,11 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     payload = _bound_public_context(context)
     assert "actions" not in payload
     assert not {"actions.entities", "actions.groups"}.intersection(public)
-    nodes = [
-        node
-        for document in payload["observation"]["documents"]
-        for node in document["roots"]
-    ]
-    assert {item["ref"] for item in nodes} == {"E1", "E2", "E3"}
-    assert {item["label"] for item in nodes} == {"Username", "Password", "Login"}
+    observation = payload["observation"]
+    assert isinstance(observation, str)
+    assert "[E1] textbox \"Username\"" in observation
+    assert "[E2] textbox \"Password\"" in observation
+    assert "[E3] button \"Login\"" in observation
 
 
 def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state() -> None:
@@ -292,22 +294,13 @@ def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state
     )
 
     public = _bound_public_context(context)
-    section = public["observation"]["facet_collections"]
-    blue = next(
-        item
-        for item in section["items"]
-        if item["scope_role"] == "clickable"
-        and item["field"] == "appearance.color_family"
-        and item["value"] == "blue"
-    )
-    selected = next(item for item in blue["boolean_partitions"] if item["field"] == "selected")
-
-    assert blue["member_count"] == 3
-    assert blue["completeness"] == "complete_for_snapshot"
-    assert len(selected["true_member_refs"]) == 2
-    assert len(selected["false_member_refs"]) == 1
-    assert set(selected["true_member_refs"] + selected["false_member_refs"]) == set(blue["member_refs"])
-    assert section["truncated"] is False
+    observation = public["observation"]
+    assert "facets count=" in observation and "coverage=complete" in observation
+    assert (
+        'clickable.appearance.color_family="blue" members=["E1","E2","E3"]'
+        " count=3 completeness=complete_for_snapshot"
+    ) in observation
+    assert 'selected true=["E1","E2"] false=["E3"]' in observation
 
 
 def test_structure_first_grounded_action_starts_from_public_structure_without_image() -> None:
@@ -331,15 +324,14 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "affordances", "tools"}
     assert public["task"]["instruction"] == context.task.instruction
     assert "actions" not in public
-    assert public["task"]["formal_evaluation"]["status"] == "incomplete"
+    assert "formal_evaluation" not in public["task"]
     assert public["goal_plan"]["resolution"] == "unavailable"
     system_content = port.messages[0].content
     assert isinstance(system_content, str)
-    assert "deterministic utility" in system_content
-    assert "references identify evidence, not permission to interact" in system_content
+    assert "Use exactly one offered tool and follow its current schema" in system_content
     assert {item["name"] for item in public["tools"]} == {
         "type_text",
         "activate",
@@ -433,8 +425,45 @@ def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_r
     user_content = port.messages[1].content
     assert isinstance(user_content, tuple)
     assert isinstance(user_content[0], ModelTextPart)
+    assert len(user_content) == 2
     assert isinstance(user_content[1], ModelImageURLPart)
     assert adapter.last_image_input_count == 1
+
+
+def test_request_evidence_schema_matches_observation_property_contract() -> None:
+    base = _context()
+    context = replace(
+        base,
+        actor_world=replace(
+            base.actor_world,
+            observation_capabilities=(
+                {
+                    "modality": "visual",
+                    "assurance": "weak",
+                    "purposes": ("target_disambiguation", "visual_property"),
+                },
+            ),
+        ),
+    )
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in catalog.specs if item.name == "request_evidence")
+
+    assert validate_value_issue(
+        {
+            "purpose": "target_disambiguation",
+            "subject": "current_world",
+            "property": "visual_state",
+        },
+        spec.input_schema,
+    ) is not None
+    assert validate_value_issue(
+        {"purpose": "target_disambiguation", "subject": "current_world"},
+        spec.input_schema,
+    ) is None
+    assert validate_value_issue(
+        {"purpose": "visual_property", "subject": "current_world", "property": "visual_state"},
+        spec.input_schema,
+    ) is None
 
 
 def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
@@ -542,23 +571,11 @@ def test_failed_argument_repair_preserves_response_and_violation_in_trace() -> N
     trace = _policy_trace_event(1, context, outcome, adapter)
 
     assert isinstance(outcome, ModelFailure)
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == (
-        "initial",
-        "argument_repair",
-    )
-    assert tuple(item.status for item in adapter.last_generation_attempts) == (
-        "accepted",
-        "schema_error",
-    )
-    assert adapter.last_structured_output_repair_failed is True
-    assert adapter.last_structured_output_violations == (
-        StructuredOutputViolation("name", "missing"),
-    )
-    failed = trace["generation_attempts"][1]
-    assert failed["violations"] == [{"field_path": "name", "code": "missing"}]
-    assert failed["transcript"]["llm.output_messages"] == [
-        {"role": "assistant", "content": "{\"arguments\":{}}"}
-    ]
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
+    assert tuple(item.status for item in adapter.last_generation_attempts) == ("accepted",)
+    assert adapter.last_structured_output_repair_failed is False
+    assert len(trace["generation_attempts"]) == 1
+    assert trace["generation_attempts"][0]["status"] == "accepted"
 
 
 def test_compact_bridge_normalizes_nested_parameters_without_model_repair() -> None:
@@ -626,7 +643,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "affordances", "tools"}
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
@@ -641,12 +658,12 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         if item["name"] not in {"ask_user", "wait", "abort"}
     )
     assert all(
-        "other observed references are context only" in item["description"]
+        "Runtime revalidates existence, currentness, and legality" in item["description"]
         for item in public["tools"]
         if item["name"] in {"type_text", "activate"}
     )
     assert all("memory" not in item["input_schema"]["properties"] for item in public["tools"])
-    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "affordances", "tools")
 
 
 def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
@@ -756,6 +773,42 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     assert tuple(item.binding for item in catalog.tools) == catalog.bindings
 
 
+def test_find_actions_exposes_search_filters_and_maps_current_refs_privately() -> None:
+    context = _context()
+    context = replace(
+        context,
+        actions=replace(
+            context.actions,
+            options=context.actions.options[:1],
+            total_count=len(context.actions.options),
+            page_size=1,
+            truncated=True,
+            has_more=True,
+            next_cursor="cursor:test",
+        ),
+    )
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in catalog.specs if item.name == "find_actions")
+    target_ref = context.actions.options[0].target_ref
+
+    assert set(spec.input_schema["properties"]) == {
+        "query",
+        "target",
+        "relevance_role",
+        "cursor",
+    }
+    resolution = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("find_actions", {"query": "like", "target": target_ref}),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(resolution.decision, RequestActionPage)
+    assert resolution.decision.query == "like"
+    assert resolution.decision.target_id == next(
+        target_id for target_id, ref in context.grounding.target_refs.items() if ref == target_ref
+    )
+
+
 @pytest.mark.parametrize(
     ("name", "arguments", "decision_type"),
     (
@@ -828,10 +881,14 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
         ),
     )
 
-    recent = _bound_public_context(context)["recent_steps"][0]
+    recent = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
 
-    assert recent["action"]["details"]["containers"] == ["E1"]
-    assert recent["result"]["details"] == {"counts": {"E1": 2}, "total": 2}
+    assert recent["action"]["details"]["containers"] == ["<expired-ref>"]
+    assert recent["result"]["details"] == {
+        "counts": {"<expired-ref>": 2},
+        "total": 2,
+    }
+    assert not re.search(r"\bE[1-9][0-9]{0,2}\b", json.dumps(recent))
 
     trace = _policy_trace_event(
         2,
@@ -912,11 +969,7 @@ def test_compact_action_payload_defers_tool_semantics_to_catalog_resolution() ->
 def test_provider_normalizer_unwraps_only_unambiguous_nested_parameters() -> None:
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    target = next(
-        spec.input_schema["properties"]["target"]["enum"][0]
-        for spec in catalog.specs
-        if spec.name == "activate"
-    )
+    target = next(item.ref for item in context.grounding.entities if "activate" in item.verbs)
     normalizer = ProviderCallNormalizer()
 
     normalized = normalizer.normalize(
@@ -1001,7 +1054,7 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
     assert "actions" not in public
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     tool = next(item for item in catalog.specs if item.name == "activate")
-    assert to_json_compatible(tool.input_schema["properties"]["target"]["enum"]) == ["E1", "E2"]
+    assert tool.input_schema["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall("activate", {"target": "E2"}),
@@ -1041,9 +1094,9 @@ def test_invalid_compact_target_gets_one_bounded_repair_then_fails_closed() -> N
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert isinstance(outcome, ModelFailure)
-    assert port.calls == 2
-    assert adapter.last_argument_repair_count == 1
-    assert adapter.last_argument_violation_paths == ("arguments.target",)
+    assert port.calls == 1
+    assert adapter.last_argument_repair_count == 0
+    assert adapter.last_argument_violation_paths == ()
 
 
 def test_compact_argument_repair_may_explicitly_reemit_a_different_current_target() -> None:
@@ -1092,8 +1145,11 @@ def test_compact_argument_repair_may_explicitly_reemit_a_different_current_targe
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
     context = _context()
-    target_ids = tuple(context.grounding.target_refs)
-    refs = tuple(context.grounding.target_refs[target_id] for target_id in target_ids)
+    targets = (
+        AgentHistoricalTargetView("textbox", "User name", ("Account form",)),
+        AgentHistoricalTargetView("textbox", "Code", ("Account form",)),
+        AgentHistoricalTargetView("button", "Submit", ("Account form",)),
+    )
     context = replace(
         context,
         recent_steps=BoundedSection(
@@ -1101,33 +1157,37 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
                 AgentTurnView(
                     "selectaction",
                     "type_text",
-                    target_ids[0],
-                    destination_id=target_ids[1],
+                    targets[0],
+                    destination=targets[1],
                     public_parameters={"text": "donovan"},
+                    expected_outcome="value donovan is entered",
                     dispatch_status="sent",
-                    action_evaluation_status="effect_confirmed",
+                    local_postcondition="satisfied",
+                    transition={"observed_change": "changed", "evidence_method": "native"},
                     task_evaluation_status="incomplete",
-                    reason="action_effect_confirmed",
+                    reason="action_postcondition_satisfied",
                 ),
                 AgentTurnView(
                     "selectaction",
                     "type_text",
-                    target_ids[1],
+                    targets[1],
                     public_parameters={"text": "UV"},
                     dispatch_status="sent",
-                    action_evaluation_status="effect_confirmed",
+                    local_postcondition="satisfied",
+                    transition={"observed_change": "changed", "evidence_method": "native"},
                     task_evaluation_status="incomplete",
-                    reason="action_effect_confirmed",
+                    reason="action_postcondition_satisfied",
                 ),
                 AgentTurnView(
                     "selectaction",
                     "activate",
-                    target_ids[2],
+                    targets[2],
                     dispatch_status="sent",
-                    action_evaluation_status="unknown",
+                    local_postcondition="unknown",
+                    transition={"observed_change": "unknown", "evidence_method": "none"},
                     task_evaluation_status="incomplete",
                     reason="action_unknown_low_local",
-                    semantic_summary={"feedback_code": "action_no_effect_change_strategy"},
+                    semantic_summary={"feedback_code": "action_outcome_unknown"},
                 ),
             ),
             3,
@@ -1137,49 +1197,27 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
 
     history = _bound_public_context(context)["recent_steps"]
 
-    assert history == [
-        {
-            "action": {
-                "kind": "selectaction",
-                "tool": "type_text",
-                "target": refs[0],
-            },
-            "result": {
-                "dispatch": "sent",
-                "effect": "effect_confirmed",
-                "task": "incomplete",
-                "reason": "action_effect_confirmed",
-            },
-        },
-        {
-            "action": {
-                "kind": "selectaction",
-                "tool": "type_text",
-                "target": refs[1],
-            },
-            "result": {
-                "dispatch": "sent",
-                "effect": "effect_confirmed",
-                "task": "incomplete",
-                "reason": "action_effect_confirmed",
-            },
-        },
-        {
-            "action": {
-                "kind": "selectaction",
-                "tool": "activate",
-                "target": refs[2],
-                "arguments": {},
-                "details": {"feedback_code": "action_no_effect_change_strategy"},
-            },
-            "result": {
-                "dispatch": "sent",
-                "effect": "unknown",
-                "task": "incomplete",
-                "reason": "action_unknown_low_local",
-            },
-        },
+    assert history["earlier_actions"] == []
+    assert history["retained_count"] == 3
+    trajectory = history["recent_trajectory"]
+    assert [item["action"]["target"]["label"] for item in trajectory] == [
+        "User name",
+        "Code",
+        "Submit",
     ]
+    assert all("task" not in item["result"] for item in trajectory)
+    assert [item["action"]["tool"] for item in trajectory] == [
+        "type_text",
+        "type_text",
+        "activate",
+    ]
+    assert trajectory[0]["result"]["transition"] == {
+        "observed_change": "changed",
+        "evidence_method": "native",
+    }
+    assert trajectory[-1]["action"]["details"] == {
+        "feedback_code": "action_outcome_unknown"
+    }
 
 
 def test_grounded_history_retains_observation_modality_and_tool_describes_current_source() -> None:
@@ -1213,7 +1251,7 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
 
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
-    previous = _bound_public_context(context)["recent_steps"][0]
+    previous = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
     assert previous["action"]["details"]["purpose"] == "criterion_verification"
     descriptions = {item.name: item.description for item in catalog.specs}
     assert "request_evidence" in descriptions
@@ -1222,15 +1260,16 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
 
 def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> None:
     context = _context()
-    target_id = next(iter(context.grounding.target_refs))
+    target = AgentHistoricalTargetView("textbox", "Value", ("Form",))
     turns = tuple(
         AgentTurnView(
             "selectaction",
             "type_text",
-            target_id,
+            target,
             public_parameters={"text": str(index)},
             dispatch_status="sent",
-            action_evaluation_status="effect_confirmed",
+            local_postcondition="satisfied",
+            transition={"observed_change": "changed", "evidence_method": "native"},
             task_evaluation_status="incomplete",
             reason=f"step-{index}",
         )
@@ -1240,32 +1279,94 @@ def test_grounded_recent_steps_keep_eight_pairs_and_only_latest_arguments() -> N
 
     recent_steps = _bound_public_context(context)["recent_steps"]
 
-    assert len(recent_steps) == 8
-    assert recent_steps[0]["result"]["reason"] == "step-2"
-    assert "arguments" not in recent_steps[-2]["action"]
-    assert recent_steps[-1]["action"]["arguments"] == {"text": "9"}
+    assert recent_steps["retained_count"] == 8
+    assert len(recent_steps["earlier_actions"]) == 4
+    assert recent_steps["earlier_actions"][0]["outcome"] == "step-2"
+    assert len(recent_steps["recent_trajectory"]) == 4
+    assert recent_steps["recent_trajectory"][-1]["action"]["arguments"] == {"text": "9"}
+
+
+def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
+    context = _context()
+    turns = tuple(
+        AgentTurnView(
+            "selectaction",
+            "activate",
+            AgentHistoricalTargetView("button", "Like", ("Rosie", "@nibh", "Id sit.")),
+            reason=f"step-{index}",
+        )
+        for index in range(5)
+    )
+    context = replace(context, recent_steps=BoundedSection(turns, len(turns), False))
+
+    history = _bound_public_context(context)["recent_steps"]
+
+    assert len(history["earlier_actions"]) == 1
+    assert {"observation", "target_ref", "destination_ref", "images"}.isdisjoint(
+        AgentTurnView.__dataclass_fields__
+    )
+    assert "observation" not in history["earlier_actions"][0]
+    assert len(history["recent_trajectory"]) == 4
+    assert all("observation" not in item for item in history["recent_trajectory"])
+    assert not re.search(r"\bE[1-9][0-9]{0,2}\b", json.dumps(history))
+    assert history["recent_trajectory"][0]["action"]["target"] == {
+        "role": "button",
+        "label": "Like",
+        "context": ["Rosie", "@nibh", "Id sit."],
+    }
+
+
+def test_historical_target_neighborhood_stops_at_nearest_semantic_group() -> None:
+    target = ActorWorldNodeView(
+        "E13",
+        "clickable",
+        "",
+        {"semantic.dom.attribute.class_tokens": ("like",)},
+    )
+    controls = ActorWorldNodeView("E10", "generic", "", children=(target,))
+    post = ActorWorldNodeView(
+        "E5",
+        "generic",
+        "",
+        children=(
+            ActorWorldNodeView("N1", "StaticText", "Rosie"),
+            ActorWorldNodeView("N2", "StaticText", "@nibh"),
+            ActorWorldNodeView("N3", "StaticText", "Id sit."),
+            controls,
+        ),
+    )
+    root = ActorWorldNodeView(
+        "E4",
+        "generic",
+        "",
+        children=(post, ActorWorldNodeView("N4", "StaticText", "Ophelia")),
+    )
+
+    assert _semantic_neighborhood((root, post, controls, target)) == (
+        "Rosie",
+        "@nibh",
+        "Id sit.",
+    )
 
 
 def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> None:
     context = _context()
     target_id = next(iter(context.grounding.target_refs))
-    target_ref = context.grounding.target_refs[target_id]
+    target = AgentHistoricalTargetView("button", "Like", ("Rosie", "@nibh"))
     turns = (
         AgentTurnView(
             "selectaction",
             "activate",
-            target_id,
+            target,
             dispatch_status="sent",
-            action_evaluation_status="effect_confirmed",
-            task_evaluation_status="incomplete",
-            reason="target changed",
-            target_snapshot={
+            local_postcondition="unknown",
+            transition={
                 "role": "button",
                 "label": "Like",
-                "state": {"active": False},
-            },
-            effect_summary={
-                "observed_effect": "effect_confirmed",
+                "before_state": {"active": False},
+                "after_state": {"active": True},
+                "observed_change": "changed",
+                "evidence_method": "structural",
                 "target_changed": True,
                 "fact_changes": (
                     {
@@ -1276,32 +1377,34 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
                     },
                 ),
             },
+            task_evaluation_status="incomplete",
+            reason="target changed",
         ),
         AgentTurnView(
             "selectaction",
             "activate",
-            target_id,
+            target,
             dispatch_status="sent",
-            action_evaluation_status="effect_confirmed",
+            local_postcondition="unknown",
+            transition={"observed_change": "changed", "evidence_method": "structural"},
             task_evaluation_status="incomplete",
             reason="target changed again",
         ),
     )
     context = replace(context, recent_steps=BoundedSection(turns, len(turns), False))
 
-    first = _bound_public_context(context)["recent_steps"][0]
+    first = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
 
-    assert first["action"]["target_snapshot"] == {
+    assert first["result"]["transition"] == {
         "role": "button",
         "label": "Like",
-        "state": {"active": False},
-    }
-    assert first["result"]["effect_details"] == {
-        "observed_effect": "effect_confirmed",
+        "before_state": {"active": False},
+        "after_state": {"active": True},
+        "observed_change": "changed",
+        "evidence_method": "structural",
         "target_changed": True,
         "fact_changes": [
             {
-                "subject_id": target_ref,
                 "predicate": "active",
                 "before": False,
                 "after": True,
@@ -1316,7 +1419,7 @@ def test_single_target_action_still_requires_the_current_public_reference() -> N
     activate = next(item for item in catalog.specs if item.name == "activate")
 
     assert to_json_compatible(activate.input_schema)["required"] == ["target"]
-    assert to_json_compatible(activate.input_schema)["properties"]["target"]["enum"] == ["E3"]
+    assert to_json_compatible(activate.input_schema)["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
     outcome = resolve_grounded_tool_call(
         catalog,
         ToolCall("activate", {"target": "E3"}),

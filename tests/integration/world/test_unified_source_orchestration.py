@@ -176,6 +176,32 @@ def test_selection_skips_expensive_visual_until_typed_visual_need() -> None:
     assert visual.plan.selections[1].requirement.value == "required"  # type: ignore[union-attr]
 
 
+def test_visual_only_semantic_need_keeps_a_fresh_structural_baseline() -> None:
+    selector = ObservationOrchestrator()
+    offers = (
+        ObservationOffer("dom", "structural", "structural", "low"),
+        ObservationOffer("visual", "visual", "weak", "high"),
+    )
+    selected = selector.select(
+        offers,
+        WorldObservationRequest(
+            ObservationRequestKind.POLICY_REQUEST,
+            "discover entities not represented structurally",
+            (
+                ObservationNeed(
+                    "test:open-world",
+                    ObservationPurpose.ENTITY_DISCOVERY,
+                    required_assurance=ObservationAssurance.WEAK,
+                ),
+            ),
+        ),
+    )
+
+    assert selected.plan is not None
+    assert [item.source for item in selected.plan.selections] == ["dom", "visual"]
+    assert selected.plan.selections[0].reason_code == "structured_baseline"
+
+
 def test_environment_state_is_required_and_structural_world_is_augmented() -> None:
     selector = ObservationOrchestrator()
     offers = (

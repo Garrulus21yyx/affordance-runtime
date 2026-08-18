@@ -6,11 +6,13 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.actions.classification import EffectCategory
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
     SemanticTarget,
 )
+from tests.support.action_contracts import verification_kwargs
 from tests.support.world import fused_world
 
 SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
@@ -110,7 +112,10 @@ def test_read_only_task_admits_only_low_risk_effect_free_interaction_shape() -> 
             valid,
             binding_id="binding:interaction:read",
             semantic_action="read",
-            verification_contract_digest="",
+            primitive_action="read_property",
+            effect_category=EffectCategory.OBSERVATION,
+            risk=ActionRisk.HIGH,
+            **verification_kwargs("read", schema_digest(SCHEMA), ()),
         ),
     )
 

@@ -131,6 +131,7 @@ class AgentActionOptionView:
     destination_mode: str = ""
     grounding_context_id: str = ""
     subject_kind: str = "entity"
+    verification_family: str = ""
     verification_contract_digest: str = ""
 
     def __post_init__(self) -> None:
@@ -202,22 +203,42 @@ class AgentActionPageView:
 
 
 @dataclass(frozen=True)
+class AgentHistoricalTargetView:
+    """A ref-free semantic description safe to carry across observation generations."""
+
+    role: str
+    label: str
+    context: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "context", tuple(self.context))
+        if any(not isinstance(item, str) or len(item) > 240 for item in self.context):
+            raise ValueError("historical target context must contain bounded strings")
+
+
+@dataclass(frozen=True)
 class AgentTurnView:
     decision_kind: str
     semantic_action: str = ""
-    target_id: str = ""
-    destination_id: str = ""
+    target: AgentHistoricalTargetView | None = None
+    destination: AgentHistoricalTargetView | None = None
     public_parameters: Mapping[str, object] = field(default_factory=dict)
+    expected_outcome: str = ""
     dispatch_status: str = ""
-    action_evaluation_status: str = ""
+    local_postcondition: str = ""
+    transition: Mapping[str, object] = field(default_factory=dict)
     task_evaluation_status: str = ""
     reason: str = ""
     semantic_summary: Mapping[str, object] = field(default_factory=dict)
-    target_snapshot: Mapping[str, object] = field(default_factory=dict)
-    effect_summary: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.target is not None and not isinstance(self.target, AgentHistoricalTargetView):
+            raise TypeError("turn target must be a ref-free semantic description")
+        if self.destination is not None and not isinstance(self.destination, AgentHistoricalTargetView):
+            raise TypeError("turn destination must be a ref-free semantic description")
         object.__setattr__(self, "public_parameters", freeze_json(self.public_parameters))
+        if not isinstance(self.expected_outcome, str) or len(self.expected_outcome) > 240:
+            raise ValueError("turn expected outcome must be one bounded string")
+        object.__setattr__(self, "expected_outcome", self.expected_outcome.strip())
+        object.__setattr__(self, "transition", freeze_json(self.transition))
         object.__setattr__(self, "semantic_summary", freeze_json(self.semantic_summary))
-        object.__setattr__(self, "target_snapshot", freeze_json(self.target_snapshot))
-        object.__setattr__(self, "effect_summary", freeze_json(self.effect_summary))

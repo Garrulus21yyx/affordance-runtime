@@ -14,11 +14,24 @@ from affordance_runtime.world.acquisition import ObservationAcquisition
 from affordance_runtime.world.contracts import WorldObservation
 
 
-class ActionEvaluationStatus(StrEnum):
-    EFFECT_CONFIRMED = "effect_confirmed"
-    NO_EFFECT_CONFIRMED = "no_effect_confirmed"
+class ObservedChange(StrEnum):
+    CHANGED = "changed"
+    UNCHANGED = "unchanged"
     UNKNOWN = "unknown"
-    REJECTED = "rejected"
+
+
+class LocalPostconditionStatus(StrEnum):
+    SATISFIED = "satisfied"
+    UNSATISFIED = "unsatisfied"
+    UNKNOWN = "unknown"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class EvidenceMethod(StrEnum):
+    NATIVE = "native"
+    STRUCTURAL = "structural"
+    VISUAL_DIFF = "visual_diff"
+    NONE = "none"
 
 
 class TaskEvaluationStatus(StrEnum):
@@ -36,9 +49,9 @@ class TaskOutcomeKind(StrEnum):
 
 
 class EvaluationInterruptionReason(StrEnum):
-    ACTION_CANCELLED = "action_evaluation_cancelled"
-    ACTION_INVALID = "action_evaluation_invalid"
-    ACTION_CALL_FAILED = "action_evaluation_call_failed"
+    ACTION_CANCELLED = "action_outcome_cancelled"
+    ACTION_INVALID = "action_outcome_invalid"
+    ACTION_CALL_FAILED = "action_outcome_call_failed"
     TASK_CANCELLED = "task_evaluation_cancelled"
     TASK_INVALID = "task_evaluation_invalid"
     TASK_CALL_FAILED = "task_evaluation_call_failed"
@@ -60,18 +73,24 @@ class CriterionEvaluationStatus(StrEnum):
 
 
 @dataclass(frozen=True)
-class ActionEvaluation:
+class ActionOutcome:
     request_id: str
     before_observation_id: str
     after_observation_id: str
-    status: ActionEvaluationStatus
+    observed_change: ObservedChange
+    local_postcondition: LocalPostconditionStatus
+    evidence_method: EvidenceMethod
     reason: str
     evidence_refs: tuple[str, ...] = ()
     evidence: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, ActionEvaluationStatus):
-            raise TypeError("action evaluation status must be typed")
+        if not isinstance(self.observed_change, ObservedChange):
+            raise TypeError("action outcome effect status must be typed")
+        if not isinstance(self.local_postcondition, LocalPostconditionStatus):
+            raise TypeError("action outcome postcondition status must be typed")
+        if not isinstance(self.evidence_method, EvidenceMethod):
+            raise TypeError("action outcome verification method must be typed")
         if not all(
             value.strip()
             for value in (
@@ -81,12 +100,15 @@ class ActionEvaluation:
                 self.reason,
             )
         ):
-            raise ValueError("action evaluation requires request, observation lineage, and reason")
+            raise ValueError("action outcome requires request, observation lineage, and reason")
         if self.before_observation_id == self.after_observation_id:
-            raise ValueError("action evaluation requires distinct before and after observations")
-        confirmed = self.status in {
-            ActionEvaluationStatus.EFFECT_CONFIRMED,
-            ActionEvaluationStatus.NO_EFFECT_CONFIRMED,
+            raise ValueError("action outcome requires distinct before and after observations")
+        confirmed = self.observed_change in {
+            ObservedChange.CHANGED,
+            ObservedChange.UNCHANGED,
+        } or self.local_postcondition in {
+            LocalPostconditionStatus.SATISFIED,
+            LocalPostconditionStatus.UNSATISFIED,
         }
         object.__setattr__(
             self,
@@ -94,7 +116,7 @@ class ActionEvaluation:
             validate_evidence_refs(tuple(self.evidence_refs), allow_empty=not confirmed),
         )
         if _contains_secret_key(self.evidence):
-            raise ValueError("action evaluation evidence cannot contain secret fields")
+            raise ValueError("action outcome evidence cannot contain secret fields")
         object.__setattr__(self, "evidence", freeze_json(self.evidence))
 
 
@@ -230,7 +252,7 @@ class EvaluationOutcome:
     observation_trigger: ObservationAcquisition | None
     consumed_acquisition: ObservationAcquisition
     after_observation: WorldObservation
-    action_evaluation: ActionEvaluation | None
+    action_outcome: ActionOutcome | None
     task_evaluation: TaskEvaluation
     semantic_delta: None = None
 
@@ -241,7 +263,7 @@ class EvaluationOutcome:
         execution: ExecutionOutcome,
         consumed_acquisition: ObservationAcquisition,
         after: WorldObservation,
-        action_evaluation: ActionEvaluation,
+        action_outcome: ActionOutcome,
         task_evaluation: TaskEvaluation,
     ) -> EvaluationOutcome:
         return cls(
@@ -251,7 +273,7 @@ class EvaluationOutcome:
             None,
             consumed_acquisition,
             after,
-            action_evaluation,
+            action_outcome,
             task_evaluation,
         )
 
@@ -293,18 +315,18 @@ class EvaluationOutcome:
             raise ValueError("task evaluation must match the consumed after world")
         if self.execution is not None:
             if self.execution.result.dispatch_status is DispatchStatus.NOT_SENT:
-                raise ValueError("NOT_SENT execution cannot trigger action evaluation")
-            if self.action_evaluation is None:
-                raise ValueError("dispatched execution requires action evaluation")
+                raise ValueError("NOT_SENT execution cannot trigger action outcome")
+            if self.action_outcome is None:
+                raise ValueError("dispatched execution requires action outcome")
             if (
                 self.before_observation.observation_id != self.execution.request.world_observation_id
-                or self.action_evaluation.request_id != self.execution.request.request_id
-                or self.action_evaluation.before_observation_id != self.before_observation.observation_id
-                or self.action_evaluation.after_observation_id != self.after_observation.observation_id
+                or self.action_outcome.request_id != self.execution.request.request_id
+                or self.action_outcome.before_observation_id != self.before_observation.observation_id
+                or self.action_outcome.after_observation_id != self.after_observation.observation_id
             ):
-                raise ValueError("action evaluation lineage must match exact execution worlds")
-        elif self.action_evaluation is not None:
-            raise ValueError("observation-triggered evaluation cannot carry action evaluation")
+                raise ValueError("action outcome lineage must match exact execution worlds")
+        elif self.action_outcome is not None:
+            raise ValueError("observation-triggered evaluation cannot carry action outcome")
         if self.observation_trigger is not None and self.observation_trigger is not self.consumed_acquisition:
             raise ValueError("observation-triggered evaluation must consume its exact trigger")
 
@@ -319,7 +341,7 @@ class EvaluationInterruption:
     observation_trigger: ObservationAcquisition | None
     consumed_acquisition: ObservationAcquisition
     after_observation: WorldObservation
-    action_evaluation: ActionEvaluation | None
+    action_outcome: ActionOutcome | None
     reason_code: EvaluationInterruptionReason
 
     @classmethod
@@ -330,7 +352,7 @@ class EvaluationInterruption:
         consumed_acquisition: ObservationAcquisition,
         after: WorldObservation,
         reason_code: EvaluationInterruptionReason,
-        action_evaluation: ActionEvaluation | None = None,
+        action_outcome: ActionOutcome | None = None,
     ) -> EvaluationInterruption:
         return cls(
             _evaluation_id(consumed_acquisition),
@@ -339,7 +361,7 @@ class EvaluationInterruption:
             None,
             consumed_acquisition,
             after,
-            action_evaluation,
+            action_outcome,
             reason_code,
         )
 
@@ -376,17 +398,17 @@ class EvaluationInterruption:
                 raise ValueError("NOT_SENT execution cannot enter evaluation")
             if self.before_observation.observation_id != self.execution.request.world_observation_id:
                 raise ValueError("evaluation interruption before world must match execution")
-            if self.action_evaluation is not None and (
-                self.action_evaluation.request_id != self.execution.request.request_id
-                or self.action_evaluation.before_observation_id != self.before_observation.observation_id
-                or self.action_evaluation.after_observation_id != self.after_observation.observation_id
+            if self.action_outcome is not None and (
+                self.action_outcome.request_id != self.execution.request.request_id
+                or self.action_outcome.before_observation_id != self.before_observation.observation_id
+                or self.action_outcome.after_observation_id != self.after_observation.observation_id
             ):
-                raise ValueError("interrupted action evaluation lineage mismatch")
-            if self.reason_code.action_phase != (self.action_evaluation is None):
+                raise ValueError("interrupted action outcome lineage mismatch")
+            if self.reason_code.action_phase != (self.action_outcome is None):
                 raise ValueError("evaluation interruption reason must match its reached evaluator phase")
         elif (
             self.observation_trigger is not self.consumed_acquisition
-            or self.action_evaluation is not None
+            or self.action_outcome is not None
             or self.reason_code.action_phase
         ):
             raise ValueError("interrupted observation evaluation must retain its exact task trigger")

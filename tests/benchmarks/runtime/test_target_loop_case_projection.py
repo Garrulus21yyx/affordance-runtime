@@ -12,6 +12,7 @@ from affordance_runtime.benchmarks.target_loop.case_projection import project_ca
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
+from affordance_runtime.evaluation import TaskOutcomeFact, TaskOutcomeKind
 
 
 def _snapshot(
@@ -19,8 +20,8 @@ def _snapshot(
     reason: str = "runtime_exception", control_status: str = "failed",
 ) -> PartialEpisodeSnapshot:
     return PartialEpisodeSnapshot(
-        observations, executions, 3, turns, "unknown", "effect_confirmed",
-        "sha256:" + "0" * 64, 1, 0, "action_effect_evaluated", 0, "SelectAction", 2, 1,
+        observations, executions, 3, turns, "unknown", "changed", "satisfied", "native",
+        "sha256:" + "0" * 64, 1, 0, "action_postcondition_satisfied", 0, "SelectAction", 2, 1,
         "complete", "", (("SelectAction", turns),), control_status, reason,
     )
 
@@ -44,8 +45,47 @@ def _result(reason: str, *, message: str = "display only"):
     )
 
 
+def test_blocked_run_does_not_publish_incompatible_verifier_unavailable_outcome() -> None:
+    result = SimpleNamespace(
+        status=RunStatus.BLOCKED,
+        sent_unknown_count=0,
+        observation_count=5,
+        execution_count=1,
+        currentness_probe_count=0,
+        step_count=10,
+        reason_code="",
+        failure_code=None,
+        policy_failure=None,
+        runtime_failure=None,
+        task_outcome=TaskOutcomeFact(
+            TaskOutcomeKind.VERIFIER_UNAVAILABLE,
+            "source_insufficient",
+        ),
+    )
+
+    projected = project_case_result(
+        "case",
+        result,
+        BenchmarkInstrumentation(),
+        1.0,
+        "",
+        final_snapshot=_snapshot(
+            observations=5,
+            executions=1,
+            turns=10,
+            control_status="blocked",
+            reason="",
+        ),
+    )
+
+    assert projected.status == "blocked"
+    assert projected.terminal_reason_code is not None
+    assert projected.failure_facts.task_outcome_kind == ""
+    assert projected.failure_facts.task_outcome_code == ""
+
+
 @pytest.mark.parametrize("reason", (
-    "task_evaluation_invalid", "action_evaluation_invalid",
+    "task_evaluation_invalid", "action_outcome_invalid",
     "action_result_lineage_mismatch", "action_not_dispatched",
     "observation_budget_exhausted", "abort_policy", "runtime_exception",
     "confirmation_subject_unavailable", "new_bounded_runtime_reason",
@@ -217,7 +257,7 @@ def test_metric_collision_preserves_runtime_and_component_facts_independently() 
     instrumentation = BenchmarkInstrumentation()
     instrumentation.record_failure(
         CaseFailureOrigin.ACTION_EVALUATION,
-        "action_evaluator_exception",
+        "action_outcome_projector_exception",
         RuntimeError("private detail"),
     )
     instrumentation.custom_metrics["observations"] = 99
@@ -227,7 +267,7 @@ def test_metric_collision_preserves_runtime_and_component_facts_independently() 
     assert projected.runtime_reason_code == "runtime_exception"
     assert projected.case_failure_code == "runtime_exception"
     assert projected.failure_origin is CaseFailureOrigin.ACTION_EVALUATION
-    assert projected.failure_code == "action_evaluator_exception"
+    assert projected.failure_code == "action_outcome_projector_exception"
     assert projected.exception_class == "RuntimeError"
     assert projected.harness_integrity_code == "metric_name_collision"
     assert projected.harness_integrity_failures == 1
@@ -312,13 +352,13 @@ def test_snapshot_request_kind_cannot_infer_component_origin(
 def test_dynamic_exception_class_is_safely_normalized_without_losing_component() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.failure_origin = CaseFailureOrigin.ACTION_EVALUATION
-    instrumentation.failure_code = "action_evaluator_exception"
+    instrumentation.failure_code = "action_outcome_projector_exception"
     instrumentation.exception_class = "private.class/" + "x" * 200
     projected = project_case_result(
         "case", _result("runtime_exception"), instrumentation, 1.0, "display only"
     )
     assert projected.failure_origin is CaseFailureOrigin.ACTION_EVALUATION
-    assert projected.failure_code == "action_evaluator_exception"
+    assert projected.failure_code == "action_outcome_projector_exception"
     assert projected.exception_class == "Exception"
 
 

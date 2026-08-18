@@ -27,7 +27,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
-from affordance_runtime.evaluation import ProductionActionEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 
 _REQUIRED = (
@@ -141,7 +141,7 @@ def _case(external_case, seed, policy, instrumentations) -> BenchmarkCase:
         environment = holder["environment"]
         return BenchmarkComposition(
             policy,
-            ProductionActionEvaluator(),
+            ProductionActionOutcomeProjector(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
         )
 

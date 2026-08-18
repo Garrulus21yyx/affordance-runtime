@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 from concurrent.futures import Future
+from importlib import import_module
 from typing import cast
 
 from affordance_runtime.surfaces.browsergym.semantics import (
@@ -27,7 +28,10 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     if (el.tagName.toLowerCase() === 'option') return Boolean(el.selected);
     return null;
   })(),
-  active: el.classList.contains('active') ? true : null,
+  // `classList.contains` is a closed boolean fact. Preserve false as well as
+  // true so the Actor can distinguish an inactive control from an omitted
+  // state field and can avoid toggling already-active controls.
+  active: el.classList.contains('active'),
   colorFamily: (() => {
     const style = getComputedStyle(el);
     const background = style.backgroundColor;
@@ -167,12 +171,22 @@ _VERIFIER_PROBE_SCRIPT = """() => {
 class ThreadBoundBrowserGym:
     """Small synchronous facade; no page, locator, or element handle crosses the thread."""
 
-    def __init__(self, task_id: str, *, headless: bool = True) -> None:
+    def __init__(
+        self,
+        task_id: str,
+        *,
+        headless: bool = True,
+        registration_modules: tuple[str, ...] = ("browsergym.miniwob",),
+    ) -> None:
         self._commands: queue.Queue[
             tuple[str, tuple[object, ...], dict[str, object], Future[object]] | None
         ] = queue.Queue()
         self._ready: Future[object] = Future()
-        self._thread = threading.Thread(target=self._run, args=(task_id, headless), daemon=True)
+        self._thread = threading.Thread(
+            target=self._run,
+            args=(task_id, headless, registration_modules),
+            daemon=True,
+        )
         self.owner_thread_ident: int | None = None
         self.last_capture_thread_ident: int | None = None
         self.last_currentness_probe_thread_ident: int | None = None
@@ -185,12 +199,13 @@ class ThreadBoundBrowserGym:
         self.unwrapped = self
         self._closed = False
 
-    def _run(self, task_id: str, headless: bool) -> None:
+    def _run(self, task_id: str, headless: bool, registration_modules: tuple[str, ...]) -> None:
         try:
             self.owner_thread_ident = threading.get_ident()
-            import browsergym.miniwob  # type: ignore[import-not-found]  # noqa: F401
             import gymnasium as gym  # type: ignore[import-not-found]
 
+            for module in registration_modules:
+                import_module(module)
             # BrowserGym's default ``standard_html`` marking omits SVG child
             # elements.  Those elements still appear as clickable in the CDP
             # DOM snapshot, but without a BrowserGym ID they cannot participate
@@ -268,6 +283,11 @@ class ThreadBoundBrowserGym:
 
     def step(self, action: str):
         return self._call("step", action)
+
+    def send_msg_to_user(self, content: str):
+        import json
+
+        return self._call("step", f"send_msg_to_user({json.dumps(content, ensure_ascii=False)})")
 
     def currentness_probe(self, bid: str):
         return self._call("currentness_probe", bid)

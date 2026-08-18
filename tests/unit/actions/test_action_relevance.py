@@ -6,8 +6,12 @@ from affordance_runtime.actions import (
     ActionRelevanceRole,
     ActionSpaceBuilder,
 )
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
+from tests.support.action_contracts import verification_kwargs
 from tests.support.agent.core_loop_support import _world
+
+_EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 @dataclass(frozen=True)
@@ -66,10 +70,11 @@ def test_explicit_direct_hint_takes_precedence_for_read_action() -> None:
         "read",
         "target:read",
         "observation",
-        {"type": "object", "properties": {}, "additionalProperties": False},
-        "schema:1",
+        _EMPTY_SCHEMA,
+        schema_digest(_EMPTY_SCHEMA),
         ("binding:1",),
         "read state",
+        **verification_kwargs("read", schema_digest(_EMPTY_SCHEMA), ()),
     )
     objective = _Objective(direct_target_ids=("target:read",))
 
@@ -86,10 +91,11 @@ def test_registered_interaction_action_is_enabling_without_business_effect() -> 
         "activate",
         "target:reveal",
         "interaction",
-        {"type": "object", "properties": {}, "additionalProperties": False},
-        "schema:1",
+        _EMPTY_SCHEMA,
+        schema_digest(_EMPTY_SCHEMA),
         ("binding:1",),
         "reveal details",
+        **verification_kwargs("activate", schema_digest(_EMPTY_SCHEMA), ()),
     )
 
     relevance = ActionRelevancePolicy().classify(option, None)

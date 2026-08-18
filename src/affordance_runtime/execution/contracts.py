@@ -40,13 +40,15 @@ class ActionIntent:
     target_id: str
     parameters: dict[str, Any] = field(default_factory=dict)
     destination_id: str = ""
-    expected_outcome: dict[str, Any] = field(default_factory=dict)
+    expected_outcome: str = ""
 
     def __post_init__(self) -> None:
         if not self.semantic_action.strip() or not self.target_id.strip():
             raise ValueError("action intent requires semantic action and target")
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
-        object.__setattr__(self, "expected_outcome", freeze_json(self.expected_outcome))
+        if not isinstance(self.expected_outcome, str) or len(self.expected_outcome) > 240:
+            raise ValueError("action intent expected outcome must be one bounded string")
+        object.__setattr__(self, "expected_outcome", self.expected_outcome.strip())
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,7 @@ class BoundActionRequest:
             or self.intent.target_id != self.selection.target_id
             or self.intent.parameters != self.selection.parameters
             or self.intent.destination_id != self.selection.destination_id
+            or self.intent.expected_outcome != self.selection.expected_outcome
             or self.binding.binding_id not in self.selection.eligible_binding_ids
             or self.selection.semantic_action != self.binding.semantic_action
             or self.selection.target_id != self.binding.target_id
@@ -87,7 +90,9 @@ class BoundActionRequest:
             or self.binding.observation_barrier != self.selection.observation_barrier
             or self.binding.destination_required != self.selection.destination_required
             or self.binding.eligible_destination_ids != self.selection.eligible_destination_ids
+            or self.binding.verification_family != self.selection.verification_family
             or self.binding.verification_contract_digest != self.selection.verification_contract_digest
+            or self.binding.verification_contract != self.selection.verification_contract
             or (
                 self.selection.destination_id
                 and self.selection.destination_id not in self.selection.eligible_destination_ids

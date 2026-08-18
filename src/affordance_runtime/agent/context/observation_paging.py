@@ -111,6 +111,13 @@ class ObservationPager:
         visible_target_ids: tuple[str, ...],
     ) -> ObservationTraversalView:
         visible = set(visible_target_ids)
+        if len(visible) >= basis.total_count:
+            return ObservationTraversalView(
+                _public_snapshot_id(basis.observation_id),
+                ObservationTraversalStatus.COMPLETE,
+                "",
+                basis.total_count,
+            )
         shown = [
             (target_id, next_offset)
             for target_id, next_offset in zip(

@@ -11,6 +11,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     ObservationConflict,
@@ -20,7 +21,10 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from tests.support.action_contracts import verification_kwargs
 from tests.support.world import fused_world
+
+_EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 def _evaluation(task: TaskGoal, observation_id: str) -> TaskEvaluation:
@@ -192,12 +196,13 @@ def test_action_page_reports_runtime_membership_and_truncation_truthfully() -> N
             "read",
             "target:0",
             "observation",
-            {"type": "object", "properties": {}, "additionalProperties": False},
-            "schema:read",
+            _EMPTY_SCHEMA,
+            schema_digest(_EMPTY_SCHEMA),
             (f"binding:{index}",),
             f"read target {index}",
             (),
             ActionRisk.LOW,
+            **verification_kwargs("read", schema_digest(_EMPTY_SCHEMA), ()),
         )
         for index in range(5)
     )

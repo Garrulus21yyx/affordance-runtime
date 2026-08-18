@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
@@ -93,9 +94,21 @@ class BrowserGymPort(Protocol):
 
     def reset(self, *, seed: int) -> tuple[dict[str, object], dict[str, object]]: ...
     def step(self, action: str) -> tuple[dict[str, object], object, object, object, dict[str, object]]: ...
+    def send_msg_to_user(self, content: str) -> tuple[dict[str, object], object, object, object, dict[str, object]]: ...
     def capture_current(self) -> tuple[dict[str, object], dict[str, object]]: ...
     def currentness_probe(self, bid: str) -> object: ...
     def close(self) -> None: ...
+
+
+def _accepts_registration_modules(factory: Callable[..., BrowserGymPort]) -> bool:
+    try:
+        parameters = inspect.signature(factory).parameters
+    except (TypeError, ValueError):
+        return True
+    return (
+        any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
+        or "registration_modules" in parameters
+    )
 
 
 @dataclass
@@ -252,6 +265,7 @@ class BrowserGymSurfaceAdapter:
         visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
         visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
         marked_candidate_policy_available: bool = False,
+        registration_modules: tuple[str, ...] = ("browsergym.miniwob",),
     ) -> BrowserGymSurfaceAdapter:
         if not task_id.strip():
             raise ValueError("BrowserGym task ID must be nonempty")
@@ -259,7 +273,10 @@ class BrowserGymSurfaceAdapter:
             from affordance_runtime.surfaces.browsergym.backend import ThreadBoundBrowserGym
 
             gym_factory = ThreadBoundBrowserGym
-        gym_environment = gym_factory(task_id, headless=True)
+        gym_kwargs: dict[str, object] = {"headless": True}
+        if _accepts_registration_modules(gym_factory):
+            gym_kwargs["registration_modules"] = registration_modules
+        gym_environment = gym_factory(task_id, **gym_kwargs)
         try:
             raw, info = gym_environment.reset(seed=seed)
             prepared_info = task_info(info)

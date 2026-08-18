@@ -1,7 +1,7 @@
 import pytest
 
 from affordance_runtime.agent.context.evaluator_views import (
-    build_model_action_evaluation_view,
+    build_model_action_outcome_view,
     build_model_task_evaluation_view,
 )
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
@@ -51,7 +51,7 @@ def test_model_evaluator_views_exclude_bound_route_backend_and_adapter_evidence(
         ActionError.STALE_BINDING,
         {"selector": "#private", "credential": "raw-secret"},
     )
-    view = build_model_action_evaluation_view(
+    view = build_model_action_outcome_view(
         _task(),
         world,
         world,

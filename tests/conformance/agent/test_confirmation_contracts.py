@@ -11,7 +11,11 @@ from affordance_runtime.confirmation import (
 )
 from affordance_runtime.execution import ActionIntent
 from affordance_runtime.risk import RiskPolicy
+from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import RiskProfile, TaskGoal
+from tests.support.action_contracts import verification_kwargs
+
+_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 def test_confirmation_decision_rejects_non_enum_kind() -> None:
@@ -27,11 +31,17 @@ def _selection() -> AdmittedActionSelection:
         "target:shared",
         "local_reversible",
         ("shared_state_enabled",),
-        "sha256:schema",
+        schema_digest(_SCHEMA),
         ("binding:https://private.example/action",),
         ActionRisk.MEDIUM,
         True,
         {},
+        verification_contract_digest=verification_kwargs(
+            "activate", schema_digest(_SCHEMA), ("shared_state_enabled",),
+        )["verification_contract_digest"],
+        verification_family=verification_kwargs(
+            "activate", schema_digest(_SCHEMA), ("shared_state_enabled",),
+        )["verification_family"],
     )
 
 

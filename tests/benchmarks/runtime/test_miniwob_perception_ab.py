@@ -110,6 +110,7 @@ def test_provider_cohort_accepts_native_tool_policy_without_weakening_frozen_ab(
         model=object(),
         provider_id="zhipu",
         model_id="glm-4.6",
+        endpoint_host="zhipu.invalid",
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
         transport_timeout_s=1,

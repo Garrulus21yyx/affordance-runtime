@@ -4,10 +4,16 @@ from pathlib import Path
 import pytest
 
 from affordance_runtime.benchmarks.webarena_verified import (
+    WA_HARD_SUBSET_SHA256,
+    WA_W1_SMOKE_CASES,
+    WA_W2_COHORT_CASES,
     evaluate_webarena_verified_manifest,
+    inspect_webarena_verified_w0_readiness,
     load_webarena_verified_tasks,
     select_stratified_webarena_subset,
+    webarena_gym_task_id,
     write_webarena_verified_subset,
+    write_webarena_verified_w0_manifest,
 )
 
 
@@ -24,6 +30,128 @@ def _dataset(path: Path, *, count: int = 36) -> Path:
     ]
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp_path: Path) -> None:
+    env = {
+        "WA_SHOPPING_URL": "https://user:pass@example.test/shopping?token=secret",
+        "WA_SHOPPING_ADMIN_URL": "https://admin.example.test",
+        "WA_REDDIT_URL": "https://reddit.example.test",
+        "WA_GITLAB_URL": "https://gitlab.example.test",
+        "WA_MAP_URL": "https://map.example.test",
+        "WA_WIKIPEDIA_URL": "https://wiki.example.test",
+        "WA_DEPLOYMENT_IMAGE_DIGEST": "sha256:" + "a" * 64,
+        "WA_AUTH_TOKEN": "must-not-leak",
+    }
+
+    manifest = write_webarena_verified_w0_manifest(tmp_path / "w0.json", timeout_s=180.0, environment=env)
+
+    assert manifest["schema_version"] == "webarena-verified-target-loop-manifest.v1"
+    assert manifest["hard_subset_sha256"] == f"sha256:{WA_HARD_SUBSET_SHA256}"
+    assert [case["task_id"] for case in manifest["smoke_cases"]] == [0, 7, 21, 27, 44, 266]
+    assert [case["task_id"] for case in manifest["proof_cohort_cases"]] == [
+        267, 97, 265, 268, 740, 759, 424, 426, 681, 672, 556, 554,
+    ]
+    assert manifest["timeout_frozen"] is True
+    assert manifest["site_environment_frozen"] is True
+    serialized = json.dumps(manifest)
+    assert "must-not-leak" not in serialized
+    assert "user:pass" not in serialized
+    assert "token=secret" not in serialized
+    assert "expected_answer" not in serialized
+    assert "evaluator" not in serialized
+
+
+def test_w0_readiness_reports_environment_blockers_without_agent_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Completed:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps(
+            {
+                "packages": {
+                    "playwright": {"installed": True, "version": "1.44.0"},
+                    "browsergym-webarena": {"installed": True, "version": "0.14.3"},
+                    "browsergym-webarena-verified": {"installed": False},
+                    "nltk": {"installed": True, "version": "3.10.3"},
+                    "webarena-verified": {"installed": False},
+                },
+                "registration": {"imported": False, "missing_task_ids": [WA_W1_SMOKE_CASES[0].gym_id]},
+                "sites": [],
+                "exercise": {"attempted": True, "reset": "not_attempted", "evaluator": "not_attempted"},
+            }
+        )
+
+    calls: list[dict[str, object]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append({"command": command, **kwargs})
+        return Completed()
+
+    monkeypatch.setattr("affordance_runtime.benchmarks.webarena_verified.subprocess.run", fake_run)
+
+    report = inspect_webarena_verified_w0_readiness(runtime_python=tmp_path / "python", output_path=tmp_path / "r.json")
+
+    assert report["ready"] is False
+    assert report["failure_origin"] == "environment"
+    assert "environment:browsergym-webarena-verified_missing" in report["acceptance_errors"]
+    assert "environment:webarena-verified_missing" in report["acceptance_errors"]
+    assert any(error.startswith("environment:wa_sites_missing:") for error in report["acceptance_errors"])
+    assert calls[0]["command"][:2] == [str(tmp_path / "python"), "-c"]
+    assert json.loads(calls[0]["input"])["probe_task_id"] == WA_W1_SMOKE_CASES[0].gym_id
+    assert (tmp_path / "r.json").exists()
+
+
+def test_w0_readiness_accepts_registered_sites_reset_and_evaluator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sites = [
+        {"env": f"WA_{name}_URL", "redacted_url": f"https://{name}.example.test/", "health": {"status": "ok"}}
+        for name in ("SHOPPING", "SHOPPING_ADMIN", "REDDIT", "GITLAB", "MAP", "WIKIPEDIA")
+    ]
+
+    class Completed:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps(
+            {
+                "packages": {
+                    "playwright": {"installed": True, "version": "1.44.0"},
+                    "browsergym-webarena": {"installed": True, "version": "0+pin"},
+                    "browsergym-webarena-verified": {"installed": True, "version": "0+pin"},
+                    "nltk": {"installed": True, "version": "3.10.3"},
+                    "webarena-verified": {"installed": True, "version": "0+pin"},
+                },
+                "registration": {
+                    "imported": True,
+                    "missing_task_ids": [],
+                    "registered_task_ids": [case.gym_id for case in (*WA_W1_SMOKE_CASES, *WA_W2_COHORT_CASES)],
+                },
+                "sites": sites,
+                "exercise": {
+                    "attempted": True,
+                    "reset": {"status": "ok", "goal_present": True},
+                    "evaluator": {"status": "ok", "terminated": True, "reward_type": "float"},
+                },
+            }
+        )
+
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.webarena_verified.subprocess.run",
+        lambda *_args, **_kwargs: Completed(),
+    )
+
+    report = inspect_webarena_verified_w0_readiness(runtime_python=tmp_path / "python")
+
+    assert report["ready"] is True
+    assert report["acceptance_errors"] == []
+    assert report["failure_origin"] == "none"
+
+
+def test_webarena_gym_task_id_uses_official_browsergym_registration_shape() -> None:
+    assert webarena_gym_task_id(WA_W1_SMOKE_CASES[0]) == "browsergym/webarena_verified.279.0.2"
+    assert WA_W2_COHORT_CASES[0].gym_id == "browsergym/webarena_verified.85.267.4"
 
 
 def test_webarena_manifest_is_stratified_and_digest_bound(tmp_path: Path) -> None:

@@ -146,28 +146,22 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
         context,
         False,
     )
-    pending = [
-        node
-        for document in public["observation"]["documents"]
-        for node in document["roots"]
-    ]
-    actor_node = None
-    while pending:
-        item = pending.pop()
-        if item["ref"] == candidate.target_ref:
-            actor_node = item
-            break
-        pending.extend(item["children"])
-    assert actor_node is not None
-    assert set(actor_node["state"]).issuperset(
-        {"grid_coordinate", "grid_membership", "grid_coordinate_confidence"}
+    observation = public["observation"]
+    target_line = next(
+        line for line in observation.splitlines() if f"[{candidate.target_ref}]" in line
     )
+    assert "grid_coordinate=" in target_line
+    assert "grid_membership=" in target_line
+    assert "grid_coordinate_confidence=" in target_line
     from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 
     action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     activate = next(spec for spec in action_catalog.specs if spec.name == "activate")
-    target_values = activate.input_schema["properties"]["target"]["enum"]
-    assert candidate.target_ref in target_values
+    assert activate.input_schema["properties"]["target"]["pattern"] == "^E[1-9][0-9]{0,2}$"
+    assert any(
+        item.ref == candidate.target_ref and "activate" in item.verbs
+        for item in context.grounding.entities
+    )
 
     assert target.target_id in dict(context.grounding.target_refs)
 

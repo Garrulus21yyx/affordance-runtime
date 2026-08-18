@@ -1,6 +1,11 @@
 import pytest
 
-from affordance_runtime.evaluation import ActionEvaluation, ActionEvaluationStatus
+from affordance_runtime.evaluation import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+)
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.world import (
     ObservationSourceProfile,
@@ -81,25 +86,29 @@ def test_unicode_fact_and_artifact_identity_is_canonicalized_without_failure() -
 
 
 @pytest.mark.parametrize("refs", (("",), ("fact:after", "fact:after")))
-def test_action_evaluation_rejects_blank_or_duplicate_evidence_refs(refs) -> None:
+def test_action_outcome_rejects_blank_or_duplicate_evidence_refs(refs) -> None:
     with pytest.raises(ValueError, match="evidence"):
-        ActionEvaluation(
+        ActionOutcome(
             "request:1",
             "before:1",
             "after:1",
-            ActionEvaluationStatus.UNKNOWN,
+            ObservedChange.UNKNOWN,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.NONE,
             "untrusted evidence",
             refs,
         )
 
 
-def test_action_evaluation_rejects_secret_bearing_evidence_mapping() -> None:
+def test_action_outcome_rejects_secret_bearing_evidence_mapping() -> None:
     with pytest.raises(ValueError, match="secret"):
-        ActionEvaluation(
+        ActionOutcome(
             "request:1",
             "before:1",
             "after:1",
-            ActionEvaluationStatus.UNKNOWN,
+            ObservedChange.UNKNOWN,
+            LocalPostconditionStatus.UNKNOWN,
+            EvidenceMethod.NONE,
             "untrusted evidence",
             evidence={"credential": "raw-secret"},
         )

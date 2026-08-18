@@ -149,6 +149,7 @@ def _goal_compiler_environment(environment: Mapping[str, str]) -> Mapping[str, s
         return environment
     model_key = {
         "zhipu": "LLM_ZHIPU_MODEL",
+        "aliyun": "LLM_ALIYUN_MODEL",
         "mistral": "LLM_MISTRAL_MODEL",
         "gemini": "LLM_GEMINI_MODEL",
         "local": "LLM_LOCAL_MODEL",

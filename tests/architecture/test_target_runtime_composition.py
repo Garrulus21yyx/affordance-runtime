@@ -49,8 +49,8 @@ def test_target_runtime_owns_lifecycle_without_legacy_coordinator_or_runner() ->
     assert "affordance_runtime.composition" not in imports
 
 
-def test_product_action_evaluator_has_no_benchmark_dependency() -> None:
-    evaluator = RUNTIME / "evaluation" / "action_evaluator.py"
+def test_product_action_outcome_projector_has_no_benchmark_dependency() -> None:
+    evaluator = RUNTIME / "evaluation" / "action_outcome_projector.py"
 
     assert not any(name.startswith("affordance_runtime.benchmarks") for name in _imports(evaluator))
 

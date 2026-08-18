@@ -42,7 +42,7 @@ class BenchmarkInstrumentation:
     tool_grounding_gap_count: int = 0
     tool_catalog_count: int = 0
     tool_catalog_bytes: int = 0
-    action_evaluator_calls: int = 0
+    action_outcome_projector_calls: int = 0
     task_evaluator_calls: int = 0
     provider_attempts: int = 0
     provider_retry_count: int = 0
@@ -360,18 +360,18 @@ def _decision_trace(decision):
 
 
 @dataclass
-class CountingActionEvaluator:
+class CountingActionOutcomeProjector:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
 
     async def evaluate(self, task, before, request, result, after):
-        self.instrumentation.action_evaluator_calls += 1
+        self.instrumentation.action_outcome_projector_calls += 1
         try:
             return await self.wrapped.evaluate(task, before, request, result, after)
         except Exception as exc:
             self.instrumentation.record_failure(
                 CaseFailureOrigin.ACTION_EVALUATION,
-                "action_evaluator_exception",
+                "action_outcome_projector_exception",
                 exc,
             )
             raise

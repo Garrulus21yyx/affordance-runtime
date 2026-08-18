@@ -29,7 +29,7 @@ def _world() -> WorldObservation:
     return fused_world("observation:runtime", (target,), (fact,), surface="static")
 
 
-class UnusedActionEvaluator:
+class UnusedActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
         del task, before, request, result, after
         raise AssertionError("target runtime fixture must not execute an action")
@@ -68,7 +68,7 @@ def _request(*, revision: int = 1, account: str = "") -> NaturalLanguageTaskRequ
 def _runtime(policy: AskForAccountPolicy | None = None):
     return compose_target_runtime(
         policy or AskForAccountPolicy(),
-        UnusedActionEvaluator(),
+        UnusedActionOutcomeProjector(),
         InputAwareTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_runtime_facade_test"),
     )

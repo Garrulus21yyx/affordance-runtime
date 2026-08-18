@@ -614,7 +614,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
     active_profile = env.get("LLM_ACTIVE_PROFILE", "local").strip().lower()
     if active_profile == "local":
         return _local_model_port(env, private_capture)
-    if active_profile not in {"mistral", "gemini", "zhipu"}:
+    if active_profile not in {"mistral", "gemini", "zhipu", "aliyun"}:
         raise ValueError(f"unsupported LLM_ACTIVE_PROFILE: {active_profile}")
     if active_profile == "mistral":
         remote = OpenAICompatibleModelPort(
@@ -634,7 +634,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             endpoint_class="remote",
             private_capture=private_capture,
         )
-    else:
+    elif active_profile == "zhipu":
         model = _required_env(env, "LLM_ZHIPU_MODEL")
         supports_multimodal = _zhipu_model_supports_multimodal(model)
         remote = OpenAICompatibleModelPort(
@@ -650,6 +650,18 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
                 else StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
             ),
             thinking_mode=None if supports_multimodal else "disabled",
+            private_capture=private_capture,
+        )
+    else:
+        remote = OpenAICompatibleModelPort(
+            base_url=_required_env(env, "LLM_ALIYUN_BASE_URL"),
+            api_key=_required_env(env, "LLM_ALIYUN_API_KEY"),
+            model=_required_env(env, "LLM_ALIYUN_MODEL"),
+            provider="aliyun",
+            endpoint_class="remote",
+            supports_multimodal=False,
+            structured_output_mode=StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA,
+            thinking_mode=None,
             private_capture=private_capture,
         )
     if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):

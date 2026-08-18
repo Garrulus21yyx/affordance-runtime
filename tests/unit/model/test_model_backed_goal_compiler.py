@@ -99,7 +99,8 @@ def test_initial_attempt_uses_independent_prompt_and_preserves_transcript() -> N
     assert isinstance(outcome, GoalPlanProposal)
     assert port.schemas == [GoalCompilerModelResponse]
     assert port.configs[0].prompt_version == GOAL_COMPILER_PROMPT_VERSION
-    assert "semantic GoalPlanner" in port.messages[0][0].content
+    assert "optional GoalCompiler" in port.messages[0][0].content
+    assert "Describe outcomes, not internal" in port.messages[0][0].content
     assert "semantic_contract" not in port.messages[0][1].content
     assert compiler.last_generation_attempts[0].transcript["llm.output_messages"][0]["content"] == "raw:1"
 
@@ -236,6 +237,32 @@ def test_role_factory_uses_distinct_better_compiler_model(monkeypatch) -> None:
     })
     assert roles.action_policy.port.port.model == "glm-4.1v-thinking-flashx"
     assert roles.goal_compiler.port.model == "glm-4.7-flash"
+
+
+def test_role_factory_uses_aliyun_compiler_model_override(monkeypatch) -> None:
+    from affordance_runtime.model import goal_compiler as module
+    from affordance_runtime.model.policy import factory
+
+    def build(environment):
+        port = ScriptedModelPort([])
+        port.model = environment["LLM_ALIYUN_MODEL"]
+        return port
+
+    action_policy = object()
+    monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
+    monkeypatch.setattr(module, "model_port_from_environment", build)
+
+    roles = model_roles_from_environment({
+        "LLM_ACTIVE_PROFILE": "aliyun",
+        "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
+        "LLM_ALIYUN_API_KEY": "secret",
+        "LLM_ALIYUN_MODEL": "glm-5.2",
+        "LLM_GOAL_COMPILER_MODEL": "glm-5.2-compiler",
+        "LLM_MODEL_ADAPTER": "pydantic-ai",
+    })
+
+    assert roles.action_policy is action_policy
+    assert roles.goal_compiler.port.model == "glm-5.2-compiler"
 
 
 def test_pydantic_policy_keeps_distinct_compiler_model_override(monkeypatch) -> None:

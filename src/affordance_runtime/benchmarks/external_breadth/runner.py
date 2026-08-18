@@ -47,7 +47,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
-from affordance_runtime.evaluation import ProductionActionEvaluator
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.goals import GoalCompiler
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
@@ -315,7 +315,7 @@ def _target_case(
         )
         return BenchmarkComposition(
             paced,
-            ProductionActionEvaluator(),
+            ProductionActionOutcomeProjector(),
             ExternalEnvironmentTaskEvaluator(environment.benchmark_task_id, environment),
             required_decisions=PRIMARY_BENCHMARK_REQUIRED_DECISIONS,
             goal_compiler=goal_compiler,

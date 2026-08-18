@@ -19,7 +19,7 @@ from affordance_runtime.model.policy import (
     ModelMetadata,
     ResolvedModelDecision,
 )
-from tests.support.agent.core_loop_support import SharedActionEvaluator, SharedTaskEvaluator, _task, _world
+from tests.support.agent.core_loop_support import SharedActionOutcomeProjector, SharedTaskEvaluator, _task, _world
 
 
 async def _context():
@@ -172,7 +172,7 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
                     ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))
                 )
             ),
-            SharedActionEvaluator(),
+            SharedActionOutcomeProjector(),
             SharedTaskEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("atomic_model_policy_test"),
         ).run_task(environment, _task())

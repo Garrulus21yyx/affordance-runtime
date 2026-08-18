@@ -30,7 +30,7 @@ class NeverPolicy:
         raise AssertionError("terminal initial observation must not call policy")
 
 
-class UnusedActionEvaluator:
+class UnusedActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after):
         del task, before, request, result, after
         raise AssertionError("terminal initial observation must not evaluate an action")
@@ -116,7 +116,7 @@ def test_target_runtime_runs_a_natural_language_request_through_intake() -> None
     environment = ScriptedEnvironment(initial_observation=observation)
     runtime = TargetRuntime(
         AgentDecisionPorts(NeverPolicy()),
-        UnusedActionEvaluator(),
+        UnusedActionOutcomeProjector(),
         BlockedTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_task_intake_test"),
     )
@@ -147,7 +147,7 @@ def test_target_runtime_does_not_touch_environment_for_nonready_intake() -> None
     environment = Environment()
     runtime = TargetRuntime(
         AgentDecisionPorts(NeverPolicy()),
-        UnusedActionEvaluator(),
+        UnusedActionOutcomeProjector(),
         BlockedTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_task_intake_test"),
     )
