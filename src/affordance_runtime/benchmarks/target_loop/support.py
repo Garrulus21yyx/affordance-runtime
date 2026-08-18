@@ -23,7 +23,13 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
-from affordance_runtime.model.policy import ModelBackedAgentPolicy, ModelMetadata, ResolvedModelDecision
+from affordance_runtime.model.policy import (
+    ModelBackedAgentPolicy,
+    ModelGenerationAttempt,
+    ModelInvocationResult,
+    ModelMetadata,
+    ResolvedModelDecision,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
@@ -75,10 +81,20 @@ class ScriptedDecisionPort:
     async def generate(self, request):
         self.calls += 1
         if self.fail:
-            return ModelFailure(ModelFailureKind.TIMEOUT, "fixture timeout", False)
+            return ModelInvocationResult(
+                failure=ModelFailure(ModelFailureKind.TIMEOUT, "fixture timeout", False),
+                attempts=(ModelGenerationAttempt(1, "initial", "fixture", "failed"),),
+                diagnostics={"policy_model_call_count": 1},
+            )
         option = request.agent_context.actions.options[0]
         decision = SelectAction(request.context_id, option.action_id)
-        return ResolvedModelDecision(decision, ModelMetadata("fixture", "scripted", "response:1"))
+        metadata = ModelMetadata("fixture", "scripted", "response:1")
+        return ModelInvocationResult(
+            output=ResolvedModelDecision(decision, metadata),
+            metadata=metadata,
+            attempts=(ModelGenerationAttempt(1, "initial", "fixture", "accepted"),),
+            diagnostics={"policy_model_call_count": 1},
+        )
 
 
 def policy_for(profile: str):

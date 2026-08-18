@@ -633,8 +633,10 @@ binding, dispatch, and task completion. PydanticAI cannot authorize GUI executio
 
 `ModelInvocationResult[T]` is the single formal model-call exit for existing model roles. It carries either a typed
 role output or typed failure, `ModelMetadata`, every physical `ModelGenerationAttempt`, bounded repair diagnostics,
-and lineage. Adapters may keep `last_*` fields as compatibility mirrors for old tests and probes, but trace and new
-benchmark code read the invocation result first and do not reconstruct attempts from adapter-private mutable state.
+role diagnostics, and lineage. Current production policy ports return only this envelope. `ModelBackedAgentPolicy`
+keeps `last_metadata` and `last_provider_attempts` only as read-only properties derived from
+`last_invocation_result`. Trace and benchmark instrumentation consume the invocation result, not adapter-private
+`last_*` fields.
 
 PydanticAI owns provider clients, provider messages, native tool-call parsing, call IDs, and basic schema repair. The
 current `PerTurnToolCatalog` is exposed as a PydanticAI `ExternalToolset`, so a model proposes one deferred semantic
@@ -697,9 +699,12 @@ observation is written once; steps reference its identity, and binary media is c
 Every provider attempt is recorded at the provider boundary as an OpenInference-shaped LLM transcript containing its
 input messages, exact current tool schema, output message or typed error, token usage, response ID, and semantic phase
 (`initial`, transport retry phases, `structured_output_repair`, `argument_repair`, or `tool_intent_repair`).
-`ModelInvocationResult` is the trace authority for attempts, metadata, repairs, and lineage; `last_*` mirrors are
-temporary compatibility only. Screenshot data URLs are replaced by content-addressed artifacts. Trace data never
-enters `RunState` or `AgentContext` and cannot affect control.
+`ModelInvocationResult` is the trace authority for attempts, metadata, repairs, role diagnostics, and lineage.
+Screenshot data URLs are replaced by content-addressed artifacts. Trace data never enters `RunState` or
+`AgentContext` and cannot affect control.
+The remaining compatibility debt is below this trace seam: `ModelBackedGoalCompiler` and compact-json still assemble
+attempts from provider `last_call`/`last_transcript` until the lower provider port returns an explicit provider-call
+record. That debt is not a trace or GUI Runtime authority.
 Langfuse renders the same agent root, model-turn chain, LLM generations, and Runtime tool spans; it is an exporter,
 not an authority, queue, transcript owner, or second loop. The separate private capture remains an optional isolated
 copy for deployments that do not enable a local Runtime trace.
@@ -985,7 +990,7 @@ validation:
 | 10. Replace symbolic goal guidance with Simple GoalPlan | implementation complete; Ready delivered / behavior failed / non-closed | five-field plan is directly projected and compiler attempts are traced; live evidence includes both reversal of satisfied Likes and a Ready-plan zero-action stall |
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
-| Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result first; GUI authority is unchanged |
+| Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
 | 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | episode lifecycle, Episode Context, WorkingFact, and model invocation boundary implemented locally; outer mission layer pending | thin outer Manager/Auditor/MissionState must enter through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 

@@ -46,14 +46,20 @@ class ScriptedPort:
         return self.outcome
 
 
-def _resolved(decision, metadata: ModelMetadata | None = None):
-    return ResolvedModelDecision(decision, metadata or ModelMetadata())
+def _decision_result(decision, metadata: ModelMetadata | None = None):
+    resolved_metadata = metadata or ModelMetadata()
+    return ModelInvocationResult(
+        output=ResolvedModelDecision(decision, resolved_metadata),
+        metadata=resolved_metadata,
+        attempts=(ModelGenerationAttempt(1, "initial", "fixture", "accepted"),),
+        diagnostics={"policy_model_call_count": 1},
+    )
 
 
 def test_model_request_has_one_typed_context_authority() -> None:
     async def scenario() -> None:
         context = await _context()
-        port = ScriptedPort(_resolved(Abort(context.context_id, "fixture stop", "policy")))
+        port = ScriptedPort(_decision_result(Abort(context.context_id, "fixture stop", "policy")))
         await ModelBackedAgentPolicy(port).decide(context)
 
         assert port.request.agent_context is context
@@ -85,7 +91,7 @@ def test_private_binding_route_and_credentials_never_enter_model_request() -> No
             ActionSpaceBuilder().build(task, observation),
             evaluation,
         )
-        port = ScriptedPort(_resolved(Abort(context.context_id, "inspection complete", "policy")))
+        port = ScriptedPort(_decision_result(Abort(context.context_id, "inspection complete", "policy")))
 
         await ModelBackedAgentPolicy(port).decide(context)
 
@@ -105,7 +111,7 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
     async def scenario() -> None:
         context = await _context()
         option = context.actions.options[0]
-        port = ScriptedPort(_resolved(
+        port = ScriptedPort(_decision_result(
             SelectAction(context.context_id, option.action_id),
             ModelMetadata("fixture", "scripted", "response:1"),
         ))
@@ -135,7 +141,7 @@ def test_model_backed_policy_records_explicit_invocation_result_as_trace_authori
         )
         port = ScriptedPort(
             ModelInvocationResult(
-                output=_resolved(SelectAction(context.context_id, option.action_id), metadata),
+                output=ResolvedModelDecision(SelectAction(context.context_id, option.action_id), metadata),
                 metadata=metadata,
                 attempts=attempts,
                 repair_diagnostics=({"kind": "transport_retry", "phase": "initial_provider_retry"},),
@@ -163,10 +169,7 @@ def test_canonical_context_port_receives_the_same_agent_context() -> None:
 
         async def generate(self, request):
             self.request = request
-            return ResolvedModelDecision(
-                Abort(request.context_id, "fixture stop", "policy"),
-                ModelMetadata(),
-            )
+            return _decision_result(Abort(request.context_id, "fixture stop", "policy"), ModelMetadata())
 
     async def scenario() -> None:
         context = await _context()
@@ -183,8 +186,8 @@ def test_canonical_context_port_receives_the_same_agent_context() -> None:
 def test_provider_outputs_and_failures_are_distinct_from_model_authored_abort() -> None:
     outcomes = (
         "not-json",
-        ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False),
-        ModelFailure(ModelFailureKind.REFUSED, "provider refused", False),
+        ModelInvocationResult(failure=ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False)),
+        ModelInvocationResult(failure=ModelFailure(ModelFailureKind.REFUSED, "provider refused", False)),
         TimeoutError("credential=must-not-leak"),
     )
 
@@ -207,7 +210,10 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
         result = await TargetRuntime(
             AgentDecisionPorts(
                 ModelBackedAgentPolicy(
-                    ScriptedPort(ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False))
+                    ScriptedPort(ModelInvocationResult(
+                        failure=ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False),
+                        attempts=(ModelGenerationAttempt(1, "initial", "fixture", "failed"),),
+                    ))
                 )
             ),
             SharedActionOutcomeProjector(),
@@ -228,7 +234,7 @@ def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
     async def scenario() -> None:
         context = await _context()
         decision = await ModelBackedAgentPolicy(
-            ScriptedPort(_resolved(Abort(context.context_id, "stop", "policy")))
+            ScriptedPort(_decision_result(Abort(context.context_id, "stop", "policy")))
         ).decide(context)
 
         assert isinstance(decision, Abort)

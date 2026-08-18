@@ -16,7 +16,6 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
-    ModelGenerationAttempt,
     ModelInvocationResult,
     ModelMetadata,
     ResolvedModelDecision,
@@ -38,12 +37,8 @@ _PUBLIC_FAILURES = {
 class ModelBackedAgentPolicy:
     port: StructuredDecisionModelPort
     call_timeout_s: float = 90.0
-    last_metadata: ModelMetadata | None = field(default=None, init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
-    )
-    last_provider_attempts: tuple[ModelGenerationAttempt, ...] = field(
-        default=(), init=False, compare=False
     )
     last_fallback_count: int = field(default=0, init=False, compare=False)
 
@@ -65,10 +60,18 @@ class ModelBackedAgentPolicy:
     def supports_final_response(self) -> bool:
         return bool(getattr(self.port, "supports_final_response", False))
 
+    @property
+    def last_metadata(self) -> ModelMetadata | None:
+        result = self.last_invocation_result
+        return result.metadata if result is not None else None
+
+    @property
+    def last_provider_attempts(self):
+        result = self.last_invocation_result
+        return result.attempts if result is not None else ()
+
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
-        object.__setattr__(self, "last_metadata", None)
         object.__setattr__(self, "last_invocation_result", None)
-        object.__setattr__(self, "last_provider_attempts", ())
         object.__setattr__(self, "last_fallback_count", 0)
         try:
             request = _build_request(context)
@@ -80,13 +83,11 @@ class ModelBackedAgentPolicy:
             failure = ModelFailure(ModelFailureKind.TIMEOUT, "provider timed out", False)
             invocation = _failure_invocation_from_port(self.port, failure)
             object.__setattr__(self, "last_invocation_result", invocation)
-            object.__setattr__(self, "last_provider_attempts", invocation.attempts)
             return _policy_failure(failure)
         except Exception:
             failure = ModelFailure(ModelFailureKind.INTERNAL_ERROR, "decision port failed", False)
             invocation = _failure_invocation_from_port(self.port, failure)
             object.__setattr__(self, "last_invocation_result", invocation)
-            object.__setattr__(self, "last_provider_attempts", invocation.attempts)
             return _policy_failure(failure)
         finally:
             object.__setattr__(
@@ -94,24 +95,23 @@ class ModelBackedAgentPolicy:
                 "last_fallback_count",
                 int(getattr(self.port, "last_fallback_count", 0)),
             )
-        invocation = _coerce_invocation_result(outcome)
+        if not isinstance(outcome, ModelInvocationResult):
+            failure = ModelFailure(
+                ModelFailureKind.INVALID_RESPONSE,
+                "provider returned an invalid envelope",
+                False,
+            )
+            invocation = ModelInvocationResult(failure=failure)
+            object.__setattr__(self, "last_invocation_result", invocation)
+            return _policy_failure(failure)
+        invocation = outcome
         object.__setattr__(self, "last_invocation_result", invocation)
-        object.__setattr__(self, "last_provider_attempts", invocation.attempts)
         if invocation.failure is not None:
             return _policy_failure(invocation.failure)
         outcome = invocation.output
-        if outcome is None:
-            return _policy_failure(
-                ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
-            )
-        if isinstance(outcome, ResolvedModelDecision):
-            object.__setattr__(self, "last_metadata", outcome.metadata)
-            if outcome.decision.context_id != context.context_id:
-                return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
-            return outcome.decision
-        return _policy_failure(
-            ModelFailure(ModelFailureKind.INVALID_RESPONSE, "provider returned an invalid envelope", False)
-        )
+        if outcome.decision.context_id != context.context_id:
+            return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
+        return outcome.decision
 
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
@@ -126,7 +126,7 @@ async def _generate_with_deadline(
     port: StructuredDecisionModelPort,
     request: ModelDecisionRequest,
     timeout_s: float,
-) -> ModelInvocationResult[ResolvedModelDecision] | ResolvedModelDecision | ModelFailure:
+) -> ModelInvocationResult[ResolvedModelDecision]:
     try:
         task = asyncio.current_task()
     except RuntimeError:
@@ -142,26 +142,8 @@ async def _bounded_generate(
     port: StructuredDecisionModelPort,
     request: ModelDecisionRequest,
     timeout_s: float,
-) -> ModelInvocationResult[ResolvedModelDecision] | ResolvedModelDecision | ModelFailure:
-    return await asyncio.wait_for(port.generate(request), timeout=timeout_s)
-
-
-def _coerce_invocation_result(
-    outcome: object,
 ) -> ModelInvocationResult[ResolvedModelDecision]:
-    if isinstance(outcome, ModelInvocationResult):
-        return outcome
-    if isinstance(outcome, ModelFailure):
-        return ModelInvocationResult(failure=outcome)
-    if isinstance(outcome, ResolvedModelDecision):
-        return ModelInvocationResult(output=outcome, metadata=outcome.metadata)
-    return ModelInvocationResult(
-        failure=ModelFailure(
-            ModelFailureKind.INVALID_RESPONSE,
-            "provider returned an invalid envelope",
-            False,
-        )
-    )
+    return await asyncio.wait_for(port.generate(request), timeout=timeout_s)
 
 
 def _failure_invocation_from_port(
@@ -171,10 +153,7 @@ def _failure_invocation_from_port(
     existing = getattr(port, "last_invocation_result", None)
     if isinstance(existing, ModelInvocationResult):
         return existing
-    return ModelInvocationResult(
-        failure=failure,
-        attempts=tuple(getattr(port, "last_generation_attempts", ())),
-    )
+    return ModelInvocationResult(failure=failure)
 
 
 def _policy_failure(failure: ModelFailure) -> PolicyFailure:

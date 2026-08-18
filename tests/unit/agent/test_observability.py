@@ -69,16 +69,21 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
 
 
 def test_cancelled_policy_turn_projects_already_captured_provider_attempts(tmp_path) -> None:
+    from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
+    from affordance_runtime.model.policy import ModelInvocationResult
+
     class CancelledPolicy:
-        last_catalog_count = 0
-        last_generation_attempts = (
-            ModelGenerationAttempt(
-                1,
-                "initial",
-                "grounded_tools.v2",
-                "failed",
-                exception_class="ModelAPIError",
-                transcript={"error.code": "unavailable"},
+        last_invocation_result = ModelInvocationResult(
+            failure=ModelFailure(ModelFailureKind.TIMEOUT, "cancelled", False),
+            attempts=(
+                ModelGenerationAttempt(
+                    1,
+                    "initial",
+                    "grounded_tools.v2",
+                    "failed",
+                    exception_class="ModelAPIError",
+                    transcript={"error.code": "unavailable"},
+                ),
             ),
         )
 
@@ -140,15 +145,6 @@ def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirror
             metadata=ModelMetadata(provider_id="fixture", model_id="scripted"),
             attempts=attempts,
         )
-        last_provider_attempts = (
-            ModelGenerationAttempt(
-                1,
-                "stale",
-                "grounded_tools.v2",
-                "accepted",
-                transcript={"llm.output_messages": [{"content": "from-last"}]},
-            ),
-        )
 
     payload = model_turn_payload(context, Abort(context.context_id, "done", "policy"), Policy())
 
@@ -159,19 +155,23 @@ def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirror
 def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tmp_path) -> None:
     from affordance_runtime.agent.observability import goal_compiler_trace_diagnostic
     from affordance_runtime.goals import Failed
+    from affordance_runtime.model.policy import ModelInvocationResult
     from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
 
     class Compiler:
-        last_schema_repair_count = 1
-        last_generation_attempts = (
-            ModelGenerationAttempt(
-                1, "goal_compile_initial", "GoalCompilerModelResponse",
-                "schema_error", transcript={"llm.output_messages": [{"content": "raw one"}]},
+        last_invocation_result = ModelInvocationResult(
+            output=Failed(1, "invalid_goal_proposal"),
+            attempts=(
+                ModelGenerationAttempt(
+                    1, "goal_compile_initial", "GoalCompilerModelResponse",
+                    "schema_error", transcript={"llm.output_messages": [{"content": "raw one"}]},
+                ),
+                ModelGenerationAttempt(
+                    2, "goal_compile_schema_repair", "GoalCompilerModelResponse",
+                    "accepted", transcript={"llm.output_messages": [{"content": "raw two"}]},
+                ),
             ),
-            ModelGenerationAttempt(
-                2, "goal_compile_schema_repair", "GoalCompilerModelResponse",
-                "accepted", transcript={"llm.output_messages": [{"content": "raw two"}]},
-            ),
+            repair_diagnostics=({"kind": "structured_output_repair", "count": 1},),
         )
         port = type("Port", (), {"provider": "fixture", "model": "model"})()
         config = type("Config", (), {"prompt_version": "prompt.v1"})()

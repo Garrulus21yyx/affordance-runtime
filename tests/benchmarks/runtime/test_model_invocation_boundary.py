@@ -31,13 +31,6 @@ def test_model_invocation_result_requires_one_output_or_typed_failure() -> None:
 
 def test_counting_decision_port_uses_invocation_attempts_without_repair_double_count() -> None:
     class WrappedPort:
-        last_schema_repair_count = 1
-        last_model_call_count = 3
-        last_provider_retry_count = 1
-        last_generation_attempts = (
-            ModelGenerationAttempt(1, "stale-mirror", "grounded_tools.v2", "accepted"),
-        )
-
         async def generate(self, request):
             del request
             return ModelInvocationResult(
@@ -51,6 +44,10 @@ def test_counting_decision_port_uses_invocation_attempts_without_repair_double_c
                     {"kind": "transport_retry", "phase": "initial_provider_retry"},
                     {"kind": "tool_call_repair", "phase": "tool_call_repair"},
                 ),
+                diagnostics={
+                    "policy_model_call_count": 3,
+                    "provider_retry_count": 1,
+                },
             )
 
     instrumentation = BenchmarkInstrumentation()

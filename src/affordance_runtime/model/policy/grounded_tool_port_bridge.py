@@ -564,6 +564,7 @@ class CompactJsonDecisionPort:
             metadata=metadata,
             attempts=self.last_generation_attempts,
             repair_diagnostics=self._repair_diagnostics(),
+            diagnostics=self._diagnostics(),
             lineage=self._lineage(request),
         )
         object.__setattr__(self, "last_invocation_result", invocation)
@@ -578,6 +579,7 @@ class CompactJsonDecisionPort:
             failure=failure,
             attempts=self.last_generation_attempts,
             repair_diagnostics=self._repair_diagnostics(),
+            diagnostics=self._diagnostics(),
             lineage=self._lineage(request),
         )
         object.__setattr__(self, "last_invocation_result", invocation)
@@ -614,6 +616,31 @@ class CompactJsonDecisionPort:
                 "normalized_operation": self.last_routing_normalized_operation,
             })
         return tuple(diagnostics)
+
+    def _diagnostics(self) -> Mapping[str, object]:
+        return {
+            "interaction_protocol": GROUNDED_TOOLS_PROTOCOL,
+            "tool_transport": "compact-json",
+            "tool_resolution_code": self.last_resolution_code.value if self.last_resolution_code else "",
+            "tool_catalog_count": self.last_catalog_count,
+            "tool_catalog_bytes": self.last_catalog_bytes,
+            "tool_catalog_specs": self.last_catalog_specs,
+            "tool_argument_repair_count": self.last_argument_repair_count,
+            "tool_argument_violation_code": self.last_argument_violation_code,
+            "tool_argument_violation_paths": self.last_argument_violation_paths,
+            "tool_argument_selected_operation": self.last_selected_operation,
+            "tool_argument_repaired_operation_match": self.last_repaired_operation_match,
+            "tool_routing_normalization": self.last_routing_normalization,
+            "tool_routing_original_operation": self.last_routing_original_operation,
+            "tool_routing_normalized_operation": self.last_routing_normalized_operation,
+            "model_image_input_count": self.last_image_input_count,
+            "policy_model_call_count": self.last_model_call_count,
+            "structured_output_validation_stage": "provider_response_to_grounded_command",
+            "structured_output_violations": self.last_structured_output_violations,
+            "structured_output_repair_attempted": self.last_structured_output_repair_attempted,
+            "structured_output_repair_failed": self.last_structured_output_repair_failed,
+            "compatibility_shim": True,
+        }
 
 
 def _with_call_id(call: ToolCall, request_id: str, phase: str) -> ToolCall:

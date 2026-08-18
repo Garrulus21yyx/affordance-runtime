@@ -275,6 +275,12 @@ class PydanticAIGroundedDecisionPort:
                     ),
                     request,
                 )
+        except asyncio.CancelledError:
+            self._invocation_failure(
+                _failure(ModelFailureKind.TIMEOUT, "model invocation was cancelled"),
+                request,
+            )
+            raise
         except UsageLimitExceeded:
             return self._invocation_failure(
                 _failure(
@@ -344,6 +350,7 @@ class PydanticAIGroundedDecisionPort:
             metadata=metadata,
             attempts=self.last_generation_attempts,
             repair_diagnostics=self._repair_diagnostics(),
+            diagnostics=self._diagnostics(),
             lineage=self._lineage(request),
         )
         object.__setattr__(self, "last_invocation_result", invocation)
@@ -358,6 +365,7 @@ class PydanticAIGroundedDecisionPort:
             failure=failure,
             attempts=self.last_generation_attempts,
             repair_diagnostics=self._repair_diagnostics(),
+            diagnostics=self._diagnostics(),
             lineage=self._lineage(request),
         )
         object.__setattr__(self, "last_invocation_result", invocation)
@@ -381,6 +389,21 @@ class PydanticAIGroundedDecisionPort:
             for item in self.last_generation_attempts
             if item.phase == "tool_call_repair"
         )
+
+    def _diagnostics(self) -> Mapping[str, object]:
+        return {
+            "interaction_protocol": GROUNDED_TOOLS_PROTOCOL,
+            "tool_transport": "pydantic-ai",
+            "tool_catalog_count": self.last_catalog_count,
+            "tool_catalog_bytes": self.last_catalog_bytes,
+            "tool_catalog_specs": self.last_catalog_specs,
+            "model_image_input_count": self.last_image_input_count,
+            "policy_model_call_count": self.last_model_call_count,
+            "provider_retry_count": self.last_provider_retry_count,
+            "tool_argument_repair_count": sum(
+                1 for item in self.last_generation_attempts if item.phase == "tool_call_repair"
+            ),
+        }
 
     async def _run_provider_call(
         self,

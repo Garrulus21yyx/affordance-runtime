@@ -292,10 +292,8 @@ def goal_compiler_trace_diagnostic(
     """Project one completed compilation lineage without creating Runtime state."""
 
     invocation = getattr(compiler, "last_invocation_result", None)
-    attempts = tuple(
-        getattr(invocation, "attempts", ())
-        or getattr(compiler, "last_generation_attempts", ())
-    )
+    attempts = tuple(getattr(invocation, "attempts", ()))
+    repair_diagnostics = tuple(getattr(invocation, "repair_diagnostics", ()))
     if isinstance(resolution, Ready):
         disposition = "ready"
         reason = ""
@@ -332,7 +330,10 @@ def goal_compiler_trace_diagnostic(
         "reason": reason,
         "question": question,
         "missing_fields": tuple(fields),
-        "schema_repair_count": int(getattr(compiler, "last_schema_repair_count", 0)),
+        "schema_repair_count": _diagnostic_count(
+            repair_diagnostics,
+            kind="structured_output_repair",
+        ),
         "contract_repair_count": sum(
             getattr(item, "phase", "") == "goal_compile_contract_repair"
             for item in attempts
@@ -346,6 +347,23 @@ def goal_compiler_trace_diagnostic(
             getattr(initial_evidence, "observation_id", "")
         ),
     }
+
+
+def _diagnostic_count(
+    diagnostics: tuple[object, ...],
+    *,
+    kind: str,
+) -> int:
+    count = 0
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, Mapping) or diagnostic.get("kind") != kind:
+            continue
+        value = diagnostic.get("count", 1)
+        try:
+            count += int(value)
+        except (TypeError, ValueError):
+            count += 1
+    return count
 
 
 @dataclass
@@ -521,19 +539,12 @@ def model_turn_payload(
 ) -> dict[str, object]:
     """Build the single model-turn diagnostic used by traces and benchmark views."""
 
-    adapter = _dynamic_tool_adapter(policy)
     backed = _model_backed_policy(policy)
     invocation = getattr(backed, "last_invocation_result", None)
-    metadata = getattr(invocation, "metadata", None) or getattr(backed, "last_metadata", None)
-    attempts = tuple(
-        getattr(invocation, "attempts", ())
-        or getattr(backed, "last_provider_attempts", ())
-        or (
-            getattr(adapter, "last_generation_attempts", ())
-            if adapter is not None
-            else ()
-        )
-    )
+    metadata = getattr(invocation, "metadata", None)
+    attempts = tuple(getattr(invocation, "attempts", ()))
+    diagnostics = getattr(invocation, "diagnostics", {}) if invocation is not None else {}
+    diagnostics = diagnostics if isinstance(diagnostics, Mapping) else {}
     payload: dict[str, object] = {
         "context_id": getattr(context, "context_id", ""),
         "visible_action_count": len(getattr(getattr(context, "actions", None), "options", ())),
@@ -557,23 +568,21 @@ def model_turn_payload(
     selected_grounding = _selected_grounding(context, outcome)
     if selected_grounding is not None:
         payload["selected_grounding"] = selected_grounding
-    if adapter is not None:
+    if diagnostics:
         payload["tool_catalog"] = {
-            "count": int(getattr(adapter, "last_catalog_count", 0)),
-            "bytes": int(getattr(adapter, "last_catalog_bytes", 0)),
-            "specs": _json_value(getattr(adapter, "last_catalog_specs", ()), None),
-            "selected_operation": str(getattr(adapter, "last_selected_operation", "")),
-            "resolution_code": _enum_value(getattr(adapter, "last_resolution_code", "")),
-            "argument_repair_count": int(getattr(adapter, "last_argument_repair_count", 0)),
-            "argument_violation_code": str(getattr(adapter, "last_argument_violation_code", "")),
-            "argument_violation_paths": list(getattr(adapter, "last_argument_violation_paths", ())),
+            "count": int(diagnostics.get("tool_catalog_count", 0)),
+            "bytes": int(diagnostics.get("tool_catalog_bytes", 0)),
+            "specs": _json_value(diagnostics.get("tool_catalog_specs", ()), None),
+            "selected_operation": str(diagnostics.get("tool_argument_selected_operation", "")),
+            "resolution_code": str(diagnostics.get("tool_resolution_code", "")),
+            "argument_repair_count": int(diagnostics.get("tool_argument_repair_count", 0)),
+            "argument_violation_code": str(diagnostics.get("tool_argument_violation_code", "")),
+            "argument_violation_paths": list(diagnostics.get("tool_argument_violation_paths", ())),
             "structured_output_violations": _json_value(
-                getattr(adapter, "last_structured_output_violations", ()), None
+                diagnostics.get("structured_output_violations", ()), None
             ),
-            "image_input_count": int(
-                getattr(adapter, "last_image_input_count", len(getattr(context, "image_inputs", ())))
-            ),
-            "model_call_count": int(getattr(adapter, "last_model_call_count", 0)),
+            "image_input_count": int(diagnostics.get("model_image_input_count", 0)),
+            "model_call_count": int(diagnostics.get("policy_model_call_count", 0)),
         }
     return payload
 
@@ -700,12 +709,8 @@ def _external_projection(value: object) -> object:
     return value
 
 
-def _dynamic_tool_adapter(value: object) -> object | None:
-    return _find_wrapped(value, "last_catalog_count")
-
-
 def _model_backed_policy(value: object) -> object:
-    return _find_wrapped(value, "last_provider_attempts") or value
+    return _find_wrapped(value, "last_invocation_result") or value
 
 
 def _find_wrapped(value: object, attribute: str) -> object | None:

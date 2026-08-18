@@ -120,7 +120,8 @@ def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -
         encoding="utf-8"
     )
     assert "ResolvedModelDecision" in adapters
-    assert "if isinstance(outcome, ResolvedModelDecision)" in policy
+    assert "ModelInvocationResult[ResolvedModelDecision]" in policy
+    assert "if isinstance(outcome, ResolvedModelDecision)" not in policy
     assert "ModelDecisionResponse" not in production
     assert "parse_agent_decision" not in policy
     assert not (RUNTIME / "model" / "policy" / "spec.py").exists()

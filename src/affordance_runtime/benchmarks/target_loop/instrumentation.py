@@ -186,7 +186,7 @@ class CountingPolicy:
             )
             raise
         invocation = getattr(self.wrapped, "last_invocation_result", None)
-        metadata = getattr(invocation, "metadata", None) or getattr(self.wrapped, "last_metadata", None)
+        metadata = getattr(invocation, "metadata", None)
         if isinstance(metadata, ModelMetadata):
             self.instrumentation.model_metadata = metadata
             self.instrumentation.prompt_tokens += metadata.prompt_tokens
@@ -199,10 +199,9 @@ class CountingPolicy:
 def _policy_trace_event(call: int, context, outcome, policy, *, exception: str = ""):
     backed = _model_backed_policy(policy)
     invocation = getattr(backed, "last_invocation_result", None)
-    generation_attempts = tuple(
-        getattr(invocation, "attempts", ())
-        or getattr(backed, "last_provider_attempts", ())
-    )
+    generation_attempts = tuple(getattr(invocation, "attempts", ()))
+    diagnostics = getattr(invocation, "diagnostics", {}) if invocation is not None else {}
+    diagnostics = diagnostics if isinstance(diagnostics, Mapping) else {}
     event: dict[str, object] = {
         "policy_call": call,
         "context_id": context.context_id,
@@ -217,41 +216,39 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         tool_result = latest_step.semantic_summary.get("result")
         if isinstance(tool_result, Mapping):
             event["previous_runtime_tool_result"] = to_json_compatible(tool_result)
-    adapter = _dynamic_tool_adapter(policy)
-    if adapter is not None:
-        image_input_count = int(getattr(adapter, "last_image_input_count", len(context.image_inputs)))
-        event["interaction_protocol"] = getattr(adapter, "interaction_protocol", "unknown")
-        event["tool_transport"] = getattr(getattr(adapter, "transport_kind", None), "value", "")
-        event["tool_resolution_code"] = getattr(
-            getattr(adapter, "last_resolution_code", None),
-            "value",
-            "",
+    if diagnostics:
+        event["interaction_protocol"] = str(diagnostics.get("interaction_protocol", "unknown"))
+        event["tool_transport"] = str(diagnostics.get("tool_transport", ""))
+        event["tool_resolution_code"] = str(diagnostics.get("tool_resolution_code", ""))
+        event["tool_catalog_count"] = int(diagnostics.get("tool_catalog_count", 0))
+        event["tool_catalog_bytes"] = int(diagnostics.get("tool_catalog_bytes", 0))
+        event["tool_argument_repair_count"] = int(diagnostics.get("tool_argument_repair_count", 0))
+        event["tool_argument_violation_code"] = str(diagnostics.get("tool_argument_violation_code", ""))
+        event["tool_argument_violation_paths"] = tuple(diagnostics.get("tool_argument_violation_paths", ()))
+        event["tool_argument_selected_operation"] = str(diagnostics.get("tool_argument_selected_operation", ""))
+        event["tool_argument_repaired_operation_match"] = bool(
+            diagnostics.get("tool_argument_repaired_operation_match", False)
         )
-        event["tool_catalog_count"] = int(getattr(adapter, "last_catalog_count", 0))
-        event["tool_catalog_bytes"] = int(getattr(adapter, "last_catalog_bytes", 0))
-        event["tool_argument_repair_count"] = int(getattr(adapter, "last_argument_repair_count", 0))
-        event["tool_argument_violation_code"] = str(getattr(adapter, "last_argument_violation_code", ""))
-        event["tool_argument_violation_paths"] = tuple(getattr(adapter, "last_argument_violation_paths", ()))
-        event["tool_argument_selected_operation"] = str(getattr(adapter, "last_selected_operation", ""))
-        event["tool_argument_repaired_operation_match"] = bool(getattr(adapter, "last_repaired_operation_match", False))
-        event["tool_routing_normalization"] = str(getattr(adapter, "last_routing_normalization", ""))
-        event["tool_routing_original_operation"] = str(getattr(adapter, "last_routing_original_operation", ""))
-        event["tool_routing_normalized_operation"] = str(getattr(adapter, "last_routing_normalized_operation", ""))
-        event["model_image_input_count"] = image_input_count
-        event["policy_model_call_count"] = int(getattr(adapter, "last_model_call_count", 0))
+        event["tool_routing_normalization"] = str(diagnostics.get("tool_routing_normalization", ""))
+        event["tool_routing_original_operation"] = str(diagnostics.get("tool_routing_original_operation", ""))
+        event["tool_routing_normalized_operation"] = str(diagnostics.get("tool_routing_normalized_operation", ""))
+        event["model_image_input_count"] = int(diagnostics.get("model_image_input_count", 0))
+        event["policy_model_call_count"] = int(diagnostics.get("policy_model_call_count", 0))
         event["model_invocation"] = to_json_compatible(invocation)
-        event["generation_attempts"] = to_json_compatible(
-            generation_attempts or getattr(adapter, "last_generation_attempts", ())
+        event["generation_attempts"] = to_json_compatible(generation_attempts)
+        event["structured_output_validation_stage"] = str(
+            diagnostics.get("structured_output_validation_stage", "")
         )
-        event["structured_output_validation_stage"] = "provider_response_to_grounded_command"
         event["structured_output_violations"] = tuple(
             {"field_path": item.field_path, "code": item.code}
-            for item in getattr(adapter, "last_structured_output_violations", ())
+            for item in diagnostics.get("structured_output_violations", ())
         )
         event["structured_output_repair_attempted"] = bool(
-            getattr(adapter, "last_structured_output_repair_attempted", False)
+            diagnostics.get("structured_output_repair_attempted", False)
         )
-        event["structured_output_repair_failed"] = bool(getattr(adapter, "last_structured_output_repair_failed", False))
+        event["structured_output_repair_failed"] = bool(
+            diagnostics.get("structured_output_repair_failed", False)
+        )
     decision = outcome
     if isinstance(decision, (SelectAction, RequestObservation, LocalToolResult)):
         event["outcome"] = type(decision).__name__
@@ -260,7 +257,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             selected = _selected_grounding_trace(
                 context,
                 decision,
-                image_attached=bool(getattr(adapter, "last_image_input_count", len(context.image_inputs))),
+                image_attached=bool(diagnostics.get("model_image_input_count", len(context.image_inputs))),
             )
             if selected is not None:
                 event["selected_grounding"] = selected
@@ -275,28 +272,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     return event
 
 
-def _dynamic_tool_adapter(value):
-    pending = [value]
-    seen: set[int] = set()
-    while pending:
-        item = pending.pop()
-        if id(item) in seen:
-            continue
-        seen.add(id(item))
-        if hasattr(item, "last_resolution_code") and hasattr(item, "last_catalog_count"):
-            return item
-        wrapped = getattr(item, "wrapped", None)
-        port = getattr(item, "port", None)
-        ports = getattr(item, "ports", None)
-        if wrapped is not None:
-            pending.append(wrapped)
-        if port is not None:
-            pending.append(port)
-        if isinstance(ports, tuple):
-            pending.extend(ports)
-    return None
-
-
 def _model_backed_policy(value):
     pending = [value]
     seen: set[int] = set()
@@ -305,7 +280,7 @@ def _model_backed_policy(value):
         if id(item) in seen:
             continue
         seen.add(id(item))
-        if isinstance(item, ModelBackedAgentPolicy):
+        if isinstance(item, ModelBackedAgentPolicy) or hasattr(item, "last_invocation_result"):
             return item
         wrapped = getattr(item, "wrapped", None)
         if wrapped is not None:
@@ -434,66 +409,42 @@ class CountingDecisionPort:
         return getattr(self.wrapped, "transport_timeout_s", None)
 
     async def generate(self, request):
-        outcome = None
-        try:
-            outcome = await self.wrapped.generate(request)
-            return outcome
-        finally:
-            invocation = outcome if isinstance(outcome, ModelInvocationResult) else None
-            attempts = tuple(
-                getattr(invocation, "attempts", ())
-                or getattr(self.wrapped, "last_generation_attempts", ())
-                or getattr(self.wrapped, "last_attempts", ())
-            )
-            attempt_count = len(attempts) if invocation is not None else (len(attempts) or 1)
-            schema_repairs = _decision_schema_repair_count(self.wrapped)
-            model_calls = _decision_model_call_count(self.wrapped)
-            self.instrumentation.provider_attempts += max(model_calls, attempt_count)
-            self.instrumentation.policy_schema_repair_count += schema_repairs
-            _record_dynamic_tool_metrics(self.instrumentation, self.wrapped)
-            explicit_retries = getattr(self.wrapped, "last_provider_retry_count", None)
-            self.instrumentation.provider_retry_count += (
-                int(explicit_retries)
-                if explicit_retries is not None
-                else max(0, attempt_count - 1)
-            )
-            self.instrumentation.fallback_count += int(getattr(self.wrapped, "last_fallback_count", 0))
+        outcome = await self.wrapped.generate(request)
+        attempts = tuple(outcome.attempts)
+        diagnostics = outcome.diagnostics
+        model_calls = int(diagnostics.get("policy_model_call_count", len(attempts)))
+        self.instrumentation.provider_attempts += max(model_calls, len(attempts))
+        self.instrumentation.policy_schema_repair_count += _repair_count(outcome)
+        _record_dynamic_tool_metrics(self.instrumentation, diagnostics)
+        self.instrumentation.provider_retry_count += int(diagnostics.get("provider_retry_count", 0))
+        self.instrumentation.fallback_count += int(diagnostics.get("fallback_count", 0))
+        return outcome
 
 
-def _decision_schema_repair_count(port: object) -> int:
-    values = getattr(port, "ports", None)
-    if isinstance(values, tuple):
-        return sum(int(getattr(item, "last_schema_repair_count", 0)) for item in values)
-    return int(getattr(port, "last_schema_repair_count", 0))
+def _repair_count(invocation: ModelInvocationResult[object]) -> int:
+    return sum(
+        item.get("kind") in {"structured_output_repair", "argument_repair", "tool_intent_repair", "tool_call_repair"}
+        for item in invocation.repair_diagnostics
+    )
 
 
-def _decision_model_call_count(port: object) -> int:
-    values = getattr(port, "ports", None)
-    if isinstance(values, tuple):
-        return sum(int(getattr(item, "last_model_call_count", 0)) for item in values)
-    return int(getattr(port, "last_model_call_count", 0))
-
-
-def _record_dynamic_tool_metrics(instrumentation, port: object) -> None:
-    values = getattr(port, "ports", None)
-    adapters = values if isinstance(values, tuple) else (port,)
-    for adapter in adapters:
-        code = getattr(getattr(adapter, "last_resolution_code", None), "value", "")
-        field = {
-            "accepted": "valid_tool_call_count",
-            "zero_tool_calls": "zero_tool_call_count",
-            "multiple_tool_calls": "multiple_tool_call_count",
-            "unknown_tool": "unknown_tool_call_count",
-            "invalid_tool_arguments": "invalid_tool_argument_count",
-            "unknown_tool_destination": "invalid_tool_argument_count",
-            "stale_tool_catalog": "stale_tool_catalog_count",
-            "tool_grounding_gap": "tool_grounding_gap_count",
-        }.get(code)
-        if field is not None:
-            setattr(instrumentation, field, getattr(instrumentation, field) + 1)
-        instrumentation.tool_catalog_count += int(getattr(adapter, "last_catalog_count", 0))
-        instrumentation.tool_catalog_bytes += int(getattr(adapter, "last_catalog_bytes", 0))
-        instrumentation.tool_argument_repair_count += int(getattr(adapter, "last_argument_repair_count", 0))
+def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, object]) -> None:
+    code = str(diagnostics.get("tool_resolution_code", ""))
+    field = {
+        "accepted": "valid_tool_call_count",
+        "zero_tool_calls": "zero_tool_call_count",
+        "multiple_tool_calls": "multiple_tool_call_count",
+        "unknown_tool": "unknown_tool_call_count",
+        "invalid_tool_arguments": "invalid_tool_argument_count",
+        "unknown_tool_destination": "invalid_tool_argument_count",
+        "stale_tool_catalog": "stale_tool_catalog_count",
+        "tool_grounding_gap": "tool_grounding_gap_count",
+    }.get(code)
+    if field is not None:
+        setattr(instrumentation, field, getattr(instrumentation, field) + 1)
+    instrumentation.tool_catalog_count += int(diagnostics.get("tool_catalog_count", 0))
+    instrumentation.tool_catalog_bytes += int(diagnostics.get("tool_catalog_bytes", 0))
+    instrumentation.tool_argument_repair_count += int(diagnostics.get("tool_argument_repair_count", 0))
 
 
 @dataclass

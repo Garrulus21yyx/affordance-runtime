@@ -128,6 +128,7 @@ class ModelInvocationResult(Generic[T]):
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
     attempts: tuple[ModelGenerationAttempt, ...] = ()
     repair_diagnostics: tuple[Mapping[str, object], ...] = ()
+    diagnostics: Mapping[str, object] = field(default_factory=dict)
     lineage: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -141,6 +142,8 @@ class ModelInvocationResult(Generic[T]):
             raise TypeError("model invocation attempts must be typed")
         if any(not isinstance(item, Mapping) for item in self.repair_diagnostics):
             raise TypeError("repair diagnostics must be mappings")
+        if not isinstance(self.diagnostics, Mapping):
+            raise TypeError("model invocation diagnostics must be a mapping")
         if not isinstance(self.lineage, Mapping):
             raise TypeError("model invocation lineage must be a mapping")
 
