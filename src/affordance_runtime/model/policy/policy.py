@@ -29,6 +29,7 @@ _PUBLIC_FAILURES = {
     ModelFailureKind.INVALID_RESPONSE: "model decision response was invalid",
     ModelFailureKind.SCHEMA_ERROR: "model decision response violated the required schema",
     ModelFailureKind.REFUSED: "model decision provider refused the request",
+    ModelFailureKind.CONTEXT_CAPACITY: "model decision request exceeded context capacity",
     ModelFailureKind.INTERNAL_ERROR: "model decision could not be produced",
 }
 

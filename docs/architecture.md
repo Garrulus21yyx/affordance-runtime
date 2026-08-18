@@ -48,7 +48,12 @@ establish support for BrowserGym primitives outside the declared semantic action
 `scroll`/`press_key` through the BrowserGym profile, current ActionSpace, tool catalog, binding/execution route, and
 fresh post-action World acquisition. The T1 W1b-World diagnostic passed all six categories under
 `evidence/w1b-world-t1/`, and real MiniWoB conformance dispatches both BrowserGym primitives without a provider call.
-W1b-Agent/W2 remain pending.
+T3 now admits the complete model request at the model-delivery boundary: the immutable `AgentContext`, current
+`ToolSpec`s, images, and repair payload are rendered once, conservatively token-estimated by component, and either
+admitted or returned as typed `context_capacity` before any provider attempt. The repeated-failure cost breaker is
+owned by `EpisodeMonitor`; the long-horizon supervisor only consumes `repeated_failure_limit` and returns a blocked
+outcome without invoking Auditor, Manager, or ActionPolicy again. T2 hover/focus remains deferred pending benchmark
+evidence. W1b-Agent/W2 remain pending.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
@@ -642,12 +647,15 @@ must implement the same projection port, select existing public region IDs, repo
 deterministic/view-all path, and never mutate World or tools.
 
 Current implementation has the full typed World, bounded semantic-group projection, action-state priority, per-node
-state coverage, current action paging, compact renderer, perception profiles, complete trace seam, and the T0
+state coverage, current action paging, compact renderer, perception profiles, complete trace seam, complete request
+admission, and the T0
 W1b-World diagnostic. The six-site T0 gate verified source capability semantics, offered-target conservation,
 action-decision state, structural closure, truthful action overflow recovery through `find_actions`, and private-data
 isolation. T1 adds BrowserGym `scroll` and `press_key` as installed capabilities, including viewport and
 focused-context subjects, current bindings, primitive dispatch, fresh capture, model-visible tool exposure, and real
-MiniWoB conformance. Remaining work is complete-request token admission and W1b-Agent/W2 model/evaluator evidence; a
+MiniWoB conformance. T3 adds deterministic complete-request token accounting, provider-preflight `context_capacity`,
+bounded repair admission, benchmark/trace request-budget metrics, and a three-strike repeated-failure breaker that
+resets on public World or operation/target/argument progress. Remaining work is W1b-Agent/W2 model/evaluator evidence; a
 non-action read route is still deferred unless measurements demonstrate a retrieval gap.
 
 ### SemanticActionRegistry

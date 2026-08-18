@@ -9,7 +9,9 @@ import pytest
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
+from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.evaluation import EvidenceMethod, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
@@ -313,7 +315,7 @@ def test_audit_bundle_from_large_world_is_bounded_not_a_bare_error() -> None:
     assert bundle.truncated is True
 
 
-def test_episode_monitor_mechanically_yields_repeated_unchanged_action() -> None:
+def test_episode_monitor_yields_only_on_third_repeated_unchanged_action() -> None:
     from affordance_runtime.agent import SelectAction
     from affordance_runtime.agent.context.contracts import AgentTurnView
     from affordance_runtime.agent.run_state import RunStatus, StepResult
@@ -351,7 +353,14 @@ def test_episode_monitor_mechanically_yields_repeated_unchanged_action() -> None
         feedback="action_unchanged_change_strategy",
     )
 
-    transition = EpisodeMonitor().evaluate(
+    monitor = EpisodeMonitor()
+    first = monitor.evaluate(result, (), after.observation_id)
+    second = monitor.evaluate(
+        result,
+        (AgentTurnView("selectaction", "activate", public_parameters={}),),
+        after.observation_id,
+    )
+    transition = monitor.evaluate(
         result,
         (
             AgentTurnView("selectaction", "activate", public_parameters={}),
@@ -360,8 +369,90 @@ def test_episode_monitor_mechanically_yields_repeated_unchanged_action() -> None
         after.observation_id,
     )
 
+    assert first.recommendation.value == "continue"
+    assert second.recommendation.value == "continue"
     assert transition.recommendation.value == "yield"
-    assert transition.reason in {"stalled", "oscillation"}
+    assert transition.reason == "repeated_failure_limit"
+
+
+def test_episode_monitor_does_not_count_repeated_successful_actions_as_stalled() -> None:
+    from affordance_runtime.agent import SelectAction
+    from affordance_runtime.agent.run_state import RunStatus, StepResult
+    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
+
+    task = shared_task()
+    before = shared_world("dom:before", False, "dom")
+    after = shared_world("dom:after", False, "dom")
+    option = ActionSpaceBuilder().build(task, before).options[0]
+    selection = ActionSpaceBuilder().admit(option, {})
+    request = ActionBinder().bind(selection, before, "context:test")
+    execution = SimpleNamespace(
+        request=request,
+        result=ActionResult(request.request_id, DispatchStatus.SENT, "dom", True),
+    )
+    action = ActionOutcome(
+        request.request_id,
+        before.observation_id,
+        after.observation_id,
+        ObservedChange.CHANGED,
+        LocalPostconditionStatus.SATISFIED,
+        EvidenceMethod.STRUCTURAL,
+        "changed",
+        ("artifact:dom-after:monitor",),
+    )
+    result = StepResult(
+        SelectAction("context:test", option.action_id),
+        before,
+        after,
+        TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
+        RunStatus.RUNNING,
+        execution,
+        action_outcome=action,
+        feedback="action_changed",
+    )
+    previous = AgentTurnView(
+        "selectaction",
+        request.intent.semantic_action,
+        AgentHistoricalTargetView("", request.intent.target_id),
+        public_parameters=request.intent.parameters,
+    )
+
+    transition = EpisodeMonitor().evaluate(result, (previous, previous), after.observation_id)
+
+    assert transition.recommendation.value == "continue"
+
+
+def test_episode_monitor_resets_repeated_failure_streak_on_world_change() -> None:
+    from affordance_runtime.agent.run_state import RunStatus, StepResult
+    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
+
+    task = shared_task()
+    before = shared_world("dom:before", False, "dom")
+    same = shared_world("dom:same", False, "dom")
+    changed = shared_world("dom:changed", True, "dom")
+    monitor = EpisodeMonitor()
+    failure = StepResult(
+        PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
+        before,
+        same,
+        TaskEvaluation(task.task_id, same.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
+        RunStatus.FAILED,
+        feedback="policy_failure:schema_error",
+    )
+    progress = StepResult(
+        PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
+        same,
+        changed,
+        TaskEvaluation(task.task_id, changed.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
+        RunStatus.FAILED,
+        feedback="policy_failure:schema_error",
+    )
+
+    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(progress, (), changed.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
 
 
 def test_episode_monitor_detects_world_fingerprint_oscillation() -> None:

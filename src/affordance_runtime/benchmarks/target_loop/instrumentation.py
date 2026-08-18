@@ -61,6 +61,18 @@ class BenchmarkInstrumentation:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    system_tokens: int = 0
+    task_plan_tokens: int = 0
+    actor_world_tokens: int = 0
+    history_tokens: int = 0
+    working_set_tokens: int = 0
+    tool_schema_tokens: int = 0
+    image_estimated_tokens: int = 0
+    repair_tokens: int = 0
+    estimated_total_tokens: int = 0
+    provider_reported_prompt_tokens: int = 0
+    admission_limit: int = 0
+    context_capacity_rejections: int = 0
     model_latency_ms: float = 0.0
     failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
     failure_code: str = ""
@@ -236,6 +248,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["policy_model_call_count"] = int(diagnostics.get("policy_model_call_count", 0))
         event["model_invocation"] = to_json_compatible(invocation)
         event["generation_attempts"] = to_json_compatible(generation_attempts)
+        event["request_breakdowns"] = to_json_compatible(diagnostics.get("request_breakdowns", ()))
+        event["admission_action"] = str(diagnostics.get("admission_action", ""))
+        event["estimated_total_tokens"] = int(diagnostics.get("estimated_total_tokens", 0))
         event["structured_output_validation_stage"] = str(
             diagnostics.get("structured_output_validation_stage", "")
         )
@@ -445,6 +460,24 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
     instrumentation.tool_catalog_count += int(diagnostics.get("tool_catalog_count", 0))
     instrumentation.tool_catalog_bytes += int(diagnostics.get("tool_catalog_bytes", 0))
     instrumentation.tool_argument_repair_count += int(diagnostics.get("tool_argument_repair_count", 0))
+    for name in (
+        "system_tokens",
+        "task_plan_tokens",
+        "actor_world_tokens",
+        "history_tokens",
+        "working_set_tokens",
+        "tool_schema_tokens",
+        "image_estimated_tokens",
+        "repair_tokens",
+        "estimated_total_tokens",
+        "provider_reported_prompt_tokens",
+    ):
+        setattr(instrumentation, name, getattr(instrumentation, name) + int(diagnostics.get(name, 0)))
+    instrumentation.admission_limit = max(
+        instrumentation.admission_limit,
+        int(diagnostics.get("admission_limit", 0)),
+    )
+    instrumentation.context_capacity_rejections += int(diagnostics.get("admission_action", "") == "context_capacity")
 
 
 @dataclass

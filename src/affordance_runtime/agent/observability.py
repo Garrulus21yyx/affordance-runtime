@@ -598,6 +598,9 @@ def model_turn_payload(
             ),
             "image_input_count": int(diagnostics.get("model_image_input_count", 0)),
             "model_call_count": int(diagnostics.get("policy_model_call_count", 0)),
+            "request_breakdowns": _json_value(diagnostics.get("request_breakdowns", ()), None),
+            "admission_action": str(diagnostics.get("admission_action", "")),
+            "estimated_total_tokens": int(diagnostics.get("estimated_total_tokens", 0)),
         }
     return payload
 

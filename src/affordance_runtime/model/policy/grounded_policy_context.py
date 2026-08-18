@@ -25,6 +25,11 @@ from affordance_runtime.model.policy.prompt import (
     MODEL_POLICY_INSTRUCTIONS,
     MODEL_POLICY_PROMPT_VERSION,
 )
+from affordance_runtime.model.policy.request_admission import (
+    AdmittedModelRequest,
+    ModelRequestBudget,
+    admit_model_request,
+)
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
 
@@ -48,6 +53,7 @@ class GroundedPolicyContextBinder:
     """Convert one canonical AgentContext to one provider message boundary."""
 
     prompts: GroundedAgentPrompts = field(default_factory=load_grounded_agent_prompts)
+    request_budget: ModelRequestBudget = field(default_factory=ModelRequestBudget)
 
     def action_messages(
         self,
@@ -58,38 +64,87 @@ class GroundedPolicyContextBinder:
         perception_profile: DecisionPerceptionProfile,
         include_tool_menu: bool,
     ) -> tuple[ModelMessage, ...]:
+        return self.action_request(
+            request,
+            tools,
+            supports_multimodal=supports_multimodal,
+            perception_profile=perception_profile,
+            include_tool_menu=include_tool_menu,
+        ).messages
+
+    def action_request(
+        self,
+        request: ModelDecisionRequest,
+        tools: tuple[ToolSpec, ...],
+        *,
+        supports_multimodal: bool,
+        perception_profile: DecisionPerceptionProfile,
+        include_tool_menu: bool,
+    ) -> AdmittedModelRequest:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        public = self._public_context(request.agent_context, include_images)
+        sections = self._public_context_sections(request.agent_context, include_images)
+        public = dict(sections["public"])
         if include_tool_menu:
             public["tools"] = _tool_menu(tools)
-        return self._messages(self.prompts.actor, public, request, include_images)
+        messages = self._messages(self.prompts.actor, public, request, include_images)
+        return admit_model_request(
+            messages=messages,
+            tools=tools,
+            budget=self.request_budget,
+            phase="initial",
+            component_payloads={
+                "task_plan": sections["task_plan"],
+                "actor_world": sections["actor_world"],
+                "history": sections["history"],
+                "working_set": sections["working_set"],
+            },
+            image_byte_count=sum(len(item.data) for item in request.image_inputs) if include_images else 0,
+        )
 
     @staticmethod
     def _public_context(
         context: AgentContext,
         include_images: bool,
     ) -> dict[str, object]:
+        return dict(GroundedPolicyContextBinder._public_context_sections(context, include_images)["public"])
+
+    @staticmethod
+    def _public_context_sections(
+        context: AgentContext,
+        include_images: bool,
+    ) -> dict[str, object]:
+        task = _task(context)
+        observation = render_compact_actor_world(
+            context.actor_world,
+            context.grounding,
+            include_images=include_images,
+        )
+        recent_steps = render_episode_history(
+            context.recent_steps.items,
+            context.history_byte_budget,
+        )
+        affordances = tuple(
+            {"ref": item.ref, "verbs": item.verbs}
+            for item in context.grounding.entities
+            if item.verbs
+        )
+        working_set = public_working_facts(context.working_facts) if context.working_facts else ()
         public: dict[str, object] = {
-            "task": _task(context),
-            "observation": render_compact_actor_world(
-                context.actor_world,
-                context.grounding,
-                include_images=include_images,
-            ),
+            "task": task,
+            "observation": observation,
             "goal_plan": _goal_plan(context),
-            "recent_steps": render_episode_history(
-                context.recent_steps.items,
-                context.history_byte_budget,
-            ),
-            "affordances": tuple(
-                {"ref": item.ref, "verbs": item.verbs}
-                for item in context.grounding.entities
-                if item.verbs
-            ),
+            "recent_steps": recent_steps,
+            "affordances": affordances,
         }
-        if context.working_facts:
-            public["working_set"] = public_working_facts(context.working_facts)
-        return public
+        if working_set:
+            public["working_set"] = working_set
+        return {
+            "public": public,
+            "task_plan": {"task": task, "goal_plan": public["goal_plan"]},
+            "actor_world": {"observation": observation, "affordances": affordances},
+            "history": recent_steps,
+            "working_set": working_set,
+        }
 
     @staticmethod
     def _include_images(

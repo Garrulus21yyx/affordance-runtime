@@ -245,6 +245,7 @@ class CaseFacts:
                 if agent_code in {
                     AgentFailureCode.NO_PROGRESS_REPETITION,
                     AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION,
+                    AgentFailureCode.REPEATED_FAILURE_LIMIT,
                 }:
                     expected_agent_failure = (
                         FailureStage.CONTROL,

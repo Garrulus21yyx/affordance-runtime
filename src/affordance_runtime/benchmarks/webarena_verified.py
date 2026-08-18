@@ -29,8 +29,12 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.request_admission import ModelRequestCapacityError
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
 from affordance_runtime.surfaces.browsergym.interaction_profile import BROWSERGYM_INTERACTION_PROFILE
@@ -560,12 +564,13 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             runtime_controls=("yield_subtask",),
         )
         catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+        request_budget = _w1b_request_budget(context, catalog)
         rendered = render_compact_actor_world(
             context.actor_world,
             context.grounding,
             include_images=False,
         )
-        return _w1b_world_success(case_ref, environment, observation, action_space, context, catalog, rendered)
+        return _w1b_world_success(case_ref, environment, observation, action_space, context, catalog, rendered, request_budget)
     except Exception as exc:
         return _w1b_world_failure(
             case_ref,
@@ -592,6 +597,7 @@ def _w1b_world_success(
     context,
     catalog,
     rendered: str,
+    request_budget: Mapping[str, object],
 ) -> dict[str, Any]:
     source_counts = _source_counts(observation)
     actor_refs, actor_paths = _actor_ref_index(context.actor_world)
@@ -671,7 +677,27 @@ def _w1b_world_success(
             "image_attached": False,
             "reason": "w1b-world read-only structured diagnostic",
         },
+        "request_budget": dict(request_budget),
     }
+
+
+def _w1b_request_budget(context, catalog) -> dict[str, object]:
+    binder = GroundedPolicyContextBinder()
+    request = ModelDecisionRequest(
+        request_id=f"diagnostic:{context.context_id}",
+        agent_context=context,
+    )
+    try:
+        admitted = binder.action_request(
+            request,
+            catalog.specs,
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+        return admitted.breakdown.as_diagnostics()
+    except ModelRequestCapacityError as exc:
+        return exc.breakdown.as_diagnostics()
 
 
 def _w1b_world_failure(

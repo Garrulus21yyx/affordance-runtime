@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
-from affordance_runtime.agent.run_state import RunState, RunStatus
+from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.mission.boundary import AuditBoundary
@@ -25,6 +25,7 @@ from affordance_runtime.mission.contracts import (
     SupervisorState,
 )
 from affordance_runtime.mission.goal_projection import subtask_goal_resolution
+from affordance_runtime.mission.monitor import EpisodeMonitor
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     AcquisitionStatus,
@@ -102,6 +103,7 @@ class MissionSupervisor:
         environment: WorldEnvironment,
         task: TaskGoal,
     ) -> MissionRunResult:
+        runtime = _with_episode_monitor(runtime)
         mission = MissionState.empty()
         supervisor = SupervisorState(
             SupervisorPhase.MANAGER,
@@ -251,6 +253,24 @@ class MissionSupervisor:
                     mission,
                     SupervisorState(SupervisorPhase.EXECUTING, decision.subtask),
                     MissionOutcome.NEEDS_USER_INPUT,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            if state.yield_reason is EpisodeYieldReason.REPEATED_FAILURE_LIMIT:
+                state.status = RunStatus.BLOCKED
+                supervisor = SupervisorState(
+                    SupervisorPhase.TERMINAL,
+                    last_typed_episode_exit=EpisodeYieldReason.REPEATED_FAILURE_LIMIT.value,
+                    last_ref=EpisodeYieldReason.REPEATED_FAILURE_LIMIT.value,
+                    mission_round_budget=self.max_rounds - round_index,
+                    opened_environment_ref=_environment_ref(environment),
+                )
+                return MissionRunResult(
+                    state,
+                    mission,
+                    supervisor,
+                    MissionOutcome.TASK_BLOCKED,
                     manager_calls=manager_calls,
                     auditor_calls=auditor_calls,
                     boundary_rejections=boundary_rejections,
@@ -561,6 +581,18 @@ def _audit_capture_failure_outcome(status: AcquisitionStatus) -> MissionOutcome:
     if status is AcquisitionStatus.CANCELLED:
         return MissionOutcome.CANCELLED
     return MissionOutcome.EVIDENCE_GAP
+
+
+def _with_episode_monitor(runtime):
+    if getattr(runtime, "episode_monitor", None) is not None:
+        return runtime
+    with_controls = getattr(runtime, "with_runtime_controls", None)
+    if not callable(with_controls):
+        return runtime
+    return with_controls(
+        tuple(getattr(runtime, "runtime_controls", ())),
+        episode_monitor=EpisodeMonitor(),
+    )
 
 
 def _record_role_invocation(

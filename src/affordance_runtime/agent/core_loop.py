@@ -325,7 +325,13 @@ class CoreAgentLoop:
 
     def _apply_episode_monitor(self, result: StepResult, state: RunState) -> StepResult:
         monitor = self.episode_monitor
-        if monitor is None or result.status_after is not RunStatus.RUNNING:
+        if monitor is None or result.status_after in {
+            RunStatus.DONE,
+            RunStatus.YIELDED,
+            RunStatus.WAITING_USER,
+            RunStatus.WAITING_CONFIRMATION,
+            RunStatus.CANCELLED,
+        }:
             return result
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
@@ -342,7 +348,17 @@ class CoreAgentLoop:
             yield_reason = None
         if yield_reason is None:
             return result
-        return replace(result, status_after=RunStatus.YIELDED, feedback=f"episode_monitor:{yield_reason.value}")
+        failure_code = (
+            AgentFailureCode.REPEATED_FAILURE_LIMIT
+            if yield_reason is EpisodeYieldReason.REPEATED_FAILURE_LIMIT
+            else result.failure_code
+        )
+        return replace(
+            result,
+            status_after=RunStatus.YIELDED,
+            feedback=f"episode_monitor:{yield_reason.value}",
+            failure_code=failure_code,
+        )
 
     async def resume_confirmation(
         self,

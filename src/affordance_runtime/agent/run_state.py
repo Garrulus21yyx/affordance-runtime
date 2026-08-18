@@ -52,6 +52,7 @@ class EpisodeYieldReason(StrEnum):
     BLOCKED = "blocked"
     CAPABILITY_GAP = "capability_gap"
     OSCILLATION = "oscillation"
+    REPEATED_FAILURE_LIMIT = "repeated_failure_limit"
 
 
 @dataclass(frozen=True)

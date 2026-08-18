@@ -133,6 +133,7 @@ def runtime_failure_from_outcome(
     if outcome.failure_code in {
         AgentFailureCode.NO_PROGRESS_REPETITION,
         AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION,
+        AgentFailureCode.REPEATED_FAILURE_LIMIT,
     }:
         return RuntimeFailure(
             FailureStage.CONTROL,

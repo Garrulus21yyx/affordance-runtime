@@ -14,6 +14,7 @@ class ModelFailureKind(StrEnum):
     INVALID_RESPONSE = "invalid_response"
     SCHEMA_ERROR = "schema_error"
     REFUSED = "refused"
+    CONTEXT_CAPACITY = "context_capacity"
     INTERNAL_ERROR = "internal_error"
 
 

@@ -52,7 +52,14 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.request_admission import (
+    ModelRequestBreakdown,
+    ModelRequestCapacityError,
+    admit_model_request,
+    request_breakdown_diagnostics,
+)
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.providers.port import ModelMessage
 
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
@@ -103,6 +110,9 @@ class PydanticAIGroundedDecisionPort:
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
         default=(), init=False, compare=False
     )
+    last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(
+        default=(), init=False, compare=False
+    )
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
@@ -151,6 +161,7 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_model_call_count", 0)
         object.__setattr__(self, "last_provider_retry_count", 0)
         object.__setattr__(self, "last_generation_attempts", ())
+        object.__setattr__(self, "last_request_breakdowns", ())
         object.__setattr__(self, "last_invocation_result", None)
         try:
             from pydantic_ai import (
@@ -183,13 +194,15 @@ class PydanticAIGroundedDecisionPort:
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
             object.__setattr__(self, "last_image_input_count", len(request.image_inputs))
-            messages = self.context_binder.action_messages(
+            admitted = self.context_binder.action_request(
                 request,
                 catalog.specs,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
                 include_tool_menu=False,
             )
+            self._append_request_breakdown(admitted.breakdown)
+            messages = admitted.messages
             instructions, user_prompt = _pydantic_prompt(messages, request.image_inputs, BinaryContent)
             final_ready = _final_response_ready(request.agent_context)
             if final_ready:
@@ -252,6 +265,12 @@ class PydanticAIGroundedDecisionPort:
                 )
                 repair_history = result.all_messages()
                 repair_transcript = _repair_input_transcript(result, repair_kwargs)
+                self._admit_repair_request(
+                    repair_transcript,
+                    catalog.specs,
+                    repair_payload=repair,
+                    image_byte_count=sum(len(item.data) for item in request.image_inputs),
+                )
                 result = await self._run_provider_call(
                     lambda: agent.run(
                         message_history=repair_history,
@@ -304,6 +323,16 @@ class PydanticAIGroundedDecisionPort:
                     retryable=detail.retryable,
                     provider_code=detail.code,
                     retry_after_s=detail.retry_after_s,
+                ),
+                request,
+            )
+        except ModelRequestCapacityError as error:
+            self._append_request_breakdown(error.breakdown)
+            return self._invocation_failure(
+                _failure(
+                    ModelFailureKind.CONTEXT_CAPACITY,
+                    "context_capacity",
+                    attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
                 ),
                 request,
             )
@@ -403,7 +432,32 @@ class PydanticAIGroundedDecisionPort:
             "tool_argument_repair_count": sum(
                 1 for item in self.last_generation_attempts if item.phase == "tool_call_repair"
             ),
+            **request_breakdown_diagnostics(
+                self.last_request_breakdowns,
+                provider_reported_prompt_tokens=sum(item.prompt_tokens for item in self.last_generation_attempts),
+            ),
         }
+
+    def _append_request_breakdown(self, breakdown: ModelRequestBreakdown) -> None:
+        object.__setattr__(self, "last_request_breakdowns", (*self.last_request_breakdowns, breakdown))
+
+    def _admit_repair_request(
+        self,
+        repair_transcript: object,
+        specs: tuple[object, ...],
+        *,
+        repair_payload: object,
+        image_byte_count: int,
+    ) -> None:
+        admitted = admit_model_request(
+            messages=(ModelMessage(role="user", content=json.dumps(to_json_compatible(repair_transcript), sort_keys=True)),),
+            tools=tuple(spec for spec in specs if isinstance(spec, ToolSpec)),
+            budget=self.context_binder.request_budget,
+            phase="tool_call_repair",
+            image_byte_count=image_byte_count,
+            repair_payload=_safe_prompt_projection(repair_payload),
+        )
+        self._append_request_breakdown(admitted.breakdown)
 
     async def _run_provider_call(
         self,
@@ -955,6 +1009,7 @@ def _failure(
     retryable: bool = False,
     provider_code: ProviderFailureCode | None = None,
     retry_after_s: float | None = None,
+    attempt_origin: ProviderAttemptOrigin = ProviderAttemptOrigin.NETWORK,
 ) -> ModelFailure:
     return ModelFailure(
         kind,
@@ -962,7 +1017,7 @@ def _failure(
         retryable,
         provider_code,
         retry_after_s,
-        attempt_origin=ProviderAttemptOrigin.NETWORK,
+        attempt_origin=attempt_origin,
     )
 
 

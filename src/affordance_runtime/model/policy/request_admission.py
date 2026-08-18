@@ -1,0 +1,289 @@
+"""Deterministic model-delivery request admission for one provider call."""
+
+from __future__ import annotations
+
+import math
+import os
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+
+from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.tool_contracts import ToolSpec
+from affordance_runtime.model.providers.port import ModelMessage
+
+DEFAULT_MODEL_REQUEST_TOKEN_LIMIT = 64_000
+_PROVIDER_ENVELOPE_TOKENS = 64
+_MESSAGE_OVERHEAD_TOKENS = 6
+_TOOL_OVERHEAD_TOKENS = 12
+
+
+@dataclass(frozen=True)
+class ModelRequestBudget:
+    """Hard provider-call admission limit for disposable model delivery."""
+
+    admission_limit: int = field(default_factory=lambda: _env_limit())
+
+    def __post_init__(self) -> None:
+        if isinstance(self.admission_limit, bool) or self.admission_limit < 1:
+            raise ValueError("model request admission limit must be positive")
+
+
+@dataclass(frozen=True)
+class ModelRequestBreakdown:
+    """Conservative token estimate for exactly one rendered provider request."""
+
+    phase: str
+    system_tokens: int = 0
+    task_plan_tokens: int = 0
+    actor_world_tokens: int = 0
+    history_tokens: int = 0
+    working_set_tokens: int = 0
+    tool_schema_tokens: int = 0
+    image_estimated_tokens: int = 0
+    repair_tokens: int = 0
+    provider_envelope_tokens: int = _PROVIDER_ENVELOPE_TOKENS
+    estimated_total_tokens: int = 0
+    provider_reported_prompt_tokens: int = 0
+    admission_limit: int = DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+    admission_action: str = "admitted"
+
+    def __post_init__(self) -> None:
+        if not self.phase.strip():
+            raise ValueError("model request breakdown requires a phase")
+        counters = (
+            self.system_tokens,
+            self.task_plan_tokens,
+            self.actor_world_tokens,
+            self.history_tokens,
+            self.working_set_tokens,
+            self.tool_schema_tokens,
+            self.image_estimated_tokens,
+            self.repair_tokens,
+            self.provider_envelope_tokens,
+            self.estimated_total_tokens,
+            self.provider_reported_prompt_tokens,
+            self.admission_limit,
+        )
+        if any(isinstance(value, bool) or value < 0 for value in counters):
+            raise ValueError("model request token counters must be non-negative")
+        if self.admission_action not in {"admitted", "context_capacity"}:
+            raise ValueError("model request admission action is outside the closed vocabulary")
+
+    def as_diagnostics(self) -> dict[str, object]:
+        return {
+            "phase": self.phase,
+            "system_tokens": self.system_tokens,
+            "task_plan_tokens": self.task_plan_tokens,
+            "actor_world_tokens": self.actor_world_tokens,
+            "history_tokens": self.history_tokens,
+            "working_set_tokens": self.working_set_tokens,
+            "tool_schema_tokens": self.tool_schema_tokens,
+            "image_estimated_tokens": self.image_estimated_tokens,
+            "repair_tokens": self.repair_tokens,
+            "provider_envelope_tokens": self.provider_envelope_tokens,
+            "estimated_total_tokens": self.estimated_total_tokens,
+            "provider_reported_prompt_tokens": self.provider_reported_prompt_tokens,
+            "admission_limit": self.admission_limit,
+            "admission_action": self.admission_action,
+        }
+
+
+@dataclass(frozen=True)
+class AdmittedModelRequest:
+    messages: tuple[ModelMessage, ...]
+    tools: tuple[ToolSpec, ...]
+    breakdown: ModelRequestBreakdown
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "messages", tuple(self.messages))
+        object.__setattr__(self, "tools", tuple(self.tools))
+        if any(not isinstance(item, ModelMessage) for item in self.messages):
+            raise TypeError("admitted model request messages must be typed")
+        if any(not isinstance(item, ToolSpec) for item in self.tools):
+            raise TypeError("admitted model request tools must be typed")
+
+
+class ModelRequestCapacityError(ValueError):
+    """Raised before provider dispatch when a rendered request exceeds budget."""
+
+    def __init__(self, breakdown: ModelRequestBreakdown) -> None:
+        super().__init__("context_capacity")
+        self.breakdown = breakdown
+
+
+def admit_model_request(
+    *,
+    messages: tuple[ModelMessage, ...],
+    tools: tuple[ToolSpec, ...],
+    budget: ModelRequestBudget,
+    phase: str,
+    component_payloads: Mapping[str, object] | None = None,
+    image_byte_count: int = 0,
+    repair_payload: object | None = None,
+) -> AdmittedModelRequest:
+    breakdown = estimate_model_request(
+        messages=messages,
+        tools=tools,
+        budget=budget,
+        phase=phase,
+        component_payloads=component_payloads,
+        image_byte_count=image_byte_count,
+        repair_payload=repair_payload,
+    )
+    if breakdown.admission_action == "context_capacity":
+        raise ModelRequestCapacityError(breakdown)
+    return AdmittedModelRequest(messages, tools, breakdown)
+
+
+def estimate_model_request(
+    *,
+    messages: tuple[ModelMessage, ...],
+    tools: tuple[ToolSpec, ...],
+    budget: ModelRequestBudget | None = None,
+    phase: str = "initial",
+    component_payloads: Mapping[str, object] | None = None,
+    image_byte_count: int = 0,
+    repair_payload: object | None = None,
+) -> ModelRequestBreakdown:
+    active_budget = budget or ModelRequestBudget()
+    components = component_payloads or {}
+    system_tokens = _estimate_system_tokens(messages)
+    task_plan_tokens = _tokens_for(components.get("task_plan", ()))
+    actor_world_tokens = _tokens_for(components.get("actor_world", ()))
+    history_tokens = _tokens_for(components.get("history", ()))
+    working_set_tokens = _tokens_for(components.get("working_set", ()))
+    tool_schema_tokens = _tokens_for(_tool_projection(tools))
+    image_estimated_tokens = _image_tokens(image_byte_count)
+    repair_tokens = _tokens_for(repair_payload) if repair_payload is not None else 0
+    if not components:
+        total_text_tokens = sum(_tokens_for_message(item) for item in messages)
+        component_sum = system_tokens + tool_schema_tokens + image_estimated_tokens + repair_tokens
+        actor_world_tokens = max(0, total_text_tokens - component_sum)
+    provider_envelope_tokens = (
+        _PROVIDER_ENVELOPE_TOKENS
+        + len(messages) * _MESSAGE_OVERHEAD_TOKENS
+        + len(tools) * _TOOL_OVERHEAD_TOKENS
+    )
+    estimated_total = (
+        system_tokens
+        + task_plan_tokens
+        + actor_world_tokens
+        + history_tokens
+        + working_set_tokens
+        + tool_schema_tokens
+        + image_estimated_tokens
+        + repair_tokens
+        + provider_envelope_tokens
+    )
+    action = "admitted" if estimated_total <= active_budget.admission_limit else "context_capacity"
+    return ModelRequestBreakdown(
+        phase=phase,
+        system_tokens=system_tokens,
+        task_plan_tokens=task_plan_tokens,
+        actor_world_tokens=actor_world_tokens,
+        history_tokens=history_tokens,
+        working_set_tokens=working_set_tokens,
+        tool_schema_tokens=tool_schema_tokens,
+        image_estimated_tokens=image_estimated_tokens,
+        repair_tokens=repair_tokens,
+        provider_envelope_tokens=provider_envelope_tokens,
+        estimated_total_tokens=estimated_total,
+        admission_limit=active_budget.admission_limit,
+        admission_action=action,
+    )
+
+
+def request_breakdown_diagnostics(
+    breakdowns: Sequence[ModelRequestBreakdown],
+    *,
+    provider_reported_prompt_tokens: int = 0,
+) -> dict[str, object]:
+    records = tuple(item.as_diagnostics() for item in breakdowns)
+    latest = records[-1] if records else {}
+    result: dict[str, object] = {
+        "request_breakdowns": records,
+        "provider_reported_prompt_tokens": provider_reported_prompt_tokens,
+    }
+    for name in (
+        "system_tokens",
+        "task_plan_tokens",
+        "actor_world_tokens",
+        "history_tokens",
+        "working_set_tokens",
+        "tool_schema_tokens",
+        "image_estimated_tokens",
+        "repair_tokens",
+        "estimated_total_tokens",
+        "admission_limit",
+        "admission_action",
+    ):
+        if name in latest:
+            result[name] = latest[name]
+    return result
+
+
+def _tokens_for_message(message: ModelMessage) -> int:
+    return _tokens_for({"role": message.role, "content": _message_content_projection(message.content)})
+
+
+def _estimate_system_tokens(messages: tuple[ModelMessage, ...]) -> int:
+    return sum(
+        _tokens_for_message(item)
+        for item in messages
+        if item.role == "system"
+    )
+
+
+def _message_content_projection(value: object) -> object:
+    if isinstance(value, tuple):
+        return tuple(
+            {"type": "image_url", "byte_count": len(getattr(part, "image_url", ""))}
+            if getattr(part, "type", "") == "image_url"
+            else to_json_compatible(part)
+            for part in value
+        )
+    return value
+
+
+def _tool_projection(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
+    return tuple(
+        {
+            "name": item.name,
+            "description": item.description,
+            "input_schema": to_json_compatible(item.input_schema),
+        }
+        for item in tools
+    )
+
+
+def _tokens_for(value: object) -> int:
+    if value in (None, "", (), [], {}):
+        return 0
+    text = value if isinstance(value, str) else _json(value)
+    return max(1, math.ceil(len(text.encode("utf-8")) / 3))
+
+
+def _image_tokens(byte_count: int) -> int:
+    if byte_count <= 0:
+        return 0
+    return max(85, math.ceil(byte_count / 2))
+
+
+def _json(value: object) -> str:
+    return __import__("json").dumps(
+        to_json_compatible(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _env_limit() -> int:
+    raw = os.environ.get("AFFORDANCE_MODEL_REQUEST_TOKEN_LIMIT", "").strip()
+    if not raw:
+        return DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+    return value if value > 0 else DEFAULT_MODEL_REQUEST_TOKEN_LIMIT

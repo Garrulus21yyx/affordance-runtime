@@ -53,6 +53,12 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationStatus,
     project_argument_paths_to_wire,
 )
+from affordance_runtime.model.policy.request_admission import (
+    ModelRequestBreakdown,
+    ModelRequestCapacityError,
+    admit_model_request,
+    request_breakdown_diagnostics,
+)
 from affordance_runtime.model.policy.strict_json import validate_json_tree
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
@@ -132,6 +138,9 @@ class CompactJsonDecisionPort:
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
         default=(), init=False, compare=False
     )
+    last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(
+        default=(), init=False, compare=False
+    )
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
@@ -191,6 +200,7 @@ class CompactJsonDecisionPort:
         object.__setattr__(self, "last_structured_output_repair_attempted", False)
         object.__setattr__(self, "last_structured_output_repair_failed", False)
         object.__setattr__(self, "last_generation_attempts", ())
+        object.__setattr__(self, "last_request_breakdowns", ())
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.UNKNOWN)
 
@@ -215,7 +225,7 @@ class CompactJsonDecisionPort:
         resolver,
         payload_base: type[_GroundedCommandPayloadBase],
     ) -> tuple[object, ModelMetadata]:
-        calls = await self._call(messages, payload_base)
+        calls = await self._call(messages, catalog.specs, payload_base)
         if not calls:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS)
         if len(calls) != 1:
@@ -289,6 +299,7 @@ class CompactJsonDecisionPort:
             object.__setattr__(self, "last_argument_repair_count", 1)
             repaired = await self._repair_selected_operation(
                 messages,
+                catalog.specs,
                 spec,
                 issue,
                 payload_base,
@@ -316,10 +327,22 @@ class CompactJsonDecisionPort:
     async def _generate_structured(
         self,
         messages,
+        specs: tuple[ToolSpec, ...],
         output_schema,
         *,
         phase: str,
+        repair_payload: object | None = None,
+        admit: bool = True,
     ):
+        if admit:
+            admitted = admit_model_request(
+                messages=messages,
+                tools=specs,
+                budget=self.context_binder.request_budget,
+                phase=phase,
+                repair_payload=repair_payload,
+            )
+            self._append_request_breakdown(admitted.breakdown)
         object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
         attempt = self.last_model_call_count
         try:
@@ -373,6 +396,9 @@ class CompactJsonDecisionPort:
     def _append_generation_attempt(self, attempt: ModelGenerationAttempt) -> None:
         object.__setattr__(self, "last_generation_attempts", (*self.last_generation_attempts, attempt))
 
+    def _append_request_breakdown(self, breakdown: ModelRequestBreakdown) -> None:
+        object.__setattr__(self, "last_request_breakdowns", (*self.last_request_breakdowns, breakdown))
+
     def _failure_from_exception(self, exc: Exception) -> ModelFailure:
         if isinstance(exc, GroundedToolResolutionError):
             object.__setattr__(self, "last_resolution_code", exc.code)
@@ -407,6 +433,14 @@ class CompactJsonDecisionPort:
             )
         if isinstance(exc, StructuredModelError):
             return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded cognition response was invalid")
+        if isinstance(exc, ModelRequestCapacityError):
+            self._append_request_breakdown(exc.breakdown)
+            object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.LOCAL_RUNTIME)
+            return _failure(
+                ModelFailureKind.CONTEXT_CAPACITY,
+                "context_capacity",
+                attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
+            )
         if isinstance(exc, (TypeError, ValueError, json.JSONDecodeError)):
             object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.CATALOG_INVALID)
             return _failure(ModelFailureKind.INTERNAL_ERROR, "grounded workspace could not be built")
@@ -415,22 +449,28 @@ class CompactJsonDecisionPort:
     async def _call(
         self,
         messages,
+        specs: tuple[ToolSpec, ...],
         payload_type: type[_GroundedCommandPayloadBase] = GroundedToolCommandPayload,
     ) -> tuple[ToolCall, ...]:
         try:
             payload = await self._generate_structured(
                 messages,
+                specs,
                 payload_type,
                 phase="initial",
+                admit=False,
             )
         except StructuredOutputError as exc:
             object.__setattr__(self, "last_schema_repair_count", self.last_schema_repair_count + 1)
             self._record_structured_output(exc, repair_attempted=True)
+            repair_messages = _format_repair_messages(messages, exc)
             try:
                 payload = await self._generate_structured(
-                    _format_repair_messages(messages, exc),
+                    repair_messages,
+                    specs,
                     payload_type,
                     phase="structured_output_repair",
+                    repair_payload=structured_output_repair_contract(exc),
                 )
             except StructuredOutputError as repair_exc:
                 self._record_structured_output(repair_exc, repair_failed=True)
@@ -460,6 +500,7 @@ class CompactJsonDecisionPort:
     async def _repair_selected_operation(
         self,
         messages,
+        specs: tuple[ToolSpec, ...],
         spec: ToolSpec,
         issue,
         payload_base: type[_GroundedCommandPayloadBase],
@@ -473,8 +514,10 @@ class CompactJsonDecisionPort:
         try:
             payload = await self._generate_structured(
                 repair_messages,
+                specs,
                 payload_type,
                 phase="argument_repair",
+                repair_payload=_argument_repair_contract(repair_spec, issue),
             )
         except StructuredOutputError as exc:
             self._record_structured_output(exc, repair_attempted=True, repair_failed=True)
@@ -500,8 +543,10 @@ class CompactJsonDecisionPort:
         try:
             payload = await self._generate_structured(
                 repair_messages,
+                specs,
                 payload_type,
                 phase="tool_intent_repair",
+                repair_payload=_tool_intent_repair_contract(specs, original_call, reconciliation),
             )
         except StructuredOutputError as exc:
             self._record_structured_output(exc, repair_attempted=True, repair_failed=True)
@@ -532,17 +577,18 @@ class CompactJsonDecisionPort:
         self._reset_diagnostics()
         try:
             catalog = self._compile_catalog(request, compile_grounded_action_catalog)
-            messages = self.context_binder.action_messages(
+            admitted = self.context_binder.action_request(
                 request,
                 catalog.specs,
                 supports_multimodal=self.port.supports_multimodal,
                 perception_profile=self.perception_profile,
                 include_tool_menu=True,
             )
+            self._append_request_breakdown(admitted.breakdown)
             resolution, metadata = await self._resolve_catalog(
                 request,
                 catalog,
-                messages,
+                admitted.messages,
                 resolve_grounded_action_call,
                 GroundedToolCommandPayload,
             )
@@ -550,6 +596,7 @@ class CompactJsonDecisionPort:
             GroundedToolResolutionError,
             ProviderModelError,
             StructuredModelError,
+            ModelRequestCapacityError,
             TypeError,
             ValueError,
         ) as exc:
@@ -640,6 +687,10 @@ class CompactJsonDecisionPort:
             "structured_output_repair_attempted": self.last_structured_output_repair_attempted,
             "structured_output_repair_failed": self.last_structured_output_repair_failed,
             "compatibility_shim": True,
+            **request_breakdown_diagnostics(
+                self.last_request_breakdowns,
+                provider_reported_prompt_tokens=sum(item.prompt_tokens for item in self.last_generation_attempts),
+            ),
         }
 
 
@@ -689,20 +740,7 @@ def _argument_repair_messages(messages, spec, issue):
     system = messages[0]
     if not isinstance(system.content, str):
         raise ValueError("grounded argument repair requires a text system message")
-    contract = {
-        "repair_kind": "selected_grounded_operation_arguments",
-        "selected_operation": spec.name,
-        "input_schema": to_json_compatible(spec.input_schema),
-        "violation": {
-            "contract_owner": issue.contract_owner.value,
-            "code": issue.code.value,
-            "field_paths": list(project_argument_paths_to_wire(issue.public_field_paths)),
-        },
-        "recovery": {
-            "operation_must_remain": spec.name,
-            "only_arguments_may_change": True,
-        },
-    }
+    contract = _argument_repair_contract(spec, issue)
     return (
         ModelMessage(
             role="system",
@@ -725,6 +763,44 @@ def _tool_intent_repair_messages(
     system = messages[0]
     if not isinstance(system.content, str):
         raise ValueError("grounded tool-intent repair requires a text system message")
+    contract = _tool_intent_repair_contract(specs, original_call, reconciliation)
+    return (
+        ModelMessage(
+            role="system",
+            content=(
+                system.content
+                + "\n\nThe previous tool intent did not identify one exact current catalog row. "
+                "Re-emit one complete standard JSON tool call with fields name and arguments. "
+                "Use only the current tools and this bounded public repair contract: "
+                + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            ),
+        ),
+        *messages[1:],
+    )
+
+
+def _argument_repair_contract(spec, issue) -> dict[str, object]:
+    return {
+        "repair_kind": "selected_grounded_operation_arguments",
+        "selected_operation": spec.name,
+        "input_schema": to_json_compatible(spec.input_schema),
+        "violation": {
+            "contract_owner": issue.contract_owner.value,
+            "code": issue.code.value,
+            "field_paths": list(project_argument_paths_to_wire(issue.public_field_paths)),
+        },
+        "recovery": {
+            "operation_must_remain": spec.name,
+            "only_arguments_may_change": True,
+        },
+    }
+
+
+def _tool_intent_repair_contract(
+    specs: tuple[ToolSpec, ...],
+    original_call: ToolCall,
+    reconciliation: ToolCallReconciliationResult,
+) -> dict[str, object]:
     specs_by_name = {spec.name: spec for spec in specs}
     candidates = []
     for candidate in reconciliation.did_you_mean[:8]:
@@ -747,7 +823,7 @@ def _tool_intent_repair_messages(
             }
             for spec in specs[:8]
         ]
-    contract = {
+    return {
         "repair_kind": "current_catalog_tool_intent",
         "issue_code": (
             reconciliation.issue_code.value
@@ -765,19 +841,6 @@ def _tool_intent_repair_messages(
             "runtime_will_not_rename_or_invent_business_arguments": True,
         },
     }
-    return (
-        ModelMessage(
-            role="system",
-            content=(
-                system.content
-                + "\n\nThe previous tool intent did not identify one exact current catalog row. "
-                "Re-emit one complete standard JSON tool call with fields name and arguments. "
-                "Use only the current tools and this bounded public repair contract: "
-                + json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-            ),
-        ),
-        *messages[1:],
-    )
 
 
 def _metadata(
