@@ -241,15 +241,16 @@ def test_repeated_policy_failure_limit_blocks_case_without_reauditing() -> None:
             ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
             ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
             ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
         ],
         [],
     )
     auditor = AuditorScript([AuditDelta(AuditDeltaStatus.UNKNOWN, 0), AuditDelta(AuditDeltaStatus.UNKNOWN, 0)], [])
 
-    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=4).run(runtime, env, task))
 
     assert result.state is not None
-    assert result.outcome is MissionOutcome.TASK_BLOCKED
+    assert result.outcome is MissionOutcome.BLOCKED
     assert result.state.status is RunStatus.BLOCKED
     assert result.state.failure_code is AgentFailureCode.REPEATED_FAILURE_LIMIT
     assert result.supervisor_state.last_typed_episode_exit == "repeated_failure_limit"

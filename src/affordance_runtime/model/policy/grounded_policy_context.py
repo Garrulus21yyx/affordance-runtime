@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from affordance_runtime.agent.context.budgets import BoundedSection
@@ -28,7 +28,9 @@ from affordance_runtime.model.policy.prompt import (
 from affordance_runtime.model.policy.request_admission import (
     AdmittedModelRequest,
     ModelRequestBudget,
+    ModelRequestCapacityError,
     admit_model_request,
+    estimate_model_request,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
@@ -87,7 +89,7 @@ class GroundedPolicyContextBinder:
         if include_tool_menu:
             public["tools"] = _tool_menu(tools)
         messages = self._messages(self.prompts.actor, public, request, include_images)
-        return admit_model_request(
+        breakdown = estimate_model_request(
             messages=messages,
             tools=tools,
             budget=self.request_budget,
@@ -98,7 +100,55 @@ class GroundedPolicyContextBinder:
                 "history": sections["history"],
                 "working_set": sections["working_set"],
             },
-            image_byte_count=sum(len(item.data) for item in request.image_inputs) if include_images else 0,
+            image_inputs=request.image_inputs if include_images else (),
+        )
+        prefit_estimated_total_tokens = breakdown.estimated_total_tokens
+        delivery_projection = "full"
+        if breakdown.estimated_total_tokens > self.request_budget.soft_target_tokens:
+            delivery_projection = "action_focused"
+            sections = self._public_context_sections(
+                request.agent_context,
+                include_images,
+                focus_refs=_tool_refs(tools),
+                max_actor_bytes=max(
+                    3 * max(1, self.request_budget.soft_target_tokens - _non_actor_tokens(breakdown)),
+                    4_096,
+                ),
+            )
+            public = dict(sections["public"])
+            if include_tool_menu:
+                public["tools"] = _tool_menu(tools)
+            messages = self._messages(self.prompts.actor, public, request, include_images)
+        try:
+            admitted = admit_model_request(
+                messages=messages,
+                tools=tools,
+                budget=self.request_budget,
+                phase="initial",
+                component_payloads={
+                    "task_plan": sections["task_plan"],
+                    "actor_world": sections["actor_world"],
+                    "history": sections["history"],
+                    "working_set": sections["working_set"],
+                },
+                image_inputs=request.image_inputs if include_images else (),
+            )
+        except ModelRequestCapacityError as exc:
+            raise ModelRequestCapacityError(
+                replace(
+                    exc.breakdown,
+                    prefit_estimated_total_tokens=prefit_estimated_total_tokens,
+                    delivery_projection=delivery_projection,
+                )
+            ) from exc
+        return AdmittedModelRequest(
+            admitted.messages,
+            admitted.tools,
+            replace(
+                admitted.breakdown,
+                prefit_estimated_total_tokens=prefit_estimated_total_tokens,
+                delivery_projection=delivery_projection,
+            ),
         )
 
     @staticmethod
@@ -112,12 +162,17 @@ class GroundedPolicyContextBinder:
     def _public_context_sections(
         context: AgentContext,
         include_images: bool,
+        *,
+        focus_refs: frozenset[str] | None = None,
+        max_actor_bytes: int | None = None,
     ) -> dict[str, object]:
         task = _task(context)
         observation = render_compact_actor_world(
             context.actor_world,
             context.grounding,
             include_images=include_images,
+            focus_refs=focus_refs,
+            max_rendered_bytes=max_actor_bytes,
         )
         recent_steps = render_episode_history(
             context.recent_steps.items,
@@ -272,6 +327,33 @@ def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
             "input_schema": to_json_compatible(item.input_schema),
         }
         for item in tools
+    )
+
+
+def _tool_refs(tools: tuple[ToolSpec, ...]) -> frozenset[str]:
+    refs: set[str] = set()
+    for spec in tools:
+        properties = spec.input_schema.get("properties") if isinstance(spec.input_schema, Mapping) else None
+        if not isinstance(properties, Mapping):
+            continue
+        for name in ("target", "source", "destination"):
+            field = properties.get(name)
+            enum = field.get("enum") if isinstance(field, Mapping) else None
+            if isinstance(enum, tuple | list):
+                refs.update(str(item) for item in enum if isinstance(item, str) and item.startswith("E"))
+    return frozenset(refs)
+
+
+def _non_actor_tokens(breakdown) -> int:
+    return (
+        breakdown.system_tokens
+        + breakdown.task_plan_tokens
+        + breakdown.history_tokens
+        + breakdown.working_set_tokens
+        + breakdown.tool_schema_tokens
+        + breakdown.image_estimated_tokens
+        + breakdown.repair_tokens
+        + breakdown.provider_envelope_tokens
     )
 
 

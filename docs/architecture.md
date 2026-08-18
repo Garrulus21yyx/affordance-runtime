@@ -49,9 +49,12 @@ establish support for BrowserGym primitives outside the declared semantic action
 fresh post-action World acquisition. The T1 W1b-World diagnostic passed all six categories under
 `evidence/w1b-world-t1/`, and real MiniWoB conformance dispatches both BrowserGym primitives without a provider call.
 T3 now admits the complete model request at the model-delivery boundary: the immutable `AgentContext`, current
-`ToolSpec`s, images, and repair payload are rendered once, conservatively token-estimated by component, and either
-admitted or returned as typed `context_capacity` before any provider attempt. The repeated-failure cost breaker is
-owned by `EpisodeMonitor`; the long-horizon supervisor only consumes `repeated_failure_limit` and returns a blocked
+`ToolSpec`s, images, and repair payload are rendered and conservatively token-estimated by component. Requests above
+the soft cost target are re-rendered through deterministic delivery-only compaction that keeps current tool targets
+and action-decision state; requests still above the derived hard cap return typed `context_capacity` before any
+provider attempt. Image estimates are based on model-visible dimensions, not compressed screenshot bytes. The
+repeated-failure cost breaker is owned by `EpisodeMonitor`; stable `INCOMPLETE` task evaluation no longer clears the
+same-failure streak, and the long-horizon supervisor consumes `repeated_failure_limit` as an operational blocked
 outcome without invoking Auditor, Manager, or ActionPolicy again. T2 hover/focus remains deferred pending benchmark
 evidence. W1b-Agent/W2 remain pending.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
@@ -621,12 +624,13 @@ needs. Page size, repetition, long-horizon duration, or a policy stall alone doe
 the structured world.
 
 Token control is a model-delivery concern, not a World-authority concern. Provider admission measures the complete
-request—stable prompt, Task/GoalPlan, Actor View, episode history, current native tool schemas, and image estimate—using
-the provider tokenizer when available and a conservative estimate otherwise; the existing byte bounds remain a
-safety backstop. Initial engineering targets are 3k–8k observation tokens on ordinary pages, 8k–12k on complex
-WebArena pages, and roughly 16k p95 for the whole action request. They are cost/attention targets, not correctness
-limits: a request may exceed them when atomic semantic groups are necessary, while an over-budget request must page,
-retrieve, or yield typed `context_capacity` rather than slice a group or silently lose an offered target.
+request—stable prompt, Task/GoalPlan, Actor View, episode history, current native tool schemas, repair payload, and
+dimension-based image estimate—using the provider tokenizer when available and a conservative estimate otherwise; the
+existing byte bounds remain a safety backstop. Initial engineering targets are 3k–8k observation tokens on ordinary
+pages, 8k–12k on complex WebArena pages, and roughly 16k p95 for the whole action request. They are cost/attention
+targets, not correctness limits: a request may exceed them when atomic semantic groups are necessary, while a request
+above the soft target first receives deterministic action-focused delivery compaction and a request above the hard cap
+must page, retrieve, or yield typed `context_capacity` rather than slice a group or silently lose an offered target.
 
 The first WebArena task-0 diagnostic illustrates why both source semantics and projection quality are governed. The
 model received the task, `REPORTS`, and the Bestsellers table in a 512/583-node partial Actor View and selected
@@ -653,10 +657,12 @@ W1b-World diagnostic. The six-site T0 gate verified source capability semantics,
 action-decision state, structural closure, truthful action overflow recovery through `find_actions`, and private-data
 isolation. T1 adds BrowserGym `scroll` and `press_key` as installed capabilities, including viewport and
 focused-context subjects, current bindings, primitive dispatch, fresh capture, model-visible tool exposure, and real
-MiniWoB conformance. T3 adds deterministic complete-request token accounting, provider-preflight `context_capacity`,
-bounded repair admission, benchmark/trace request-budget metrics, and a three-strike repeated-failure breaker that
-resets on public World or operation/target/argument progress. Remaining work is W1b-Agent/W2 model/evaluator evidence; a
-non-action read route is still deferred unless measurements demonstrate a retrieval gap.
+MiniWoB conformance. T3 adds deterministic complete-request token accounting, soft-target delivery compaction,
+dimension-based image token estimates, provider-preflight `context_capacity`, bounded repair admission,
+benchmark/trace request-budget metrics, and a three-strike repeated-failure breaker that resets on public World or
+operation/target/argument progress and public criterion/output progress rather than stable `INCOMPLETE` verifier
+status. Remaining work is W1b-Agent/W2 model/evaluator evidence; a non-action read route is still deferred unless
+measurements demonstrate a retrieval gap.
 
 ### SemanticActionRegistry
 

@@ -646,25 +646,26 @@ native tool schemas, image estimate, repair payload, and provider-envelope overh
 admitted independently; over-budget requests return typed `context_capacity` with `provider_attempts=0`. The
 repeated-failure breaker is owned by `EpisodeMonitor` and yields `repeated_failure_limit` only on the third identical
 ref-free typed failure/no-change key; public World progress, changed operation/target/arguments, satisfied local
-postcondition, formal evaluation change, and user revision reset the streak. T2 hover/focus remains deferred pending
+postcondition, terminal formal evaluation, public criterion/output progress, and user revision reset the streak. Stable
+`INCOMPLETE` task evaluation is not progress and does not clear the streak. T2 hover/focus remains deferred pending
 benchmark evidence. T4 W1b-Agent is the next gate.
 
 The T3 W1b-World provider-free rerun passed on 2026-08-19 under `evidence/w1b-world-t3/` using the fixed BrowserGym
 Python. It did not call ActionPolicy, GoalCompiler, Manager, Auditor, or any provider.
 
-| Site category | Tool schemas | Offered targets | Missing Actor targets | State retained/total | Closure leaks | Estimated complete request tokens |
-|---|---:|---:|---:|---:|---:|---:|
-| shopping_admin | 11 | 34 | 0 | 69/69 | 0/0 | 14,696 |
-| map | 10 | 36 | 0 | 75/75 | 0/0 | 8,277 |
-| shopping | 11 | 42 | 0 | 91/91 | 0/0 | 15,822 |
-| reddit | 10 | 16 | 0 | 36/36 | 0/0 | 6,346 |
-| gitlab | 10 | 36 | 0 | 73/73 | 0/0 | 22,959 |
-| wikipedia/map | 9 | 36 | 0 | 71/71 | 0/0 | 13,695 |
+| Site category | Tool schemas | Offered targets | Missing Actor targets | State retained/total | Closure leaks | Projection | Prefit tokens | Admitted tokens |
+|---|---:|---:|---:|---:|---:|---|---:|---:|
+| shopping_admin | 11 | 34 | 0 | 69/69 | 0/0 | full | 14,695 | 14,695 |
+| map | 10 | 36 | 0 | 75/75 | 0/0 | full | 8,283 | 8,283 |
+| shopping | 10 | 42 | 0 | 88/88 | 0/0 | full | 15,590 | 15,590 |
+| reddit | 10 | 16 | 0 | 36/36 | 0/0 | full | 6,350 | 6,350 |
+| gitlab | 10 | 36 | 0 | 75/75 | 0/0 | action_focused | 22,955 | 9,378 |
+| wikipedia/map | 10 | 36 | 0 | 75/75 | 0/0 | full | 13,925 | 13,925 |
 
-All six request budgets were admitted under the default 64k hard cap with `image_estimated_tokens=0` and
-`provider_reported_prompt_tokens=0` because this diagnostic is provider-free. GitLab exceeds the approximate 16k p95
-cost target and remains a cost signal, not a correctness failure, because no offered target or structural group was
-lost.
+All six request budgets were admitted under the derived 62,904-token hard cap with `image_estimated_tokens=0` and
+`provider_reported_prompt_tokens=0` because this diagnostic is provider-free. GitLab crossed the approximate 16k soft
+cost target and was re-rendered through action-focused delivery compaction; all offered targets, action-decision state,
+and structural-closure invariants stayed intact.
 
 W1b-World uses the single production acquisition and projection chain. It does not create a second renderer or an
 offline oracle view for the model:

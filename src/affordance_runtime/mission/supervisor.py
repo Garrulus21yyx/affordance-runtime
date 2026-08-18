@@ -270,7 +270,7 @@ class MissionSupervisor:
                     state,
                     mission,
                     supervisor,
-                    MissionOutcome.TASK_BLOCKED,
+                    MissionOutcome.BLOCKED,
                     manager_calls=manager_calls,
                     auditor_calls=auditor_calls,
                     boundary_rejections=boundary_rejections,

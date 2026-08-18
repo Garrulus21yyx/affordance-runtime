@@ -12,20 +12,41 @@ from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelMessage
 
 DEFAULT_MODEL_REQUEST_TOKEN_LIMIT = 64_000
+DEFAULT_MODEL_REQUEST_SOFT_TARGET = 16_000
 _PROVIDER_ENVELOPE_TOKENS = 64
 _MESSAGE_OVERHEAD_TOKENS = 6
 _TOOL_OVERHEAD_TOKENS = 12
+_DEFAULT_IMAGE_WIDTH = 1280
+_DEFAULT_IMAGE_HEIGHT = 720
 
 
 @dataclass(frozen=True)
 class ModelRequestBudget:
     """Hard provider-call admission limit for disposable model delivery."""
 
+    soft_target_tokens: int = DEFAULT_MODEL_REQUEST_SOFT_TARGET
+    model_context_window: int = 67_000
+    max_output_tokens: int = 1_024
+    protocol_reserve_tokens: int = 2_048
+    safety_margin_tokens: int = 1_024
     admission_limit: int = field(default_factory=lambda: _env_limit())
 
     def __post_init__(self) -> None:
-        if isinstance(self.admission_limit, bool) or self.admission_limit < 1:
+        counters = (
+            self.soft_target_tokens,
+            self.model_context_window,
+            self.max_output_tokens,
+            self.protocol_reserve_tokens,
+            self.safety_margin_tokens,
+            self.admission_limit,
+        )
+        if any(isinstance(value, bool) or value < 0 for value in counters):
+            raise ValueError("model request budget counters must be non-negative")
+        if self.soft_target_tokens < 1 or self.model_context_window < 1:
             raise ValueError("model request admission limit must be positive")
+        derived = self.model_context_window - self.max_output_tokens - self.protocol_reserve_tokens - self.safety_margin_tokens
+        limit = min(self.admission_limit or derived, derived)
+        object.__setattr__(self, "admission_limit", max(1, limit))
 
 
 @dataclass(frozen=True)
@@ -46,6 +67,8 @@ class ModelRequestBreakdown:
     provider_reported_prompt_tokens: int = 0
     admission_limit: int = DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
     admission_action: str = "admitted"
+    prefit_estimated_total_tokens: int = 0
+    delivery_projection: str = "full"
 
     def __post_init__(self) -> None:
         if not self.phase.strip():
@@ -63,11 +86,14 @@ class ModelRequestBreakdown:
             self.estimated_total_tokens,
             self.provider_reported_prompt_tokens,
             self.admission_limit,
+            self.prefit_estimated_total_tokens,
         )
         if any(isinstance(value, bool) or value < 0 for value in counters):
             raise ValueError("model request token counters must be non-negative")
         if self.admission_action not in {"admitted", "context_capacity"}:
             raise ValueError("model request admission action is outside the closed vocabulary")
+        if self.delivery_projection not in {"full", "action_focused"}:
+            raise ValueError("model request delivery projection is outside the closed vocabulary")
 
     def as_diagnostics(self) -> dict[str, object]:
         return {
@@ -85,6 +111,8 @@ class ModelRequestBreakdown:
             "provider_reported_prompt_tokens": self.provider_reported_prompt_tokens,
             "admission_limit": self.admission_limit,
             "admission_action": self.admission_action,
+            "prefit_estimated_total_tokens": self.prefit_estimated_total_tokens,
+            "delivery_projection": self.delivery_projection,
         }
 
 
@@ -119,6 +147,7 @@ def admit_model_request(
     phase: str,
     component_payloads: Mapping[str, object] | None = None,
     image_byte_count: int = 0,
+    image_inputs: Sequence[object] = (),
     repair_payload: object | None = None,
 ) -> AdmittedModelRequest:
     breakdown = estimate_model_request(
@@ -128,6 +157,7 @@ def admit_model_request(
         phase=phase,
         component_payloads=component_payloads,
         image_byte_count=image_byte_count,
+        image_inputs=image_inputs,
         repair_payload=repair_payload,
     )
     if breakdown.admission_action == "context_capacity":
@@ -143,6 +173,7 @@ def estimate_model_request(
     phase: str = "initial",
     component_payloads: Mapping[str, object] | None = None,
     image_byte_count: int = 0,
+    image_inputs: Sequence[object] = (),
     repair_payload: object | None = None,
 ) -> ModelRequestBreakdown:
     active_budget = budget or ModelRequestBudget()
@@ -153,7 +184,7 @@ def estimate_model_request(
     history_tokens = _tokens_for(components.get("history", ()))
     working_set_tokens = _tokens_for(components.get("working_set", ()))
     tool_schema_tokens = _tokens_for(_tool_projection(tools))
-    image_estimated_tokens = _image_tokens(image_byte_count)
+    image_estimated_tokens = _image_tokens(image_inputs, fallback_byte_count=image_byte_count)
     repair_tokens = _tokens_for(repair_payload) if repair_payload is not None else 0
     if not components:
         total_text_tokens = sum(_tokens_for_message(item) for item in messages)
@@ -263,10 +294,42 @@ def _tokens_for(value: object) -> int:
     return max(1, math.ceil(len(text.encode("utf-8")) / 3))
 
 
-def _image_tokens(byte_count: int) -> int:
-    if byte_count <= 0:
+def _image_tokens(images: Sequence[object], *, fallback_byte_count: int = 0) -> int:
+    count = len(tuple(images))
+    if count <= 0 and fallback_byte_count <= 0:
         return 0
-    return max(85, math.ceil(byte_count / 2))
+    if count <= 0:
+        count = 1
+    total = 0
+    for image in images or (None,) * count:
+        width, height = _image_dimensions(getattr(image, "data", b"") if image is not None else b"")
+        tiles = max(1, math.ceil(width / 512) * math.ceil(height / 512))
+        # Conservative provider-neutral high-detail estimate. This follows
+        # model-visible dimensions instead of compressed file size.
+        total += 85 + tiles * 170
+    return total
+
+
+def _image_dimensions(data: bytes) -> tuple[int, int]:
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if data.startswith(b"\xff\xd8"):
+        index = 2
+        while index + 9 < len(data):
+            if data[index] != 0xFF:
+                index += 1
+                continue
+            marker = data[index + 1]
+            index += 2
+            if marker in {0xD8, 0xD9}:
+                continue
+            if index + 2 > len(data):
+                break
+            length = int.from_bytes(data[index:index + 2], "big")
+            if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF} and index + 7 < len(data):
+                return int.from_bytes(data[index + 5:index + 7], "big"), int.from_bytes(data[index + 3:index + 5], "big")
+            index += max(2, length)
+    return _DEFAULT_IMAGE_WIDTH, _DEFAULT_IMAGE_HEIGHT
 
 
 def _json(value: object) -> str:

@@ -1,20 +1,36 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import Abort
 from affordance_runtime.agent.context import ContextBuilder, ModelFailureKind
+from affordance_runtime.agent.context.actor_world_snapshot import (
+    ActorWorldDocumentView,
+    ActorWorldNodeView,
+    ActorWorldSnapshot,
+    ActorWorldSourceView,
+)
+from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.context import (
+    AgentGroundingEntityView,
+    AgentGroundingIndexView,
+    AgentImageInput,
+)
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
-from affordance_runtime.model.policy.request_admission import ModelRequestBudget
+from affordance_runtime.model.policy.request_admission import ModelRequestBudget, estimate_model_request
+from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelConfig,
+    ModelMessage,
     StructuredOutputError,
     StructuredOutputViolation,
 )
@@ -77,6 +93,118 @@ def test_complete_request_breakdown_covers_rendered_sections_and_is_deterministi
     asyncio.run(scenario())
 
 
+def test_image_tokens_are_dimension_based_not_compressed_byte_based() -> None:
+    small_png = _png(1280, 720)
+    padded_png = small_png + (b"x" * (250 * 1024))
+    first = AgentImageInput(
+        "artifact:image:small",
+        "image/png",
+        small_png,
+        hashlib.sha256(small_png).hexdigest(),
+    )
+    second = AgentImageInput(
+        "artifact:image:padded",
+        "image/png",
+        padded_png,
+        hashlib.sha256(padded_png).hexdigest(),
+    )
+
+    small = estimate_model_request(
+        messages=(ModelMessage(role="user", content="see image"),),
+        tools=(),
+        image_inputs=(first,),
+    )
+    padded = estimate_model_request(
+        messages=(ModelMessage(role="user", content="see image"),),
+        tools=(),
+        image_inputs=(second,),
+    )
+
+    assert small.image_estimated_tokens == padded.image_estimated_tokens
+    assert padded.image_estimated_tokens < 5_000
+
+
+def test_soft_target_uses_action_focused_projection_without_mutating_context() -> None:
+    async def scenario() -> None:
+        request, _catalog = await _request()
+        roots = tuple(
+            ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
+            for index in range(1, 240)
+        )
+        large_context = replace(
+            request.agent_context,
+            actor_world=ActorWorldSnapshot(
+                (ActorWorldDocumentView("S1", "structural", roots, len(roots), len(roots), False),),
+                (
+                    ActorWorldSourceView(
+                        "S1",
+                        "structural",
+                        "structural",
+                        "current",
+                        "complete",
+                        "complete",
+                        "not_available",
+                    ),
+                ),
+                (),
+                (),
+                BoundedSection((), 0, False),
+                (),
+                (),
+                (),
+            ),
+            grounding=AgentGroundingIndexView(
+                tuple(
+                    AgentGroundingEntityView(f"E{index}", "button", f"Button {index}", verbs=("activate",))
+                    for index in range(1, 240)
+                ),
+                {f"target:{index}": f"E{index}" for index in range(1, 240)},
+            ),
+        )
+        request = ModelDecisionRequest(request.request_id, large_context)
+        tool = ToolSpec(
+            "activate_target",
+            "Activate one current target.",
+            {
+                "type": "object",
+                "properties": {"target": {"type": "string", "enum": ["E1"]}},
+                "required": ["target"],
+            },
+        )
+        binder = GroundedPolicyContextBinder(
+            request_budget=ModelRequestBudget(
+                soft_target_tokens=10,
+                model_context_window=200_000,
+                max_output_tokens=1,
+                protocol_reserve_tokens=1,
+                safety_margin_tokens=1,
+                admission_limit=100_000,
+            )
+        )
+        before_actor_world = request.agent_context.actor_world
+        before_bindings = request.agent_context.private_fact_bindings
+
+        admitted = binder.action_request(
+            request,
+            (tool,),
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+
+        payload = json.loads(admitted.messages[1].content)
+        observation = payload["observation"]
+        assert "delivery=action_focused" in observation
+        assert "[E1]" in observation
+        assert request.agent_context.actor_world == before_actor_world
+        assert request.agent_context.private_fact_bindings == before_bindings
+        assert admitted.breakdown.admission_action == "admitted"
+        assert admitted.breakdown.delivery_projection == "action_focused"
+        assert admitted.breakdown.prefit_estimated_total_tokens > admitted.breakdown.estimated_total_tokens
+
+    asyncio.run(scenario())
+
+
 @dataclass
 class _FakeCompactPort:
     scripted: list[object] = field(default_factory=list)
@@ -124,6 +252,10 @@ def test_irreducible_over_budget_returns_context_capacity_without_provider_attem
         assert result.diagnostics["estimated_total_tokens"] > result.diagnostics["admission_limit"]
 
     asyncio.run(scenario())
+
+
+def _png(width: int, height: int) -> bytes:
+    return b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + width.to_bytes(4, "big") + height.to_bytes(4, "big")
 
 
 def test_repair_request_has_separate_admission_and_bounded_repair_tokens() -> None:

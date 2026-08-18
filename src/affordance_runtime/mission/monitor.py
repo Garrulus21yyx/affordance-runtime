@@ -12,6 +12,7 @@ from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import (
     LocalPostconditionStatus,
     ObservedChange,
+    TaskEvaluation,
     TaskEvaluationStatus,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -67,7 +68,7 @@ class EpisodeMonitor:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)
         elif action is not None and action.observed_change is ObservedChange.UNCHANGED:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
-        if result.task_evaluation.status is not TaskEvaluationStatus.UNKNOWN:
+        if result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
             events.append(EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED)
         failure_key = _repeated_failure_key(result, events, fresh_world_fingerprint)
         if failure_key:
@@ -156,7 +157,7 @@ def _repeated_failure_key(
     events: list[EpisodeMonitorEvent],
     fresh_world_fingerprint: str,
 ) -> str:
-    if result.task_evaluation.status is not TaskEvaluationStatus.UNKNOWN:
+    if result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
         return ""
     before_world = _world_digest(result.before_world)
     after_world = _world_digest(result.after_world) or fresh_world_fingerprint
@@ -168,6 +169,7 @@ def _repeated_failure_key(
                 "kind": "policy_failure",
                 "failure": result.decision.kind.value,
                 "reason": result.decision.reason,
+                "task_progress": _task_progress_digest(result.task_evaluation),
                 "world": after_world,
             }
         )
@@ -179,6 +181,7 @@ def _repeated_failure_key(
                 "failure": result.runtime_failure.kind.value,
                 "code": result.runtime_failure.code,
                 "attempt": _public_attempt(result),
+                "task_progress": _task_progress_digest(result.task_evaluation),
                 "world": after_world,
             }
         )
@@ -188,6 +191,7 @@ def _repeated_failure_key(
                 "kind": "agent_failure",
                 "code": result.failure_code.value,
                 "attempt": _public_attempt(result),
+                "task_progress": _task_progress_digest(result.task_evaluation),
                 "world": after_world,
             }
         )
@@ -203,8 +207,43 @@ def _repeated_failure_key(
             "kind": "action_no_progress",
             "result": "unsatisfied" if unsatisfied else "unchanged",
             "attempt": _public_attempt(result),
+            "task_progress": _task_progress_digest(result.task_evaluation),
             "world": after_world,
             "events": tuple(item.value for item in events),
+        }
+    )
+
+
+def _task_progress_digest(evaluation: TaskEvaluation) -> object:
+    return to_json_compatible(
+        {
+            "status": evaluation.status.value,
+            "criteria": tuple(
+                {
+                    "criterion_id": item.criterion_id,
+                    "status": item.status.value,
+                    "evidence_refs": item.evidence_refs,
+                }
+                for item in evaluation.criteria
+            ),
+            "completion_evidence_refs": evaluation.completion_evidence_refs,
+            "outputs": tuple(
+                {
+                    "output_id": item.output_id,
+                    "value": item.value,
+                    "evidence_refs": item.evidence_refs,
+                }
+                for item in evaluation.outputs
+            ),
+            "outcome": (
+                {
+                    "kind": evaluation.outcome.kind.value,
+                    "code": evaluation.outcome.code,
+                    "evidence_refs": evaluation.outcome.evidence_refs,
+                }
+                if evaluation.outcome is not None
+                else None
+            ),
         }
     )
 

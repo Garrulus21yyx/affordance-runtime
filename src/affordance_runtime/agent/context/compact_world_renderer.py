@@ -29,6 +29,8 @@ def render_compact_actor_world(
     grounding: AgentGroundingIndexView,
     *,
     include_images: bool,
+    focus_refs: frozenset[str] | None = None,
+    max_rendered_bytes: int | None = None,
 ) -> str:
     """Render one public World without changing its facts, identity, or binding authority.
 
@@ -40,8 +42,21 @@ def render_compact_actor_world(
 
     delivered = actor_world_for_delivery(snapshot, include_images=include_images)
     verbs = {item.ref: item.verbs for item in grounding.entities}
+    focused = focus_refs or frozenset()
     source_by_ref = {item.source_ref: item for item in delivered.sources}
+    lines = _render_documents(delivered, verbs, source_by_ref, focus_refs=frozenset())
+    rendered = "\n".join(lines)
+    if not max_rendered_bytes or len(rendered.encode()) <= max_rendered_bytes or not focused:
+        return rendered
+    lines = _render_documents(delivered, verbs, source_by_ref, focus_refs=focused)
+    return "\n".join(lines)
+
+
+def _render_documents(delivered, verbs, source_by_ref, *, focus_refs: frozenset[str]) -> list[str]:
+    action_focused = bool(focus_refs)
     lines = ["compact_world format=compact_ax.v1"]
+    if action_focused:
+        lines.append("delivery=action_focused non_action_content=omitted recovery=none")
     for document in delivered.documents:
         source = source_by_ref.get(document.source_ref)
         coverage = "partial" if document.truncated else "complete"
@@ -57,8 +72,22 @@ def render_compact_actor_world(
             f" nodes={document.retained_node_count}/{document.total_node_count}"
             f" coverage={coverage}{source_detail}"
         )
+        omitted_roots = 0
         for root in document.roots:
-            lines.extend(_render_node(root, verbs, depth=1, parent_label=""))
+            if action_focused and not _contains_focus(root, focus_refs):
+                omitted_roots += 1
+                continue
+            lines.extend(
+                _render_node(
+                    root,
+                    verbs,
+                    depth=1,
+                    parent_label="",
+                    focus_refs=focus_refs,
+                )
+            )
+        if omitted_roots:
+            lines.append(f"  omitted_non_action_roots={omitted_roots}")
 
     if delivered.global_facts:
         lines.append("global_facts")
@@ -66,7 +95,7 @@ def render_compact_actor_world(
             f"  {item.subject}.{_short_field(item.field)}={_value(item.value)}"
             for item in delivered.global_facts
         )
-    if delivered.facet_collections.items:
+    if delivered.facet_collections.items and not action_focused:
         lines.append(
             "facets"
             f" count={len(delivered.facet_collections.items)}/{delivered.facet_collections.total_count}"
@@ -85,17 +114,17 @@ def render_compact_actor_world(
                     f" true={_value(partition.true_member_refs)}"
                     f" false={_value(partition.false_member_refs)}"
                 )
-    if delivered.media:
+    if delivered.media and not action_focused:
         lines.append("media")
         lines.extend(
             f"  {item.evidence_ref} kind={item.kind} availability={item.availability}"
             f" attachment={item.attachment} aligned={_value(item.aligned_node_refs)}"
             for item in delivered.media
         )
-    if delivered.artifacts:
+    if delivered.artifacts and not action_focused:
         lines.append("artifacts")
         lines.extend(f"  {_value(item)}" for item in delivered.artifacts)
-    if delivered.conflicts:
+    if delivered.conflicts and not action_focused:
         lines.append("conflicts")
         lines.extend(f"  {_value(item)}" for item in delivered.conflicts)
     if delivered.observation_capabilities:
@@ -103,7 +132,7 @@ def render_compact_actor_world(
         lines.extend(f"  {_value(item)}" for item in delivered.observation_capabilities)
     if delivered.traversal is not None:
         lines.append(f"traversal {_value(delivered.traversal)}")
-    return "\n".join(lines)
+    return lines
 
 
 def _render_node(
@@ -112,13 +141,19 @@ def _render_node(
     *,
     depth: int,
     parent_label: str,
+    focus_refs: frozenset[str] | None = None,
 ) -> list[str]:
     label = node.label.strip()
     role = node.role.strip() or "unknown"
     classes = _class_tokens(node.state.get(_CLASS_FIELD))
     public_ref = node.ref if node.ref.startswith("E") else ""
     current_verbs = verbs.get(public_ref, ())
-    state = _model_state(node.state, interactive=bool(current_verbs))
+    focused = not focus_refs or public_ref in focus_refs
+    state = (
+        _model_state(node.state, interactive=bool(current_verbs))
+        if focused
+        else _focused_ancestor_state(node.state)
+    )
 
     skip = role == "InlineTextBox" or (role == "StaticText" and not label)
     if role == "StaticText" and label and parent_label and label in parent_label:
@@ -146,11 +181,12 @@ def _render_node(
             attributes.append("parent=outside_snapshot")
         if node.state_truncated:
             attributes.append(f"state_coverage={len(node.state)}/{node.state_total_count}")
-        attributes.extend(f"fact.{_short_field(item.field)}={_value(item.value)}" for item in node.facts)
-        attributes.extend(
-            f"relation.{_short_field(key)}={_value(value)}"
-            for key, value in node.relations.items()
-        )
+        if focused:
+            attributes.extend(f"fact.{_short_field(item.field)}={_value(item.value)}" for item in node.facts)
+            attributes.extend(
+                f"relation.{_short_field(key)}={_value(value)}"
+                for key, value in node.relations.items()
+            )
         if current_verbs:
             attributes.append(f"verbs={_value(current_verbs)}")
         if attributes:
@@ -160,15 +196,32 @@ def _render_node(
 
     child_parent_label = display_label or parent_label
     for child in node.children:
+        if focus_refs and not _contains_focus(child, focus_refs):
+            continue
         lines.extend(
             _render_node(
                 child,
                 verbs,
                 depth=current_depth,
                 parent_label=child_parent_label,
+                focus_refs=focus_refs,
             )
         )
     return lines
+
+
+def _contains_focus(node: ActorWorldNodeView, focus_refs: frozenset[str]) -> bool:
+    if node.ref in focus_refs:
+        return True
+    return any(_contains_focus(child, focus_refs) for child in node.children)
+
+
+def _focused_ancestor_state(state: Mapping[str, object]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key in ("active", "selected", "expanded", "required", "disabled", "readonly"):
+        if key in state:
+            result[key] = state[key]
+    return result
 
 
 def _model_state(state: Mapping[str, object], *, interactive: bool) -> dict[str, object]:

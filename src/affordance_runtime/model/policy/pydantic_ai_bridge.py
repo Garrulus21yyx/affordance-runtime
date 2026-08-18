@@ -269,7 +269,7 @@ class PydanticAIGroundedDecisionPort:
                     repair_transcript,
                     catalog.specs,
                     repair_payload=repair,
-                    image_byte_count=sum(len(item.data) for item in request.image_inputs),
+                    image_inputs=request.image_inputs,
                 )
                 result = await self._run_provider_call(
                     lambda: agent.run(
@@ -447,14 +447,14 @@ class PydanticAIGroundedDecisionPort:
         specs: tuple[object, ...],
         *,
         repair_payload: object,
-        image_byte_count: int,
+        image_inputs: Sequence[AgentImageInput],
     ) -> None:
         admitted = admit_model_request(
             messages=(ModelMessage(role="user", content=json.dumps(to_json_compatible(repair_transcript), sort_keys=True)),),
             tools=tuple(spec for spec in specs if isinstance(spec, ToolSpec)),
             budget=self.context_binder.request_budget,
             phase="tool_call_repair",
-            image_byte_count=image_byte_count,
+            image_inputs=image_inputs,
             repair_payload=_safe_prompt_projection(repair_payload),
         )
         self._append_request_breakdown(admitted.breakdown)

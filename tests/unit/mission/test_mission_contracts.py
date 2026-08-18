@@ -15,6 +15,8 @@ from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.evaluation import EvidenceMethod, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
     LocalPostconditionStatus,
     ObservedChange,
 )
@@ -373,6 +375,67 @@ def test_episode_monitor_yields_only_on_third_repeated_unchanged_action() -> Non
     assert second.recommendation.value == "continue"
     assert transition.recommendation.value == "yield"
     assert transition.reason == "repeated_failure_limit"
+
+
+def test_episode_monitor_keeps_repeated_failure_streak_across_stable_incomplete_evaluation() -> None:
+    from affordance_runtime.agent.run_state import RunStatus, StepResult
+    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
+
+    task = shared_task()
+    before = shared_world("dom:before", False, "dom")
+    after = shared_world("dom:after", False, "dom")
+    monitor = EpisodeMonitor()
+
+    def failure() -> StepResult:
+        return StepResult(
+            PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
+            before,
+            after,
+            TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.INCOMPLETE, "not done"),
+            RunStatus.FAILED,
+            feedback="policy_failure:schema_error",
+        )
+
+    first = monitor.evaluate(failure(), (), after.observation_id)
+    second = monitor.evaluate(failure(), (), after.observation_id)
+    third = monitor.evaluate(failure(), (), after.observation_id)
+
+    assert first.recommendation.value == "continue"
+    assert second.recommendation.value == "continue"
+    assert third.recommendation.value == "yield"
+    assert third.reason == "repeated_failure_limit"
+
+
+def test_episode_monitor_resets_failure_streak_on_incomplete_public_evaluation_change() -> None:
+    from affordance_runtime.agent.run_state import RunStatus, StepResult
+    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
+
+    task = shared_task()
+    before = shared_world("dom:before", False, "dom")
+    after = shared_world("dom:after", False, "dom")
+    monitor = EpisodeMonitor()
+
+    def failure(status: CriterionEvaluationStatus) -> StepResult:
+        return StepResult(
+            PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
+            before,
+            after,
+            TaskEvaluation(
+                task.task_id,
+                after.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "not done",
+                criteria=(CriterionEvaluation("criterion:visible", status, (), "public state"),),
+            ),
+            RunStatus.FAILED,
+            feedback="policy_failure:schema_error",
+        )
+
+    assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "continue"
+    reset = monitor.evaluate(failure(CriterionEvaluationStatus.UNSATISFIED), (), after.observation_id)
+    assert reset.recommendation.value == "continue"
+    assert monitor.repeated_failure_count == 1
 
 
 def test_episode_monitor_does_not_count_repeated_successful_actions_as_stalled() -> None:
