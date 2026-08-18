@@ -56,22 +56,24 @@ class BrowserGymRoleSpec:
         ))
 
 
-def _role(
-    role: str,
+def _offer(
     semantic_action: str,
     primitive_action: str,
     currentness_fields: tuple[str, ...],
-) -> BrowserGymRoleSpec:
-    return BrowserGymRoleSpec(
-        role,
-        True,
-        (RoleCapabilityOffer(
-            semantic_action,
-            primitive_action,
-            currentness_fields,
-            _PRIMITIVE_EXECUTION_REQUIREMENTS[primitive_action],
-        ),),
+) -> RoleCapabilityOffer:
+    return RoleCapabilityOffer(
+        semantic_action,
+        primitive_action,
+        currentness_fields,
+        _PRIMITIVE_EXECUTION_REQUIREMENTS[primitive_action],
     )
+
+
+def _role(
+    role: str,
+    *offers: RoleCapabilityOffer,
+) -> BrowserGymRoleSpec:
+    return BrowserGymRoleSpec(role, True, offers)
 
 
 _COMMON_ACTIVATION_AVAILABILITY = ("attached", "visible", "enabled")
@@ -87,31 +89,70 @@ _PRIMITIVE_EXECUTION_REQUIREMENTS = {
     # below remains the proof that this route is backed by a native select.
     "select_option": ("attached", "enabled", "not_readonly"),
     "drag_and_drop": _COMMON_ACTIVATION_AVAILABILITY,
+    "press": ("attached", "visible", "enabled", "focusable"),
+    "scroll": (),
+    "keyboard_press": (),
 }
 
 _ROLE_SPECS = {
-    "button": _role("button", "activate", "click", ("expanded",)),
-    "link": _role("link", "activate", "click", ("expanded",)),
-    "textbox": _role("textbox", "type_text", "fill", ("value", "required")),
-    "searchbox": _role("searchbox", "type_text", "fill", ("value", "required")),
+    "button": _role(
+        "button",
+        _offer("activate", "click", ("expanded",)),
+        _offer("press_key", "press", ()),
+    ),
+    "link": _role(
+        "link",
+        _offer("activate", "click", ("expanded",)),
+        _offer("press_key", "press", ()),
+    ),
+    "textbox": _role(
+        "textbox",
+        _offer("type_text", "fill", ("value", "required")),
+        _offer("press_key", "press", ()),
+    ),
+    "searchbox": _role(
+        "searchbox",
+        _offer("type_text", "fill", ("value", "required")),
+        _offer("press_key", "press", ()),
+    ),
     "combobox": _role(
-        "combobox", "select_option", "select_option",
-        ("value", "expanded", "required", "selected_options"),
+        "combobox",
+        _offer("select_option", "select_option", ("value", "expanded", "required", "selected_options")),
+        _offer("press_key", "press", ()),
     ),
     "listbox": _role(
-        "listbox", "select_option", "select_option",
-        ("value", "expanded", "required", "selected_options"),
+        "listbox",
+        _offer("select_option", "select_option", ("value", "expanded", "required", "selected_options")),
+        _offer("press_key", "press", ()),
     ),
-    "checkbox": _role("checkbox", "activate", "click", ("checked",)),
-    "radio": _role("radio", "activate", "click", ("checked",)),
-    "tab": _role("tab", "activate", "click", ("selected",)),
-    "menuitem": _role("menuitem", "activate", "click", ("expanded", "checked")),
-    "clickable": _role("clickable", "activate", "click", ()),
+    "checkbox": _role(
+        "checkbox",
+        _offer("activate", "click", ("checked",)),
+        _offer("press_key", "press", ()),
+    ),
+    "radio": _role(
+        "radio",
+        _offer("activate", "click", ("checked",)),
+        _offer("press_key", "press", ()),
+    ),
+    "tab": _role(
+        "tab",
+        _offer("activate", "click", ("selected",)),
+        _offer("press_key", "press", ()),
+    ),
+    "menuitem": _role(
+        "menuitem",
+        _offer("activate", "click", ("expanded", "checked")),
+        _offer("press_key", "press", ()),
+    ),
+    "clickable": _role(
+        "clickable",
+        _offer("activate", "click", ()),
+        _offer("press_key", "press", ()),
+    ),
     "draggable": _role(
         "draggable",
-        "drag_to",
-        "drag_and_drop",
-        (),
+        _offer("drag_to", "drag_and_drop", ()),
     ),
     "drop_target": BrowserGymRoleSpec("drop_target", True, ()),
     "slider": BrowserGymRoleSpec("slider", True, ()),
@@ -129,6 +170,12 @@ BROWSERGYM_INTERACTION_PROFILE = AdapterInteractionProfile(
         AdapterCapabilitySupport("type_text", ("fill",), (InteractionSubjectKind.ENTITY,)),
         AdapterCapabilitySupport("select_option", ("select_option",), (InteractionSubjectKind.ENTITY,)),
         AdapterCapabilitySupport("drag_to", ("drag_and_drop",), (InteractionSubjectKind.ENTITY,)),
+        AdapterCapabilitySupport("scroll", ("scroll",), (InteractionSubjectKind.VIEWPORT,)),
+        AdapterCapabilitySupport(
+            "press_key",
+            ("press", "keyboard_press"),
+            (InteractionSubjectKind.ENTITY, InteractionSubjectKind.FOCUSED_CONTEXT),
+        ),
     ),
 )
 
@@ -137,6 +184,9 @@ BROWSERGYM_PRIMITIVE_TRANSLATORS = (
     PrimitiveTranslator("type_text", "fill"),
     PrimitiveTranslator("select_option", "select_option"),
     PrimitiveTranslator("drag_to", "drag_and_drop"),
+    PrimitiveTranslator("scroll", "scroll"),
+    PrimitiveTranslator("press_key", "press"),
+    PrimitiveTranslator("press_key", "keyboard_press"),
 )
 
 BROWSERGYM_INTERACTION_CAPABILITIES = CapabilityComposer(

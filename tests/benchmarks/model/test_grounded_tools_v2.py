@@ -189,7 +189,18 @@ def _bound_public_context(context) -> dict[str, object]:
 
 def _selector_context(*, operation: str, schema: dict[str, object]):
     context = _context()
-    source = context.actions.options[0]
+    selected = []
+    seen_refs = set()
+    for option in context.actions.options:
+        if option.target_role not in {"button", "textbox"} or option.target_ref in seen_refs:
+            continue
+        selected.append(option)
+        seen_refs.add(option.target_ref)
+        if len(selected) == 2:
+            break
+    source_options = tuple(selected)
+    assert len(source_options) == 2
+    source = source_options[0]
     verification_digest = verification_contract_for_action(
         operation,
         schema_digest(schema),
@@ -208,7 +219,7 @@ def _selector_context(*, operation: str, schema: dict[str, object]):
             target_state={"ordinal": index},
             verification_contract_digest=verification_digest,
         )
-        for index, option in enumerate(context.actions.options[:2], 1)
+        for index, option in enumerate(source_options, 1)
     )
     return replace(
         context,
@@ -228,8 +239,25 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     context = _context()
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     public = json.dumps(_bound_public_context(context))
-    assert [item.ref for item in context.grounding.entities] == ["E1", "E2", "E3"]
-    assert all(item.marked for item in context.grounding.entities)
+    assert {
+        (item.ref, item.role, item.label) for item in context.grounding.entities
+    } == {
+        ("E1", "textbox", "Username"),
+        ("E2", "textbox", "Password"),
+        ("E3", "button", "Login"),
+        ("E4", "focused_context", "Current keyboard focus"),
+        ("E5", "viewport", "Current page viewport"),
+    }
+    assert all(
+        item.marked for item in context.grounding.entities
+        if item.role in {"button", "textbox"}
+    )
+    subject_kinds = {
+        (item.semantic_action, item.target_role, item.target_label): item.subject_kind
+        for item in context.actions.options
+    }
+    assert subject_kinds[("scroll", "viewport", "Current page viewport")] == "viewport"
+    assert subject_kinds[("press_key", "focused_context", "Current keyboard focus")] == "focused_context"
     assert not hasattr(catalog, "view")
     assert "bbox" not in public
     assert "entity:" not in public and "action:" not in public and "binding:" not in public
@@ -241,6 +269,8 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert "[E1] textbox \"Username\"" in observation
     assert "[E2] textbox \"Password\"" in observation
     assert "[E3] button \"Login\"" in observation
+    assert "[E4] focused_context \"Current keyboard focus\"" in observation
+    assert "[E5] viewport \"Current page viewport\"" in observation
 
 
 def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state() -> None:
@@ -337,6 +367,8 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert {item["name"] for item in public["tools"]} == {
         "type_text",
         "activate",
+        "press_key",
+        "scroll",
         "pin_fact",
         "ask_user",
         "wait",
@@ -658,6 +690,8 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
+        "press",
+        "scroll",
         "pin",
         "ask",
         "wait",
@@ -993,21 +1027,25 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "count_children")
     containers = spec.input_schema["properties"]["containers"]["items"]["enum"]
-    assert containers == ("E1",) or containers == ["E1"]
+    group_ref = next(
+        item.ref for item in context.grounding.entities
+        if item.role == "generic" and item.label == "Choices"
+    )
+    assert containers == (group_ref,) or containers == [group_ref]
     root = context.actor_world.documents[0].roots[0]
     assert "member_count" not in root.state
 
     outcome = resolve_grounded_tool_call(
         catalog,
-        ToolCall("count_children", {"containers": ["E1"]}, "provider-call:count"),
+        ToolCall("count_children", {"containers": [group_ref]}, "provider-call:count"),
         expected_context_id=context.context_id,
     )
 
     assert outcome.decision == LocalToolResult(
         context.context_id,
         "count_children",
-        {"containers": ("E1",)},
-        {"counts": {"E1": 2}, "total": 2},
+        {"containers": (group_ref,)},
+        {"counts": {group_ref: 2}, "total": 2},
         "provider-call:count",
     )
 
@@ -1144,7 +1182,17 @@ def test_provider_normalizer_unwraps_only_unambiguous_nested_parameters() -> Non
 
 def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
     context = _context()
-    source_options = context.actions.options[:2]
+    selected = []
+    seen_refs = set()
+    for option in context.actions.options:
+        if option.target_role not in {"button", "textbox"} or option.target_ref in seen_refs:
+            continue
+        selected.append(option)
+        seen_refs.add(option.target_ref)
+        if len(selected) == 2:
+            break
+    source_options = tuple(selected)
+    assert len(source_options) == 2
     empty_schema = {
         "type": "object",
         "properties": {},

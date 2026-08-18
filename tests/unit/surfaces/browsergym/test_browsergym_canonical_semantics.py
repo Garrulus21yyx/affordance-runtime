@@ -49,6 +49,28 @@ def _projection(raw):
     )
 
 
+def _page_targets(world):
+    return tuple(
+        target for target in world.targets
+        if target.role not in {"viewport", "focused_context"}
+    )
+
+
+def _page_bindings(world):
+    return tuple(
+        binding for binding in world.bindings
+        if binding.semantic_action not in {"scroll"}
+        and binding.target_id != "focused-context:current"
+    )
+
+
+def _binding(world, semantic_action: str):
+    return next(
+        binding for binding in world.bindings
+        if binding.semantic_action == semantic_action
+    )
+
+
 @given(st.permutations((0, 1, 2, 3)))
 def test_canonical_record_is_invariant_to_ax_permutation_and_unrelated_nodes(permutation) -> None:
     raw = raw_observation(
@@ -105,8 +127,10 @@ def test_bidless_recognized_interactive_unit_is_not_empty_or_projected() -> None
 
     assert analysis.inventory.recognized_target_count == 1
     assert inventory.status is SemanticInventoryStatus.PARTIAL
-    assert inventory.recognized_target_count == inventory.omitted_target_count == 1
-    assert projection.world.targets == projection.world.bindings == ()
+    assert inventory.omitted_target_count == 1
+    assert inventory.recognized_target_count == 3
+    assert _page_targets(projection.world) == ()
+    assert all(binding.semantic_action in {"scroll", "press_key"} for binding in projection.world.bindings)
 
 
 def test_ax_name_remains_authoritative_while_dom_semantics_are_preserved() -> None:
@@ -187,12 +211,12 @@ def test_native_link_role_is_not_replaced_without_explicit_drag_evidence() -> No
 
     projection = _projection(raw)
 
-    assert [(item.role, item.label) for item in projection.world.targets] == [
+    assert [(item.role, item.label) for item in _page_targets(projection.world)] == [
         ("link", "REPORTS")
     ]
-    assert len(projection.world.bindings) == 1
-    assert projection.world.bindings[0].semantic_action == "activate"
-    assert projection.world.bindings[0].primitive_action == "click"
+    activate = _binding(projection.world, "activate")
+    assert activate.semantic_action == "activate"
+    assert activate.primitive_action == "click"
 
 
 def test_browser_default_draggable_like_value_does_not_generate_drag_binding() -> None:
@@ -246,7 +270,7 @@ def test_explicit_toggle_convention_active_false_reaches_public_world() -> None:
     projection = _projection(raw)
 
     assert any(
-        item.subject_id == projection.world.targets[0].target_id
+            item.subject_id == _page_targets(projection.world)[0].target_id
         and item.predicate == "active"
         and item.value is False
         for item in projection.world.facts
@@ -293,11 +317,14 @@ def test_dom_clickable_svg_symbol_becomes_identity_bound_activate_control() -> N
 
     projection = _projection(raw)
 
-    assert len(projection.world.targets) == len(projection.world.bindings) == 1
-    assert projection.world.targets[0].role == "clickable"
-    assert projection.world.bindings[0].semantic_action == "activate"
-    assert projection.world.bindings[0].primitive_action == "click"
-    assert projection.private_bindings[0].private_element_id == "svg-point"
+    page_targets = _page_targets(projection.world)
+    page_bindings = _page_bindings(projection.world)
+    assert len(page_targets) == 1
+    assert page_targets[0].role == "clickable"
+    assert any(binding.semantic_action == "activate" for binding in page_bindings)
+    assert any(binding.primitive_action == "click" for binding in page_bindings)
+    element_private = next(item for item in projection.private_bindings if hasattr(item, "private_element_id"))
+    assert element_private.private_element_id == "svg-point"
     assert projection.world.sources[0].media[0].grounding_regions[0].bbox == (22, 97, 14, 14)
     public = repr(projection.world)
     assert "svg-point" not in public
@@ -341,7 +368,10 @@ def test_dom_clickable_inventory_preserves_off_viewport_capability_and_deduplica
         target.target_id for target in projection.world.targets if target.role == "clickable"
     }
     assert len(clickable_target_ids) == 2
-    assert {binding.target_id for binding in projection.world.bindings} == clickable_target_ids
+    assert {
+        binding.target_id for binding in _page_bindings(projection.world)
+        if binding.semantic_action == "activate"
+    } == clickable_target_ids
     structure_roles = {
         item.private_bid: item.role for item in analyze_browsergym_semantics(raw).structure
     }
@@ -370,10 +400,9 @@ def test_dom_clickable_action_inventory_is_invariant_to_viewport_visibility(
 
     projection = _projection(raw)
 
-    assert len(projection.world.targets) == 1
-    assert len(projection.world.bindings) == 1
-    assert projection.world.bindings[0].primitive_action == "click"
-    assert projection.world.targets[0].state == {
+    assert len(_page_targets(projection.world)) == 1
+    assert any(binding.primitive_action == "click" for binding in _page_bindings(projection.world))
+    assert _page_targets(projection.world)[0].state == {
         "viewport.visible": visibility > 0.0,
         "semantic.name_status": "unknown",
     }
@@ -550,8 +579,9 @@ def test_duplicate_public_option_labels_and_unknown_availability_fail_closed() -
         {"label": "Duplicate", "value": "second"},
     ]
     control = canonical_control_for_bid(raw, "select")
-    assert control is not None and not control.executable
-    assert not _projection(raw).world.bindings
+    assert control is not None
+    assert not any(offer.semantic_action == "select_option" for offer in control.executable_offers)
+    assert not any(binding.semantic_action == "select_option" for binding in _projection(raw).world.bindings)
 
     for field, value in (
         ("visible", False), ("enabled", False), ("readonly", True), ("editable", None),
@@ -559,8 +589,8 @@ def test_duplicate_public_option_labels_and_unknown_availability_fail_closed() -
         unavailable = raw_observation(ax_node("field", "textbox", "Name"))
         unavailable[PRIVATE_CONTROL_PROPERTIES_KEY]["field"][field] = value
         projection = _projection(unavailable)
-        assert len(projection.world.targets) == 1
-        assert not projection.world.bindings
+        assert len(_page_targets(projection.world)) == 1
+        assert not any(binding.semantic_action == "type_text" for binding in projection.world.bindings)
 
 
 def test_duplicate_private_option_values_cannot_receive_select_binding() -> None:
@@ -576,9 +606,9 @@ def test_duplicate_private_option_values_cannot_receive_select_binding() -> None
 
     control = canonical_control_for_bid(raw, "select")
 
-    assert control is not None and not control.executable
+    assert control is not None
     assert control.private_options == ()
-    assert not _projection(raw).world.bindings
+    assert not any(binding.semantic_action == "select_option" for binding in _projection(raw).world.bindings)
 
 
 def test_named_physical_option_outside_public_domain_cannot_receive_select_binding() -> None:
@@ -593,9 +623,9 @@ def test_named_physical_option_outside_public_domain_cannot_receive_select_bindi
 
     control = canonical_control_for_bid(raw, "select")
 
-    assert control is not None and not control.executable
+    assert control is not None
     assert control.private_options == ()
-    assert not _projection(raw).world.bindings
+    assert not any(binding.semantic_action == "select_option" for binding in _projection(raw).world.bindings)
 
 
 def test_public_projection_contains_no_private_route_value_or_fingerprint() -> None:
@@ -608,11 +638,16 @@ def test_public_projection_contains_no_private_route_value_or_fingerprint() -> N
     ]
     projection = _projection(raw)
     public = repr(projection.world)
-    serialized = repr(projection.world.bindings[0].parameter_schema)
+    select_binding = _binding(projection.world, "select_option")
+    serialized = repr(select_binding.parameter_schema)
+    select_private = next(
+        item for item in projection.private_bindings
+        if getattr(item, "binding_id", "") == select_binding.binding_id
+    )
 
     for forbidden in (
         "private-select", "private-option", "native-secret-value", "selector",
-        projection.private_bindings[0].canonical_control.currentness_fingerprint,
+        select_private.canonical_control.currentness_fingerprint,
     ):
         assert forbidden not in public
         assert forbidden not in serialized

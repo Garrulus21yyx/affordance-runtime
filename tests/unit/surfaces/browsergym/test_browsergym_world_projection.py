@@ -34,6 +34,31 @@ def _walk(node):
         yield from _walk(child)
 
 
+_RUNTIME_ROLES = {"viewport", "focused_context"}
+
+
+def _page_targets(world):
+    return tuple(item for item in world.targets if item.role not in _RUNTIME_ROLES)
+
+
+def _runtime_targets(world):
+    return tuple(item for item in world.targets if item.role in _RUNTIME_ROLES)
+
+
+def _page_bindings(world):
+    page_target_ids = {item.target_id for item in _page_targets(world)}
+    return tuple(item for item in world.bindings if item.target_id in page_target_ids)
+
+
+def _page_structure(world):
+    page_target_ids = {item.target_id for item in _page_targets(world)}
+    return tuple(
+        item
+        for item in world.sources[0].structure
+        if item.semantic_target_id in page_target_ids or item.semantic_target_id == ""
+    )
+
+
 def test_structural_projection_is_bounded_truthful_and_private() -> None:
     raw = raw_observation(
         ax_node("private-1", "button", "okay"),
@@ -52,18 +77,20 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
         task_state=snapshot,
         entity_identity=_IDENTITY,
     )
-    assert len(projected.world.targets) == 3
-    assert len(projected.world.bindings) == 3
-    assert projected.target_count_total == 3
+    assert len(_page_targets(projected.world)) == 3
+    assert {item.role for item in _runtime_targets(projected.world)} == {"viewport", "focused_context"}
+    assert len(_page_bindings(projected.world)) == 6
+    assert projected.target_count_total == 5
     assert str(projected.world.source_manifest[0].coverage) == "complete"
     public = repr(projected.world)
     assert "private-" not in public
     assert "selector" not in public and "bid" not in public
-    select = next(item for item in projected.world.bindings if item.semantic_action == "select_option")
+    select = next(item for item in _page_bindings(projected.world) if item.semantic_action == "select_option")
     assert select.parameter_schema["properties"]["value"]["enum"] == ("A", "B")
     select_target = next(item for item in projected.world.targets if item.role == "combobox")
-    assert select_target.state["option_domain"] == ("A", "B")
-    assert dict(projected.private_bindings[-1].option_values) == {"A": "A", "B": "B"}
+    assert tuple(select_target.state["option_domain"]) == ("A", "B")
+    private_select = next(item for item in projected.private_bindings if item.binding_id == select.binding_id)
+    assert dict(private_select.option_values) == {"A": "A", "B": "B"}
     inventory = projected.world.sources[0].semantic_inventory
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
     assert (
@@ -73,10 +100,10 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
         inventory.non_executable_target_count,
         inventory.omitted_target_count,
         inventory.informational_target_count,
-    ) == (3, 3, 3, 0, 0, 0)
+    ) == (5, 5, 5, 0, 0, 0)
     retained = projected.world.sources[0].entity_inventory
     assert retained.status is EntityInventoryStatus.COMPLETE
-    assert (retained.entity_count, retained.entity_total_count) == (3, 3)
+    assert (retained.entity_count, retained.entity_total_count) == (5, 5)
     assert (retained.option_value_count, retained.option_value_total_count) == (2, 2)
 
 
@@ -101,9 +128,9 @@ def test_hidden_native_select_keeps_one_semantic_binding_on_existing_projection_
         entity_identity=_IDENTITY,
     )
 
-    assert len(projected.world.targets) == 1
-    assert len(projected.world.bindings) == len(projected.private_bindings) == 1
-    binding = projected.world.bindings[0]
+    assert len(_page_targets(projected.world)) == 1
+    assert len(_page_bindings(projected.world)) == 1
+    binding = _page_bindings(projected.world)[0]
     assert binding.semantic_action == binding.primitive_action == "select_option"
     assert binding.parameter_schema["properties"]["value"]["enum"] == (
         "5ft 10in", "6 ft",
@@ -129,8 +156,8 @@ def test_entity_identity_is_stable_across_ax_order_and_unrelated_insertions() ->
         identity,
     )
 
-    first = {item.label: item.target_id for item in baseline.world.targets}
-    second = {item.label: item.target_id for item in reordered.world.targets}
+    first = {item.label: item.target_id for item in _page_targets(baseline.world)}
+    second = {item.label: item.target_id for item in _page_targets(reordered.world)}
     assert first["Save"] == second["Save"]
     assert first["Name"] == second["Name"]
     assert all(value.startswith("entity:") for value in second.values())
@@ -146,8 +173,8 @@ def test_entity_identity_distinguishes_same_label_and_page_incarnations() -> Non
     first_page = _project_with_identity(raw, identity, page_identity="page:first")
     second_page = _project_with_identity(raw, identity, page_identity="page:second")
 
-    first_ids = tuple(item.target_id for item in first_page.world.targets)
-    second_ids = tuple(item.target_id for item in second_page.world.targets)
+    first_ids = tuple(item.target_id for item in _page_targets(first_page.world))
+    second_ids = tuple(item.target_id for item in _page_targets(second_page.world))
     assert len(set(first_ids)) == 2
     assert set(first_ids).isdisjoint(second_ids)
 
@@ -162,7 +189,7 @@ def test_structure_identity_remains_unique_when_ax_nodes_share_one_bid() -> None
         raw_observation(first, second),
         BrowserGymEntityIdentityMap(b"shared-bid-structure-test-key"),
     )
-    structure = projected.world.sources[0].structure
+    structure = _page_structure(projected.world)
 
     assert len(structure) == 2
     assert len({item.structure_id for item in structure}) == 2
@@ -178,14 +205,13 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     baseline = _project(baseline_raw)
     omitted = _project(omitted_raw)
 
-    assert len(omitted.world.targets) == len(baseline.world.targets) + 1
+    assert len(_page_targets(omitted.world)) == len(_page_targets(baseline.world)) + 1
     checkbox = next(item for item in omitted.world.targets if item.role == "checkbox")
     assert checkbox.label == "Remember"
-    assert len(omitted.world.bindings) == len(baseline.world.bindings) + 1
-    assert (
-        next(item for item in omitted.world.bindings if item.target_id == checkbox.target_id).semantic_action
-        == "activate"
-    )
+    assert len(_page_bindings(omitted.world)) == len(_page_bindings(baseline.world)) + 2
+    assert {
+        item.semantic_action for item in _page_bindings(omitted.world) if item.target_id == checkbox.target_id
+    } == {"activate", "press_key"}
     assert omitted.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert baseline.world.source_manifest[0].coverage is CoverageState.COMPLETE
     task = TaskGoal(
@@ -194,10 +220,13 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    assert len(ActionSpaceBuilder().build(task, omitted.world).options) == 2
+    assert (
+        len(ActionSpaceBuilder().build(task, omitted.world).options)
+        == len(ActionSpaceBuilder().build(task, baseline.world).options) + 2
+    )
     inventory = omitted.world.sources[0].semantic_inventory
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
-    assert (inventory.recognized_target_count, inventory.projected_target_count) == (2, 2)
+    assert (inventory.recognized_target_count, inventory.projected_target_count) == (4, 4)
 
 
 def test_drag_source_publishes_one_finite_semantic_destination_domain() -> None:
@@ -243,10 +272,10 @@ def test_static_text_is_projected_as_read_only_information() -> None:
     inventory = projected.world.sources[0].semantic_inventory
     assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
-    assert inventory.recognized_target_count == 1
-    assert len(projected.world.targets) == 1
-    assert projected.world.targets[0].role == "StaticText"
-    assert projected.world.bindings == ()
+    assert inventory.recognized_target_count == 3
+    assert len(_page_targets(projected.world)) == 1
+    assert _page_targets(projected.world)[0].role == "StaticText"
+    assert _page_bindings(projected.world) == ()
     assert inventory.informational_target_count == 1
 
 
@@ -261,7 +290,7 @@ def test_structural_relations_use_only_current_public_target_ids() -> None:
     by_role = {item.role: item for item in projected.world.targets}
     assert by_role["row"].relations["parent_id"] == by_role["table"].target_id
     assert by_role["row"].relations["child_ids"] == (by_role["cell"].target_id,)
-    assert projected.world.bindings == ()
+    assert _page_bindings(projected.world) == ()
 
 
 def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None:
@@ -299,7 +328,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
 
     assert 'group "Products"' in observation
     assert 'row "MacBook Pro"' in observation
-    assert f'[{option.target_ref}] button "Add to cart" verbs=["activate"]' in observation
+    assert f'[{option.target_ref}] button "Add to cart" verbs=["activate","press_key"]' in observation
     assert observation.index('group "Products"') < observation.index('row "MacBook Pro"')
     assert observation.index('row "MacBook Pro"') < observation.index('button "Add to cart"')
     encoded = json.dumps(observation)
@@ -319,9 +348,8 @@ def test_browsergym_clickable_generic_uses_descendant_text_without_exposing_rout
     label = next(item for item in projected.world.targets if item.role == "StaticText")
     assert clickable.label == "Open account"
     assert clickable.relations["child_ids"] == (label.target_id,)
-    assert len(projected.world.bindings) == 1
-    assert projected.world.bindings[0].target_id == clickable.target_id
-    assert projected.world.bindings[0].semantic_action == "activate"
+    clickable_bindings = tuple(item for item in _page_bindings(projected.world) if item.target_id == clickable.target_id)
+    assert {item.semantic_action for item in clickable_bindings} == {"activate"}
     assert "container" not in repr(projected.world)
 
 
@@ -373,14 +401,14 @@ def test_inactive_tab_panel_descendants_do_not_gain_action_authority() -> None:
     collapsed = _project(accordion(False))
     collapsed_labels = {
         next(item.label for item in collapsed.world.targets if item.target_id == binding.target_id)
-        for binding in collapsed.world.bindings
+        for binding in _page_bindings(collapsed.world)
     }
     assert collapsed_labels == {"Section #37"}
 
     expanded = _project(accordion(True))
     expanded_labels = {
         next(item.label for item in expanded.world.targets if item.target_id == binding.target_id)
-        for binding in expanded.world.bindings
+        for binding in _page_bindings(expanded.world)
     }
     assert expanded_labels == {"Section #37", "Submit"}
 
@@ -391,8 +419,8 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
     disabled_projection = _project(disabled)
     disabled_inventory = disabled_projection.world.sources[0].semantic_inventory
     assert disabled_inventory.status is SemanticInventoryStatus.REPRESENTED
-    assert (disabled_inventory.projected_target_count, disabled_inventory.non_executable_target_count) == (1, 1)
-    assert disabled_inventory.actionable_target_count == 0
+    assert (disabled_inventory.projected_target_count, disabled_inventory.non_executable_target_count) == (3, 1)
+    assert disabled_inventory.actionable_target_count == 2
 
     many_options = raw_observation(
         ax_node("select", "combobox", "Choice"),
@@ -401,8 +429,8 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
     select_projection = _project(many_options)
     select_inventory = select_projection.world.sources[0].semantic_inventory
     assert select_inventory.status is SemanticInventoryStatus.REPRESENTED
-    assert select_inventory.non_executable_target_count == 1
-    assert not select_projection.world.bindings
+    assert select_inventory.non_executable_target_count == 0
+    assert {item.semantic_action for item in _page_bindings(select_projection.world)} == {"press_key"}
 
     monkeypatch.setattr(projection_module, "MAX_INVENTORY_TARGETS", 1)
     truncated = _project(
@@ -419,7 +447,7 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
         truncated_inventory.recognized_target_count,
         truncated_inventory.projected_target_count,
         truncated_inventory.omitted_target_count,
-    ) == (3, 1, 2)
+    ) == (5, 3, 2)
     retained = truncated.world.sources[0].entity_inventory
     assert retained.status is EntityInventoryStatus.PARTIAL
     assert EntityInventoryIssueCode.ENTITY_CAPACITY_EXCEEDED in retained.issue_codes
@@ -435,7 +463,7 @@ def test_fact_only_truncation_does_not_change_target_inventory(monkeypatch) -> N
     inventory = projected.world.sources[0].semantic_inventory
     assert projected.world.source_manifest[0].coverage is CoverageState.TRUNCATED
     assert inventory.status is SemanticInventoryStatus.REPRESENTED
-    assert (inventory.recognized_target_count, inventory.projected_target_count) == (1, 1)
+    assert (inventory.recognized_target_count, inventory.projected_target_count) == (3, 3)
     retained = projected.world.sources[0].entity_inventory
     assert retained.status is EntityInventoryStatus.PARTIAL
     assert retained.issue_codes == (EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED,)
@@ -446,8 +474,8 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
         raw_observation(*(ax_node(f"button-{index}", "button", f"Button {index}") for index in range(65)))
     )
 
-    assert len(projected.world.targets) == 65
-    assert len(projected.world.bindings) == 65
+    assert len(_page_targets(projected.world)) == 65
+    assert len(_page_bindings(projected.world)) == 130
     assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert projected.world.sources[0].entity_inventory.status is EntityInventoryStatus.COMPLETE
 
@@ -470,10 +498,10 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
         action_space,
         evaluation,
     )
-    assert len(action_space.options) == 65
+    assert len(action_space.options) == 132
     document = context.actor_world.documents[0]
-    assert document.total_node_count == 65
-    assert document.retained_node_count == 65
+    assert document.total_node_count == 67
+    assert document.retained_node_count == 67
     assert document.truncated is False
     assert context.actor_world.traversal is None
 
@@ -512,7 +540,7 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
     )
     assert any(item.label == "Continue task" for item in nodes)
     assert context.actor_world.traversal is None
-    assert len(nodes) == 71
+    assert len(nodes) == 73
 
 
 def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None:
@@ -558,7 +586,7 @@ def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None
 
     assert page_count == 1
     assert seen == {item.action_id for item in action_space.options}
-    assert len(seen) == len(world.bindings) == 41
+    assert len(seen) == len(world.bindings) == 44
 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:

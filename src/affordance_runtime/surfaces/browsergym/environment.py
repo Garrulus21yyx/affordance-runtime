@@ -13,6 +13,8 @@ from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymBindingStore,
     BrowserGymDragBinding,
     BrowserGymElementBinding,
+    BrowserGymFocusedContextBinding,
+    BrowserGymViewportBinding,
     BrowserGymVisualBinding,
 )
 from affordance_runtime.surfaces.browsergym.currentness import (
@@ -143,6 +145,9 @@ class BrowserGymSurfaceAdapter:
     dom_action_calls: int = 0
     fill_calls: int = 0
     select_calls: int = 0
+    scroll_calls: int = 0
+    press_calls: int = 0
+    keyboard_press_calls: int = 0
     visual_proposer_calls: int = 0
     visual_point_grounder_calls: int = 0
     visual_point_grounder_success_count: int = 0
@@ -824,6 +829,8 @@ class BrowserGymSurfaceAdapter:
         self.probe_calls += 1
         if isinstance(private, BrowserGymVisualBinding):
             return self._probe_visual_currentness(request, private)
+        if isinstance(private, BrowserGymViewportBinding | BrowserGymFocusedContextBinding):
+            return self._probe_context_currentness(request, private)
         assert isinstance(private, BrowserGymElementBinding | BrowserGymDragBinding)
         try:
             result = self.gym_environment.currentness_probe(private.private_element_id)
@@ -890,6 +897,53 @@ class BrowserGymSurfaceAdapter:
             return ActionError.CURRENTNESS_UNAVAILABLE, 1
         return ActionError.STALE_BINDING, 1
 
+    def _probe_context_currentness(
+        self,
+        request: BoundActionRequest,
+        private: BrowserGymViewportBinding | BrowserGymFocusedContextBinding,
+    ) -> tuple[ActionError | None, int]:
+        try:
+            raw, probe = self.gym_environment.capture_current()
+            if not isinstance(probe, dict):
+                raise ValueError("context currentness probe must be structured")
+            ready = probe.get("ready")
+            done = probe.get("done")
+            if not isinstance(ready, bool) or not isinstance(done, bool):
+                raise ValueError("context currentness probe omitted task state")
+            live_page = page_identity(raw)
+            live_episode = probe_episode(probe, self._episode_identity)
+        except Exception:
+            self.last_currentness_decision = unavailable_currentness()
+            return ActionError.CURRENTNESS_UNAVAILABLE, 1
+        reason = None
+        if not self.is_current(request):
+            reason = BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
+        elif done or self._terminated:
+            reason = BrowserGymCurrentnessReason.TASK_DONE
+        elif not ready:
+            reason = BrowserGymCurrentnessReason.TASK_NOT_READY
+        elif private.page_identity != live_page:
+            reason = BrowserGymCurrentnessReason.PAGE_CHANGED
+        elif private.episode_identity != live_episode:
+            reason = BrowserGymCurrentnessReason.EPISODE_CHANGED
+        elif (
+            isinstance(private, BrowserGymFocusedContextBinding)
+            and private.focused_private_element_id
+            and not _focused_bid_is_current(raw, private.focused_private_element_id)
+        ):
+            reason = BrowserGymCurrentnessReason.STATE_CHANGED
+        if reason is None:
+            self.last_currentness_decision = BrowserGymCurrentnessDecision(
+                BrowserGymCurrentnessStatus.CURRENT,
+                BrowserGymCurrentnessReason.CURRENT,
+            )
+            return None, 1
+        self.last_currentness_decision = BrowserGymCurrentnessDecision(
+            BrowserGymCurrentnessStatus.STALE,
+            reason,
+        )
+        return ActionError.STALE_BINDING, 1
+
     def _probe_visual_currentness(
         self,
         request: BoundActionRequest,
@@ -942,3 +996,14 @@ class BrowserGymSurfaceAdapter:
         self.dispatched_request_ids.append(request.request_id)
         self.fill_calls += int(request.binding.primitive_action == "fill")
         self.select_calls += int(request.binding.primitive_action == "select_option")
+        self.scroll_calls += int(request.binding.primitive_action == "scroll")
+        self.press_calls += int(request.binding.primitive_action == "press")
+        self.keyboard_press_calls += int(request.binding.primitive_action == "keyboard_press")
+
+
+def _focused_bid_is_current(raw: dict[str, object], private_bid: str) -> bool:
+    try:
+        live = canonical_control_for_bid(raw, private_bid)
+    except (BrowserGymSemanticError, RuntimeError):
+        return False
+    return bool(live and dict(live.public_state).get("focused") is True)

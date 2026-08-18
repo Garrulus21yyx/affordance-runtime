@@ -44,8 +44,11 @@ source/projection contract without adding tools: BrowserGym drag evidence now de
 semantics rather than browser-default properties; source structure retains projected controls with ancestors; bounded
 World/Actor projection preserves current tool targets, verbs, action-decision state, and truthful action overflow; and
 the W1b-World read-only diagnostic passed all six frozen site categories under `evidence/w1b-world-t0/`. This does not
-establish support for BrowserGym primitives outside the declared semantic action algebra; T1 begins with
-`scroll`/`press_key`, and W1b-Agent/W2 remain pending.
+establish support for BrowserGym primitives outside the declared semantic action algebra. T1 now installs
+`scroll`/`press_key` through the BrowserGym profile, current ActionSpace, tool catalog, binding/execution route, and
+fresh post-action World acquisition. The T1 W1b-World diagnostic passed all six categories under
+`evidence/w1b-world-t1/`, and real MiniWoB conformance dispatches both BrowserGym primitives without a provider call.
+W1b-Agent/W2 remain pending.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
@@ -642,9 +645,10 @@ Current implementation has the full typed World, bounded semantic-group projecti
 state coverage, current action paging, compact renderer, perception profiles, complete trace seam, and the T0
 W1b-World diagnostic. The six-site T0 gate verified source capability semantics, offered-target conservation,
 action-decision state, structural closure, truthful action overflow recovery through `find_actions`, and private-data
-isolation. Remaining work is T1 capability installation (`scroll`/`press_key` first), complete-request token admission,
-and W1b-Agent/W2 model/evaluator evidence; a non-action read route is still deferred unless measurements demonstrate a
-retrieval gap.
+isolation. T1 adds BrowserGym `scroll` and `press_key` as installed capabilities, including viewport and
+focused-context subjects, current bindings, primitive dispatch, fresh capture, model-visible tool exposure, and real
+MiniWoB conformance. Remaining work is complete-request token admission and W1b-Agent/W2 model/evaluator evidence; a
+non-action read route is still deferred unless measurements demonstrate a retrieval gap.
 
 ### SemanticActionRegistry
 
@@ -698,18 +702,18 @@ The four named layers remain distinct:
 
 The global registry currently defines ten semantic operations:
 `activate`, `type_text`, `select_option`, `read`, `scroll`, `press_key`, `focus`, `drag_to`, `set_value`, and `hover`.
-The BrowserGym profile currently installs only four:
-`activate -> click`, `type_text -> fill`, `select_option -> select_option`, and
-`drag_to -> drag_and_drop`. Therefore the registry is presently a vocabulary superset, not an installed-capability
-claim. BrowserGym already supplies maintained primitives for the first missing tranche; this project should reuse
-those primitives rather than implement raw Playwright replacements.
+The BrowserGym profile currently installs six:
+`activate -> click`, `type_text -> fill`, `select_option -> select_option`, `drag_to -> drag_and_drop`,
+`scroll -> scroll`, and `press_key -> press | keyboard_press`. Therefore the registry is presently a vocabulary
+superset, not an installed-capability claim for the remaining entries. BrowserGym supplies maintained primitives for
+these installed operations; this project reuses them rather than implementing raw Playwright replacements.
 
 The bounded remediation order is:
 
 1. correct real-page affordance classification so authored click/edit/drag semantics are not confused with browser
    defaults and every offered operation has truthful current evidence;
 2. install `scroll` and `press_key` end to end, including viewport/focused-context subjects, current bindings,
-   BrowserGym translation, dispatch, fresh capture, model exposure, and real conformance;
+   BrowserGym translation, dispatch, fresh capture, model exposure, and real conformance (done in T1);
 3. install `hover` and `focus` through the same chain;
 4. add `set_value` only when a declared benchmark page exposes a slider/spinbutton/value control that cannot be
    handled honestly by the installed operations; keep `read` in the observation/evidence path unless real-page
@@ -1207,7 +1211,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0 real-web World/Actor contract implemented and verified; T1 scroll/press_key active next / W1b-Agent and W2 non-closed | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; install missing first-tranche capabilities, rerun all W1b smokes, then run W2 |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0 real-web World/Actor contract implemented and verified; T1 scroll/press_key implemented and verified / W1b-Agent and W2 non-closed | thin outer Manager/Auditor/MissionState enters through the same role request -> `ModelInvocationResult` seam, then the unchanged inner GUI chain and official evaluator; run W1b-Agent smokes, then W2 |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:

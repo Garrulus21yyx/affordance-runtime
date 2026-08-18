@@ -3,6 +3,7 @@ import copy
 from dataclasses import replace
 
 from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.execution import ActionError, DispatchStatus
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
@@ -19,6 +20,18 @@ from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     request_for,
     start_environment,
 )
+
+
+def _request_for_role(world, task, semantic_action, target_role, parameters=None):
+    builder = ActionSpaceBuilder()
+    target = next(item for item in world.targets if item.role == target_role)
+    option = next(
+        item
+        for item in builder.build(task, world).options
+        if item.semantic_action == semantic_action and item.target_id == target.target_id
+    )
+    selection = builder.admit(option, parameters or {})
+    return ActionBinder().bind(selection, world, "context:test")
 
 
 def _fixture(*, fail_step=False, fail_probe=False):
@@ -92,6 +105,60 @@ def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
         assert len(fake.actions) == 1 and fake.actions[0].startswith(prefix)
         assert environment.probe_calls == 1 and environment.step_calls == 1
         asyncio.run(environment.close())
+
+
+def test_scroll_dispatches_viewport_browsergym_scroll_without_element_route() -> None:
+    fake, environment, task, world = _fixture()
+    request = _request_for_role(world, task, "scroll", "viewport", {"direction": "down", "extent": "small"})
+
+    outcome = asyncio.run(environment.execute(request))
+
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ["scroll(0.0, 150.0)"]
+    assert environment.scroll_calls == 1
+    assert environment.keyboard_press_calls == environment.press_calls == 0
+    assert environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_press_key_dispatches_entity_press_and_focused_keyboard_press() -> None:
+    fake, environment, task, world = _fixture()
+    entity_request = _request_for_role(world, task, "press_key", "button", {"key": "Enter"})
+
+    entity_outcome = asyncio.run(environment.execute(entity_request))
+
+    assert entity_outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ['press("1", "Enter")']
+    assert environment.press_calls == 1
+    asyncio.run(environment.close())
+
+    fake, environment, task, world = _fixture()
+    focused_request = _request_for_role(world, task, "press_key", "focused_context", {"key": "Escape"})
+
+    focused_outcome = asyncio.run(environment.execute(focused_request))
+
+    assert focused_outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ['keyboard_press("Escape")']
+    assert environment.keyboard_press_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_press_key_rejects_keys_outside_current_closed_enum_before_dispatch() -> None:
+    fake, environment, task, world = _fixture()
+    builder = ActionSpaceBuilder()
+    target = next(item for item in world.targets if item.role == "button")
+    option = next(
+        item
+        for item in builder.build(task, world).options
+        if item.semantic_action == "press_key" and item.target_id == target.target_id
+    )
+
+    result = builder.try_admit(option, {"key": 'Enter"); scroll(0, 9999); //'})
+
+    assert result.admitted is None
+    assert result.issue is not None
+    assert fake.actions == []
+    asyncio.run(environment.close())
 
 
 def test_drag_dispatches_one_official_action_with_two_private_current_endpoints() -> None:

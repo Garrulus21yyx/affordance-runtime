@@ -266,7 +266,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
 | Model invocation boundary convergence — implemented / locally verified | shared provider/model invocation exit for current model roles | `ModelInvocationResult[T]` carries typed output/failure, `ModelMetadata`, physical attempts, repair diagnostics, role diagnostics, and lineage; production policy ports return only this envelope; PydanticAI remains native-tool transport; compact-json remains a compatibility shim | focused/unit/integration tests prove attempts are retained, retry and role repair stay distinct, instrumentation reads the explicit result, and GUI Runtime authority is unchanged; W1/W2 benchmark verification remains pending |
-| G5. WebArena-Verified long horizon — W1a implemented locally / T0 W1b-World passed / W1b-Agent and W2 non-closed | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; real-page World/Actor gate; site smokes; frozen 12-case cohort | existing long-horizon contracts plus one governed BrowserGym raw -> full World -> bounded Actor View -> current tools delivery path; no second selector, browser, or loop; T1 installs `scroll`/`press_key` before agent smokes | T0 source semantics, target/state conservation, structural closure, coverage/recovery, and private-data isolation passed across the six W1b sites; next prove first-tranche capabilities, then official evaluator success on at least 6/12 including every W2 stratum, with no benchmark branch or cross-case memory |
+| G5. WebArena-Verified long horizon — W1a implemented locally / T0 W1b-World passed / T1 scroll/key passed / W1b-Agent and W2 non-closed | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; real-page World/Actor gate; site smokes; frozen 12-case cohort | existing long-horizon contracts plus one governed BrowserGym raw -> full World -> bounded Actor View -> current tools delivery path; no second selector, browser, or loop; first-tranche BrowserGym capabilities are installed | T0 source semantics, target/state conservation, structural closure, coverage/recovery, and private-data isolation passed across the six W1b sites; T1 scroll/key conformance and W1b-World rerun passed; next prove official evaluator success on at least 6/12 including every W2 stratum, with no benchmark branch or cross-case memory |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
 
@@ -632,6 +632,14 @@ complete action-decision-state retention, zero structural-closure violations, ze
 contract gate only; it did not call ActionPolicy, GoalCompiler, Manager, Auditor, or any provider, and it did not
 mutate the GUI after official reset.
 
+T1 BrowserGym capability installation is now implemented and locally verified. `scroll` and `press_key` are installed
+through the surface profile, primitive translators, private bindings, current ActionSpace, action paging/tool catalog,
+admission/binding/execution route, fresh World acquisition, outcome projection, and benchmark instrumentation. The real
+MiniWoB conformance dispatches viewport scroll and button Enter press through the product target loop with
+`provider_attempts=0`. The follow-up six-site W1b-World read-only diagnostic passed under `evidence/w1b-world-t1/`;
+it again did not call ActionPolicy, GoalCompiler, Manager, Auditor, or a provider and did not perform GUI mutation
+beyond official reset/navigation acquisition.
+
 W1b-World uses the single production acquisition and projection chain. It does not create a second renderer or an
 offline oracle view for the model:
 
@@ -686,8 +694,8 @@ The current BrowserGym support baseline is explicit rather than inferred from th
 
 | Status | Operations | W1b treatment |
 |---|---|---|
-| installed now | `activate`, `type_text`, `select_option`, `drag_to` | preserve and run real click/fill/select/drag conformance |
-| first missing tranche | `scroll`, `press_key` | install end to end before treating a site smoke blocked on either operation as a policy failure |
+| installed now | `activate`, `type_text`, `select_option`, `drag_to`, `scroll`, `press_key` | preserve and run real click/fill/select/drag plus T1 scroll/key conformance |
+| first missing tranche | none | complete as of T1; site smoke failures on these operations can now be attributed past capability installation |
 | second missing tranche | `hover`, `focus` | install through the same owner chain and exercise on representative real controls |
 | evidence-triggered only | `set_value` | add only when a declared page exposes a value control not honestly covered by existing operations |
 | observation-owned by default | `read` | use current World/evidence; add at most one read-only recovery route only after a measured non-action retrieval gap |
@@ -945,8 +953,9 @@ legacy-engine path. Every serialized run identity records `runtime=core`. This e
 makes no new live MiniWoB performance claim until the paired cohorts below have run. The outer mission layer described
 for G5 is now an executable W1a product path for local contracts: thin mission roles, accepted MissionState, bounded
 episodes, `yield_subtask`, official BrowserGym finalization, and native terminal mapping are implemented and verified
-locally. The real-page T0 W1b-World gate is now passed; W1b-Agent site smokes and W2 frozen cohort evidence still
-precede any long-horizon capability claim. The current executable gate is:
+locally. The real-page T0 W1b-World gate is passed, and T1 BrowserGym `scroll`/`press_key` installation is verified
+through real conformance plus the T1 W1b-World rerun. W1b-Agent site smokes and W2 frozen cohort evidence still precede
+any long-horizon capability claim. The current executable gate is:
 
 ```bash
 pytest -q

@@ -13,12 +13,17 @@ from affordance_runtime.actions import (
     ActionBinding,
     ActionRisk,
 )
-from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    VerificationFamily,
+)
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragBinding,
     BrowserGymDragDestination,
     BrowserGymElementBinding,
+    BrowserGymFocusedContextBinding,
     BrowserGymPrivateBinding,
+    BrowserGymViewportBinding,
 )
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
@@ -168,6 +173,16 @@ def project_browsergym_observation(
         for structure_node in retained_structure
     )
     controls_by_node_id = {node.private_node_id: node for node in projected}
+    viewport_target, viewport_structure, viewport_public, viewport_private = _viewport_subject(
+        raw,
+        observation_id,
+        source_revision,
+        page_identity,
+        episode_identity,
+    )
+    targets.append(viewport_target)
+    bindings.append(viewport_public)
+    private.append(viewport_private)
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
         state: dict[str, object] = dict(node.public_state)
@@ -221,10 +236,28 @@ def project_browsergym_observation(
         for public, runtime in binding_pairs:
             bindings.append(public)
             private.append(runtime)
+    focused = _focused_context_subject(
+        projected,
+        target_ids,
+        observation_id,
+        source_revision,
+        page_identity,
+        episode_identity,
+    )
+    if focused is not None:
+        focused_target, focused_structure, focused_public, focused_private = focused
+        targets.append(focused_target)
+        bindings.append(focused_public)
+        private.append(focused_private)
     if fact_total > len(facts):
         issues.append(EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED)
     relation_count = sum(
         bool(target.relations.get("parent_id")) + len(target.relations.get("child_ids", ())) for target in targets
+    )
+    relation_total_count = relation_total + (
+        len(focused_target.relations.get("child_ids", ()))
+        if focused is not None
+        else 0
     )
     issues = list(dict.fromkeys(issues))
     truncated = bool(issues)
@@ -259,9 +292,10 @@ def project_browsergym_observation(
         artifacts["screenshot_semantic_state"] = {
             "public_summary": "Current screenshot state for bounded before/after effect comparison.",
         }
+    derived_subject_count = 1 + int(focused is not None)
     actionable_target_count = len({binding.target_id for binding in bindings})
     projected_target_count = len(targets)
-    recognized_target_count = analysis.inventory.recognized_target_count
+    recognized_target_count = analysis.inventory.recognized_target_count + derived_subject_count
     inventory = SemanticInventorySummary.assessed(
         analysis.inventory.profile_id,
         recognized_target_count=recognized_target_count,
@@ -276,11 +310,11 @@ def project_browsergym_observation(
     entity_inventory = EntityInventorySummary(
         EntityInventoryStatus.PARTIAL if truncated else EntityInventoryStatus.COMPLETE,
         len(targets),
-        len(candidates),
+        len(candidates) + derived_subject_count,
         len(facts),
         fact_total,
         relation_count,
-        relation_total,
+        relation_total_count,
         option_value_count,
         option_value_total,
         tuple(issues),
@@ -299,16 +333,166 @@ def project_browsergym_observation(
         screenshot_media,
         entity_inventory,
         acquisition_root_id=observation_id,
-        structure=structure,
-        structure_total_count=len(analysis.structure),
+        structure=(*structure, viewport_structure, *((focused_structure,) if focused is not None else ())),
+        structure_total_count=len(analysis.structure) + 1 + int(focused is not None),
     )
     return BrowserGymProjection(
         source,
         tuple(private),
-        len(candidates),
+        len(candidates) + derived_subject_count,
         fact_total,
         analysis,
     )
+
+
+def _viewport_subject(
+    raw: dict[str, object],
+    observation_id: str,
+    revision: str,
+    page_identity: str,
+    episode_identity: str,
+) -> tuple[SemanticTarget, ObservationStructureNode, ActionBinding, BrowserGymViewportBinding]:
+    target_id = "viewport:current"
+    width, height = _viewport_dimensions(raw)
+    state = {"subject.kind": "viewport", "scroll_extent_source": "viewport"}
+    target = SemanticTarget(target_id, "viewport", "Current page viewport", state, {})
+    structure = ObservationStructureNode(
+        "structure:viewport:current",
+        "viewport",
+        "Current page viewport",
+        state,
+        "",
+        (),
+        target_id,
+        False,
+    )
+    schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema("scroll")
+    binding_id = f"binding:{observation_id}:viewport:scroll"
+    public = ActionBinding(
+        binding_id,
+        observation_id,
+        observation_id,
+        revision,
+        _public_fingerprint(("viewport", target.label, tuple(sorted(state.items())))),
+        target_id,
+        target_id,
+        "browsergym",
+        "browsergym",
+        "scroll",
+        "scroll",
+        "local_reversible",
+        ("external_ui_interaction",),
+        schema,
+        {},
+        observation_barrier=True,
+        risk=ActionRisk.LOW,
+        verification_family=VerificationFamily.SCROLL_STATE.value,
+    )
+    private = BrowserGymViewportBinding(
+        binding_id,
+        observation_id,
+        revision,
+        page_identity,
+        episode_identity,
+        target_id,
+        "scroll",
+        width,
+        height,
+    )
+    return target, structure, public, private
+
+
+def _focused_context_subject(
+    controls: list[CanonicalBrowserControl],
+    target_ids: dict[str, str],
+    observation_id: str,
+    revision: str,
+    page_identity: str,
+    episode_identity: str,
+) -> tuple[SemanticTarget, ObservationStructureNode, ActionBinding, BrowserGymFocusedContextBinding] | None:
+    focused = tuple(
+        control
+        for control in controls
+        if dict(control.public_state).get("focused") is True
+        and control.private_node_id in target_ids
+    )
+    if len(focused) > 1:
+        return None
+    focused_control = focused[0] if focused else None
+    target_id = "focused-context:current"
+    state: dict[str, object] = {"subject.kind": "focused_context"}
+    relations: dict[str, object] = {}
+    focused_private = ""
+    child_ids: tuple[str, ...] = ()
+    if focused_control is not None:
+        state["focused"] = True
+        state["focused_role"] = focused_control.role
+        if focused_control.accessible_name:
+            state["focused_label"] = focused_control.accessible_name
+        focused_target_id = target_ids[focused_control.private_node_id]
+        relations["child_ids"] = (focused_target_id,)
+        child_ids = (focused_target_id,)
+        focused_private = focused_control.private_bid
+    else:
+        state["focused"] = "unknown"
+    target = SemanticTarget(target_id, "focused_context", "Current keyboard focus", state, relations)
+    structure = ObservationStructureNode(
+        "structure:focused-context:current",
+        "focused_context",
+        "Current keyboard focus",
+        state,
+        "",
+        (),
+        target_id,
+        False,
+    )
+    schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema("press_key")
+    binding_id = f"binding:{observation_id}:focused-context:press-key"
+    public = ActionBinding(
+        binding_id,
+        observation_id,
+        observation_id,
+        revision,
+        _public_fingerprint(("focused_context", target.label, tuple(sorted(state.items())), child_ids)),
+        target_id,
+        target_id,
+        "browsergym",
+        "browsergym",
+        "press_key",
+        "keyboard_press",
+        "local_reversible",
+        ("external_ui_interaction",),
+        schema,
+        {},
+        observation_barrier=True,
+        risk=ActionRisk.LOW,
+        verification_family=VerificationFamily.SEMANTIC.value,
+    )
+    private = BrowserGymFocusedContextBinding(
+        binding_id,
+        observation_id,
+        revision,
+        page_identity,
+        episode_identity,
+        target_id,
+        "keyboard_press",
+        focused_private,
+    )
+    return target, structure, public, private
+
+
+def _viewport_dimensions(raw: dict[str, object]) -> tuple[int, int]:
+    screenshot = raw.get("screenshot")
+    shape = getattr(screenshot, "shape", None)
+    if isinstance(shape, tuple) and len(shape) >= 2:
+        height, width = shape[0], shape[1]
+        if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+            return width, height
+    return 800, 600
+
+
+def _public_fingerprint(value: object) -> str:
+    return "sha256:" + hashlib.sha256(repr(value).encode("utf-8")).hexdigest()
 
 
 def _visible_numeric_labels(raw: dict[str, object]) -> tuple[VisibleNumericLabel, ...]:
@@ -480,6 +664,11 @@ def _binding_pairs(
             eligible_destination_ids=tuple(
                 destination_id for destination_id, _destination in drag_destinations
             ) if semantic == "drag_to" else (),
+            verification_family=(
+                VerificationFamily.SEMANTIC.value
+                if semantic == "press_key"
+                else ""
+            ),
         )
         runtime: BrowserGymPrivateBinding
         if semantic == "drag_to":

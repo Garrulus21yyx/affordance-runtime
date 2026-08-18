@@ -43,6 +43,45 @@ class BrowserGymStructuredDecisionPort:
         )
 
 
+@dataclass
+class BrowserGymCapabilityDecisionPort:
+    """Select one public action option by semantic action and current target role."""
+
+    semantic_action: str
+    target_role: str
+    parameters: dict[str, object]
+    target_label: str = ""
+    calls: int = 0
+    public_contexts: list[AgentContext] = field(default_factory=list)
+
+    async def generate(self, request):
+        self.calls += 1
+        context = request.agent_context
+        self.public_contexts.append(context)
+        option = _capability_option(
+            context.actions.options,
+            self.semantic_action,
+            self.target_role,
+            self.target_label,
+        )
+        metadata = ModelMetadata(
+            provider_id="conformance",
+            model_id="scripted-capability",
+            response_id=f"response:{self.calls}",
+            endpoint_class="in-process",
+            prompt_version="browsergym-t1-capability-conformance.v1",
+            schema_version="typed-agent-context.v1",
+        )
+        return ModelInvocationResult(
+            output=ResolvedModelDecision(
+                _selection(context, option, dict(self.parameters)),
+                metadata,
+            ),
+            metadata=metadata,
+            lineage={"role": "ActionPolicy", "adapter": "conformance"},
+        )
+
+
 def adapter_conformance_composition(environment, port) -> BenchmarkComposition:
     return BenchmarkComposition(
         ModelBackedAgentPolicy(port, call_timeout_s=10),
@@ -70,6 +109,19 @@ def _public_decision(context: AgentContext) -> SelectAction:
         return _selection(context, _labelled(actions, "activate", "submit"), {})
     label = quoted[0] if quoted else ""
     return _selection(context, _labelled(actions, "activate", label), {})
+
+
+def _capability_option(actions, semantic: str, role: str, label: str):
+    return next(
+        (
+            item
+            for item in actions
+            if item.semantic_action == semantic
+            and item.target_role == role
+            and (not label or item.target_label.casefold() == label.casefold())
+        ),
+        None,
+    )
 
 
 def _selection(context, option, parameters) -> SelectAction:

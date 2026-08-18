@@ -93,7 +93,74 @@ class BrowserGymVisualBinding:
         return self.region.source_revision
 
 
-BrowserGymPrivateBinding = BrowserGymElementBinding | BrowserGymDragBinding | BrowserGymVisualBinding
+@dataclass(frozen=True)
+class BrowserGymViewportBinding:
+    """Runtime-private current viewport route for BrowserGym wheel scrolling."""
+
+    binding_id: str
+    source_observation_id: str
+    source_revision: str
+    page_identity: str
+    episode_identity: str
+    semantic_target_id: str
+    supported_primitive: str
+    viewport_width: int
+    viewport_height: int
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.binding_id,
+                self.source_observation_id,
+                self.source_revision,
+                self.page_identity,
+                self.episode_identity,
+                self.semantic_target_id,
+                self.supported_primitive,
+            )
+        ):
+            raise ValueError("BrowserGym viewport binding requires current identity")
+        if self.viewport_width <= 0 or self.viewport_height <= 0:
+            raise ValueError("BrowserGym viewport binding requires positive dimensions")
+
+
+@dataclass(frozen=True)
+class BrowserGymFocusedContextBinding:
+    """Runtime-private route for BrowserGym page-level keyboard events."""
+
+    binding_id: str
+    source_observation_id: str
+    source_revision: str
+    page_identity: str
+    episode_identity: str
+    semantic_target_id: str
+    supported_primitive: str
+    focused_private_element_id: str = ""
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.binding_id,
+                self.source_observation_id,
+                self.source_revision,
+                self.page_identity,
+                self.episode_identity,
+                self.semantic_target_id,
+                self.supported_primitive,
+            )
+        ):
+            raise ValueError("BrowserGym focused-context binding requires current identity")
+
+
+BrowserGymPrivateBinding = (
+    BrowserGymElementBinding
+    | BrowserGymDragBinding
+    | BrowserGymVisualBinding
+    | BrowserGymViewportBinding
+    | BrowserGymFocusedContextBinding
+)
 
 
 @dataclass

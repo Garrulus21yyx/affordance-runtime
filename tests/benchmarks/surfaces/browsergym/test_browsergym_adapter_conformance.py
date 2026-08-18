@@ -2,7 +2,10 @@ import os
 
 import pytest
 
-from affordance_runtime.benchmarks.external_smoke.adapter_conformance import run_adapter_conformance
+from affordance_runtime.benchmarks.external_smoke.adapter_conformance import (
+    run_adapter_conformance,
+    run_t1_browsergym_capability_conformance,
+)
 
 pytestmark = pytest.mark.skipif(not os.environ.get("MINIWOB_URL"), reason="fixed MiniWoB source is unavailable")
 
@@ -34,6 +37,28 @@ def test_adapter_readiness_requires_all_real_gates(conformance) -> None:
     assert conformance.target_loop_adapter_ready
     assert conformance.suite.acceptance.accepted
     assert len(conformance.suite.cases) == 3
+
+
+def test_t1_real_browsergym_scroll_and_press_key_conformance() -> None:
+    import asyncio
+
+    outcome = asyncio.run(run_t1_browsergym_capability_conformance(7))
+
+    assert outcome.accepted, outcome.errors
+    by_id = {item.case_id: item for item in outcome.cases}
+    scroll = by_id["t1-scroll-viewport"]
+    assert scroll.dispatch_status == "sent"
+    assert scroll.physical_action == "scroll"
+    assert scroll.post_observation_acquired
+    assert scroll.scroll_calls == 1
+    assert scroll.press_calls == scroll.keyboard_press_calls == 0
+
+    press = by_id["t1-press-key-entity"]
+    assert press.dispatch_status == "sent"
+    assert press.physical_action == "press"
+    assert press.post_observation_acquired
+    assert press.press_calls == 1
+    assert press.official_status in {"success", "incomplete"}
 
 
 def _assert_case(conformance, case_id: str, *, steps: int, policy_calls: int):

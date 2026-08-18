@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent.context.budgets import serialized_size
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
@@ -32,6 +33,7 @@ from affordance_runtime.model.policy.grounded_tool_catalog import compile_ground
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
+from affordance_runtime.surfaces.browsergym.interaction_profile import BROWSERGYM_INTERACTION_PROFILE
 from affordance_runtime.surfaces.browsergym.task_state import (
     BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
     BrowserGymTaskStateSnapshot,
@@ -653,6 +655,7 @@ def _w1b_world_success(
             "partial": context.actions.has_more,
             "recovery": "find_actions" if context.actions.has_more else "not_required",
         },
+        "capability_census": _capability_census(context, catalog),
         "decision_state": state_metrics,
         "structural_closure": {
             "violation_count": len(closure_violations),
@@ -756,6 +759,40 @@ def _action_option_refs(context) -> tuple[str, ...]:
         )
         if ref
     ))
+
+
+def _capability_census(context, catalog) -> tuple[dict[str, object], ...]:
+    supported = {item.semantic_action: item for item in BROWSERGYM_INTERACTION_PROFILE.capabilities}
+    eligible = Counter(option.semantic_action for option in context.actions.options)
+    exposed = {item.name for item in catalog.specs}
+    paged = bool(context.actions.has_more and "find_actions" in exposed)
+    result = []
+    for definition in INTERACTION_CAPABILITY_REGISTRY.definitions:
+        action = definition.semantic_action
+        adapter_supported = action in supported
+        currently_eligible = eligible[action]
+        model_exposed = action in exposed
+        absence_reason = ""
+        if not adapter_supported:
+            absence_reason = "adapter_not_supported"
+        elif currently_eligible == 0:
+            absence_reason = "no_current_eligible_binding"
+        elif not model_exposed and paged:
+            absence_reason = "paged_searchable"
+        elif not model_exposed:
+            absence_reason = "not_model_exposed"
+        result.append({
+            "semantic_action": action,
+            "registry_defined": True,
+            "adapter_supported": adapter_supported,
+            "currently_eligible": currently_eligible,
+            "model_exposed": model_exposed,
+            "paged_searchable": bool(not model_exposed and paged and currently_eligible),
+            "absence_reason": absence_reason,
+            "subject_kinds": tuple(item.value for item in definition.subject_kinds),
+            "primitive_actions": supported[action].primitive_actions if adapter_supported else (),
+        })
+    return tuple(result)
 
 
 def _action_state_metrics(context, actor_refs: Mapping[str, object]) -> dict[str, Any]:

@@ -10,6 +10,9 @@ from affordance_runtime.actions.admission import AdmissionIssue, invalid_paramet
 _PRIVATE_PARAMETER_PARTS = frozenset(
     {"selector", "coordinate", "bbox", "point", "href", "method", "backend", "executor", "credential", "security"}
 )
+_ADMISSION_PRIVATE_PATH_PARTS = _PRIVATE_PARAMETER_PARTS | frozenset(
+    {"password", "secret", "token", "authorization", "api", "key"}
+)
 _SCHEMA_TYPES = frozenset({"object", "string", "boolean", "integer", "number"})
 _SCHEMA_KEYS = frozenset(
     {"type", "properties", "required", "additionalProperties", "enum", "minimum", "maximum", "description"}
@@ -190,7 +193,7 @@ def validate_value_issue(
         return None
     field_path, expected, actual = violation
     return invalid_parameters_issue(
-        field_path=field_path,
+        field_path=_public_issue_path(field_path),
         expected=expected,
         actual=actual,
     )
@@ -275,3 +278,14 @@ def _json_type(value: Any) -> str:
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return "array"
     return type(value).__name__
+
+
+def _public_issue_path(path: str) -> str:
+    parts = {
+        part.casefold()
+        for item in path.split(".")
+        for part in item.replace("-", "_").split("_")
+    }
+    if parts & _ADMISSION_PRIVATE_PATH_PARTS:
+        return "parameters"
+    return path

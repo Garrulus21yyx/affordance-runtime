@@ -141,6 +141,39 @@ def _visual_request():
     )
 
 
+_RUNTIME_ROLES = {"viewport", "focused_context"}
+
+
+def _non_runtime_bindings(observation):
+    runtime_target_ids = {
+        target.target_id for target in observation.targets if target.role in _RUNTIME_ROLES
+    }
+    return tuple(
+        binding for binding in observation.bindings if binding.target_id not in runtime_target_ids
+    )
+
+
+def _non_runtime_options(task, observation):
+    runtime_target_ids = {
+        target.target_id for target in observation.targets if target.role in _RUNTIME_ROLES
+    }
+    return tuple(
+        option
+        for option in ActionSpaceBuilder().build(task, observation).options
+        if option.target_id not in runtime_target_ids
+    )
+
+
+def _visual_targets(observation):
+    visual_ids = {
+        target.target_id
+        for source in observation.sources
+        if source.surface == "browsergym_visual"
+        for target in source.targets
+    }
+    return tuple(target for target in observation.targets if target.target_id in visual_ids)
+
+
 def _target_disambiguation_request() -> WorldObservationRequest:
     return WorldObservationRequest(
         ObservationRequestKind.POLICY_REQUEST,
@@ -233,7 +266,7 @@ def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() ->
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
-            assert initial.observation.bindings == ()
+            assert _non_runtime_bindings(initial.observation) == ()
             assert len(proposer.calls) == 0
             assert environment.visual_proposer_calls == 0
             assert [(item.source, item.status) for item in initial.source_results] == [
@@ -250,7 +283,7 @@ def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() ->
                 "browsergym",
                 "browsergym_visual",
             }
-            assert acquired.observation.bindings == ()
+            assert _non_runtime_bindings(acquired.observation) == ()
             visual = next(source for source in acquired.observation.sources if source.surface == "browsergym_visual")
             assert len(visual.targets) == 1
             assert visual.bindings == ()
@@ -334,8 +367,8 @@ def test_point_grounder_cannot_create_browsergym_mainline_action_authority() -> 
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
-            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
-            assert acquired.observation.bindings == ()
+            assert _non_runtime_options(task, acquired.observation) == ()
+            assert _non_runtime_bindings(acquired.observation) == ()
             assert environment.visual_point_grounder_calls == 0
             assert isinstance(environment.visual_point_grounder, _Grounder)
             assert environment.visual_point_grounder.calls == []
@@ -364,8 +397,8 @@ def test_changed_screenshot_does_not_make_observation_only_visual_entity_executa
             # Capture used ``post`` in the fixture; changing it cannot create an
             # executable route for an unmatched observation-only V-ref.
             fake.post = _raw(shade=2)
-            assert acquired.observation.bindings == ()
-            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+            assert _non_runtime_bindings(acquired.observation) == ()
+            assert _non_runtime_options(task, acquired.observation) == ()
             assert environment.visual_point_grounder_calls == 0
             assert fake.actions == []
             assert environment.step_calls == 0
@@ -388,9 +421,9 @@ def test_unsupported_visual_primitive_never_creates_action_authority() -> None:
             await environment.reset(task)
             acquired = await environment.capture(_visual_request())
             assert acquired.observation is not None
-            assert len(acquired.observation.targets) == 1
-            assert acquired.observation.bindings == ()
-            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+            assert len(_visual_targets(acquired.observation)) == 1
+            assert _non_runtime_bindings(acquired.observation) == ()
+            assert _non_runtime_options(task, acquired.observation) == ()
         finally:
             await environment.close()
 
@@ -434,7 +467,7 @@ def test_visual_entity_facts_do_not_imply_point_action_authority() -> None:
                 ("selected", False),
             }
             assert visual.bindings == ()
-            assert ActionSpaceBuilder().build(task, acquired.observation).options == ()
+            assert _non_runtime_options(task, acquired.observation) == ()
         finally:
             await environment.close()
 

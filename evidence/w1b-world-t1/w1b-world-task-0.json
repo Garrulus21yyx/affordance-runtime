@@ -1,0 +1,274 @@
+{
+  "acceptance_errors": [],
+  "action_inventory": {
+    "partial": false,
+    "recovery": "not_required",
+    "total_count": 62,
+    "visible_count": 62
+  },
+  "actor": {
+    "document_count": 1,
+    "rendered_bytes": 27579,
+    "rendered_token_estimate": 6885,
+    "retained_node_count": 585,
+    "serialized_bytes": 186915,
+    "source_coverage": [
+      {
+        "assurance": "structural",
+        "freshness": "current",
+        "inventory_coverage": "partial",
+        "modality": "structural",
+        "projection_coverage": "truncated",
+        "rendering_coverage": "current_screenshot_available",
+        "semantic_interpretation": "open_world",
+        "source_ref": "S1"
+      }
+    ],
+    "total_node_count": 585
+  },
+  "capability_census": [
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 31,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "click"
+      ],
+      "registry_defined": true,
+      "semantic_action": "activate",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "fill"
+      ],
+      "registry_defined": true,
+      "semantic_action": "type_text",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "select_option"
+      ],
+      "registry_defined": true,
+      "semantic_action": "select_option",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "read",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "scroll"
+      ],
+      "registry_defined": true,
+      "semantic_action": "scroll",
+      "subject_kinds": [
+        "viewport"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 29,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "press",
+        "keyboard_press"
+      ],
+      "registry_defined": true,
+      "semantic_action": "press_key",
+      "subject_kinds": [
+        "entity",
+        "focused_context"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "focus",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "drag_and_drop"
+      ],
+      "registry_defined": true,
+      "semantic_action": "drag_to",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "set_value",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "hover",
+      "subject_kinds": [
+        "entity"
+      ]
+    }
+  ],
+  "case": {
+    "cohort": "w1",
+    "gym_id": "browsergym/webarena_verified.279.0.2",
+    "intent_template_id": 279,
+    "public_intent_digest": "",
+    "revision": 2,
+    "sites": [
+      "shopping_admin"
+    ],
+    "task_id": 0,
+    "task_type": "smoke"
+  },
+  "decision_state": {
+    "coverage": "complete",
+    "mismatches": [],
+    "retained": 69,
+    "total": 69,
+    "verb_mismatch_count": 0
+  },
+  "perception_route": {
+    "image_attached": false,
+    "profile": "TEXT_ONLY",
+    "reason": "w1b-world read-only structured diagnostic"
+  },
+  "presentation_collapse": {
+    "appearance_state_fields": 195,
+    "empty_static_text": 1,
+    "inline_text_boxes": 143
+  },
+  "private_isolation": {
+    "leak_count": 0,
+    "markers": []
+  },
+  "schema_version": "webarena-verified-w1b-world.v1",
+  "source": {
+    "browsergym_diagnostic": {
+      "actionable_target_count": 34,
+      "diagnostic_role_distribution": {
+        "StaticText": 138,
+        "button": 2,
+        "clickable": 1,
+        "columnheader": 12,
+        "generic": 135,
+        "heading": 1,
+        "link": 24,
+        "list": 1,
+        "listitem": 4,
+        "row": 24,
+        "tab": 4,
+        "table": 4,
+        "textbox": 1
+      },
+      "informational_target_count": 319,
+      "inventory_profile_id": "browsergym-ax-target-inventory.v3",
+      "inventory_status": "represented",
+      "non_executable_target_count": 319,
+      "omitted_target_count": 0,
+      "projected_target_count": 353,
+      "recognized_target_count": 353
+    },
+    "coverage": [
+      {
+        "coverage": "truncated",
+        "entity_inventory": "partial",
+        "entity_issues": [
+          "inventory_fact_capacity_exceeded"
+        ],
+        "semantic_inventory": "represented",
+        "source": "browsergym"
+      }
+    ],
+    "raw_fact_total_count": 815,
+    "raw_structure_total_count": 585,
+    "raw_target_total_count": 353,
+    "world_source_fact_count": 811,
+    "world_source_structure_count": 585,
+    "world_source_target_count": 353
+  },
+  "status": "ok",
+  "structural_closure": {
+    "violation_count": 0,
+    "violations": []
+  },
+  "tools": {
+    "actor_missing_offered_targets": [],
+    "catalog_serialized_bytes": 8969,
+    "catalog_tool_count": 11,
+    "find_actions_offered": false,
+    "offered_action_ref_count": 34,
+    "offered_tool_target_count": 34
+  },
+  "world": {
+    "binding_count": 62,
+    "fact_count": 811,
+    "semantic_digest": "sha256:998f5a9a5e452878191246f831a9cdba09de6865d6f05cfc5b14e9da637472f7",
+    "serialized_bytes": 1751208,
+    "source_count": 1,
+    "target_count": 353
+  }
+}

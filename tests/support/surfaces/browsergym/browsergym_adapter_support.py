@@ -104,6 +104,11 @@ def raw_observation(*nodes, goal='Click the "okay" button.', url="file:///fixed/
             "enabled": True,
             "readonly": False,
             "editable": role in {"textbox", "searchbox", "combobox", "listbox"},
+            "focusable": role in {
+                "button", "checkbox", "combobox", "link", "listbox", "menuitem",
+                "radio", "searchbox", "tab", "textbox",
+            },
+            "focused": False,
             "options": [{"label": option["name"]["value"], "value": option["name"]["value"]} for option in owned],
         }
     return {

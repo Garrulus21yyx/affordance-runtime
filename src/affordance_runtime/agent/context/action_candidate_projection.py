@@ -51,6 +51,7 @@ def close_action_candidates(
                 target_role=entity.role,
                 target_state=state,
                 target_marked=entity.marked,
+                subject_kind=_subject_kind(option.subject_kind, entity.role),
                 destination_mode=_destination_mode(option).value,
                 grounding_context_id=context_id,
                 destinations=BoundedSection(
@@ -61,6 +62,14 @@ def close_action_candidates(
             )
         )
     return replace(actions, options=tuple(projected))
+
+
+def _subject_kind(default: str, role: str) -> str:
+    if role == "viewport":
+        return "viewport"
+    if role == "focused_context":
+        return "focused_context"
+    return default
 
 
 def _destination_mode(option) -> DestinationMode:

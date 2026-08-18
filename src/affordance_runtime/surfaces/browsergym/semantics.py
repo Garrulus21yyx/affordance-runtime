@@ -58,6 +58,7 @@ class BrowserGymControlAvailability:
     enabled: bool | None
     readonly: bool | None
     editable: bool | None
+    focusable: bool | None
 
     def allows(self, offer: RoleCapabilityOffer) -> bool:
         conditions = {
@@ -66,6 +67,7 @@ class BrowserGymControlAvailability:
             "enabled": self.enabled is True,
             "not_readonly": self.readonly is False,
             "editable": self.editable is True,
+            "focusable": self.focusable is True,
         }
         return all(conditions.get(name, False) for name in offer.execution_requirements)
 
@@ -76,6 +78,7 @@ class BrowserGymControlAvailability:
             ("enabled", self.enabled),
             ("readonly", self.readonly),
             ("editable", self.editable),
+            ("focusable", self.focusable),
         )
 
 
@@ -745,6 +748,8 @@ def _canonical_control(
         public_state.append(("selected", physical["selected"]))
     if isinstance(physical, dict) and isinstance(physical.get("active"), bool):
         public_state.append(("active", physical["active"]))
+    if isinstance(physical, dict) and physical.get("focused") is True:
+        public_state.append(("focused", physical["focused"]))
     if isinstance(physical, dict) and isinstance(physical.get("color_family"), str):
         color = physical["color_family"]
         public_state.append(
@@ -829,6 +834,7 @@ def _availability(value: object) -> BrowserGymControlAvailability:
                 mapping.get("enabled"),
                 mapping.get("readonly"),
                 mapping.get("editable"),
+                mapping.get("focusable"),
             )
         )
     )

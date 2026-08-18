@@ -149,6 +149,27 @@ def test_each_profile_action_and_primitive_has_one_composed_owner(profile, compo
     )
 
 
+def test_browsergym_t1_capabilities_are_installed_without_future_operations() -> None:
+    support = {item.semantic_action: item for item in BROWSERGYM_INTERACTION_PROFILE.capabilities}
+
+    assert set(support) == {
+        "activate",
+        "type_text",
+        "select_option",
+        "drag_to",
+        "scroll",
+        "press_key",
+    }
+    assert support["scroll"].primitive_actions == ("scroll",)
+    assert support["scroll"].subject_kinds == (InteractionSubjectKind.VIEWPORT,)
+    assert support["press_key"].primitive_actions == ("press", "keyboard_press")
+    assert support["press_key"].subject_kinds == (
+        InteractionSubjectKind.ENTITY,
+        InteractionSubjectKind.FOCUSED_CONTEXT,
+    )
+    assert {"hover", "focus", "set_value"}.isdisjoint(support)
+
+
 def test_composer_and_schema_contracts_fail_closed_with_typed_issues() -> None:
     profile = AdapterInteractionProfile(
         "fixture.v1",

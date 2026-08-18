@@ -156,7 +156,22 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     label: String(option.label || option.textContent || '').trim(),
     value: String(option.value),
     selected: Boolean(option.selected)
-  })) : []
+  })) : [],
+  focused: document.activeElement === el,
+  focusable: (() => {
+    if (el.disabled) return false;
+    const tag = el.tagName.toLowerCase();
+    const nativeFocusable = (
+      ['input', 'select', 'textarea', 'button'].includes(tag) ||
+      (tag === 'a' && Boolean(el.getAttribute('href'))) ||
+      el.isContentEditable
+    );
+    if (nativeFocusable) return true;
+    const tabindex = el.getAttribute('tabindex');
+    if (tabindex === null || tabindex === '') return false;
+    const parsed = Number.parseInt(tabindex, 10);
+    return Number.isFinite(parsed) && parsed >= 0;
+  })()
 })"""
 
 _VERIFIER_PROBE_SCRIPT = """() => {
@@ -401,6 +416,16 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
                 else ""
             ),
             "editable": editable,
+            "focusable": (
+                physical["focusable"]
+                if isinstance(physical.get("focusable"), bool)
+                else None
+            ),
+            "focused": (
+                physical["focused"]
+                if isinstance(physical.get("focused"), bool)
+                else None
+            ),
             "options": options if isinstance(options, list) else [],
             "bbox": bbox if isinstance(bbox, list) else [],
             "label_hint": label_hint if isinstance(label_hint, str) else "",

@@ -36,8 +36,8 @@ def diagnostic_snapshot(
 ) -> BrowserGymDiagnosticSnapshot:
     if inventory.profile_id != analysis.inventory.profile_id:
         raise ValueError("BrowserGym diagnostic inventory profile mismatch")
-    if inventory.recognized_target_count != analysis.inventory.recognized_target_count:
-        raise ValueError("BrowserGym diagnostic recognized count mismatch")
+    if inventory.recognized_target_count < analysis.inventory.recognized_target_count:
+        raise ValueError("BrowserGym diagnostic recognized count regressed below source analysis")
     return BrowserGymDiagnosticSnapshot(
         inventory,
         analysis.diagnostic_role_distribution,

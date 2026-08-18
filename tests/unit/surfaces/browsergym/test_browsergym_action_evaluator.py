@@ -80,7 +80,7 @@ def _world(
     assert fused.observation is not None
     world = fused.observation
     if conflict:
-        target = world.targets[0]
+        target = next(item for item in world.targets if item.role in {"textbox", "combobox"})
         world = replace(world, conflicts=(
             ObservationConflict("conflict:value", target.target_id, "value", "material conflict"),
         ))
@@ -227,7 +227,7 @@ def _activate_world(observation_id: str, shade: int):
 def _activate_structural_world(observation_id: str, active: bool):
     world = _activate_world(observation_id, 255)
     source = world.sources[0]
-    target = source.targets[0]
+    target = next(item for item in source.targets if item.role == "button")
     active_fact = StateFact(
         f"fact:{observation_id}:active",
         target.target_id,
@@ -242,7 +242,12 @@ def _activate_structural_world(observation_id: str, active: bool):
     ) + (active_fact,)
     source = replace(
         source,
-        targets=(replace(target, state={**target.state, "active": active}),),
+        targets=tuple(
+            replace(item, state={**item.state, "active": active})
+            if item.target_id == target.target_id
+            else item
+            for item in source.targets
+        ),
         facts=facts,
         entity_inventory=replace(
             source.entity_inventory,
@@ -292,9 +297,10 @@ def test_activate_target_state_change_keeps_public_before_after_fact_delta() -> 
     assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
     assert evaluation.evidence_method is EvidenceMethod.STRUCTURAL
     assert evaluation.evidence["verification_profile"] == "structural_target_diff_v1"
+    button = next(item for item in before.targets if item.role == "button")
     assert evaluation.evidence["fact_changes"] == (
         {
-            "subject_id": before.targets[0].target_id,
+            "subject_id": button.target_id,
             "predicate": "active",
             "before": False,
             "after": True,
@@ -308,7 +314,7 @@ def test_activate_target_feedback_excludes_unrelated_world_changes() -> None:
     before_source = before.sources[0]
     after_source = after.sources[0]
     unrelated_before = replace(
-        before_source.targets[0],
+        next(item for item in before_source.targets if item.role == "button"),
         target_id="target:unrelated",
         role="generic",
         label="Other",
@@ -337,15 +343,16 @@ def test_activate_target_feedback_excludes_unrelated_world_changes() -> None:
         facts=(*before_source.facts, before_fact),
         semantic_inventory=replace(
             before_source.semantic_inventory,
-            recognized_target_count=2,
-            projected_target_count=2,
+            recognized_target_count=4,
+            projected_target_count=4,
+            actionable_target_count=3,
             non_executable_target_count=1,
             informational_target_count=1,
         ),
         entity_inventory=replace(
             before_source.entity_inventory,
-            entity_count=2,
-            entity_total_count=2,
+            entity_count=4,
+            entity_total_count=4,
             fact_count=2,
             fact_total_count=2,
         ),
@@ -356,15 +363,16 @@ def test_activate_target_feedback_excludes_unrelated_world_changes() -> None:
         facts=(*after_source.facts, after_fact),
         semantic_inventory=replace(
             after_source.semantic_inventory,
-            recognized_target_count=2,
-            projected_target_count=2,
+            recognized_target_count=4,
+            projected_target_count=4,
+            actionable_target_count=3,
             non_executable_target_count=1,
             informational_target_count=1,
         ),
         entity_inventory=replace(
             after_source.entity_inventory,
-            entity_count=2,
-            entity_total_count=2,
+            entity_count=4,
+            entity_total_count=4,
             fact_count=2,
             fact_total_count=2,
         ),
@@ -376,8 +384,9 @@ def test_activate_target_feedback_excludes_unrelated_world_changes() -> None:
     evaluation = _evaluate_activate(before, after)
 
     assert evaluation.evidence["verification_profile"] == "structural_target_diff_v1"
+    button = next(item for item in before.targets if item.role == "button")
     assert all(
-        change["subject_id"] == before.targets[0].target_id
+        change["subject_id"] == button.target_id
         for change in evaluation.evidence["fact_changes"]
     )
 

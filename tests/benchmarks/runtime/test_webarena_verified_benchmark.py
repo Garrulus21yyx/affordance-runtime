@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,6 +8,7 @@ from affordance_runtime.benchmarks.webarena_verified import (
     WA_HARD_SUBSET_SHA256,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
+    _capability_census,
     evaluate_webarena_verified_manifest,
     inspect_webarena_verified_w0_readiness,
     load_webarena_verified_tasks,
@@ -30,6 +32,37 @@ def _dataset(path: Path, *, count: int = 36) -> Path:
     ]
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def test_w1b_world_capability_census_reports_t1_browsergym_support() -> None:
+    context = SimpleNamespace(
+        actions=SimpleNamespace(
+            options=(
+                SimpleNamespace(semantic_action="scroll"),
+                SimpleNamespace(semantic_action="press_key"),
+            ),
+            has_more=False,
+        )
+    )
+    catalog = SimpleNamespace(
+        specs=(
+            SimpleNamespace(name="scroll"),
+            SimpleNamespace(name="press_key"),
+        )
+    )
+
+    census = {item["semantic_action"]: item for item in _capability_census(context, catalog)}
+
+    assert census["scroll"]["registry_defined"] is True
+    assert census["scroll"]["adapter_supported"] is True
+    assert census["scroll"]["currently_eligible"] == 1
+    assert census["scroll"]["model_exposed"] is True
+    assert census["press_key"]["adapter_supported"] is True
+    assert census["press_key"]["currently_eligible"] == 1
+    assert census["press_key"]["model_exposed"] is True
+    assert census["hover"]["registry_defined"] is True
+    assert census["hover"]["adapter_supported"] is False
+    assert census["hover"]["absence_reason"] == "adapter_not_supported"
 
 
 def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp_path: Path) -> None:
