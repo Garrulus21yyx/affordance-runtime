@@ -47,6 +47,8 @@ from affordance_runtime.model.mission_roles import (
     ModelBackedMissionManager,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
+from affordance_runtime.model.policy.request_admission import ModelRequestBudget
+from affordance_runtime.model.providers.port import StructuredOutputError, StructuredOutputViolation
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
@@ -136,6 +138,20 @@ class _FailingPort(_Port):
         raise RuntimeError("provider down")
 
 
+@dataclass
+class _RepairingPort(_Port):
+    calls: int = 0
+
+    async def generate_structured(self, messages, output_schema, config):
+        self.calls += 1
+        if self.calls == 1:
+            raise StructuredOutputError(
+                "invalid",
+                violations=(StructuredOutputViolation("$", "json_invalid"),),
+            )
+        return await super().generate_structured(messages, output_schema, config)
+
+
 def test_manager_context_hides_world_screenshot_action_space_and_trajectory() -> None:
     port = _Port({"route": "blocked", "reason": "no route"})
     manager = ModelBackedMissionManager(port)
@@ -197,7 +213,16 @@ def test_manager_and_auditor_return_model_invocation_result_and_failures_do_not_
 
 
 def test_auditor_context_uses_public_world_view_evidence_and_compact_history() -> None:
-    port = _Port({"status": "unknown", "base_mission_version": 0})
+    port = _Port({
+        "status": "audited_satisfied",
+        "base_mission_version": 0,
+        "completed_outcomes": ({
+            "audit_id": "audit:answer",
+            "status": "audited_satisfied",
+            "evidence_refs": ("F1",),
+            "summary": "answer visible",
+        },),
+    })
     auditor = ModelBackedMissionAuditor(port)
     world = _world("42")
     bundle = AuditBundle.from_world(world)
@@ -222,11 +247,13 @@ def test_auditor_context_uses_public_world_view_evidence_and_compact_history() -
     audit_world = payload["audit_world"]
     assert audit_world["format"] == "compact_ax.v1"
     assert 'text "Answer" value[F1]="42"' in audit_world["observation"]
-    assert audit_world["facts"][0]["subject_label"] == "Answer"
-    assert audit_world["facts"][0]["public_ref"] == "F1"
-    assert audit_world["facts"][0]["evidence_ref"].startswith("fact:")
-    assert payload["audit_bundle"]["evidence"][0]["evidence_ref"] == audit_world["facts"][0]["evidence_ref"]
-    assert payload["audit_bundle"]["evidence"][0]["public_ref"] == "F1"
+    assert "facts" not in audit_world
+    assert "artifacts" not in audit_world
+    assert "audit_bundle" not in payload
+    assert "F1" in payload["audit_evidence"]["visible_refs"]
+    assert payload["audit_evidence"]["visible_ref_count"] == len(payload["audit_evidence"]["visible_refs"])
+    assert result.output is not None
+    assert result.output.completed_outcomes[0].evidence_refs == ("fact:obs:answer",)
     assert payload["episode_history"]["retained_count"] == 5
     assert len(payload["episode_history"]["recent_trajectory"]) == 4
     assert len(payload["episode_history"]["earlier_actions"]) == 1
@@ -276,7 +303,7 @@ def test_auditor_history_bounds_large_transition_evidence_before_provider_call()
     assert result.accepted
     payload = json.loads(port.messages[1].content)
     encoded = json.dumps(payload["episode_history"], ensure_ascii=False).encode()
-    assert len(encoded) <= 8192
+    assert len(encoded) <= 16 * 1024
     assert "fact_changes" not in json.dumps(payload["episode_history"])
     assert payload["episode_history"]["recent_trajectory"][-1]["result"]["transition"]["fact_change_count"] == 200
 
@@ -313,21 +340,20 @@ def test_auditor_delivery_exposes_structure_text_as_public_fact_evidence() -> No
 
     assert result.accepted
     payload = json.loads(port.messages[1].content)
-    facts = payload["audit_world"]["facts"]
-    answer = next(item for item in facts if item["value"] == "Quest Lumaflex™ Band")
-    assert answer["public_ref"].startswith("F")
-    assert answer["predicate"] == "public.label"
-    assert answer["evidence_ref"].startswith("fact:")
-    assert f'fact.public.label[{answer["public_ref"]}]="Quest Lumaflex™ Band"' in payload["audit_world"]["observation"]
+    assert "facts" not in payload["audit_world"]
+    assert "audit_bundle" not in payload
+    refs = payload["audit_evidence"]["visible_refs"]
+    assert refs
+    assert any(
+        f'fact.public.label[{ref}]="Quest Lumaflex™ Band"' in payload["audit_world"]["observation"]
+        for ref in refs
+    )
 
 
-def test_auditor_context_capacity_failure_is_typed_and_does_not_call_provider(monkeypatch) -> None:
-    import affordance_runtime.model.mission_roles as roles
-
+def test_auditor_context_capacity_failure_is_typed_and_does_not_call_provider() -> None:
     port = _Port({"status": "unknown", "base_mission_version": 0})
-    auditor = ModelBackedMissionAuditor(port)
+    auditor = ModelBackedMissionAuditor(port, request_budget=ModelRequestBudget(admission_limit=1))
     world = _world("42")
-    monkeypatch.setattr(roles, "_AUDIT_HISTORY_BYTES", 1)
 
     result = asyncio.run(auditor.audit(AuditorRoleRequest(
         _task(),
@@ -336,13 +362,45 @@ def test_auditor_context_capacity_failure_is_typed_and_does_not_call_provider(mo
         world,
         (),
         "ready_for_audit",
-        (AgentTurnView("selectaction", "activate", reason="large"),),
+        (),
         AuditBundle.from_world(world),
     )))
 
     assert result.failure is not None
+    assert result.failure.kind is ModelFailureKind.CONTEXT_CAPACITY
     assert result.failure.reason == "context_capacity"
+    assert result.diagnostics["role"] == "auditor"
+    assert result.diagnostics["phase"] == "auditor_initial"
+    assert result.diagnostics["admission_action"] == "context_capacity"
+    assert result.diagnostics["provider_attempts"] == 0
+    assert result.diagnostics["estimated_total_tokens"] > result.diagnostics["admission_limit"]
+    assert result.diagnostics["actor_world_tokens"] > 0
+    assert result.diagnostics["evidence_tokens"] > 0
     assert port.messages == ()
+
+
+def test_auditor_schema_repair_diagnostics_keep_initial_and_repair_breakdowns() -> None:
+    port = _RepairingPort({"status": "unknown", "base_mission_version": 0})
+    auditor = ModelBackedMissionAuditor(port)
+    world = _world("42")
+
+    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+        _task(),
+        SubtaskContract("Read answer", "Answer visible"),
+        MissionState.empty(),
+        world,
+        (),
+        "ready_for_audit",
+        (),
+        AuditBundle.from_world(world),
+    )))
+
+    assert result.failure is None
+    assert port.calls == 2
+    assert result.diagnostics["provider_attempts"] == 2
+    breakdowns = result.diagnostics["request_breakdowns"]
+    assert [item["phase"] for item in breakdowns] == ["auditor_initial", "auditor_schema_repair"]
+    assert result.diagnostics["phase"] == "auditor_schema_repair"
 
 
 def test_new_roles_do_not_reference_adapter_last_diagnostics() -> None:
@@ -482,11 +540,9 @@ def test_auditor_delivery_keeps_model_visible_late_evidence_refs() -> None:
     payload = json.loads(port.messages[1].content)
     serialized = json.dumps(payload, ensure_ascii=False)
     assert answer in serialized
-    assert "fact:large:answer" in serialized
-    assert any(
-        item["evidence_ref"] == "fact:large:answer" and item["public_ref"].startswith("F")
-        for item in payload["audit_bundle"]["evidence"]
-    )
+    assert "fact:large:answer" not in serialized
+    assert "audit_bundle" not in payload
+    assert payload["audit_evidence"]["visible_ref_count"] == len(payload["audit_evidence"]["visible_refs"])
 
 
 def test_episode_monitor_yields_only_on_third_repeated_unchanged_action() -> None:

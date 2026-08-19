@@ -677,14 +677,15 @@ and W2 remain blocked on the declared delivery/recoverability gates and model sm
 
 The subsequent W1b task-0 failure is therefore recorded as long-horizon audit delivery, not currentness or second-turn
 context growth. The first episode completed the Reports -> Bestsellers -> Year -> date -> Show Report GUI path and
-yielded with the answer table visible, but Auditor input construction failed before provider dispatch because it still
-projected the fresh World through an independent fixed byte cap and exposed only the first 128 audit evidence records.
-The local repair makes Auditor reuse the same `AgentContext`/`compact_ax.v1` public delivery path, exposes model-visible
-`F#` fact refs beside their canonical evidence refs, retains the 4096-record World evidence authority in
-`AuditBundle`, and records resolver rejections as `invalid_tool_arguments` or `tool_grounding_gap` rather than
-`schema_error`. Targeted local verification passed, but W1b-Agent remains non-closed until the same-case provider run
-shows `yield_subtask -> Auditor provider attempt > 0 -> accepted top1 fact/outcome -> request_final_audit -> single
-final response -> native evaluator`.
+yielded with the answer table visible, but Auditor admission failed before provider dispatch because it serialized the
+same visible evidence three ways: compact World F refs, full `audit_world.facts`, and full `audit_bundle.evidence`.
+The local repair makes Auditor reuse the same `AgentContext`/`compact_ax.v1` public delivery path, exposes only
+model-visible `F#` refs/counts in `audit_evidence`, retains the 4096-record World evidence authority internally in
+`AuditBundle`, resolves F refs privately before `AuditBoundary`, and records resolver rejections as
+`invalid_tool_arguments` or `tool_grounding_gap` rather than `schema_error`. Targeted local verification passed, but
+W1b-Agent remains non-closed until the same-case provider run shows
+`yield_subtask -> Auditor provider attempt > 0 -> accepted top1 fact/outcome -> request_final_audit -> single final
+response -> native evaluator`.
 
 A second 2026-08-19 W1b task-0 diagnostic reached an earlier inner-loop failure. After `REPORTS` opened, the fresh
 World contained `Bestsellers`, but that structure-visible link did not enter the current `ActionSpace` or model-visible
@@ -699,7 +700,7 @@ The next run under `evidence/live/w1b-one-task-0-aliyun-glm51-watch3-20260819T02
 sharper. The first episode reached `yield_subtask:ready_for_audit` after the Reports -> Bestsellers -> Year -> date ->
 Show Report path, and the model text identified `Quest Lumaflex™ Band`. Auditor then failed locally with
 `context_capacity` and `provider_attempts=0` because the supposedly compact episode history still serialized large
-transition/fact-change payloads into the 8 KiB audit budget. The follow-on Manager episode and later
+transition/fact-change payloads into the then-8 KiB audit budget. The follow-on Manager episode and later
 `policy_failure:schema_error` were downstream symptoms. The local repair bounds episode history, indexes retained
 target/structure labels such as table cells as current public scalar `fact:` evidence, and makes episode audit
 provider/context failure terminal instead of feeding an empty MissionState back to Manager for a duplicate GUI subtask.
@@ -794,17 +795,36 @@ The predeclared exit properties are:
   without Close-menu substitution, empty-page oscillation, or false token amplification.
 
 Current implementation status is now
-`W1b action/recovery convergence implemented and locally verified / W1b task-0 witness result = official failed at
-Auditor context capacity / W1b-Agent blocked`. The provider-free watch4 synthetic witness proves that read-only
+`W1b action/recovery convergence implemented and locally verified / Auditor AuditView evidence projection repaired
+locally / latest W1b task-0 witness reached final response but official native outcome remained blocked / W1b-Agent
+blocked`. The provider-free watch4 synthetic witness proves that read-only
 `Bestsellers` remains non-executable, repair cannot swap it to an unrelated executable target, current executable
 matches are exposed, empty action search does not erase the base page, and repeated local discovery results route
 through `CONTINUE -> RECOVER -> YIELD`. The official same-case witness at
 `evidence/live/w1b-one-task-0-aliyun-glm51-convergence-20260819T102415Z/` advanced through executable refs to the
 Bestsellers report, set the 2022 filters, observed `Quest Lumaflex™ Band` as the top row, and yielded
-`ready_for_audit`; the case still reports `status=failed` because the Auditor model role rejected the current
-post-episode context with `context_capacity` before accepting facts or delivering the final answer. This is a
-separate cross-episode acceptance requirement; it must not be folded into action refs, repair, visual grounding, or
+`ready_for_audit`; the case reports `status=failed` because Auditor admission rejected the request with
+`context_capacity` before any provider attempt. The root cause was model-facing evidence duplication: compact World
+already carried visible `F#` facts, then `audit_world.facts` and `audit_bundle.evidence` each serialized the same
+visible canonical `EvidenceRecord` set. The repaired Auditor request keeps the full `AuditBundle` internal, deletes
+both full evidence lists from provider payloads, exposes only visible public F refs/counts in `audit_evidence`,
+resolves returned F refs privately before `AuditBoundary`, and records role admission diagnostics plus the
+`auditor_context_capacity` subreason. This remains separate from action refs, repair, visual grounding, and
 control-stall recovery.
+
+The post-repair same-case witness at
+`evidence/live/w1b-one-task-0-aliyun-glm51-auditview-20260819T111504Z/` removed the Auditor capacity failure:
+Auditor admission was `admitted` with `estimated_total_tokens=13008`, `evidence_tokens=476`,
+`admission_limit=61880`, and `provider_attempts=1`. Auditor accepted the cited `top1_bestseller_2022` fact and
+Manager requested final audit; final response delivery returned `Quest Lumaflex™ Band`. The official case still
+reports `status=blocked` with `verified_terminal_task_failure`, so the remaining gate is finalization/native-evaluator
+compatibility, not GUI action selection, repair, Auditor context capacity, or provider dispatch.
+
+The final same-case run on the completed worktree at
+`evidence/live/w1b-one-task-0-aliyun-glm51-auditview-final-20260819T112859Z/` followed a different 10-step route with
+`inspect_world` control-stall recovery and then failed before provider dispatch because the same deterministic compact
+history was 13,812 bytes, above the local 8 KiB Auditor history cap but still far below the provider admission limit.
+The local Auditor history cap is therefore 16 KiB while full-request admission remains the hard authority.
 
 | Site category | Tool schemas | Offered targets | Missing Actor targets | State retained/total | Closure leaks | Projection | Prefit tokens | Admitted tokens |
 |---|---:|---:|---:|---:|---:|---|---:|---:|

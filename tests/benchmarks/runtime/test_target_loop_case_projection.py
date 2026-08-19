@@ -224,6 +224,7 @@ def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
         stale_tool_catalog_count=1,
         tool_catalog_count=7,
         tool_catalog_bytes=2048,
+        evidence_tokens=123,
     )
 
     projected = project_case_result("case", None, instrumentation, 1.0, "display")
@@ -238,6 +239,7 @@ def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
         "stale_tool_catalog_count": 1,
         "tool_catalog_count": 7,
         "tool_catalog_bytes": 2048,
+        "evidence_tokens": 123,
     }.items():
         assert projected.measurements[name].value == expected
 

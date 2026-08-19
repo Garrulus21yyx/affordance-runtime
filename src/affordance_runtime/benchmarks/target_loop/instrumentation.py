@@ -66,6 +66,7 @@ class BenchmarkInstrumentation:
     actor_world_tokens: int = 0
     history_tokens: int = 0
     working_set_tokens: int = 0
+    evidence_tokens: int = 0
     tool_schema_tokens: int = 0
     image_estimated_tokens: int = 0
     repair_tokens: int = 0
@@ -466,6 +467,7 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
         "actor_world_tokens",
         "history_tokens",
         "working_set_tokens",
+        "evidence_tokens",
         "tool_schema_tokens",
         "image_estimated_tokens",
         "repair_tokens",

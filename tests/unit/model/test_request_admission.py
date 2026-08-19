@@ -85,6 +85,7 @@ def test_complete_request_breakdown_covers_rendered_sections_and_is_deterministi
             + first.actor_world_tokens
             + first.history_tokens
             + first.working_set_tokens
+            + first.evidence_tokens
             + first.tool_schema_tokens
             + first.image_estimated_tokens
             + first.repair_tokens

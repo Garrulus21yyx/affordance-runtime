@@ -246,7 +246,7 @@ def test_auditor_failure_terminates_without_reexecuting_same_gui_subtask() -> No
 
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
 
-    assert result.outcome is MissionOutcome.AUDITOR_FAILURE
+    assert result.outcome is MissionOutcome.AUDITOR_SCHEMA_FAILURE
     assert result.status is RunStatus.FAILED
     assert len(manager.requests) == 1
     assert len(auditor.requests) == 1
@@ -272,7 +272,7 @@ def test_repeated_policy_failure_limit_does_not_first_block_without_manager_rout
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=4).run(runtime, env, task))
 
     assert result.state is not None
-    assert result.outcome is MissionOutcome.AUDITOR_FAILURE
+    assert result.outcome is MissionOutcome.AUDITOR_SCHEMA_FAILURE
     assert result.state.status is RunStatus.YIELDED
     assert result.state.failure_code is None
     assert result.supervisor_state.last_typed_episode_exit != "repeated_failure_limit"

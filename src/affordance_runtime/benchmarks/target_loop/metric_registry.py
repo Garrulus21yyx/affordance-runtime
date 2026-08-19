@@ -47,6 +47,7 @@ CANONICAL_METRICS = frozenset(
         "actor_world_tokens",
         "history_tokens",
         "working_set_tokens",
+        "evidence_tokens",
         "tool_schema_tokens",
         "image_estimated_tokens",
         "repair_tokens",

@@ -266,6 +266,7 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
         "actor_world_tokens": state.actor_world_tokens,
         "history_tokens": state.history_tokens,
         "working_set_tokens": state.working_set_tokens,
+        "evidence_tokens": state.evidence_tokens,
         "tool_schema_tokens": state.tool_schema_tokens,
         "image_estimated_tokens": state.image_estimated_tokens,
         "repair_tokens": state.repair_tokens,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus
@@ -292,6 +293,9 @@ class MissionSupervisor:
                 MissionOutcome.TASK_COMPLETE,
                 MissionOutcome.TASK_BLOCKED,
                 MissionOutcome.AUDITOR_FAILURE,
+                MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
+                MissionOutcome.AUDITOR_PROVIDER_FAILURE,
+                MissionOutcome.AUDITOR_SCHEMA_FAILURE,
             }:
                 return MissionRunResult(
                     audit_result.state,
@@ -361,11 +365,12 @@ class MissionSupervisor:
         result = await self.auditor.audit(request)
         _record_role_invocation(self.trace_sink, "auditor", 1, request, result)
         if result.failure is not None:
+            outcome = _auditor_failure_outcome(result.failure)
             return MissionRunResult(
                 state,
                 mission,
-                SupervisorState(SupervisorPhase.TERMINAL, last_ref="auditor_failure"),
-                MissionOutcome.AUDITOR_FAILURE,
+                SupervisorState(SupervisorPhase.TERMINAL, last_ref=outcome.value),
+                outcome,
                 auditor_calls=1,
             )
         delta = result.output
@@ -398,11 +403,12 @@ class MissionSupervisor:
             _record_role_invocation(self.trace_sink, "auditor", 2, retry_request, retry)
             calls = 2
             if retry.failure is not None:
+                outcome = _auditor_failure_outcome(retry.failure)
                 return MissionRunResult(
                     state,
                     mission,
-                    SupervisorState(SupervisorPhase.TERMINAL, last_ref="auditor_failure"),
-                    MissionOutcome.AUDITOR_FAILURE,
+                    SupervisorState(SupervisorPhase.TERMINAL, last_ref=outcome.value),
+                    outcome,
                     auditor_calls=2,
                 )
             delta = retry.output
@@ -471,11 +477,12 @@ class MissionSupervisor:
         audit = await self.auditor.audit(audit_request)
         _record_role_invocation(self.trace_sink, "auditor", 1, audit_request, audit)
         if audit.failure is not None or audit.output is None:
+            outcome = _auditor_failure_outcome(audit.failure)
             return MissionRunResult(
                 state,
                 mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref="final_audit_failed"),
-                MissionOutcome.AUDITOR_FAILURE,
+                SupervisorState(SupervisorPhase.MANAGER, last_ref=outcome.value),
+                outcome,
                 auditor_calls=1,
             )
         accepted = self.boundary.accept(mission, audit.output, bundle)
@@ -563,6 +570,9 @@ def _run_status_for_mission_outcome(outcome: MissionOutcome, state: RunState | N
         MissionOutcome.BLOCKED: RunStatus.BLOCKED,
         MissionOutcome.MANAGER_FAILURE: RunStatus.FAILED,
         MissionOutcome.AUDITOR_FAILURE: RunStatus.FAILED,
+        MissionOutcome.AUDITOR_CONTEXT_CAPACITY: RunStatus.FAILED,
+        MissionOutcome.AUDITOR_PROVIDER_FAILURE: RunStatus.FAILED,
+        MissionOutcome.AUDITOR_SCHEMA_FAILURE: RunStatus.FAILED,
         MissionOutcome.BOUNDARY_REJECTED: RunStatus.RUNNING,
         MissionOutcome.EVIDENCE_GAP: RunStatus.BLOCKED,
         MissionOutcome.FINAL_AUDIT_NOT_READY: RunStatus.RUNNING,
@@ -579,8 +589,13 @@ def _audit_manager_signal(result: MissionRunResult, state: RunState) -> str:
         return "audit:rejected"
     if result.outcome is MissionOutcome.EVIDENCE_GAP:
         return "audit:evidence_gap"
-    if result.outcome is MissionOutcome.AUDITOR_FAILURE:
-        return "audit:auditor_failure"
+    if result.outcome in {
+        MissionOutcome.AUDITOR_FAILURE,
+        MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
+        MissionOutcome.AUDITOR_PROVIDER_FAILURE,
+        MissionOutcome.AUDITOR_SCHEMA_FAILURE,
+    }:
+        return f"audit:{result.outcome.value}"
     return f"episode:{state.status.value}:{state.yield_reason.value if state.yield_reason else ''}"
 
 
@@ -588,6 +603,18 @@ def _audit_capture_failure_outcome(status: AcquisitionStatus) -> MissionOutcome:
     if status is AcquisitionStatus.CANCELLED:
         return MissionOutcome.CANCELLED
     return MissionOutcome.EVIDENCE_GAP
+
+
+def _auditor_failure_outcome(failure: ModelFailure | None) -> MissionOutcome:
+    if failure is None:
+        return MissionOutcome.AUDITOR_FAILURE
+    if failure.kind is ModelFailureKind.CONTEXT_CAPACITY:
+        return MissionOutcome.AUDITOR_CONTEXT_CAPACITY
+    if failure.kind is ModelFailureKind.SCHEMA_ERROR:
+        return MissionOutcome.AUDITOR_SCHEMA_FAILURE
+    if failure.kind in {ModelFailureKind.PROVIDER_UNAVAILABLE, ModelFailureKind.PROVIDER_EXHAUSTED, ModelFailureKind.TIMEOUT}:
+        return MissionOutcome.AUDITOR_PROVIDER_FAILURE
+    return MissionOutcome.AUDITOR_FAILURE
 
 
 def _with_episode_monitor(runtime):

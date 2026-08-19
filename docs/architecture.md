@@ -62,14 +62,13 @@ does not clear the same-failure streak, and the long-horizon supervisor consumes
 operational blocked outcome without invoking Auditor, Manager, or ActionPolicy again. T2 hover/focus remains deferred
 pending benchmark evidence. W1b-Agent/W2 remain pending.
 The same 2026-08-19 W1b task-0 trace separated the next failure from currentness: the inner GUI episode reached the
-answer table and yielded, but the read-only Auditor still used an obsolete `project_model_world` byte cap and an
-`AuditBundle` prefix slice, so no provider attempt was made and late table evidence could not be cited. The local
-repair keeps fresh `WorldObservation` as authority while making Auditor delivery use the same `AgentContext` and
-`compact_ax.v1` renderer as ActionPolicy, with model-visible `F#` fact refs mirrored into the supplied evidence bundle.
-`AuditBundle` now retains the same bounded 4096-record evidence authority as `WorldEvidenceIndex`, and grounded-tool
-adapter failures preserve `invalid_tool_arguments` or `tool_grounding_gap` instead of collapsing resolver rejection into
-`schema_error`. This repairs the long-horizon audit-delivery gap locally; W1b-Agent still awaits the same-case
-provider/native-evaluator acceptance chain before any closed claim.
+answer table and yielded, and the compact Auditor observation already contained the answer as model-visible `F#`
+facts. The real pre-provider overflow came from reattaching the same visible evidence twice as full canonical
+`EvidenceRecord` lists under `audit_world.facts` and `audit_bundle.evidence`. The local repair keeps `AuditBundle` as
+the internal authority for `AuditBoundary` resolution, but the model-facing `AuditView` now contains only compact
+World text, counts, and visible public F refs. Auditor output may cite those F refs; the adapter resolves them to
+canonical evidence refs before Boundary admission. Admission diagnostics now include role/phase/component token
+breakdown and preserve `auditor_context_capacity` separately from provider or schema failures.
 The later `watch4` run reopened the inner action/recovery boundary: read-only and executable nodes shared `E*`,
 same-call repair changed `Bestsellers` into `Close menu`, discovery filters erased the usable action page, local-tool
 oscillation bypassed Monitor, and cumulative repair usage was counted twice. The action-reference, recovery,
@@ -77,7 +76,11 @@ same-turn visual-binding, control-stall, and token-accounting convergence contra
 pre-W1b-Agent repair. It is now implemented and locally verified by focused owner tests, the provider-free watch4
 synthetic witness, full local tests, and one official same-case W1b task-0 witness. That witness advanced through
 executable refs to the Bestsellers report and identified `Quest Lumaflex™ Band`, then failed in the separate
-Auditor/context-capacity acceptance path; it did not reproduce the read-only E-ref, repair target-swap, or
+Auditor/context-capacity acceptance path. After the AuditView repair, the same-case witness at
+`evidence/live/w1b-one-task-0-aliyun-glm51-auditview-20260819T111504Z/` admitted Auditor at 13,008 estimated tokens,
+made one Auditor provider attempt, accepted the cited `top1_bestseller_2022` fact, requested final audit, and delivered
+the final response `Quest Lumaflex™ Band`; the official case outcome remains `blocked` because the native evaluator
+returned `verified_terminal_task_failure`. Neither witness reproduced the read-only E-ref, repair target-swap, or
 inspect/action-page loop.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
@@ -860,10 +863,11 @@ public semantic World fingerprints in episode history while retaining observatio
 fresh and historical worlds in the same identity domain.
 
 The next W1b task-0 run proved GLM-5.1 completed the GUI path and read the correct answer before `yield_subtask`, but
-Auditor failed before provider dispatch because its episode-history projection still exceeded the local audit budget.
-The repair keeps complete transition evidence in trace and makes model-facing episode history genuinely compact:
-older steps retain only action, semantic target, arguments, outcome, and bounded state-delta signals, while recent steps
-carry bounded transition summaries and fact-change counts/samples rather than full fact-change payloads. Current public
+Auditor failed before provider dispatch because model-facing audit evidence duplicated full canonical records already
+represented in compact World F refs. The repair keeps complete transition evidence and canonical AuditBundle records
+inside Runtime/trace, while model-facing episode history remains compact: older steps retain only action, semantic
+target, arguments, outcome, and bounded state-delta signals, and recent steps carry bounded transition summaries and
+fact-change counts/samples rather than full fact-change payloads. Current public
 text from target labels and retained structure nodes is now indexed as canonical scalar `fact:` evidence, so visible
 table cells, headings, and result text can be cited by `pin_fact` and Auditor without model-supplied values. Episode
 audit provider/context failure now terminates as typed `AUDITOR_FAILURE` instead of returning to Manager to re-execute
@@ -1686,7 +1690,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence implemented and locally verified; same-case W1b task-0 witness reached the answer then failed at Auditor context capacity / W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; executable/read-only refs, representation-only repair, explicit discovery results, admitted same-turn visual binding, zero-dispatch control-stall detection, and non-cumulative token accounting are in place; next gate is the separate Auditor/finalization acceptance path plus six-site smokes before W2 |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence implemented and locally verified; Auditor AuditView evidence projection repaired and same-case witness reached final response, with official native outcome still `blocked` / W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; executable/read-only refs, representation-only repair, explicit discovery results, admitted same-turn visual binding, zero-dispatch control-stall detection, non-cumulative token accounting, and model-facing audit evidence de-duplication are in place; next gate is finalization/native-evaluator compatibility plus six-site smokes before W2 |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:

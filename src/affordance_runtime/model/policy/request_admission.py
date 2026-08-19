@@ -59,6 +59,7 @@ class ModelRequestBreakdown:
     actor_world_tokens: int = 0
     history_tokens: int = 0
     working_set_tokens: int = 0
+    evidence_tokens: int = 0
     tool_schema_tokens: int = 0
     image_estimated_tokens: int = 0
     repair_tokens: int = 0
@@ -79,6 +80,7 @@ class ModelRequestBreakdown:
             self.actor_world_tokens,
             self.history_tokens,
             self.working_set_tokens,
+            self.evidence_tokens,
             self.tool_schema_tokens,
             self.image_estimated_tokens,
             self.repair_tokens,
@@ -103,6 +105,7 @@ class ModelRequestBreakdown:
             "actor_world_tokens": self.actor_world_tokens,
             "history_tokens": self.history_tokens,
             "working_set_tokens": self.working_set_tokens,
+            "evidence_tokens": self.evidence_tokens,
             "tool_schema_tokens": self.tool_schema_tokens,
             "image_estimated_tokens": self.image_estimated_tokens,
             "repair_tokens": self.repair_tokens,
@@ -183,6 +186,7 @@ def estimate_model_request(
     actor_world_tokens = _tokens_for(components.get("actor_world", ()))
     history_tokens = _tokens_for(components.get("history", ()))
     working_set_tokens = _tokens_for(components.get("working_set", ()))
+    evidence_tokens = _tokens_for(components.get("evidence", ()))
     tool_schema_tokens = _tokens_for(_tool_projection(tools))
     image_estimated_tokens = _image_tokens(image_inputs, fallback_byte_count=image_byte_count)
     repair_tokens = _tokens_for(repair_payload) if repair_payload is not None else 0
@@ -201,6 +205,7 @@ def estimate_model_request(
         + actor_world_tokens
         + history_tokens
         + working_set_tokens
+        + evidence_tokens
         + tool_schema_tokens
         + image_estimated_tokens
         + repair_tokens
@@ -214,6 +219,7 @@ def estimate_model_request(
         actor_world_tokens=actor_world_tokens,
         history_tokens=history_tokens,
         working_set_tokens=working_set_tokens,
+        evidence_tokens=evidence_tokens,
         tool_schema_tokens=tool_schema_tokens,
         image_estimated_tokens=image_estimated_tokens,
         repair_tokens=repair_tokens,
@@ -236,17 +242,20 @@ def request_breakdown_diagnostics(
         "provider_reported_prompt_tokens": provider_reported_prompt_tokens,
     }
     for name in (
+        "phase",
         "system_tokens",
         "task_plan_tokens",
         "actor_world_tokens",
         "history_tokens",
         "working_set_tokens",
+        "evidence_tokens",
         "tool_schema_tokens",
         "image_estimated_tokens",
         "repair_tokens",
         "estimated_total_tokens",
         "admission_limit",
         "admission_action",
+        "delivery_projection",
     ):
         if name in latest:
             result[name] = latest[name]
