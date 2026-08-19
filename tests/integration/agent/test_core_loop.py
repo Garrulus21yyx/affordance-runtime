@@ -197,7 +197,7 @@ class CorePolicy:
             step = context.recent_steps.items[-1]
             assert step.semantic_action == "count_children"
             assert step.semantic_summary["result"] == {
-                "counts": {"N1": 2, "N4": 3},
+                "counts": {"<expired-ref-1>": 2, "<expired-ref-2>": 3},
                 "total": 5,
             }
             return Abort(context.context_id, "count observed", AbortCategory.USER_REQUEST)
@@ -317,7 +317,7 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
         assert state.execution_count == 0
         assert state.observation_count == 1
         assert state.recent_steps[0].semantic_summary["result"] == {
-            "counts": {"N1": 2, "N4": 3},
+            "counts": {"<expired-ref-1>": 2, "<expired-ref-2>": 3},
             "total": 5,
         }
 
@@ -454,16 +454,17 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             assert previous[0].task_evaluation_status == TaskEvaluationStatus.INCOMPLETE
             assert previous[0].reason == "state did not change"
             assert previous[0].semantic_summary["feedback_code"] == "action_unchanged_change_strategy"
-            assert previous[0].transition == {
-                    "role": "button",
-                    "label": "Enable shared state",
-                    "before_world": "before",
-                    "after_world": "after",
-                    "before_state": {"enabled": False},
-                    "after_state": {"enabled": False},
+            assert previous[0].transition.items() >= {
+                "role": "button",
+                "label": "Enable shared state",
+                "before_world": "before",
+                "after_world": "after",
+                "before_state": {"enabled": False},
+                "after_state": {"enabled": False},
                 "observed_change": "unchanged",
                 "evidence_method": "structural",
-            }
+            }.items()
+            assert previous[0].transition["before_world_fingerprint"] == previous[0].transition["after_world_fingerprint"]
             return Abort(context.context_id, "feedback projection verified", AbortCategory.USER_REQUEST)
 
     class NoEffectActionOutcomeProjector:

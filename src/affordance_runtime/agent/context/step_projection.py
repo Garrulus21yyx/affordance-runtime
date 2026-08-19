@@ -74,6 +74,8 @@ def project_step_result(result: StepResult) -> AgentTurnView:
     summary = dict(project_decision_summary(decision))
     if result.tool_result is not None:
         summary["result"] = project_public_value(result.tool_result)
+    if isinstance(decision, RequestActionPage) and result.action_page_result:
+        summary["result"] = project_public_value(result.action_page_result)
     summary["feedback_code"] = result.feedback
     return AgentTurnView(
         type(decision).__name__.lower(),
@@ -183,7 +185,7 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
     if isinstance(decision, RequestActionPage):
         return {
             "query": _bounded(decision.query, 120),
-            "target_id": _bounded(decision.target_id),
+            "exact_target": decision.exact_target_ref,
             "relevance_role": decision.relevance_role,
             "cursor_requested": bool(decision.cursor),
         }

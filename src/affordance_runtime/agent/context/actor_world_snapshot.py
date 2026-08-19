@@ -650,7 +650,14 @@ def _structure_documents(
         SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.allocation
         for item in observation.entity_source_links
     }
-    next_context_ref = 1
+    next_context_ref = 1 + max(
+        (
+            int(ref[1:])
+            for ref in refs.values()
+            if isinstance(ref, str) and ref.startswith("N") and ref[1:].isdigit()
+        ),
+        default=0,
+    )
     documents: list[ActorWorldDocumentView] = []
     emitted_entities: set[str] = set()
     structural_sources = sorted(
@@ -740,7 +747,7 @@ def _structure_documents(
                 raise ValueError("Actor source structure contains a cycle")
             item = by_id[structure_id]
             canonical_id = canonical_for_structure.get(structure_id)
-            is_entity_occurrence = actor_refs[structure_id].startswith("E")
+            is_entity_occurrence = canonical_id in visible
             target = visible.get(canonical_id or "") if is_entity_occurrence else None
             target_ref = refs.get(canonical_id or "") if is_entity_occurrence else None
             entity = entity_by_ref.get(target_ref or "")

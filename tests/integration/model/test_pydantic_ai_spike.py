@@ -249,7 +249,7 @@ def test_pydantic_ai_ask_user_preserves_question_and_runtime_resume() -> None:
     asyncio.run(scenario())
 
 
-def test_pydantic_ai_returns_invalid_arguments_for_one_bounded_repair() -> None:
+def test_pydantic_ai_returns_invalid_arguments_feedback_without_repicking_in_repair() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -263,7 +263,9 @@ def test_pydantic_ai_returns_invalid_arguments_for_one_bounded_repair() -> None:
 
         assert state.status is RunStatus.WAITING_USER
         assert scripted.calls == 2
-        assert "Re-emit exactly one call" in repr(scripted.messages[-1])
+        assert "Re-emit exactly one call" not in repr(scripted.messages)
+        assert state.recent_steps[0].semantic_action == "tool_rejected"
+        assert state.recent_steps[0].semantic_summary["result"]["failure_kind"] == "invalid_tool_arguments"
 
     asyncio.run(scenario())
 
@@ -421,13 +423,15 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
         calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")]
     )
 
-    decision = pydantic_bridge._resolve_deferred(
+    decision, error, parsed = pydantic_bridge._resolve_deferred(
         output,
         SimpleNamespace(catalog_id="grounded-catalog:test"),
         "context:test",
     )
 
     assert decision == normalized
+    assert error is None
+    assert parsed == normalized
     assert captured["resolution"].decision == normalized
 
 

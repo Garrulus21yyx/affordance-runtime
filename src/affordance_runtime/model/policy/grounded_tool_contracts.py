@@ -31,6 +31,7 @@ class GroundedToolResolutionCode(StrEnum):
     DESTINATION_UNAVAILABLE = "destination_unavailable"
     UNSUPPORTED_DESTINATION_MODE = "unsupported_destination_mode"
     GROUNDING_FALLBACK_UNAVAILABLE = "grounding_fallback_unavailable"
+    REPAIR_CHANGED_INTENT = "repair_changed_intent"
     CATALOG_INVALID = "grounded_tool_catalog_invalid"
     UNKNOWN_TOOL = "unknown_tool"
     INVALID_ARGUMENT = "invalid_argument"

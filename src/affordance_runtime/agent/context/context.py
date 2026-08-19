@@ -99,7 +99,7 @@ class AgentGroundingEntityView:
     marked: bool = False
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"E[1-9][0-9]{0,2}", self.ref):
+        if not re.fullmatch(r"[EN][1-9][0-9]{0,2}", self.ref):
             raise ValueError("grounding entity requires a bounded call-local ref")
         object.__setattr__(self, "state", freeze_json(self.state))
         object.__setattr__(self, "relation_hints", tuple(self.relation_hints))
@@ -145,7 +145,12 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
-    evidence_index: WorldEvidenceIndex | None = field(default=None, repr=False, compare=False)
+    evidence_index: WorldEvidenceIndex | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
     current_observation: WorldObservation | None = field(
         default=None,
         repr=False,
@@ -167,6 +172,7 @@ class AgentContext:
     current_step_index: int = field(default=0, repr=False, compare=False)
     history_byte_budget: int = field(default=16 * 1024, repr=False, compare=False)
     runtime_controls: tuple[str, ...] = ()
+    control_feedback: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -199,6 +205,7 @@ class AgentContext:
         ):
             raise ValueError("AgentContext runtime controls must be bounded and unique")
         object.__setattr__(self, "runtime_controls", controls)
+        object.__setattr__(self, "control_feedback", freeze_json(dict(self.control_feedback)))
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
         from affordance_runtime.agent.context.world_region_index import WorldRegionIndex

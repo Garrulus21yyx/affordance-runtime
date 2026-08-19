@@ -75,7 +75,39 @@ class EpisodeMonitorEvent(StrEnum):
 
 class EpisodeMonitorRecommendation(StrEnum):
     CONTINUE = "continue"
+    RECOVER = "recover"
     YIELD = "yield"
+
+
+class RecoveryKind(StrEnum):
+    GROUNDING_STALL = "grounding_stall"
+    EFFECT_STALL = "effect_stall"
+    UNCERTAIN_EFFECT = "uncertain_effect"
+    STATE_OSCILLATION = "state_oscillation"
+    CONTROL_STALL = "control_stall"
+    STRATEGY_STALL = "strategy_stall"
+    CAPABILITY_GAP = "capability_gap"
+
+
+@dataclass(frozen=True)
+class RecoverySignal:
+    kind: RecoveryKind
+    stable_signature: str
+    observed_evidence: Mapping[str, object]
+    attempted_modes: tuple[str, ...] = ()
+    prohibited_immediate_repeat: str = ""
+    recovery_attempt: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, RecoveryKind):
+            object.__setattr__(self, "kind", RecoveryKind(self.kind))
+        _bounded_text(self.stable_signature, "recovery signature", limit=1_000)
+        object.__setattr__(self, "observed_evidence", freeze_json(dict(self.observed_evidence)))
+        object.__setattr__(self, "attempted_modes", _bounded_unique(self.attempted_modes, "attempted_modes"))
+        if self.prohibited_immediate_repeat:
+            _bounded_text(self.prohibited_immediate_repeat, "prohibited repeat", limit=1_000)
+        if not 1 <= self.recovery_attempt <= 3:
+            raise ValueError("recovery attempt is outside bounds")
 
 
 @dataclass(frozen=True)
@@ -239,16 +271,20 @@ class AuditBundle:
 
     @classmethod
     def from_world(cls, world: WorldObservation) -> AuditBundle:
-        from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+        from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 
         index = WorldEvidenceIndex.from_observation(world)
-        records = index.records[:_MAX_AUDIT_EVIDENCE_RECORDS]
+        all_records = tuple(sorted(
+            (*index.records, *public_text_evidence_records(world)),
+            key=lambda item: item.evidence_ref,
+        ))
+        records = all_records[:_MAX_AUDIT_EVIDENCE_RECORDS]
         return cls(
             world.observation_id,
             tuple(source.observation_id for source in world.sources),
             records,
             {source.observation_id: source.coverage.value for source in world.sources},
-            len(index.records),
+            len(all_records),
         )
 
     def __post_init__(self) -> None:
@@ -353,6 +389,7 @@ class EpisodeMonitorTransition:
     events: tuple[EpisodeMonitorEvent, ...]
     recommendation: EpisodeMonitorRecommendation
     reason: str = ""
+    recovery_signal: RecoverySignal | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "events", tuple(self.events))
@@ -360,6 +397,8 @@ class EpisodeMonitorTransition:
             raise TypeError("episode monitor events must be typed")
         if not isinstance(self.recommendation, EpisodeMonitorRecommendation):
             raise TypeError("episode monitor recommendation must be typed")
+        if self.recovery_signal is not None and not isinstance(self.recovery_signal, RecoverySignal):
+            raise TypeError("episode monitor recovery signal must be typed")
 
 
 class ManagerPort(Protocol):

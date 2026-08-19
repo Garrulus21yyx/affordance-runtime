@@ -78,7 +78,7 @@ def test_model_world_projection_is_bounded_and_route_free() -> None:
     )
 
     assert len(view.targets.items) == 2 and view.targets.truncated
-    assert len(view.facts.items) == 2 and view.facts.truncated
+    assert len(view.facts.items) == 3 and view.facts.truncated
     representation = repr(view)
     for private in ("world:private-observation", "source:private", "selector", "#private", "conflict:private"):
         assert private not in representation
@@ -184,7 +184,7 @@ def test_task_view_contains_only_evaluator_supported_facts() -> None:
 
     verified_facts = context.task.evaluation.verified_public_facts
     assert tuple(item.fact_ref for item in verified_facts) == ("F1",)
-    assert tuple(item.subject_id for item in verified_facts) == ("E1",)
+    assert tuple(item.subject_id for item in verified_facts) == ("N1",)
     verified = verified_facts[0]
     matching = tuple(
         fact

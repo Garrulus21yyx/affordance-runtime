@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.decisions import RequestObservation, SelectAction
+from affordance_runtime.agent.decisions import LocalToolResult, RequestActionPage, RequestObservation, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import (
@@ -21,6 +21,8 @@ from affordance_runtime.mission.contracts import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
     EpisodeMonitorTransition,
+    RecoveryKind,
+    RecoverySignal,
 )
 
 _WORLD_OSCILLATION_WINDOW = 4
@@ -46,6 +48,7 @@ class EpisodeMonitor:
     config: EpisodeMonitorConfig = EpisodeMonitorConfig()
     repeated_failure_key: str = ""
     repeated_failure_count: int = 0
+    recovery_in_progress_key: str = ""
 
     def evaluate(
         self,
@@ -78,6 +81,21 @@ class EpisodeMonitor:
             else:
                 self.repeated_failure_key = failure_key
                 self.repeated_failure_count = 1
+            if failure_key == self.recovery_in_progress_key:
+                return EpisodeMonitorTransition(
+                    tuple(events),
+                    EpisodeMonitorRecommendation.YIELD,
+                    _recovery_kind(result, events).value,
+                )
+            if self.repeated_failure_count == 2:
+                signal = _recovery_signal(result, events, failure_key)
+                self.recovery_in_progress_key = failure_key
+                return EpisodeMonitorTransition(
+                    tuple(events),
+                    EpisodeMonitorRecommendation.RECOVER,
+                    signal.kind.value,
+                    signal,
+                )
             if self.repeated_failure_count >= self.config.repeated_failure_limit:
                 return EpisodeMonitorTransition(
                     tuple(events),
@@ -119,7 +137,36 @@ class EpisodeMonitor:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
             events.append(EpisodeMonitorEvent.REPEATED_ACTION)
         if EpisodeMonitorEvent.OSCILLATION in events:
-            return EpisodeMonitorTransition(tuple(events), EpisodeMonitorRecommendation.YIELD, "oscillation")
+            failure_key = failure_key or _stable_key(
+                {
+                    "kind": "state_oscillation",
+                    "world": fresh_world_fingerprint,
+                    "attempt": _public_attempt(result),
+                }
+            )
+            if failure_key == self.recovery_in_progress_key:
+                return EpisodeMonitorTransition(
+                    tuple(events),
+                    EpisodeMonitorRecommendation.YIELD,
+                    RecoveryKind.STATE_OSCILLATION.value,
+                )
+            signal = _recovery_signal(result, events, failure_key, kind=RecoveryKind.STATE_OSCILLATION)
+            self.recovery_in_progress_key = failure_key
+            return EpisodeMonitorTransition(
+                tuple(events),
+                EpisodeMonitorRecommendation.RECOVER,
+                signal.kind.value,
+                signal,
+            )
+        if (
+            not failure_key
+            and (
+                EpisodeMonitorEvent.STATE_CHANGED in events
+                or EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED in events
+                or _world_digest(result.before_world) != (_world_digest(result.after_world) or fresh_world_fingerprint)
+            )
+        ):
+            self.recovery_in_progress_key = ""
         return EpisodeMonitorTransition(tuple(events), EpisodeMonitorRecommendation.CONTINUE)
 
 
@@ -208,6 +255,33 @@ def _repeated_failure_key(
                 "attempt": _public_attempt(result),
                 "task_progress": _task_progress_digest(result.task_evaluation),
                 "world": after_world,
+            }
+        )
+    if isinstance(result.decision, LocalToolResult):
+        return _stable_key(
+            {
+                "kind": "local_tool_result",
+                "world": after_world,
+                "tool": result.decision.tool_name,
+                "canonical_args": to_json_compatible(result.decision.arguments),
+                "result": to_json_compatible(result.decision.result),
+                "task_progress": _task_progress_digest(result.task_evaluation),
+            }
+        )
+    if isinstance(result.decision, RequestActionPage):
+        return _stable_key(
+            {
+                "kind": "action_page_result",
+                "world": after_world,
+                "filters": {
+                    "query": result.decision.query,
+                    "exact_target": result.decision.exact_target_ref,
+                    "relevance_role": result.decision.relevance_role,
+                    "cursor": bool(result.decision.cursor),
+                },
+                "result": to_json_compatible(result.action_page_result),
+                "total_count": result.action_page_result.get("total_count", 0),
+                "task_progress": _task_progress_digest(result.task_evaluation),
             }
         )
     action = result.action_outcome
@@ -344,6 +418,72 @@ def _world_digest(world) -> str:
 
 def _stable_key(payload: dict[str, object]) -> str:
     return json.dumps(to_json_compatible(payload), sort_keys=True, separators=(",", ":"))
+
+
+def _recovery_signal(
+    result: StepResult,
+    events: list[EpisodeMonitorEvent],
+    failure_key: str,
+    *,
+    kind: RecoveryKind | None = None,
+) -> RecoverySignal:
+    selected_kind = kind or _recovery_kind(result, events)
+    attempted = _attempted_modes(result, events)
+    return RecoverySignal(
+        selected_kind,
+        failure_key,
+        {
+            "feedback": result.feedback,
+            "events": tuple(item.value for item in events),
+            "dispatch": _dispatch_status(result),
+            "task_evaluation": result.task_evaluation.status.value,
+        },
+        attempted,
+        _prohibited_repeat(result, failure_key),
+        1,
+    )
+
+
+def _recovery_kind(result: StepResult, events: list[EpisodeMonitorEvent]) -> RecoveryKind:
+    if EpisodeMonitorEvent.OSCILLATION in events:
+        return RecoveryKind.STATE_OSCILLATION
+    if isinstance(result.decision, LocalToolResult | RequestActionPage):
+        return RecoveryKind.CONTROL_STALL
+    if EpisodeMonitorEvent.CAPABILITY_GAP in events:
+        return RecoveryKind.CAPABILITY_GAP
+    if result.feedback in {"binding_unavailable"} or result.feedback.startswith("action_not_sent:"):
+        return RecoveryKind.GROUNDING_STALL
+    if result.action_outcome is not None and result.action_outcome.observed_change is ObservedChange.UNCHANGED:
+        return RecoveryKind.EFFECT_STALL
+    if result.execution is not None and result.execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
+        return RecoveryKind.UNCERTAIN_EFFECT
+    return RecoveryKind.STRATEGY_STALL
+
+
+def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> tuple[str, ...]:
+    modes = []
+    if isinstance(result.decision, LocalToolResult):
+        modes.append(result.decision.tool_name)
+    elif isinstance(result.decision, RequestActionPage):
+        modes.append("find_actions")
+    elif isinstance(result.decision, SelectAction):
+        modes.append(_semantic_action(result) or "select_action")
+    else:
+        modes.append(type(result.decision).__name__)
+    modes.extend(item.value for item in events)
+    return tuple(dict.fromkeys(item for item in modes if item))
+
+
+def _prohibited_repeat(result: StepResult, fallback: str) -> str:
+    if isinstance(result.decision, SelectAction):
+        return _action_key(result)
+    return fallback
+
+
+def _dispatch_status(result: StepResult) -> str:
+    if result.execution is None:
+        return "not_sent"
+    return result.execution.result.dispatch_status.value
 
 
 def _turn_key(turn: AgentTurnView) -> str:

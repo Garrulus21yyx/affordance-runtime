@@ -27,11 +27,13 @@ from affordance_runtime.agent.working_facts import (
 from affordance_runtime.evaluation.contracts import ActionOutcome, TaskEvaluation
 from affordance_runtime.execution.contracts import ExecutionOutcome
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.mission.contracts import RecoverySignal
 
 
 class RunStatus(StrEnum):
@@ -54,6 +56,13 @@ class EpisodeYieldReason(StrEnum):
     CAPABILITY_GAP = "capability_gap"
     OSCILLATION = "oscillation"
     REPEATED_FAILURE_LIMIT = "repeated_failure_limit"
+    CONTROL_STALL = "control_stall"
+    GROUNDING_STALL = "grounding_stall"
+    EFFECT_STALL = "effect_stall"
+    UNCERTAIN_EFFECT = "uncertain_effect"
+    STATE_OSCILLATION = "state_oscillation"
+    STRATEGY_STALL = "strategy_stall"
+    FAILED_STRATEGY = "failed_strategy"
 
 
 @dataclass(frozen=True)
@@ -75,6 +84,8 @@ class StepResult:
     runtime_failure: RuntimeFailure | None = None
     policy_observation: ActorWorldSnapshot | None = None
     policy_target_refs: Mapping[str, str] = field(default_factory=dict)
+    action_page_result: Mapping[str, object] = field(default_factory=dict)
+    recovery_signal: RecoverySignal | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status_after, RunStatus):
@@ -102,6 +113,12 @@ class StepResult:
             raise ValueError("step decision/execution tool call lineage mismatch")
         if not self.feedback.strip():
             raise ValueError("step feedback must be concise and nonblank")
+        object.__setattr__(self, "action_page_result", freeze_json(dict(self.action_page_result)))
+        if self.recovery_signal is not None:
+            from affordance_runtime.mission.contracts import RecoverySignal
+
+            if not isinstance(self.recovery_signal, RecoverySignal):
+                raise TypeError("step recovery signal must be typed")
         if self.failure_code is not None and not isinstance(self.failure_code, AgentFailureCode):
             raise TypeError("step failure code must be typed")
         if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
@@ -139,6 +156,7 @@ class RunState:
     working_facts: tuple[WorkingFact, ...] = ()
     delivery_lens: WorldDeliveryLens | None = None
     yield_reason: EpisodeYieldReason | None = None
+    recovery_signal: RecoverySignal | None = None
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -170,6 +188,11 @@ class RunState:
                 raise ValueError("run delivery lens must belong to current world")
         if self.yield_reason is not None and not isinstance(self.yield_reason, EpisodeYieldReason):
             raise TypeError("episode yield reason must be typed")
+        if self.recovery_signal is not None:
+            from affordance_runtime.mission.contracts import RecoverySignal
+
+            if not isinstance(self.recovery_signal, RecoverySignal):
+                raise TypeError("run recovery signal must be typed")
 
     @property
     def terminal(self) -> bool:
@@ -269,6 +292,7 @@ class RunState:
             if lens.world_observation_id == self.current_world.observation_id:
                 self.delivery_lens = lens
                 self.action_page = None
+        self.recovery_signal = result.recovery_signal
         if self.status is RunStatus.RUNNING and self.remaining_steps == 0:
             self.status = (
                 RunStatus.YIELDED

@@ -9,7 +9,6 @@ from affordance_runtime.agent.core_loop import _world_fingerprint
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, TaskEvaluation, TaskEvaluationStatus
@@ -254,7 +253,7 @@ def test_auditor_failure_terminates_without_reexecuting_same_gui_subtask() -> No
     assert len(policy.contexts) == 1
 
 
-def test_repeated_policy_failure_limit_blocks_case_without_reauditing() -> None:
+def test_repeated_policy_failure_limit_does_not_first_block_without_manager_route() -> None:
     _, env, task = _env_task()
     policy = PolicyFailurePolicy([])
     runtime = _runtime(policy)
@@ -273,13 +272,13 @@ def test_repeated_policy_failure_limit_blocks_case_without_reauditing() -> None:
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=4).run(runtime, env, task))
 
     assert result.state is not None
-    assert result.outcome is MissionOutcome.BLOCKED
-    assert result.state.status is RunStatus.BLOCKED
-    assert result.state.failure_code is AgentFailureCode.REPEATED_FAILURE_LIMIT
-    assert result.supervisor_state.last_typed_episode_exit == "repeated_failure_limit"
+    assert result.outcome is MissionOutcome.AUDITOR_FAILURE
+    assert result.state.status is RunStatus.YIELDED
+    assert result.state.failure_code is None
+    assert result.supervisor_state.last_typed_episode_exit != "repeated_failure_limit"
     assert len(policy.contexts) == 3
     assert len(manager.requests) == 3
-    assert len(auditor.requests) == 2
+    assert len(auditor.requests) == 3
 
 
 def test_pre_stop_incomplete_task_evaluation_does_not_become_subtask_unsatisfied() -> None:

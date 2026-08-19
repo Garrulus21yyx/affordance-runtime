@@ -212,13 +212,15 @@ class GroundedPolicyContextBinder:
             "recent_steps": recent_steps,
             "affordances": affordances,
         }
+        if context.control_feedback:
+            public["control_feedback"] = project_public_value(context.control_feedback)
         if working_set:
             public["working_set"] = working_set
         return {
             "public": public,
             "task_plan": {"task": task, "goal_plan": public["goal_plan"]},
             "actor_world": {"observation": observation, "affordances": affordances},
-            "history": recent_steps,
+            "history": {"recent_steps": recent_steps, "control_feedback": context.control_feedback},
             "working_set": working_set,
         }
 

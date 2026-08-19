@@ -124,7 +124,7 @@ def test_corresponded_structure_retains_one_canonical_entity_with_all_source_ref
     )
     world, snapshot = _snapshot((visual, dom))
 
-    entity_nodes = tuple(item for item in _nodes(snapshot) if item.ref.startswith("E"))
+    entity_nodes = tuple(item for item in _nodes(snapshot) if item.ref.startswith("N") and item.role == "button")
     assert len(world.targets) == len(entity_nodes) == 1
     assert entity_nodes[0].state == {"enabled": True}
     assert entity_nodes[0].state_evidence
@@ -143,7 +143,7 @@ def test_blank_semantic_label_falls_back_to_the_structure_label() -> None:
 
     _, snapshot = _snapshot((source,))
 
-    target = next(item for item in _nodes(snapshot) if item.ref.startswith("E"))
+    target = next(item for item in _nodes(snapshot) if item.ref.startswith("N") and item.role == "button")
     assert target.label == "Save"
 
 
@@ -262,7 +262,7 @@ def test_multiple_structure_free_sources_have_truthful_per_document_counts() -> 
         (item.source_ref, item.retained_node_count, item.total_node_count, item.truncated)
         for item in snapshot.documents
     ) == (("S1", 1, 1, False), ("S2", 1, 1, False))
-    assert len({node.ref for node in _nodes(snapshot) if node.ref.startswith("E")}) == 2
+    assert len({node.ref for node in _nodes(snapshot) if node.ref.startswith("N")}) == 2
 
     _, bounded = _snapshot((first, second), bound=1)
     assert tuple(

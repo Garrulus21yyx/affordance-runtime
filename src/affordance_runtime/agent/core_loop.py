@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
@@ -60,6 +61,7 @@ from affordance_runtime.goals.compiler import (
     UnavailableGoalCompiler,
 )
 from affordance_runtime.goals.plan import GoalPlanResolution, NeedsInput, Ready
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.risk.contracts import RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
@@ -338,7 +340,20 @@ class CoreAgentLoop:
         if not callable(evaluate):
             return result
         transition = evaluate(result, state.recent_steps, _world_fingerprint(result.after_world))
-        if getattr(transition, "recommendation", "") != "yield":
+        recommendation = getattr(transition, "recommendation", "")
+        if str(recommendation) == "recover":
+            signal = getattr(transition, "recovery_signal", None)
+            return replace(
+                result,
+                status_after=RunStatus.RUNNING,
+                feedback=(
+                    f"episode_monitor_recover:{getattr(signal.kind, 'value', 'strategy_stall')}"
+                    if signal is not None
+                    else "episode_monitor_recover:strategy_stall"
+                ),
+                recovery_signal=signal,
+            )
+        if str(recommendation) != "yield":
             return result
         reason = getattr(transition, "reason", "stalled")
         try:
@@ -467,6 +482,7 @@ class CoreAgentLoop:
             runtime_controls=self.runtime_controls,
             delivery_lens=lens,
             region_index=region_index,
+            control_feedback=_recovery_feedback(state.recovery_signal),
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)
@@ -609,14 +625,26 @@ class CoreAgentLoop:
             )
         except ValueError:
             return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_invalid")
+        result_payload = _action_page_result_payload(page, decision)
+        retained_page = page
+        feedback = "action_page_ready"
+        if page.total_count == 0:
+            retained_page = (
+                state.action_page
+                if state.action_page is not None
+                and state.action_page.action_space_id == action_space.action_space_id
+                else self.context_builder.page(action_space, state.current_world)
+            )
+            feedback = "action_page_empty"
         return StepResult(
             decision,
             state.current_world,
             state.current_world,
             state.current_task_evaluation,
             RunStatus.RUNNING,
-            feedback="action_page_ready",
-            action_page=page,
+            feedback=feedback,
+            action_page=retained_page,
+            action_page_result=result_payload,
         )
 
     async def _wait(
@@ -727,6 +755,13 @@ class CoreAgentLoop:
             assert admission.issue is not None
             return _same_world_step(state, decision, RunStatus.BLOCKED, f"admission_rejected:{admission.issue.code}")
         selection = admission.admitted
+        if _repeats_recovery_signature(state.recovery_signal, selection):
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.RUNNING,
+                "recovery_repeat_rejected",
+            )
         page_issue = action_page.selection_issue(selection.action_id, selection.destination_id)
         if page_issue is not None:
             return _same_world_step(state, decision, RunStatus.BLOCKED, f"admission_rejected:{page_issue.code}")
@@ -875,6 +910,67 @@ def _same_world_step(
         status,
         feedback=feedback,
     )
+
+
+def _action_page_result_payload(page, decision: RequestActionPage) -> dict[str, object]:
+    applied = {
+        "query": decision.query,
+        "exact_target": decision.exact_target_ref,
+        "cursor": decision.cursor,
+    }
+    if decision.relevance_role:
+        applied["relevance_role"] = decision.relevance_role
+    relaxations = []
+    if decision.exact_target_ref:
+        relaxations.append("remove_exact_target")
+    if decision.relevance_role:
+        relaxations.append("remove_relevance_role")
+    if decision.query:
+        relaxations.append("shorten_query")
+    return {
+        "applied_filters": applied,
+        "total_count": page.total_count,
+        "visible_count": len(page.visible_action_ids),
+        "why_empty": (
+            "filters_matched_no_actions"
+            if page.total_count == 0 and any(value for value in applied.values())
+            else "action_space_empty"
+            if page.total_count == 0
+            else ""
+        ),
+        "safe_relaxations": tuple(relaxations) if page.total_count == 0 else (),
+        "authority_changed": False if page.total_count == 0 else True,
+    }
+
+
+def _recovery_feedback(signal) -> dict[str, object]:
+    if signal is None:
+        return {}
+    return {
+        "kind": signal.kind.value,
+        "stable_signature": signal.stable_signature,
+        "observed_evidence": signal.observed_evidence,
+        "attempted_modes": signal.attempted_modes,
+        "prohibited_immediate_repeat": signal.prohibited_immediate_repeat,
+        "recovery_attempt": signal.recovery_attempt,
+        "instruction": (
+            "Do not repeat prohibited_immediate_repeat. Use the fresh World and current tools "
+            "to choose a materially different route, or yield if no supported route exists."
+        ),
+    }
+
+
+def _repeats_recovery_signature(signal, selection) -> bool:
+    if signal is None or not signal.prohibited_immediate_repeat:
+        return False
+    payload = {
+        "action": selection.semantic_action,
+        "target": selection.target_id,
+        "destination": selection.destination_id,
+        "parameters": selection.parameters,
+    }
+    current = json.dumps(to_json_compatible(payload), sort_keys=True, separators=(",", ":"))
+    return current == signal.prohibited_immediate_repeat
 
 
 def _final_response_available(

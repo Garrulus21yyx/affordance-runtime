@@ -250,7 +250,7 @@ def _render_node(
     label = node.label.strip()
     role = node.role.strip() or "unknown"
     classes = _class_tokens(node.state.get(_CLASS_FIELD))
-    public_ref = node.ref if node.ref.startswith("E") else ""
+    public_ref = node.ref if _is_model_ref(node.ref) and not (node.ref.startswith("N") and role == "StaticText") else ""
     current_verbs = verbs.get(public_ref, ())
     state = _model_state(node.state, interactive=bool(current_verbs))
 
@@ -286,13 +286,15 @@ def _render_node(
             attributes.append("parent=outside_snapshot")
         if node.state_truncated:
             attributes.append(f"state_coverage={len(node.state)}/{node.state_total_count}")
+        if current_verbs:
+            attributes.append(f"verbs={_value(current_verbs)}")
+        elif public_ref.startswith("N"):
+            attributes.append("read_only=true")
         attributes.extend(f"fact.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}" for item in node.facts)
         attributes.extend(
             f"relation.{_short_field(key)}={_value(value)}"
             for key, value in node.relations.items()
         )
-        if current_verbs:
-            attributes.append(f"verbs={_value(current_verbs)}")
         if attributes:
             line += " " + " ".join(attributes)
         lines.append(line)
@@ -538,11 +540,14 @@ def _render_region_members_from_world(
         target = targets.get(target_id)
         if target is None:
             continue
-        prefix = f"[{refs[target_id]}] " if target_id in refs else ""
+        public_ref = refs.get(target_id, "")
+        prefix = f"[{public_ref}] " if _is_model_ref(public_ref) else ""
         line = f"  {prefix}{target.role} {_value(target.label)}"
-        state = _model_state(target.state, interactive=bool(prefix))
+        state = _model_state(target.state, interactive=public_ref.startswith("E"))
         if state:
             line += " " + " ".join(f"{_short_field(key)}={_value(value)}" for key, value in state.items())
+        if public_ref.startswith("N"):
+            line += " read_only=true"
         lines.append(line)
     for fact in observation.facts:
         if fact.fact_id in region.member_fact_ids:
@@ -612,17 +617,27 @@ def _find_matches(
     needle = query.casefold()[:120]
     matches: list[Mapping[str, object]] = []
     target_region = _target_region_locations(index, grounding)
+    entity_by_ref = {item.ref: item for item in grounding.entities}
     for target in observation.targets:
         values = [target.role, target.label, *(str(value) for value in target.state.values())]
         if needle and needle not in " ".join(values).casefold():
             continue
         location = target_region.get(target.target_id, ("", ""))
+        node_ref = location[1]
+        entity = entity_by_ref.get(node_ref)
+        verbs = tuple(entity.verbs) if entity is not None else ()
         matches.append({
             "region_ref": location[0],
-            "node_ref": location[1],
+            "node_ref": node_ref,
             "role": target.role,
             "label": target.label,
-            "target_id": target.target_id,
+            "actionable": bool(verbs),
+            "verbs": verbs,
+            "action_refs": (node_ref,) if node_ref.startswith("E") and verbs else (),
+            "currentness": {
+                "observation_id": observation.observation_id,
+                "target_id": target.target_id,
+            },
             "snippet": _bounded_snippet(" ".join(values), query),
         })
     for fact in observation.facts:
@@ -635,7 +650,13 @@ def _find_matches(
             "node_ref": location[1],
             "role": "fact",
             "label": fact.predicate,
-            "target_id": fact.subject_id,
+            "actionable": False,
+            "verbs": (),
+            "action_refs": (),
+            "currentness": {
+                "observation_id": observation.observation_id,
+                "subject_id": fact.subject_id,
+            },
             "snippet": _bounded_snippet(f"{fact.predicate} {fact.value}", query),
         })
     return tuple(matches)
@@ -650,6 +671,14 @@ def _target_region_locations(
         for target_id in region.member_target_ids:
             result.setdefault(target_id, (region.public_ref, grounding.target_refs.get(target_id, "")))
     return result
+
+
+def _is_model_ref(value: str) -> bool:
+    return (
+        len(value) >= 2
+        and value[0] in {"E", "N"}
+        and value[1:].isdigit()
+    )
 
 
 def _bounded_snippet(haystack: str, query: str) -> str:

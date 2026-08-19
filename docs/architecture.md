@@ -74,8 +74,11 @@ The later `watch4` run reopened the inner action/recovery boundary: read-only an
 same-call repair changed `Bestsellers` into `Close menu`, discovery filters erased the usable action page, local-tool
 oscillation bypassed Monitor, and cumulative repair usage was counted twice. The action-reference, recovery,
 same-turn visual-binding, control-stall, and token-accounting convergence contract below is therefore the active
-pre-W1b-Agent repair. It is documented but not yet implemented or verified; no VLM, recovery, or token-correctness
-claim follows from the design alone.
+pre-W1b-Agent repair. It is now implemented and locally verified by focused owner tests, the provider-free watch4
+synthetic witness, full local tests, and one official same-case W1b task-0 witness. That witness advanced through
+executable refs to the Bestsellers report and identified `Quest Lumaflex™ Band`, then failed in the separate
+Auditor/context-capacity acceptance path; it did not reproduce the read-only E-ref, repair target-swap, or
+inspect/action-page loop.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
@@ -1683,7 +1686,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence documented but not implemented / W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; implement executable/read-only refs, representation-only repair, explicit discovery results, admitted same-turn visual binding, zero-dispatch control-stall detection, and non-cumulative token accounting; pass properties plus the same-case witness and six-site smokes, then run W2 |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence implemented and locally verified; same-case W1b task-0 witness reached the answer then failed at Auditor context capacity / W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; executable/read-only refs, representation-only repair, explicit discovery results, admitted same-turn visual binding, zero-dispatch control-stall detection, and non-cumulative token accounting are in place; next gate is the separate Auditor/finalization acceptance path plus six-site smokes before W2 |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:

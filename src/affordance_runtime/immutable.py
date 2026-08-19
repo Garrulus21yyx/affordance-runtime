@@ -122,6 +122,7 @@ def to_json_compatible(value: Any) -> Any:
         return {
             field.name: to_json_compatible(getattr(value, field.name))
             for field in fields(value)
+            if field.metadata.get("serialize", True) is not False
         }
     if isinstance(value, Mapping):
         return {

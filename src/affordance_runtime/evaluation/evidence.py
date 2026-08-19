@@ -25,7 +25,6 @@ class WorldEvidenceIndex:
     @classmethod
     def from_observation(cls, observation: WorldObservation) -> WorldEvidenceIndex:
         records = [_fact_record(observation, fact) for fact in observation.facts]
-        records.extend(_public_text_records(observation))
         records.extend(_artifact_record(observation, source, str(key)) for source in observation.sources for key in source.artifacts)
         refs = [record.evidence_ref for record in records]
         validated = validate_evidence_refs(tuple(refs), allow_empty=True)
@@ -64,7 +63,9 @@ def _artifact_record(observation, source, key: str) -> EvidenceRecord:
     )
 
 
-def _public_text_records(observation) -> tuple[EvidenceRecord, ...]:
+def public_text_evidence_records(observation: WorldObservation) -> tuple[EvidenceRecord, ...]:
+    """Return public text evidence for Auditor reading, not evaluator fact authority."""
+
     sources = {item.observation_id: item for item in observation.sources}
     source_by_target = _source_by_target(observation, sources)
     records: list[EvidenceRecord] = []
@@ -73,9 +74,8 @@ def _public_text_records(observation) -> tuple[EvidenceRecord, ...]:
         if not label:
             continue
         source = source_by_target.get(target.target_id) or next(iter(sources.values()), None)
-        if source is None:
-            continue
-        records.append(_public_text_record(observation, source, target.target_id, label))
+        if source is not None:
+            records.append(_public_text_record(observation, source, target.target_id, label))
     linked_targets = {
         (link.source_observation_id, link.source_target_id)
         for link in observation.entity_source_links

@@ -11,24 +11,36 @@ from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 
-_GENERATION_REF = re.compile(r"\b[EFR][1-9][0-9]{0,3}\b")
+_GENERATION_REF = re.compile(r"\b[ENFR][1-9][0-9]{0,3}\b")
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
 
 
 def sanitize_history_value(value: object) -> object:
     """Remove observation-generation identity before a value enters episode history."""
 
+    return _sanitize_history_value(value, {})
+
+
+def _sanitize_history_value(value: object, refs: dict[str, str]) -> object:
     if isinstance(value, str):
-        return _GENERATION_REF.sub("<expired-ref>", value)
+        return _GENERATION_REF.sub(lambda match: _expired_ref(match.group(0), refs), value)
     if isinstance(value, Mapping):
         return {
-            str(sanitize_history_value(str(key))): sanitize_history_value(item)
+            str(_sanitize_history_value(str(key), refs)): _sanitize_history_value(item, refs)
             for key, item in value.items()
             if str(key) not in _PRIVATE_HISTORY_KEYS and not str(key).endswith("_ref")
         }
     if isinstance(value, tuple | list):
-        return tuple(sanitize_history_value(item) for item in value)
+        return tuple(_sanitize_history_value(item, refs) for item in value)
     return value
+
+
+def _expired_ref(ref: str, refs: dict[str, str]) -> str:
+    replacement = refs.get(ref)
+    if replacement is None:
+        replacement = f"<expired-ref-{len(refs) + 1}>"
+        refs[ref] = replacement
+    return replacement
 
 
 @dataclass(frozen=True)

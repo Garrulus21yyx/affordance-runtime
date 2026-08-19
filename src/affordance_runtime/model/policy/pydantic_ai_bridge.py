@@ -26,7 +26,7 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
-from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.decisions import FinalResponse, LocalToolResult
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
@@ -255,9 +255,9 @@ class PydanticAIGroundedDecisionPort:
             if final_ready:
                 decision = _resolve_final_response(result.output, request.context_id)
             else:
-                decision, resolution_error = _resolve_deferred(result.output, catalog, request.context_id)
+                decision, resolution_error, initial_call = _resolve_deferred(result.output, catalog, request.context_id)
                 self._set_tool_resolution(resolution_error, accepted=decision is not None)
-            if decision is None and not final_ready:
+            if decision is None and not final_ready and _representation_repair_allowed(resolution_error):
                 repair = _repair_input(
                     result.output,
                     catalog,
@@ -293,8 +293,19 @@ class PydanticAIGroundedDecisionPort:
                     input_messages=repair_transcript,
                     provider_error_type=ModelAPIError,
                 )
-                decision, resolution_error = _resolve_deferred(result.output, catalog, request.context_id)
+                decision, resolution_error, repaired_call = _resolve_deferred(result.output, catalog, request.context_id)
+                intent_error = _intent_preservation_error(initial_call, repaired_call)
+                if intent_error is not None:
+                    decision = None
+                    resolution_error = intent_error
                 self._set_tool_resolution(resolution_error, accepted=decision is not None)
+            if decision is None and not final_ready and resolution_error is not None:
+                decision = _tool_rejection_decision(
+                    resolution_error,
+                    repaired_call if "repaired_call" in locals() and repaired_call is not None else initial_call,
+                    catalog,
+                    request.context_id,
+                )
             if decision is None:
                 return self._invocation_failure(
                     _tool_resolution_failure(resolution_error),
@@ -363,7 +374,8 @@ class PydanticAIGroundedDecisionPort:
                 request,
             )
 
-        run_usage = result.usage
+        invocation_prompt_tokens = sum(item.prompt_tokens for item in self.last_generation_attempts)
+        invocation_completion_tokens = sum(item.completion_tokens for item in self.last_generation_attempts)
         rate_limit_retries = sum(
             1
             for item in self.last_generation_attempts
@@ -377,9 +389,9 @@ class PydanticAIGroundedDecisionPort:
             prompt_version=self.context_binder.prompts.version,
             schema_version=GROUNDED_TOOLS_PROTOCOL,
             latency_ms=(time.perf_counter() - semantic_started) * 1000,
-            prompt_tokens=run_usage.input_tokens,
-            completion_tokens=run_usage.output_tokens,
-            total_tokens=run_usage.input_tokens + run_usage.output_tokens,
+            prompt_tokens=invocation_prompt_tokens,
+            completion_tokens=invocation_completion_tokens,
+            total_tokens=invocation_prompt_tokens + invocation_completion_tokens,
             rate_limit_retry_count=rate_limit_retries,
             transient_retry_count=max(0, self.last_provider_retry_count - rate_limit_retries),
             grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
@@ -556,6 +568,19 @@ class PydanticAIGroundedDecisionPort:
         responses = [message for message in messages if message.get("kind") == "response"]
         usage = result.usage
         response = responses[-1] if responses else {}
+        attempt_prompt_tokens, raw_cumulative_prompt_tokens = _attempt_token_delta(
+            self.last_generation_attempts,
+            response,
+            usage,
+            "input_tokens",
+        )
+        attempt_completion_tokens, raw_cumulative_completion_tokens = _attempt_token_delta(
+            self.last_generation_attempts,
+            response,
+            usage,
+            "output_tokens",
+        )
+        attempt_cached_input_tokens = _response_usage_int(response, "cache_read_tokens")
         transcript = {
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
@@ -571,9 +596,14 @@ class PydanticAIGroundedDecisionPort:
                 }
                 for spec in specs
             ],
-            "llm.token_count.prompt": usage.input_tokens,
-            "llm.token_count.completion": usage.output_tokens,
-            "llm.token_count.total": usage.input_tokens + usage.output_tokens,
+            "llm.token_count.prompt": attempt_prompt_tokens,
+            "llm.token_count.completion": attempt_completion_tokens,
+            "llm.token_count.total": attempt_prompt_tokens + attempt_completion_tokens,
+            "estimated_request_tokens": 0,
+            "attempt_input_tokens": attempt_prompt_tokens,
+            "attempt_cached_input_tokens": attempt_cached_input_tokens,
+            "provider_raw_cumulative_input_tokens": raw_cumulative_prompt_tokens,
+            "provider_raw_cumulative_output_tokens": raw_cumulative_completion_tokens,
             "response.id": str(response.get("provider_response_id") or ""),
             "status": "accepted",
             "error": "",
@@ -585,9 +615,9 @@ class PydanticAIGroundedDecisionPort:
             status="accepted",
             response_id=str(response.get("provider_response_id") or ""),
             latency_ms=latency_ms,
-            prompt_tokens=usage.input_tokens,
-            completion_tokens=usage.output_tokens,
-            total_tokens=usage.input_tokens + usage.output_tokens,
+            prompt_tokens=attempt_prompt_tokens,
+            completion_tokens=attempt_completion_tokens,
+            total_tokens=attempt_prompt_tokens + attempt_completion_tokens,
             transcript=transcript,
         )
         object.__setattr__(
@@ -755,28 +785,100 @@ def _endpoint_host(base_url: str) -> str:
 def _resolve_deferred(output, catalog, context_id: str):
     from pydantic_ai import DeferredToolRequests
 
-    if not isinstance(output, DeferredToolRequests) or output.approvals or len(output.calls) != 1:
-        return None, None
+    if not isinstance(output, DeferredToolRequests) or output.approvals:
+        return None, None, None
+    if len(output.calls) != 1:
+        code = (
+            GroundedToolResolutionCode.ZERO_CALLS
+            if not output.calls
+            else GroundedToolResolutionCode.MULTIPLE_CALLS
+        )
+        return None, GroundedToolResolutionError(code), None
     call = output.calls[0]
+    parsed_call = None
     try:
         arguments = call.args_as_dict(raise_if_invalid=True)
+        parsed_call = ToolCall(call.tool_name, arguments, call.tool_call_id)
         reconciliation = ProviderCallNormalizer().normalize(
-            ToolCall(call.tool_name, arguments, call.tool_call_id),
+            parsed_call,
             catalog,
         )
         if reconciliation.status is not ToolCallReconciliationStatus.EXACT:
-            return None, None
+            return None, _reconciliation_error(reconciliation), parsed_call
         assert reconciliation.exact_call is not None
         return resolve_grounded_action_call(
             catalog,
             reconciliation.exact_call,
             expected_context_id=context_id,
             expected_catalog_id=catalog.catalog_id,
-        ).decision, None
+        ).decision, None, reconciliation.exact_call
     except GroundedToolResolutionError as exc:
-        return None, exc
+        return None, exc, parsed_call
     except (ValueError, TypeError):
-        return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), parsed_call
+
+
+def _reconciliation_error(reconciliation) -> GroundedToolResolutionError:
+    code = (
+        GroundedToolResolutionCode.UNKNOWN_OPERATION
+        if str(reconciliation.issue_code) == "unknown_tool"
+        else GroundedToolResolutionCode.STALE_CATALOG
+        if str(reconciliation.issue_code) == "stale_catalog"
+        else GroundedToolResolutionCode.INVALID_ARGUMENTS
+    )
+    detail = reconciliation.argument_code
+    if reconciliation.field_paths:
+        detail = f"{detail}:{','.join(reconciliation.field_paths)}" if detail else ",".join(reconciliation.field_paths)
+    return GroundedToolResolutionError(code, detail)
+
+
+def _representation_repair_allowed(error: GroundedToolResolutionError | None) -> bool:
+    if error is None:
+        return True
+    return error.code in {
+        GroundedToolResolutionCode.ZERO_CALLS,
+        GroundedToolResolutionCode.MULTIPLE_CALLS,
+    }
+
+
+def _intent_preservation_error(
+    initial_call: ToolCall | None,
+    repaired_call: ToolCall | None,
+) -> GroundedToolResolutionError | None:
+    if initial_call is None or repaired_call is None:
+        return None
+    before = _intent_fingerprint(initial_call)
+    after = _intent_fingerprint(repaired_call)
+    if before == after:
+        return None
+    return GroundedToolResolutionError(
+        GroundedToolResolutionCode.REPAIR_CHANGED_INTENT,
+        json.dumps(
+            {"initial": before, "repaired": after},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )[:500],
+    )
+
+
+def _intent_fingerprint(call: ToolCall) -> Mapping[str, object]:
+    arguments = dict(call.arguments)
+    target = arguments.get("exact_target", arguments.get("target", ""))
+    source = arguments.get("source", "")
+    destination = arguments.get("destination", "")
+    semantic_arguments = {
+        key: value
+        for key, value in arguments.items()
+        if key not in {"target", "exact_target", "source", "destination"}
+    }
+    return {
+        "operation": call.name,
+        "target": target,
+        "source": source,
+        "destination": destination,
+        "arguments": to_json_compatible(semantic_arguments),
+    }
 
 
 def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> ModelFailure:
@@ -788,6 +890,53 @@ def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> Model
     if error.code is GroundedToolResolutionCode.GROUNDING_GAP:
         return _failure(ModelFailureKind.TOOL_GROUNDING_GAP, str(error))
     return _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, str(error))
+
+
+def _tool_rejection_decision(
+    error: GroundedToolResolutionError,
+    call: ToolCall | None,
+    catalog,
+    context_id: str,
+) -> LocalToolResult | None:
+    if call is None:
+        return None
+    operation = call.name
+    arguments = dict(call.arguments)
+    requested_ref = str(
+        arguments.get("target")
+        or arguments.get("exact_target")
+        or arguments.get("source")
+        or ""
+    )
+    matches = []
+    spec = next((item for item in catalog.specs if item.name == operation), None)
+    if spec is not None:
+        properties = spec.input_schema.get("properties") if isinstance(spec.input_schema, Mapping) else None
+        if isinstance(properties, Mapping):
+            for field in ("target", "exact_target", "source"):
+                schema = properties.get(field)
+                if isinstance(schema, Mapping) and isinstance(schema.get("enum"), Sequence):
+                    for ref in list(schema["enum"])[:3]:
+                        matches.append({"ref": ref, "verbs": (operation,)})
+                    break
+    return LocalToolResult(
+        context_id,
+        "tool_rejected",
+        {
+            "operation": operation,
+            "arguments": to_json_compatible(arguments),
+        },
+        {
+            "failure_kind": error.code.value,
+            "requested_operation": operation,
+            "requested_ref": requested_ref,
+            "why_rejected": error.detail or error.code.value,
+            "dispatch": "not_sent",
+            "world_changed": False,
+            "current_actionable_matches": tuple(matches),
+        },
+        call.call_id,
+    )
 
 
 def _final_response_ready(context) -> bool:
@@ -935,6 +1084,40 @@ def _safe_prompt_projection(value: object) -> object:
         return to_json_compatible(value)
     except (TypeError, ValueError):
         return {"type": type(value).__name__}
+
+
+def _attempt_token_delta(
+    previous_attempts: tuple[ModelGenerationAttempt, ...],
+    response: Mapping[str, object],
+    usage: object,
+    field_name: str,
+) -> tuple[int, int]:
+    response_value = _response_usage_int(response, field_name)
+    raw_cumulative = _usage_int(usage, field_name)
+    if response_value >= 0:
+        return response_value, raw_cumulative
+    previous = sum(
+        (
+            item.prompt_tokens
+            if field_name == "input_tokens"
+            else item.completion_tokens
+        )
+        for item in previous_attempts
+    )
+    return max(0, raw_cumulative - previous), raw_cumulative
+
+
+def _response_usage_int(response: Mapping[str, object], field_name: str) -> int:
+    usage = response.get("usage")
+    if not isinstance(usage, Mapping):
+        return -1
+    value = usage.get(field_name)
+    return value if type(value) is int and value >= 0 else -1
+
+
+def _usage_int(usage: object, field_name: str) -> int:
+    value = getattr(usage, field_name, 0)
+    return value if type(value) is int and value >= 0 else 0
 
 
 def _tool_transcript(specs: tuple[object, ...]) -> list[dict[str, object]]:

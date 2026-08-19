@@ -54,7 +54,7 @@ class _FindActionsBinding:
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         query = str(arguments.get("query", ""))
-        target_ref = str(arguments.get("target", ""))
+        target_ref = str(arguments.get("exact_target", ""))
         relevance_role = str(arguments.get("relevance_role", ""))
         cursor = str(arguments.get("cursor", ""))
         continuing = bool(cursor)
@@ -64,7 +64,7 @@ class _FindActionsBinding:
             except KeyError as exc:
                 raise GroundedToolResolutionError(
                     GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                    "target is not present in the current observation",
+                    "exact_target is not present in the current executable action set",
                 ) from exc
         else:
             target_id = ""
@@ -84,6 +84,7 @@ class _FindActionsBinding:
             relevance_role,
             cursor,
             tool_call_id,
+            target_ref,
         )
 
 
@@ -435,14 +436,10 @@ def compile_grounded_tool_catalog(
     registered.append(RegisteredGroundedTool(
         ToolSpec(
             "find_actions",
-            "Search the complete current observation legal ActionSpace by semantic text or current target. Use cursor only to continue the same search.",
+            "Search the complete current observation legal ActionSpace. Filters are AND. exact_target means that exact executable target, not an ancestor or region. Use cursor only to continue the same search.",
             _object_schema({
                 "query": {"type": "string", "maxLength": 120},
-                "target": {"type": "string", "pattern": "^E[1-9][0-9]{0,2}$"},
-                "relevance_role": {
-                    "type": "string",
-                    "enum": ["direct", "enabling", "information", "other"],
-                },
+                "exact_target": {"type": "string", "pattern": "^E[1-9][0-9]{0,2}$"},
                 "cursor": {"type": "string", "maxLength": 512},
             }),
         ),

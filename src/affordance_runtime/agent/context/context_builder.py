@@ -34,7 +34,7 @@ from affordance_runtime.agent.context.world_projection import (
 from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
 from affordance_runtime.agent.working_facts import WorkingFact, public_working_facts
 from affordance_runtime.evaluation.contracts import TaskEvaluation
-from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.goals.plan import Failed, GoalPlanResolution, NeedsInput
 from affordance_runtime.goals.projection import project_agent_goal_plan
 from affordance_runtime.immutable import to_json_compatible
@@ -48,6 +48,7 @@ class ContextBuilder:
     budget: ContextProjectionBudget = field(default_factory=ContextProjectionBudget)
     pager: ActionPager = field(default_factory=ActionPager)
     grounding_projection: GroundingProjection = field(default_factory=GroundingProjection)
+    include_public_text_evidence: bool = False
 
     def build(
         self,
@@ -65,6 +66,7 @@ class ContextBuilder:
         runtime_controls: tuple[str, ...] = (),
         delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldRegionIndex | None = None,
+        control_feedback: dict[str, object] | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -116,7 +118,7 @@ class ContextBuilder:
             len(shown_actions),
             page.total_count > len(shown_actions),
             page.has_more,
-            ("target", "relevance_role", "query", "cursor"),
+            ("exact_target", "query", "cursor"),
             page.query,
             page.target_id,
             page.relevance_role.value if page.relevance_role else "",
@@ -167,6 +169,8 @@ class ContextBuilder:
             runtime_controls,
             delivery_lens,
             current_region_index,
+            control_feedback or {},
+            self.include_public_text_evidence,
         )
 
     def page(
@@ -321,10 +325,15 @@ def _fit_context(
     runtime_controls: tuple[str, ...],
     delivery_lens: WorldDeliveryLens | None,
     region_index: WorldRegionIndex,
+    control_feedback: dict[str, object],
+    include_public_text_evidence: bool,
 ) -> AgentContext:
-    evidence_index = WorldEvidenceIndex.from_observation(observation)
+    evidence_index = _evidence_index(
+        observation,
+        include_public_text=include_public_text_evidence,
+    )
     while True:
-        fact_refs = {item.fact_ref: f"F{index}" for index, item in enumerate(world.facts.items, 1)}
+        fact_refs = _public_fact_refs(world.facts.items, task_evaluation)
         task_view = project_task(
             task,
             task_evaluation,
@@ -370,6 +379,7 @@ def _fit_context(
             current_step_index,
             budget.max_history_serialized_bytes,
             runtime_controls,
+            control_feedback,
         )
         if _semantic_serialized_size(context) <= budget.max_total_serialized_bytes:
             return context
@@ -391,15 +401,31 @@ def _fit_context(
 def _semantic_serialized_size(context: AgentContext) -> int:
     payload = to_json_compatible({
         "task": context.task,
-        "observation": context.actor_world,
+        "actor_world": context.actor_world,
         "goal_plan": context.goal_plan,
         "recent_steps": render_episode_history(
             context.recent_steps.items,
             context.history_byte_budget,
         ),
         "working_set": public_working_facts(context.working_facts),
+        "control_feedback": context.control_feedback,
     })
     return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+
+
+def _evidence_index(observation: WorldObservation, *, include_public_text: bool) -> WorldEvidenceIndex:
+    index = WorldEvidenceIndex.from_observation(observation)
+    if not include_public_text:
+        return index
+    records = tuple(sorted(
+        (*index.records, *public_text_evidence_records(observation)),
+        key=lambda item: item.evidence_ref,
+    ))
+    return WorldEvidenceIndex(
+        observation.observation_id,
+        tuple(sorted(item.evidence_ref for item in records)),
+        records,
+    )
 
 
 def _current_public_fact_bindings(
@@ -421,3 +447,23 @@ def _current_public_fact_bindings(
         ):
             result[public] = canonical
     return result
+
+
+def _public_fact_refs(facts, task_evaluation: TaskEvaluation) -> dict[str, str]:
+    present = {item.fact_ref for item in facts}
+    prioritized: list[str] = []
+
+    def add(ref: str) -> None:
+        if ref in present and ref not in prioritized:
+            prioritized.append(ref)
+
+    for ref in task_evaluation.completion_evidence_refs:
+        add(ref)
+    for criterion in task_evaluation.criteria:
+        for ref in criterion.evidence_refs:
+            add(ref)
+    for output in task_evaluation.outputs:
+        for ref in output.evidence_refs:
+            add(ref)
+    ordered = [*prioritized, *(item.fact_ref for item in facts if item.fact_ref not in prioritized)]
+    return {ref: f"F{index}" for index, ref in enumerate(ordered, 1)}

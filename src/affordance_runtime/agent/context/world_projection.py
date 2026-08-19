@@ -383,7 +383,7 @@ def _state_fact_priority(
 ) -> tuple[int, int, int, str]:
     pinned_rank = 0 if subject_id in pinned_targets else 1
     state_rank = _ACTION_DECISION_STATE_PRIORITY.get(predicate.casefold(), len(_ACTION_DECISION_STATE_PRIORITY))
-    return (pinned_rank, 0 if state_rank < len(_ACTION_DECISION_STATE_PRIORITY) else 2, state_rank, f"{ordinal:08d}")
+    return (pinned_rank, 0, state_rank, f"{ordinal:08d}")
 
 
 def _public_text_fact_candidates(

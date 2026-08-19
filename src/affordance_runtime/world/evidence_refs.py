@@ -23,7 +23,7 @@ def canonical_artifact_ref(source_id: str, artifact_key: str) -> str:
 
 
 def canonical_public_text_ref(observation_id: str, subject_id: str, predicate: str = "public.label") -> str:
-    return canonical_fact_ref(f"{observation_id}:{subject_id}:{predicate}")
+    return f"fact:public-text-{_digest(f'{observation_id}:{subject_id}:{predicate}')}"
 
 
 def _digest(value: str) -> str:

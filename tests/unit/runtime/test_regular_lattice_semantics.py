@@ -149,7 +149,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     target_line = next(
         line for line in observation.splitlines() if f"[{candidate.target_ref}]" in line
     )
-    assert "grid_coordinate=" in target_line
+    assert "grid_coordinate[F" in target_line
     assert "grid_membership=" not in target_line
     assert "grid_coordinate_confidence=" not in target_line
     from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase

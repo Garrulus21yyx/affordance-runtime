@@ -121,12 +121,15 @@ class RequestActionPage:
     relevance_role: str = ""
     cursor: str = ""
     tool_call_id: str = ""
+    exact_target_ref: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_tool_call_id(self.tool_call_id)
         if len(self.query) > 120 or len(self.target_id) > 240 or len(self.cursor) > 512:
             raise ValueError("action page request exceeds bounded fields")
+        if self.exact_target_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.exact_target_ref) is None:
+            raise ValueError("action page exact target ref is invalid")
         if self.relevance_role:
             ActionRelevanceRole(self.relevance_role)
 

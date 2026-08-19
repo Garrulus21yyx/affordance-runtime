@@ -4,11 +4,13 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from affordance_runtime.actions import (
+    ActionBinding,
     ActionSpaceBuilder,
     verification_contract_for_action,
 )
@@ -26,13 +28,17 @@ from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
 from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.compact_world_renderer import inspect_actor_world
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
+from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.mission import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
+from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
@@ -57,7 +63,12 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.policy.pydantic_ai_bridge import _tool_resolution_failure
+from affordance_runtime.model.policy.pydantic_ai_bridge import (
+    _attempt_token_delta,
+    _intent_preservation_error,
+    _tool_rejection_decision,
+    _tool_resolution_failure,
+)
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelCallRecord,
@@ -75,8 +86,10 @@ from affordance_runtime.task import (
     RiskProfile,
     TaskGoal,
 )
+from affordance_runtime.world import SemanticTarget
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from tests.support.surfaces.browsergym.projection_support import project_browsergym_observation
+from tests.support.world import fused_world
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
 
@@ -1000,20 +1013,209 @@ def test_find_actions_exposes_search_filters_and_maps_current_refs_privately() -
 
     assert set(spec.input_schema["properties"]) == {
         "query",
-        "target",
-        "relevance_role",
+        "exact_target",
         "cursor",
     }
     resolution = resolve_grounded_tool_call(
         catalog,
-        ToolCall("find_actions", {"query": "like", "target": target_ref}),
+        ToolCall("find_actions", {"query": "like", "exact_target": target_ref}),
         expected_context_id=context.context_id,
     )
     assert isinstance(resolution.decision, RequestActionPage)
     assert resolution.decision.query == "like"
+    assert resolution.decision.exact_target_ref == target_ref
     assert resolution.decision.target_id == next(
         target_id for target_id, ref in context.grounding.target_refs.items() if ref == target_ref
     )
+
+    legacy = ProviderCallNormalizer().normalize(
+        ToolCall("find_actions", {"query": "like", "target": target_ref}),
+        catalog,
+    )
+    assert legacy.status is ToolCallReconciliationStatus.EXACT
+    assert legacy.exact_call is not None
+    assert "exact_target" in legacy.exact_call.arguments
+    assert "target" not in legacy.exact_call.arguments
+
+
+def test_tool_call_repair_cannot_change_intent_target_or_operation() -> None:
+    changed_target = _intent_preservation_error(
+        ToolCall("activate", {"target": "E114", "expected_outcome": "open bestsellers"}, "call:1"),
+        ToolCall("activate", {"target": "E14", "expected_outcome": "open bestsellers"}, "call:2"),
+    )
+    changed_operation = _intent_preservation_error(
+        ToolCall("activate", {"target": "E1"}, "call:1"),
+        ToolCall("inspect_world", {"action": "find", "query": "E1"}, "call:2"),
+    )
+    equivalent = _intent_preservation_error(
+        ToolCall("find_actions", {"target": "E1", "query": "reports"}, "call:1"),
+        ToolCall("find_actions", {"exact_target": "E1", "query": "reports"}, "call:2"),
+    )
+
+    assert changed_target is not None
+    assert changed_target.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT
+    assert changed_operation is not None
+    assert changed_operation.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT
+    assert equivalent is None
+
+
+def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
+    task = TaskGoal(
+        "task:watch4-synthetic",
+        "Open the requested navigation section.",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    source_id = "obs:watch4-synthetic"
+    revision = f"revision:{source_id}"
+    schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+
+    def binding(target_id: str) -> ActionBinding:
+        return ActionBinding(
+            f"binding:{target_id}",
+            source_id,
+            source_id,
+            revision,
+            f"fingerprint:{target_id}",
+            target_id,
+            target_id,
+            "browsergym",
+            "browsergym",
+            "activate",
+            "click",
+            "external_ui_interaction",
+            ("external_ui_interaction",),
+            schema,
+            {"route": "fixture"},
+        )
+
+    world = fused_world(
+        source_id,
+        (
+            SemanticTarget("target:readonly", "link", "Bestsellers"),
+            SemanticTarget("target:close", "button", "Close menu"),
+            SemanticTarget("target:bestsellers-tab", "tab", "Bestsellers"),
+            SemanticTarget("target:bestsellers-link", "link", "Bestsellers"),
+        ),
+        bindings=(
+            binding("target:close"),
+            binding("target:bestsellers-tab"),
+            binding("target:bestsellers-link"),
+        ),
+        surface="browsergym",
+    )
+    action_space = ActionSpaceBuilder().build(task, world)
+    evaluation = TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
+    context = ContextBuilder().build(task, world, action_space, evaluation)
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+
+    readonly_ref = context.grounding.target_refs["target:readonly"]
+    close_ref = context.grounding.target_refs["target:close"]
+    actionable_refs = {
+        context.grounding.target_refs["target:bestsellers-tab"],
+        context.grounding.target_refs["target:bestsellers-link"],
+    }
+    assert readonly_ref.startswith("N")
+    assert close_ref.startswith("E")
+    assert all(ref.startswith("E") for ref in actionable_refs)
+
+    activate_spec = next(item for item in catalog.specs if item.name == "activate")
+    activate_targets = set(activate_spec.input_schema["properties"]["target"]["enum"])
+    assert readonly_ref not in activate_targets
+    assert close_ref in activate_targets
+    assert actionable_refs <= activate_targets
+
+    inspected = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        observation=world,
+        action="find",
+        query="Bestsellers",
+    )
+    matches = inspected["matches"]
+    assert any(match["node_ref"] == readonly_ref and match["actionable"] is False for match in matches)
+    assert any(
+        match["node_ref"] in actionable_refs
+        and match["actionable"] is True
+        and "activate" in match["verbs"]
+        for match in matches
+    )
+
+    initial = ToolCall("activate", {"target": "E114", "expected_outcome": "open Bestsellers"}, "call:initial")
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        resolve_grounded_tool_call(catalog, initial, expected_context_id=context.context_id)
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+    changed = _intent_preservation_error(
+        initial,
+        ToolCall("activate", {"target": close_ref, "expected_outcome": "open Bestsellers"}, "call:repair"),
+    )
+    assert changed is not None
+    assert changed.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT
+    feedback = _tool_rejection_decision(captured.value, initial, catalog, context.context_id)
+    assert isinstance(feedback, LocalToolResult)
+    assert feedback.result["failure_kind"] == "invalid_tool_arguments"
+    assert feedback.result["dispatch"] == "not_sent"
+    assert feedback.result["world_changed"] is False
+    assert any(match["ref"] in actionable_refs for match in feedback.result["current_actionable_matches"])
+
+    request = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("find_actions", {"query": "definitely-not-present"}, "call:find"),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(request, RequestActionPage)
+    from affordance_runtime.agent.run_state import RunState
+
+    base_page = ContextBuilder().page(action_space, world)
+    state = RunState(world, evaluation, 4, action_page=base_page)
+    empty_step = CoreAgentLoop(None, None, None)._action_page(task, state, action_space, request)
+    assert empty_step.feedback == "action_page_empty"
+    assert empty_step.action_page == base_page
+    assert empty_step.action_page_result["total_count"] == 0
+    assert empty_step.action_page_result["authority_changed"] is False
+    assert "shorten_query" in empty_step.action_page_result["safe_relaxations"]
+
+    monitor = EpisodeMonitor()
+    local = LocalToolResult(
+        context.context_id,
+        "inspect_world",
+        {"action": "find", "query": "definitely-not-present"},
+        {"action": "find", "matches": (), "total_count": 0},
+    )
+    local_step = replace(empty_step, decision=local, feedback="local_tool_result", action_page_result={})
+    assert monitor.evaluate(local_step, (), world.observation_id).recommendation is EpisodeMonitorRecommendation.CONTINUE
+    recovery = monitor.evaluate(local_step, (), world.observation_id)
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.kind is RecoveryKind.CONTROL_STALL
+    yielded = monitor.evaluate(local_step, (), world.observation_id)
+    assert yielded.recommendation is EpisodeMonitorRecommendation.YIELD
+
+
+def test_cumulative_provider_usage_is_delta_counted_for_repair_attempts() -> None:
+    previous = (
+        ModelGenerationAttempt(
+            1,
+            "initial",
+            "grounded-tools",
+            "accepted",
+            prompt_tokens=15598,
+            completion_tokens=100,
+            total_tokens=15698,
+        ),
+    )
+
+    repair_input, raw_cumulative = _attempt_token_delta(
+        previous,
+        {},
+        SimpleNamespace(input_tokens=31442),
+        "input_tokens",
+    )
+    assert repair_input == 15844
+    assert raw_cumulative == 31442
+    assert previous[0].prompt_tokens + repair_input == 31442
 
 
 @pytest.mark.parametrize(
@@ -1094,9 +1296,9 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
 
     recent = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
 
-    assert recent["action"]["details"]["containers"] == ["<expired-ref>"]
+    assert recent["action"]["details"]["containers"] == ["<expired-ref-1>"]
     assert recent["result"]["details"] == {
-        "counts": {"<expired-ref>": 2},
+        "counts": {"<expired-ref-1>": 2},
         "total": 2,
     }
     assert not re.search(r"\bE[1-9][0-9]{0,2}\b", json.dumps(recent))
@@ -1502,7 +1704,7 @@ def test_grounded_recent_steps_keep_all_compact_and_latest_four_detailed() -> No
 
     assert recent_steps["retained_count"] == 10
     assert len(recent_steps["earlier_actions"]) == 6
-    assert recent_steps["earlier_actions"][0]["outcome"] == "step-0 used <expired-ref>"
+    assert recent_steps["earlier_actions"][0]["outcome"] == "step-0 used <expired-ref-1>"
     assert len(recent_steps["recent_trajectory"]) == 4
     assert recent_steps["recent_trajectory"][-1]["action"]["arguments"] == {"text": "9"}
 

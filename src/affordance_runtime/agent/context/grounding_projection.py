@@ -71,9 +71,16 @@ class GroundingProjection:
                 target_position[item.target_id],
             ),
         ))
-        target_refs = {
-            item.target_id: f"E{index}" for index, item in enumerate(ordered_targets, 1)
-        }
+        target_refs: dict[str, str] = {}
+        executable_index = 1
+        readonly_index = 1
+        for target in ordered_targets:
+            if target.target_id in offered:
+                target_refs[target.target_id] = f"E{executable_index}"
+                executable_index += 1
+            else:
+                target_refs[target.target_id] = f"N{readonly_index}"
+                readonly_index += 1
         selected_regions = {
             region.target_id for _, media in candidates for region in media.grounding_regions
         }

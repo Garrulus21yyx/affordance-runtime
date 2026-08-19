@@ -10,10 +10,11 @@ import pytest
 from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent import LocalToolResult, SelectAction
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.run_state import RunStatus, StepResult
 from affordance_runtime.evaluation import EvidenceMethod, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
@@ -30,12 +31,14 @@ from affordance_runtime.mission import (
     AuditDeltaStatus,
     AuditorRoleRequest,
     EpisodeMonitor,
+    EpisodeMonitorRecommendation,
     ManagerDecision,
     ManagerRoleRequest,
     ManagerRoute,
     MissionState,
     OutcomeProposal,
     PromoteFactProposal,
+    RecoveryKind,
     SubtaskContract,
     subtask_goal_resolution,
 )
@@ -70,6 +73,40 @@ def _world(value: object = "42"):
     target = SemanticTarget("target:answer", "text", "Answer", {"value": value})
     fact = StateFact("fact:obs:answer", target.target_id, "value", value, "obs")
     return fused_world("obs", (target,), (fact,), surface="browsergym")
+
+
+def _evaluation(world) -> TaskEvaluation:
+    return TaskEvaluation("task:mission", world.observation_id, TaskEvaluationStatus.INCOMPLETE, "not complete")
+
+
+def test_episode_monitor_recovers_then_yields_repeated_local_tool_result() -> None:
+    world = _world()
+    evaluation = _evaluation(world)
+    decision = LocalToolResult(
+        "context:1",
+        "inspect_world",
+        {"action": "find", "query": "missing"},
+        {"action": "find", "matches": (), "total_count": 0},
+    )
+    step = StepResult(
+        decision,
+        world,
+        world,
+        evaluation,
+        RunStatus.RUNNING,
+        feedback="local_tool_result",
+    )
+    monitor = EpisodeMonitor()
+
+    first = monitor.evaluate(step, (), "world:digest")
+    second = monitor.evaluate(step, (), "world:digest")
+    third = monitor.evaluate(step, (), "world:digest")
+
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second.recovery_signal is not None
+    assert second.recovery_signal.kind is RecoveryKind.CONTROL_STALL
+    assert third.recommendation is EpisodeMonitorRecommendation.YIELD
 
 
 @dataclass
@@ -507,9 +544,11 @@ def test_episode_monitor_yields_only_on_third_repeated_unchanged_action() -> Non
     )
 
     assert first.recommendation.value == "continue"
-    assert second.recommendation.value == "continue"
+    assert second.recommendation.value == "recover"
+    assert second.recovery_signal is not None
+    assert second.recovery_signal.kind is RecoveryKind.EFFECT_STALL
     assert transition.recommendation.value == "yield"
-    assert transition.reason == "repeated_failure_limit"
+    assert transition.reason == "effect_stall"
 
 
 def test_episode_monitor_keeps_repeated_failure_streak_across_stable_incomplete_evaluation() -> None:
@@ -536,9 +575,11 @@ def test_episode_monitor_keeps_repeated_failure_streak_across_stable_incomplete_
     third = monitor.evaluate(failure(), (), after.observation_id)
 
     assert first.recommendation.value == "continue"
-    assert second.recommendation.value == "continue"
+    assert second.recommendation.value == "recover"
+    assert second.recovery_signal is not None
+    assert second.recovery_signal.kind is RecoveryKind.STRATEGY_STALL
     assert third.recommendation.value == "yield"
-    assert third.reason == "repeated_failure_limit"
+    assert third.reason == "strategy_stall"
 
 
 def test_episode_monitor_keys_not_sent_failures_by_public_semantics_not_target_id() -> None:
@@ -597,9 +638,11 @@ def test_episode_monitor_keys_not_sent_failures_by_public_semantics_not_target_i
     third = monitor.evaluate(failure("obs:three", "target:c"), (), "obs:three")
 
     assert first.recommendation.value == "continue"
-    assert second.recommendation.value == "continue"
+    assert second.recommendation.value == "recover"
+    assert second.recovery_signal is not None
+    assert second.recovery_signal.kind is RecoveryKind.GROUNDING_STALL
     assert third.recommendation.value == "yield"
-    assert third.reason == "repeated_failure_limit"
+    assert third.reason == "grounding_stall"
 
 
 def test_episode_monitor_detects_world_oscillation_with_semantic_fingerprints() -> None:
@@ -634,10 +677,15 @@ def test_episode_monitor_detects_world_oscillation_with_semantic_fingerprints() 
         ),
     )
 
-    transition = EpisodeMonitor().evaluate(result, recent, closed_fingerprint)
+    monitor = EpisodeMonitor()
+    transition = monitor.evaluate(result, recent, closed_fingerprint)
+    repeated = monitor.evaluate(result, recent, closed_fingerprint)
 
-    assert transition.recommendation.value == "yield"
-    assert transition.reason == "oscillation"
+    assert transition.recommendation.value == "recover"
+    assert transition.recovery_signal is not None
+    assert transition.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+    assert repeated.recommendation.value == "yield"
+    assert repeated.reason == "state_oscillation"
 
 
 def test_episode_monitor_resets_failure_streak_on_incomplete_public_evaluation_change() -> None:
@@ -666,7 +714,7 @@ def test_episode_monitor_resets_failure_streak_on_incomplete_public_evaluation_c
         )
 
     assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "recover"
     reset = monitor.evaluate(failure(CriterionEvaluationStatus.UNSATISFIED), (), after.observation_id)
     assert reset.recommendation.value == "continue"
     assert monitor.repeated_failure_count == 1
@@ -746,10 +794,10 @@ def test_episode_monitor_resets_repeated_failure_streak_on_world_change() -> Non
     )
 
     assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "recover"
     assert monitor.evaluate(progress, (), changed.observation_id).recommendation.value == "continue"
     assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
+    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "recover"
 
 
 def test_episode_monitor_detects_world_fingerprint_oscillation() -> None:
@@ -788,7 +836,19 @@ def test_episode_monitor_detects_world_fingerprint_oscillation() -> None:
         feedback="changed",
     )
 
-    transition = EpisodeMonitor().evaluate(
+    monitor = EpisodeMonitor()
+    transition = monitor.evaluate(
+        result,
+        (
+            AgentTurnView(
+                "selectaction",
+                "activate",
+                transition={"before_world": "obs:a", "after_world": "obs:b", "observed_change": "changed"},
+            ),
+        ),
+        "obs:a",
+    )
+    repeated = monitor.evaluate(
         result,
         (
             AgentTurnView(
@@ -800,5 +860,8 @@ def test_episode_monitor_detects_world_fingerprint_oscillation() -> None:
         "obs:a",
     )
 
-    assert transition.recommendation.value == "yield"
-    assert transition.reason == "oscillation"
+    assert transition.recommendation.value == "recover"
+    assert transition.recovery_signal is not None
+    assert transition.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+    assert repeated.recommendation.value == "yield"
+    assert repeated.reason == "state_oscillation"

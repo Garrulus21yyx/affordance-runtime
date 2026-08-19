@@ -257,7 +257,10 @@ class MissionSupervisor:
                     auditor_calls=auditor_calls,
                     boundary_rejections=boundary_rejections,
                 )
-            if state.yield_reason is EpisodeYieldReason.REPEATED_FAILURE_LIMIT:
+            if (
+                state.yield_reason is EpisodeYieldReason.REPEATED_FAILURE_LIMIT
+                and last_exit == f"episode:yielded:{EpisodeYieldReason.REPEATED_FAILURE_LIMIT.value}"
+            ):
                 state.status = RunStatus.BLOCKED
                 supervisor = SupervisorState(
                     SupervisorPhase.TERMINAL,

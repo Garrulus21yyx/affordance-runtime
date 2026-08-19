@@ -547,11 +547,12 @@ def _auditor_delivery_context(request: AuditorRoleRequest):
         "auditor read-only delivery",
     )
     return ContextBuilder(
-        ContextProjectionBudget(
+        budget=ContextProjectionBudget(
             max_facts=4096,
             max_facts_per_target=4096,
             max_history_serialized_bytes=_AUDIT_HISTORY_BYTES,
-        )
+        ),
+        include_public_text_evidence=True,
     ).build(
         request.original_task,
         request.after_world,

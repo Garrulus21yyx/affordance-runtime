@@ -84,6 +84,28 @@ def test_compact_world_discloses_partial_node_state() -> None:
     assert "state_coverage=2/5" in rendered
 
 
+def test_executable_and_readonly_refs_render_with_separate_contracts() -> None:
+    snapshot = _snapshot((
+        ActorWorldNodeView("N1", "link", "Bestsellers"),
+        ActorWorldNodeView("E1", "tab", "Bestsellers"),
+    ))
+    grounding = AgentGroundingIndexView(
+        (
+            AgentGroundingEntityView("N1", "link", "Bestsellers"),
+            AgentGroundingEntityView("E1", "tab", "Bestsellers", verbs=("activate", "press_key")),
+        ),
+        {
+            "readonly:bestsellers": "N1",
+            "action:bestsellers": "E1",
+        },
+    )
+
+    rendered = render_compact_actor_world(snapshot, grounding, include_images=False)
+
+    assert '[N1] link "Bestsellers" read_only=true' in rendered
+    assert '[E1] tab "Bestsellers" verbs=["activate","press_key"]' in rendered
+
+
 def test_region_delivery_folds_with_recoverable_directory() -> None:
     snapshot = _snapshot(tuple(_post(index) for index in range(1, 16)))
     grounding = _grounding(post_count=15, include_submit=False)
@@ -142,6 +164,10 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
     assert found["total_count"] == 1
     assert found["matches"][0]["region_ref"] == "R5"
     assert found["matches"][0]["snippet"] == "StaticText Post 5"
+    assert found["matches"][0]["actionable"] is False
+    assert found["matches"][0]["verbs"] == ()
+    assert found["matches"][0]["action_refs"] == ()
+    assert found["matches"][0]["currentness"]["observation_id"] == observation.observation_id
     assert all_regions["total_count"] == 5
 
 
