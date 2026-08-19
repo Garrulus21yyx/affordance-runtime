@@ -22,5 +22,9 @@ def canonical_artifact_ref(source_id: str, artifact_key: str) -> str:
     return f"artifact:source-{_digest(source_id)}:key-{_digest(artifact_key)}"
 
 
+def canonical_public_text_ref(observation_id: str, subject_id: str, predicate: str = "public.label") -> str:
+    return canonical_fact_ref(f"{observation_id}:{subject_id}:{predicate}")
+
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()

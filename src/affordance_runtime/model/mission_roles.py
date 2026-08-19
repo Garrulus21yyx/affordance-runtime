@@ -11,13 +11,16 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
+from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
 )
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
     AuditDelta,
@@ -35,6 +38,11 @@ from affordance_runtime.model.policy.contracts import (
     ModelInvocationResult,
     ModelMetadata,
 )
+from affordance_runtime.model.policy.request_admission import (
+    ModelRequestBudget,
+    ModelRequestCapacityError,
+    admit_model_request,
+)
 from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
@@ -46,9 +54,8 @@ from affordance_runtime.model.providers.port import (
     structured_output_repair_contract,
 )
 
-_MAX_ROLE_INPUT_BYTES = 24 * 1024
-_AUDIT_WORLD_BYTES = 12 * 1024
 _AUDIT_HISTORY_BYTES = 8 * 1024
+_AUDIT_RENDERED_WORLD_BYTES = 128 * 1024
 
 
 def _load_prompt(name: str, key: str) -> tuple[str, str]:
@@ -157,14 +164,34 @@ async def _invoke_structured_role(
     except Exception:
         return _StructuredRoleInvocation(None, ModelFailure(ModelFailureKind.INTERNAL_ERROR, "role input construction failed", False))
     try:
+        messages = admit_model_request(
+            messages=messages,
+            tools=(),
+            budget=ModelRequestBudget(max_output_tokens=config.max_tokens),
+            phase=initial_phase,
+        ).messages
+    except ModelRequestCapacityError:
+        return _StructuredRoleInvocation(None, ModelFailure(ModelFailureKind.CONTEXT_CAPACITY, "context_capacity", False))
+    try:
         response, attempts = await _generate_structured_role(port, config, messages, schema, initial_phase, attempts)
     except StructuredOutputError as exc:
         attempts = getattr(exc, "_mission_role_attempts", attempts)
+        repair_messages = _repair_messages(messages, exc)
+        try:
+            repair_messages = admit_model_request(
+                messages=repair_messages,
+                tools=(),
+                budget=ModelRequestBudget(max_output_tokens=config.max_tokens),
+                phase=repair_phase,
+                repair_payload=structured_output_repair_contract(exc),
+            ).messages
+        except ModelRequestCapacityError:
+            return _StructuredRoleInvocation(None, ModelFailure(ModelFailureKind.CONTEXT_CAPACITY, "context_capacity", False), attempts)
         try:
             response, attempts = await _generate_structured_role(
                 port,
                 config,
-                _repair_messages(messages, exc),
+                repair_messages,
                 schema,
                 repair_phase,
                 attempts,
@@ -426,9 +453,11 @@ def _auditor_messages(request: AuditorRoleRequest) -> tuple[ModelMessage, ...]:
             "total_evidence_count": request.audit_bundle.total_evidence_count or len(request.audit_bundle.evidence_records),
             "truncated": request.audit_bundle.truncated,
             "evidence": tuple(
-                _evidence_payload(item)
-                for item in request.audit_bundle.evidence_records
-                if item.evidence_ref in visible_refs
+                item
+                for item in tuple(audit_world.get("facts", ())) + tuple(audit_world.get("artifacts", ()))
+                if isinstance(item, Mapping)
+                and isinstance(item.get("evidence_ref"), str)
+                and item["evidence_ref"] in visible_refs
             ),
         },
         "related_audit_ids": request.related_audit_ids,
@@ -438,8 +467,6 @@ def _auditor_messages(request: AuditorRoleRequest) -> tuple[ModelMessage, ...]:
 
 def _messages(instructions: str, payload: Mapping[str, object]) -> tuple[ModelMessage, ...]:
     encoded = json.dumps(to_json_compatible(payload), separators=(",", ":"), ensure_ascii=False)
-    if len(encoded.encode()) > _MAX_ROLE_INPUT_BYTES:
-        raise RoleInputCapacityError("mission role input exceeds bounded workspace")
     return (
         ModelMessage(role="system", content=instructions),
         ModelMessage(role="user", content=encoded),
@@ -469,47 +496,99 @@ def _task_payload(task) -> Mapping[str, object]:
 
 def _audit_world_payload(request: AuditorRoleRequest) -> Mapping[str, object]:
     try:
-        view = project_model_world(
-            request.after_world,
-            ContextProjectionBudget(
-                max_facts=64,
-                max_artifact_summaries=8,
-                max_history_serialized_bytes=_AUDIT_HISTORY_BYTES,
-                max_total_serialized_bytes=_AUDIT_WORLD_BYTES * 2,
-            ),
+        context = _auditor_delivery_context(request)
+        rendered = render_compact_actor_world(
+            context.actor_world,
+            context.grounding,
+            include_images=False,
+            region_index=context.region_index,
+            observation=context.current_observation,
+            max_rendered_bytes=_AUDIT_RENDERED_WORLD_BYTES,
         )
     except ValueError as exc:
         raise RoleInputCapacityError("audit world exceeds bounded context") from exc
-    target_labels = {item.target_id: item.label for item in view.targets.items}
-    retained_refs = {item.evidence_ref for item in request.audit_bundle.evidence_records}
-    facts = tuple(item for item in view.facts.items if item.fact_ref in retained_refs)
-    artifacts = tuple(item for item in view.artifact_summaries.items if item.evidence_ref in retained_refs)
+    visible_facts = _visible_delivery_fact_payloads(context, request, rendered)
+    visible_artifacts = tuple(
+        _evidence_payload(record)
+        for record in request.audit_bundle.evidence_records
+        if record.kind == "artifact" and record.evidence_ref in rendered
+    )
     return {
         "observation_id": request.after_world.observation_id,
-        "targets": tuple(to_json_compatible(item) for item in view.targets.items),
-        "facts": tuple(
+        "format": "compact_ax.v1",
+        "delivery_projection": "region_lens" if "delivery=region_lens" in rendered else "full",
+        "observation": rendered,
+        "facts": visible_facts,
+        "artifacts": visible_artifacts,
+        "sources": tuple(
             {
-                "evidence_ref": item.fact_ref,
-                "subject_id": item.subject_id,
-                "subject_label": target_labels.get(item.subject_id, ""),
-                "predicate": item.predicate,
-                "value": item.value,
+                "source_ref": item.source_ref,
+                "modality": item.modality,
+                "assurance": item.assurance,
+                "freshness": item.freshness,
+                "inventory_coverage": item.inventory_coverage,
+                "projection_coverage": item.projection_coverage,
+                "rendering_coverage": item.rendering_coverage,
             }
-            for item in facts
+            for item in context.actor_world.sources
         ),
-        "artifacts": tuple(to_json_compatible(item) for item in artifacts),
-        "sources": tuple(to_json_compatible(item) for item in view.sources),
-        "target_total_count": view.targets.total_count,
-        "fact_total_count": view.facts.total_count,
-        "artifact_total_count": view.artifact_summaries.total_count,
-        "truncated": (
-            view.targets.truncated
-            or view.facts.truncated
-            or view.artifact_summaries.truncated
-            or len(facts) < len(view.facts.items)
-            or len(artifacts) < len(view.artifact_summaries.items)
-        ),
+        "fact_total_count": len(context.private_fact_bindings),
+        "artifact_total_count": sum(1 for record in request.audit_bundle.evidence_records if record.kind == "artifact"),
+        "truncated": context.actor_world.documents[0].truncated if context.actor_world.documents else False,
     }
+
+
+def _auditor_delivery_context(request: AuditorRoleRequest):
+    action_space = ActionSpaceBuilder().build(request.original_task, request.after_world)
+    evaluation = TaskEvaluation(
+        request.original_task.task_id,
+        request.after_world.observation_id,
+        TaskEvaluationStatus.UNKNOWN,
+        "auditor read-only delivery",
+    )
+    return ContextBuilder(
+        ContextProjectionBudget(
+            max_facts=4096,
+            max_facts_per_target=4096,
+            max_history_serialized_bytes=_AUDIT_HISTORY_BYTES,
+        )
+    ).build(
+        request.original_task,
+        request.after_world,
+        action_space,
+        evaluation,
+        working_facts=request.working_facts,
+    )
+
+
+def _visible_delivery_fact_payloads(context, request: AuditorRoleRequest, rendered: str) -> tuple[Mapping[str, object], ...]:
+    labels = {item.target_id: item.label for item in context.current_observation.targets}
+    values = []
+    for public_ref, canonical_ref in sorted(
+        context.private_fact_bindings.items(),
+        key=lambda item: _public_fact_sort_key(item[0]),
+    ):
+        if not _public_ref_visible(public_ref, rendered):
+            continue
+        record = request.audit_bundle.resolve(canonical_ref)
+        if record is None and context.evidence_index is not None:
+            record = context.evidence_index.resolve_record(canonical_ref)
+        if record is None:
+            continue
+        values.append({
+            **_evidence_payload(record, public_ref=public_ref),
+            "subject_label": labels.get(record.subject_id, ""),
+        })
+    return tuple(values)
+
+
+def _public_fact_sort_key(public_ref: str) -> tuple[int, str]:
+    suffix = public_ref[1:] if public_ref.startswith("F") else ""
+    return (int(suffix) if suffix.isdecimal() else 0, public_ref)
+
+
+def _public_ref_visible(public_ref: str, rendered: str) -> bool:
+    return f"[{public_ref}]" in rendered or f" {public_ref} " in f" {rendered} "
 
 
 def _visible_audit_refs(audit_world: Mapping[str, object]) -> frozenset[str]:
@@ -543,8 +622,8 @@ def _mission_payload(mission) -> Mapping[str, object]:
     }
 
 
-def _evidence_payload(record) -> Mapping[str, object]:
-    return {
+def _evidence_payload(record, *, public_ref: str = "") -> Mapping[str, object]:
+    payload = {
         "evidence_ref": record.evidence_ref,
         "kind": record.kind,
         "source_observation_id": record.source_observation_id,
@@ -557,6 +636,9 @@ def _evidence_payload(record) -> Mapping[str, object]:
         "output_id": record.output_id,
         "public_summary": record.public_summary,
     }
+    if public_ref:
+        payload["public_ref"] = public_ref
+    return payload
 
 
 def _metadata(port, config, attempts, schema_name: str) -> ModelMetadata:

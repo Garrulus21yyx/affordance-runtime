@@ -105,20 +105,37 @@ class GroundedPolicyContextBinder:
         prefit_estimated_total_tokens = breakdown.estimated_total_tokens
         delivery_projection = "full"
         if breakdown.estimated_total_tokens > self.request_budget.soft_target_tokens:
-            delivery_projection = "action_focused"
-            sections = self._public_context_sections(
+            lens_sections = self._public_context_sections(
                 request.agent_context,
                 include_images,
-                focus_refs=_tool_refs(tools),
+                expanded_refs=_expanded_refs(request.agent_context, tools),
                 max_actor_bytes=max(
                     3 * max(1, self.request_budget.soft_target_tokens - _non_actor_tokens(breakdown)),
                     4_096,
                 ),
             )
-            public = dict(sections["public"])
+            lens_public = dict(lens_sections["public"])
             if include_tool_menu:
-                public["tools"] = _tool_menu(tools)
-            messages = self._messages(self.prompts.actor, public, request, include_images)
+                lens_public["tools"] = _tool_menu(tools)
+            lens_messages = self._messages(self.prompts.actor, lens_public, request, include_images)
+            lens_breakdown = estimate_model_request(
+                messages=lens_messages,
+                tools=tools,
+                budget=self.request_budget,
+                phase="initial",
+                component_payloads={
+                    "task_plan": lens_sections["task_plan"],
+                    "actor_world": lens_sections["actor_world"],
+                    "history": lens_sections["history"],
+                    "working_set": lens_sections["working_set"],
+                },
+                image_inputs=request.image_inputs if include_images else (),
+            )
+            if lens_breakdown.estimated_total_tokens < breakdown.estimated_total_tokens:
+                delivery_projection = "region_lens"
+                sections = lens_sections
+                messages = lens_messages
+                breakdown = lens_breakdown
         try:
             admitted = admit_model_request(
                 messages=messages,
@@ -163,7 +180,7 @@ class GroundedPolicyContextBinder:
         context: AgentContext,
         include_images: bool,
         *,
-        focus_refs: frozenset[str] | None = None,
+        expanded_refs: frozenset[str] | None = None,
         max_actor_bytes: int | None = None,
     ) -> dict[str, object]:
         task = _task(context)
@@ -171,7 +188,11 @@ class GroundedPolicyContextBinder:
             context.actor_world,
             context.grounding,
             include_images=include_images,
-            focus_refs=focus_refs,
+            region_index=context.region_index,
+            observation=context.current_observation,
+            expanded_refs=expanded_refs,
+            selected_region_keys=_selected_region_keys(context),
+            selected_cursor=context.delivery_lens.cursor if context.delivery_lens is not None else "",
             max_rendered_bytes=max_actor_bytes,
         )
         recent_steps = render_episode_history(
@@ -342,6 +363,31 @@ def _tool_refs(tools: tuple[ToolSpec, ...]) -> frozenset[str]:
             if isinstance(enum, tuple | list):
                 refs.update(str(item) for item in enum if isinstance(item, str) and item.startswith("E"))
     return frozenset(refs)
+
+
+def _expanded_refs(context: AgentContext, tools: tuple[ToolSpec, ...]) -> frozenset[str]:
+    refs = set(_tool_refs(tools))
+    lens = context.delivery_lens
+    region_index = context.region_index
+    if lens is None or region_index is None:
+        return frozenset(refs)
+    region = region_index.get(lens.selected_region_key)
+    if region is None:
+        return frozenset(refs)
+    target_refs = context.grounding.target_refs
+    refs.update(
+        target_refs[target_id]
+        for target_id in region.member_target_ids
+        if target_id in target_refs
+    )
+    return frozenset(refs)
+
+
+def _selected_region_keys(context: AgentContext) -> frozenset[str]:
+    lens = context.delivery_lens
+    if lens is None or not lens.selected_region_key:
+        return frozenset()
+    return frozenset({lens.selected_region_key})
 
 
 def _non_actor_tokens(breakdown) -> int:

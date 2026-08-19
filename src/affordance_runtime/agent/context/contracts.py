@@ -11,7 +11,7 @@ from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 
-_GENERATION_REF = re.compile(r"\b[EF][1-9][0-9]{0,2}\b")
+_GENERATION_REF = re.compile(r"\b[EFR][1-9][0-9]{0,3}\b")
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
 
 

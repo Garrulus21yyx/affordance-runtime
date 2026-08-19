@@ -7,8 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
+from affordance_runtime.agent import SelectAction
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.policy import PolicyFailure
@@ -20,7 +22,7 @@ from affordance_runtime.evaluation.contracts import (
     LocalPostconditionStatus,
     ObservedChange,
 )
-from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus, ExecutionOutcome
 from affordance_runtime.mission import (
     AuditBoundary,
     AuditBundle,
@@ -43,7 +45,14 @@ from affordance_runtime.model.mission_roles import (
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
 from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import SemanticTarget, StateFact
+from affordance_runtime.world import (
+    ObservationSourceProfile,
+    ObservationStructureNode,
+    SemanticTarget,
+    StateFact,
+    SurfaceObservation,
+    WorldFusion,
+)
 from tests.support.world import fused_world
 
 
@@ -174,13 +183,105 @@ def test_auditor_context_uses_public_world_view_evidence_and_compact_history() -
     assert result.accepted
     payload = json.loads(port.messages[1].content)
     audit_world = payload["audit_world"]
-    assert audit_world["targets"][0]["label"] == "Answer"
+    assert audit_world["format"] == "compact_ax.v1"
+    assert 'text "Answer" value[F1]="42"' in audit_world["observation"]
     assert audit_world["facts"][0]["subject_label"] == "Answer"
+    assert audit_world["facts"][0]["public_ref"] == "F1"
     assert audit_world["facts"][0]["evidence_ref"].startswith("fact:")
     assert payload["audit_bundle"]["evidence"][0]["evidence_ref"] == audit_world["facts"][0]["evidence_ref"]
+    assert payload["audit_bundle"]["evidence"][0]["public_ref"] == "F1"
     assert payload["episode_history"]["retained_count"] == 5
     assert len(payload["episode_history"]["recent_trajectory"]) == 4
     assert len(payload["episode_history"]["earlier_actions"]) == 1
+
+
+def test_auditor_history_bounds_large_transition_evidence_before_provider_call() -> None:
+    port = _Port({"status": "unknown", "base_mission_version": 0})
+    auditor = ModelBackedMissionAuditor(port)
+    world = _world("42")
+    large_changes = tuple(
+        {
+            "subject_id": f"target:{index}",
+            "predicate": "public.label",
+            "before": "",
+            "after": "Quest Lumaflex Band " * 20,
+        }
+        for index in range(200)
+    )
+    history = tuple(
+        AgentTurnView(
+            "selectaction",
+            "activate",
+            AgentHistoricalTargetView("button", f"Step {index}"),
+            dispatch_status="sent",
+            local_postcondition="unknown",
+            transition={
+                "observed_change": "changed",
+                "evidence_method": "structural",
+                "fact_changes": large_changes,
+            },
+            reason="target changed",
+        )
+        for index in range(8)
+    )
+
+    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+        _task(),
+        SubtaskContract("Read answer", "Answer visible"),
+        MissionState.empty(),
+        world,
+        (),
+        "ready_for_audit",
+        history,
+        AuditBundle.from_world(world),
+    )))
+
+    assert result.accepted
+    payload = json.loads(port.messages[1].content)
+    encoded = json.dumps(payload["episode_history"], ensure_ascii=False).encode()
+    assert len(encoded) <= 8192
+    assert "fact_changes" not in json.dumps(payload["episode_history"])
+    assert payload["episode_history"]["recent_trajectory"][-1]["result"]["transition"]["fact_change_count"] == 200
+
+
+def test_auditor_delivery_exposes_structure_text_as_public_fact_evidence() -> None:
+    port = _Port({"status": "unknown", "base_mission_version": 0})
+    auditor = ModelBackedMissionAuditor(port)
+    source = SurfaceObservation(
+        "obs:table",
+        "browsergym",
+        "rev:table",
+        ObservationSourceProfile.dom(),
+        structure=(
+            ObservationStructureNode("n:root", "table", "data-grid", child_structure_ids=("n:row",)),
+            ObservationStructureNode("n:row", "row", "#", parent_structure_id="n:root", child_structure_ids=("n:cell",)),
+            ObservationStructureNode("n:cell", "gridcell", "Quest Lumaflex™ Band", parent_structure_id="n:row"),
+        ),
+        structure_total_count=3,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
+
+    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+        _task(),
+        SubtaskContract("Read answer", "Answer visible"),
+        MissionState.empty(),
+        world,
+        (),
+        "ready_for_audit",
+        (),
+        AuditBundle.from_world(world),
+    )))
+
+    assert result.accepted
+    payload = json.loads(port.messages[1].content)
+    facts = payload["audit_world"]["facts"]
+    answer = next(item for item in facts if item["value"] == "Quest Lumaflex™ Band")
+    assert answer["public_ref"].startswith("F")
+    assert answer["predicate"] == "public.label"
+    assert answer["evidence_ref"].startswith("fact:")
+    assert f'fact.public.label[{answer["public_ref"]}]="Quest Lumaflex™ Band"' in payload["audit_world"]["observation"]
 
 
 def test_auditor_context_capacity_failure_is_typed_and_does_not_call_provider(monkeypatch) -> None:
@@ -312,9 +413,43 @@ def test_audit_bundle_from_large_world_is_bounded_not_a_bare_error() -> None:
     )
     bundle = AuditBundle.from_world(fused_world("obs:large", (target,), facts))
 
-    assert len(bundle.evidence_records) == 128
-    assert bundle.total_evidence_count == 140
-    assert bundle.truncated is True
+    assert len(bundle.evidence_records) == 141
+    assert bundle.total_evidence_count == 141
+    assert bundle.truncated is False
+
+
+def test_auditor_delivery_keeps_model_visible_late_evidence_refs() -> None:
+    target = SemanticTarget("target:large", "row", "Large row")
+    facts = tuple(
+        StateFact(f"fact:large:{index}", target.target_id, f"value_{index}", index, "obs:large")
+        for index in range(140)
+    )
+    answer = "Quest Lumaflex Band"
+    late_fact = StateFact("fact:large:answer", target.target_id, "answer", answer, "obs:large")
+    world = fused_world("obs:large", (target,), (*facts, late_fact))
+    port = _Port({"status": "unknown", "base_mission_version": 0})
+    auditor = ModelBackedMissionAuditor(port)
+
+    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+        _task(),
+        SubtaskContract("Read answer", "Answer visible"),
+        MissionState.empty(),
+        world,
+        (),
+        "ready_for_audit",
+        (),
+        AuditBundle.from_world(world),
+    )))
+
+    assert result.accepted
+    payload = json.loads(port.messages[1].content)
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert answer in serialized
+    assert "fact:large:answer" in serialized
+    assert any(
+        item["evidence_ref"] == "fact:large:answer" and item["public_ref"].startswith("F")
+        for item in payload["audit_bundle"]["evidence"]
+    )
 
 
 def test_episode_monitor_yields_only_on_third_repeated_unchanged_action() -> None:
@@ -404,6 +539,105 @@ def test_episode_monitor_keeps_repeated_failure_streak_across_stable_incomplete_
     assert second.recommendation.value == "continue"
     assert third.recommendation.value == "yield"
     assert third.reason == "repeated_failure_limit"
+
+
+def test_episode_monitor_keys_not_sent_failures_by_public_semantics_not_target_id() -> None:
+    from affordance_runtime.agent.run_state import RunStatus, StepResult
+
+    task = _task()
+    monitor = EpisodeMonitor()
+
+    def failure(observation_id: str, target_id: str) -> StepResult:
+        target = SemanticTarget(target_id, "link", "REPORTS", {})
+        binding = ActionBinding(
+            f"binding:{observation_id}",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            f"fingerprint:{observation_id}",
+            target.target_id,
+            target.target_id,
+            "browsergym",
+            "browsergym",
+            "activate",
+            "click",
+            "external_ui_interaction",
+            ("external_ui_interaction",),
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            {},
+            risk=ActionRisk.LOW,
+        )
+        world = fused_world(observation_id, (target,), (), (binding,), surface="browsergym")
+        builder = ActionSpaceBuilder()
+        option = builder.build(task, world).options[0]
+        request = ActionBinder().bind(builder.admit(option, {}), world, "context:test")
+        execution = ExecutionOutcome(
+            request,
+            ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                "browsergym",
+                False,
+                ActionError.CURRENTNESS_UNAVAILABLE,
+            ),
+            None,
+        )
+        return StepResult(
+            SelectAction("context:test", option.action_id),
+            world,
+            world,
+            TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
+            RunStatus.BLOCKED,
+            execution=execution,
+            feedback="action_not_sent:currentness_unavailable",
+        )
+
+    first = monitor.evaluate(failure("obs:one", "target:a"), (), "obs:one")
+    second = monitor.evaluate(failure("obs:two", "target:b"), (), "obs:two")
+    third = monitor.evaluate(failure("obs:three", "target:c"), (), "obs:three")
+
+    assert first.recommendation.value == "continue"
+    assert second.recommendation.value == "continue"
+    assert third.recommendation.value == "yield"
+    assert third.reason == "repeated_failure_limit"
+
+
+def test_episode_monitor_detects_world_oscillation_with_semantic_fingerprints() -> None:
+    from affordance_runtime.agent.run_state import RunStatus, StepResult
+    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
+    from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
+
+    task = shared_task()
+    closed = shared_world("obs:closed", False, "dom")
+    open_world = shared_world("obs:open", True, "dom")
+    closed_fingerprint = public_world_semantic_digest(closed)
+    open_fingerprint = public_world_semantic_digest(open_world)
+    option = ActionSpaceBuilder().build(task, open_world).options[0]
+    result = StepResult(
+        SelectAction("context:test", option.action_id),
+        open_world,
+        closed,
+        TaskEvaluation(task.task_id, closed.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
+        RunStatus.RUNNING,
+        feedback="action_changed_unknown",
+    )
+    recent = (
+        AgentTurnView(
+            "selectaction",
+            "activate",
+            transition={
+                "before_world": "obs:older-closed",
+                "after_world": "obs:older-open",
+                "before_world_fingerprint": closed_fingerprint,
+                "after_world_fingerprint": open_fingerprint,
+            },
+        ),
+    )
+
+    transition = EpisodeMonitor().evaluate(result, recent, closed_fingerprint)
+
+    assert transition.recommendation.value == "yield"
+    assert transition.reason == "oscillation"
 
 
 def test_episode_monitor_resets_failure_streak_on_incomplete_public_evaluation_change() -> None:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref, canonical_public_text_ref
 
 _MAX_REFS = 4096
 _MAX_REF_LENGTH = 512
@@ -25,6 +25,7 @@ class WorldEvidenceIndex:
     @classmethod
     def from_observation(cls, observation: WorldObservation) -> WorldEvidenceIndex:
         records = [_fact_record(observation, fact) for fact in observation.facts]
+        records.extend(_public_text_records(observation))
         records.extend(_artifact_record(observation, source, str(key)) for source in observation.sources for key in source.artifacts)
         refs = [record.evidence_ref for record in records]
         validated = validate_evidence_refs(tuple(refs), allow_empty=True)
@@ -60,6 +61,58 @@ def _artifact_record(observation, source, key: str) -> EvidenceRecord:
         source.surface, source.observation_id, str(source.source_profile.modality),
         str(source.source_profile.assurance), artifact_kind=key, output_id=key,
         public_summary=str(summary)[:500],
+    )
+
+
+def _public_text_records(observation) -> tuple[EvidenceRecord, ...]:
+    sources = {item.observation_id: item for item in observation.sources}
+    source_by_target = _source_by_target(observation, sources)
+    records: list[EvidenceRecord] = []
+    for target in observation.targets:
+        label = str(target.label).strip()
+        if not label:
+            continue
+        source = source_by_target.get(target.target_id) or next(iter(sources.values()), None)
+        if source is None:
+            continue
+        records.append(_public_text_record(observation, source, target.target_id, label))
+    linked_targets = {
+        (link.source_observation_id, link.source_target_id)
+        for link in observation.entity_source_links
+    }
+    for source in observation.sources:
+        for node in source.structure:
+            label = str(node.label).strip()
+            if not label or (
+                node.semantic_target_id
+                and (source.observation_id, node.semantic_target_id) in linked_targets
+            ):
+                continue
+            records.append(_public_text_record(observation, source, node.structure_id, label))
+    return tuple(records)
+
+
+def _source_by_target(observation, sources) -> dict[str, object]:
+    result = {}
+    for link in observation.entity_source_links:
+        source = sources.get(link.source_observation_id)
+        if source is not None:
+            result.setdefault(link.canonical_target_id, source)
+    return result
+
+
+def _public_text_record(observation, source, subject_id: str, value: str) -> EvidenceRecord:
+    return EvidenceRecord(
+        canonical_public_text_ref(observation.observation_id, subject_id),
+        observation.observation_id,
+        "fact",
+        source.surface,
+        source.observation_id,
+        str(source.source_profile.modality),
+        str(source.source_profile.assurance),
+        subject_id,
+        "public.label",
+        value,
     )
 
 

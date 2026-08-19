@@ -28,6 +28,7 @@ from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNode
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
+from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
@@ -56,6 +57,7 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
+from affordance_runtime.model.policy.pydantic_ai_bridge import _tool_resolution_failure
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelCallRecord,
@@ -370,6 +372,8 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "press_key",
         "scroll",
         "pin_fact",
+        "inspect_world",
+        "find_actions",
         "ask_user",
         "wait",
         "abort",
@@ -693,6 +697,8 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "press",
         "scroll",
         "pin",
+        "inspect",
+        "find",
         "ask",
         "wait",
         "abort",
@@ -956,6 +962,22 @@ def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema()
                 expected_context_id=context.context_id,
             )
         assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+
+def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> None:
+    grounding_gap = GroundedToolResolutionError(
+        GroundedToolResolutionCode.GROUNDING_GAP,
+        "evidence_ref is not a current public scalar fact",
+    )
+    invalid_arguments = GroundedToolResolutionError(
+        GroundedToolResolutionCode.INVALID_ARGUMENTS,
+        "command.evidence_ref is not in the allowed enum",
+    )
+
+    assert _tool_resolution_failure(grounding_gap).kind is ModelFailureKind.TOOL_GROUNDING_GAP
+    invalid_failure = _tool_resolution_failure(invalid_arguments)
+    assert invalid_failure.kind is ModelFailureKind.INVALID_TOOL_ARGUMENTS
+    assert invalid_failure.reason.startswith("invalid_tool_arguments")
 
 
 def test_find_actions_exposes_search_filters_and_maps_current_refs_privately() -> None:
@@ -1602,7 +1624,8 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
         "observed_change": "changed",
         "evidence_method": "structural",
         "target_changed": True,
-        "fact_changes": [
+        "fact_change_count": 1,
+        "fact_change_sample": [
             {
                 "predicate": "active",
                 "before": False,

@@ -20,7 +20,7 @@ _KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _ID = re.compile(r"^[a-z][a-z0-9_:-]{0,95}$")
 _MAX_TEXT = 500
 _MAX_COLLECTION = 32
-_MAX_AUDIT_EVIDENCE_RECORDS = 128
+_MAX_AUDIT_EVIDENCE_RECORDS = 4096
 
 
 class ManagerRoute(StrEnum):

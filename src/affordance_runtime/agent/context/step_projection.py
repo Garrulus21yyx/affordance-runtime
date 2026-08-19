@@ -206,6 +206,8 @@ def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str
     transition = dict(_target_snapshot(result, result.execution.request.intent.target_id if result.execution else ""))
     transition["before_world"] = result.before_world.observation_id
     transition["after_world"] = result.after_world.observation_id
+    transition["before_world_fingerprint"] = _world_digest(result.before_world)
+    transition["after_world_fingerprint"] = _world_digest(result.after_world)
     if action is not None:
         transition["observed_change"] = action.observed_change.value
         transition["evidence_method"] = action.evidence_method.value
@@ -213,6 +215,15 @@ def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str
             if key in action.evidence:
                 transition[key] = _historical_value(project_public_value(action.evidence[key]))
     return transition
+
+
+def _world_digest(world) -> str:
+    try:
+        from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
+
+        return public_world_semantic_digest(world)
+    except Exception:
+        return ""
 
 
 def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]:

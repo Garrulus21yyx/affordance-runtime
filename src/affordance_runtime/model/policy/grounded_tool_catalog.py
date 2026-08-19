@@ -9,7 +9,9 @@ from typing import Mapping
 
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
+from affordance_runtime.agent.context.compact_world_renderer import inspect_actor_world
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
@@ -199,7 +201,7 @@ class _PinFactBinding:
             canonical = self.public_to_canonical[public_ref]
         except KeyError as exc:
             raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                GroundedToolResolutionCode.GROUNDING_GAP,
                 "evidence_ref is not a current public scalar fact",
             ) from exc
         record = self.evidence_index.resolve_record(canonical)
@@ -237,6 +239,79 @@ class _PinFactBinding:
             {"status": "pinned", "key": key},
             tool_call_id,
             working_fact=fact,
+        )
+
+
+@dataclass(frozen=True)
+class _InspectWorldBinding:
+    context: AgentContext
+
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        action = str(arguments["action"])
+        region_ref = str(arguments.get("region_ref", ""))
+        query = str(arguments.get("query", ""))
+        cursor = str(arguments.get("cursor", ""))
+        if action == "open_region" and not region_ref:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                "open_region requires region_ref",
+            )
+        if action == "find" and not query.strip():
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                "find requires query",
+            )
+        if self.context.current_observation is None or self.context.region_index is None:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.CATALOG_INVALID,
+                "inspect_world requires current world region index",
+            )
+        try:
+            region = (
+                self.context.region_index.resolve_public_ref(region_ref)
+                if action == "open_region"
+                else None
+            )
+            result = inspect_actor_world(
+                self.context.actor_world,
+                self.context.grounding,
+                region_index=self.context.region_index,
+                observation=self.context.current_observation,
+                action=action,
+                region_ref=region_ref,
+                query=query,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                str(exc),
+            ) from exc
+        except KeyError as exc:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                "region_ref is not present in the current world",
+            ) from exc
+        lens = None
+        public_result = dict(result)
+        if action == "open_region":
+            lens = WorldDeliveryLens(
+                self.context.current_observation.observation_id,
+                region.key if region is not None else "",
+                cursor,
+            )
+        return LocalToolResult(
+            context_id,
+            "inspect_world",
+            {
+                "action": action,
+                "region_ref": region_ref,
+                "query": query,
+                "cursor": cursor,
+            },
+            public_result,
+            tool_call_id,
+            delivery_lens=lens,
         )
 
 
@@ -336,37 +411,57 @@ def compile_grounded_tool_catalog(
                 ),
             ))
 
-    if context.actions.has_more:
-        registered.append(RegisteredGroundedTool(
-            ToolSpec(
-                "find_actions",
-                "Search currently legal actions by semantic text or current target. Use cursor only to continue the same search.",
-                _object_schema({
-                    "query": {"type": "string", "maxLength": 120},
-                    "target": {"type": "string", "pattern": "^E[1-9][0-9]{0,2}$"},
-                    "relevance_role": {
-                        "type": "string",
-                        "enum": ["direct", "enabling", "information", "other"],
-                    },
-                    "cursor": {"type": "string", "maxLength": 512},
-                }),
-            ),
-            _FindActionsBinding(
+    regions = context.region_index.public_refs if context.region_index is not None else ()
+    registered.append(RegisteredGroundedTool(
+        ToolSpec(
+            "inspect_world",
+            "Read folded current observation public world content without browser dispatch. Use open_region for a region, find for exact text/role/label/value/fact search, or view_all for paged exact fallback.",
+            _object_schema(
                 {
-                    ref: target_id
-                    for option in context.actions.options
-                    for ref, target_id in (
-                        (option.target_ref, option.target_id),
-                        *((item.grounding_ref, item.destination_id) for item in option.destinations.items),
-                    )
-                    if ref
+                    "action": {
+                        "type": "string",
+                        "enum": ["open_region", "find", "view_all"],
+                    },
+                    "region_ref": {"type": "string", "enum": list(regions)},
+                    "query": {"type": "string", "maxLength": 120},
+                    "cursor": {"type": "string", "maxLength": 512},
                 },
-                context.actions.active_query,
-                context.actions.active_target_filter,
-                context.actions.active_relevance_filter,
-                context.actions.next_cursor,
+                ("action",),
             ),
-        ))
+        ),
+        _InspectWorldBinding(context),
+    ))
+
+    registered.append(RegisteredGroundedTool(
+        ToolSpec(
+            "find_actions",
+            "Search the complete current observation legal ActionSpace by semantic text or current target. Use cursor only to continue the same search.",
+            _object_schema({
+                "query": {"type": "string", "maxLength": 120},
+                "target": {"type": "string", "pattern": "^E[1-9][0-9]{0,2}$"},
+                "relevance_role": {
+                    "type": "string",
+                    "enum": ["direct", "enabling", "information", "other"],
+                },
+                "cursor": {"type": "string", "maxLength": 512},
+            }),
+        ),
+        _FindActionsBinding(
+            {
+                ref: target_id
+                for option in context.actions.options
+                for ref, target_id in (
+                    (option.target_ref, option.target_id),
+                    *((item.grounding_ref, item.destination_id) for item in option.destinations.items),
+                )
+                if ref
+            },
+            context.actions.active_query,
+            context.actions.active_target_filter,
+            context.actions.active_relevance_filter,
+            context.actions.next_cursor,
+        ),
+    ))
 
     if "yield_subtask" in context.runtime_controls:
         registered.append(RegisteredGroundedTool(

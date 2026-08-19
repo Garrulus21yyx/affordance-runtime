@@ -1,10 +1,13 @@
 import asyncio
 import copy
+import sys
 from dataclasses import replace
+from types import ModuleType
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.surfaces.browsergym.backend import _with_stable_private_control_properties
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
 )
@@ -45,6 +48,66 @@ def _fixture(*, fail_step=False, fail_probe=False):
     fake = FakeBrowserGym(raw, raw, fail_step=fail_step, fail_probe=fail_probe)
     environment, task = open_fake(fake)
     return fake, environment, task, start_environment(environment, task)
+
+
+class _Locator:
+    def __init__(self, page):
+        self.page = page
+
+    def count(self):
+        return 1
+
+    def is_visible(self, timeout=0):
+        del timeout
+        return self.page.visible
+
+    def is_enabled(self, timeout=0):
+        del timeout
+        return True
+
+    def is_editable(self, timeout=0):
+        del timeout
+        return False
+
+    def evaluate(self, script):
+        del script
+        return {
+            "readonly": False,
+            "active": False,
+            "focusable": True,
+            "focused": False,
+            "bbox": [10, 10, 80, 20],
+            "options": [],
+        }
+
+
+class _StablePage:
+    def __init__(self):
+        self.visible = False
+        self.wait_count = 0
+        self.locator = _Locator(self)
+
+    def wait_for_timeout(self, delay_ms):
+        del delay_ms
+        self.wait_count += 1
+        self.visible = True
+
+
+def test_thread_bound_capture_waits_for_stable_executable_inventory(monkeypatch) -> None:
+    page = _StablePage()
+    raw = raw_observation(ax_node("best", "link", "Bestsellers"))
+
+    utils = ModuleType("browsergym.core.action.utils")
+    utils.get_elem_by_bid = lambda _page, _bid: page.locator  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "browsergym", ModuleType("browsergym"))
+    monkeypatch.setitem(sys.modules, "browsergym.core", ModuleType("browsergym.core"))
+    monkeypatch.setitem(sys.modules, "browsergym.core.action", ModuleType("browsergym.core.action"))
+    monkeypatch.setitem(sys.modules, "browsergym.core.action.utils", utils)
+
+    enriched = _with_stable_private_control_properties(page, lambda: raw, raw)
+
+    assert page.wait_count >= 2
+    assert enriched[PRIVATE_CONTROL_PROPERTIES_KEY]["best"]["visible"] is True
 
 
 def _drag_fixture():
@@ -107,13 +170,93 @@ def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
         asyncio.run(environment.close())
 
 
+def test_missing_native_task_globals_use_lifecycle_fallback_for_element_dispatch() -> None:
+    fake, environment, task, world = _fixture()
+    fake.probe_task = {}
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert result.dispatch_status is DispatchStatus.SENT
+    assert result.adapter_evidence["currentness_status"] == "current"
+    assert result.adapter_evidence["currentness_reason"] == "current"
+    assert result.adapter_evidence["currentness_task_state_source"] == "lifecycle_fallback"
+    assert result.adapter_evidence["currentness_episode_source"] == "lifecycle_fallback"
+    assert result.adapter_evidence["effectful_dispatch_count"] == 1
+    assert environment.step_calls == fake.currentness_probe_count == 1
+    asyncio.run(environment.close())
+
+
+def test_native_task_facts_take_precedence_over_lifecycle_fallback() -> None:
+    fake, environment, task, world = _fixture()
+    fake.probe_task["ready"] = False
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert (result.dispatch_status, result.error) == (
+        DispatchStatus.NOT_SENT,
+        ActionError.STALE_BINDING,
+    )
+    assert result.adapter_evidence["currentness_reason"] == "task_not_ready"
+    assert result.adapter_evidence["currentness_task_state_source"] == "native"
+    assert environment.step_calls == 0
+    asyncio.run(environment.close())
+
+    fake, environment, task, world = _fixture()
+    fake.probe_task["episode"] = "changed"
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert (result.dispatch_status, result.error) == (
+        DispatchStatus.NOT_SENT,
+        ActionError.STALE_BINDING,
+    )
+    assert result.adapter_evidence["currentness_reason"] == "episode_changed"
+    assert result.adapter_evidence["currentness_episode_source"] == "native"
+    assert environment.step_calls == 0
+    asyncio.run(environment.close())
+
+
+def test_missing_and_malformed_native_task_facts_are_distinct() -> None:
+    fake, environment, task, world = _fixture()
+    fake.probe_task = {"episode": "0"}
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert result.dispatch_status is DispatchStatus.SENT
+    assert result.adapter_evidence["currentness_task_state_source"] == "lifecycle_fallback"
+    assert result.adapter_evidence["currentness_episode_source"] == "native"
+    asyncio.run(environment.close())
+
+    for malformed_task in ({"ready": "yes"}, {"episode": {}}):
+        fake, environment, task, world = _fixture()
+        fake.probe_override = {
+            "raw": fake.post,
+            "task": {**malformed_task, "url": fake.post["url"]},
+            "latency_ms": 0.1,
+        }
+
+        result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+        assert (result.dispatch_status, result.error) == (
+            DispatchStatus.NOT_SENT,
+            ActionError.CURRENTNESS_UNAVAILABLE,
+        )
+        assert result.adapter_evidence["currentness_status"] == "unavailable"
+        assert result.adapter_evidence["currentness_reason"] == "probe_unavailable"
+        assert result.adapter_evidence["effectful_dispatch_count"] == 0
+        assert environment.step_calls == 0
+        asyncio.run(environment.close())
+
+
 def test_scroll_dispatches_viewport_browsergym_scroll_without_element_route() -> None:
     fake, environment, task, world = _fixture()
     request = _request_for_role(world, task, "scroll", "viewport", {"direction": "down", "extent": "small"})
+    fake.probe_task = {}
 
     outcome = asyncio.run(environment.execute(request))
 
     assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert outcome.result.adapter_evidence["currentness_task_state_source"] == "lifecycle_fallback"
     assert fake.actions == ["scroll(0.0, 150.0)"]
     assert environment.scroll_calls == 1
     assert environment.keyboard_press_calls == environment.press_calls == 0
@@ -134,10 +277,12 @@ def test_press_key_dispatches_entity_press_and_focused_keyboard_press() -> None:
 
     fake, environment, task, world = _fixture()
     focused_request = _request_for_role(world, task, "press_key", "focused_context", {"key": "Escape"})
+    fake.probe_task = {}
 
     focused_outcome = asyncio.run(environment.execute(focused_request))
 
     assert focused_outcome.result.dispatch_status is DispatchStatus.SENT
+    assert focused_outcome.result.adapter_evidence["currentness_task_state_source"] == "lifecycle_fallback"
     assert fake.actions == ['keyboard_press("Escape")']
     assert environment.keyboard_press_calls == 1
     asyncio.run(environment.close())
@@ -217,6 +362,42 @@ def test_stale_or_unavailable_currentness_is_not_sent_and_zero_step() -> None:
     assert (result.dispatch_status, result.error) == (DispatchStatus.NOT_SENT, ActionError.STALE_BINDING)
     assert fake.actions == [] and environment.step_calls == 0 and environment.probe_calls == 1
     assert fake.currentness_probe_count == 1
+    asyncio.run(environment.close())
+
+
+def test_page_and_element_drift_stay_stale_when_native_globals_are_missing() -> None:
+    fake, environment, task, world = _fixture()
+    fake.probe_task = {}
+    changed_page = copy.deepcopy(fake.post)
+    changed_page["url"] = "http://shopping_admin.example.test/admin/dashboard"
+    fake.post = changed_page
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert (result.dispatch_status, result.error) == (
+        DispatchStatus.NOT_SENT,
+        ActionError.STALE_BINDING,
+    )
+    assert result.adapter_evidence["currentness_reason"] == "page_changed"
+    assert result.adapter_evidence["currentness_task_state_source"] == "lifecycle_fallback"
+    asyncio.run(environment.close())
+
+    fake, environment, task, world = _fixture()
+    fake.probe_task = {}
+    detached = copy.deepcopy(fake.post)
+    detached["axtree_object"]["nodes"] = [
+        node for node in detached["axtree_object"]["nodes"] if node.get("browsergym_id") != "1"
+    ]
+    fake.post = detached
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert (result.dispatch_status, result.error) == (
+        DispatchStatus.NOT_SENT,
+        ActionError.STALE_BINDING,
+    )
+    assert result.adapter_evidence["currentness_reason"] == "element_missing"
+    assert environment.step_calls == 0
     asyncio.run(environment.close())
 
 

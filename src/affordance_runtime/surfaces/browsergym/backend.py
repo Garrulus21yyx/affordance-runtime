@@ -176,14 +176,18 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
 
 _VERIFIER_PROBE_SCRIPT = """() => {
   const facts = {
-    episode: String(window.WOB_EPISODE_ID),
     url: location.href
   };
+  if ('WOB_EPISODE_ID' in window) facts.episode = window.WOB_EPISODE_ID;
   if ('WOB_TASK_READY' in window) facts.ready = window.WOB_TASK_READY;
   if ('WOB_DONE_GLOBAL' in window) facts.done = window.WOB_DONE_GLOBAL;
   if ('WOB_RAW_REWARD_GLOBAL' in window) facts.raw_reward = window.WOB_RAW_REWARD_GLOBAL;
   return facts;
 }"""
+
+_STABLE_OBSERVATION_ATTEMPTS = 2
+_STABLE_OBSERVATION_WAIT_MS = 120
+
 
 class ThreadBoundBrowserGym:
     """Small synchronous facade; no page, locator, or element handle crosses the thread."""
@@ -262,20 +266,24 @@ class ThreadBoundBrowserGym:
                     getter = getattr(unwrapped, "_get_obs", None)
                     if not callable(getter):
                         raise RuntimeError("pinned BrowserGym has no read-only observation API")
-                    raw = _with_private_control_properties(unwrapped.page, getter())
+                    raw = _with_stable_private_control_properties(unwrapped.page, getter, getter())
                     verifier = unwrapped.page.evaluate(_VERIFIER_PROBE_SCRIPT)
                     value = (raw, verifier)
                 else:
                     value = getattr(environment, name)(*args, **kwargs)
+                    getter = getattr(unwrapped, "_get_obs", None)
                     if name == "reset":
                         reset_raw, info = cast(tuple[object, object], value)
-                        value = (_with_private_control_properties(unwrapped.page, reset_raw), info)
+                        value = (
+                            _with_stable_private_control_properties(unwrapped.page, getter, reset_raw),
+                            info,
+                        )
                     elif name == "step":
                         step_raw, reward, terminated, truncated, info = cast(
                             tuple[object, object, object, object, object], value,
                         )
                         value = (
-                            _with_private_control_properties(unwrapped.page, step_raw),
+                            _with_stable_private_control_properties(unwrapped.page, getter, step_raw),
                             reward, terminated, truncated, info,
                         )
                     elif name == "close":
@@ -461,6 +469,51 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
     enriched = dict(raw)
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
     return enriched
+
+
+def _with_stable_private_control_properties(page: object, getter: object, raw: object) -> dict[str, object]:
+    enriched = _with_private_control_properties(page, raw)
+    if not callable(getter):
+        return enriched
+    signature = _executable_signature(enriched)
+    for _attempt in range(_STABLE_OBSERVATION_ATTEMPTS):
+        _wait_for_stable_sample(page)
+        try:
+            candidate = _with_private_control_properties(page, getter())
+        except BaseException:
+            return enriched
+        candidate_signature = _executable_signature(candidate)
+        if candidate_signature == signature:
+            return candidate
+        enriched = candidate
+        signature = candidate_signature
+    return enriched
+
+
+def _wait_for_stable_sample(page: object) -> None:
+    try:
+        page.wait_for_timeout(_STABLE_OBSERVATION_WAIT_MS)
+    except BaseException:
+        time.sleep(_STABLE_OBSERVATION_WAIT_MS / 1000)
+
+
+def _executable_signature(raw: dict[str, object]) -> tuple[object, ...]:
+    try:
+        from affordance_runtime.surfaces.browsergym.semantics import analyze_browsergym_semantics
+
+        analysis = analyze_browsergym_semantics(raw)
+    except BaseException:
+        return ()
+    return tuple(
+        (
+            item.private_node_id,
+            item.private_bid,
+            item.role,
+            item.accessible_name,
+            tuple((offer.semantic_action, offer.primitive_action) for offer in item.executable_offers),
+        )
+        for item in analysis.controls
+    )
 
 
 def _effective_visibility(visible: bool | None, physical: dict[str, object]) -> bool | None:

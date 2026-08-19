@@ -266,7 +266,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
 | Model invocation boundary convergence — implemented / locally verified | shared provider/model invocation exit for current model roles | `ModelInvocationResult[T]` carries typed output/failure, `ModelMetadata`, physical attempts, repair diagnostics, role diagnostics, and lineage; production policy ports return only this envelope; PydanticAI remains native-tool transport; compact-json remains a compatibility shim | focused/unit/integration tests prove attempts are retained, retry and role repair stay distinct, instrumentation reads the explicit result, and GUI Runtime authority is unchanged; W1/W2 benchmark verification remains pending |
-| G5. WebArena-Verified long horizon — W1a implemented locally / T0 W1b-World passed / T1 scroll/key passed / T3 request admission passed / W1b-Agent and W2 non-closed | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; real-page World/Actor gate; site smokes; frozen 12-case cohort | existing long-horizon contracts plus one governed BrowserGym raw -> full World -> bounded Actor View -> current tools -> complete request admission delivery path; no second selector, browser, or loop; first-tranche BrowserGym capabilities are installed | T0 source semantics, target/state conservation, structural closure, coverage/recovery, and private-data isolation passed across the six W1b sites; T1 scroll/key conformance and W1b-World rerun passed; T3 complete-request budget and repeated-failure breaker passed; next gate is W1b-Agent, then W2 |
+| G5. WebArena-Verified long horizon — W1a implemented locally / T0 W1b-World passed / T1 scroll/key passed / T3 admission passed / T3.1 provider-free recovery passed / action-reference, repair, discovery, visual binding, control-stall, and token-accounting convergence pending / W1b-Agent and W2 blocked | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; real-page World/Actor gate; recoverable region delivery; one executable/read-only reference contract; bounded same-turn visual grounding; site smokes; frozen 12-case cohort | existing long-horizon contracts plus one governed BrowserGym raw -> full World -> Actor View -> current ActionSpace/tools -> ActionPolicy -> structural-or-visual binding -> existing Binder/Executor path; `inspect_world`/`find_actions` recovery; compact audit history/current public-text evidence; per-attempt token deltas; no second selector authority, browser, Binder, policy, or GUI loop | six-page T3.1 provider-free recoverability is necessary but watch4 falsified live action/recovery closure; exit now also requires E/N namespace properties, intent-preserving repair, non-destructive empty search, bounded visual-trigger properties, zero-dispatch control-stall detection, exact token aggregation, the same-case provider witness, and the previously declared Auditor/finalization chain |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
 
@@ -306,7 +306,8 @@ permission; the policy may skip, revisit, or adapt items and emits exactly one c
 The delivery contract no longer truncates the World at 64 targets or the structure at 128 nodes. It uses the enclosing
 serialized-byte budget and retains repeated sibling structures only as complete semantic groups. Current E-refs and
 verbs are projected in Observation/affordances, while operation schemas remain stable. The normal short-task path has
-one current catalog; a byte-bound overflow exposes `find_actions(query,target,relevance_role,cursor)`. Recent Steps
+one current catalog; a byte-bound overflow exposes `find_actions(query,exact_target,cursor)` and exposes an
+objective-relative role filter only when a current objective exists. Recent Steps
 contains older action/result summaries followed by the latest four ref-free semantic target/action/local-transition
 records. DOM/BrowserGym retains no historical screenshots; only the current screenshot may accompany the current
 World. A visual-only typed need still acquires and fuses a
@@ -614,7 +615,8 @@ that is not in W2. This produces the following executable, non-proof smoke set:
 These cases are excluded from the W2 proof cohort. They prove only the shared adapter boundary:
 
 - reset returns the official instruction and a usable BrowserGym observation;
-- compact World preserves the relevant AX/DOM structure without leaking private task/evaluator data;
+- model delivery preserves exact expanded AX/DOM structure, exposes a complete region directory, and recovers folded
+  public facts through `inspect_world` without leaking private task/evaluator data;
 - current action compilation and at least one official BrowserGym dispatch work, with no eligible action silently
   absent from both direct tool exposure and `find_actions`;
 - ref-free Recent Steps remain temporal-safe across navigation and tab changes;
@@ -640,18 +642,160 @@ MiniWoB conformance dispatches viewport scroll and button Enter press through th
 it again did not call ActionPolicy, GoalCompiler, Manager, Auditor, or a provider and did not perform GUI mutation
 beyond official reset/navigation acquisition.
 
-T3 complete-request admission is now implemented and locally verified. The model-delivery boundary measures the full
-request, including stable system prompt, task/GoalPlan, compact Actor World, episode history, working set, current
+T3 complete-request accounting/admission is implemented and locally verified. The model-delivery boundary measures
+the full request, including stable system prompt, task/GoalPlan, Actor delivery, episode history, working set, current
 native tool schemas, image estimate, repair payload, and provider-envelope overhead. Initial and repair requests are
 admitted independently; over-budget requests return typed `context_capacity` with `provider_attempts=0`. The
 repeated-failure breaker is owned by `EpisodeMonitor` and yields `repeated_failure_limit` only on the third identical
 ref-free typed failure/no-change key; public World progress, changed operation/target/arguments, satisfied local
 postcondition, terminal formal evaluation, public criterion/output progress, and user revision reset the streak. Stable
 `INCOMPLETE` task evaluation is not progress and does not clear the streak. T2 hover/focus remains deferred pending
-benchmark evidence. T4 W1b-Agent is the next gate.
+benchmark evidence.
+
+T3 semantic-safe compression is not complete. Its soft-target `action_focused` branch conserves current offered
+targets and action-decision state but explicitly omits non-action roots with no recovery route. A provider-free
+counterexample can place an exact issue ID or destination code in one non-action subtree and a `Continue` button in
+another: the focused projection retains only the button. This is a delivery-contract defect, not a policy failure and
+not evidence that the full World lacks the fact. This evidence triggered T3.1 recoverable region delivery; that
+provider-free gate subsequently passed, while the later `watch4` live run opened the distinct action/recovery
+convergence gate documented below.
 
 The T3 W1b-World provider-free rerun passed on 2026-08-19 under `evidence/w1b-world-t3/` using the fixed BrowserGym
 Python. It did not call ActionPolicy, GoalCompiler, Manager, Auditor, or any provider.
+
+On 2026-08-19 the WebArena BrowserGym currentness gate was repaired and verified separately from model behavior.
+BrowserGym read-only probes now treat MiniWoB task globals as optional native facts: present valid `ready/done/episode`
+values remain authoritative, malformed present values fail as typed `currentness_unavailable`, and missing values use
+the adapter lifecycle for executable-session currentness. The shared resolver covers element/drag, viewport/focused
+keyboard, and visual bindings, and `ActionResult.adapter_evidence` records typed currentness status, reason, task-state
+source, episode source, probe count, and effectful dispatch count. A provider-free scripted smoke on W1 shopping-admin
+task 0 selected the public `REPORTS` link through `ActionSpace -> Binder -> BrowserGymSurfaceAdapter.execute` and
+returned `currentness_status=current`, `currentness_reason=current`,
+`currentness_task_state_source=lifecycle_fallback`, `dispatch_status=sent`, `effectful_dispatch_count=1`,
+`step_calls=1`, and a fresh post-action World. This closes the WebArena mutation-path currentness gap only; W1b-Agent
+and W2 remain blocked on the declared delivery/recoverability gates and model smokes.
+
+The subsequent W1b task-0 failure is therefore recorded as long-horizon audit delivery, not currentness or second-turn
+context growth. The first episode completed the Reports -> Bestsellers -> Year -> date -> Show Report GUI path and
+yielded with the answer table visible, but Auditor input construction failed before provider dispatch because it still
+projected the fresh World through an independent fixed byte cap and exposed only the first 128 audit evidence records.
+The local repair makes Auditor reuse the same `AgentContext`/`compact_ax.v1` public delivery path, exposes model-visible
+`F#` fact refs beside their canonical evidence refs, retains the 4096-record World evidence authority in
+`AuditBundle`, and records resolver rejections as `invalid_tool_arguments` or `tool_grounding_gap` rather than
+`schema_error`. Targeted local verification passed, but W1b-Agent remains non-closed until the same-case provider run
+shows `yield_subtask -> Auditor provider attempt > 0 -> accepted top1 fact/outcome -> request_final_audit -> single
+final response -> native evaluator`.
+
+A second 2026-08-19 W1b task-0 diagnostic reached an earlier inner-loop failure. After `REPORTS` opened, the fresh
+World contained `Bestsellers`, but that structure-visible link did not enter the current `ActionSpace` or model-visible
+tool catalog on that observation. The local repair keeps the fix at the observation/projection owners: BrowserGym
+capture performs a bounded owner-thread re-sample until the executable inventory stabilizes, projection records
+`action.why_not_eligible` and a `browsergym_action_eligibility` artifact for structure-visible targets with no binding,
+and episode history stores public semantic World fingerprints so Monitor can detect `A -> B -> A` oscillation using the
+same identity domain it compares against fresh worlds. No prompt, GoalPlan, Manager, or new stop rule was changed.
+Targeted verification passed; the user explicitly deferred the same-case model rerun, so W1b-Agent remains non-closed.
+
+The next run under `evidence/live/w1b-one-task-0-aliyun-glm51-watch3-20260819T023003Z` made the success/failure split
+sharper. The first episode reached `yield_subtask:ready_for_audit` after the Reports -> Bestsellers -> Year -> date ->
+Show Report path, and the model text identified `Quest Lumaflex™ Band`. Auditor then failed locally with
+`context_capacity` and `provider_attempts=0` because the supposedly compact episode history still serialized large
+transition/fact-change payloads into the 8 KiB audit budget. The follow-on Manager episode and later
+`policy_failure:schema_error` were downstream symptoms. The local repair bounds episode history, indexes retained
+target/structure labels such as table cells as current public scalar `fact:` evidence, and makes episode audit
+provider/context failure terminal instead of feeding an empty MissionState back to Manager for a duplicate GUI subtask.
+No same-case model rerun is claimed after this repair.
+
+##### W1b task-0 watch4: action/recovery convergence reopened
+
+The later run at
+`evidence/live/w1b-one-task-0-aliyun-glm51-watch4-20260819T083223Z/` did not reproduce currentness or provider-schema
+failure. It exposed a shared inner-loop contract gap and must not be summarized as successfully opening
+Products/Bestsellers. The trace shows this exact causal sequence:
+
+```text
+activate REPORTS                                      # dispatched
+policy selects E114 "Bestsellers"                    # E114 has no verbs; not in activate enum
+Runtime rejects the target                            # correct local admission
+same-call tool repair substitutes E14                 # semantic target changed
+E14 dispatches "Close menu"                          # Dashboard restored
+inspect_world(find "Bestsellers")                    # relevant readable/actionable nodes exist
+find_actions(query + exact target + relevance_role)   # strict AND -> empty ActionPage
+inspect restores base inventory -> repeated empty search
+EpisodeMonitor observes no GUI ActionOutcome and misses the control oscillation
+```
+
+The Dashboard ActionSpace already contained executable `Bestsellers` actions (`E90`/`E96` in that generation), so
+this is not evidence that another GUI capability or site-specific selector is required. It is also not evidence that
+generic repetition should enable VLM. Four existing owners require one coordinated repair:
+
+| Gap | Owner | Required repair | Explicit non-goal |
+|---|---|---|---|
+| readable `E114` looked executable | Actor projection + ActionSpace/ToolCatalog | reserve `E*` for executable targets, use `N*` for read-only nodes, print verbs inline, record typed `why_not_eligible` | label/task special case |
+| repair changed `Bestsellers` to `Close menu` | role/tool repair boundary | representation-only repair; operation/target/semantic-argument change returns `repair_changed_intent` and no dispatch | hidden second policy decision |
+| recovery results were hard to act on | `inspect_world`/`find_actions` owners | inspect returns actionable/verbs/action refs; `exact_target` and AND semantics are explicit; omit `relevance_role` without an objective; empty search preserves base page and reports applied filters/relaxations | second action registry or automatic execution |
+| local tools oscillated without recovery | EpisodeMonitor + existing ActionPolicy | include ref-free LocalToolResult/ActionPage result keys; second stable no-information signature emits one `RECOVER(control_stall)` turn that restores the base page/lens and forbids the same immediate signature; third/failing recovery yields | direct VLM, a new Recovery Agent, or semantic task-failure inference |
+
+Visual grounding is a separate binding completion route inside the same admitted action. An ActionOption may be
+offered when it has a structural or bounded visual binding route. After policy selects that executable target,
+`VISUAL_ONLY_TARGET`, `GROUNDING_GAP`, or `GROUNDING_AMBIGUOUS` may call the visual grounder once in the same CoreLoop
+step, producing a typed private binding for the existing Binder and one BrowserGym dispatch. Invalid `N*` refs,
+control stalls, policy indecision, stale/disabled targets, and no-effect execution cannot trigger it directly. They
+first enter typed recovery routing. A stall classified as `grounding_stall` may then use the admitted visual route;
+state oscillation, discovery loops, uncertain external effects, and semantic strategy failure may not. The grounder
+does not choose a replacement action, mutate the GUI itself, or declare completion.
+
+Recovery is deliberately bounded rather than being another model role:
+
+```text
+first same no-progress signature -> exact feedback
+second                            -> one RECOVER turn in existing ActionPolicy
+third or failed recovery          -> YIELD(failed_strategy/control_stall)
+```
+
+An `A -> B -> A` transition enters recovery immediately because it already proves both repetition and successful
+state-changing execution; VLM would not repair that semantic reversal. A pre-dispatch grounding failure can use VLM
+in the same step. A post-dispatch visual retry additionally requires a retry-safe/idempotent action contract and fresh
+mechanical evidence that the local outcome was not reached; unknown-effect or irreversible event actions are never
+auto-repeated. In long-horizon mode, the first stalled episode returns its typed failed-strategy evidence to Manager
+for a changed route instead of becoming terminal `REPEATED_FAILURE_LIMIT`; the same failure signature recurring in a
+subsequent episode may exhaust the mission recovery budget.
+
+The same trace also invalidates the current provider token aggregate. Its physical inputs were 15,598 tokens for the
+initial call and 15,844 for repair. The repair attempt stored the cumulative 31,442 and diagnostics added the initial
+15,598 again, publishing 47,040. Until repaired, this metric must be labeled invalid. Correct accounting records
+per-network-call deltas, sums them once into `invocation_input_tokens=31,442`, separates cached input, and sums
+invocations once at case/run level. Request-admission estimates remain a separate diagnostic and are never added to
+provider usage.
+
+Implementation is intentionally one convergence increment, not four independent patches:
+
+1. migrate model-visible refs and renderer/tool enums to the `E executable / N read-only / F evidence / R region`
+   contract, with current-generation closure properties;
+2. constrain role repair to representation equivalence and project typed grounding rejection into the next normal
+   policy context;
+3. close inspect/action-search response semantics and preserve the base action page on empty search;
+4. add same-turn `BindingRouter -> VisualGroundingPort -> existing Binder` with the bounded trigger/outcome algebra;
+5. extend EpisodeMonitor to zero-dispatch control turns and `CONTINUE -> RECOVER once -> YIELD`, projecting one
+   `RecoverySignal` into the existing ActionPolicy rather than adding a recovery model;
+6. fix physical-attempt delta, semantic-invocation, and run-level token aggregation; and
+7. rerun provider-free invariant/property tests, then exactly one same-case W1b witness before six-site smokes.
+
+The predeclared exit properties are:
+
+- every model-visible `E*` has at least one current verb and resolves through its tool enum; no `N*` is executable;
+- repair cannot change operation, target identity, or semantic arguments;
+- zero-result action search cannot erase current action authority, and all recovery responses state actionability;
+- only an already-admitted grounding gap/ambiguity, including a stall classified as grounding, can invoke VLM, at
+  most once per observation/operation/target; oscillation/control/strategy stalls cannot;
+- repeated local-tool results and action-page alternation receive one strategy-changing recovery turn and then yield
+  `control_stall` within the bounded threshold if no new evidence appears;
+- `attempt -> invocation -> run` token totals count every physical request exactly once; and
+- the same W1b case either advances through an executable Bestsellers target or returns one truthful typed failure,
+  without Close-menu substitution, empty-page oscillation, or false token amplification.
+
+Current status is therefore `W1b action/recovery convergence documented / implementation pending / W1b-Agent
+blocked`. The earlier Auditor/context-capacity repair remains a separate cross-episode acceptance requirement after
+this inner-loop gate; neither problem may be hidden by the other.
 
 | Site category | Tool schemas | Offered targets | Missing Actor targets | State retained/total | Closure leaks | Projection | Prefit tokens | Admitted tokens |
 |---|---:|---:|---:|---:|---:|---|---:|---:|
@@ -664,17 +808,75 @@ Python. It did not call ActionPolicy, GoalCompiler, Manager, Auditor, or any pro
 
 All six request budgets were admitted under the derived 62,904-token hard cap with `image_estimated_tokens=0` and
 `provider_reported_prompt_tokens=0` because this diagnostic is provider-free. GitLab crossed the approximate 16k soft
-cost target and was re-rendered through action-focused delivery compaction; all offered targets, action-decision state,
-and structural-closure invariants stayed intact.
+cost target and was re-rendered through action-focused delivery compaction. The run proves offered-target,
+action-decision-state, and retained-subtree closure only. Because the projection reported
+`non_action_content=omitted recovery=none`, its 9,378-token result is recorded as an unsafe diagnostic and cannot count
+as semantic-safe compression evidence. The uncompressed 22,955-token request remained under the hard cap.
+
+##### T3.1: recoverable region delivery and inspection
+
+T3.1 replaces action-only omission with one recoverable model-delivery path:
+
+```text
+full current WorldObservation
+  -> deterministic ActorWorldSnapshot
+  -> deterministic WorldRegionIndex
+  -> current WorldDeliveryLens
+  -> complete region directory + exact expanded subtrees
+  -> ActionPolicy
+       |-> find_actions(...)   # searches complete current ActionSpace
+       `-> inspect_world(...)  # open_region | find | view_all over complete public World
+```
+
+The full World remains the sole environment authority. `WorldRegionIndex` and `WorldDeliveryLens` are disposable
+projections. Region descriptions are extractive—landmark/role, exact heading or labels, item/action counts, bounded
+state badges, changed flag, and coverage. They never replace exact prices, IDs, dates, values, status, or user-authored
+text. Expanded regions preserve exact public values, relations, current refs, and structural closure. The single
+`inspect_world` local tool performs zero BrowserGym dispatch and supports:
+
+- `open_region`: exact structurally closed, semantically paged subtree;
+- `find`: exact current public text/role/label/value/fact matches with region location and cursor;
+- `view_all`: exact paged fallback when the directory is insufficient; and
+- optional current screenshot crop from existing BrowserGym geometry for visual zoom, never a second acquisition or
+  VLM-triggered guess.
+
+Every inspect call is bound to current World/context/catalog identity. Fresh acquisition invalidates old R/E refs,
+cursors, query results, and lens state. Direct tool targets must be present in exact delivered content; actions in
+folded regions remain reachable through `find_actions`. No region selector may alter the complete ActionSpace or
+private bindings.
+
+T3.1 exits only when the six frozen W1b-World pages plus held-out synthetic structures satisfy all properties below:
+
+1. every public fact/entity/relation is delivered exactly or belongs to a visible region recoverable through one
+   `inspect_world` operation;
+2. sampled folded prices, IDs, dates, values, statuses, table cells, repeated items, and user text round-trip exactly
+   from the same World, without model paraphrase;
+3. every current ActionOption is directly exposed or reachable through `find_actions`, and every directly exposed
+   target appears in an exact expanded subtree with the required state and closure;
+4. `open_region`, `find`, `view_all`, paging, and optional crop perform zero GUI dispatch and never change the full
+   World semantic digest;
+5. old World/context/catalog/region refs typed-fail after fresh acquisition; no resolver guesses a replacement;
+6. provider input records directory/expanded/search/crop coverage plus complete prefit/admitted token composition;
+7. a directory plus one useful exact page that cannot fit the hard cap returns `context_capacity`; it never prefix
+   slices, breaks a row/card, or falls back to `recovery=none`; and
+8. full-view and region-delivery paired diagnostics report token reduction and recovery latency, without treating a
+   soft cost target as a correctness gate.
+
+The first implementation uses deterministic AX/document landmarks, dialogs, forms, tables, lists/feeds,
+heading-associated sections, and bounded repeated-sibling groups. Region4Web's learned partition/summary and
+FocusAgent's LLM line selector remain predeclared later A/Bs only if this deterministic held-out gate or W1b-Agent
+demonstrates a retrieval failure. They cannot be silently added during the baseline run.
 
 W1b-World uses the single production acquisition and projection chain. It does not create a second renderer or an
-offline oracle view for the model:
+offline oracle view for the model. T3.1 extends the existing projection/delivery seam without changing acquisition or
+World authority:
 
 ```text
 BrowserGym raw observation
   -> BrowserGymSurfaceAdapter
   -> full WorldObservation
-  -> ActorWorldSnapshot / compact_ax.v1
+  -> ActorWorldSnapshot
+  -> full compact_ax.v1 OR WorldRegionIndex -> WorldDeliveryLens -> region compact_ax.v1
   + current PerTurnToolCatalog
   -> complete request admission
   -> diagnostics
@@ -690,7 +892,7 @@ For each page it persists these paired diagnostics:
 | capability reachability census | for each registry operation and current option record `registry_defined`, `adapter_supported`, `currently_eligible`, `model_exposed` or `paged_searchable`, typed absence reason, selection, and dispatch |
 | structural-closure violations | no retained control without label/ancestor context; no retained table cell without its row and headers; no dialog/form/card target detached from its container |
 | collapsed presentation counts | empty wrappers, duplicate inline text, icon glyphs, redundant text, and low-value appearance metadata are measured rather than silently guessed absent |
-| omission and recovery | partial source/projection/action coverage is explicit; action pages are reachable through `find_actions`; any later non-action read route must resolve only current public World evidence |
+| omission and recovery | partial source/projection/action coverage is explicit; action pages are reachable through `find_actions`; folded non-action regions are recoverable through current `inspect_world`; neither route changes World authority |
 | perception route | record `TEXT_ONLY`, `STRUCTURE_FIRST`, or `SCREENSHOT_AX` and why an image/visual provider was or was not attached |
 | request budget | serialized World bytes, rendered observation tokens, tool-schema tokens, episode-memory tokens, image estimate, total prompt tokens, and repair amplification |
 | authority isolation | no BID, selector, coordinate, credentials, expected answer, evaluator state, reward, or hidden task metadata enters Actor View or provider input |
@@ -705,6 +907,12 @@ The hard correctness gate is invariant-based:
 - every `ActionOption` in the complete current ActionSpace is present in the direct catalog or reachable through the
   current `find_actions` route, and every exposed current reference resolves to exactly one current option before
   admission;
+- after a mutation on a dynamic page, every model-visible and interaction-eligible structure target appears in the
+  stabilized current ActionSpace/tool catalog; targets that remain structure-visible but unbound carry typed
+  `why_not_eligible` diagnostics in trace evidence;
+- Auditor episode history fits the declared local budget without full transition evidence, every model-visible precise
+  table/result text needed across stages has a current public scalar evidence ref, and audit provider/context failure
+  is a typed terminal audit failure rather than evidence of incomplete GUI progress;
 - a semantic registry entry is not reported as installed for BrowserGym unless the surface offer, primitive
   translator, private binding, executor route, fresh capture, and real conformance evidence all exist;
 - projection changes neither private bindings nor the full World semantic digest and never reads task/benchmark
@@ -741,21 +949,25 @@ real BrowserGym observation
   -> typed local outcome (unknown/not_applicable is valid for open semantics)
 ```
 
-The implementation order is source-semantics correction, `scroll`/`press_key`, `hover`/`focus`, capability census,
-measured `find_actions` filtering, complete-request token admission, real capability conformance, and then W1b-Agent.
+The implementation order is source-semantics correction, `scroll`/`press_key`, capability census, measured
+`find_actions` filtering, complete-request token admission, T3.1 recoverable region delivery/inspection, and then
+W1b-Agent. `hover`/`focus` remains evidence-triggered rather than blocking this delivery gate.
 No W1b failure authorizes one tool per element, a second registry/executor, raw Playwright, `search_tools`, or an LLM
 tool-legality evaluator. Large external MCP/WoT/SaaS discovery remains outside G5.
 
-Use deterministic cleanup inside the existing projection owner first. BrowserGym remains the raw acquisition owner;
-AgentLab/BrowserGym token-fitting and flattening, browser-use serializer ideas, Glass on-demand reads, and Region4Web
-progressive disclosure are reference signals only. Do not import another browser/session/tree/selector/agent loop.
-Do not add a model-backed region selector before the deterministic W1b-World gate fails on held-out pages. If that
-happens, the selector is a predeclared A/B behind the same projection port, selects existing public region IDs, reports
-coverage, and fails open to deterministic/view-all rendering.
+Use deterministic cleanup and region partition inside the existing projection/delivery owner first. BrowserGym
+remains the raw acquisition owner; AgentLab/BrowserGym token fitting, browser-use serializer ideas, Glass targeted
+reads, Region4Web region overview/`view_all`, and FocusAgent soft line retrieval are reference signals only. Do not
+import another browser/session/tree/selector/agent loop. Do not add a model-backed region selector before the
+deterministic T3.1 recovery gate and W1b-Agent expose a held-out retrieval failure. If that happens, the selector is a
+predeclared A/B behind the same projection port, selects existing public region IDs, reports coverage, and fails open
+to deterministic directory/`view_all` delivery.
 
-Only shared environment/composition or already-declared W1a contract defects may be repaired during W1b. Do not add a
+Only shared environment/composition, T3.1 recovery, or already-declared W1a contract defects may be repaired before
+W1b-Agent. Do not add a
 site/task branch, change the frozen ActionPolicy prompt/model, enable model GoalCompiler, or introduce model history
-summary/RAG from smoke behavior. W1b-Agent begins only after W1b-World passes on all six site categories. Its model
+summary/RAG from smoke behavior. W1b-Agent begins only after W1b-World and the T3.1 recoverability gate pass on all six
+site categories. Its model
 smokes then establish that at least one legal BrowserGym dispatch, ref-safe navigation history, STOP, native result,
 cleanup, and reporting work through the same projection; they do not redefine the World invariants.
 
@@ -883,10 +1095,10 @@ Do not change architecture after one failed task. Aggregate shared mechanisms ac
 |---|---|---|
 | relevant fact is absent from BrowserGym source or full World | fix/reuse BrowserGym acquisition or SurfaceAdapter/Fusion semantics, or run a declared structured/adaptive observation A/B | Actor-View prompt hint, site selector, task rule, or always-on VLM |
 | fact exists in full World but is absent or orphaned in Actor View | fix deterministic retention/structural closure at the existing World projection owner and verify across real pages | mutate World, add a second DOM tree/selector owner, or task-aware pruning |
-| Actor View conserves required facts but request tokens are repeatedly noisy or repair-amplified | collapse measured presentation redundancy, fit the complete request to provider tokens, and use existing paging/read recovery; evaluate any learned region selector only as a frozen A/B | silently prefix-truncate, remove offered targets, or call a per-step selector model by default |
+| Actor View conserves required facts but request tokens are repeatedly noisy or repair-amplified | collapse measured presentation redundancy, then use deterministic region directory/exact expansion, `inspect_world`, and `find_actions`; evaluate any learned region selector only as a frozen A/B after the recoverable baseline | silently prefix-truncate, use `recovery=none`, remove offered targets/facts, or call a per-step selector model by default |
 | adapter exposes the wrong verb because a browser-default property was mistaken for authored semantics | fix source-local capability classification and conformance across element kinds/sites | blame Context/model intelligence, add a label exception, or bypass Binder with raw Playwright |
 | offered control lacks a reusable interaction | add one generic semantic capability only if BrowserGym exposes a stable primitive and multiple tasks require it | raw Playwright escape or WebArena-only tool |
-| fresh World and complete episode context are correct but policy loops | EpisodeMonitor yields; Manager chooses a new bounded route; compare a stronger policy only in a declared arm | case prompt, mutable GoalPlan status, or another GUI loop |
+| fresh World and complete episode context are correct but policy loops | EpisodeMonitor emits one typed recovery turn to the existing ActionPolicy; a failed recovery yields a failed-strategy report and Manager chooses a different bounded route; compare a stronger policy only in a declared arm | direct generic VLM fallback, case prompt, mutable GoalPlan status, Recovery Agent, or another GUI loop |
 | an exact value is needed after navigation but was never pinned | improve general `pin_fact` tool description/admission and classify policy failure; do not reconstruct it from trace | task keyword extraction, hidden state, or arbitrary model memory |
 | compact `AgentTurnView` history exceeds the byte budget in held-out episodes after deterministic folding | run a predeclared model-summary/offload A/B with full trace retained | silently drop oldest steps or make free-form summary authority |
 | Manager repeatedly creates unsuitable subtasks despite correct MissionState | compare Manager prompt/model or narrower SubtaskContract in a new arm | per-step Manager, site skills, or moving planning into CoreLoop |
@@ -983,8 +1195,13 @@ for G5 is now an executable W1a product path for local contracts: thin mission r
 episodes, `yield_subtask`, official BrowserGym finalization, and native terminal mapping are implemented and verified
 locally. The real-page T0 W1b-World gate is passed, T1 BrowserGym `scroll`/`press_key` installation is verified
 through real conformance plus the T1 W1b-World rerun, and T3 complete-request admission/repeated-failure breaker is
-verified locally with the T3 W1b-World budget rerun. T2 hover/focus is deferred pending benchmark evidence. W1b-Agent
-site smokes and W2 frozen cohort evidence still precede any long-horizon capability claim. The current executable gate is:
+verified locally with the T3 W1b-World budget rerun. That rerun also invalidated the `action_focused recovery=none`
+branch as semantic-safe compression evidence. T3.1 recoverable region delivery/inspection subsequently passed its
+six-page provider-free gate, but the `watch4` live run falsified the downstream action/recovery closure. The active
+gate is now the coordinated executable/read-only reference, representation-only repair, discovery response,
+same-turn visual binding, zero-dispatch control-stall, and token-accounting convergence described above. T2
+hover/focus remains deferred pending benchmark evidence. W1b-Agent site smokes and W2 frozen cohort evidence still
+precede any long-horizon capability claim. The current executable gate is:
 
 ```bash
 pytest -q

@@ -17,7 +17,10 @@ from affordance_runtime.immutable import freeze_json
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
+    from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+    from affordance_runtime.world.contracts import WorldObservation
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,24 @@ class AgentContext:
         metadata={"serialize": False},
     )
     evidence_index: WorldEvidenceIndex | None = field(default=None, repr=False, compare=False)
+    current_observation: WorldObservation | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    delivery_lens: WorldDeliveryLens | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    region_index: WorldRegionIndex | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
     current_step_index: int = field(default=0, repr=False, compare=False)
     history_byte_budget: int = field(default=16 * 1024, repr=False, compare=False)
     runtime_controls: tuple[str, ...] = ()
@@ -179,12 +200,36 @@ class AgentContext:
             raise ValueError("AgentContext runtime controls must be bounded and unique")
         object.__setattr__(self, "runtime_controls", controls)
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+        from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
+        from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+        from affordance_runtime.world.contracts import WorldObservation
 
         if not isinstance(self.actor_world, ActorWorldSnapshot):
             raise TypeError("AgentContext actor world must be a typed snapshot")
         if self.evidence_index is not None and not isinstance(self.evidence_index, WorldEvidenceIndex):
             raise TypeError("AgentContext evidence index must be typed")
+        if self.current_observation is not None and not isinstance(self.current_observation, WorldObservation):
+            raise TypeError("AgentContext current observation must be typed")
+        if self.delivery_lens is not None:
+            if not isinstance(self.delivery_lens, WorldDeliveryLens):
+                raise TypeError("AgentContext delivery lens must be typed")
+            if (
+                self.current_observation is not None
+                and self.delivery_lens.world_observation_id != self.current_observation.observation_id
+            ):
+                raise ValueError("AgentContext delivery lens must belong to current observation")
+        if self.region_index is not None:
+            if not isinstance(self.region_index, WorldRegionIndex):
+                raise TypeError("AgentContext region index must be typed")
+            if (
+                self.current_observation is not None
+                and self.region_index.world_observation_id != self.current_observation.observation_id
+            ):
+                raise ValueError("AgentContext region index must belong to current observation")
+            if self.delivery_lens is not None and self.delivery_lens.selected_region_key:
+                if self.region_index.get(self.delivery_lens.selected_region_key) is None:
+                    raise ValueError("AgentContext delivery lens selects an unknown region")
         if self.evidence_index is not None and any(
             self.evidence_index.resolve(canonical) is False for canonical in bindings.values()
         ):

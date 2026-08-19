@@ -15,6 +15,7 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
     EpisodeMonitorEvent,
@@ -185,6 +186,20 @@ def _repeated_failure_key(
                 "world": after_world,
             }
         )
+    if (
+        result.execution is not None
+        and result.execution.result.dispatch_status is DispatchStatus.NOT_SENT
+        and result.execution.result.error is not None
+    ):
+        return _stable_key(
+            {
+                "kind": "action_not_sent",
+                "error": result.execution.result.error.value,
+                "attempt": _public_attempt(result),
+                "task": result.task_evaluation.task_id,
+                "task_progress": _task_progress_digest(result.task_evaluation),
+            }
+        )
     if result.failure_code is not None:
         return _stable_key(
             {
@@ -208,7 +223,6 @@ def _repeated_failure_key(
             "result": "unsatisfied" if unsatisfied else "unchanged",
             "attempt": _public_attempt(result),
             "task_progress": _task_progress_digest(result.task_evaluation),
-            "world": after_world,
             "events": tuple(item.value for item in events),
         }
     )
@@ -267,14 +281,16 @@ def _public_attempt(result: StepResult) -> dict[str, object]:
 
 
 def _public_target(result: StepResult, target_id: str) -> dict[str, object]:
-    if not target_id or result.policy_observation is None:
+    if not target_id:
         return {}
+    if result.policy_observation is None:
+        return _world_target(result, target_id)
     ref = result.policy_target_refs.get(target_id, "")
     if not ref:
-        return {}
+        return _world_target(result, target_id)
     path = _node_path(result.policy_observation, ref)
     if not path:
-        return {}
+        return _world_target(result, target_id)
     node = path[-1]
     return {
         "role": node.role,
@@ -287,6 +303,16 @@ def _public_target(result: StepResult, target_id: str) -> dict[str, object]:
             for item in path[:-1]
             if item.label.strip() or item.role.strip()
         )[-4:],
+    }
+
+
+def _world_target(result: StepResult, target_id: str) -> dict[str, object]:
+    target = next((item for item in result.before_world.targets if item.target_id == target_id), None)
+    if target is None:
+        return {}
+    return {
+        "role": target.role,
+        "label": target.label,
     }
 
 
@@ -335,8 +361,8 @@ def _returns_to_recent_world(recent_steps: tuple[AgentTurnView, ...], fresh_worl
         return False
     seen = []
     for step in recent_steps[-_WORLD_OSCILLATION_WINDOW:]:
-        before = step.transition.get("before_world")
-        after = step.transition.get("after_world")
+        before = step.transition.get("before_world_fingerprint") or step.transition.get("before_world")
+        after = step.transition.get("after_world_fingerprint") or step.transition.get("after_world")
         for value in (before, after):
             if isinstance(value, str) and value and value not in seen:
                 seen.append(value)

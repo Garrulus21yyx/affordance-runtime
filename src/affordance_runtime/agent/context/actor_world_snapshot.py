@@ -293,6 +293,11 @@ def project_actor_world_snapshot(
         if memberships.get(target_id)
     }
     fallback_source = next(iter(source_refs.values()), "S1")
+    structure_ids = {
+        node.structure_id
+        for source in observation.sources
+        for node in source.structure
+    }
     facts_by_subject: dict[str, list[ActorWorldFactView]] = defaultdict(list)
     evidence_by_subject: dict[str, dict[str, str]] = defaultdict(dict)
     global_facts: list[ActorWorldGlobalFactView] = []
@@ -304,7 +309,7 @@ def project_actor_world_snapshot(
         target = visible.get(fact.subject_id)
         if target is not None and target.state.get(fact.predicate) == fact.value:
             evidence_by_subject[fact.subject_id].setdefault(fact.predicate, evidence)
-        elif target is not None:
+        elif target is not None or fact.subject_id in structure_ids:
             facts_by_subject[fact.subject_id].append(
                 ActorWorldFactView(evidence, fact.predicate, fact.value)
             )
@@ -750,7 +755,7 @@ def _structure_documents(
                 (target.label or item.label) if target is not None else item.label,
                 target.state if target is not None else item.state,
                 evidence_by_subject.get(canonical_id or "", {}),
-                tuple(facts_by_subject.get(canonical_id or "", ())),
+                tuple(facts_by_subject.get(canonical_id or structure_id, ())),
                 _non_tree_relations(target, refs) if target is not None else {},
                 (
                     tuple(

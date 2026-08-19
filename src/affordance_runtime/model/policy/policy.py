@@ -28,6 +28,8 @@ _PUBLIC_FAILURES = {
     ModelFailureKind.TIMEOUT: "model decision provider timed out",
     ModelFailureKind.INVALID_RESPONSE: "model decision response was invalid",
     ModelFailureKind.SCHEMA_ERROR: "model decision response violated the required schema",
+    ModelFailureKind.INVALID_TOOL_ARGUMENTS: "model decision referenced invalid tool arguments",
+    ModelFailureKind.TOOL_GROUNDING_GAP: "model decision referenced unavailable grounding evidence",
     ModelFailureKind.REFUSED: "model decision provider refused the request",
     ModelFailureKind.CONTEXT_CAPACITY: "model decision request exceeded context capacity",
     ModelFailureKind.INTERNAL_ERROR: "model decision could not be produced",

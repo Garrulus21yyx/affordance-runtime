@@ -231,6 +231,29 @@ def test_same_browsergym_adapter_spans_two_episodes_without_trajectory_leak() ->
     assert [len(context.recent_steps.items) for context in policy.contexts] == [0, 0]
 
 
+def test_auditor_failure_terminates_without_reexecuting_same_gui_subtask() -> None:
+    _, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy)
+    contract = SubtaskContract("Read value", "Value is visible", episode_turn_budget=1)
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+        ],
+        [],
+    )
+    auditor = AuditorScript([], [])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.AUDITOR_FAILURE
+    assert result.status is RunStatus.FAILED
+    assert len(manager.requests) == 1
+    assert len(auditor.requests) == 1
+    assert len(policy.contexts) == 1
+
+
 def test_repeated_policy_failure_limit_blocks_case_without_reauditing() -> None:
     _, env, task = _env_task()
     policy = PolicyFailurePolicy([])

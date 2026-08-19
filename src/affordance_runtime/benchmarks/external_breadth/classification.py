@@ -166,6 +166,8 @@ _POLICY_OUTCOMES = {
     ModelFailureKind.TIMEOUT: MiniWobTaskOutcome.PROVIDER_TIMEOUT,
     ModelFailureKind.INVALID_RESPONSE: MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE,
     ModelFailureKind.SCHEMA_ERROR: MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE,
+    ModelFailureKind.INVALID_TOOL_ARGUMENTS: MiniWobTaskOutcome.RUNTIME_REJECTED,
+    ModelFailureKind.TOOL_GROUNDING_GAP: MiniWobTaskOutcome.RUNTIME_REJECTED,
     ModelFailureKind.REFUSED: MiniWobTaskOutcome.PROVIDER_REFUSED,
     ModelFailureKind.CONTEXT_CAPACITY: MiniWobTaskOutcome.POLICY_DECISION_FAILURE,
     ModelFailureKind.INTERNAL_ERROR: MiniWobTaskOutcome.POLICY_DECISION_FAILURE,

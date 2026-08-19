@@ -95,7 +95,11 @@ def serialized_size(value: object) -> int:
 
 def _serializable(value: object) -> object:
     if is_dataclass(value) and not isinstance(value, type):
-        return {item.name: _serializable(getattr(value, item.name)) for item in fields(value)}
+        return {
+            item.name: _serializable(getattr(value, item.name))
+            for item in fields(value)
+            if item.metadata.get("serialize", True) is not False
+        }
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, Mapping):

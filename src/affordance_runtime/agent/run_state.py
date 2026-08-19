@@ -14,6 +14,7 @@ from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
 )
+from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.decisions import AgentDecision, LocalToolResult, SelectAction, YieldSubtask
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
@@ -136,6 +137,7 @@ class RunState:
     goal_plan_version_counter: int = 0
     yield_on_budget_exhaustion: bool = False
     working_facts: tuple[WorkingFact, ...] = ()
+    delivery_lens: WorldDeliveryLens | None = None
     yield_reason: EpisodeYieldReason | None = None
 
     def __post_init__(self) -> None:
@@ -161,6 +163,11 @@ class RunState:
         if any(not isinstance(item, AgentTurnView) for item in self.recent_steps):
             raise ValueError("recent step context must be public")
         self.working_facts = validate_working_fact_collection(self.working_facts)
+        if self.delivery_lens is not None:
+            if not isinstance(self.delivery_lens, WorldDeliveryLens):
+                raise TypeError("run delivery lens must be typed")
+            if self.delivery_lens.world_observation_id != self.current_world.observation_id:
+                raise ValueError("run delivery lens must belong to current world")
         if self.yield_reason is not None and not isinstance(self.yield_reason, EpisodeYieldReason):
             raise TypeError("episode yield reason must be typed")
 
@@ -251,9 +258,17 @@ class RunState:
         self.execution_count += int(result.execution is not None)
         self.step_count += int(consume_step)
         self.action_page = result.action_page
+        if acquired_new_world:
+            self.delivery_lens = None
+            self.action_page = None
         self.waited_ms += result.waited_ms
         if isinstance(result.decision, LocalToolResult) and result.decision.working_fact is not None:
             self.remember_working_fact(result.decision.working_fact)
+        if isinstance(result.decision, LocalToolResult) and result.decision.delivery_lens is not None:
+            lens = result.decision.delivery_lens
+            if lens.world_observation_id == self.current_world.observation_id:
+                self.delivery_lens = lens
+                self.action_page = None
         if self.status is RunStatus.RUNNING and self.remaining_steps == 0:
             self.status = (
                 RunStatus.YIELDED

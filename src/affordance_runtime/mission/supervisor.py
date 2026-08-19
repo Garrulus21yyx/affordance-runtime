@@ -285,10 +285,14 @@ class MissionSupervisor:
             )
             auditor_calls += audit_result.auditor_calls
             boundary_rejections += audit_result.boundary_rejections
-            if audit_result.outcome in {MissionOutcome.TASK_COMPLETE, MissionOutcome.TASK_BLOCKED}:
+            if audit_result.outcome in {
+                MissionOutcome.TASK_COMPLETE,
+                MissionOutcome.TASK_BLOCKED,
+                MissionOutcome.AUDITOR_FAILURE,
+            }:
                 return MissionRunResult(
                     audit_result.state,
-                    mission,
+                    audit_result.mission_state,
                     audit_result.supervisor_state,
                     audit_result.outcome,
                     manager_calls=manager_calls,
@@ -357,7 +361,7 @@ class MissionSupervisor:
             return MissionRunResult(
                 state,
                 mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref="auditor_failure"),
+                SupervisorState(SupervisorPhase.TERMINAL, last_ref="auditor_failure"),
                 MissionOutcome.AUDITOR_FAILURE,
                 auditor_calls=1,
             )
@@ -394,7 +398,7 @@ class MissionSupervisor:
                 return MissionRunResult(
                     state,
                     mission,
-                    SupervisorState(SupervisorPhase.MANAGER, last_ref="auditor_failure"),
+                    SupervisorState(SupervisorPhase.TERMINAL, last_ref="auditor_failure"),
                     MissionOutcome.AUDITOR_FAILURE,
                     auditor_calls=2,
                 )

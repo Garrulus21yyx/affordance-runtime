@@ -92,7 +92,7 @@ class ModelRequestBreakdown:
             raise ValueError("model request token counters must be non-negative")
         if self.admission_action not in {"admitted", "context_capacity"}:
             raise ValueError("model request admission action is outside the closed vocabulary")
-        if self.delivery_projection not in {"full", "action_focused"}:
+        if self.delivery_projection not in {"full", "region_lens"}:
             raise ValueError("model request delivery projection is outside the closed vocabulary")
 
     def as_diagnostics(self) -> dict[str, object]:

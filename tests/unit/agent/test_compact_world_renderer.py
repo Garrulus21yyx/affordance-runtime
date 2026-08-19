@@ -9,12 +9,18 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldSourceView,
 )
 from affordance_runtime.agent.context.budgets import BoundedSection
-from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
+from affordance_runtime.agent.context.compact_world_renderer import (
+    inspect_actor_world,
+    render_compact_actor_world,
+)
 from affordance_runtime.agent.context.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
 )
+from affordance_runtime.agent.context.world_region_index import WorldRegion, WorldRegionIndex
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.world.contracts import SemanticTarget
+from tests.support.world import fused_world
 
 
 def test_compact_world_conserves_complete_groups_states_and_affordances() -> None:
@@ -27,7 +33,7 @@ def test_compact_world_conserves_complete_groups_states_and_affordances() -> Non
     rendered = render_compact_actor_world(snapshot, grounding, include_images=False)
 
     assert rendered.count('StaticText "@nibh"') == 7
-    assert rendered.count('clickable "like" active=false verbs=["activate"]') == 7
+    assert rendered.count('clickable "like" active[F') == 7
     assert '[E22] button "Submit" verbs=["activate"]' in rendered
     for index in range(1, 8):
         group_ref = f"E{(index - 1) * 3 + 1}"
@@ -52,7 +58,7 @@ def test_compact_world_drops_projection_scaffolding_but_not_public_semantics() -
     assert "appearance.color_family" not in rendered
     assert "N1" not in rendered
     assert "@nibh" in rendered
-    assert "active=false" in rendered
+    assert "active[F1]=false" in rendered
 
 
 def test_compact_world_discloses_partial_node_state() -> None:
@@ -76,6 +82,100 @@ def test_compact_world_discloses_partial_node_state() -> None:
 
     assert 'value="China"' in rendered
     assert "state_coverage=2/5" in rendered
+
+
+def test_region_delivery_folds_with_recoverable_directory() -> None:
+    snapshot = _snapshot(tuple(_post(index) for index in range(1, 16)))
+    grounding = _grounding(post_count=15, include_submit=False)
+
+    rendered = render_compact_actor_world(
+        snapshot,
+        grounding,
+        include_images=False,
+        region_index=_region_index(15),
+        expanded_refs=frozenset({"E3"}),
+        max_rendered_bytes=700,
+    )
+
+    assert "delivery=region_lens" in rendered
+    assert "non_action_content=folded" in rendered
+    assert "recovery=inspect_world" in rendered
+    assert "recovery=none" not in rendered
+    assert "region_directory" in rendered
+    assert "region [R1]" in rendered
+    assert 'Post 1' in rendered
+    assert 'region [R15]' in rendered
+
+
+def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() -> None:
+    snapshot = _snapshot(tuple(_post(index) for index in range(1, 6)))
+    grounding = _grounding(post_count=5)
+    observation = _observation(5)
+    region_index = _region_index(5, observation.observation_id)
+
+    opened = inspect_actor_world(
+        snapshot,
+        grounding,
+        region_index=region_index,
+        observation=observation,
+        action="open_region",
+        region_ref="R5",
+    )
+    found = inspect_actor_world(
+        snapshot,
+        grounding,
+        region_index=region_index,
+        observation=observation,
+        action="find",
+        query="Post 5",
+    )
+    all_regions = inspect_actor_world(
+        snapshot,
+        grounding,
+        region_index=region_index,
+        observation=observation,
+        action="view_all",
+    )
+
+    assert opened["action"] == "open_region"
+    assert 'Post 5' in opened["content"]
+    assert found["total_count"] == 1
+    assert found["matches"][0]["region_ref"] == "R5"
+    assert found["matches"][0]["snippet"] == "StaticText Post 5"
+    assert all_regions["total_count"] == 5
+
+
+def _observation(post_count: int):
+    targets = []
+    for index in range(1, post_count + 1):
+        base = (index - 1) * 3 + 1
+        targets.extend((
+            SemanticTarget(f"entity:{base}", "generic", "media"),
+            SemanticTarget(f"entity:{base + 1}", "StaticText", f"Post {index}"),
+            SemanticTarget(f"entity:{base + 2}", "clickable", "like", {"active": False}),
+        ))
+    return fused_world("S1", tuple(targets), surface="dom")
+
+
+def _region_index(post_count: int, observation_id: str = "world:test") -> WorldRegionIndex:
+    return WorldRegionIndex(
+        observation_id,
+        tuple(
+            WorldRegion(
+                f"region:test:{index}",
+                f"R{index}",
+                "S1",
+                f"post:{index}",
+                tuple(f"entity:{(index - 1) * 3 + offset}" for offset in (1, 2, 3)),
+                (),
+                f"Post {index}",
+                "generic",
+                {"targets": 3, "facts": 0, "actions": 1},
+                "complete",
+            )
+            for index in range(1, post_count + 1)
+        ),
+    )
 
 
 def _post(index: int) -> ActorWorldNodeView:
@@ -135,7 +235,7 @@ def _snapshot(roots: tuple[ActorWorldNodeView, ...]) -> ActorWorldSnapshot:
     )
 
 
-def _grounding(post_count: int = 7) -> AgentGroundingIndexView:
+def _grounding(post_count: int = 7, *, include_submit: bool = True) -> AgentGroundingIndexView:
     entities = []
     bindings = {}
     for index in range(1, post_count + 1):
@@ -148,8 +248,9 @@ def _grounding(post_count: int = 7) -> AgentGroundingIndexView:
             ref = f"E{base + offset}"
             entities.append(AgentGroundingEntityView(ref, role, label, verbs=verbs))
             bindings[f"entity:{base + offset}"] = ref
-    entities.append(AgentGroundingEntityView("E22", "button", "Submit", verbs=("activate",)))
-    bindings["entity:22"] = "E22"
+    if include_submit:
+        entities.append(AgentGroundingEntityView("E22", "button", "Submit", verbs=("activate",)))
+        bindings["entity:22"] = "E22"
     return AgentGroundingIndexView(tuple(entities), bindings)
 
 

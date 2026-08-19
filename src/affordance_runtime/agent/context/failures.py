@@ -13,6 +13,8 @@ class ModelFailureKind(StrEnum):
     TIMEOUT = "timeout"
     INVALID_RESPONSE = "invalid_response"
     SCHEMA_ERROR = "schema_error"
+    INVALID_TOOL_ARGUMENTS = "invalid_tool_arguments"
+    TOOL_GROUNDING_GAP = "tool_grounding_gap"
     REFUSED = "refused"
     CONTEXT_CAPACITY = "context_capacity"
     INTERNAL_ERROR = "internal_error"

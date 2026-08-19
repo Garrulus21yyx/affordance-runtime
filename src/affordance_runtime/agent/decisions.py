@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any, TypeAlias
 
 from affordance_runtime.actions.relevance import ActionRelevanceRole
+from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.observation_needs import ObservationPurpose
@@ -155,6 +156,7 @@ class LocalToolResult:
     result: Mapping[str, object]
     tool_call_id: str = ""
     working_fact: WorkingFact | None = field(default=None, repr=False, compare=False)
+    delivery_lens: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -167,6 +169,8 @@ class LocalToolResult:
         object.__setattr__(self, "result", freeze_json(self.result))
         if self.working_fact is not None and not isinstance(self.working_fact, WorkingFact):
             raise TypeError("local tool state effect must be a typed working fact")
+        if self.delivery_lens is not None and not isinstance(self.delivery_lens, WorldDeliveryLens):
+            raise TypeError("local tool state effect must be a typed delivery lens")
 
 
 @dataclass(frozen=True)

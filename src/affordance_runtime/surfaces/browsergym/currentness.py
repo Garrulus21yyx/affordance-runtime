@@ -37,6 +37,13 @@ class BrowserGymCurrentnessReason(str, Enum):
     NOT_EXECUTABLE = "not_executable"
 
 
+class BrowserGymCurrentnessSource(str, Enum):
+    NATIVE = "native"
+    LIFECYCLE_FALLBACK = "lifecycle_fallback"
+    MIXED = "mixed"
+    UNAVAILABLE = "unavailable"
+
+
 @dataclass(frozen=True)
 class BrowserGymCurrentnessContext:
     binding_epoch_matches: bool
@@ -53,12 +60,20 @@ class BrowserGymCurrentnessContext:
 class BrowserGymCurrentnessDecision:
     status: BrowserGymCurrentnessStatus
     reason: BrowserGymCurrentnessReason
+    task_state_source: BrowserGymCurrentnessSource = BrowserGymCurrentnessSource.UNAVAILABLE
+    episode_source: BrowserGymCurrentnessSource = BrowserGymCurrentnessSource.UNAVAILABLE
 
 
-def unavailable_currentness() -> BrowserGymCurrentnessDecision:
+def unavailable_currentness(
+    *,
+    task_state_source: BrowserGymCurrentnessSource = BrowserGymCurrentnessSource.UNAVAILABLE,
+    episode_source: BrowserGymCurrentnessSource = BrowserGymCurrentnessSource.UNAVAILABLE,
+) -> BrowserGymCurrentnessDecision:
     return BrowserGymCurrentnessDecision(
         BrowserGymCurrentnessStatus.UNAVAILABLE,
         BrowserGymCurrentnessReason.PROBE_UNAVAILABLE,
+        task_state_source,
+        episode_source,
     )
 
 
@@ -68,6 +83,18 @@ def compare_browsergym_currentness(
     context: BrowserGymCurrentnessContext,
 ) -> BrowserGymCurrentnessDecision:
     reason = _stale_reason(captured, live, context)
+    if reason is None:
+        return BrowserGymCurrentnessDecision(
+            BrowserGymCurrentnessStatus.CURRENT,
+            BrowserGymCurrentnessReason.CURRENT,
+        )
+    return BrowserGymCurrentnessDecision(BrowserGymCurrentnessStatus.STALE, reason)
+
+
+def compare_browsergym_context_currentness(
+    context: BrowserGymCurrentnessContext,
+) -> BrowserGymCurrentnessDecision:
+    reason = _context_stale_reason(context)
     if reason is None:
         return BrowserGymCurrentnessDecision(
             BrowserGymCurrentnessStatus.CURRENT,
@@ -127,16 +154,9 @@ def _stale_reason(
     live: CanonicalBrowserControl | None,
     context: BrowserGymCurrentnessContext,
 ) -> BrowserGymCurrentnessReason | None:
-    if not context.binding_epoch_matches:
-        return BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
-    if context.task_done:
-        return BrowserGymCurrentnessReason.TASK_DONE
-    if not context.task_ready:
-        return BrowserGymCurrentnessReason.TASK_NOT_READY
-    if context.captured_page_identity != context.live_page_identity:
-        return BrowserGymCurrentnessReason.PAGE_CHANGED
-    if context.captured_episode_identity != context.live_episode_identity:
-        return BrowserGymCurrentnessReason.EPISODE_CHANGED
+    reason = _context_stale_reason(context)
+    if reason is not None:
+        return reason
     if live is None:
         return BrowserGymCurrentnessReason.ELEMENT_MISSING
     if captured.private_bid != live.private_bid:
@@ -171,4 +191,20 @@ def _stale_reason(
     )
     if len(live_offers) != 1:
         return BrowserGymCurrentnessReason.NOT_EXECUTABLE
+    return None
+
+
+def _context_stale_reason(
+    context: BrowserGymCurrentnessContext,
+) -> BrowserGymCurrentnessReason | None:
+    if not context.binding_epoch_matches:
+        return BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
+    if context.task_done:
+        return BrowserGymCurrentnessReason.TASK_DONE
+    if not context.task_ready:
+        return BrowserGymCurrentnessReason.TASK_NOT_READY
+    if context.captured_page_identity != context.live_page_identity:
+        return BrowserGymCurrentnessReason.PAGE_CHANGED
+    if context.captured_episode_identity != context.live_episode_identity:
+        return BrowserGymCurrentnessReason.EPISODE_CHANGED
     return None

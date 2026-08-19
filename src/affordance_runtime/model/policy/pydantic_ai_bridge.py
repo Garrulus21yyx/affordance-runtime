@@ -44,6 +44,7 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
 )
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
+    GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
@@ -113,6 +114,10 @@ class PydanticAIGroundedDecisionPort:
     last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(
         default=(), init=False, compare=False
     )
+    last_tool_resolution_code: GroundedToolResolutionCode | None = field(
+        default=None, init=False, compare=False
+    )
+    last_tool_resolution_detail: str = field(default="", init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
@@ -194,6 +199,8 @@ class PydanticAIGroundedDecisionPort:
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
             object.__setattr__(self, "last_image_input_count", len(request.image_inputs))
+            object.__setattr__(self, "last_tool_resolution_code", None)
+            object.__setattr__(self, "last_tool_resolution_detail", "")
             admitted = self.context_binder.action_request(
                 request,
                 catalog.specs,
@@ -244,11 +251,12 @@ class PydanticAIGroundedDecisionPort:
                 input_messages=_initial_input_transcript(instructions, user_prompt),
                 provider_error_type=ModelAPIError,
             )
-            decision = (
-                _resolve_final_response(result.output, request.context_id)
-                if final_ready
-                else _resolve_deferred(result.output, catalog, request.context_id)
-            )
+            resolution_error = None
+            if final_ready:
+                decision = _resolve_final_response(result.output, request.context_id)
+            else:
+                decision, resolution_error = _resolve_deferred(result.output, catalog, request.context_id)
+                self._set_tool_resolution(resolution_error, accepted=decision is not None)
             if decision is None and not final_ready:
                 repair = _repair_input(
                     result.output,
@@ -285,13 +293,11 @@ class PydanticAIGroundedDecisionPort:
                     input_messages=repair_transcript,
                     provider_error_type=ModelAPIError,
                 )
-                decision = _resolve_deferred(result.output, catalog, request.context_id)
+                decision, resolution_error = _resolve_deferred(result.output, catalog, request.context_id)
+                self._set_tool_resolution(resolution_error, accepted=decision is not None)
             if decision is None:
                 return self._invocation_failure(
-                    _failure(
-                        ModelFailureKind.SCHEMA_ERROR,
-                        "model did not produce one valid current tool call after bounded repair",
-                    ),
+                    _tool_resolution_failure(resolution_error),
                     request,
                 )
         except asyncio.CancelledError:
@@ -336,9 +342,15 @@ class PydanticAIGroundedDecisionPort:
                 ),
                 request,
             )
-        except (GroundedToolResolutionError, ValueError, TypeError):
+        except GroundedToolResolutionError as exc:
+            self._set_tool_resolution(exc, accepted=False)
             return self._invocation_failure(
-                _failure(ModelFailureKind.SCHEMA_ERROR, "grounded tool response could not be resolved"),
+                _tool_resolution_failure(exc),
+                request,
+            )
+        except (ValueError, TypeError):
+            return self._invocation_failure(
+                _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, "grounded tool response could not be resolved"),
                 request,
             )
         except Exception as error:
@@ -429,6 +441,10 @@ class PydanticAIGroundedDecisionPort:
             "model_image_input_count": self.last_image_input_count,
             "policy_model_call_count": self.last_model_call_count,
             "provider_retry_count": self.last_provider_retry_count,
+            "tool_resolution_code": (
+                self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
+            ),
+            "tool_resolution_detail": self.last_tool_resolution_detail,
             "tool_argument_repair_count": sum(
                 1 for item in self.last_generation_attempts if item.phase == "tool_call_repair"
             ),
@@ -440,6 +456,16 @@ class PydanticAIGroundedDecisionPort:
 
     def _append_request_breakdown(self, breakdown: ModelRequestBreakdown) -> None:
         object.__setattr__(self, "last_request_breakdowns", (*self.last_request_breakdowns, breakdown))
+
+    def _set_tool_resolution(self, error: GroundedToolResolutionError | None, *, accepted: bool) -> None:
+        if accepted:
+            object.__setattr__(self, "last_tool_resolution_code", GroundedToolResolutionCode.ACCEPTED)
+            object.__setattr__(self, "last_tool_resolution_detail", "")
+            return
+        if error is None:
+            return
+        object.__setattr__(self, "last_tool_resolution_code", error.code)
+        object.__setattr__(self, "last_tool_resolution_detail", error.detail)
 
     def _admit_repair_request(
         self,
@@ -730,7 +756,7 @@ def _resolve_deferred(output, catalog, context_id: str):
     from pydantic_ai import DeferredToolRequests
 
     if not isinstance(output, DeferredToolRequests) or output.approvals or len(output.calls) != 1:
-        return None
+        return None, None
     call = output.calls[0]
     try:
         arguments = call.args_as_dict(raise_if_invalid=True)
@@ -739,16 +765,29 @@ def _resolve_deferred(output, catalog, context_id: str):
             catalog,
         )
         if reconciliation.status is not ToolCallReconciliationStatus.EXACT:
-            return None
+            return None, None
         assert reconciliation.exact_call is not None
         return resolve_grounded_action_call(
             catalog,
             reconciliation.exact_call,
             expected_context_id=context_id,
             expected_catalog_id=catalog.catalog_id,
-        ).decision
-    except (GroundedToolResolutionError, ValueError, TypeError):
-        return None
+        ).decision, None
+    except GroundedToolResolutionError as exc:
+        return None, exc
+    except (ValueError, TypeError):
+        return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+
+
+def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> ModelFailure:
+    if error is None:
+        return _failure(
+            ModelFailureKind.SCHEMA_ERROR,
+            "model did not produce one valid current tool call after bounded repair",
+        )
+    if error.code is GroundedToolResolutionCode.GROUNDING_GAP:
+        return _failure(ModelFailureKind.TOOL_GROUNDING_GAP, str(error))
+    return _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, str(error))
 
 
 def _final_response_ready(context) -> bool:

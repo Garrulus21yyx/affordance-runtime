@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -16,7 +17,10 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     resolve_grounded_tool_call,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.surfaces.browsergym.binding import BrowserGymVisualBinding
 from affordance_runtime.surfaces.browsergym.semantics import PRIVATE_CONTROL_PROPERTIES_KEY
+from affordance_runtime.surfaces.browsergym.visual_projection import browsergym_visual_frame
+from affordance_runtime.surfaces.visual.contracts import VisualRegionBinding
 from affordance_runtime.surfaces.visual.disambiguation import (
     VisualCandidateDisambiguationRequest,
 )
@@ -404,6 +408,59 @@ def test_changed_screenshot_does_not_make_observation_only_visual_entity_executa
             assert environment.step_calls == 0
         finally:
             await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_missing_native_task_globals_use_lifecycle_fallback_for_visual_currentness() -> None:
+    async def scenario() -> None:
+        raw = _raw()
+        fake = FakeBrowserGym(raw)
+        fake.probe_task = {}
+        proposer = _Proposer([])
+        environment, task = _open(fake, proposer, with_point=False)
+        try:
+            await environment.reset(task)
+            frame = browsergym_visual_frame(raw, "visual:currentness")
+            region = VisualRegionBinding.from_region(
+                frame,
+                "visual-region:currentness",
+                VisualRegion(
+                    (0.25, 0.2, 0.2, 0.3),
+                    "target",
+                    0.9,
+                    primitive_action="point_activate",
+                    action_point_xy=(0.3, 0.3),
+                ),
+            )
+            private = BrowserGymVisualBinding(
+                "binding:visual-currentness",
+                environment._page_identity,  # noqa: SLF001 - low-level visual currentness conformance
+                environment._episode_identity,  # noqa: SLF001
+                region,
+            )
+            environment.bindings.replace((*environment.bindings.values, private))
+            request = SimpleNamespace(
+                binding=SimpleNamespace(
+                    binding_id=private.binding_id,
+                    source_observation_id=private.source_observation_id,
+                    source_revision=private.source_revision,
+                    primitive_action="point_activate",
+                ),
+            )
+
+            error, count = environment._probe_visual_currentness(request, private)  # noqa: SLF001
+        finally:
+            await environment.close()
+
+        assert error is None and count == 1
+        assert environment.last_currentness_decision is not None
+        assert environment.last_currentness_decision.status.value == "current"
+        assert environment.last_currentness_decision.reason.value == "current"
+        assert environment.last_currentness_decision.task_state_source.value == "lifecycle_fallback"
+        assert environment.last_currentness_decision.episode_source.value == "lifecycle_fallback"
+        assert fake.actions == []
+        assert environment.step_calls == 0
 
     asyncio.run(scenario())
 

@@ -10,6 +10,7 @@ from affordance_runtime.actions.binder import ActionBinder, BindingError
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import project_step_result
+from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
 from affordance_runtime.agent.decisions import (
     Abort,
     AbortCategory,
@@ -427,10 +428,28 @@ class CoreAgentLoop:
         if state.status is not RunStatus.RUNNING:
             raise ValueError("core step requires a running state")
         action_space = self.action_space_builder.build(task, state.current_world)
+        region_index = WorldRegionIndex.from_observation(state.current_world)
+        lens = (
+            state.delivery_lens
+            if state.delivery_lens is not None
+            and state.delivery_lens.world_observation_id == state.current_world.observation_id
+            and (
+                not state.delivery_lens.selected_region_key
+                or region_index.get(state.delivery_lens.selected_region_key) is not None
+            )
+            else None
+        )
         action_page = (
             state.action_page
             if state.action_page is not None
             and state.action_page.action_space_id == action_space.action_space_id
+            else self.context_builder.page_for_delivery_lens(
+                action_space,
+                state.current_world,
+                lens,
+                region_index,
+            )
+            if lens is not None
             else self.context_builder.page(action_space, state.current_world)
         )
         context = self.context_builder.build(
@@ -446,6 +465,8 @@ class CoreAgentLoop:
             goal_resolution=state.goal_resolution,
             working_facts=state.working_facts,
             runtime_controls=self.runtime_controls,
+            delivery_lens=lens,
+            region_index=region_index,
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)

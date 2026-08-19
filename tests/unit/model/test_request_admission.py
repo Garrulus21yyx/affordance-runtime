@@ -20,6 +20,7 @@ from affordance_runtime.agent.context.context import (
     AgentGroundingIndexView,
     AgentImageInput,
 )
+from affordance_runtime.agent.context.world_region_index import WorldRegion, WorldRegionIndex
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
@@ -124,7 +125,7 @@ def test_image_tokens_are_dimension_based_not_compressed_byte_based() -> None:
     assert padded.image_estimated_tokens < 5_000
 
 
-def test_soft_target_uses_action_focused_projection_without_mutating_context() -> None:
+def test_soft_target_uses_recoverable_region_projection_without_mutating_context() -> None:
     async def scenario() -> None:
         request, _catalog = await _request()
         roots = tuple(
@@ -160,6 +161,24 @@ def test_soft_target_uses_action_focused_projection_without_mutating_context() -
                 ),
                 {f"target:{index}": f"E{index}" for index in range(1, 240)},
             ),
+            region_index=WorldRegionIndex(
+                request.agent_context.current_observation.observation_id,
+                tuple(
+                    WorldRegion(
+                        f"region:test:{index + 1}-{min(index + 32, 239)}",
+                        f"R{index // 32 + 1}",
+                        "S1",
+                        f"targets:{index + 1}-{min(index + 32, 239)}",
+                        tuple(f"target:{target}" for target in range(index + 1, min(index + 33, 240))),
+                        (),
+                        f"button items {index + 1}-{min(index + 32, 239)}",
+                        "button",
+                        {"targets": min(32, 239 - index), "facts": 0, "actions": min(32, 239 - index)},
+                        "complete",
+                    )
+                    for index in range(0, 239, 32)
+                ),
+            ),
         )
         request = ModelDecisionRequest(request.request_id, large_context)
         tool = ToolSpec(
@@ -194,13 +213,76 @@ def test_soft_target_uses_action_focused_projection_without_mutating_context() -
 
         payload = json.loads(admitted.messages[1].content)
         observation = payload["observation"]
-        assert "delivery=action_focused" in observation
+        assert "delivery=region_lens" in observation
+        assert "recovery=inspect_world" in observation
+        assert "recovery=none" not in observation
         assert "[E1]" in observation
         assert request.agent_context.actor_world == before_actor_world
         assert request.agent_context.private_fact_bindings == before_bindings
         assert admitted.breakdown.admission_action == "admitted"
-        assert admitted.breakdown.delivery_projection == "action_focused"
+        assert admitted.breakdown.delivery_projection == "region_lens"
         assert admitted.breakdown.prefit_estimated_total_tokens > admitted.breakdown.estimated_total_tokens
+
+    asyncio.run(scenario())
+
+
+def test_soft_target_keeps_full_projection_when_region_lens_is_larger() -> None:
+    async def scenario() -> None:
+        request, _catalog = await _request()
+        context = replace(
+            request.agent_context,
+            region_index=WorldRegionIndex(
+                request.agent_context.current_observation.observation_id,
+                tuple(
+                    WorldRegion(
+                        f"region:oversized:{index}",
+                        f"R{index}",
+                        "S1",
+                        f"synthetic:{index}",
+                        ("shared-toggle",) if index == 1 else (),
+                        (),
+                        "oversized directory entry " + ("x" * 240),
+                        "region",
+                        {"targets": 1 if index == 1 else 0, "facts": 0, "actions": 1 if index == 1 else 0},
+                        "complete",
+                    )
+                    for index in range(1, 90)
+                ),
+            ),
+        )
+        request = ModelDecisionRequest(request.request_id, context)
+        tool = ToolSpec(
+            "activate_target",
+            "Activate one current target.",
+            {
+                "type": "object",
+                "properties": {"target": {"type": "string", "enum": ["E1"]}},
+                "required": ["target"],
+            },
+        )
+        binder = GroundedPolicyContextBinder(
+            request_budget=ModelRequestBudget(
+                soft_target_tokens=1,
+                model_context_window=200_000,
+                max_output_tokens=1,
+                protocol_reserve_tokens=1,
+                safety_margin_tokens=1,
+                admission_limit=100_000,
+            )
+        )
+
+        admitted = binder.action_request(
+            request,
+            (tool,),
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+
+        payload = json.loads(admitted.messages[1].content)
+        assert "delivery=region_lens" not in payload["observation"]
+        assert admitted.breakdown.delivery_projection == "full"
+        assert admitted.breakdown.prefit_estimated_total_tokens == admitted.breakdown.estimated_total_tokens
 
     asyncio.run(scenario())
 

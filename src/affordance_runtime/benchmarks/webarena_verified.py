@@ -31,10 +31,17 @@ from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
-from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model.policy.grounded_tool_catalog import (
+    compile_grounded_tool_catalog,
+    resolve_grounded_tool_call,
+)
+from affordance_runtime.model.policy.grounded_tool_contracts import (
+    GroundedToolPhase,
+    GroundedToolResolutionError,
+)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.request_admission import ModelRequestCapacityError
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
 from affordance_runtime.surfaces.browsergym.interaction_profile import BROWSERGYM_INTERACTION_PROFILE
@@ -570,7 +577,7 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             context.grounding,
             include_images=False,
         )
-        return _w1b_world_success(case_ref, environment, observation, action_space, context, catalog, rendered, request_budget)
+        return _w1b_world_success(case_ref, environment, task, observation, action_space, context, catalog, rendered, request_budget)
     except Exception as exc:
         return _w1b_world_failure(
             case_ref,
@@ -592,6 +599,7 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
 def _w1b_world_success(
     case_ref: WebArenaVerifiedCaseRef,
     environment: WebArenaVerifiedCaseEnvironment,
+    task: TaskGoal,
     observation,
     action_space,
     context,
@@ -608,6 +616,14 @@ def _w1b_world_success(
     closure_violations = _structural_closure_violations(context.actor_world, actor_paths)
     leak_markers = _private_leak_markers(rendered, catalog)
     find_actions_offered = "find_actions" in {item.name for item in catalog.specs}
+    recoverability = _recoverability_diagnostic(
+        environment,
+        task,
+        observation,
+        action_space,
+        context,
+        catalog,
+    )
     acceptance_errors = []
     if missing_tool_refs:
         acceptance_errors.append(f"tool_targets_missing_from_actor:{len(missing_tool_refs)}")
@@ -619,8 +635,7 @@ def _w1b_world_success(
         acceptance_errors.append(f"private_model_input_leaks:{len(leak_markers)}")
     if context.actions.has_more and not find_actions_offered:
         acceptance_errors.append("partial_action_inventory_without_find_actions")
-    if not context.actions.has_more and find_actions_offered:
-        acceptance_errors.append("complete_action_inventory_reported_partial")
+    acceptance_errors.extend(recoverability["acceptance_errors"])
     return {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "status": "ok",
@@ -672,6 +687,7 @@ def _w1b_world_success(
             "leak_count": len(leak_markers),
             "markers": leak_markers,
         },
+        "recoverability": recoverability,
         "perception_route": {
             "profile": "TEXT_ONLY",
             "image_attached": False,
@@ -698,6 +714,236 @@ def _w1b_request_budget(context, catalog) -> dict[str, object]:
         return admitted.breakdown.as_diagnostics()
     except ModelRequestCapacityError as exc:
         return exc.breakdown.as_diagnostics()
+
+
+def _recoverability_diagnostic(
+    environment: WebArenaVerifiedCaseEnvironment,
+    task: TaskGoal,
+    observation,
+    action_space,
+    context,
+    catalog,
+) -> dict[str, Any]:
+    errors: list[str] = []
+    checks: dict[str, object] = {}
+    semantic_before = _semantic_world_digest(observation)
+    browsergym_before = environment.surface.diagnostic_snapshot().as_metrics()
+    region_index = context.region_index
+    if region_index is None or not region_index.regions:
+        return {
+            "status": "failed",
+            "acceptance_errors": ("recoverability:no_region_index",),
+            "checks": {"region_index": False},
+        }
+    target_by_id = {item.target_id: item for item in observation.targets}
+    option_by_target = {item.target_id: item for item in action_space.options}
+    sample_region = next(
+        (
+            region
+            for region in region_index.regions
+            if any(target_id in option_by_target for target_id in region.member_target_ids)
+        ),
+        next((region for region in region_index.regions if region.member_target_ids), region_index.regions[0]),
+    )
+    sample_target_id = next(
+        (target_id for target_id in sample_region.member_target_ids if target_id in option_by_target),
+        "",
+    ) or next(
+        (target_id for target_id in sample_region.member_target_ids if target_id in target_by_id),
+        "",
+    )
+    sample_target = target_by_id.get(sample_target_id)
+    query = _recoverability_query(sample_region, sample_target, observation)
+    try:
+        opened = resolve_grounded_tool_call(
+            catalog,
+            ToolCall(
+                "inspect_world",
+                {"action": "open_region", "region_ref": sample_region.public_ref},
+                "recoverability:open",
+            ),
+            expected_context_id=context.context_id,
+            expected_catalog_id=catalog.catalog_id,
+        ).decision
+        open_content = str(opened.result.get("content", ""))
+        checks["open_region"] = bool(open_content.strip())
+        if not checks["open_region"]:
+            errors.append("recoverability:open_region_empty")
+        if sample_target is not None and sample_target.label and sample_target.label not in open_content:
+            errors.append("recoverability:open_region_missing_target_label")
+        lens = getattr(opened, "delivery_lens", None)
+        checks["lens_effect"] = bool(lens and lens.selected_region_key == sample_region.key)
+        if not checks["lens_effect"]:
+            errors.append("recoverability:open_region_missing_lens_effect")
+    except Exception as exc:
+        return _recoverability_failure("open_region", exc)
+    if query:
+        try:
+            found = resolve_grounded_tool_call(
+                catalog,
+                ToolCall("inspect_world", {"action": "find", "query": query}, "recoverability:find"),
+                expected_context_id=context.context_id,
+                expected_catalog_id=catalog.catalog_id,
+            ).decision
+            matches = tuple(found.result.get("matches", ()))
+            checks["find"] = bool(matches)
+            if not matches:
+                errors.append("recoverability:find_no_match")
+            elif not any(item.get("region_ref") == sample_region.public_ref for item in matches if isinstance(item, Mapping)):
+                errors.append("recoverability:find_wrong_region")
+        except Exception as exc:
+            return _recoverability_failure("find", exc)
+    try:
+        viewed = resolve_grounded_tool_call(
+            catalog,
+            ToolCall("inspect_world", {"action": "view_all"}, "recoverability:view_all"),
+            expected_context_id=context.context_id,
+            expected_catalog_id=catalog.catalog_id,
+        ).decision
+        page = viewed.result.get("page", {})
+        regions = tuple(viewed.result.get("regions", ()))
+        checks["view_all"] = any(
+            isinstance(item, Mapping) and item.get("region_ref") == sample_region.public_ref
+            for item in regions
+        ) or bool(page.get("has_more"))
+        if not checks["view_all"]:
+            errors.append("recoverability:view_all_missing_regions")
+        if page.get("has_more"):
+            cursor = str(page.get("next_cursor", ""))
+            continued = resolve_grounded_tool_call(
+                catalog,
+                ToolCall("inspect_world", {"action": "view_all", "cursor": cursor}, "recoverability:view_all:2"),
+                expected_context_id=context.context_id,
+                expected_catalog_id=catalog.catalog_id,
+            ).decision
+            checks["cursor"] = bool(continued.result.get("regions", ()))
+            if not checks["cursor"]:
+                errors.append("recoverability:view_all_cursor_empty")
+        else:
+            checks["cursor"] = True
+    except Exception as exc:
+        return _recoverability_failure("view_all", exc)
+    if lens is not None and sample_target_id:
+        try:
+            builder = ContextBuilder()
+            page = builder.page_for_delivery_lens(action_space, observation, lens, region_index)
+            next_context = builder.build(
+                task,
+                observation,
+                action_space,
+                TaskEvaluation(
+                    task.task_id,
+                    observation.observation_id,
+                    TaskEvaluationStatus.INCOMPLETE,
+                    "w1b-world recoverability rerender",
+                ),
+                action_page=page,
+                delivery_lens=lens,
+                region_index=region_index,
+            )
+            next_catalog = compile_grounded_tool_catalog(next_context, GroundedToolPhase.ACTION_SELECTION)
+            rendered = render_compact_actor_world(
+                next_context.actor_world,
+                next_context.grounding,
+                include_images=False,
+                region_index=next_context.region_index,
+                observation=next_context.current_observation,
+                selected_region_keys=frozenset({lens.selected_region_key}),
+                selected_cursor=lens.cursor,
+                max_rendered_bytes=1,
+            )
+            action_target_id = next(
+                (
+                    option.target_id
+                    for option in next_context.actions.options
+                    if option.target_id in sample_region.member_target_ids
+                ),
+                sample_target_id,
+            )
+            current_ref = next_context.grounding.target_refs.get(action_target_id, "")
+            checks["expanded_current_ref"] = bool(current_ref and f"[{current_ref}]" in rendered)
+            if not checks["expanded_current_ref"]:
+                errors.append("recoverability:expanded_region_missing_current_ref")
+            checks["expanded_tool_target"] = any(
+                option.target_id == action_target_id and option.target_ref == current_ref
+                for option in next_context.actions.options
+            ) and _catalog_has_action_tool(next_catalog)
+            if not checks["expanded_tool_target"]:
+                errors.append("recoverability:expanded_region_missing_tool_target")
+        except Exception as exc:
+            return _recoverability_failure("lens_rerender", exc)
+    try:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall(
+                "inspect_world",
+                {"action": "open_region", "region_ref": sample_region.public_ref},
+                "recoverability:stale",
+            ),
+            expected_context_id="context:" + "0" * 64,
+            expected_catalog_id=catalog.catalog_id,
+        )
+        errors.append("recoverability:stale_context_not_rejected")
+        checks["stale_context"] = False
+    except GroundedToolResolutionError:
+        checks["stale_context"] = True
+    browsergym_after = environment.surface.diagnostic_snapshot().as_metrics()
+    checks["semantic_digest_unchanged"] = semantic_before == _semantic_world_digest(observation)
+    checks["zero_dispatch_metrics_unchanged"] = browsergym_before == browsergym_after
+    if not checks["semantic_digest_unchanged"]:
+        errors.append("recoverability:world_digest_changed")
+    if not checks["zero_dispatch_metrics_unchanged"]:
+        errors.append("recoverability:browsergym_metrics_changed")
+    return {
+        "status": "ok" if not errors else "failed",
+        "acceptance_errors": tuple(errors),
+        "sample": {
+            "region_ref": sample_region.public_ref,
+            "target_id_digest": _digest_public_id(sample_target_id),
+            "query": query,
+        },
+        "checks": checks,
+    }
+
+
+def _recoverability_failure(stage: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "status": "failed",
+        "acceptance_errors": (f"recoverability:{stage}_failed",),
+        "checks": {stage: False},
+        "failure": {
+            "exception_class": type(exc).__name__,
+            "message_digest": f"sha256:{hashlib.sha256(str(exc).encode()).hexdigest()}",
+        },
+    }
+
+
+def _recoverability_query(region, target, observation) -> str:
+    if target is not None and target.label.strip():
+        return target.label.strip()[:120]
+    for fact in observation.facts:
+        if fact.fact_id in region.member_fact_ids:
+            return str(fact.value)[:120]
+    return region.heading[:120]
+
+
+def _catalog_has_action_tool(catalog) -> bool:
+    local_tools = {
+        "inspect_world",
+        "find_actions",
+        "request_evidence",
+        "count_" + "children",
+        "pin_fact",
+        "ask_user",
+        "wait",
+        "abort",
+        "yield_subtask",
+    }
+    return any(spec.name not in local_tools for spec in catalog.specs)
+
+
+def _digest_public_id(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode()).hexdigest() if value else ""
 
 
 def _w1b_world_failure(

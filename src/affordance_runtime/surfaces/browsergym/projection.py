@@ -186,6 +186,8 @@ def project_browsergym_observation(
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
         state: dict[str, object] = dict(node.public_state)
+        execution_allowed = not _is_tab_panel_container(node, controls_by_node_id)
+        drag_destinations = _drag_destinations(node, projected, target_ids)
         membership = lattice_by_node.get(node.private_node_id)
         if membership is not None:
             state.update({
@@ -203,6 +205,9 @@ def project_browsergym_observation(
             option_value_count += len(option_domain)
             if len(option_domain) < len(node.public_options):
                 issues.append(EntityInventoryIssueCode.OPTION_DOMAIN_CAPACITY_EXCEEDED)
+        why_not_eligible = _why_not_eligible(node, execution_allowed, drag_destinations)
+        if why_not_eligible:
+            state["action.why_not_eligible"] = why_not_eligible
         relations: dict[str, object] = {}
         parent = target_ids.get(node.private_parent_id)
         children = tuple(target_ids[child_id] for child_id in node.private_child_ids if child_id in target_ids)
@@ -230,8 +235,8 @@ def project_browsergym_observation(
             source_revision,
             page_identity,
             episode_identity,
-            drag_destinations=_drag_destinations(node, projected, target_ids),
-            execution_allowed=not _is_tab_panel_container(node, controls_by_node_id),
+            drag_destinations=drag_destinations,
+            execution_allowed=execution_allowed,
         )
         for public, runtime in binding_pairs:
             bindings.append(public)
@@ -249,6 +254,7 @@ def project_browsergym_observation(
         targets.append(focused_target)
         bindings.append(focused_public)
         private.append(focused_private)
+    fact_total = max(fact_total, len(facts))
     if fact_total > len(facts):
         issues.append(EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED)
     relation_count = sum(
@@ -275,6 +281,12 @@ def project_browsergym_observation(
         "public_summary": "Current provider-native BrowserGym task state.",
         "source": task_state.source.value,
     }
+    eligibility_diagnostics = _eligibility_diagnostics(targets, bindings)
+    if eligibility_diagnostics:
+        artifacts["browsergym_action_eligibility"] = {
+            "public_summary": "Non-authoritative diagnostics for BrowserGym targets visible in structure but absent from action bindings.",
+            "items": eligibility_diagnostics,
+        }
     screenshot_media = _screenshot_media(
         raw,
         observation_id,
@@ -705,6 +717,77 @@ def _binding_pairs(
             )
         result.append((public, runtime))
     return tuple(result)
+
+
+def _why_not_eligible(
+    node: CanonicalBrowserControl,
+    execution_allowed: bool,
+    drag_destinations: tuple[tuple[str, CanonicalBrowserControl], ...],
+) -> tuple[str, ...]:
+    if not node.role_spec.executable:
+        return ()
+    if node.executable and execution_allowed:
+        drag_offers = tuple(offer for offer in node.executable_offers if offer.semantic_action == "drag_to")
+        if not drag_offers or drag_destinations:
+            return ()
+    reasons: list[str] = []
+    if not execution_allowed:
+        reasons.append("execution_suppressed_tab_panel_container")
+    availability = dict(node.availability.as_tuple())
+    for offer in node.role_spec.offers:
+        for requirement in offer.execution_requirements:
+            state = _requirement_state(requirement, availability)
+            if state:
+                reasons.append(state)
+        if offer.semantic_action == "select_option" and not node.private_options:
+            reasons.append("select_option_domain_unavailable")
+        if offer.semantic_action == "drag_to" and not drag_destinations:
+            reasons.append("drag_destination_unavailable")
+    return tuple(dict.fromkeys(reasons))[:8] or ("no_executable_offer",)
+
+
+def _requirement_state(requirement: str, availability: dict[str, bool | None]) -> str:
+    if requirement == "attached":
+        return _availability_reason("attached", availability.get("attached"), expected=True)
+    if requirement == "visible":
+        return _availability_reason("visible", availability.get("visible"), expected=True)
+    if requirement == "enabled":
+        return _availability_reason("enabled", availability.get("enabled"), expected=True)
+    if requirement == "not_readonly":
+        return _availability_reason("readonly", availability.get("readonly"), expected=False)
+    if requirement == "editable":
+        return _availability_reason("editable", availability.get("editable"), expected=True)
+    if requirement == "focusable":
+        return _availability_reason("focusable", availability.get("focusable"), expected=True)
+    return f"availability.{requirement}_unsupported"
+
+
+def _availability_reason(field: str, actual: bool | None, *, expected: bool) -> str:
+    if actual is expected:
+        return ""
+    suffix = "unknown" if actual is None else f"{str(actual).lower()}"
+    return f"availability.{field}_{suffix}"
+
+
+def _eligibility_diagnostics(
+    targets: list[SemanticTarget],
+    bindings: list[ActionBinding],
+) -> tuple[dict[str, object], ...]:
+    actionable = {binding.target_id for binding in bindings}
+    diagnostics = []
+    for target in targets:
+        reasons = target.state.get("action.why_not_eligible")
+        if target.target_id in actionable or not isinstance(reasons, tuple | list) or not reasons:
+            continue
+        diagnostics.append({
+            "target_id": target.target_id,
+            "role": target.role,
+            "label": target.label,
+            "why_not_eligible": tuple(str(item) for item in reasons),
+        })
+        if len(diagnostics) >= 128:
+            break
+    return tuple(diagnostics)
 
 
 def _drag_destinations(

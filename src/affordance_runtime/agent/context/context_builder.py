@@ -25,11 +25,13 @@ from affordance_runtime.agent.context.grounding_projection import (
 )
 from affordance_runtime.agent.context.projection import project_action_page
 from affordance_runtime.agent.context.task_projection import project_task
+from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_projection import (
     ModelWorldView,
     fit_model_world,
     project_model_world,
 )
+from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
 from affordance_runtime.agent.working_facts import WorkingFact, public_working_facts
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -61,10 +63,21 @@ class ContextBuilder:
         goal_resolution: GoalPlanResolution | None = None,
         working_facts: tuple[WorkingFact, ...] = (),
         runtime_controls: tuple[str, ...] = (),
+        delivery_lens: WorldDeliveryLens | None = None,
+        region_index: WorldRegionIndex | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
-        default_page = self.page(action_space, observation)
+        if delivery_lens is not None and delivery_lens.world_observation_id != observation.observation_id:
+            raise ValueError("delivery lens belongs to a previous observation")
+        current_region_index = region_index or WorldRegionIndex.from_observation(observation)
+        if current_region_index.world_observation_id != observation.observation_id:
+            raise ValueError("region index belongs to a previous observation")
+        default_page = (
+            self.page_for_delivery_lens(action_space, observation, delivery_lens, current_region_index)
+            if delivery_lens is not None
+            else self.page(action_space, observation)
+        )
         page = action_page or default_page
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
@@ -81,6 +94,11 @@ class ContextBuilder:
             shown_actions,
             observation,
             self.budget.observation_pinned_capacity(len(observation.targets)),
+            extra_target_ids=(
+                current_region_index.member_target_ids(delivery_lens.selected_region_key)
+                if delivery_lens is not None and delivery_lens.selected_region_key
+                else ()
+            ),
         )
         world = project_model_world(
             observation,
@@ -125,7 +143,7 @@ class ContextBuilder:
             page,
             context_generation,
             goal_plan,
-            _tool_catalog_digest(actions, world, grounding, runtime_controls),
+            _tool_catalog_digest(actions, world, grounding, runtime_controls, delivery_lens),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         return _fit_context(
@@ -147,6 +165,8 @@ class ContextBuilder:
             working_facts,
             history_total,
             runtime_controls,
+            delivery_lens,
+            current_region_index,
         )
 
     def page(
@@ -174,6 +194,39 @@ class ContextBuilder:
             ),
             max_destinations_per_option=self.budget.max_destinations_per_option,
             max_targets=self.budget.observation_pinned_capacity(len(observation.targets)),
+        )
+
+    def page_for_delivery_lens(
+        self,
+        action_space: ActionSpace,
+        observation: WorldObservation,
+        lens: WorldDeliveryLens,
+        region_index: WorldRegionIndex | None = None,
+    ) -> InternalActionPage:
+        if lens.world_observation_id != observation.observation_id:
+            raise ValueError("delivery lens belongs to a previous observation")
+        current_region_index = region_index or WorldRegionIndex.from_observation(observation)
+        if current_region_index.world_observation_id != observation.observation_id:
+            raise ValueError("region index belongs to a previous observation")
+        selected_targets = set(current_region_index.member_target_ids(lens.selected_region_key))
+        allowed = {
+            option.action_id
+            for option in action_space.options
+            if option.target_id in selected_targets
+            or bool(set(option.eligible_destination_ids) & selected_targets)
+        }
+        if not allowed:
+            return self.page(action_space, observation)
+        labels = {item.target_id: item.label for item in observation.targets}
+        return self.pager.page(
+            action_space,
+            None,
+            labels=labels,
+            page_size=min(self.budget.max_action_options, self.pager.page_size),
+            max_destinations_per_option=self.budget.max_destinations_per_option,
+            max_targets=self.budget.observation_pinned_capacity(len(observation.targets)),
+            allowed_action_ids=frozenset(allowed),
+            authority_digest="delivery-lens:" + lens.selected_region_key,
         )
 
 
@@ -218,6 +271,7 @@ def _tool_catalog_digest(
     world,
     grounding: GroundingProjectionResult,
     runtime_controls: tuple[str, ...],
+    delivery_lens: WorldDeliveryLens | None,
 ) -> str:
     """Bind identity to the exact current inputs that determine the public tool catalog."""
 
@@ -227,17 +281,25 @@ def _tool_catalog_digest(
         "world_targets": world.targets,
         "grounding_entities": grounding.index.entities,
         "runtime_controls": tuple(runtime_controls),
+        "delivery_lens": delivery_lens,
     })
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _pinned_targets(actions, observation, limit: int) -> tuple[str, ...]:
-    values = [
+def _pinned_targets(
+    actions,
+    observation,
+    limit: int,
+    *,
+    extra_target_ids: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    page_values = [
         target_id
         for option in actions
         for target_id in (option.target_id, *(item.destination_id for item in option.destinations.items))
     ]
+    values = [*extra_target_ids, *page_values]
     current = {item.target_id for item in observation.targets}
     return tuple(target_id for target_id in dict.fromkeys(values) if target_id in current)[:limit]
 
@@ -257,6 +319,8 @@ def _fit_context(
     working_facts: tuple[WorkingFact, ...],
     current_step_index: int,
     runtime_controls: tuple[str, ...],
+    delivery_lens: WorldDeliveryLens | None,
+    region_index: WorldRegionIndex,
 ) -> AgentContext:
     evidence_index = WorldEvidenceIndex.from_observation(observation)
     while True:
@@ -300,6 +364,9 @@ def _fit_context(
             working_facts,
             private_fact_bindings,
             evidence_index,
+            observation,
+            delivery_lens,
+            region_index,
             current_step_index,
             budget.max_history_serialized_bytes,
             runtime_controls,

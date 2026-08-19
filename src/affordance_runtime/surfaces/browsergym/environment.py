@@ -21,7 +21,9 @@ from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessContext,
     BrowserGymCurrentnessDecision,
     BrowserGymCurrentnessReason,
+    BrowserGymCurrentnessSource,
     BrowserGymCurrentnessStatus,
+    compare_browsergym_context_currentness,
     compare_browsergym_currentness,
     compare_browsergym_drag_currentness,
     unavailable_currentness,
@@ -100,6 +102,15 @@ class BrowserGymPort(Protocol):
     def capture_current(self) -> tuple[dict[str, object], dict[str, object]]: ...
     def currentness_probe(self, bid: str) -> object: ...
     def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class _BrowserGymCurrentnessLifecycle:
+    live_episode_identity: str
+    task_ready: bool
+    task_done: bool
+    task_state_source: BrowserGymCurrentnessSource
+    episode_source: BrowserGymCurrentnessSource
 
 
 def _accepts_registration_modules(factory: Callable[..., BrowserGymPort]) -> bool:
@@ -416,7 +427,7 @@ class BrowserGymSurfaceAdapter:
                 request.binding.executor_id,
                 False,
                 error,
-                {"currentness_probe_count": physical_probe_count, "effectful_dispatch_count": 0},
+                self._currentness_evidence(physical_probe_count, 0),
             )
         assert private is not None
         try:
@@ -428,7 +439,7 @@ class BrowserGymSurfaceAdapter:
                 request.binding.executor_id,
                 False,
                 ActionError.INVALID_PARAMETERS,
-                {"currentness_probe_count": 1, "effectful_dispatch_count": 0},
+                self._currentness_evidence(1, 0),
             )
         self._record_dispatch(request)
         self._pending_raw = None
@@ -445,14 +456,14 @@ class BrowserGymSurfaceAdapter:
                 "browsergym",
                 False,
                 ActionError.EXECUTION_FAILED,
-                {"currentness_probe_count": 1, "effectful_dispatch_count": 1},
+                self._currentness_evidence(1, 1),
             )
         result = ActionResult(
             request.request_id,
             DispatchStatus.SENT,
             "browsergym",
             True,
-            adapter_evidence={"currentness_probe_count": 1, "effectful_dispatch_count": 1},
+            adapter_evidence=self._currentness_evidence(1, 1),
         )
         try:
             current_task_info = task_info(info)
@@ -848,15 +859,8 @@ class BrowserGymSurfaceAdapter:
         if not isinstance(raw, dict) or not isinstance(task, dict):
             self.last_currentness_decision = unavailable_currentness()
             return ActionError.CURRENTNESS_UNAVAILABLE, 1
-        ready, done = task.get("ready"), task.get("done")
-        episode = task.get("episode")
-        if (
-            not isinstance(ready, bool)
-            or not isinstance(done, bool)
-            or not isinstance(episode, str | int)
-            or isinstance(episode, bool)
-        ):
-            self.last_currentness_decision = unavailable_currentness()
+        lifecycle = self._resolve_currentness_lifecycle(task)
+        if lifecycle is None:
             return ActionError.CURRENTNESS_UNAVAILABLE, 1
         try:
             live = canonical_control_for_bid(raw, private.private_element_id)
@@ -869,9 +873,9 @@ class BrowserGymSurfaceAdapter:
             private.page_identity,
             live_page,
             private.episode_identity,
-            str(episode),
-            ready,
-            done or self._terminated,
+            lifecycle.live_episode_identity,
+            lifecycle.task_ready,
+            lifecycle.task_done,
             request.binding.primitive_action,
         )
         if isinstance(private, BrowserGymDragBinding):
@@ -890,7 +894,7 @@ class BrowserGymSurfaceAdapter:
             )
         else:
             decision = compare_browsergym_currentness(private.canonical_control, live, context)
-        self.last_currentness_decision = decision
+        self.last_currentness_decision = self._with_currentness_sources(decision, lifecycle)
         if decision.status is BrowserGymCurrentnessStatus.CURRENT:
             return None, 1
         if decision.status is BrowserGymCurrentnessStatus.UNAVAILABLE:
@@ -906,42 +910,42 @@ class BrowserGymSurfaceAdapter:
             raw, probe = self.gym_environment.capture_current()
             if not isinstance(probe, dict):
                 raise ValueError("context currentness probe must be structured")
-            ready = probe.get("ready")
-            done = probe.get("done")
-            if not isinstance(ready, bool) or not isinstance(done, bool):
-                raise ValueError("context currentness probe omitted task state")
+            lifecycle = self._resolve_currentness_lifecycle(probe)
+            if lifecycle is None:
+                return ActionError.CURRENTNESS_UNAVAILABLE, 1
             live_page = page_identity(raw)
-            live_episode = probe_episode(probe, self._episode_identity)
         except Exception:
             self.last_currentness_decision = unavailable_currentness()
             return ActionError.CURRENTNESS_UNAVAILABLE, 1
-        reason = None
-        if not self.is_current(request):
-            reason = BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
-        elif done or self._terminated:
-            reason = BrowserGymCurrentnessReason.TASK_DONE
-        elif not ready:
-            reason = BrowserGymCurrentnessReason.TASK_NOT_READY
-        elif private.page_identity != live_page:
-            reason = BrowserGymCurrentnessReason.PAGE_CHANGED
-        elif private.episode_identity != live_episode:
-            reason = BrowserGymCurrentnessReason.EPISODE_CHANGED
-        elif (
-            isinstance(private, BrowserGymFocusedContextBinding)
+        context = BrowserGymCurrentnessContext(
+            self.is_current(request),
+            private.page_identity,
+            live_page,
+            private.episode_identity,
+            lifecycle.live_episode_identity,
+            lifecycle.task_ready,
+            lifecycle.task_done,
+            request.binding.primitive_action,
+        )
+        decision = compare_browsergym_context_currentness(context)
+        reason = decision.reason if decision.status is not BrowserGymCurrentnessStatus.CURRENT else None
+        if (
+            reason is None
+            and isinstance(private, BrowserGymFocusedContextBinding)
             and private.focused_private_element_id
             and not _focused_bid_is_current(raw, private.focused_private_element_id)
         ):
             reason = BrowserGymCurrentnessReason.STATE_CHANGED
         if reason is None:
-            self.last_currentness_decision = BrowserGymCurrentnessDecision(
+            self.last_currentness_decision = self._with_currentness_sources(BrowserGymCurrentnessDecision(
                 BrowserGymCurrentnessStatus.CURRENT,
                 BrowserGymCurrentnessReason.CURRENT,
-            )
+            ), lifecycle)
             return None, 1
-        self.last_currentness_decision = BrowserGymCurrentnessDecision(
+        self.last_currentness_decision = self._with_currentness_sources(BrowserGymCurrentnessDecision(
             BrowserGymCurrentnessStatus.STALE,
             reason,
-        )
+        ), lifecycle)
         return ActionError.STALE_BINDING, 1
 
     def _probe_visual_currentness(
@@ -953,40 +957,136 @@ class BrowserGymSurfaceAdapter:
             raw, probe = self.gym_environment.capture_current()
             if not isinstance(probe, dict):
                 raise ValueError("visual currentness probe must be structured")
-            ready = probe.get("ready")
-            done = probe.get("done")
-            if not isinstance(ready, bool) or not isinstance(done, bool):
-                raise ValueError("visual currentness probe omitted task state")
+            lifecycle = self._resolve_currentness_lifecycle(probe)
+            if lifecycle is None:
+                return ActionError.CURRENTNESS_UNAVAILABLE, 1
             live_page = page_identity(raw)
-            live_episode = probe_episode(probe, self._episode_identity)
             live = browsergym_visual_frame(raw, f"probe:{uuid.uuid4().hex}")
         except Exception:
             self.last_currentness_decision = unavailable_currentness()
             return ActionError.CURRENTNESS_UNAVAILABLE, 1
-        reason = None
-        if not self.is_current(request):
-            reason = BrowserGymCurrentnessReason.BINDING_EPOCH_CHANGED
-        elif done or self._terminated:
-            reason = BrowserGymCurrentnessReason.TASK_DONE
-        elif not ready:
-            reason = BrowserGymCurrentnessReason.TASK_NOT_READY
-        elif private.page_identity != live_page:
-            reason = BrowserGymCurrentnessReason.PAGE_CHANGED
-        elif private.episode_identity != live_episode:
-            reason = BrowserGymCurrentnessReason.EPISODE_CHANGED
-        elif not visual_binding_is_current(private.region, live):
+        context = BrowserGymCurrentnessContext(
+            self.is_current(request),
+            private.page_identity,
+            live_page,
+            private.episode_identity,
+            lifecycle.live_episode_identity,
+            lifecycle.task_ready,
+            lifecycle.task_done,
+            request.binding.primitive_action,
+        )
+        decision = compare_browsergym_context_currentness(context)
+        reason = decision.reason if decision.status is not BrowserGymCurrentnessStatus.CURRENT else None
+        if reason is None and not visual_binding_is_current(private.region, live):
             reason = BrowserGymCurrentnessReason.STATE_CHANGED
         if reason is None:
-            self.last_currentness_decision = BrowserGymCurrentnessDecision(
+            self.last_currentness_decision = self._with_currentness_sources(BrowserGymCurrentnessDecision(
                 BrowserGymCurrentnessStatus.CURRENT,
                 BrowserGymCurrentnessReason.CURRENT,
-            )
+            ), lifecycle)
             return None, 1
-        self.last_currentness_decision = BrowserGymCurrentnessDecision(
+        self.last_currentness_decision = self._with_currentness_sources(BrowserGymCurrentnessDecision(
             BrowserGymCurrentnessStatus.STALE,
             reason,
-        )
+        ), lifecycle)
         return ActionError.STALE_BINDING, 1
+
+    def _resolve_currentness_lifecycle(
+        self,
+        probe: dict[str, object],
+    ) -> _BrowserGymCurrentnessLifecycle | None:
+        episode = probe.get("episode")
+        if "episode" in probe:
+            if not isinstance(episode, str | int) or isinstance(episode, bool):
+                self.last_currentness_decision = unavailable_currentness(
+                    task_state_source=self._task_state_source_for_probe(probe),
+                    episode_source=BrowserGymCurrentnessSource.NATIVE,
+                )
+                return None
+            live_episode_identity = str(episode)
+            episode_source = BrowserGymCurrentnessSource.NATIVE
+        else:
+            live_episode_identity = self._episode_identity
+            episode_source = BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK
+
+        ready = probe.get("ready")
+        if "ready" in probe:
+            if not isinstance(ready, bool):
+                self.last_currentness_decision = unavailable_currentness(
+                    task_state_source=BrowserGymCurrentnessSource.NATIVE,
+                    episode_source=episode_source,
+                )
+                return None
+            task_ready = ready
+            ready_source = BrowserGymCurrentnessSource.NATIVE
+        else:
+            task_ready = self._task is not None and not self._closed and not self._terminated
+            ready_source = BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK
+
+        done = probe.get("done")
+        if "done" in probe:
+            if not isinstance(done, bool):
+                self.last_currentness_decision = unavailable_currentness(
+                    task_state_source=BrowserGymCurrentnessSource.NATIVE,
+                    episode_source=episode_source,
+                )
+                return None
+            task_done = done or self._terminated
+            done_source = BrowserGymCurrentnessSource.NATIVE
+        else:
+            task_done = self._terminated
+            done_source = BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK
+
+        task_sources = {ready_source, done_source}
+        if task_sources == {BrowserGymCurrentnessSource.NATIVE}:
+            task_state_source = BrowserGymCurrentnessSource.NATIVE
+        elif task_sources == {BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK}:
+            task_state_source = BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK
+        else:
+            task_state_source = BrowserGymCurrentnessSource.MIXED
+        return _BrowserGymCurrentnessLifecycle(
+            live_episode_identity,
+            task_ready,
+            task_done,
+            task_state_source,
+            episode_source,
+        )
+
+    def _task_state_source_for_probe(self, probe: dict[str, object]) -> BrowserGymCurrentnessSource:
+        ready_source = (
+            BrowserGymCurrentnessSource.NATIVE
+            if "ready" in probe
+            else BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK
+        )
+        done_source = (
+            BrowserGymCurrentnessSource.NATIVE
+            if "done" in probe
+            else BrowserGymCurrentnessSource.LIFECYCLE_FALLBACK
+        )
+        return ready_source if ready_source is done_source else BrowserGymCurrentnessSource.MIXED
+
+    def _with_currentness_sources(
+        self,
+        decision: BrowserGymCurrentnessDecision,
+        lifecycle: _BrowserGymCurrentnessLifecycle,
+    ) -> BrowserGymCurrentnessDecision:
+        return BrowserGymCurrentnessDecision(
+            decision.status,
+            decision.reason,
+            lifecycle.task_state_source,
+            lifecycle.episode_source,
+        )
+
+    def _currentness_evidence(self, probe_count: int, dispatch_count: int) -> dict[str, object]:
+        decision = self.last_currentness_decision or unavailable_currentness()
+        return {
+            "currentness_probe_count": probe_count,
+            "currentness_status": decision.status.value,
+            "currentness_reason": decision.reason.value,
+            "currentness_task_state_source": decision.task_state_source.value,
+            "currentness_episode_source": decision.episode_source.value,
+            "effectful_dispatch_count": dispatch_count,
+        }
 
     def _record_dispatch(self, request: BoundActionRequest) -> None:
         self.step_calls += 1

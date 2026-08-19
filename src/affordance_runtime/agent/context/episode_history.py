@@ -14,6 +14,21 @@ from affordance_runtime.agent.context.contracts import (
 from affordance_runtime.agent.context.projection import project_public_value
 
 DETAILED_HISTORY_STEPS = 4
+_TRANSITION_SUMMARY_KEYS = (
+    "role",
+    "label",
+    "observed_change",
+    "evidence_method",
+    "local_postcondition",
+    "target_changed",
+    "screenshot_changed",
+    "structural_world_changed",
+    "before_world_fingerprint",
+    "after_world_fingerprint",
+)
+_STATE_DELTA_KEYS = ("before_state", "after_state")
+_MAX_STATE_DELTA_FIELDS = 8
+_MAX_FACT_CHANGE_SAMPLE = 4
 
 
 class EpisodeHistoryCapacityError(ValueError):
@@ -64,7 +79,7 @@ def _earlier_action(item: AgentTurnView) -> dict[str, object]:
         result["arguments"] = sanitize_history_value(project_public_value(item.public_parameters))
     if item.semantic_summary:
         result["details"] = sanitize_history_value(project_public_value(item.semantic_summary))
-    transition = sanitize_history_value(project_public_value(item.transition))
+    transition = _compact_transition(item.transition, fact_change_sample=0)
     if transition:
         result["transition"] = transition
     return result
@@ -97,8 +112,9 @@ def _turn(item: AgentTurnView) -> dict[str, object]:
     }
     if item.task_evaluation_status not in {"", "unknown", "incomplete"}:
         result["task"] = sanitize_history_value(item.task_evaluation_status)
-    if item.transition:
-        result["transition"] = sanitize_history_value(item.transition)
+    transition = _compact_transition(item.transition, fact_change_sample=_MAX_FACT_CHANGE_SAMPLE)
+    if transition:
+        result["transition"] = transition
     if result_details is not None:
         result["details"] = result_details
     return {"action": action, "result": result}
@@ -112,6 +128,75 @@ def _historical_target(value: AgentHistoricalTargetView) -> dict[str, object]:
     if value.context:
         result["context"] = tuple(sanitize_history_value(item) for item in value.context)
     return result
+
+
+def _compact_transition(
+    transition: Mapping[str, object],
+    *,
+    fact_change_sample: int,
+) -> dict[str, object]:
+    public = sanitize_history_value(transition)
+    if not isinstance(public, Mapping):
+        return {}
+    result = {
+        key: public[key]
+        for key in _TRANSITION_SUMMARY_KEYS
+        if key in public and _small_history_value(public[key])
+    }
+    for key in _STATE_DELTA_KEYS:
+        value = public.get(key)
+        if isinstance(value, Mapping):
+            compact = _compact_state_delta(value)
+            if compact:
+                result[key] = compact
+    raw_fact_changes = transition.get("fact_changes")
+    public_fact_changes = public.get("fact_changes")
+    if isinstance(raw_fact_changes, tuple | list):
+        result["fact_change_count"] = len(raw_fact_changes)
+        sample = tuple(
+            item
+            for item in (_compact_fact_change(change) for change in public_fact_changes[:fact_change_sample])
+            if item
+        ) if isinstance(public_fact_changes, tuple | list) else ()
+        if sample:
+            result["fact_change_sample"] = sample
+    return result
+
+
+def _compact_state_delta(value: Mapping[str, object]) -> dict[str, object]:
+    result = {}
+    for key, item in value.items():
+        if len(result) >= _MAX_STATE_DELTA_FIELDS:
+            break
+        if _small_history_value(item):
+            result[str(key)] = item
+    return result
+
+
+def _compact_fact_change(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    result = {}
+    for key in ("predicate", "before", "after"):
+        item = value.get(key)
+        if _small_history_value(item):
+            result[key] = item
+    return result
+
+
+def _small_history_value(value: object) -> bool:
+    if isinstance(value, str):
+        return len(value) <= 240
+    if value is None or isinstance(value, bool | int | float):
+        return True
+    if isinstance(value, tuple | list):
+        return len(value) <= _MAX_STATE_DELTA_FIELDS and all(_small_history_value(item) for item in value)
+    if isinstance(value, Mapping):
+        return len(value) <= _MAX_STATE_DELTA_FIELDS and all(
+            isinstance(key, str) and len(key) <= 120 and _small_history_value(item)
+            for key, item in value.items()
+        )
+    return False
 
 
 def _fold_repeated_no_progress(

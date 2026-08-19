@@ -229,6 +229,40 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     assert (inventory.recognized_target_count, inventory.projected_target_count) == (4, 4)
 
 
+def test_visible_structure_without_executable_binding_records_eligibility_reason() -> None:
+    raw = raw_observation(ax_node("reports-menu-item", "link", "Bestsellers"))
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["reports-menu-item"]["visible"] = False
+    projected = project_browsergym_observation(
+        raw,
+        observation_id="obs:eligibility",
+        source_revision="revision:eligibility",
+        page_identity="page:opaque",
+        episode_identity="0",
+        task_state=reset_task_state("obs:eligibility"),
+        entity_identity=_IDENTITY,
+    )
+
+    target = next(item for item in _page_targets(projected.world) if item.label == "Bestsellers")
+    assert target.state["action.why_not_eligible"] == ("availability.visible_false",)
+    assert not any(binding.target_id == target.target_id for binding in _page_bindings(projected.world))
+    artifact = projected.world.sources[0].artifacts["browsergym_action_eligibility"]
+    assert artifact["items"][0]["label"] == "Bestsellers"
+    assert artifact["items"][0]["why_not_eligible"] == ("availability.visible_false",)
+
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["reports-menu-item"]["visible"] = True
+    stable = project_browsergym_observation(
+        raw,
+        observation_id="obs:eligible",
+        source_revision="revision:eligible",
+        page_identity="page:opaque",
+        episode_identity="0",
+        task_state=reset_task_state("obs:eligible"),
+        entity_identity=_IDENTITY,
+    )
+    stable_target = next(item for item in _page_targets(stable.world) if item.label == "Bestsellers")
+    assert any(binding.target_id == stable_target.target_id for binding in _page_bindings(stable.world))
+
+
 def test_drag_source_publishes_one_finite_semantic_destination_domain() -> None:
     raw = raw_observation(
         ax_node("source-private", "generic", "Quarterly report"),
@@ -328,7 +362,9 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
 
     assert 'group "Products"' in observation
     assert 'row "MacBook Pro"' in observation
-    assert f'[{option.target_ref}] button "Add to cart" verbs=["activate","press_key"]' in observation
+    button_line = next(line for line in observation.splitlines() if f"[{option.target_ref}] button" in line)
+    assert '"Add to cart"' in button_line
+    assert 'verbs=["activate","press_key"]' in button_line
     assert observation.index('group "Products"') < observation.index('row "MacBook Pro"')
     assert observation.index('row "MacBook Pro"') < observation.index('button "Add to cart"')
     encoded = json.dumps(observation)
