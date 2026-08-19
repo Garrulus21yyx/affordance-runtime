@@ -21,14 +21,10 @@ _TRANSITION_SUMMARY_KEYS = (
     "evidence_method",
     "local_postcondition",
     "target_changed",
-    "screenshot_changed",
     "structural_world_changed",
-    "before_world_fingerprint",
-    "after_world_fingerprint",
 )
 _STATE_DELTA_KEYS = ("before_state", "after_state")
 _MAX_STATE_DELTA_FIELDS = 8
-_MAX_FACT_CHANGE_SAMPLE = 4
 
 
 class EpisodeHistoryCapacityError(ValueError):
@@ -70,18 +66,11 @@ def _payload(
 
 def _earlier_action(item: AgentTurnView) -> dict[str, object]:
     result: dict[str, object] = {
-        "tool": sanitize_history_value(item.semantic_action),
+        "operation": sanitize_history_value(item.semantic_action),
         "outcome": sanitize_history_value(item.reason),
     }
     if item.target is not None:
         result["target"] = _historical_target(item.target)
-    if item.public_parameters:
-        result["arguments"] = sanitize_history_value(project_public_value(item.public_parameters))
-    if item.semantic_summary:
-        result["details"] = sanitize_history_value(project_public_value(item.semantic_summary))
-    transition = _compact_transition(item.transition, fact_change_sample=0)
-    if transition:
-        result["transition"] = transition
     return result
 
 
@@ -112,7 +101,7 @@ def _turn(item: AgentTurnView) -> dict[str, object]:
     }
     if item.task_evaluation_status not in {"", "unknown", "incomplete"}:
         result["task"] = sanitize_history_value(item.task_evaluation_status)
-    transition = _compact_transition(item.transition, fact_change_sample=_MAX_FACT_CHANGE_SAMPLE)
+    transition = _compact_transition(item.transition)
     if transition:
         result["transition"] = transition
     if result_details is not None:
@@ -132,8 +121,6 @@ def _historical_target(value: AgentHistoricalTargetView) -> dict[str, object]:
 
 def _compact_transition(
     transition: Mapping[str, object],
-    *,
-    fact_change_sample: int,
 ) -> dict[str, object]:
     public = sanitize_history_value(transition)
     if not isinstance(public, Mapping):
@@ -150,16 +137,8 @@ def _compact_transition(
             if compact:
                 result[key] = compact
     raw_fact_changes = transition.get("fact_changes")
-    public_fact_changes = public.get("fact_changes")
     if isinstance(raw_fact_changes, tuple | list):
         result["fact_change_count"] = len(raw_fact_changes)
-        sample = tuple(
-            item
-            for item in (_compact_fact_change(change) for change in public_fact_changes[:fact_change_sample])
-            if item
-        ) if isinstance(public_fact_changes, tuple | list) else ()
-        if sample:
-            result["fact_change_sample"] = sample
     return result
 
 
@@ -172,16 +151,6 @@ def _compact_state_delta(value: Mapping[str, object]) -> dict[str, object]:
             result[str(key)] = item
     return result
 
-
-def _compact_fact_change(value: object) -> dict[str, object]:
-    if not isinstance(value, Mapping):
-        return {}
-    result = {}
-    for key in ("predicate", "before", "after"):
-        item = value.get(key)
-        if _small_history_value(item):
-            result[key] = item
-    return result
 
 
 def _small_history_value(value: object) -> bool:
@@ -214,13 +183,18 @@ def _fold_repeated_no_progress(
 
 
 def _foldable(item: Mapping[str, object]) -> bool:
-    tool = item.get("tool")
+    tool = item.get("operation")
+    outcome = str(item.get("outcome", "")).casefold()
     transition = item.get("transition")
     unchanged = isinstance(transition, Mapping) and transition.get("observed_change") in {
         "unchanged",
         "no_effect",
     }
-    return tool in {"wait", "find_actions"} or unchanged
+    return tool in {"wait", "find_actions", "inspect_world"} or unchanged or outcome in {
+        "unchanged",
+        "no_effect",
+        "no effect",
+    }
 
 
 def _same_step(left: Mapping[str, object], right: Mapping[str, object]) -> bool:

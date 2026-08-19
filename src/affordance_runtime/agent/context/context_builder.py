@@ -75,16 +75,10 @@ class ContextBuilder:
         current_region_index = region_index or WorldRegionIndex.from_observation(observation)
         if current_region_index.world_observation_id != observation.observation_id:
             raise ValueError("region index belongs to a previous observation")
-        default_page = (
-            self.page_for_delivery_lens(action_space, observation, delivery_lens, current_region_index)
-            if delivery_lens is not None
-            else self.page(action_space, observation)
-        )
+        default_page = self.page(action_space, observation)
         page = action_page or default_page
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
-        if page.objective_digest != default_page.objective_digest:
-            raise ValueError("action page relevance belongs to a previous context")
         projected_actions = project_action_page(
             action_space,
             page,

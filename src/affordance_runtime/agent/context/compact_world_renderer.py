@@ -39,6 +39,7 @@ def render_compact_actor_world(
     selected_region_keys: frozenset[str] | None = None,
     selected_cursor: str = "",
     max_rendered_bytes: int | None = None,
+    force_region_delivery: bool = False,
 ) -> str:
     """Render one public World without changing its facts, identity, or binding authority.
 
@@ -53,7 +54,7 @@ def render_compact_actor_world(
     source_by_ref = {item.source_ref: item for item in delivered.sources}
     lines = _render_documents(delivered, verbs, source_by_ref)
     rendered = "\n".join(lines)
-    if not max_rendered_bytes or len(rendered.encode()) <= max_rendered_bytes:
+    if not force_region_delivery and (not max_rendered_bytes or len(rendered.encode()) <= max_rendered_bytes):
         return rendered
     if region_index is None:
         raise ValueError("recoverable region delivery requires a WorldRegionIndex")
@@ -326,6 +327,7 @@ def _render_region_delivery(
     max_rendered_bytes: int,
 ) -> str:
     regions = region_index.regions
+    selected_region_keys = selected_region_keys or _default_selected_region_keys(regions, observation)
     expanded: list[WorldRegion] = [
         region
         for region in regions
@@ -371,6 +373,25 @@ def _render_region_delivery(
             f"  {item.subject}.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}"
             for item in delivered.global_facts
         )
+    if delivered.facet_collections.items:
+        lines.append(
+            "facets"
+            f" count={len(delivered.facet_collections.items)}/{delivered.facet_collections.total_count}"
+            f" coverage={'partial' if delivered.facet_collections.truncated else 'complete'}"
+        )
+        for item in delivered.facet_collections.items:
+            line = (
+                f"  {item.scope_role}.{_short_field(item.field)}={_value(item.value)}"
+                f" members={_value(item.member_refs)} count={item.member_count}"
+                f" completeness={item.completeness}"
+            )
+            lines.append(line)
+            for partition in item.boolean_partitions:
+                lines.append(
+                    f"    {_short_field(partition.field)}"
+                    f" true={_value(partition.true_member_refs)}"
+                    f" false={_value(partition.false_member_refs)}"
+                )
     if delivered.observation_capabilities:
         lines.append("observation_capabilities")
         lines.extend(f"  {_value(item)}" for item in delivered.observation_capabilities)
@@ -387,6 +408,8 @@ def _render_region_delivery(
             observation=observation,
             include_header=True,
         )
+        if observation is not None and len(rendered) == 1:
+            rendered.extend(_render_region_members_from_world(region, observation, grounding))
         if region.key in selected_region_keys and selected_cursor:
             content, page = _page_rendered_lines(rendered, selected_cursor)
             rendered = [
@@ -402,6 +425,58 @@ def _render_region_delivery(
         if len("\n".join(candidate).encode()) <= max_rendered_bytes or region is expanded[0]:
             lines.extend(rendered)
     return "\n".join(lines)
+
+
+def _default_selected_region_keys(
+    regions: tuple[WorldRegion, ...],
+    observation: WorldObservation | None,
+) -> frozenset[str]:
+    if not regions:
+        return frozenset()
+    selected: list[str] = []
+    target_state: dict[str, Mapping[str, object]] = {}
+    if observation is not None:
+        target_state = {item.target_id: item.state for item in observation.targets}
+    preferred_roles = {
+        "alertdialog",
+        "dialog",
+        "form",
+        "search",
+        "focused_context",
+        "toolbar",
+        "viewport",
+    }
+    for region in regions:
+        role = region.role.casefold()
+        has_focus_or_active = any(
+            bool(target_state.get(target_id, {}).get(key))
+            for target_id in region.member_target_ids
+            for key in ("active", "focused", "focus")
+        )
+        bounded = _bounded_default_region(region)
+        if bounded and (has_focus_or_active or role in preferred_roles):
+            selected.append(region.key)
+        if len(selected) >= 6:
+            break
+    selected_set = set(selected)
+    for region in regions:
+        if len(selected) >= 6:
+            break
+        if region.key in selected_set or region.role.casefold() in {"focused_context", "viewport"}:
+            continue
+        if _bounded_default_region(region) and region.counts.get("actions", 0):
+            selected.insert(0, region.key)
+            selected_set.add(region.key)
+    if not selected:
+        selected.append(next((region.key for region in regions if _bounded_default_region(region)), regions[0].key))
+    return frozenset(selected)
+
+
+def _bounded_default_region(region: WorldRegion) -> bool:
+    return (
+        region.counts.get("targets", len(region.member_target_ids)) <= 80
+        and region.counts.get("actions", 0) <= 80
+    )
 
 
 def _directory_page(

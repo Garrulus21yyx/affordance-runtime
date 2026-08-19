@@ -266,7 +266,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
 | Model invocation boundary convergence — implemented / locally verified | shared provider/model invocation exit for current model roles | `ModelInvocationResult[T]` carries typed output/failure, `ModelMetadata`, physical attempts, repair diagnostics, role diagnostics, and lineage; production policy ports return only this envelope; PydanticAI remains native-tool transport; compact-json remains a compatibility shim | focused/unit/integration tests prove attempts are retained, retry and role repair stay distinct, instrumentation reads the explicit result, and GUI Runtime authority is unchanged; W1/W2 benchmark verification remains pending |
-| G5. WebArena-Verified long horizon — W1a implemented locally / T0 W1b-World passed / T1 scroll/key passed / T3 admission passed / T3.1 provider-free recovery passed / action-reference, repair, discovery, visual binding, control-stall, and token-accounting convergence implemented and locally verified / same-case W1b task-0 witness reached answer then failed at Auditor context capacity / W1b-Agent and W2 blocked | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; real-page World/Actor gate; recoverable region delivery; one executable/read-only reference contract; bounded same-turn visual grounding; site smokes; frozen 12-case cohort | existing long-horizon contracts plus one governed BrowserGym raw -> full World -> Actor View -> current ActionSpace/tools -> ActionPolicy -> structural-or-visual binding -> existing Binder/Executor path; `inspect_world`/`find_actions` recovery; compact audit history/current public-text evidence; per-attempt token deltas; no second selector authority, browser, Binder, policy, or GUI loop | next exit gates are the separate Auditor/finalization acceptance path, official site compatibility smokes, and the frozen W2 cohort; no WebArena long-horizon capability claim follows from the same-case witness alone |
+| G5. WebArena-Verified long horizon — W1a implemented locally / T0 W1b-World passed / T1 scroll/key passed / T3 admission passed / T3.1 provider-free recovery passed / action-reference, repair, discovery, visual binding, control-stall, Auditor delivery, and final-response contracts implemented locally / T3.2 cost-first delivery active / W1b-Agent and W2 blocked | episode history/working set; outer Manager/Auditor/AuditBoundary; official BrowserGym integration; real-page World/Actor gate; recoverable cost-first region delivery; one executable/read-only reference contract; bounded same-turn visual grounding; site smokes; frozen 12-case cohort | existing long-horizon contracts plus one governed BrowserGym raw -> full World -> Actor View -> current ActionSpace -> delivery lens/direct tool subset -> ActionPolicy -> structural-or-visual binding -> existing Binder/Executor path; `inspect_world`/`find_actions` recovery; bounded semantic history; narrow representation repair; compact audit evidence; per-attempt token deltas; no second selector authority, browser, Binder, policy, or GUI loop | next exit gates are T3.2 paired cost/recoverability diagnostics, one same-case finalization/native-evaluator witness, official six-site smokes, and the frozen W2 cohort; no WebArena long-horizon capability claim follows from one case |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
 
@@ -801,7 +801,7 @@ The predeclared exit properties are:
 Current implementation status is now
 `W1b action/recovery convergence implemented and locally verified / Auditor AuditView evidence projection repaired
 locally / final-response contract delivery implemented locally / previous W1b task-0 witness reached final response but
-official native outcome remained blocked / W1b-Agent blocked`. The provider-free watch4 synthetic witness proves that read-only
+official native outcome remained blocked / T3.2 cost-first delivery active / W1b-Agent blocked`. The provider-free watch4 synthetic witness proves that read-only
 `Bestsellers` remains non-executable, repair cannot swap it to an unrelated executable target, current executable
 matches are exposed, empty action search does not erase the base page, and repeated local discovery results route
 through `CONTINUE -> RECOVER -> YIELD`. The official same-case witness at
@@ -834,7 +834,9 @@ The current local repair removes unconditional final LLM audit and restores publ
 WebArena intake preserves the marker-delimited public final schema in `public_final_response_contract`, ordinary GUI
 turns hide it, finalizing turns expose it, and Supervisor validates/one-shot wraps plain retrieved text into the public
 JSON response shape before `send_msg_to_user`. No benchmark rerun has been performed after this final-response contract
-repair.
+repair. The next run is not authorized until T3.2's paired provider-free cost/recoverability gate passes; after that,
+one same-case provider witness jointly checks finalization/native-evaluator compatibility and the declared request-cost
+measurements before the six-site W1b-Agent smokes.
 
 | Site category | Tool schemas | Offered targets | Missing Actor targets | State retained/total | Closure leaks | Projection | Prefit tokens | Admitted tokens |
 |---|---:|---:|---:|---:|---:|---|---:|---:|
@@ -906,6 +908,98 @@ heading-associated sections, and bounded repeated-sibling groups. Region4Web's l
 FocusAgent's LLM line selector remain predeclared later A/Bs only if this deterministic held-out gate or W1b-Agent
 demonstrates a retrieval failure. They cannot be silently added during the baseline run.
 
+##### T3.2: cost-first delivery, bounded history, and narrow repair
+
+T3.1 proved that omitted public facts and actions remain recoverable, but it did not prove that the ordinary provider
+payload is efficient. The `watch3` trace is the frozen cost counterexample. Its ten initial ActionPolicy calls consumed
+119,524 provider prompt tokens and two repair calls consumed another 48,111; 28.7% of total prompt input was repair.
+The largest initial/repair pair was 15,050/30,336 tokens. This is not an accounting defect: the initial call repeatedly
+sent a full compact Magento page, cumulative episode history, and broad current Tool Schemas, while PydanticAI repair
+replayed the original message history. Later history projection reduced transition payload, but the post-repair
+`auditview` witness still used 90,368 input tokens across eight ActionPolicy calls, about 11.3k per call, with no action
+repair. Therefore the primary remaining cost defect is delivery selection, not Auditor or the history byte cap.
+
+The local causal chain is explicit:
+
+```text
+full current ActionSpace
+  -> Tool Schemas enumerate refs from many page regions
+  -> _expanded_refs seeds the lens with every schema E-ref
+  -> nearly every action-bearing region expands
+  -> region_lens is not smaller, or full remains below the 16k soft target
+  -> full compact page is sent again
+
+stateless provider call t
+  -> republishes compact history[1..t-1]
+
+representation repair
+  -> result.all_messages() + same ToolSet + repair request
+  -> original World/history/tool context is paid again
+```
+
+T3.2 changes only model delivery. Full `WorldObservation`, complete `ActionSpace`, private bindings, execution,
+ActionOutcome, TaskEvaluator/native authority, trace, and the single ActionPolicy loop remain unchanged.
+
+| Owner | Required change | Must not become |
+|---|---|---|
+| `WorldRegionIndex` / `WorldDeliveryLens` | always construct both full and recoverable candidates; on page entry select directory + active/focused/main/viewport/navigation regions; on the same page recompute selected exact subtrees from fresh World and include the latest transition | remembered World, semantic progress, or task-aware authority |
+| `PerTurnToolCatalog` | compile direct target enums only after delivery, from exact targets present in expanded regions; keep the complete current ActionSpace searchable through `find_actions` | a second ActionSpace or loss of hidden actions |
+| `GroundedPolicyContextBinder` | choose the smallest candidate satisfying directory, structural closure, direct-target, and recovery invariants even when full is below 16k | silent task-specific pruning or hard correctness gate at the soft target |
+| episode-history renderer | latest four bounded semantic transitions; older one-line actions; remove World/context/catalog IDs, fingerprints, screenshots, unchanged state, full fact changes, DOM/CSS metadata, and prior tool menus | mutable progress summary or LLM memory |
+| PydanticAI role repair | local normalization first; otherwise one fresh narrow request containing invalid call, validator error, the one operation schema, and sealed intent identity | replay of World/history/images, target substitution, or another policy decision |
+| request instrumentation | record full-candidate, admitted-candidate, per-component, repair-amplification, recovery-turn, and provider physical-attempt tokens | control authority or sums that mix estimates with usage |
+
+The fixed implementation order is:
+
+1. remove Tool-Schema E-refs as the input to region expansion; derive the default lens from fresh page/viewport/focus,
+   latest transition, and any explicit `WorldDeliveryLens` selection;
+2. build the direct tool subset from delivered exact E-refs, then prove every other current ActionOption remains
+   reachable through `find_actions` with a fresh current ref;
+3. compare full and lens candidates on every ordinary call, not only above the old 16k soft threshold; retain full only
+   when it is smaller, required by an atomic region, or explicitly reached through paged `view_all`;
+4. narrow `AgentTurnView` delivery to semantic action plus changed predicates/results, while leaving complete
+   `StepResult` and evidence in trace;
+5. replace `result.all_messages()` representation repair with a fresh narrow repair envelope and forbid repairs for
+   grounding/stale/semantic errors;
+6. add paired provider-free full-versus-cost-first diagnostics on the six W1b pages and held-out synthetic structures;
+7. run exactly one task-0 provider witness on the completed tree, jointly checking official finalization and cost; only
+   then run the six-site W1b-Agent smokes.
+
+The correctness properties are unchanged and take precedence over cost:
+
+- every current public fact/relation is exact in delivery or recoverable through a visible region and
+  `inspect_world`;
+- every ActionOption is direct or reachable through `find_actions`, and every direct Tool target is exact in the
+  current delivered subtree;
+- page/lens change and fresh acquisition preserve currentness and invalidate stale E/N/F/R refs;
+- current state for direct controls, exact table/header/row structure, and changed regions survive;
+- representation repair preserves operation, target identity, and semantic arguments and performs zero GUI dispatch;
+- compression never reads benchmark identity, expected answer, evaluator state, selector, coordinate, or private
+  binding.
+
+The cost gates are diagnostic but falsifiable:
+
+| Request class | Initial target |
+|---|---:|
+| new-page ActionPolicy request | normally 8k–10k provider input tokens |
+| steady same-page ActionPolicy request | normally 4k–7k |
+| model-facing episode history | normally <=1.5k |
+| representation repair | normally <=2k and <=20% of its initial request |
+| paired six-page observation delivery | material reduction on every selected complex page; no regression in recovery/closure/action reachability |
+| task-0 total ActionPolicy input | at least 40% below the 90,368-token `auditview` baseline unless the trace identifies an exact atomic-content exception |
+
+These targets do not permit dropping evidence. An exact atomic table or dialog may exceed them and remain admitted;
+only the existing hard cap returns `context_capacity`. Provider caching may be reported separately but cannot satisfy
+the gate because cached full pages still consume attention and preserve the same distraction. No model selector,
+summarizer, embedding index, second World, second Tool Registry, or provider-specific cache becomes part of T3.2.
+
+SOTA alignment is architectural rather than a code import: AgentLab supplies BrowserGym-backed flattening/token-fit
+reference behavior; FocusAgent motivates task-relevant AX-line selection; Region4Web/PageDigest motivates selected
+exact regions plus non-selected region abstractions and same-page transition tracking; Qwen3-VL OSWorld motivates
+older textual actions with only a bounded recent rich window. The baseline remains deterministic and recoverable.
+Learned line/region selection is a later paired A/B only if T3.2's deterministic gate cannot achieve acceptable cost
+without extra recovery turns.
+
 W1b-World uses the single production acquisition and projection chain. It does not create a second renderer or an
 offline oracle view for the model. T3.1 extends the existing projection/delivery seam without changing acquisition or
 World authority:
@@ -959,11 +1053,11 @@ The hard correctness gate is invariant-based:
 - trace and published metrics distinguish source omission, World projection loss, Actor omission, tool-capability
   absence, policy error, and provider failure.
 
-The initial efficiency targets are 3k–8k observation tokens for ordinary pages, 8k–12k for complex WebArena pages,
-and approximately 16k p95 for the complete action request. These are diagnostic targets, not pass/fail correctness
-bounds. An atomic relevant region may exceed them; the required behavior is measured paging/retrieval or typed
-`context_capacity`, never prefix slicing or loss of an offered target. Provider tokenization is used when available,
-with a conservative estimator and existing byte cap as fallbacks.
+The earlier 3k–8k observation / 16k complete-request targets were capacity-oriented and are superseded by the T3.2
+request-class targets above. The hard interpretation is unchanged: an atomic relevant region may exceed a cost target;
+the required behavior is measured paging/retrieval or typed `context_capacity`, never prefix slicing or loss of an
+offered target. Provider tokenization is used when available, with a conservative estimator and existing byte cap as
+fallbacks.
 
 The current BrowserGym support baseline is explicit rather than inferred from the ten-entry semantic vocabulary:
 

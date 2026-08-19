@@ -70,6 +70,12 @@ class ModelRequestBreakdown:
     admission_action: str = "admitted"
     prefit_estimated_total_tokens: int = 0
     delivery_projection: str = "full"
+    full_candidate_tokens: int = 0
+    lens_candidate_tokens: int = 0
+    expanded_region_count: int = 0
+    folded_region_count: int = 0
+    direct_action_count: int = 0
+    searchable_action_count: int = 0
 
     def __post_init__(self) -> None:
         if not self.phase.strip():
@@ -89,6 +95,12 @@ class ModelRequestBreakdown:
             self.provider_reported_prompt_tokens,
             self.admission_limit,
             self.prefit_estimated_total_tokens,
+            self.full_candidate_tokens,
+            self.lens_candidate_tokens,
+            self.expanded_region_count,
+            self.folded_region_count,
+            self.direct_action_count,
+            self.searchable_action_count,
         )
         if any(isinstance(value, bool) or value < 0 for value in counters):
             raise ValueError("model request token counters must be non-negative")
@@ -116,6 +128,12 @@ class ModelRequestBreakdown:
             "admission_action": self.admission_action,
             "prefit_estimated_total_tokens": self.prefit_estimated_total_tokens,
             "delivery_projection": self.delivery_projection,
+            "full_candidate_tokens": self.full_candidate_tokens,
+            "lens_candidate_tokens": self.lens_candidate_tokens,
+            "expanded_region_count": self.expanded_region_count,
+            "folded_region_count": self.folded_region_count,
+            "direct_action_count": self.direct_action_count,
+            "searchable_action_count": self.searchable_action_count,
         }
 
 
@@ -256,6 +274,12 @@ def request_breakdown_diagnostics(
         "admission_limit",
         "admission_action",
         "delivery_projection",
+        "full_candidate_tokens",
+        "lens_candidate_tokens",
+        "expanded_region_count",
+        "folded_region_count",
+        "direct_action_count",
+        "searchable_action_count",
     ):
         if name in latest:
             result[name] = latest[name]

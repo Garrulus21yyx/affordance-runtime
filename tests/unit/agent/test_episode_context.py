@@ -39,6 +39,35 @@ def test_episode_history_retains_all_steps_and_never_repeats_the_latest_four() -
     )
 
 
+def test_fifty_step_history_keeps_semantic_trace_without_refs_ids_or_screenshots() -> None:
+    steps = tuple(
+            AgentTurnView(
+                "selectaction",
+                "activate",
+                reason="unchanged",
+            transition={
+                "observed_change": "unchanged",
+                "before_world_fingerprint": f"fingerprint-before-{index}",
+                "after_world_fingerprint": f"fingerprint-after-{index}",
+                "screenshot_changed": False,
+                "fact_changes": tuple({"predicate": f"p{inner}", "before": "a", "after": "b"} for inner in range(6)),
+            },
+        )
+        for index in range(50)
+    )
+
+    rendered = render_episode_history(steps, max_bytes=3_000)
+    encoded = json.dumps(to_json_compatible(rendered))
+
+    assert rendered["retained_count"] == 50
+    assert len(rendered["recent_trajectory"]) == 4
+    assert len(rendered["earlier_actions"]) < 46
+    assert "activate" in encoded
+    assert "fingerprint" not in encoded
+    assert "screenshot" not in encoded
+    assert not re.search(r"\b[EFNR][1-9][0-9]{0,3}\b", encoded)
+
+
 def test_projected_history_removes_generation_local_entity_and_fact_refs() -> None:
     world = shared_world("observation:refs", False)
     decision = LocalToolResult(

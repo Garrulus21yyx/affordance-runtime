@@ -458,13 +458,6 @@ class CoreAgentLoop:
             state.action_page
             if state.action_page is not None
             and state.action_page.action_space_id == action_space.action_space_id
-            else self.context_builder.page_for_delivery_lens(
-                action_space,
-                state.current_world,
-                lens,
-                region_index,
-            )
-            if lens is not None
             else self.context_builder.page(action_space, state.current_world)
         )
         context = self.context_builder.build(

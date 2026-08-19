@@ -1827,13 +1827,6 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
         "evidence_method": "structural",
         "target_changed": True,
         "fact_change_count": 1,
-        "fact_change_sample": [
-            {
-                "predicate": "active",
-                "before": False,
-                "after": True,
-            },
-        ],
     }
 
 

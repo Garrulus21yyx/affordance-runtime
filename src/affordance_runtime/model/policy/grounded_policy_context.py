@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -34,6 +35,8 @@ from affordance_runtime.model.policy.request_admission import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
+
+_PUBLIC_E_REF = re.compile(r"\bE[1-9][0-9]*\b")
 
 
 @dataclass(frozen=True)
@@ -84,78 +87,44 @@ class GroundedPolicyContextBinder:
         include_tool_menu: bool,
     ) -> AdmittedModelRequest:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        sections = self._public_context_sections(request.agent_context, include_images)
-        public = dict(sections["public"])
-        if include_tool_menu:
-            public["tools"] = _tool_menu(tools)
-        messages = self._messages(self.prompts.actor, public, request, include_images)
-        breakdown = estimate_model_request(
-            messages=messages,
-            tools=tools,
-            budget=self.request_budget,
-            phase="initial",
-            component_payloads={
-                "task_plan": sections["task_plan"],
-                "actor_world": sections["actor_world"],
-                "history": sections["history"],
-                "working_set": sections["working_set"],
-            },
-            image_inputs=request.image_inputs if include_images else (),
+        full = self._candidate(
+            request,
+            tools,
+            include_images=include_images,
+            include_tool_menu=include_tool_menu,
+            force_region_delivery=False,
         )
-        prefit_estimated_total_tokens = breakdown.estimated_total_tokens
-        delivery_projection = "full"
-        if breakdown.estimated_total_tokens > self.request_budget.soft_target_tokens:
-            lens_sections = self._public_context_sections(
-                request.agent_context,
-                include_images,
-                expanded_refs=_expanded_refs(request.agent_context, tools),
-                max_actor_bytes=max(
-                    3 * max(1, self.request_budget.soft_target_tokens - _non_actor_tokens(breakdown)),
-                    4_096,
-                ),
-            )
-            lens_public = dict(lens_sections["public"])
-            if include_tool_menu:
-                lens_public["tools"] = _tool_menu(tools)
-            lens_messages = self._messages(self.prompts.actor, lens_public, request, include_images)
-            lens_breakdown = estimate_model_request(
-                messages=lens_messages,
-                tools=tools,
-                budget=self.request_budget,
-                phase="initial",
-                component_payloads={
-                    "task_plan": lens_sections["task_plan"],
-                    "actor_world": lens_sections["actor_world"],
-                    "history": lens_sections["history"],
-                    "working_set": lens_sections["working_set"],
-                },
-                image_inputs=request.image_inputs if include_images else (),
-            )
-            if lens_breakdown.estimated_total_tokens < breakdown.estimated_total_tokens:
-                delivery_projection = "region_lens"
-                sections = lens_sections
-                messages = lens_messages
-                breakdown = lens_breakdown
+        lens = self._candidate(
+            request,
+            tools,
+            include_images=include_images,
+            include_tool_menu=include_tool_menu,
+            force_region_delivery=True,
+            max_actor_bytes=max(4_096, self.request_budget.soft_target_tokens * 3),
+        )
+        selected = lens if lens.breakdown.estimated_total_tokens < full.breakdown.estimated_total_tokens else full
+        selected_projection = "region_lens" if selected is lens else "full"
         try:
             admitted = admit_model_request(
-                messages=messages,
-                tools=tools,
+                messages=selected.messages,
+                tools=selected.tools,
                 budget=self.request_budget,
                 phase="initial",
-                component_payloads={
-                    "task_plan": sections["task_plan"],
-                    "actor_world": sections["actor_world"],
-                    "history": sections["history"],
-                    "working_set": sections["working_set"],
-                },
+                component_payloads=selected.component_payloads,
                 image_inputs=request.image_inputs if include_images else (),
             )
         except ModelRequestCapacityError as exc:
             raise ModelRequestCapacityError(
                 replace(
                     exc.breakdown,
-                    prefit_estimated_total_tokens=prefit_estimated_total_tokens,
-                    delivery_projection=delivery_projection,
+                    prefit_estimated_total_tokens=full.breakdown.estimated_total_tokens,
+                    delivery_projection=selected_projection,
+                    full_candidate_tokens=full.breakdown.estimated_total_tokens,
+                    lens_candidate_tokens=lens.breakdown.estimated_total_tokens,
+                    expanded_region_count=selected.expanded_region_count,
+                    folded_region_count=selected.folded_region_count,
+                    direct_action_count=selected.direct_action_count,
+                    searchable_action_count=selected.searchable_action_count,
                 )
             ) from exc
         return AdmittedModelRequest(
@@ -163,9 +132,70 @@ class GroundedPolicyContextBinder:
             admitted.tools,
             replace(
                 admitted.breakdown,
-                prefit_estimated_total_tokens=prefit_estimated_total_tokens,
-                delivery_projection=delivery_projection,
+                prefit_estimated_total_tokens=full.breakdown.estimated_total_tokens,
+                delivery_projection=selected_projection,
+                full_candidate_tokens=full.breakdown.estimated_total_tokens,
+                lens_candidate_tokens=lens.breakdown.estimated_total_tokens,
+                expanded_region_count=selected.expanded_region_count,
+                folded_region_count=selected.folded_region_count,
+                direct_action_count=selected.direct_action_count,
+                searchable_action_count=selected.searchable_action_count,
             ),
+        )
+
+    def _candidate(
+        self,
+        request: ModelDecisionRequest,
+        tools: tuple[ToolSpec, ...],
+        *,
+        include_images: bool,
+        include_tool_menu: bool,
+        force_region_delivery: bool,
+        max_actor_bytes: int | None = None,
+    ) -> "_PolicyRequestCandidate":
+        sections = self._public_context_sections(
+            request.agent_context,
+            include_images,
+            max_actor_bytes=max_actor_bytes,
+            force_region_delivery=force_region_delivery,
+        )
+        observation = str(sections["public"]["observation"])
+        delivered_refs = _delivered_refs(observation)
+        direct_tools = _direct_tools_for_delivery(tools, delivered_refs)
+        public = dict(sections["public"])
+        if include_tool_menu:
+            public["tools"] = _tool_menu(direct_tools)
+        messages = self._messages(self.prompts.actor, public, request, include_images)
+        component_payloads = {
+            "task_plan": sections["task_plan"],
+            "actor_world": sections["actor_world"],
+            "history": sections["history"],
+            "working_set": sections["working_set"],
+        }
+        breakdown = estimate_model_request(
+            messages=messages,
+            tools=direct_tools,
+            budget=self.request_budget,
+            phase="initial",
+            component_payloads=component_payloads,
+            image_inputs=request.image_inputs if include_images else (),
+        )
+        expanded, folded = _region_counts(observation)
+        direct_refs = _tool_refs(direct_tools)
+        searchable = sum(
+            1
+            for option in request.agent_context.actions.options
+            if option.target_ref not in direct_refs
+        )
+        return _PolicyRequestCandidate(
+            messages,
+            direct_tools,
+            component_payloads,
+            breakdown,
+            expanded,
+            folded,
+            len(request.agent_context.actions.options) - searchable,
+            searchable,
         )
 
     @staticmethod
@@ -182,6 +212,7 @@ class GroundedPolicyContextBinder:
         *,
         expanded_refs: frozenset[str] | None = None,
         max_actor_bytes: int | None = None,
+        force_region_delivery: bool = False,
     ) -> dict[str, object]:
         task = _task(context)
         observation = render_compact_actor_world(
@@ -194,6 +225,7 @@ class GroundedPolicyContextBinder:
             selected_region_keys=_selected_region_keys(context),
             selected_cursor=context.delivery_lens.cursor if context.delivery_lens is not None else "",
             max_rendered_bytes=max_actor_bytes,
+            force_region_delivery=force_region_delivery,
         )
         recent_steps = render_episode_history(
             context.recent_steps.items,
@@ -369,22 +401,56 @@ def _tool_refs(tools: tuple[ToolSpec, ...]) -> frozenset[str]:
     return frozenset(refs)
 
 
-def _expanded_refs(context: AgentContext, tools: tuple[ToolSpec, ...]) -> frozenset[str]:
-    refs = set(_tool_refs(tools))
-    lens = context.delivery_lens
-    region_index = context.region_index
-    if lens is None or region_index is None:
-        return frozenset(refs)
-    region = region_index.get(lens.selected_region_key)
-    if region is None:
-        return frozenset(refs)
-    target_refs = context.grounding.target_refs
-    refs.update(
-        target_refs[target_id]
-        for target_id in region.member_target_ids
-        if target_id in target_refs
-    )
-    return frozenset(refs)
+def _delivered_refs(observation: str) -> frozenset[str]:
+    return frozenset(_PUBLIC_E_REF.findall(observation))
+
+
+def _direct_tools_for_delivery(tools: tuple[ToolSpec, ...], delivered_refs: frozenset[str]) -> tuple[ToolSpec, ...]:
+    result: list[ToolSpec] = []
+    for spec in tools:
+        schema = to_json_compatible(spec.input_schema)
+        if not isinstance(schema, Mapping):
+            result.append(spec)
+            continue
+        properties = schema.get("properties")
+        if not isinstance(properties, Mapping):
+            result.append(spec)
+            continue
+        changed = False
+        empty_selector = False
+        next_properties = dict(properties)
+        for name in ("target", "source", "destination"):
+            field = next_properties.get(name)
+            if not isinstance(field, Mapping):
+                continue
+            enum = field.get("enum")
+            if not isinstance(enum, tuple | list) or not any(isinstance(item, str) and item.startswith("E") for item in enum):
+                continue
+            filtered = [item for item in enum if isinstance(item, str) and item in delivered_refs]
+            changed = True
+            if not filtered:
+                empty_selector = True
+                break
+            next_field = dict(field)
+            next_field["enum"] = filtered
+            next_properties[name] = next_field
+        if empty_selector:
+            continue
+        if changed:
+            next_schema = dict(schema)
+            next_schema["properties"] = next_properties
+            result.append(ToolSpec(spec.name, spec.description, next_schema))
+        else:
+            result.append(spec)
+    return tuple(result)
+
+
+def _region_counts(observation: str) -> tuple[int, int]:
+    if "delivery=region_lens" not in observation:
+        return 0, 0
+    expanded = observation.count(" expanded=true")
+    folded = observation.count(" expanded=false")
+    return expanded, folded
 
 
 def _selected_region_keys(context: AgentContext) -> frozenset[str]:
@@ -394,17 +460,16 @@ def _selected_region_keys(context: AgentContext) -> frozenset[str]:
     return frozenset({lens.selected_region_key})
 
 
-def _non_actor_tokens(breakdown) -> int:
-    return (
-        breakdown.system_tokens
-        + breakdown.task_plan_tokens
-        + breakdown.history_tokens
-        + breakdown.working_set_tokens
-        + breakdown.tool_schema_tokens
-        + breakdown.image_estimated_tokens
-        + breakdown.repair_tokens
-        + breakdown.provider_envelope_tokens
-    )
+@dataclass(frozen=True)
+class _PolicyRequestCandidate:
+    messages: tuple[ModelMessage, ...]
+    tools: tuple[ToolSpec, ...]
+    component_payloads: Mapping[str, object]
+    breakdown: object
+    expanded_region_count: int
+    folded_region_count: int
+    direct_action_count: int
+    searchable_action_count: int
 
 
 def _section(

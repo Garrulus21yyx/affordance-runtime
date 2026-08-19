@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions import ActionSpaceBuilder
@@ -24,11 +25,20 @@ from affordance_runtime.agent.context.world_region_index import WorldRegion, Wor
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
-from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model.policy.grounded_tool_contracts import (
+    GroundedToolPhase,
+    GroundedToolResolutionCode,
+    GroundedToolResolutionError,
+)
 from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.pydantic_ai_bridge import (
+    _intent_preservation_error,
+    _repair_input_transcript,
+    _representation_repair_allowed,
+)
 from affordance_runtime.model.policy.request_admission import ModelRequestBudget, estimate_model_request
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
@@ -227,6 +237,105 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
     asyncio.run(scenario())
 
 
+def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_delivery() -> None:
+    async def scenario() -> None:
+        request, _catalog = await _request()
+        total = 240
+        roots = tuple(
+            ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
+            for index in range(1, total + 1)
+        )
+        large_context = replace(
+            request.agent_context,
+            actor_world=ActorWorldSnapshot(
+                (ActorWorldDocumentView("S1", "structural", roots, len(roots), len(roots), False),),
+                (
+                    ActorWorldSourceView(
+                        "S1",
+                        "structural",
+                        "structural",
+                        "current",
+                        "complete",
+                        "complete",
+                        "not_available",
+                    ),
+                ),
+                (),
+                (),
+                BoundedSection((), 0, False),
+                (),
+                (),
+                (),
+            ),
+            grounding=AgentGroundingIndexView(
+                tuple(
+                    AgentGroundingEntityView(f"E{index}", "button", f"Button {index}", verbs=("activate",))
+                    for index in range(1, total + 1)
+                ),
+                {f"target:{index}": f"E{index}" for index in range(1, total + 1)},
+            ),
+            region_index=WorldRegionIndex(
+                request.agent_context.current_observation.observation_id,
+                tuple(
+                    WorldRegion(
+                        f"region:many:{index + 1}-{index + 12}",
+                        f"R{index // 12 + 1}",
+                        "S1",
+                        f"targets:{index + 1}-{index + 12}",
+                        tuple(f"target:{target}" for target in range(index + 1, index + 13)),
+                        (),
+                        f"button items {index + 1}-{index + 12}",
+                        "region",
+                        {"targets": 12, "facts": 0, "actions": 12},
+                        "complete",
+                    )
+                    for index in range(0, total, 12)
+                ),
+            ),
+        )
+        request = ModelDecisionRequest(request.request_id, large_context)
+        broad_tool = ToolSpec(
+            "activate",
+            "Activate one current target.",
+            {
+                "type": "object",
+                "properties": {"target": {"type": "string", "enum": [f"E{index}" for index in range(1, total + 1)]}},
+                "required": ["target"],
+            },
+        )
+        binder = GroundedPolicyContextBinder(
+            request_budget=ModelRequestBudget(
+                soft_target_tokens=16_000,
+                model_context_window=200_000,
+                max_output_tokens=1,
+                protocol_reserve_tokens=1,
+                safety_margin_tokens=1,
+                admission_limit=100_000,
+            )
+        )
+
+        admitted = binder.action_request(
+            request,
+            (broad_tool,),
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+
+        payload = json.loads(admitted.messages[1].content)
+        observation = payload["observation"]
+        delivered_refs = set(re.findall(r"\bE[1-9][0-9]*\b", observation))
+        direct_refs = set(admitted.tools[0].input_schema["properties"]["target"]["enum"])
+        assert admitted.breakdown.delivery_projection == "region_lens"
+        assert admitted.breakdown.expanded_region_count < len(large_context.region_index.regions)
+        assert direct_refs
+        assert direct_refs <= delivered_refs
+        assert len(direct_refs) < total
+        assert admitted.breakdown.folded_region_count > 0
+
+    asyncio.run(scenario())
+
+
 def test_soft_target_keeps_full_projection_when_region_lens_is_larger() -> None:
     async def scenario() -> None:
         request, _catalog = await _request()
@@ -370,3 +479,36 @@ def test_repair_request_has_separate_admission_and_bounded_repair_tokens() -> No
         assert breakdowns[1]["repair_tokens"] > 0
 
     asyncio.run(scenario())
+
+
+def test_narrow_representation_repair_transcript_excludes_original_context() -> None:
+    transcript = _repair_input_transcript(
+        "Repair only this call. Allowed operation schema: {\"type\":\"object\"}."
+    )
+    encoded = json.dumps(transcript)
+
+    assert "Repair only this call" in encoded
+    assert "compact_world" not in encoded
+    assert "recent_steps" not in encoded
+    assert "goal_plan" not in encoded
+    assert "image_url" not in encoded
+
+
+def test_representation_repair_rejects_stale_grounding_and_changed_intent() -> None:
+    assert not _representation_repair_allowed(
+        GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+    )
+    assert not _representation_repair_allowed(
+        GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
+    )
+    assert not _representation_repair_allowed(
+        GroundedToolResolutionError(GroundedToolResolutionCode.GROUNDING_GAP)
+    )
+
+    changed = _intent_preservation_error(
+        ToolCall("activate", {"target": "E1", "expected_outcome": "open"}),
+        ToolCall("activate", {"target": "E2", "expected_outcome": "open"}),
+    )
+
+    assert changed is not None
+    assert changed.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT

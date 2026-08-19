@@ -173,9 +173,7 @@ class PydanticAIGroundedDecisionPort:
                 Agent,
                 BinaryContent,
                 DeferredToolRequests,
-                DeferredToolResults,
                 ExternalToolset,
-                ModelRetry,
                 ToolDefinition,
             )
             from pydantic_ai.exceptions import (
@@ -224,7 +222,7 @@ class PydanticAIGroundedDecisionPort:
                         parameters_json_schema=to_json_compatible(spec.input_schema),
                         strict=True,
                     )
-                    for spec in catalog.specs
+                    for spec in admitted.tools
                 ],
                 id=catalog.catalog_id,
             )
@@ -258,38 +256,40 @@ class PydanticAIGroundedDecisionPort:
                 decision, resolution_error, initial_call = _resolve_deferred(result.output, catalog, request.context_id)
                 self._set_tool_resolution(resolution_error, accepted=decision is not None)
             if decision is None and not final_ready and _representation_repair_allowed(resolution_error):
-                repair = _repair_input(
+                repair_prompt, repair_specs = _repair_input(
                     result.output,
                     catalog,
-                    DeferredToolRequests,
-                    DeferredToolResults,
-                    ModelRetry,
                     request.context_id,
+                    resolution_error,
                 )
-                repair_kwargs = (
-                    {"deferred_tool_results": repair}
-                    if isinstance(repair, DeferredToolResults)
-                    else {"user_prompt": repair}
+                repair_toolset = ExternalToolset(
+                    [
+                        ToolDefinition(
+                            name=spec.name,
+                            description=spec.description,
+                            parameters_json_schema=to_json_compatible(spec.input_schema),
+                            strict=True,
+                        )
+                        for spec in repair_specs
+                    ],
+                    id=catalog.catalog_id,
                 )
-                repair_history = result.all_messages()
-                repair_transcript = _repair_input_transcript(result, repair_kwargs)
+                repair_transcript = _repair_input_transcript(repair_prompt)
                 self._admit_repair_request(
                     repair_transcript,
-                    catalog.specs,
-                    repair_payload=repair,
-                    image_inputs=request.image_inputs,
+                    repair_specs,
+                    repair_payload=repair_prompt,
                 )
                 result = await self._run_provider_call(
                     lambda: agent.run(
-                        message_history=repair_history,
-                        toolsets=[toolset],
+                        repair_prompt,
+                        toolsets=[repair_toolset],
                         usage=usage,
                         usage_limits=limits,
                         model_settings=_ACTION_MODEL_SETTINGS,
-                        **repair_kwargs,
                     ),
                     phase="tool_call_repair",
-                    specs=catalog.specs,
+                    specs=repair_specs,
                     input_messages=repair_transcript,
                     provider_error_type=ModelAPIError,
                 )
@@ -485,14 +485,12 @@ class PydanticAIGroundedDecisionPort:
         specs: tuple[object, ...],
         *,
         repair_payload: object,
-        image_inputs: Sequence[AgentImageInput],
     ) -> None:
         admitted = admit_model_request(
             messages=(ModelMessage(role="user", content=json.dumps(to_json_compatible(repair_transcript), sort_keys=True)),),
             tools=tuple(spec for spec in specs if isinstance(spec, ToolSpec)),
             budget=self.context_binder.request_budget,
             phase="tool_call_repair",
-            image_inputs=image_inputs,
             repair_payload=_safe_prompt_projection(repair_payload),
         )
         self._append_request_breakdown(admitted.breakdown)
@@ -835,10 +833,7 @@ def _reconciliation_error(reconciliation) -> GroundedToolResolutionError:
 def _representation_repair_allowed(error: GroundedToolResolutionError | None) -> bool:
     if error is None:
         return True
-    return error.code in {
-        GroundedToolResolutionCode.ZERO_CALLS,
-        GroundedToolResolutionCode.MULTIPLE_CALLS,
-    }
+    return False
 
 
 def _intent_preservation_error(
@@ -963,16 +958,33 @@ def _resolve_final_response(output, context_id: str) -> FinalResponse | None:
         return None
 
 
-def _repair_input(output, catalog, deferred_type, deferred_results_type, model_retry_type, context_id: str):
-    message = _repair_message(output, catalog, deferred_type, context_id)
-    if isinstance(output, deferred_type) and output.calls:
-        return deferred_results_type(
-            calls={call.tool_call_id: model_retry_type(message) for call in output.calls}
-        )
-    return message
+def _repair_input(output, catalog, context_id: str, error: GroundedToolResolutionError | None):
+    from pydantic_ai import DeferredToolRequests
+
+    spec = _selected_repair_spec(output, catalog, DeferredToolRequests)
+    message = _repair_message(output, catalog, DeferredToolRequests, context_id, error)
+    return message, (spec,)
 
 
-def _repair_message(output, catalog, deferred_type, context_id: str) -> str:
+def _selected_repair_spec(output, catalog, deferred_type) -> ToolSpec:
+    if isinstance(output, deferred_type) and len(output.calls) == 1:
+        call = output.calls[0]
+        spec = next((item for item in catalog.specs if item.name == call.tool_name), None)
+        if spec is not None:
+            return spec
+    raise GroundedToolResolutionError(
+        GroundedToolResolutionCode.INVALID_ARGUMENTS,
+        "representation repair requires exactly one known current operation",
+    )
+
+
+def _repair_message(
+    output,
+    catalog,
+    deferred_type,
+    context_id: str,
+    error: GroundedToolResolutionError | None = None,
+) -> str:
     if isinstance(output, deferred_type) and len(output.calls) == 1:
         call = output.calls[0]
         spec = next((item for item in catalog.specs if item.name == call.tool_name), None)
@@ -1018,12 +1030,24 @@ def _repair_message(output, catalog, deferred_type, context_id: str) -> str:
                         guidance = f" Runtime rejection: {str(exc)}."
             except (ValueError, TypeError):
                 pass
+            sealed = {
+                "operation": call.tool_name,
+                "target_identity": _call_selector_identity(call),
+                "semantic_arguments": _call_semantic_arguments(call),
+            }
+            rejection = str(error) if error is not None else "invalid representation"
             return (
-                f"Invalid arguments for {spec.name}. Re-emit exactly one call using this schema: "
-                f"{schema}.{guidance}"
+                "Repair only the representation of this one tool call. "
+                "Do not change operation, target/source/destination identity, semantic arguments, or intended local outcome. "
+                f"Validator rejection: {rejection}. "
+                f"Sealed identity: {json.dumps(sealed, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}. "
+                f"Allowed operation schema: {schema}.{guidance} "
+                "Re-emit exactly one tool call for the same sealed identity."
             )
-    names = ", ".join(spec.name for spec in catalog.specs)
-    return f"Emit exactly one current tool call. Available tools: {names}"
+    raise GroundedToolResolutionError(
+        GroundedToolResolutionCode.INVALID_ARGUMENTS,
+        "representation repair requires exactly one known current operation",
+    )
 
 
 def _pydantic_prompt(messages, image_inputs: Sequence[AgentImageInput], binary_content_type):
@@ -1053,13 +1077,32 @@ def _initial_input_transcript(instructions: str, user_prompt: object) -> list[di
     ]
 
 
-def _repair_input_transcript(result: object, repair_kwargs: Mapping[str, object]) -> object:
+def _call_selector_identity(call) -> Mapping[str, object]:
     try:
-        history = json.loads(result.all_messages_json())
-    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
-        history = [{"history": "retained_by_pydantic_ai"}]
-    repair = repair_kwargs.get("user_prompt") or repair_kwargs.get("deferred_tool_results")
-    return [*history, {"role": "repair", "content": _safe_prompt_projection(repair)}]
+        arguments = call.args_as_dict(raise_if_invalid=True)
+    except (TypeError, ValueError):
+        arguments = {}
+    return {
+        key: to_json_compatible(arguments.get(key, ""))
+        for key in ("target", "exact_target", "source", "destination")
+        if key in arguments
+    }
+
+
+def _call_semantic_arguments(call) -> Mapping[str, object]:
+    try:
+        arguments = call.args_as_dict(raise_if_invalid=True)
+    except (TypeError, ValueError):
+        return {}
+    return {
+        key: to_json_compatible(value)
+        for key, value in arguments.items()
+        if key not in {"target", "exact_target", "source", "destination"}
+    }
+
+
+def _repair_input_transcript(repair_prompt: str) -> object:
+    return [{"role": "repair", "content": _safe_prompt_projection(repair_prompt)}]
 
 
 def _safe_prompt_projection(value: object) -> object:
