@@ -96,16 +96,16 @@ export MINIWOB_URL=http://127.0.0.1:18888/miniwob/
 export PYTHONPATH=src:tests
 ```
 
-Zhipu 视觉运行已经确认可使用 `glm-4.1v-thinking-flashx`。需要复现当前视觉 gate 时显式设置：
+Zhipu 视觉运行使用 `glm-4.6v-flash`。需要复现当前视觉 gate 时显式设置：
 
 ```bash
 export LLM_ACTIVE_PROFILE=zhipu
-export LLM_ZHIPU_MODEL=glm-4.1v-thinking-flashx
-export LLM_ZHIPU_VISION_MODEL=glm-4.1v-thinking-flashx
+export LLM_ZHIPU_MODEL=glm-4.6
+export LLM_ZHIPU_VISION_MODEL=glm-4.6v-flash
 export LLM_PROFILE_FALLBACK_TO_LOCAL=false
 ```
 
-`.env` 中也可能有不同的默认 `LLM_ZHIPU_MODEL` 或 `LLM_ZHIPU_VISION_MODEL`；明确指定的 benchmark profile 优先，不能据默认值否定 4.1V 的多模态能力。
+`.env` 中也可能有不同的默认 `LLM_ZHIPU_MODEL` 或 `LLM_ZHIPU_VISION_MODEL`；明确指定的 benchmark profile 优先，不能据默认值否定当前配置的多模态能力。
 
 ## Long benchmark background execution
 

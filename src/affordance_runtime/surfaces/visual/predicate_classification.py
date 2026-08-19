@@ -75,7 +75,7 @@ class VisualPredicateClassifierPort(Protocol):
 class OpenAICompatibleVisualPredicateClassifier:
     base_url: str
     api_key: str = field(repr=False)
-    model: str = "glm-4.1v-thinking-flashx"
+    model: str = "glm-4.6v-flash"
     provider: str = "zhipu"
     prompt_version: str = _PROMPT_VERSION
     timeout_s: float = 90.0
