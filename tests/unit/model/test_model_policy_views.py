@@ -85,6 +85,34 @@ def test_task_projection_is_bounded_and_secret_safe() -> None:
     assert "/private/report" not in repr(view)
 
 
+def test_final_response_contract_is_only_projected_when_requested() -> None:
+    task = TaskGoal(
+        "task-final",
+        "Answer using the public format.",
+        inputs={
+            "public_final_response_contract": {
+                "format": "Return JSON.",
+                "json_schema": {
+                    "type": "object",
+                    "properties": {
+                        "retrieved_data": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["retrieved_data"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        requested_outputs=("final",),
+    )
+
+    ordinary = project_task(task)
+    finalizing = project_task(task, include_final_response_contract=True)
+
+    assert ordinary.final_response_contract == {}
+    assert "public_final_response_contract" not in ordinary.public_inputs
+    assert finalizing.final_response_contract["json_schema"]["properties"]["retrieved_data"]["items"]["type"] == "string"
+
+
 def test_action_space_projection_excludes_runtime_route_identity() -> None:
     view = project_action_space(_space(), _labels())
     option = view.options[0]

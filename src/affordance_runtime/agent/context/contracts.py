@@ -106,9 +106,11 @@ class AgentTaskView:
     evaluation: AgentTaskEvaluationView = field(
         default_factory=lambda: AgentTaskEvaluationView("unknown")
     )
+    final_response_contract: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
+        object.__setattr__(self, "final_response_contract", freeze_json(self.final_response_contract))
         if self.public_inputs_total_count < len(self.public_inputs):
             raise ValueError("public input total cannot be smaller than its projection")
         if self.public_inputs_truncated != (self.public_inputs_total_count > len(self.public_inputs)):

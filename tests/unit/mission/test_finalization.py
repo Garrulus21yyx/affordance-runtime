@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.context.context_builder import ContextBuilder
-from affordance_runtime.agent.context.task_projection import project_task
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY, project_task
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.run_state import RunStatus
@@ -221,6 +221,25 @@ def _browsergym_env_task(*, fail_final=False):
     return fake, env, task
 
 
+def _with_retrieve_final_schema(task):
+    return replace(task, inputs={
+        PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: {
+            "format": "Return a FinalAgentResponse JSON object.",
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "const": "RETRIEVE"},
+                    "status": {"type": "string", "enum": ["SUCCESS", "FAILURE"]},
+                    "retrieved_data": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "error_details": {"type": "null"},
+                },
+                "required": ["task_type", "status", "retrieved_data", "error_details"],
+                "additionalProperties": False,
+            },
+        }
+    })
+
+
 class SentUnknownWithPostWorldEnvironment:
     def __init__(self, wrapped):
         self.wrapped = wrapped
@@ -323,7 +342,7 @@ def test_ordinary_episode_catalog_exposes_yield_but_not_final_response_or_stop()
     assert "STOP" not in names
 
 
-def test_unaccepted_global_final_audit_cannot_send_stop() -> None:
+def test_accepted_fact_skips_redundant_global_final_audit() -> None:
     fake, env, task = _browsergym_env_task()
     policy = YieldThenFinalPolicy()
     runtime = compose_target_runtime(
@@ -344,8 +363,10 @@ def test_unaccepted_global_final_audit_cannot_send_stop() -> None:
 
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
 
-    assert result.finalization is None
-    assert fake.final_messages == []
+    assert result.finalization is not None
+    assert fake.final_messages == ["Done"]
+    assert len(auditor.requests) == 1
+    assert result.auditor_calls == 1
 
 
 def test_empty_satisfied_global_final_audit_cannot_send_stop() -> None:
@@ -376,7 +397,7 @@ def test_empty_satisfied_global_final_audit_cannot_send_stop() -> None:
     assert fake.final_messages == []
 
 
-def test_contradictory_satisfied_final_audit_cannot_send_stop() -> None:
+def test_mechanically_ready_finalization_does_not_call_conflicting_second_auditor() -> None:
     fake, env, task = _browsergym_env_task()
     policy = YieldThenFinalPolicy()
     runtime = compose_target_runtime(
@@ -397,10 +418,9 @@ def test_contradictory_satisfied_final_audit_cannot_send_stop() -> None:
 
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
 
-    assert result.outcome is MissionOutcome.ROUND_BUDGET_EXHAUSTED
-    assert result.boundary_rejections == 1
-    assert result.finalization is None
-    assert fake.final_messages == []
+    assert result.finalization is not None
+    assert fake.final_messages == ["Done"]
+    assert len(auditor.requests) == 1
     assert result.mission_state.audited_outcomes[-1].audit_id == "audit:first"
 
 
@@ -437,8 +457,19 @@ def test_final_audit_requires_fresh_capture_before_auditor_or_stop() -> None:
     assert manager.requests[2].last_audit_or_failure_ref == "final_audit_capture:capability_unavailable"
 
 
-def test_final_audit_not_ready_returns_to_manager_when_budget_remains() -> None:
+def test_invalid_public_final_response_contract_returns_to_manager_without_dispatch() -> None:
     fake, env, task = _browsergym_env_task()
+    task = replace(task, inputs={
+        PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: {
+            "format": "Return a JSON object with answer.",
+            "json_schema": {
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+                "required": ["answer"],
+                "additionalProperties": False,
+            },
+        }
+    })
     policy = YieldThenFinalPolicy()
     runtime = compose_target_runtime(
         policy,
@@ -464,7 +495,8 @@ def test_final_audit_not_ready_returns_to_manager_when_budget_remains() -> None:
     assert fake.final_messages == []
     assert len(manager.requests) == 3
     assert manager.requests[2].last_typed_exit == "final_audit:not_ready"
-    assert manager.requests[2].last_audit_or_failure_ref == "audit_status_not_promotable"
+    assert manager.requests[2].last_audit_or_failure_ref == "final_response_contract_invalid"
+    assert len(auditor.requests) == 1
 
 
 def test_accepted_unsatisfied_final_audit_is_carried_back_to_manager() -> None:
@@ -527,6 +559,7 @@ def test_sent_unknown_final_response_reads_acquired_post_world_once() -> None:
     assert env.final_messages == ["Done"]
     assert fake.final_messages == []
     assert evaluator.calls == 3
+    assert len(auditor.requests) == 1
     assert result.state is not None
     assert result.state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
     assert result.status is RunStatus.DONE
@@ -558,9 +591,41 @@ def test_accepted_final_audit_sends_stop_once() -> None:
     assert result.finalization.result.dispatch_status is DispatchStatus.SENT
     assert second.result.dispatch_status is DispatchStatus.NOT_SENT
     assert fake.final_messages == ["Done"]
+    assert len(auditor.requests) == 1
     assert [context.runtime_controls for context in policy.contexts] == [
         ("yield_subtask",),
         ("final_response",),
+    ]
+
+
+def test_public_final_response_schema_is_visible_only_on_final_turn_and_validated_before_send() -> None:
+    fake, env, task = _browsergym_env_task()
+    task = _with_retrieve_final_schema(task)
+    policy = YieldThenFinalPolicy()
+    runtime = compose_target_runtime(
+        policy,
+        ProductionActionOutcomeProjector(),
+        UnknownEvaluator(),
+        required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
+        runtime_controls=("yield_subtask",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, SubtaskContract("Read", "Read", episode_turn_budget=1)),
+            ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, reason="ready"),
+        ],
+        [],
+    )
+    auditor = FinalAuditAuditor(accept_final=True)
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.finalization is not None
+    assert len(auditor.requests) == 1
+    assert policy.contexts[0].task.final_response_contract == {}
+    assert policy.contexts[1].task.final_response_contract["json_schema"]["properties"]["task_type"]["const"] == "RETRIEVE"
+    assert fake.final_messages == [
+        '{"retrieved_data":["Done"],"task_type":"RETRIEVE","status":"SUCCESS","error_details":null}'
     ]
 
 
@@ -660,11 +725,17 @@ def test_webarena_native_success_is_stop_gated_even_if_probe_reports_done() -> N
 
 
 def test_webarena_public_intake_does_not_project_hidden_expected_or_evaluator_data() -> None:
+    final_schema = (
+        '{"type":"object","properties":{"task_type":{"const":"RETRIEVE"},'
+        '"status":{"enum":["SUCCESS","FAILURE"]},"retrieved_data":{"type":"array","items":{"type":"string"}},'
+        '"error_details":{"type":"null"}},"required":["task_type","status","retrieved_data","error_details"],'
+        '"additionalProperties":false}'
+    )
     raw = raw_observation(
         ax_node("button", "button", "Continue"),
         goal=(
             "Official public instruction\n\n---\nFinal response format: "
-            "use send_msg_to_user with STOP schema"
+            f"{final_schema}"
         ),
     )
     fake = FakeBrowserGym(raw)
@@ -682,8 +753,10 @@ def test_webarena_public_intake_does_not_project_hidden_expected_or_evaluator_da
     assert "evaluator" not in serialized
     assert task.instruction == "Official public instruction"
     assert task.task_id == "task:webarena_verified"
-    assert task.inputs == {}
-    for leaked in ("browsergym/webarena_verified", "shopping_admin", "smoke", "send_msg_to_user", "stop"):
+    assert task.inputs[PUBLIC_FINAL_RESPONSE_CONTRACT_KEY]["json_schema"]["properties"]["task_type"]["const"] == "RETRIEVE"
+    assert PUBLIC_FINAL_RESPONSE_CONTRACT_KEY not in projected.public_inputs
+    assert projected.final_response_contract == {}
+    for leaked in ("browsergym/webarena_verified", "shopping_admin", "smoke"):
         assert leaked not in projected_serialized
     assert task.requested_outputs == ("webarena_final_response",)
     asyncio.run(env.close())

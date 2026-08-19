@@ -80,8 +80,11 @@ Auditor/context-capacity acceptance path. After the AuditView repair, the same-c
 `evidence/live/w1b-one-task-0-aliyun-glm51-auditview-20260819T111504Z/` admitted Auditor at 13,008 estimated tokens,
 made one Auditor provider attempt, accepted the cited `top1_bestseller_2022` fact, requested final audit, and delivered
 the final response `Quest Lumaflex™ Band`; the official case outcome remains `blocked` because the native evaluator
-returned `verified_terminal_task_failure`. Neither witness reproduced the read-only E-ref, repair target-swap, or
-inspect/action-page loop.
+returned `verified_terminal_task_failure` after receiving plain text instead of the public WebArena final-response
+JSON schema. The local repair now keeps the public final-response contract in task intake, exposes it only on the
+`final_response` turn, skips redundant final Auditor calls when accepted facts still resolve in a fresh capture, and
+validates or representation-wraps the response before `send_msg_to_user`. Neither witness reproduced the read-only
+E-ref, repair target-swap, or inspect/action-page loop.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
@@ -1564,8 +1567,8 @@ Act:
 - Use ask_user only for missing user-owned information, and abort only when safe progress is impossible.
 - Local action outcome reports what happened to one action; only TaskEvaluator or a native verifier proves success.
 
-Return exactly one offered tool call without prose. On an explicit final-response turn, return only the grounded
-user-facing answer.
+Return exactly one offered tool call without prose. On an explicit final-response turn, use task.final_response_contract
+when present and return only the grounded user-facing answer in that public format.
 ```
 
 The canonical target GoalCompiler prompt is:
@@ -1690,7 +1693,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence implemented and locally verified; Auditor AuditView evidence projection repaired and same-case witness reached final response, with official native outcome still `blocked` / W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; executable/read-only refs, representation-only repair, explicit discovery results, admitted same-turn visual binding, zero-dispatch control-stall detection, non-cumulative token accounting, and model-facing audit evidence de-duplication are in place; next gate is finalization/native-evaluator compatibility plus six-site smokes before W2 |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence implemented and locally verified; Auditor AuditView evidence projection and final-response contract delivery repaired locally after the same-case witness reached plain-text final response with official native outcome still `blocked` / W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; executable/read-only refs, representation-only repair, explicit discovery results, admitted same-turn visual binding, zero-dispatch control-stall detection, non-cumulative token accounting, model-facing audit evidence de-duplication, and public final schema validation are in place; next gate is one same-case finalization/native-evaluator witness plus six-site smokes before W2 |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:

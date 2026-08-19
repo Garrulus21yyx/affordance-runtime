@@ -17,6 +17,7 @@ from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGIS
 from affordance_runtime.agent.context.budgets import serialized_size
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
 )
@@ -371,15 +372,22 @@ def open_webarena_verified_case(
         registration_modules=(WA_REGISTRATION_MODULE,),
     )
     try:
+        public_instruction, final_response_contract = _public_webarena_goal(surface.goal_instruction)
         intake = ThinTaskIntake().compile(
             NaturalLanguageTaskRequest(
                 "task:webarena_verified",
-                _public_webarena_instruction(surface.goal_instruction),
+                public_instruction,
                 TaskBoundary(
                     allowed_effects=("external_ui_interaction",),
                     forbidden_effects=("credential_use",),
-                    constraints=("Provide exactly one final response matching the public task format when ready.",),
-                    inputs={},
+                    constraints=(
+                        "Provide exactly one final response matching the public task format when ready.",
+                    ),
+                    inputs=(
+                        {PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: final_response_contract}
+                        if final_response_contract
+                        else {}
+                    ),
                     requested_outputs=(WA_FINAL_OUTPUT_ID,),
                     risk_profile=RiskProfile.LOW,
                     loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
@@ -425,10 +433,41 @@ def classify_webarena_terminal_snapshot(
 
 
 def _public_webarena_instruction(goal: str) -> str:
+    return _public_webarena_goal(goal)[0]
+
+
+def _public_webarena_goal(goal: str) -> tuple[str, dict[str, object]]:
     for marker in ("\n\n---\nFinal response format:", "\n---\nFinal response format:"):
         if marker in goal:
-            return goal.split(marker, 1)[0].strip()
-    return goal.strip()
+            instruction, format_text = goal.split(marker, 1)
+            contract = _public_final_response_contract(format_text)
+            return instruction.strip(), contract
+    return goal.strip(), {}
+
+
+def _public_final_response_contract(format_text: str) -> dict[str, object]:
+    text = format_text.strip()
+    if not text:
+        return {}
+    contract: dict[str, object] = {"format": text[:4096]}
+    schema = _extract_json_object(text)
+    if isinstance(schema, Mapping):
+        contract["json_schema"] = to_json_compatible(schema)
+    return contract
+
+
+def _extract_json_object(text: str) -> object | None:
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, Mapping):
+            return value
+    return None
 
 
 def write_webarena_verified_w0_manifest(

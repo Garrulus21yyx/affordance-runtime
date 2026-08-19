@@ -288,6 +288,8 @@ def _task(context: AgentContext) -> dict[str, object]:
             },
         ),
     }
+    if task.final_response_contract:
+        result["final_response_contract"] = to_json_compatible(task.final_response_contract)
     evaluation = {
             "status": str(task.evaluation.status),
             "criteria": tuple(

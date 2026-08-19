@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution.contracts import DispatchStatus
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.boundary import AuditBoundary
 from affordance_runtime.mission.contracts import (
     AuditBundle,
@@ -464,41 +469,46 @@ class MissionSupervisor:
             relevant_fact_keys=tuple(item.key for item in mission.accepted_facts),
             candidate_output_keys=("final_response",),
         )
-        audit_request = AuditorRoleRequest(
-            task,
-            final_contract,
-            mission,
-            state.current_world,
-            state.working_facts,
-            "request_final_audit",
-            (),
-            bundle,
-        )
-        audit = await self.auditor.audit(audit_request)
-        _record_role_invocation(self.trace_sink, "auditor", 1, audit_request, audit)
-        if audit.failure is not None or audit.output is None:
-            outcome = _auditor_failure_outcome(audit.failure)
-            return MissionRunResult(
-                state,
+        auditor_calls = 0
+        boundary_rejections = 0
+        if not _accepted_facts_resolve_in_bundle(mission, bundle):
+            audit_request = AuditorRoleRequest(
+                task,
+                final_contract,
                 mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref=outcome.value),
-                outcome,
-                auditor_calls=1,
+                state.current_world,
+                state.working_facts,
+                "request_final_audit",
+                (),
+                bundle,
             )
-        accepted = self.boundary.accept(mission, audit.output, bundle)
-        if (
-            not accepted.accepted
-            or audit.output.status is not AuditDeltaStatus.AUDITED_SATISFIED
-        ):
-            return MissionRunResult(
-                state,
-                accepted.mission_state,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "final_audit_not_ready"),
-                MissionOutcome.FINAL_AUDIT_NOT_READY,
-                auditor_calls=1,
-                boundary_rejections=int(not accepted.accepted),
-            )
-        mission = accepted.mission_state
+            audit = await self.auditor.audit(audit_request)
+            auditor_calls = 1
+            _record_role_invocation(self.trace_sink, "auditor", 1, audit_request, audit)
+            if audit.failure is not None or audit.output is None:
+                outcome = _auditor_failure_outcome(audit.failure)
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.MANAGER, last_ref=outcome.value),
+                    outcome,
+                    auditor_calls=auditor_calls,
+                )
+            accepted = self.boundary.accept(mission, audit.output, bundle)
+            if (
+                not accepted.accepted
+                or audit.output.status is not AuditDeltaStatus.AUDITED_SATISFIED
+            ):
+                boundary_rejections = int(not accepted.accepted)
+                return MissionRunResult(
+                    state,
+                    accepted.mission_state,
+                    SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "final_audit_not_ready"),
+                    MissionOutcome.FINAL_AUDIT_NOT_READY,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            mission = accepted.mission_state
         finalizing_runtime = runtime.with_runtime_controls(("final_response",), episode_monitor=None)
         final_state = await finalizing_runtime.initialize_from_world(
             task,
@@ -515,10 +525,21 @@ class MissionSupervisor:
                 mission,
                 SupervisorState(SupervisorPhase.MANAGER, last_ref="final_response_not_produced"),
                 MissionOutcome.FINAL_AUDIT_NOT_READY,
-                auditor_calls=1,
+                auditor_calls=auditor_calls,
+                boundary_rejections=boundary_rejections,
             )
         response = final_state.last_step.decision
-        finalization = await environment.finalize(response.content)
+        content, valid = _public_final_response_content(response.content, task)
+        if not valid:
+            return MissionRunResult(
+                final_state,
+                mission,
+                SupervisorState(SupervisorPhase.MANAGER, last_ref="final_response_contract_invalid"),
+                MissionOutcome.FINAL_AUDIT_NOT_READY,
+                auditor_calls=auditor_calls,
+                boundary_rejections=boundary_rejections,
+            )
+        finalization = await environment.finalize(content)
         if (
             finalization.result.dispatch_status is DispatchStatus.NOT_SENT
             or finalization.post_acquisition is None
@@ -528,7 +549,8 @@ class MissionSupervisor:
                 mission,
                 SupervisorState(SupervisorPhase.TERMINAL),
                 MissionOutcome.FINALIZED,
-                auditor_calls=1,
+                auditor_calls=auditor_calls,
+                boundary_rejections=boundary_rejections,
                 finalization=finalization,
             )
         post = finalization.post_acquisition
@@ -541,7 +563,8 @@ class MissionSupervisor:
             mission,
             SupervisorState(SupervisorPhase.TERMINAL),
             MissionOutcome.FINALIZED,
-            auditor_calls=1,
+            auditor_calls=auditor_calls,
+            boundary_rejections=boundary_rejections,
             finalization=finalization,
         )
 
@@ -603,6 +626,83 @@ def _audit_capture_failure_outcome(status: AcquisitionStatus) -> MissionOutcome:
     if status is AcquisitionStatus.CANCELLED:
         return MissionOutcome.CANCELLED
     return MissionOutcome.EVIDENCE_GAP
+
+
+def _accepted_facts_resolve_in_bundle(mission: MissionState, bundle: AuditBundle) -> bool:
+    return bool(mission.accepted_facts) and all(
+        _accepted_fact_resolves_in_bundle(item, bundle)
+        for item in mission.accepted_facts
+    )
+
+
+def _accepted_fact_resolves_in_bundle(fact, bundle: AuditBundle) -> bool:
+    if bundle.resolve(fact.record.evidence_ref) is not None:
+        return True
+    expected_value = to_json_compatible(fact.record.value)
+    return any(
+        record.kind == "fact"
+        and record.predicate == fact.record.predicate
+        and to_json_compatible(record.value) == expected_value
+        for record in bundle.evidence_records
+    )
+
+
+def _public_final_response_content(content: str, task: TaskGoal) -> tuple[str, bool]:
+    schema = _public_final_response_schema(task)
+    if schema is None:
+        return content, True
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError:
+        value = _repair_public_final_response(content, schema)
+    try:
+        validate_value(value, schema, path="final_response")
+    except ValueError:
+        return content, False
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False), True
+
+
+def _public_final_response_schema(task: TaskGoal) -> Mapping[str, object] | None:
+    contract = task.inputs.get(PUBLIC_FINAL_RESPONSE_CONTRACT_KEY)
+    if not isinstance(contract, Mapping):
+        return None
+    schema = contract.get("json_schema")
+    return schema if isinstance(schema, Mapping) else None
+
+
+def _repair_public_final_response(content: str, schema: Mapping[str, object]) -> object:
+    if not content.strip():
+        return content
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping) or "retrieved_data" not in properties:
+        return content
+    value: dict[str, object] = {"retrieved_data": [content]}
+    if "task_type" in properties:
+        value["task_type"] = _schema_default(properties["task_type"])
+    if "status" in properties:
+        value["status"] = _schema_default(properties["status"], preferred="SUCCESS")
+    if "error_details" in properties:
+        value["error_details"] = None
+    return value
+
+
+def _schema_default(schema: object, *, preferred: str = "") -> object:
+    if not isinstance(schema, Mapping):
+        return preferred
+    if "const" in schema:
+        return schema["const"]
+    enum = schema.get("enum")
+    if isinstance(enum, tuple | list) and enum:
+        if preferred and preferred in enum:
+            return preferred
+        return enum[0]
+    variants = schema.get("oneOf") or schema.get("anyOf")
+    if isinstance(variants, tuple | list):
+        for variant in variants:
+            value = _schema_default(variant, preferred=preferred)
+            if value not in ("", None):
+                return value
+    return preferred
 
 
 def _auditor_failure_outcome(failure: ModelFailure | None) -> MissionOutcome:

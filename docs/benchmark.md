@@ -501,7 +501,11 @@ Environments without an explicit STOP capability retain the present final-respon
 
 Before STOP, the native WebArena state is running/incomplete and is not model-visible semantic progress. After STOP,
 the integrated evaluator is the sole official authority. The public instruction and official final-response schema
-may enter TaskGoal; expected answers, evaluator configuration, backend state, and private task metadata may not.
+may enter TaskGoal; expected answers, evaluator configuration, backend state, and private task metadata may not. The
+final-response schema is projected only on the `final_response` turn. If MissionState already contains accepted facts
+whose public value/evidence still resolves against a fresh finalization capture, Supervisor does not make a second
+semantic Auditor call; it lets ActionPolicy produce the final response, mechanically validates or representation-wraps
+that response against the public schema, then leaves official success solely to the native evaluator.
 
 #### W0: pin and prove environment readiness
 
@@ -796,8 +800,8 @@ The predeclared exit properties are:
 
 Current implementation status is now
 `W1b action/recovery convergence implemented and locally verified / Auditor AuditView evidence projection repaired
-locally / latest W1b task-0 witness reached final response but official native outcome remained blocked / W1b-Agent
-blocked`. The provider-free watch4 synthetic witness proves that read-only
+locally / final-response contract delivery implemented locally / previous W1b task-0 witness reached final response but
+official native outcome remained blocked / W1b-Agent blocked`. The provider-free watch4 synthetic witness proves that read-only
 `Bestsellers` remains non-executable, repair cannot swap it to an unrelated executable target, current executable
 matches are exposed, empty action search does not erase the base page, and repeated local discovery results route
 through `CONTINUE -> RECOVER -> YIELD`. The official same-case witness at
@@ -825,6 +829,12 @@ The final same-case run on the completed worktree at
 `inspect_world` control-stall recovery and then failed before provider dispatch because the same deterministic compact
 history was 13,812 bytes, above the local 8 KiB Auditor history cap but still far below the provider admission limit.
 The local Auditor history cap is therefore 16 KiB while full-request admission remains the hard authority.
+
+The current local repair removes unconditional final LLM audit and restores public final-response contract delivery:
+WebArena intake preserves the marker-delimited public final schema in `public_final_response_contract`, ordinary GUI
+turns hide it, finalizing turns expose it, and Supervisor validates/one-shot wraps plain retrieved text into the public
+JSON response shape before `send_msg_to_user`. No benchmark rerun has been performed after this final-response contract
+repair.
 
 | Site category | Tool schemas | Offered targets | Missing Actor targets | State retained/total | Closure leaks | Projection | Prefit tokens | Admitted tokens |
 |---|---:|---:|---:|---:|---:|---|---:|---:|

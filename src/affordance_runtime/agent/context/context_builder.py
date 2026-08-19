@@ -340,6 +340,7 @@ def _fit_context(
             world.facts.items,
             fact_refs,
             grounding.index.target_refs,
+            include_final_response_contract="final_response" in runtime_controls,
         )
         private_fact_bindings = _current_public_fact_bindings(
             observation,
