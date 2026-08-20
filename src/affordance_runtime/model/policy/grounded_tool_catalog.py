@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Mapping
 
 from affordance_runtime.actions.schema_validation import validate_value
@@ -50,6 +51,24 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.observation_needs import ObservationPurpose
+
+
+class GroundedLocalToolName(StrEnum):
+    """Closed non-ActionSpace vocabulary owned by the grounded ToolCatalog."""
+
+    REQUEST_EVIDENCE = "request_evidence"
+    COUNT_CHILDREN = "count_children"
+    PIN_FACT = "pin_fact"
+    READ_REGION = "read_region"
+    SEARCH_WORLD = "search_world"
+    LIST_REGIONS = "list_regions"
+    SEARCH_ACTIONS = "search_actions"
+    READ_NEXT_PAGE = "read_next_page"
+    ACTION_RESULTS_NEXT_PAGE = "action_results_next_page"
+    YIELD_SUBTASK = "yield_subtask"
+    ASK_USER = "ask_user"
+    WAIT = "wait"
+    ABORT = "abort"
 
 
 @dataclass(frozen=True)
@@ -129,10 +148,10 @@ class _EvidenceBinding:
 
 @dataclass(frozen=True)
 class _ControlBinding:
-    kind: str
+    kind: GroundedLocalToolName
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        if self.kind == "ask_user":
+        if self.kind is GroundedLocalToolName.ASK_USER:
             requested_fields = arguments.get("requested_fields", ())
             if not isinstance(requested_fields, list | tuple):
                 raise GroundedToolResolutionError(
@@ -144,21 +163,21 @@ class _ControlBinding:
                 tuple(str(item) for item in requested_fields),
                 tool_call_id,
             )
-        if self.kind == "wait":
+        if self.kind is GroundedLocalToolName.WAIT:
             return Wait(
                 context_id,
                 str(arguments["reason"]),
                 5_000,
                 tool_call_id,
             )
-        if self.kind == "abort":
+        if self.kind is GroundedLocalToolName.ABORT:
             return Abort(
                 context_id,
                 str(arguments["reason"]),
                 str(arguments["category"]),
                 tool_call_id,
             )
-        if self.kind == "yield_subtask":
+        if self.kind is GroundedLocalToolName.YIELD_SUBTASK:
             return YieldSubtask(
                 context_id,
                 str(arguments["kind"]),
@@ -189,7 +208,7 @@ class _CountChildrenBinding:
         counts = {item: self.counts[item] for item in container_refs}
         return LocalToolResult(
             context_id,
-            "count_children",
+            GroundedLocalToolName.COUNT_CHILDREN.value,
             {"containers": container_refs},
             {"counts": counts, "total": sum(counts.values())},
             tool_call_id,
@@ -230,7 +249,7 @@ class _PinFactBinding:
                 )
             return LocalToolResult(
                 context_id,
-                "pin_fact",
+                GroundedLocalToolName.PIN_FACT.value,
                 {"key": key, "evidence_ref": public_ref, "purpose": purpose},
                 {"status": "already_pinned", "key": key},
                 tool_call_id,
@@ -244,7 +263,7 @@ class _PinFactBinding:
             ) from exc
         return LocalToolResult(
             context_id,
-            "pin_fact",
+            GroundedLocalToolName.PIN_FACT.value,
             {"key": key, "evidence_ref": public_ref, "purpose": purpose},
             {"status": "pinned", "key": key},
             tool_call_id,
@@ -263,15 +282,15 @@ class _WorldReadBinding:
         query = ""
         page_cursor = ""
         if self.kind == "region":
-            tool_name = "read_region"
+            tool_name = GroundedLocalToolName.READ_REGION.value
             action = "open_region"
             region_ref = str(arguments["region_ref"])
         elif self.kind == "find":
-            tool_name = "search_world"
+            tool_name = GroundedLocalToolName.SEARCH_WORLD.value
             action = "find"
             query = str(arguments["query"]).strip()
         elif self.kind == "view_all":
-            tool_name = "list_regions"
+            tool_name = GroundedLocalToolName.LIST_REGIONS.value
             action = "view_all"
         elif self.kind == "continue":
             if arguments:
@@ -282,7 +301,7 @@ class _WorldReadBinding:
                     GroundedToolResolutionCode.INVALID_ARGUMENTS,
                     "no current World read has another page",
                 )
-            tool_name = "read_next_page"
+            tool_name = GroundedLocalToolName.READ_NEXT_PAGE.value
             page_cursor = lens.next_cursor
             if lens.kind == "region":
                 action = "open_region"
@@ -320,9 +339,9 @@ class _WorldReadBinding:
             result,
         )
         public_arguments: Mapping[str, object]
-        if tool_name == "read_region":
+        if tool_name == GroundedLocalToolName.READ_REGION.value:
             public_arguments = {"region_ref": region_ref}
-        elif tool_name == "search_world":
+        elif tool_name == GroundedLocalToolName.SEARCH_WORLD.value:
             public_arguments = {"query": query}
         else:
             public_arguments = {}
@@ -422,7 +441,7 @@ def compile_grounded_tool_catalog(
         ordered_purposes = tuple(sorted(purposes))
         registered.append(RegisteredGroundedTool(
             ToolSpec(
-                "request_evidence",
+                GroundedLocalToolName.REQUEST_EVIDENCE.value,
                 "Request missing current-world evidence; Runtime chooses how to obtain it.",
                 _evidence_request_schema(ordered_purposes, subjects),
             ),
@@ -448,7 +467,7 @@ def compile_grounded_tool_catalog(
     if child_counts:
         registered.append(RegisteredGroundedTool(
             ToolSpec(
-                "count_children",
+                GroundedLocalToolName.COUNT_CHILDREN.value,
                 "Count direct children in current complete repeated groups.",
                 _object_schema(
                     {
@@ -480,7 +499,7 @@ def compile_grounded_tool_catalog(
         if eligible:
             registered.append(RegisteredGroundedTool(
                 ToolSpec(
-                    "pin_fact",
+                    GroundedLocalToolName.PIN_FACT.value,
                     "Remember one current scalar F-ref for this episode.",
                     _object_schema(
                         {
@@ -515,7 +534,7 @@ def compile_grounded_tool_catalog(
     registered.extend((
         RegisteredGroundedTool(
             ToolSpec(
-                "read_region",
+                GroundedLocalToolName.READ_REGION.value,
                 "Read one current folded R-region; no browser action.",
                 _object_schema(
                     {
@@ -532,7 +551,7 @@ def compile_grounded_tool_catalog(
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                "search_world",
+                GroundedLocalToolName.SEARCH_WORLD.value,
                 "Search readable content in the complete current World; no browser action.",
                 _object_schema(
                     {
@@ -550,7 +569,7 @@ def compile_grounded_tool_catalog(
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                "list_regions",
+                GroundedLocalToolName.LIST_REGIONS.value,
                 "List current PageMap region records; no browser action.",
                 _object_schema({}),
             ),
@@ -558,7 +577,7 @@ def compile_grounded_tool_catalog(
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                "search_actions",
+                GroundedLocalToolName.SEARCH_ACTIONS.value,
                 "Search legal current actions. Use a visible E-ref directly instead.",
                 _object_schema(
                     {
@@ -583,7 +602,7 @@ def compile_grounded_tool_catalog(
     ):
         registered.append(RegisteredGroundedTool(
             ToolSpec(
-                "read_next_page",
+                GroundedLocalToolName.READ_NEXT_PAGE.value,
                 "Continue the prior World read; Runtime owns paging.",
                 _object_schema({}),
             ),
@@ -592,7 +611,7 @@ def compile_grounded_tool_catalog(
     if context.actions.next_cursor:
         registered.append(RegisteredGroundedTool(
             ToolSpec(
-                "action_results_next_page",
+                GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
                 "Continue current action results; Runtime owns paging.",
                 _object_schema({}),
             ),
@@ -604,10 +623,10 @@ def compile_grounded_tool_catalog(
             ),
         ))
 
-    if "yield_subtask" in context.runtime_controls:
+    if GroundedLocalToolName.YIELD_SUBTASK.value in context.runtime_controls:
         registered.append(RegisteredGroundedTool(
             ToolSpec(
-                "yield_subtask",
+                GroundedLocalToolName.YIELD_SUBTASK.value,
                 "Return this executor episode for review without claiming success.",
                 _object_schema(
                     {
@@ -626,13 +645,13 @@ def compile_grounded_tool_catalog(
                     ("kind", "reason"),
                 ),
             ),
-            _ControlBinding("yield_subtask"),
+            _ControlBinding(GroundedLocalToolName.YIELD_SUBTASK),
         ))
 
     registered.extend((
         RegisteredGroundedTool(
             ToolSpec(
-                "ask_user",
+                GroundedLocalToolName.ASK_USER.value,
                 "Ask for task information unavailable in the interface.",
                 _object_schema(
                     {
@@ -652,11 +671,11 @@ def compile_grounded_tool_catalog(
                     ("question",),
                 ),
             ),
-            _ControlBinding("ask_user"),
+            _ControlBinding(GroundedLocalToolName.ASK_USER),
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                "wait",
+                GroundedLocalToolName.WAIT.value,
                 "Wait five seconds, then observe a fresh World.",
                 _object_schema(
                     {
@@ -670,11 +689,11 @@ def compile_grounded_tool_catalog(
                     ("reason",),
                 ),
             ),
-            _ControlBinding("wait"),
+            _ControlBinding(GroundedLocalToolName.WAIT),
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                "abort",
+                GroundedLocalToolName.ABORT.value,
                 "Stop when safe progress is impossible.",
                 _object_schema(
                     {
@@ -693,7 +712,7 @@ def compile_grounded_tool_catalog(
                     ("reason", "category"),
                 ),
             ),
-            _ControlBinding("abort"),
+            _ControlBinding(GroundedLocalToolName.ABORT),
         ),
     ))
     names = tuple(tool.spec.name for tool in registered)

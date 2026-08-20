@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib.resources import files
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.actions import INTERACTION_CAPABILITY_REGISTRY, ActionSpaceBuilder
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import sanitize_history_value
@@ -40,6 +41,7 @@ from affordance_runtime.model.policy.contracts import (
     ModelInvocationResult,
     ModelMetadata,
 )
+from affordance_runtime.model.policy.grounded_tool_catalog import GroundedLocalToolName
 from affordance_runtime.model.policy.request_admission import (
     ModelRequestBreakdown,
     ModelRequestBudget,
@@ -61,6 +63,38 @@ from affordance_runtime.task.contracts import TaskGoal
 
 _AUDIT_HISTORY_BYTES = 16 * 1024
 _AUDIT_RENDERED_WORLD_BYTES = 128 * 1024
+_ACTION_POLICY_IDENTIFIERS = frozenset({
+    *(item.semantic_action for item in INTERACTION_CAPABILITY_REGISTRY.definitions),
+    *(item.value for item in GroundedLocalToolName),
+})
+_ACTION_POLICY_IDENTIFIER_PATTERN = (
+    r"(?:"
+    + "|".join(re.escape(item) for item in sorted(_ACTION_POLICY_IDENTIFIERS))
+    + r")"
+)
+_CODE_STYLE_IDENTIFIER_PATTERN = (
+    r"(?:"
+    + "|".join(
+        re.escape(item) for item in sorted(_ACTION_POLICY_IDENTIFIERS) if "_" in item
+    )
+    + r")"
+)
+_PRESCRIBED_IDENTIFIER = re.compile(
+    r"(?:\b(?:use|call|invoke|run)\s+(?:"
+    + _CODE_STYLE_IDENTIFIER_PATTERN
+    + r"\b|the\s+"
+    + _ACTION_POLICY_IDENTIFIER_PATTERN
+    + r"\s+(?:tool|command|operation)\b)|\b(?:tool|command|operation)\s+"
+    + _ACTION_POLICY_IDENTIFIER_PATTERN
+    + r"\b|`"
+    + _ACTION_POLICY_IDENTIFIER_PATTERN
+    + r"`)",
+    re.IGNORECASE,
+)
+_TOOL_CALL_SYNTAX = re.compile(
+    r"\b" + _ACTION_POLICY_IDENTIFIER_PATTERN + r"\s*\(",
+    re.IGNORECASE,
+)
 
 
 def _load_prompt(name: str, key: str) -> tuple[str, str]:
@@ -89,8 +123,15 @@ class SubtaskContractModel(BaseModel):
     constraints: tuple[str, ...] = Field(default=(), max_length=32)
     relevant_fact_keys: tuple[str, ...] = Field(default=(), max_length=32)
     candidate_output_keys: tuple[str, ...] = Field(default=(), max_length=32)
-    episode_turn_budget: int = Field(default=10, ge=1, le=100)
+    episode_turn_budget: int = Field(default=15, ge=1, le=15)
     related_audit_ids: tuple[str, ...] = Field(default=(), max_length=32)
+
+    @field_validator("objective", "done_when")
+    @classmethod
+    def _semantic_text_not_tool_identifier(cls, value: str) -> str:
+        if _PRESCRIBED_IDENTIFIER.search(value) or _TOOL_CALL_SYNTAX.search(value):
+            raise ValueError("subtask semantic text cannot prescribe implementation identifiers")
+        return value
 
 
 class ManagerDecisionModel(BaseModel):

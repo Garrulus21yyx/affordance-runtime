@@ -21,6 +21,7 @@ from affordance_runtime.model.providers.port import (
     ProviderModelError,
     StructuredModelError,
     StructuredOutputError,
+    StructuredOutputFailureKind,
     StructuredOutputMode,
     model_port_from_environment,
 )
@@ -234,18 +235,169 @@ def test_private_capture_preserves_schema_invalid_provider_content(tmp_path) -> 
         thread.join(timeout=2)
 
     record = json.loads(capture.path.read_text(encoding="utf-8"))
-    assert record["status"] == "schema_error"
+    assert record["status"] == "json_invalid"
     assert record["response_content"] == '{"wrong":true}'
     assert record["error"]
     assert {(item.field_path, item.code) for item in captured.value.violations} == {
         ("value", "missing"),
         ("wrong", "extra_forbidden"),
     }
+    assert captured.value.kind is StructuredOutputFailureKind.JSON_INVALID
+    assert record["response_metadata"]["final_content_present"] is True
     assert port.last_transcript is not None
-    assert port.last_transcript["status"] == "schema_error"
+    assert port.last_transcript["status"] == "json_invalid"
     assert port.last_transcript["llm.output_messages"] == [
         {"role": "assistant", "content": '{"wrong":true}'}
     ]
+
+
+def test_openai_adapter_classifies_budget_exhaustion_and_records_response_shape() -> None:
+    server, thread, requests = _serve({
+        "id": "response-truncated",
+        "choices": [{
+            "finish_reason": "length",
+            "message": {"content": "", "reasoning_content": "private reasoning"},
+        }],
+        "usage": {"prompt_tokens": 11_383, "completion_tokens": 2_048, "total_tokens": 13_431},
+    })
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="reasoning-test",
+            supports_thinking_control=True,
+        )
+        with pytest.raises(StructuredOutputError) as captured:
+            asyncio.run(port.generate_structured(
+                [ModelMessage(role="user", content="one command")],
+                Answer,
+                ModelConfig(max_tokens=2_048),
+            ))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert captured.value.kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+    assert port.last_call is not None
+    assert port.last_call.finish_reason == "length"
+    assert port.last_call.completion_tokens == 2_048
+    assert port.last_call.max_output_tokens == 2_048
+    assert port.last_call.final_content_present is False
+    assert port.last_call.reasoning_content_present is True
+    assert "message.reasoning_content" in port.last_call.response_fields
+    assert port.last_transcript is not None
+    assert port.last_transcript["status"] == "output_truncated"
+    assert port.last_transcript["llm.output.reasoning_content_present"] is True
+    assert "private reasoning" not in json.dumps(port.last_transcript)
+    assert requests[0]["max_tokens"] == 2_048
+
+
+def test_openai_adapter_separates_empty_final_content_from_json_invalid() -> None:
+    cases = (
+        (
+            {"choices": [{"finish_reason": "stop", "message": {"content": ""}}], "usage": {}},
+            StructuredOutputFailureKind.EMPTY_FINAL_CONTENT,
+        ),
+        (
+            {"choices": [{"finish_reason": "stop", "message": {"content": "not-json"}}], "usage": {}},
+            StructuredOutputFailureKind.JSON_INVALID,
+        ),
+    )
+    for response, expected in cases:
+        server, thread, _ = _serve(response)
+        try:
+            port = OpenAICompatibleModelPort(
+                base_url=f"http://127.0.0.1:{server.server_port}",
+                api_key="secret",
+                model="remote-test",
+            )
+            with pytest.raises(StructuredOutputError) as captured:
+                asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        assert captured.value.kind is expected
+
+
+def test_openai_adapter_confirms_truncation_from_exact_usage_without_finish_reason() -> None:
+    server, thread, _ = _serve({
+        "choices": [{"message": {"content": ""}}],
+        "usage": {"completion_tokens": 4_096},
+    })
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="reasoning-test",
+        )
+        with pytest.raises(StructuredOutputError) as captured:
+            asyncio.run(port.generate_structured(
+                [],
+                Answer,
+                ModelConfig(max_tokens=4_096),
+            ))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert captured.value.kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+
+
+def test_openai_adapter_applies_explicit_thinking_mode_only_when_supported() -> None:
+    server, thread, requests = _serve({
+        "choices": [{"finish_reason": "stop", "message": {"content": '{"value":"ok"}'}}],
+        "usage": {},
+    })
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="reasoning-test",
+            supports_thinking_control=True,
+        )
+        answer = asyncio.run(port.generate_structured(
+            [],
+            Answer,
+            ModelConfig(thinking_mode="disabled"),
+        ))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "ok"
+    assert requests[0]["thinking"] == {"type": "disabled"}
+
+
+def test_openai_adapter_rejects_port_thinking_default_without_capability() -> None:
+    port = OpenAICompatibleModelPort(
+        base_url="https://provider.invalid",
+        api_key="secret",
+        model="unsupported-thinking-control",
+        thinking_mode="disabled",
+        supports_thinking_control=False,
+    )
+
+    with pytest.raises(StructuredModelError, match="does not declare thinking-mode control"):
+        asyncio.run(port.generate_structured([], Answer, ModelConfig()))
+
+    per_call_port = OpenAICompatibleModelPort(
+        base_url="https://provider.invalid",
+        api_key="secret",
+        model="unsupported-thinking-control",
+        supports_thinking_control=False,
+    )
+    with pytest.raises(StructuredModelError, match="does not declare thinking-mode control"):
+        asyncio.run(
+            per_call_port.generate_structured(
+                [],
+                Answer,
+                ModelConfig(thinking_mode="disabled"),
+            )
+        )
 
 
 def test_provider_transport_preserves_arguments_without_owning_tool_semantics() -> None:
@@ -634,7 +786,7 @@ def test_environment_factory_selects_zhipu_profile_without_exposing_key() -> Non
     assert port.model == "glm-4.7-flash"
     assert port.supports_multimodal is False
     assert port.structured_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
-    assert port.thinking_mode == "disabled"
+    assert port.thinking_mode is None
     assert "zhipu-secret" not in repr(port)
 
 
@@ -670,6 +822,7 @@ def test_environment_factory_selects_deepseek_profile_without_exposing_key() -> 
     assert port.supports_multimodal is False
     assert port.structured_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
     assert port.thinking_mode is None
+    assert port.supports_thinking_control is True
     assert "deepseek-secret" not in repr(port)
 
 
@@ -706,7 +859,7 @@ def test_zhipu_text_profile_requests_json_object_and_embeds_schema_in_prompt() -
     request = requests[0]
     assert request["response_format"] == {"type": "json_object"}
     assert "never the JSON Schema definition itself" in request["messages"][0]["content"]
-    assert request["thinking"] == {"type": "disabled"}
+    assert "thinking" not in request
     assert request["messages"][0]["role"] == "system"
     assert '"value"' in request["messages"][0]["content"]
     assert request["messages"][1] == {"role": "user", "content": "answer"}

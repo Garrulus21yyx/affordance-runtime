@@ -8,10 +8,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from affordance_runtime.actions import ActionBinding, ActionRisk
+from affordance_runtime.actions import INTERACTION_CAPABILITY_REGISTRY, ActionBinding, ActionRisk
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.agent import LocalToolResult, SelectAction
+from affordance_runtime.agent import (
+    LocalToolResult,
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
+    SelectAction,
+)
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
@@ -51,8 +56,10 @@ from affordance_runtime.mission import (
 from affordance_runtime.model.mission_roles import (
     ModelBackedMissionAuditor,
     ModelBackedMissionManager,
+    SubtaskContractModel,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
+from affordance_runtime.model.policy.grounded_tool_catalog import GroundedLocalToolName
 from affordance_runtime.model.policy.request_admission import ModelRequestBudget
 from affordance_runtime.model.providers.port import StructuredOutputError, StructuredOutputViolation
 from affordance_runtime.task import RiskProfile, TaskGoal
@@ -75,6 +82,82 @@ def _task() -> TaskGoal:
         requested_outputs=("final_response",),
         risk_profile=RiskProfile.LOW,
     )
+
+
+def test_subtask_default_budget_is_fifteen_not_twenty() -> None:
+    contract = SubtaskContract("Read the report result", "The first product is known")
+    model_contract = SubtaskContractModel(
+        objective="Read the report result",
+        done_when="The first product is known",
+    )
+
+    assert contract.episode_turn_budget == 15
+    assert model_contract.episode_turn_budget == 15
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    tuple(item.semantic_action for item in INTERACTION_CAPABILITY_REGISTRY.definitions)
+    + tuple(item.value for item in GroundedLocalToolName),
+)
+def test_manager_subtask_model_rejects_concrete_tool_identifiers(tool_name: str) -> None:
+    objectives = [
+        f"Use the {tool_name} tool to inspect the report",
+        f"Call the {tool_name} operation to inspect the report",
+        f"Invoke the {tool_name} command to inspect the report",
+        f"Tool {tool_name} should inspect the report",
+        f"`{tool_name}` should inspect the report",
+        f"{tool_name}() should inspect the report",
+    ]
+    if "_" in tool_name:
+        objectives.append(f"Use {tool_name} to inspect the report")
+    for objective in objectives:
+        with pytest.raises(ValueError, match="implementation identifiers"):
+            SubtaskContractModel(
+                objective=objective,
+                done_when="The first product is known",
+            )
+
+
+def test_subtask_budget_contract_rejects_twenty_turns() -> None:
+    with pytest.raises(ValueError, match="less than or equal to 15"):
+        SubtaskContractModel(
+            objective="Read the report result",
+            done_when="The first product is known",
+            episode_turn_budget=20,
+        )
+    with pytest.raises(ValueError, match=r"within \[1, 15\]"):
+        SubtaskContract(
+            "Read the report result",
+            "The first product is known",
+            episode_turn_budget=20,
+        )
+
+
+@pytest.mark.parametrize(
+    "semantic_text",
+    (
+        "The order_id field is visible in the report",
+        "Use the current report to find order_id",
+        "Run the focus group analysis shown on the page",
+        "Run focus group analysis shown on the page",
+        "Use read-only mode when the page offers it",
+        "Use Focus for Teams to review the report",
+        "Use activate now",
+        "Call wait immediately",
+        "Invoke abort if progress is unsafe",
+        "Run scroll once",
+    ),
+)
+def test_manager_subtask_model_allows_semantic_text_that_only_resembles_tools(
+    semantic_text: str,
+) -> None:
+    contract = SubtaskContractModel(
+        objective=semantic_text,
+        done_when="The relevant report result is known",
+    )
+
+    assert contract.objective == semantic_text
 
 
 def _world(value: object = "42"):
@@ -118,6 +201,41 @@ def test_episode_monitor_recovers_then_yields_repeated_local_tool_result() -> No
     assert third.recovery_signal is not None
     assert third.recovery_signal.kind is RecoveryKind.CONTROL_STALL
     assert third.recovery_signal.observed_evidence["same_result_count"] == 3
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_guidance"),
+    (
+        (ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS, "exactly one offered tool call"),
+        (ProtocolFeedbackKind.OUTPUT_TRUNCATED, "exhausted its output budget"),
+        (ProtocolFeedbackKind.EMPTY_FINAL_CONTENT, "non-empty final JSON command"),
+        (ProtocolFeedbackKind.JSON_INVALID, "valid JSON command"),
+    ),
+)
+def test_episode_monitor_feedback_preserves_protocol_failure_kind(
+    kind: ProtocolFeedbackKind,
+    expected_guidance: str,
+) -> None:
+    world = _world()
+    step = StepResult(
+        ProtocolFeedback("context:1", kind, 0, kind.value),
+        world,
+        world,
+        _evaluation(world),
+        RunStatus.RUNNING,
+        feedback=kind.value,
+    )
+    monitor = EpisodeMonitor()
+
+    monitor.evaluate(step, (), "world:digest")
+    transition = monitor.evaluate(step, (), "world:digest")
+
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert transition.recovery_signal is not None
+    assert transition.recovery_signal.kind is RecoveryKind.PROTOCOL_STALL
+    assert expected_guidance in transition.recovery_signal.prohibited_immediate_repeat
+    if kind is not ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS:
+        assert "multi-call" not in transition.recovery_signal.prohibited_immediate_repeat
 
 
 @pytest.mark.parametrize("payload_size", (100_000, 1_000_000))
@@ -265,8 +383,12 @@ def test_manager_context_receives_bounded_environment_scope() -> None:
         "Magento Admin",
         "Ordered Products Report",
         "/admin/reports/",
-        ("navigate_current_ui", "activate", "read_current_world"),
-        ("public_web_search",),
+        (
+            "navigate within the current application",
+            "activate an offered control",
+            "read content visible in the current application",
+        ),
+        ("search the public web outside the current application",),
         ("activate REPORTS", "activate Ordered Products Report"),
     )
 
@@ -282,8 +404,14 @@ def test_manager_context_receives_bounded_environment_scope() -> None:
         "application": "Magento Admin",
         "page_title": "Ordered Products Report",
         "route_family": "/admin/reports/",
-        "available_capabilities": ["navigate_current_ui", "activate", "read_current_world"],
-        "unavailable_capabilities": ["public_web_search"],
+        "available_capabilities": [
+            "navigate within the current application",
+            "activate an offered control",
+            "read content visible in the current application",
+        ],
+        "unavailable_capabilities": [
+            "search the public web outside the current application",
+        ],
         "last_successful_transitions": ["activate REPORTS", "activate Ordered Products Report"],
     }
 
@@ -296,8 +424,8 @@ def test_manager_context_strips_generation_refs_from_environment_and_recovery() 
         "Magento Admin E19",
         "Ordered Products Report <expired-ref-1>",
         "/admin/reports/",
-        ("activate", "read_current_world"),
-        ("public_web_search",),
+        ("activate an offered control", "read content visible in the current application"),
+        ("search the public web outside the current application",),
         ("activate E19", "read_region R14", "inspect <expired-ref-2>"),
     )
     signal = RecoverySignal(

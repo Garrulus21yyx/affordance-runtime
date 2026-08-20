@@ -340,16 +340,30 @@ def _attempt_trace(item: object) -> dict[str, object]:
         transcript = getattr(item, "transcript", None)
         transcript = transcript if isinstance(transcript, Mapping) else {}
         status = getattr(item, "status", "")
+        output_failure = getattr(item, "output_failure_kind", None)
         return {
             "attempt_number": int(getattr(item, "attempt", 0)),
             "phase": str(getattr(item, "phase", "")),
             "status": status.value if hasattr(status, "value") else str(status),
-            "failure_kind": "",
+            "failure_kind": (
+                output_failure.value if hasattr(output_failure, "value") else ""
+            ),
             "failure_code": str(transcript.get("error.code", "")),
             "origin": "network" if transcript.get("network_dispatched", True) else "local_runtime",
             "network_dispatched": bool(transcript.get("network_dispatched", True)),
             "scheduled_delay_s": 0.0,
             "response_id": str(getattr(item, "response_id", "")),
+            "finish_reason": str(getattr(item, "finish_reason", "")),
+            "max_output_tokens": int(getattr(item, "max_output_tokens", 0)),
+            "prompt_tokens": int(getattr(item, "prompt_tokens", 0)),
+            "completion_tokens": int(getattr(item, "completion_tokens", 0)),
+            "final_content_present": bool(
+                getattr(item, "final_content_present", False)
+            ),
+            "reasoning_content_present": bool(
+                getattr(item, "reasoning_content_present", False)
+            ),
+            "response_fields": tuple(getattr(item, "response_fields", ())),
         }
     status = getattr(item, "status", "")
     origin = getattr(item, "origin", "")

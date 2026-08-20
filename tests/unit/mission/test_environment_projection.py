@@ -60,12 +60,14 @@ def test_mission_environment_is_bounded_semantic_scope_without_world_identity() 
     assert view.page_title == "Ordered Products Report"
     assert view.route_family == "/admin/reports/"
     assert view.available_capabilities == (
-        "read_current_world",
-        "search_current_world",
-        "activate",
-        "navigate_current_ui",
+        "read content visible in the current application",
+        "find content within the current application",
+        "activate an offered control",
+        "navigate within the current application",
     )
-    assert view.unavailable_capabilities == ("public_web_search",)
+    assert view.unavailable_capabilities == (
+        "search the public web outside the current application",
+    )
     assert view.last_successful_transitions == ("activate REPORTS",)
     serialized = repr(view)
     assert "observation:manager-environment" not in serialized

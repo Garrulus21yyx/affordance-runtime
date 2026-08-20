@@ -8,6 +8,7 @@ from typing import Generic, Mapping, TypeVar
 from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
 from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 
 _SAFE_METADATA = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 MAX_MODEL_RESPONSE_BYTES = 32 * 1024
@@ -29,6 +30,12 @@ class ModelGenerationAttempt:
     completion_tokens: int = 0
     total_tokens: int = 0
     exception_class: str = ""
+    output_failure_kind: StructuredOutputFailureKind | None = None
+    finish_reason: str = ""
+    max_output_tokens: int = 0
+    final_content_present: bool = False
+    reasoning_content_present: bool = False
+    response_fields: tuple[str, ...] = ()
     transcript: object | None = field(default=None, repr=False, compare=False)
 
 

@@ -73,7 +73,28 @@ def model_policy_from_environment(
     except ValueError as exc:
         raise ValueError("unsupported model decision perception profile") from exc
     transport_timeout = min(30.0, max(0.001, call_timeout_s - 1.0))
+    action_max_tokens = _bounded_int(
+        env,
+        "LLM_ACTION_POLICY_MAX_TOKENS",
+        default=4_096,
+        minimum=512,
+        maximum=16_384,
+    )
+    truncated_retry_max_tokens = _bounded_int(
+        env,
+        "LLM_ACTION_POLICY_TRUNCATED_RETRY_MAX_TOKENS",
+        default=512,
+        minimum=64,
+        maximum=4_096,
+    )
+    retry_thinking = env.get(
+        "LLM_ACTION_POLICY_TRUNCATED_RETRY_THINKING",
+        "disabled",
+    ).strip().casefold()
+    if retry_thinking not in {"enabled", "disabled", "inherit"}:
+        raise ValueError("unsupported truncated-output retry thinking mode")
     config = ModelConfig(
+        max_tokens=action_max_tokens,
         timeout_s=transport_timeout,
         rate_limit_retries=0,
         transient_retries=0,
@@ -88,6 +109,10 @@ def model_policy_from_environment(
         port,
         config,
         perception_profile=selected_perception,
+        truncated_retry_max_tokens=truncated_retry_max_tokens,
+        truncated_retry_thinking_mode=(
+            None if retry_thinking == "inherit" else retry_thinking
+        ),
     )
     return ModelBackedAgentPolicy(
         adapter,
@@ -168,3 +193,21 @@ def _goal_compiler_environment(environment: Mapping[str, str]) -> Mapping[str, s
 
 def _enabled(value: str) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def _bounded_int(
+    environment: Mapping[str, str],
+    name: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw = environment.get(name, "").strip()
+    try:
+        value = default if not raw else int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be within [{minimum}, {maximum}]")
+    return value

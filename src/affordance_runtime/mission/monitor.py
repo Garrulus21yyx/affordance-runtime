@@ -585,7 +585,17 @@ def _prohibited_repeat(result: StepResult) -> str:
             "without new evidence."
         )
     if isinstance(result.decision, ProtocolFeedback):
-        return "Return exactly one offered tool call; do not repeat a multi-call response."
+        guidance = {
+            "multiple_tool_calls": (
+                "Return exactly one offered tool call; do not repeat a multi-call response."
+            ),
+            "output_truncated": (
+                "Return one compact final command; the prior response exhausted its output budget."
+            ),
+            "empty_final_content": "Return one non-empty final JSON command.",
+            "json_invalid": "Return one valid JSON command matching the current schema.",
+        }
+        return guidance[result.decision.kind.value]
     if isinstance(result.decision, RequestActionPage):
         return "Do not repeat search_actions with the same query without new evidence."
     if isinstance(result.decision, SelectAction):

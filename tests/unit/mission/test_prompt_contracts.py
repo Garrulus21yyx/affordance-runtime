@@ -32,7 +32,7 @@ def test_manager_prompt_is_short_structured_and_limits_environment_projection() 
         "Output contract",
     )
     _section_positions(prompt, sections)
-    assert len(prompt) < 1700
+    assert len(prompt) < 2_000
     lowered = prompt.casefold()
     for forbidden in ("screenshot", "worldobservation", "actionspace", "selector", "coordinate", "e/f ref"):
         assert forbidden not in lowered
@@ -40,6 +40,10 @@ def test_manager_prompt_is_short_structured_and_limits_environment_projection() 
     assert "not a second environment authority" in prompt
     assert re.search(r"\bE[- ]?ref\b", prompt, flags=re.IGNORECASE) is None
     assert re.search(r"\bF[- ]?ref\b", prompt, flags=re.IGNORECASE) is None
+    assert "never prescribe or copy concrete ActionPolicy tool/capability identifiers" in prompt
+    assert "15 turns" in prompt
+    assert "5-8 turns" in prompt
+    assert "do not default to 20" in prompt
 
 
 def test_manager_prompt_route_and_authority_contract() -> None:

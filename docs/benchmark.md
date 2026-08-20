@@ -60,6 +60,37 @@ as a separate cohort and is not attributed to the adapter.
 
 ## Current evidence
 
+### 2026-08-20 ActionPolicy output-budget classification and recovery
+
+The latest DeepSeek task-0 evidence is not a stale-ref, missing-read-tool, or insufficient-total-step witness. Policy
+calls at sequences 8, 31, 33, 35, and 39 each reported exactly 2,048 completion tokens and empty final content. This
+matches provider output-budget exhaustion: reasoning consumed the configured completion allowance before the compact
+single-command JSON was delivered. Increasing GUI turns alone cannot recover a wire configuration that repeats the
+same 2,048-token cutoff.
+
+The local repair records `finish_reason`, configured and actual token usage, final/reasoning content presence, and safe
+response field names at the provider boundary. The previous generic `representation_error` outcome is removed;
+provider output is classified as `output_truncated|empty_final_content|json_invalid`, while native multi-call remains
+`multiple_tool_calls`. Only confirmed truncation receives one same-policy-turn retry. The normal request keeps provider
+default reasoning with `max_tokens=4096`; the retry is bounded to 512 and requests disabled thinking only through a
+declared provider capability. Provider-free properties prove one policy call can contain two provider attempts while
+creating no extra GUI step, and that empty or invalid non-truncated output never enters the retry.
+
+Manager capability projection now uses semantic descriptions instead of `read_current_world|search_current_world`.
+Manager prompt forbids ActionPolicy tool prescriptions. The typed output boundary rejects only unambiguous protocol
+forms—code-style names, backticks, call syntax, and explicit tool/command/operation labels—using vocabulary projected
+from `InteractionCapabilityRegistry` and the single fixed-name owner in `GroundedToolCatalog`. It deliberately does not
+guess whether ordinary words such as `read|focus|scroll` are tools, preserving legitimate page fields such as
+`order_id`. The ordinary episode default and hard upper bound are 15 turns, with prompt guidance of 5–8 for a simple
+read-only episode and no 20-turn loop. The existing three same-kind protocol-stall bound remains intact.
+
+The fresh six-page read-only diagnostic at
+`evidence/w1b-world-t32-output-budget-recovery-run1/` passes 6/6 with `ready=true`, `failure_origin=none`, no acceptance
+errors, provider attempts zero, and zero-dispatch metrics unchanged. It performed no model call or GUI mutation. This
+is provider-free contract evidence only: no DeepSeek/live WebArena witness has been run, task-0 live verification is
+pending, and the milestone remains non-closed. Focused owner/cross-owner tests pass (`170 passed`), the full suite
+passes (`1397 passed, 19 skipped`), and Ruff plus diff-check pass.
+
 ### 2026-08-20 T3.2 recovery-scope and wire-capability repair
 
 DeepSeek run2 is a progressive failure witness rather than a return to the original defect. Current `E19` and `E45`

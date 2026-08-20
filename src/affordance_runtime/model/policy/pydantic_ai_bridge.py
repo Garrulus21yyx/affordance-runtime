@@ -281,7 +281,7 @@ class PydanticAIGroundedDecisionPort:
                 elif decision is None and (resolution_error is None or initial_call is None):
                     decision = ProtocolFeedback(
                         request.context_id,
-                        ProtocolFeedbackKind.REPRESENTATION_ERROR,
+                        ProtocolFeedbackKind.JSON_INVALID,
                         0,
                         (
                             resolution_error.code.value
@@ -437,7 +437,7 @@ class PydanticAIGroundedDecisionPort:
         )
         decision = ProtocolFeedback(
             request.context_id,
-            ProtocolFeedbackKind.REPRESENTATION_ERROR,
+            ProtocolFeedbackKind.JSON_INVALID,
             0,
             detail,
         )

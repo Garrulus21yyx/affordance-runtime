@@ -36,7 +36,12 @@ from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
 from affordance_runtime.agent.core_loop import CoreAgentLoop
-from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
+from affordance_runtime.benchmarks.target_loop.instrumentation import (
+    BenchmarkInstrumentation,
+    CountingDecisionPort,
+    CountingPolicy,
+    _policy_trace_event,
+)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
@@ -61,6 +66,7 @@ from affordance_runtime.model.policy.grounded_tool_rejection import (
     grounded_tool_rejection_decision,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.policy import _build_request as _action_request
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
@@ -77,6 +83,7 @@ from affordance_runtime.model.providers.port import (
     ModelImageURLPart,
     ModelTextPart,
     StructuredOutputError,
+    StructuredOutputFailureKind,
     StructuredOutputViolation,
 )
 from affordance_runtime.schema_digest import schema_digest
@@ -1820,11 +1827,11 @@ def test_action_schema_error_returns_same_episode_feedback_after_one_provider_ca
     assert outcome.failure is None
     assert outcome.output is not None
     assert isinstance(outcome.output.decision, ProtocolFeedback)
-    assert outcome.output.decision.kind is ProtocolFeedbackKind.REPRESENTATION_ERROR
+    assert outcome.output.decision.kind is ProtocolFeedbackKind.JSON_INVALID
     assert port.calls == 1
     assert adapter.last_structured_output_violations == (StructuredOutputViolation("target", "string_type"),)
     assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
-    assert tuple(item.status for item in adapter.last_generation_attempts) == ("schema_error",)
+    assert tuple(item.status for item in adapter.last_generation_attempts) == ("json_invalid",)
 
 
 def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provider_call() -> None:
@@ -1854,10 +1861,10 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provide
     assert outcome.failure is None
     assert outcome.output is not None
     assert isinstance(outcome.output.decision, ProtocolFeedback)
-    assert outcome.output.decision.kind is ProtocolFeedbackKind.REPRESENTATION_ERROR
+    assert outcome.output.decision.kind is ProtocolFeedbackKind.JSON_INVALID
     assert adapter.last_model_call_count == 1
     assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
-    assert all(item.status == "schema_error" for item in adapter.last_generation_attempts)
+    assert all(item.status == "json_invalid" for item in adapter.last_generation_attempts)
     trace = _policy_trace_event(1, context, outcome, adapter)
     assert trace["structured_output_validation_stage"] == "provider_response_to_grounded_command"
     assert trace["structured_output_violations"] == (
@@ -1866,6 +1873,165 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provide
             "code": "missing_required_field",
         },
     )
+
+
+def test_truncated_action_output_retries_once_in_same_turn_with_narrow_budget() -> None:
+    class TruncatedThenActionPort:
+        provider = "deepseek"
+        model = "deepseek-v4-flash"
+        endpoint_class = "fixture"
+        supports_multimodal = False
+        supports_thinking_control = True
+
+        def __init__(self):
+            self.calls = 0
+            self.configs = []
+            self.last_call = None
+            self.last_transcript = None
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del kwargs
+            self.calls += 1
+            self.configs.append(config)
+            self.last_call = ModelCallRecord(
+                provider=self.provider,
+                model=self.model,
+                endpoint_class=self.endpoint_class,
+                prompt_version=config.prompt_version,
+                schema_name=output_schema.__name__,
+                schema_version="grounded_tools.v2",
+                latency_ms=1,
+                prompt_tokens=100,
+                completion_tokens=config.max_tokens if self.calls == 1 else 12,
+                total_tokens=100 + (config.max_tokens if self.calls == 1 else 12),
+                response_id=f"response:{self.calls}",
+                finish_reason="length" if self.calls == 1 else "stop",
+                max_output_tokens=config.max_tokens,
+                final_content_present=self.calls > 1,
+                reasoning_content_present=self.calls == 1,
+                response_fields=("message.content", "message.reasoning_content"),
+            )
+            self.last_transcript = {
+                "status": "output_truncated" if self.calls == 1 else "accepted",
+                "error.code": "output_truncated" if self.calls == 1 else "",
+            }
+            if self.calls == 1:
+                raise StructuredOutputError(
+                    "budget exhausted",
+                    kind=StructuredOutputFailureKind.OUTPUT_TRUNCATED,
+                    violations=(StructuredOutputViolation("$", "output_truncated"),),
+                )
+            assert messages[-1].role == "user"
+            return output_schema.model_validate({
+                "name": "activate",
+                "arguments": {"target": "E3"},
+            })
+
+    context = _context()
+    port = TruncatedThenActionPort()
+    adapter = CompactJsonDecisionPort(
+        port,
+        ModelConfig(
+            max_tokens=4_096,
+            timeout_s=1,
+            rate_limit_retries=0,
+            transient_retries=0,
+        ),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    instrumentation = BenchmarkInstrumentation()
+    policy = CountingPolicy(
+        ModelBackedAgentPolicy(
+            CountingDecisionPort(adapter, instrumentation),
+            call_timeout_s=2,
+        ),
+        instrumentation,
+    )
+
+    decision = asyncio.run(policy.decide(context))
+    outcome = policy.wrapped.last_invocation_result
+
+    assert isinstance(decision, SelectAction)
+    assert outcome is not None and outcome.failure is None
+    assert port.calls == 2
+    assert instrumentation.policy_calls == 1
+    assert instrumentation.provider_attempts == 2
+    assert tuple(item.max_tokens for item in port.configs) == (4_096, 512)
+    assert tuple(item.thinking_mode for item in port.configs) == (None, "disabled")
+    assert tuple(item.phase for item in outcome.attempts) == (
+        "initial",
+        "truncated_output_retry",
+    )
+    assert tuple(item.status for item in outcome.attempts) == (
+        "output_truncated",
+        "accepted",
+    )
+    assert outcome.metadata.prompt_tokens == 200
+    assert outcome.metadata.completion_tokens == 4_108
+    assert outcome.diagnostics["truncated_output_retry_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_calls"),
+    (
+        (StructuredOutputFailureKind.OUTPUT_TRUNCATED, 2),
+        (StructuredOutputFailureKind.EMPTY_FINAL_CONTENT, 1),
+        (StructuredOutputFailureKind.JSON_INVALID, 1),
+    ),
+)
+def test_action_output_failure_categories_preserve_feedback_and_retry_boundary(
+    failure_kind: StructuredOutputFailureKind,
+    expected_calls: int,
+) -> None:
+    class FailedOutputPort(_ActionPort):
+        supports_thinking_control = True
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del messages, output_schema, kwargs
+            self.calls += 1
+            self.last_call = ModelCallRecord(
+                provider=self.provider,
+                model=self.model,
+                endpoint_class=self.endpoint_class,
+                prompt_version=config.prompt_version,
+                schema_name="GroundedToolCommandPayload",
+                schema_version="grounded_tools.v2",
+                latency_ms=1,
+                completion_tokens=config.max_tokens,
+                total_tokens=config.max_tokens,
+                finish_reason=(
+                    "length"
+                    if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                    else "stop"
+                ),
+                max_output_tokens=config.max_tokens,
+                final_content_present=(
+                    failure_kind is StructuredOutputFailureKind.JSON_INVALID
+                ),
+            )
+            raise StructuredOutputError(
+                failure_kind.value,
+                kind=failure_kind,
+                violations=(StructuredOutputViolation("$", failure_kind.value),),
+            )
+
+    context = _context()
+    port = FailedOutputPort()
+    adapter = CompactJsonDecisionPort(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, ProtocolFeedback)
+    assert outcome.output.decision.kind.value == failure_kind.value
+    assert outcome.output.decision.detail == failure_kind.value
+    assert port.calls == expected_calls
+    assert adapter.last_model_call_count == expected_calls
 
 
 def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:

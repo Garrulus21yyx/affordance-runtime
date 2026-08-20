@@ -91,6 +91,37 @@ def test_provider_profile_declares_wire_capability_without_model_id_branching() 
         })
 
 
+def test_json_action_policy_owns_bounded_output_and_truncation_retry_config() -> None:
+    policy = model_policy_factory.model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_ACTION_POLICY_MAX_TOKENS": "4096",
+            "LLM_ACTION_POLICY_TRUNCATED_RETRY_MAX_TOKENS": "512",
+            "LLM_ACTION_POLICY_TRUNCATED_RETRY_THINKING": "disabled",
+        },
+        model_port=_Transport(provider="deepseek", supports_multimodal=False),
+        call_timeout_s=5,
+    )
+
+    assert policy.port.config.max_tokens == 4_096
+    assert policy.port.context_binder.request_budget.max_output_tokens == 4_096
+    assert policy.port.context_binder.request_budget.admission_limit == 59_832
+    assert policy.port.truncated_retry_max_tokens == 512
+    assert policy.port.truncated_retry_thinking_mode == "disabled"
+
+    with pytest.raises(ValueError, match="MAX_TOKENS"):
+        model_policy_factory.model_policy_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "deepseek",
+                "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+                "LLM_ACTION_POLICY_MAX_TOKENS": "20000",
+            },
+            model_port=_Transport(provider="deepseek", supports_multimodal=False),
+            call_timeout_s=5,
+        )
+
+
 def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
     assert "phase" not in {item.name for item in fields(CompactJsonDecisionPort)}
     factory_source = inspect.getsource(model_policy_factory)

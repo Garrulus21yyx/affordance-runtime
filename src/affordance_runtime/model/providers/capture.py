@@ -42,6 +42,7 @@ class PrivateModelCapture:
         response_content: object | None = None,
         response_id: str = "",
         error: str = "",
+        response_metadata: Mapping[str, Any] | None = None,
     ) -> None:
         with self._lock:
             self._sequence += 1
@@ -62,6 +63,7 @@ class PrivateModelCapture:
                 "response_content": response_content,
                 "response_id": response_id,
                 "error": error,
+                "response_metadata": dict(response_metadata or {}),
             }
             encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
             descriptor = os.open(

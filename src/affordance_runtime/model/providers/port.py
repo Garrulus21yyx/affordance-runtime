@@ -83,6 +83,7 @@ class ModelConfig(BaseModel):
         "json_object_prompt_schema",
         "prompt_json_local_validation",
     ] | None = None
+    thinking_mode: Literal["enabled", "disabled"] | None = None
 
 
 class ModelCallRecord(BaseModel):
@@ -102,10 +103,23 @@ class ModelCallRecord(BaseModel):
     response_id: str = ""
     rate_limit_retry_count: int = 0
     transient_retry_count: int = 0
+    finish_reason: str = Field(default="", max_length=80)
+    max_output_tokens: int = Field(default=0, ge=0)
+    final_content_present: bool = False
+    reasoning_content_present: bool = False
+    response_fields: tuple[str, ...] = Field(default=(), max_length=32)
 
 
 class StructuredModelError(RuntimeError):
     """A provider, JSON, or strict-schema failure without secret-bearing payloads."""
+
+
+class StructuredOutputFailureKind(StrEnum):
+    """Closed provider-output failures before Runtime action semantics exist."""
+
+    OUTPUT_TRUNCATED = "output_truncated"
+    EMPTY_FINAL_CONTENT = "empty_final_content"
+    JSON_INVALID = "json_invalid"
 
 
 @dataclass(frozen=True)
@@ -128,18 +142,20 @@ class StructuredOutputViolation:
 
 
 class StructuredOutputError(StructuredModelError):
-    """A redacted response-content failure eligible for one bounded schema retry."""
+    """A redacted, typed provider-output failure before role semantics are accepted."""
 
     def __init__(
         self,
         message: str,
         *,
+        kind: StructuredOutputFailureKind = StructuredOutputFailureKind.JSON_INVALID,
         violations: tuple[StructuredOutputViolation, ...] = (),
     ) -> None:
         if len(violations) > 4 or any(
             not isinstance(item, StructuredOutputViolation) for item in violations
         ):
             raise ValueError("structured output violations must be bounded and typed")
+        self.kind = StructuredOutputFailureKind(kind)
         self.violations = tuple(violations)
         super().__init__(message)
 
@@ -214,6 +230,7 @@ class OpenAICompatibleModelPort:
     supports_multimodal: bool = True
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.NATIVE_JSON_SCHEMA
     thinking_mode: Literal["enabled", "disabled"] | None = None
+    supports_thinking_control: bool = False
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     last_transcript: Mapping[str, object] | None = field(default=None, init=False, repr=False)
@@ -268,8 +285,15 @@ class OpenAICompatibleModelPort:
             }
         elif selected_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA:
             body["response_format"] = {"type": "json_object"}
-        if self.thinking_mode is not None:
-            body["thinking"] = {"type": self.thinking_mode}
+        selected_thinking_mode = self.thinking_mode
+        if selected_thinking_mode is not None and not self.supports_thinking_control:
+            raise StructuredModelError("provider does not declare thinking-mode control")
+        if config.thinking_mode is not None:
+            if not self.supports_thinking_control:
+                raise StructuredModelError("provider does not declare thinking-mode control")
+            selected_thinking_mode = config.thinking_mode
+        if selected_thinking_mode is not None:
+            body["thinking"] = {"type": selected_thinking_mode}
         if config.seed is not None:
             body["seed"] = config.seed
         _raise_if_model_circuit_open(self)
@@ -299,6 +323,13 @@ class OpenAICompatibleModelPort:
         usage = response.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
+        choice = _first_choice(response)
+        message = choice.get("message") if isinstance(choice.get("message"), Mapping) else {}
+        finish_reason = str(choice.get("finish_reason") or "")[:80]
+        content = _final_content(message.get("content"))
+        final_content_present = bool(content.strip())
+        reasoning_content_present = _reasoning_content_present(message)
+        response_fields = _response_field_names(response, message)
         self.last_call = ModelCallRecord(
             provider=self.provider,
             model=self.model,
@@ -313,26 +344,53 @@ class OpenAICompatibleModelPort:
             response_id=str(response.get("id") or ""),
             rate_limit_retry_count=rate_limit_retry_count,
             transient_retry_count=transient_retry_count,
+            finish_reason=finish_reason,
+            max_output_tokens=config.max_tokens,
+            final_content_present=final_content_present,
+            reasoning_content_present=reasoning_content_present,
+            response_fields=response_fields,
         )
+        if not final_content_present:
+            kind = (
+                StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                if _output_budget_exhausted(finish_reason, completion_tokens, config.max_tokens)
+                else StructuredOutputFailureKind.EMPTY_FINAL_CONTENT
+            )
+            self._capture(
+                serialized_messages,
+                output_schema,
+                kind.value,
+                response_content=content,
+                response_id=str(response.get("id") or ""),
+                error=kind.value,
+            )
+            raise StructuredOutputError(
+                f"structured response has no final content: {kind.value}",
+                kind=kind,
+                violations=(StructuredOutputViolation("$", kind.value),),
+            )
         try:
-            content = response["choices"][0]["message"]["content"]
-            if isinstance(content, list):
-                content = "".join(str(item.get("text") or "") for item in content if isinstance(item, dict))
             parsed = output_schema.model_validate_json(
                 _structured_json_content(content, output_schema),
             )
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            kind = (
+                StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                if _output_budget_exhausted(finish_reason, completion_tokens, config.max_tokens)
+                else StructuredOutputFailureKind.JSON_INVALID
+            )
             violations = _schema_failure_violations(exc)
             self._capture(
                 serialized_messages,
                 output_schema,
-                "schema_error",
-                response_content=locals().get("content"),
+                kind.value,
+                response_content=content,
                 response_id=str(response.get("id") or ""),
                 error=_schema_failure_summary(exc),
             )
             raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
+                kind=kind,
                 violations=violations,
             ) from exc
         self._capture(
@@ -375,6 +433,7 @@ class OpenAICompatibleModelPort:
                 response_content=response_content,
                 response_id=response_id,
                 error=error,
+                response_metadata=_response_metadata(self.last_call),
             )
 
 @dataclass
@@ -439,6 +498,10 @@ class OllamaModelPort:
         latency_ms = round((perf_counter() - started) * 1_000, 3)
         prompt_tokens = int(response.get("prompt_eval_count") or 0)
         completion_tokens = int(response.get("eval_count") or 0)
+        message = response.get("message") if isinstance(response.get("message"), Mapping) else {}
+        finish_reason = str(response.get("done_reason") or "")[:80]
+        content = _final_content(message.get("content"))
+        final_content_present = bool(content.strip())
         self.last_call = ModelCallRecord(
             provider=self.provider,
             model=self.model,
@@ -452,21 +515,49 @@ class OllamaModelPort:
             total_tokens=prompt_tokens + completion_tokens,
             rate_limit_retry_count=rate_limit_retry_count,
             transient_retry_count=transient_retry_count,
+            finish_reason=finish_reason,
+            max_output_tokens=config.max_tokens,
+            final_content_present=final_content_present,
+            reasoning_content_present=_reasoning_content_present(message),
+            response_fields=_response_field_names(response, message),
         )
+        if not final_content_present:
+            kind = (
+                StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                if _output_budget_exhausted(finish_reason, completion_tokens, config.max_tokens)
+                else StructuredOutputFailureKind.EMPTY_FINAL_CONTENT
+            )
+            self._capture(
+                messages,
+                output_schema,
+                kind.value,
+                response_content=content,
+                error=kind.value,
+            )
+            raise StructuredOutputError(
+                f"structured response has no final content: {kind.value}",
+                kind=kind,
+                violations=(StructuredOutputViolation("$", kind.value),),
+            )
         try:
-            content = str(response["message"]["content"])
             parsed = output_schema.model_validate_json(content)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            kind = (
+                StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                if _output_budget_exhausted(finish_reason, completion_tokens, config.max_tokens)
+                else StructuredOutputFailureKind.JSON_INVALID
+            )
             violations = _schema_failure_violations(exc)
             self._capture(
                 messages,
                 output_schema,
-                "schema_error",
-                response_content=locals().get("content"),
+                kind.value,
+                response_content=content,
                 error=_schema_failure_summary(exc),
             )
             raise StructuredOutputError(
                 f"structured response failed {output_schema.__name__} validation: {_schema_failure_summary(exc)}",
+                kind=kind,
                 violations=violations,
             ) from exc
         self._capture(messages, output_schema, "accepted", response_content=content)
@@ -500,7 +591,74 @@ class OllamaModelPort:
                 status=status,
                 response_content=response_content,
                 error=error,
+                response_metadata=_response_metadata(self.last_call),
             )
+
+
+def _first_choice(response: Mapping[str, Any]) -> Mapping[str, Any]:
+    choices = response.get("choices")
+    if not isinstance(choices, Sequence) or isinstance(choices, str | bytes) or not choices:
+        return {}
+    choice = choices[0]
+    return choice if isinstance(choice, Mapping) else {}
+
+
+def _final_content(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return "".join(
+            str(item.get("text") or "")
+            for item in value
+            if isinstance(item, Mapping)
+        )
+    return ""
+
+
+def _reasoning_content_present(message: Mapping[str, Any]) -> bool:
+    for key in ("reasoning_content", "reasoning", "reasoning_details"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+        if isinstance(value, Mapping | Sequence) and not isinstance(value, str | bytes) and bool(value):
+            return True
+    return False
+
+
+def _response_field_names(
+    response: Mapping[str, Any],
+    message: Mapping[str, Any],
+) -> tuple[str, ...]:
+    names = [f"response.{key}" for key in response]
+    names.extend(f"message.{key}" for key in message)
+    return tuple(
+        sorted({name for name in names if re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", name)})
+    )[:32]
+
+
+def _output_budget_exhausted(
+    finish_reason: str,
+    completion_tokens: int,
+    max_output_tokens: int,
+) -> bool:
+    return finish_reason.casefold() in {"length", "max_tokens"} or (
+        max_output_tokens > 0 and completion_tokens >= max_output_tokens
+    )
+
+
+def _response_metadata(record: ModelCallRecord | None) -> dict[str, object]:
+    if record is None:
+        return {}
+    return {
+        "finish_reason": record.finish_reason,
+        "max_output_tokens": record.max_output_tokens,
+        "prompt_tokens": record.prompt_tokens,
+        "completion_tokens": record.completion_tokens,
+        "total_tokens": record.total_tokens,
+        "final_content_present": record.final_content_present,
+        "reasoning_content_present": record.reasoning_content_present,
+        "response_fields": list(record.response_fields),
+    }
 
 
 def _openinference_llm_transcript(
@@ -536,9 +694,19 @@ def _openinference_llm_transcript(
         "llm.token_count.prompt": int(getattr(record, "prompt_tokens", 0)),
         "llm.token_count.completion": int(getattr(record, "completion_tokens", 0)),
         "llm.token_count.total": int(getattr(record, "total_tokens", 0)),
+        "llm.output.finish_reason": str(getattr(record, "finish_reason", "")),
+        "llm.output.max_tokens": int(getattr(record, "max_output_tokens", 0)),
+        "llm.output.final_content_present": bool(
+            getattr(record, "final_content_present", False)
+        ),
+        "llm.output.reasoning_content_present": bool(
+            getattr(record, "reasoning_content_present", False)
+        ),
+        "llm.response_fields": list(getattr(record, "response_fields", ())),
         "response.id": response_id,
         "status": status,
         "error": error,
+        "error.code": error,
     }
 
 def _messages_with_structured_output_contract(
@@ -649,7 +817,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
                 if supports_multimodal
                 else StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
             ),
-            thinking_mode=None if supports_multimodal else "disabled",
+            thinking_mode=None,
             private_capture=private_capture,
         )
     elif active_profile == "aliyun":
@@ -674,6 +842,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
             supports_multimodal=False,
             structured_output_mode=StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA,
             thinking_mode=None,
+            supports_thinking_control=True,
             private_capture=private_capture,
         )
     if _env_bool(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):

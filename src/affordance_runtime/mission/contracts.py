@@ -124,7 +124,7 @@ class SubtaskContract:
     constraints: tuple[str, ...] = ()
     relevant_fact_keys: tuple[str, ...] = ()
     candidate_output_keys: tuple[str, ...] = ()
-    episode_turn_budget: int = 10
+    episode_turn_budget: int = 15
     related_audit_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -138,8 +138,8 @@ class SubtaskContract:
             _keys(self.candidate_output_keys, "candidate_output_keys"),
         )
         object.__setattr__(self, "related_audit_ids", _ids(self.related_audit_ids, "related_audit_ids"))
-        if type(self.episode_turn_budget) is not int or not 1 <= self.episode_turn_budget <= 100:
-            raise ValueError("subtask episode budget must be within [1, 100]")
+        if type(self.episode_turn_budget) is not int or not 1 <= self.episode_turn_budget <= 15:
+            raise ValueError("subtask episode budget must be within [1, 15]")
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,51 @@ task-completion authority.
 
 ### Implementation status
 
+#### 2026-08-20 ActionPolicy output-budget recovery
+
+The latest DeepSeek evidence narrows the repeated `representation_error` witness to a provider-output failure rather
+than a missing GUI/read capability. Five ActionPolicy calls each consumed the configured 2,048 completion-token limit
+and returned no final content. The OpenAI-compatible boundary previously read only `message.content`, discarded
+`finish_reason` and reasoning-presence metadata, and therefore collapsed budget exhaustion into generic invalid JSON.
+
+Provider output now has one closed pre-action failure algebra:
+
+```text
+output_truncated | empty_final_content | json_invalid | multiple_tool_calls
+```
+
+`ModelCallRecord`, the provider transcript, private capture metadata, and `ModelGenerationAttempt` record bounded
+`finish_reason`, configured output limit, actual prompt/completion/total usage, final-content presence,
+reasoning-content presence, and safe response-field names. Reasoning text itself is not copied into public trace.
+Empty or invalid content is `output_truncated` only when `finish_reason=length|max_tokens` or reported completion usage
+reaches the configured output limit; an ordinary empty final and nonempty invalid JSON remain distinct.
+
+JSON single-command ActionPolicy now reserves 4,096 output tokens in both transport config and request admission.
+Normal reasoning remains provider-default. A confirmed truncation may make exactly one additional provider attempt
+inside the same ActionPolicy turn, against the same World, delivery, manifest, and catalog. That recovery uses at most
+512 output tokens and requests `thinking=disabled` only when the provider port declares thinking-control capability.
+It neither creates a GUI step nor dispatches an action by itself. `empty_final_content` and `json_invalid` never use this
+retry; a failed retry becomes typed same-episode protocol feedback and retains the existing bounded
+`protocol_stall -> Manager` fallback.
+
+Monitor recovery guidance is now failure-specific, so empty/truncated/invalid output is never described as a
+multi-call response. Manager environment capabilities are semantic phrases rather than pseudo-tool identifiers, and
+Manager prompt forbids prescribing the current ActionPolicy vocabulary. Its typed boundary deterministically rejects
+unambiguous protocol syntax: code-style names, backticks, call syntax, explicit `tool|command|operation <name>`, and
+`the <name> tool|command|operation`. Interaction names come from `InteractionCapabilityRegistry`; fixed local/control
+names have one closed owner in `GroundedToolCatalog`. Ambiguous ordinary words such as `read|focus|scroll` are not
+treated as Runtime-decidable tool references, so page fields such as `order_id` and phrases such as “focus group” remain
+valid. The ordinary subtask default and hard upper bound are 15 turns; Manager guidance uses 5–8 for a simple read-only
+episode and explicitly does not default to 20.
+
+This increment does not change World compression, ModelTurnDelivery/DeliveryManifest, ToolCatalog, Binder, Executor,
+Auditor, GoalPlan, or CoreAgentLoop ownership. Local provider-free implementation and tests are complete; no real
+provider or live WebArena task has been run, so the status remains non-closed and live task-0 verification is pending.
+Focused owner/cross-owner tests pass (`170 passed`), the full suite passes (`1397 passed, 19 skipped`), and Ruff plus
+diff-check pass. The fresh six-page read-only diagnostic at
+`evidence/w1b-world-t32-output-budget-recovery-run1/` passes 6/6 with `ready=true`, no acceptance errors, no provider
+attempts, and no GUI dispatch.
+
 #### 2026-08-20 recovery scope and provider-wire convergence
 
 The failed DeepSeek run2 did not reproduce the earlier DeliveryManifest authority gap: current `E19` and `E45` were

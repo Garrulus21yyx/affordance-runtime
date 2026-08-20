@@ -46,7 +46,9 @@ class YieldSubtaskKind(StrEnum):
 
 class ProtocolFeedbackKind(StrEnum):
     MULTIPLE_TOOL_CALLS = "multiple_tool_calls"
-    REPRESENTATION_ERROR = "representation_error"
+    OUTPUT_TRUNCATED = "output_truncated"
+    EMPTY_FINAL_CONTENT = "empty_final_content"
+    JSON_INVALID = "json_invalid"
 
 
 def _require_context(context_id: str) -> None:

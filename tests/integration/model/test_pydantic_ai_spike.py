@@ -558,3 +558,6 @@ def test_factory_selects_deepseek_json_single_command_profile() -> None:
     assert selected.port.model_id == "deepseek-v4-flash"
     assert selected.port.port.endpoint_class == "remote"
     assert selected.port.port.supports_multimodal is False
+    assert selected.port.config.max_tokens == 4_096
+    assert selected.port.truncated_retry_max_tokens == 512
+    assert selected.port.truncated_retry_thinking_mode == "disabled"

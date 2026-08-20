@@ -9,6 +9,19 @@ from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.mission.contracts import MissionEnvironmentView
 from affordance_runtime.world.contracts import WorldObservation
 
+_CAPABILITY_DESCRIPTIONS = {
+    "activate": "activate an offered control",
+    "press_key": "use the keyboard on the focused control",
+    "type_text": "enter text into an offered field",
+    "select_option": "choose from an offered set of options",
+    "scroll": "move within the current page",
+    "drag_to": "drag between offered controls",
+    "focus": "focus an offered control",
+    "hover": "inspect an offered control by hovering",
+    "set_value": "set a value on an offered control",
+    "read": "read content exposed by the current application",
+}
+
 
 def project_mission_environment(
     observation: WorldObservation,
@@ -19,16 +32,26 @@ def project_mission_environment(
     title = _page_title(observation)
     page_title, application = _page_and_application(title)
     operations = tuple(sorted({item.semantic_action for item in observation.bindings if item.semantic_action}))
-    capabilities = ["read_current_world", "search_current_world", *operations]
+    capabilities = [
+        "read content visible in the current application",
+        "find content within the current application",
+        *(
+            _CAPABILITY_DESCRIPTIONS.get(
+                operation,
+                "use another interaction currently offered by the application",
+            )
+            for operation in operations
+        ),
+    ]
     if operations:
-        capabilities.append("navigate_current_ui")
+        capabilities.append("navigate within the current application")
     return MissionEnvironmentView(
         surface=_surface_family(observation),
         application=application,
         page_title=page_title,
         route_family=_route_family(observation),
         available_capabilities=tuple(dict.fromkeys(capabilities)),
-        unavailable_capabilities=("public_web_search",),
+        unavailable_capabilities=("search the public web outside the current application",),
         last_successful_transitions=_successful_transitions(recent_steps),
     )
 
