@@ -25,7 +25,6 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.benchmarks.webarena_verified import (
-    WA_W1B_DELIVERY_PROBES,
     DeliveryRetrievalProbe,
     _delivery_probe_item_diagnostic,
 )
@@ -61,49 +60,24 @@ def _evaluation(task: TaskGoal, observation_id: str) -> TaskEvaluation:
     )
 
 
-def test_delivery_probe_v2_freezes_task_related_routes() -> None:
-    task_0 = WA_W1B_DELIVERY_PROBES[0].retrievals[0]
-    task_27 = WA_W1B_DELIVERY_PROBES[27].retrievals[0]
-    task_44 = WA_W1B_DELIVERY_PROBES[44].retrievals[0]
-
-    assert (task_0.query, task_0.expected_labels, task_0.expected_kinds, task_0.required_operations) == (
-        "Bestsellers",
-        ("bestsellers",),
-        ("tab", "link"),
-        ("activate",),
-    )
-    assert (task_27.query, task_27.expected_labels, task_27.expected_kinds, task_27.required_operations) == (
-        "Search",
-        ("search",),
-        ("searchbox",),
-        ("type_text",),
-    )
-    assert (task_44.query, task_44.expected_labels, task_44.expected_kinds, task_44.required_operations) == (
-        "Todos",
-        ("to-do", "todo"),
-        ("link",),
-        ("activate",),
-    )
-
-
 def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_manifest() -> None:
     probe = DeliveryRetrievalProbe("Search", ("search",), ("searchbox",), ("type_text",))
     action = SimpleNamespace(target_ref="E7", operation="type_text")
 
     label_only = _delivery_probe_item_diagnostic(
-        {"node_ref": "N1", "label": "Search", "role": "generic", "verbs": ()},
+        SimpleNamespace(target_ref="N1", label="Search", role="generic", operation=""),
         probe,
         ("N1", "E7"),
         (action,),
     )
     role_operation_only = _delivery_probe_item_diagnostic(
-        {"node_ref": "E7", "label": "Query", "role": "searchbox", "verbs": ("type_text",)},
+        SimpleNamespace(target_ref="E7", label="Query", role="searchbox", operation="type_text"),
         probe,
         ("N1", "E7"),
         (action,),
     )
     joint = _delivery_probe_item_diagnostic(
-        {"node_ref": "E7", "label": "Search", "role": "searchbox", "verbs": ("type_text",)},
+        SimpleNamespace(target_ref="E7", label="Search", role="searchbox", operation="type_text"),
         probe,
         ("N1", "E7"),
         (action,),
@@ -113,10 +87,33 @@ def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_mani
         "label": True,
         "label_and_kind": False,
         "label_kind_operation": False,
+        "path": True,
         "matched": False,
     }
     assert not role_operation_only["matched"]
     assert joint["matched"]
+
+    path_probe = DeliveryRetrievalProbe(
+        "Search",
+        ("search",),
+        ("searchbox",),
+        ("type_text",),
+        ("workspace",),
+    )
+    wrong_path = _delivery_probe_item_diagnostic(
+        SimpleNamespace(
+            target_ref="E7",
+            label="Search",
+            role="searchbox",
+            operation="type_text",
+            functional_path=("Overview",),
+        ),
+        path_probe,
+        ("E7",),
+        (action,),
+    )
+    assert wrong_path["path"] is False
+    assert wrong_path["matched"] is False
 
 
 def _functional_world(*, rows: int = 3):
@@ -460,8 +457,7 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
         include_images=False,
         region_index=context.region_index,
         observation=world,
-        action_options=context.complete_actions,
-        preference_text=task.instruction,
+        action_candidates=context.action_candidates,
     )
     reports = next(
         item for item in context.complete_actions
@@ -480,8 +476,7 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
     assert any(item.get("kind") == "schema_member" for item in opened.items)
     assert len(tuple(item for item in opened.items if item.get("kind") == "complete_item")) == 5
     assert reports.target_ref in view.manifest.executable_refs
-    active_view = view.text.split("ActiveView exact=true", 1)[1]
-    assert active_view.index(f"[{reports.target_ref}]") < active_view.index(f"[{table.public_ref}]")
+    assert f"[{reports.target_ref}] activate" in view.text
 
 
 def test_page_map_manifest_is_atomic_and_folded_descriptors_contain_no_exact_refs() -> None:
@@ -496,7 +491,7 @@ def test_page_map_manifest_is_atomic_and_folded_descriptors_contain_no_exact_ref
         include_images=False,
         region_index=context.region_index,
         observation=world,
-        preference_text=task.instruction,
+        action_candidates=context.action_candidates,
     )
     page_map = view.text.split("ActiveView exact=true", 1)[0]
 
@@ -553,7 +548,7 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
 
     opened = resolve_catalog_call(
         first_catalog,
-        ToolCall("read_region", {"region_ref": region_ref}),
+        ToolCall("open_region", {"region_ref": region_ref}),
         expected_context_id=first.context_id,
     ).decision
 
@@ -635,14 +630,21 @@ def test_lossless_fact_reference_algebra_covers_more_than_one_thousand_scalars()
     assert "F1000" in context.private_fact_bindings
 
 
-def _direct_action_world(observation_id: str, *, include_bestsellers: bool):
-    reports = SemanticTarget("nav:reports", "link", "REPORTS")
-    targets = [reports]
+def _candidate_navigation_world(observation_id: str, *, include_account_settings: bool):
+    overview_scope = SemanticTarget("scope:overview", "navigation", "Overview")
+    account_scope = SemanticTarget("scope:account", "region", "Account Preferences")
+    overview = SemanticTarget(
+        "nav:overview-settings",
+        "link",
+        "Settings",
+        relations={"parent_id": overview_scope.target_id},
+    )
+    targets = [overview_scope, account_scope, overview]
     nodes = [
         ObservationStructureNode(
             "root",
             "document",
-            "Admin",
+            "Control Center",
             child_structure_ids=("nav", "main"),
         ),
         ObservationStructureNode(
@@ -650,55 +652,63 @@ def _direct_action_world(observation_id: str, *, include_bestsellers: bool):
             "navigation",
             "Primary navigation",
             parent_structure_id="root",
-            child_structure_ids=("reports",),
+            child_structure_ids=("overview-scope", "overview-settings"),
         ),
         ObservationStructureNode(
-            "reports",
-            "link",
-            "REPORTS",
+            "overview-scope",
+            "group",
+            "Overview",
             parent_structure_id="nav",
-            semantic_target_id=reports.target_id,
+            semantic_target_id=overview_scope.target_id,
+        ),
+        ObservationStructureNode(
+            "overview-settings",
+            "link",
+            "Settings",
+            parent_structure_id="nav",
+            semantic_target_id=overview.target_id,
         ),
         ObservationStructureNode(
             "main",
             "main",
-            "Reports workspace",
+            "Account workspace",
             parent_structure_id="root",
             child_structure_ids=("heading", "tabs"),
         ),
         ObservationStructureNode(
             "heading",
             "heading",
-            "Reports > Products",
+            "Account > Preferences",
             parent_structure_id="main",
+            semantic_target_id=account_scope.target_id,
         ),
         ObservationStructureNode(
             "tabs",
             "tablist",
-            "Product report tabs",
+            "Preference controls",
             parent_structure_id="main",
-            child_structure_ids=("bestsellers",) if include_bestsellers else (),
+            child_structure_ids=("account-settings",) if include_account_settings else (),
         ),
     ]
-    bindings = [_activate_binding(observation_id, reports)]
-    if include_bestsellers:
-        bestsellers = SemanticTarget(
-            "report:bestsellers",
-            "tab",
-            "Bestsellers",
+    bindings = [_activate_binding(observation_id, overview)]
+    if include_account_settings:
+        account_settings = SemanticTarget(
+            "action:account-settings",
+            "menuitem",
+            "Settings",
             {"selected": False},
-            {"parent_id": "nav:reports"},
+            {"parent_id": account_scope.target_id},
         )
-        targets.append(bestsellers)
+        targets.append(account_settings)
         nodes.append(ObservationStructureNode(
-            "bestsellers",
-            "tab",
-            "Bestsellers",
+            "account-settings",
+            "menuitem",
+            "Settings",
             {"selected": False},
             parent_structure_id="tabs",
-            semantic_target_id=bestsellers.target_id,
+            semantic_target_id=account_settings.target_id,
         ))
-        bindings.append(_activate_binding(observation_id, bestsellers))
+        bindings.append(_activate_binding(observation_id, account_settings))
     source = SurfaceObservation(
         observation_id,
         "browser",
@@ -734,9 +744,9 @@ def _activate_binding(observation_id: str, target: SemanticTarget) -> ActionBind
     )
 
 
-def _direct_action_context(world, instruction: str):
+def _candidate_context(world, instruction: str):
     task = TaskGoal(
-        "direct-action",
+        "candidate-navigation",
         instruction,
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
@@ -752,59 +762,57 @@ def _direct_action_context(world, instruction: str):
 
 
 def test_task_related_current_action_is_promoted_with_structural_closure() -> None:
-    world = _direct_action_world("obs:with-bestsellers", include_bestsellers=True)
-    _task_goal, context, view = _direct_action_context(world, "Open the Bestsellers report")
-    bestsellers = next(
-        item for item in context.complete_actions if item.target_label == "Bestsellers"
+    world = _candidate_navigation_world("obs:with-settings", include_account_settings=True)
+    _task_goal, context, view = _candidate_context(world, "Open Account Preferences Settings")
+    target = next(
+        item for item in context.complete_actions if item.target_id == "action:account-settings"
     )
     _, catalog = catalog_for(context)
     resolved = resolve_catalog_call(
         catalog,
-        ToolCall("activate", {"target": bestsellers.target_ref}),
+        ToolCall("activate", {"target": target.target_ref}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     ).decision
 
-    assert "DirectActions exact=true" in view.text
-    assert f'[{bestsellers.target_ref}] tab "Bestsellers"' in view.text
-    assert 'context=["Reports workspace","Reports > Products","REPORTS"]' in view.text
+    assert "ActionCandidates exact=true" in view.text
+    assert f'[{target.target_ref}] activate menuitem "Settings"' in view.text
+    assert 'path=["Control Center","Account workspace","Account Preferences","Settings"]' in view.text
     assert 'verbs=["activate"]' in view.text
-    assert bestsellers.target_ref in view.manifest.executable_refs
-    assert resolved.action_id == bestsellers.action_id
+    assert target.target_ref in view.manifest.executable_refs
+    assert resolved.action_id == target.action_id
 
 
 def test_future_action_is_not_invented_or_replaced_by_navigation_macro() -> None:
-    world = _direct_action_world("obs:reports-only", include_bestsellers=False)
-    _task_goal, context, view = _direct_action_context(world, "Open the Bestsellers report")
+    world = _candidate_navigation_world("obs:overview-only", include_account_settings=False)
+    _task_goal, context, view = _candidate_context(world, "Open Account Preferences Settings")
     _, catalog = catalog_for(context)
 
-    assert "Bestsellers" not in view.text
-    assert all(item.target_label != "Bestsellers" for item in context.complete_actions)
+    assert all(item.target_id != "action:account-settings" for item in context.complete_actions)
     assert "navigate_to" not in {item.name for item in catalog.specs}
 
 
 def test_fresh_world_promotes_newly_available_action() -> None:
-    before = _direct_action_world("obs:before-reports", include_bestsellers=False)
-    after = _direct_action_world("obs:after-reports", include_bestsellers=True)
-    _task_goal, before_context, before_view = _direct_action_context(
-        before, "Open the Bestsellers report"
+    before = _candidate_navigation_world("obs:before-settings", include_account_settings=False)
+    after = _candidate_navigation_world("obs:after-settings", include_account_settings=True)
+    _task_goal, before_context, _before_view = _candidate_context(
+        before, "Open Account Preferences Settings"
     )
-    _task_goal, after_context, after_view = _direct_action_context(
-        after, "Open the Bestsellers report"
+    _task_goal, after_context, after_view = _candidate_context(
+        after, "Open Account Preferences Settings"
     )
 
-    assert all(item.target_label != "Bestsellers" for item in before_context.complete_actions)
-    assert "Bestsellers" not in before_view.text
-    bestsellers = next(
-        item for item in after_context.complete_actions if item.target_label == "Bestsellers"
+    assert all(item.target_id != "action:account-settings" for item in before_context.complete_actions)
+    target = next(
+        item for item in after_context.complete_actions if item.target_id == "action:account-settings"
     )
-    assert f'[{bestsellers.target_ref}] tab "Bestsellers"' in after_view.text
-    assert bestsellers.target_ref in after_view.manifest.executable_refs
+    assert f'[{target.target_ref}] activate menuitem "Settings"' in after_view.text
+    assert target.target_ref in after_view.manifest.executable_refs
 
 
 def test_grounding_and_manifest_partition_executable_and_readonly_refs() -> None:
-    world = _direct_action_world("obs:ref-partition", include_bestsellers=True)
-    _task_goal, context, view = _direct_action_context(world, "Open the Bestsellers report")
+    world = _candidate_navigation_world("obs:ref-partition", include_account_settings=True)
+    _task_goal, context, view = _candidate_context(world, "Open Account Preferences Settings")
     entities = {item.ref: item for item in context.grounding.entities}
 
     assert all(ref.startswith("E") and entities[ref].verbs for ref in view.manifest.executable_refs)
@@ -814,8 +822,8 @@ def test_grounding_and_manifest_partition_executable_and_readonly_refs() -> None
 
 
 def test_one_delivery_identity_owns_view_catalog_and_resolver_admission() -> None:
-    world = _direct_action_world("obs:delivery-identity", include_bestsellers=True)
-    _task_goal, context, _view = _direct_action_context(world, "Open the Bestsellers report")
+    world = _candidate_navigation_world("obs:delivery-identity", include_account_settings=True)
+    _task_goal, context, _view = _candidate_context(world, "Open Account Preferences Settings")
     delivery, catalog = catalog_for(context)
 
     assert delivery.view.manifest is delivery.manifest
@@ -848,10 +856,10 @@ def test_one_delivery_identity_owns_view_catalog_and_resolver_admission() -> Non
 
 
 def test_nonmanifest_ref_is_grounding_gap_and_new_world_rejects_old_delivery() -> None:
-    before = _direct_action_world("obs:delivery-before", include_bestsellers=True)
-    after = _direct_action_world("obs:delivery-after", include_bestsellers=True)
-    _task_goal, before_context, _ = _direct_action_context(before, "Open the Bestsellers report")
-    _task_goal, after_context, _ = _direct_action_context(after, "Open the Bestsellers report")
+    before = _candidate_navigation_world("obs:delivery-before", include_account_settings=True)
+    after = _candidate_navigation_world("obs:delivery-after", include_account_settings=True)
+    _task_goal, before_context, _ = _candidate_context(before, "Open Account Preferences Settings")
+    _task_goal, after_context, _ = _candidate_context(after, "Open Account Preferences Settings")
     delivery, catalog = catalog_for(before_context)
 
     with pytest.raises(GroundedToolResolutionError) as gap:

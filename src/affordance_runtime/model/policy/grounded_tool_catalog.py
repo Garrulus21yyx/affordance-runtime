@@ -59,10 +59,10 @@ class GroundedLocalToolName(StrEnum):
     REQUEST_EVIDENCE = "request_evidence"
     COUNT_CHILDREN = "count_children"
     PIN_FACT = "pin_fact"
-    READ_REGION = "read_region"
-    SEARCH_WORLD = "search_world"
+    OPEN_REGION = "open_region"
+    FIND_CONTENT = "find_content"
     LIST_REGIONS = "list_regions"
-    SEARCH_ACTIONS = "search_actions"
+    FIND_ACTIONS = "find_actions"
     READ_NEXT_PAGE = "read_next_page"
     ACTION_RESULTS_NEXT_PAGE = "action_results_next_page"
     YIELD_SUBTASK = "yield_subtask"
@@ -72,7 +72,7 @@ class GroundedLocalToolName(StrEnum):
 
 
 @dataclass(frozen=True)
-class _SearchActionsBinding:
+class _FindActionsBinding:
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         query = str(arguments["query"]).strip()
         return RequestActionPage(
@@ -282,11 +282,11 @@ class _WorldReadBinding:
         query = ""
         page_cursor = ""
         if self.kind == "region":
-            tool_name = GroundedLocalToolName.READ_REGION.value
+            tool_name = GroundedLocalToolName.OPEN_REGION.value
             action = "open_region"
             region_ref = str(arguments["region_ref"])
         elif self.kind == "find":
-            tool_name = GroundedLocalToolName.SEARCH_WORLD.value
+            tool_name = GroundedLocalToolName.FIND_CONTENT.value
             action = "find"
             query = str(arguments["query"]).strip()
         elif self.kind == "view_all":
@@ -339,9 +339,9 @@ class _WorldReadBinding:
             result,
         )
         public_arguments: Mapping[str, object]
-        if tool_name == GroundedLocalToolName.READ_REGION.value:
+        if tool_name == GroundedLocalToolName.OPEN_REGION.value:
             public_arguments = {"region_ref": region_ref}
-        elif tool_name == GroundedLocalToolName.SEARCH_WORLD.value:
+        elif tool_name == GroundedLocalToolName.FIND_CONTENT.value:
             public_arguments = {"query": query}
         else:
             public_arguments = {}
@@ -534,8 +534,8 @@ def compile_grounded_tool_catalog(
     registered.extend((
         RegisteredGroundedTool(
             ToolSpec(
-                GroundedLocalToolName.READ_REGION.value,
-                "Read one current folded R-region; no browser action.",
+                GroundedLocalToolName.OPEN_REGION.value,
+                "Open one known current PageMap region for readable content; no browser action.",
                 _object_schema(
                     {
                         "region_ref": {
@@ -551,8 +551,8 @@ def compile_grounded_tool_catalog(
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                GroundedLocalToolName.SEARCH_WORLD.value,
-                "Search readable content in the complete current World; no browser action.",
+                GroundedLocalToolName.FIND_CONTENT.value,
+                "Find readable text, values, or facts in the complete current World; no browser action.",
                 _object_schema(
                     {
                         "query": {
@@ -577,8 +577,8 @@ def compile_grounded_tool_catalog(
         ),
         RegisteredGroundedTool(
             ToolSpec(
-                GroundedLocalToolName.SEARCH_ACTIONS.value,
-                "Search legal current actions. Use a visible E-ref directly instead.",
+                GroundedLocalToolName.FIND_ACTIONS.value,
+                "Find ranked legal controls in the complete current ActionSpace; never executes.",
                 _object_schema(
                     {
                         "query": {
@@ -591,7 +591,7 @@ def compile_grounded_tool_catalog(
                     ("query",),
                 ),
             ),
-            _SearchActionsBinding(),
+            _FindActionsBinding(),
         ),
     ))
     if (

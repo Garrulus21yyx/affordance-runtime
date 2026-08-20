@@ -262,7 +262,7 @@ def _control_tool_name(decision: AgentDecision) -> str:
         return "protocol_feedback"
     return {
         RequestObservation: "request_evidence",
-        RequestActionPage: "search_actions",
+        RequestActionPage: "find_actions",
         AskUser: "ask_user",
         FinalResponse: "final_response",
         Wait: "wait",

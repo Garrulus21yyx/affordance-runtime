@@ -1,0 +1,476 @@
+{
+  "acceptance_errors": [],
+  "action_candidates": {
+    "acceptance_errors": [],
+    "automatic_candidate_count": 5,
+    "automatic_candidates": [
+      {
+        "functional_path": [
+          "Dashboard / Magento Admin",
+          "The information in this tab has been changed. This tab contains invalid data. Please resolve this before saving. Loading... Most Viewed Products"
+        ],
+        "label": "The information in this tab has been changed. This tab contains invalid data. Please resolve this before saving. Loading... Most Viewed Products",
+        "operation": "activate",
+        "rank": 1,
+        "reasons": [
+          "lexical_match",
+          "path_match",
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R4",
+        "role": "tab",
+        "target_ref": "E23"
+      },
+      {
+        "functional_path": [
+          "Dashboard / Magento Admin",
+          "The information in this tab has been changed. This tab contains invalid data. Please resolve this before saving. Loading... Bestsellers"
+        ],
+        "label": "The information in this tab has been changed. This tab contains invalid data. Please resolve this before saving. Loading... Bestsellers",
+        "operation": "activate",
+        "rank": 2,
+        "reasons": [
+          "lexical_match",
+          "path_match",
+          "role_compatible",
+          "state_ready",
+          "already_satisfied_penalty"
+        ],
+        "region_ref": "R4",
+        "role": "tab",
+        "target_ref": "E22"
+      },
+      {
+        "functional_path": [
+          "Dashboard / Magento Admin",
+          "Account Activity"
+        ],
+        "label": " Account Activity",
+        "operation": "activate",
+        "rank": 3,
+        "reasons": [
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R2",
+        "role": "link",
+        "target_ref": "E29"
+      },
+      {
+        "functional_path": [
+          "Dashboard / Magento Admin",
+          "All Store Views"
+        ],
+        "label": "All Store Views",
+        "operation": "activate",
+        "rank": 4,
+        "reasons": [
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R4",
+        "role": "button",
+        "target_ref": "E11"
+      },
+      {
+        "functional_path": [
+          "Dashboard / Magento Admin",
+          "Go to Advanced Reporting \ue644"
+        ],
+        "label": "Go to Advanced Reporting \ue644",
+        "operation": "activate",
+        "rank": 5,
+        "reasons": [
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R4",
+        "role": "link",
+        "target_ref": "E15"
+      }
+    ],
+    "automatic_find_actions_ordering_identity": true,
+    "candidate_action_space_closure": true,
+    "candidate_manifest_closure": true,
+    "discovery_gui_dispatch_count": 0,
+    "full_request_tokens": 7893,
+    "observation_only_calls_before_candidate_execution": 0,
+    "provider_attempts": 0,
+    "repeated_region_version_reads": 0,
+    "target_rank": 2,
+    "target_recall_at_5": true,
+    "target_witnesses": [
+      {
+        "expected_path_tokens": [
+          "dashboard"
+        ],
+        "matched_paths": [
+          [
+            "Dashboard / Magento Admin",
+            "The information in this tab has been changed. This tab contains invalid data. Please resolve this before saving. Loading... Bestsellers"
+          ]
+        ],
+        "matched_refs": [
+          "E22"
+        ],
+        "query": "Bestsellers",
+        "recall_at_5": true,
+        "target_rank": 2
+      }
+    ],
+    "tool_schema_tokens": 1701
+  },
+  "action_inventory": {
+    "partial": false,
+    "recovery": "not_required",
+    "total_count": 61,
+    "visible_count": 61
+  },
+  "actor": {
+    "delivery_projection": "page_map",
+    "document_count": 1,
+    "manifest": {
+      "executable": 16,
+      "facts": 104,
+      "readonly": 52,
+      "regions": 13
+    },
+    "rendered_bytes": 12753,
+    "rendered_token_estimate": 3173,
+    "retained_node_count": 607,
+    "serialized_bytes": 234488,
+    "source_coverage": [
+      {
+        "assurance": "structural",
+        "freshness": "current",
+        "inventory_coverage": "partial",
+        "modality": "structural",
+        "projection_coverage": "truncated",
+        "rendering_coverage": "current_screenshot_available",
+        "semantic_interpretation": "open_world",
+        "source_ref": "S1"
+      }
+    ],
+    "total_node_count": 607
+  },
+  "capability_census": [
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 29,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "click"
+      ],
+      "registry_defined": true,
+      "semantic_action": "activate",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "fill"
+      ],
+      "registry_defined": true,
+      "semantic_action": "type_text",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "select_option"
+      ],
+      "registry_defined": true,
+      "semantic_action": "select_option",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "read",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "scroll"
+      ],
+      "registry_defined": true,
+      "semantic_action": "scroll",
+      "subject_kinds": [
+        "viewport"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 30,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "press",
+        "keyboard_press"
+      ],
+      "registry_defined": true,
+      "semantic_action": "press_key",
+      "subject_kinds": [
+        "entity",
+        "focused_context"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "focus",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "drag_and_drop"
+      ],
+      "registry_defined": true,
+      "semantic_action": "drag_to",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "set_value",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "hover",
+      "subject_kinds": [
+        "entity"
+      ]
+    }
+  ],
+  "case": {
+    "cohort": "w1",
+    "gym_id": "browsergym/webarena_verified.279.0.2",
+    "intent_template_id": 279,
+    "public_intent_digest": "",
+    "revision": 2,
+    "sites": [
+      "shopping_admin"
+    ],
+    "task_id": 0,
+    "task_type": "smoke"
+  },
+  "decision_state": {
+    "coverage": "complete",
+    "mismatches": [],
+    "retained": 71,
+    "total": 71,
+    "verb_mismatch_count": 0
+  },
+  "delivery_probe": {
+    "acceptance_errors": [],
+    "page_identity": true,
+    "probe_version": "v2",
+    "probe_visible_to_production": false,
+    "provider_attempts": 0,
+    "required_regions": true,
+    "retrievals": [
+      {
+        "item_count": 1,
+        "joint_match_count": 1,
+        "kind_found": true,
+        "label_found": true,
+        "manifest_ref_visible": true,
+        "matched_refs": [
+          "E22"
+        ],
+        "operation_found": true,
+        "ordering_identity": true,
+        "passed": true,
+        "query": "Bestsellers",
+        "search_results_visible": true
+      }
+    ],
+    "site_key": "shopping_admin",
+    "target_related_route": true
+  },
+  "perception_route": {
+    "image_attached": false,
+    "profile": "TEXT_ONLY",
+    "reason": "w1b-world read-only structured diagnostic"
+  },
+  "presentation_collapse": {
+    "appearance_state_fields": 200,
+    "empty_generic_wrappers": 131,
+    "empty_static_text": 1,
+    "inline_text_boxes": 149
+  },
+  "private_isolation": {
+    "leak_count": 0,
+    "markers": []
+  },
+  "recoverability": {
+    "acceptance_errors": [],
+    "checks": {
+      "continuation": true,
+      "expanded_current_ref": true,
+      "expanded_tool_target": true,
+      "find": true,
+      "lens_effect": true,
+      "open_region": true,
+      "semantic_digest_unchanged": true,
+      "stale_context": true,
+      "view_all": true,
+      "zero_dispatch_metrics_unchanged": true
+    },
+    "sample": {
+      "query": "Magento Admin Panel",
+      "region_ref": "R2",
+      "target_id_digest": "sha256:28f52136c1353d46485ecd4bcd0b8425311f6ddfa54e550690a9fea12239dec2"
+    },
+    "status": "ok"
+  },
+  "request_budget": {
+    "actor_world_tokens": 4488,
+    "admission_action": "admitted",
+    "admission_limit": 62904,
+    "delivery_projection": "page_map",
+    "direct_action_count": 31,
+    "estimated_total_tokens": 7893,
+    "evidence_tokens": 0,
+    "expanded_region_count": 4,
+    "folded_region_count": 9,
+    "full_candidate_tokens": 0,
+    "history_tokens": 35,
+    "image_estimated_tokens": 0,
+    "lens_candidate_tokens": 7893,
+    "phase": "initial",
+    "prefit_estimated_total_tokens": 7893,
+    "provider_envelope_tokens": 244,
+    "provider_reported_prompt_tokens": 0,
+    "repair_tokens": 0,
+    "searchable_action_count": 30,
+    "system_tokens": 1156,
+    "task_plan_tokens": 269,
+    "tool_schema_tokens": 1701,
+    "working_set_tokens": 0
+  },
+  "schema_version": "webarena-verified-w1b-world.v4",
+  "source": {
+    "browsergym_diagnostic": {
+      "actionable_target_count": 32,
+      "diagnostic_role_distribution": {
+        "StaticText": 144,
+        "button": 3,
+        "clickable": 1,
+        "columnheader": 12,
+        "generic": 143,
+        "heading": 1,
+        "link": 25,
+        "list": 1,
+        "listitem": 4,
+        "row": 24,
+        "tab": 4,
+        "table": 4,
+        "textbox": 1
+      },
+      "informational_target_count": 333,
+      "inventory_profile_id": "browsergym-ax-target-inventory.v3",
+      "inventory_status": "represented",
+      "non_executable_target_count": 333,
+      "omitted_target_count": 0,
+      "projected_target_count": 365,
+      "recognized_target_count": 365
+    },
+    "coverage": [
+      {
+        "coverage": "truncated",
+        "entity_inventory": "partial",
+        "entity_issues": [
+          "inventory_fact_capacity_exceeded"
+        ],
+        "semantic_inventory": "represented",
+        "source": "browsergym"
+      }
+    ],
+    "raw_fact_total_count": 829,
+    "raw_structure_total_count": 607,
+    "raw_target_total_count": 365,
+    "world_source_fact_count": 825,
+    "world_source_structure_count": 607,
+    "world_source_target_count": 365
+  },
+  "status": "ok",
+  "structural_closure": {
+    "violation_count": 0,
+    "violations": []
+  },
+  "tools": {
+    "actor_missing_offered_targets": [],
+    "catalog_serialized_bytes": 5102,
+    "catalog_tool_count": 14,
+    "find_actions_offered": true,
+    "offered_action_ref_count": 32,
+    "offered_tool_target_count": 16
+  },
+  "world": {
+    "binding_count": 61,
+    "fact_count": 825,
+    "semantic_digest": "sha256:090297b34cf023cdbd2dffc7262ff75b20a53fd679153dba9c58d6f4f571ae4c",
+    "serialized_bytes": 1825695,
+    "source_count": 1,
+    "target_count": 365
+  }
+}

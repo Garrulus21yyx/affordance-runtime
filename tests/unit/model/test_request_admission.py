@@ -227,7 +227,7 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
         payload = json.loads(admitted.messages[1].content)
         observation = payload["observation"]
         assert "projection=page_map" in observation
-        assert "recovery=read_region/search_world/search_actions" in observation
+        assert "recovery=open_region/find_content/find_actions" in observation
         assert "recovery=none" not in observation
         assert "[E1]" in observation
         assert request.agent_context.actor_world == before_actor_world

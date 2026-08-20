@@ -21,6 +21,7 @@ from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
     from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -184,6 +185,13 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    action_space_id: str = field(default="", repr=False, compare=False)
+    action_candidates: ActionCandidateProjection | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -221,6 +229,9 @@ class AgentContext:
         if len({item.action_id for item in complete_actions}) != len(complete_actions):
             raise ValueError("AgentContext complete action index must be unique")
         object.__setattr__(self, "complete_actions", complete_actions)
+        if not self.action_space_id.strip():
+            raise ValueError("AgentContext requires current ActionSpace identity")
+        from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
         from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -233,6 +244,38 @@ class AgentContext:
             raise TypeError("AgentContext evidence index must be typed")
         if self.current_observation is not None and not isinstance(self.current_observation, WorldObservation):
             raise TypeError("AgentContext current observation must be typed")
+        if self.action_candidates is not None:
+            if not isinstance(self.action_candidates, ActionCandidateProjection):
+                raise TypeError("AgentContext action candidates must be a typed projection")
+            if self.action_candidates.action_space_id != self.action_space_id:
+                raise ValueError("AgentContext candidates belong to another ActionSpace")
+            if (
+                self.current_observation is not None
+                and self.action_candidates.world_observation_id
+                != self.current_observation.observation_id
+            ):
+                raise ValueError("AgentContext candidates belong to another World")
+            current_candidates = {
+                (item.action_id, item.target_ref, item.operation)
+                for item in complete_actions
+            }
+            if any(
+                (item.action_id, item.target_ref, item.operation) not in current_candidates
+                for item in self.action_candidates.candidates
+            ):
+                raise ValueError("AgentContext candidates are outside the complete current actions")
+            current_by_action = {item.action_id: item for item in complete_actions}
+            if any(
+                tuple(destination.target_ref for destination in item.destinations)
+                != tuple(
+                    destination.grounding_ref
+                    for destination in current_by_action[item.action_id].destinations.items
+                )
+                or item.destination_required
+                != current_by_action[item.action_id].destination_required
+                for item in self.action_candidates.candidates
+            ):
+                raise ValueError("AgentContext candidate destinations are outside current actions")
         if self.delivery_lens is not None:
             if not isinstance(self.delivery_lens, WorldDeliveryLens):
                 raise TypeError("AgentContext delivery lens must be typed")

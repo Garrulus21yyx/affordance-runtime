@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from affordance_runtime.actions.admission import (
     AdmissionContractOwner,
@@ -31,6 +34,174 @@ _ROLE_ORDER = {
     ActionRelevanceRole.INFORMATION: 2,
     ActionRelevanceRole.OTHER: 3,
 }
+
+ACTION_CANDIDATE_REASON_VOCABULARY = frozenset({
+    "exact_label",
+    "lexical_match",
+    "path_match",
+    "role_compatible",
+    "state_ready",
+    "newly_revealed",
+    "repeated_penalty",
+    "already_satisfied_penalty",
+    "risk_penalty",
+    "effect_penalty",
+})
+
+_OPERATION_ROLES = {
+    "activate": frozenset({
+        "button", "checkbox", "link", "menuitem", "radio", "switch", "tab", "treeitem",
+    }),
+    "type_text": frozenset({"combobox", "searchbox", "textbox"}),
+    "select_option": frozenset({"combobox", "listbox", "option"}),
+    "check": frozenset({"checkbox", "menuitemcheckbox", "switch"}),
+    "uncheck": frozenset({"checkbox", "menuitemcheckbox", "switch"}),
+    "read": frozenset({"cell", "document", "gridcell", "row", "status", "table"}),
+}
+_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+_LEXICAL_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into",
+    "is", "it", "of", "on", "or", "that", "the", "this", "to", "use", "with",
+})
+
+
+@dataclass(frozen=True)
+class RankedActionCandidate:
+    """One deterministic rank over an already legal ActionOption."""
+
+    action_id: str
+    target_id: str
+    operation: str
+    rank: int
+    score: float
+    reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.action_id or not self.target_id or not self.operation or self.rank < 1:
+            raise ValueError("ranked action candidate identity is invalid")
+        if any(item not in ACTION_CANDIDATE_REASON_VOCABULARY for item in self.reasons):
+            raise ValueError("ranked action candidate reason is outside the closed vocabulary")
+
+
+@dataclass(frozen=True)
+class ActionCandidateRanker:
+    """Pure shared ordering for automatic delivery and explicit action search."""
+
+    fuzzy_threshold: float = 0.86
+
+    def rank(
+        self,
+        options,
+        *,
+        labels: Mapping[str, str],
+        roles: Mapping[str, str] | None = None,
+        states: Mapping[str, Mapping[str, object]] | None = None,
+        functional_paths: Mapping[str, tuple[str, ...]] | None = None,
+        query: str = "",
+        instruction: str = "",
+        objectives: tuple[str, ...] = (),
+        done_when: tuple[str, ...] = (),
+        recent_outcomes: tuple[object, ...] = (),
+        require_match: bool = False,
+    ) -> tuple[RankedActionCandidate, ...]:
+        roles = roles or {}
+        states = states or {}
+        functional_paths = functional_paths or {}
+        explicit_query = _normalize_text(query[:120])
+        intent = explicit_query or _normalize_text(
+            " ".join((instruction, *objectives, *done_when))
+        )
+        intent_tokens = _tokens(intent)
+        scored: list[tuple[float, str, str, str, str, tuple[str, ...]]] = []
+        for option in options:
+            action_id = str(getattr(option, "action_id", ""))
+            target_id = str(getattr(option, "target_id", ""))
+            operation = str(
+                getattr(option, "operation", "") or getattr(option, "semantic_action", "")
+            ).casefold()
+            if not action_id or not target_id or not operation:
+                continue
+            label = _normalize_text(labels.get(target_id, ""))
+            role = _normalize_text(roles.get(target_id, ""))
+            path = tuple(
+                value for item in functional_paths.get(target_id, ())
+                if (value := _normalize_text(item))
+            )
+            state = states.get(target_id, {})
+            reasons: list[str] = []
+            score = 0.0
+
+            label_tokens = _tokens(label)
+            path_text = " ".join(path)
+            path_tokens = _tokens(path_text)
+            exact_label = bool(label and (
+                label == explicit_query
+                or (label in intent and label_tokens and label_tokens <= intent_tokens)
+            ))
+            if exact_label:
+                score += 8.0
+                reasons.append("exact_label")
+            lexical = _lexical_score(intent_tokens, (*label_tokens, *_tokens(operation), *_tokens(role)))
+            fuzzy = _fuzzy_score(intent_tokens, label_tokens)
+            if lexical or fuzzy >= self.fuzzy_threshold:
+                score += lexical * 3.0 + fuzzy * 2.0
+                reasons.append("lexical_match")
+            path_overlap = _lexical_score(intent_tokens, path_tokens)
+            if path_overlap:
+                score += path_overlap * 5.0
+                reasons.append("path_match")
+            if role in _OPERATION_ROLES.get(operation, frozenset()):
+                score += 1.0
+                reasons.append("role_compatible")
+            if _state_ready(operation, state):
+                score += 0.5
+                reasons.append("state_ready")
+            if _state_flag(state, "changed", "newly_revealed"):
+                score += 0.75
+                reasons.append("newly_revealed")
+            if _state_flag(state, "selected", "active", "checked", "pressed"):
+                score -= 0.75
+                reasons.append("already_satisfied_penalty")
+            if _repeated_without_progress(option, label, role, recent_outcomes):
+                score -= 3.0
+                reasons.append("repeated_penalty")
+            risk = str(getattr(option, "risk", "")).casefold()
+            if risk in {"medium", "high", "irreversible"}:
+                score -= {"medium": 0.25, "high": 0.75, "irreversible": 1.5}[risk]
+                reasons.append("risk_penalty")
+            effect = str(getattr(option, "effect_category", "")).casefold()
+            if effect in {"external", "irreversible"}:
+                score -= 0.5 if effect == "external" else 1.0
+                reasons.append("effect_penalty")
+
+            matched = any(item in reasons for item in (
+                "exact_label", "lexical_match", "path_match",
+            ))
+            if require_match and not matched:
+                continue
+            scored.append((
+                -score,
+                path_text,
+                label,
+                operation,
+                action_id,
+                tuple(dict.fromkeys(reasons)),
+            ))
+        result = []
+        for rank, item in enumerate(sorted(scored), 1):
+            option = next(
+                candidate for candidate in options
+                if str(getattr(candidate, "action_id", "")) == item[4]
+            )
+            result.append(RankedActionCandidate(
+                item[4],
+                str(getattr(option, "target_id", "")),
+                item[3],
+                rank,
+                -item[0],
+                item[5],
+            ))
+        return tuple(result)
 
 
 def canonical_action_query(query: str) -> str:
@@ -137,6 +308,9 @@ class ActionPager:
         target_id: str = "",
         relevance_role: ActionRelevanceRole | str | None = None,
         labels: Mapping[str, str] | None = None,
+        roles: Mapping[str, str] | None = None,
+        states: Mapping[str, Mapping[str, object]] | None = None,
+        functional_paths: Mapping[str, tuple[str, ...]] | None = None,
         cursor: str = "",
         page_size: int | None = None,
         max_destinations_per_option: int = 16,
@@ -171,6 +345,9 @@ class ActionPager:
             target_id,
             role,
             labels,
+            roles or {},
+            states or {},
+            functional_paths or {},
             allowed_action_ids,
         )
         if offset > len(ranked):
@@ -300,6 +477,9 @@ def _ranked_options(
     target_id: str,
     role: ActionRelevanceRole | None,
     labels: Mapping[str, str],
+    roles: Mapping[str, str],
+    states: Mapping[str, Mapping[str, object]],
+    functional_paths: Mapping[str, tuple[str, ...]],
     allowed_action_ids: frozenset[str] | None = None,
 ) -> list[tuple[int, ActionOption, ActionRelevance]]:
     ranked = [
@@ -311,15 +491,121 @@ def _ranked_options(
     if role is not None:
         ranked = [item for item in ranked if item[2].role == role]
     if query:
-        needle = canonical_action_query(query)
-        ranked = [
-            item
-            for item in ranked
-            if needle in f"{labels.get(item[1].target_id, '')} {item[1].description}".casefold()
-        ]
+        shared_order = ActionCandidateRanker().rank(
+            tuple(item[1] for item in ranked),
+            labels=labels,
+            roles=roles,
+            states=states,
+            functional_paths=functional_paths,
+            query=query,
+            require_match=True,
+        )
+        order = {item.action_id: item.rank for item in shared_order}
+        ranked = [item for item in ranked if item[1].action_id in order]
+        ranked.sort(key=lambda item: order[item[1].action_id])
     if objective is not None:
         ranked.sort(key=lambda item: (_ROLE_ORDER[item[2].role], -item[2].score, item[0]))
     return ranked
+
+
+def _normalize_text(value: object) -> str:
+    return " ".join(
+        unicodedata.normalize("NFKC", str(value)).casefold().split()
+    )[:1000]
+
+
+def _tokens(value: str) -> frozenset[str]:
+    raw = tuple(_TOKEN.findall(value))
+    values: set[str] = set()
+    for item in raw:
+        if len(item) >= 2 and item not in _LEXICAL_STOPWORDS:
+            values.add(item)
+            values.add(_stem(item))
+        if len(item) >= 8:
+            values.update((item[:4], item[-4:]))
+    for size in (2, 3):
+        for index in range(0, len(raw) - size + 1):
+            joined = "".join(raw[index : index + size])
+            if 4 <= len(joined) <= 24:
+                values.add(_stem(joined))
+    return frozenset(item for item in values if len(item) >= 3)
+
+
+def _stem(value: str) -> str:
+    if len(value) > 6 and value.endswith("ing"):
+        return value[:-3]
+    if len(value) > 5 and value.endswith("ers"):
+        return value[:-3]
+    if len(value) > 4 and value.endswith("s"):
+        return value[:-1]
+    return value
+
+
+def _lexical_score(intent: frozenset[str], candidate) -> float:
+    values = frozenset(candidate)
+    if not intent or not values:
+        return 0.0
+    return len(intent & values) / max(1, len(values))
+
+
+def _fuzzy_score(intent: frozenset[str], label: frozenset[str]) -> float:
+    if not intent or not label:
+        return 0.0
+    return max(
+        SequenceMatcher(None, wanted, actual).ratio()
+        for wanted in intent
+        for actual in label
+    )
+
+
+def _state_flag(state: Mapping[str, object], *names: str) -> bool:
+    wanted = {item.casefold() for item in names}
+    return any(
+        key.casefold().rsplit(".", 1)[-1] in wanted and value is True
+        for key, value in state.items()
+    )
+
+
+def _state_ready(operation: str, state: Mapping[str, object]) -> bool:
+    if any(
+        key.casefold().rsplit(".", 1)[-1] in {"disabled", "hidden"} and value is True
+        for key, value in state.items()
+    ):
+        return False
+    if any(
+        key.casefold().rsplit(".", 1)[-1] in {"enabled", "visible"} and value is False
+        for key, value in state.items()
+    ):
+        return False
+    if operation == "type_text" and any(
+        key.casefold().rsplit(".", 1)[-1] in {"editable", "readonly"}
+        and (value is False if key.casefold().endswith("editable") else value is True)
+        for key, value in state.items()
+    ):
+        return False
+    return True
+
+
+def _repeated_without_progress(option, label: str, role: str, outcomes: tuple[object, ...]) -> bool:
+    operation = str(
+        getattr(option, "operation", "") or getattr(option, "semantic_action", "")
+    ).casefold()
+    for outcome in outcomes[-4:]:
+        prior_operation = str(getattr(outcome, "semantic_action", "")).casefold()
+        target = getattr(outcome, "target", None)
+        prior_label = _normalize_text(getattr(target, "label", ""))
+        prior_role = _normalize_text(getattr(target, "role", ""))
+        transition = getattr(outcome, "transition", {})
+        no_progress = (
+            isinstance(transition, Mapping)
+            and str(transition.get("observed_change", "")).casefold()
+            in {"unchanged", "no_effect", "regressed"}
+        ) or str(getattr(outcome, "local_postcondition", "")).casefold() in {
+            "unchanged", "no_effect", "unknown",
+        }
+        if no_progress and prior_operation == operation and prior_label == label and prior_role == role:
+            return True
+    return False
 
 
 def _select_page_slice(

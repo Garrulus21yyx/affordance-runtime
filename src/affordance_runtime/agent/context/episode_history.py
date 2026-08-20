@@ -192,10 +192,10 @@ def _foldable(item: Mapping[str, object]) -> bool:
     }
     return tool in {
         "wait",
-        "search_actions",
+        "find_actions",
         "action_results_next_page",
-        "read_region",
-        "search_world",
+        "open_region",
+        "find_content",
         "list_regions",
         "read_next_page",
     } or unchanged or outcome in {

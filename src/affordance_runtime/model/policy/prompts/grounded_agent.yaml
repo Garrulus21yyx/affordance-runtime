@@ -8,9 +8,11 @@ actor: |-
   - task is authoritative for the objective, constraints, allowed effects, and success criteria.
   - observation is an AX-style compact rendering of the authoritative current World. Indentation preserves hierarchy;
     coverage headers state whether each current structural document is complete.
-  - Executable E refs print their currently supported verbs inline in ActiveView/SearchResults. Folded PageMap entries
-    contain only R refs and exact descriptors. Use read_region for one R ref, search_world for readable current content,
-    and search_actions for legal current actions. A next-page tool is offered only when Runtime has another page.
+  - Executable E refs print their currently supported verbs inline in ActionCandidates/ActiveView/SearchResults.
+    Folded PageMap entries contain only R refs and exact descriptors. Use open_region when you already know the PageMap
+    region to inspect. Use find_content to locate readable text, values, or facts. Use find_actions to locate a current
+    executable GUI control. Finding content never makes it executable; execute only a current E-ref. A next-page tool
+    is offered only when Runtime has another page.
   - recent_steps contains ref-free semantic target descriptions, actions, and local transitions. It never contains an
     executable target reference or a prior complete observation. Only refs in the current observation and current
     DeliveryManifest-backed exact view are valid for the next GUI tool call.

@@ -71,7 +71,7 @@ WA_DEFAULT_TIMEOUT_S = 0.0
 WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
 WA_FINAL_OUTPUT_ID = "webarena_final_response"
 WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
-WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v3"
+WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v4"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v1"
 _W1B_PRIVATE_MARKERS = (
@@ -98,6 +98,7 @@ class DeliveryRetrievalProbe:
     expected_labels: tuple[str, ...]
     expected_kinds: tuple[str, ...] = ()
     required_operations: tuple[str, ...] = ()
+    expected_path_tokens: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -116,11 +117,22 @@ class DeliveryProbe:
 WA_W1B_DELIVERY_PROBES: Mapping[int, DeliveryProbe] = {
     0: DeliveryProbe(
         "shopping_admin", ("admin", "dashboard"), ("document",),
-        (DeliveryRetrievalProbe("Bestsellers", ("bestsellers",), ("tab", "link"), ("activate",)),),
+        (DeliveryRetrievalProbe(
+            "Bestsellers",
+            ("bestsellers",),
+            ("tab", "link"),
+            ("activate",),
+            ("dashboard",),
+        ),),
     ),
     7: DeliveryProbe(
         "map", ("map", "openstreetmap"), ("document",),
-        (DeliveryRetrievalProbe("Search", ("search",), ("searchbox", "textbox"), ("type_text",)),),
+        (DeliveryRetrievalProbe(
+            "Find directions between two points",
+            ("find directions between two points",),
+            ("link",),
+            ("activate",),
+        ),),
     ),
     21: DeliveryProbe(
         "shopping", ("headphones",), ("document",),
@@ -128,7 +140,7 @@ WA_W1B_DELIVERY_PROBES: Mapping[int, DeliveryProbe] = {
     ),
     27: DeliveryProbe(
         "reddit", ("reddit", "postmill"), ("document",),
-        (DeliveryRetrievalProbe("Search", ("search",), ("searchbox",), ("type_text",)),),
+        (DeliveryRetrievalProbe("Comments", ("comments",), ("link",), ("activate",)),),
     ),
     44: DeliveryProbe(
         "gitlab", ("gitlab",), ("document",),
@@ -746,7 +758,7 @@ def _w1b_world_success(
     state_metrics = _action_state_metrics(context, actor_refs)
     closure_violations = _structural_closure_violations(context.actor_world, actor_paths)
     leak_markers = _private_leak_markers(rendered.text, catalog)
-    search_actions_offered = "search_actions" in {item.name for item in catalog.specs}
+    find_actions_offered = "find_actions" in {item.name for item in catalog.specs}
     recoverability = _recoverability_diagnostic(
         environment,
         task,
@@ -764,6 +776,14 @@ def _w1b_world_success(
         catalog,
         rendered,
     )
+    candidate_diagnostic = _candidate_diagnostic(
+        WA_W1B_DELIVERY_PROBES[case_ref.task_id],
+        context,
+        rendered,
+        delivery_probe,
+        recoverability,
+        request_budget,
+    )
     acceptance_errors = []
     if missing_tool_refs:
         acceptance_errors.append(f"tool_targets_missing_from_actor:{len(missing_tool_refs)}")
@@ -773,10 +793,11 @@ def _w1b_world_success(
         acceptance_errors.append(f"structural_closure_violations:{len(closure_violations)}")
     if leak_markers:
         acceptance_errors.append(f"private_model_input_leaks:{len(leak_markers)}")
-    if context.actions.has_more and not search_actions_offered:
-        acceptance_errors.append("partial_action_inventory_without_search_actions")
+    if context.actions.has_more and not find_actions_offered:
+        acceptance_errors.append("partial_action_inventory_without_find_actions")
     acceptance_errors.extend(recoverability["acceptance_errors"])
     acceptance_errors.extend(delivery_probe["acceptance_errors"])
+    acceptance_errors.extend(candidate_diagnostic["acceptance_errors"])
     acceptance_errors.extend(_w1b_cost_errors(request_budget))
     return {
         "schema_version": WA_SCHEMA_W1B_WORLD,
@@ -817,13 +838,13 @@ def _w1b_world_success(
             "actor_missing_offered_targets": missing_tool_refs,
             "catalog_tool_count": len(catalog.specs),
             "catalog_serialized_bytes": catalog.serialized_bytes,
-            "search_actions_offered": search_actions_offered,
+            "find_actions_offered": find_actions_offered,
         },
         "action_inventory": {
             "visible_count": context.actions.page_size,
             "total_count": context.actions.total_count,
             "partial": context.actions.has_more,
-            "recovery": "search_actions" if context.actions.has_more else "not_required",
+            "recovery": "find_actions" if context.actions.has_more else "not_required",
         },
         "capability_census": _capability_census(context, catalog),
         "decision_state": state_metrics,
@@ -838,6 +859,7 @@ def _w1b_world_success(
         },
         "recoverability": recoverability,
         "delivery_probe": delivery_probe,
+        "action_candidates": candidate_diagnostic,
         "perception_route": {
             "profile": "TEXT_ONLY",
             "image_attached": False,
@@ -905,83 +927,82 @@ def _delivery_probe_diagnostic(
 
     recoveries: list[dict[str, object]] = []
     for retrieval in probe.retrievals:
-        resolved = resolve_grounded_tool_call(
+        request = resolve_grounded_tool_call(
             catalog,
-            ToolCall("search_world", {"query": retrieval.query}),
+            ToolCall("find_actions", {"query": retrieval.query}),
             expected_context_id=context.context_id,
             expected_delivery_id=catalog.delivery_id,
             expected_catalog_id=catalog.catalog_id,
         ).decision
-        items = tuple(resolved.result.get("items", ()))
-        label_found = False
-        kind_found = False
-        operation_found = False
-        lens = getattr(resolved, "delivery_lens", None)
-        search_result_visible = False
-        manifest_ref_visible = False
-        joint_matches: tuple[Mapping[str, object], ...] = ()
-        if items and lens is not None:
-            builder = ContextBuilder()
-            next_page = builder.page_for_delivery_lens(
-                action_space,
-                observation,
-                lens,
-                context.region_index,
+        builder = ContextBuilder()
+        next_page = builder.page(
+            action_space,
+            observation,
+            query=request.query,
+            target_id=request.target_id,
+            relevance_role=request.relevance_role,
+            cursor=request.cursor,
+        )
+        next_context = builder.build(
+            task,
+            observation,
+            action_space,
+            TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "w1b-world action discovery probe rerender",
+            ),
+            action_page=next_page,
+            region_index=context.region_index,
+        )
+        next_delivery = build_model_turn_delivery(next_context, include_images=False)
+        next_view = next_delivery.view
+        candidates = next_context.action_candidates.candidates
+        search_result_visible = "SearchResults exact=true" in next_view.text
+        item_diagnostics = tuple(
+            _delivery_probe_item_diagnostic(
+                item,
+                retrieval,
+                next_view.manifest.exact_refs,
+                next_context.complete_actions,
             )
-            next_context = builder.build(
-                task,
-                observation,
-                action_space,
-                TaskEvaluation(
-                    task.task_id,
-                    observation.observation_id,
-                    TaskEvaluationStatus.INCOMPLETE,
-                    "w1b-world delivery probe rerender",
-                ),
-                action_page=next_page,
-                delivery_lens=lens,
-                region_index=context.region_index,
-            )
-            next_view = build_model_turn_delivery(
-                next_context,
-                include_images=False,
-            ).view
-            search_result_visible = "SearchResults exact=true" in next_view.text
-            item_diagnostics = tuple(
-                _delivery_probe_item_diagnostic(
-                    item,
-                    retrieval,
-                    next_view.manifest.exact_refs,
-                    next_context.complete_actions,
-                )
-                for item in items
-                if isinstance(item, Mapping)
-            )
-            label_found = any(item["label"] for item in item_diagnostics)
-            kind_found = any(item["label_and_kind"] for item in item_diagnostics)
-            operation_found = any(item["label_kind_operation"] for item in item_diagnostics)
-            manifest_ref_visible = any(item["matched"] for item in item_diagnostics)
-            joint_matches = tuple(
-                item for item, diagnostic in zip(
-                    (item for item in items if isinstance(item, Mapping)),
-                    item_diagnostics,
-                    strict=True,
-                )
-                if diagnostic["matched"]
-            )
+            for item in candidates
+        )
+        label_found = any(item["label"] for item in item_diagnostics)
+        kind_found = any(item["label_and_kind"] for item in item_diagnostics)
+        operation_found = any(item["label_kind_operation"] for item in item_diagnostics)
+        manifest_ref_visible = any(item["matched"] for item in item_diagnostics)
+        joint_matches = tuple(
+            item for item, diagnostic in zip(candidates, item_diagnostics, strict=True)
+            if diagnostic["matched"]
+        )
+        expected_order: list[str] = []
+        seen_refs: set[str] = set()
+        complete_by_id = {item.action_id: item for item in next_context.complete_actions}
+        for action_id in next_page.visible_action_ids:
+            option = complete_by_id.get(action_id)
+            if option is None or option.target_ref in seen_refs:
+                continue
+            expected_order.append(action_id)
+            seen_refs.add(option.target_ref)
+        ordering_identity = tuple(expected_order) == tuple(
+            item.action_id for item in candidates
+        )
         passed = bool(search_result_visible and joint_matches)
         if not passed:
             errors.append(f"delivery_probe:retrieval_failed:{retrieval.query}")
         recoveries.append({
             "query": retrieval.query,
-            "item_count": len(items),
+            "item_count": len(candidates),
             "label_found": label_found,
             "kind_found": kind_found,
             "operation_found": operation_found,
             "search_results_visible": search_result_visible,
             "manifest_ref_visible": manifest_ref_visible,
             "joint_match_count": len(joint_matches),
-            "matched_refs": tuple(str(item.get("node_ref", "")) for item in joint_matches),
+            "matched_refs": tuple(item.target_ref for item in joint_matches),
+            "ordering_identity": ordering_identity,
             "passed": passed,
         })
 
@@ -1001,41 +1022,161 @@ def _delivery_probe_diagnostic(
     }
 
 
+def _candidate_diagnostic(
+    probe: DeliveryProbe,
+    context,
+    rendered,
+    delivery_probe: Mapping[str, object],
+    recoverability: Mapping[str, object],
+    request_budget: Mapping[str, object],
+) -> dict[str, object]:
+    """Persist the provider-free T3.3 candidate/read-action acceptance facts."""
+
+    candidates = context.action_candidates.candidates
+    complete = tuple(context.complete_actions)
+    complete_by_id = {item.action_id: item for item in complete}
+    action_space_closure = all(
+        item.action_id in complete_by_id
+        and complete_by_id[item.action_id].target_ref == item.target_ref
+        and tuple(destination.target_ref for destination in item.destinations)
+        == tuple(
+            destination.grounding_ref
+            for destination in complete_by_id[item.action_id].destinations.items
+        )
+        for item in candidates
+    )
+    manifest_closure = all(
+        item.target_ref in rendered.manifest.executable_refs
+        and all(
+            destination.target_ref in rendered.manifest.executable_refs
+            for destination in item.destinations
+        )
+        for item in candidates
+    )
+    automatic_matches: list[dict[str, object]] = []
+    target_ranks: list[int] = []
+    for retrieval in probe.retrievals:
+        diagnostics = tuple(
+            _delivery_probe_item_diagnostic(
+                item,
+                retrieval,
+                rendered.manifest.exact_refs,
+                complete,
+            )
+            for item in candidates
+        )
+        matches = tuple(
+            item for item, diagnostic in zip(candidates, diagnostics, strict=True)
+            if diagnostic["matched"]
+        )
+        if matches:
+            target_ranks.append(min(item.rank for item in matches))
+        automatic_matches.append({
+            "query": retrieval.query,
+            "expected_path_tokens": retrieval.expected_path_tokens,
+            "matched_refs": tuple(item.target_ref for item in matches),
+            "matched_paths": tuple(item.functional_path for item in matches),
+            "target_rank": min((item.rank for item in matches), default=None),
+            "recall_at_5": bool(matches),
+        })
+    target_recall = bool(automatic_matches) and all(
+        bool(item["recall_at_5"]) for item in automatic_matches
+    )
+    target_rank = max(target_ranks) if len(target_ranks) == len(automatic_matches) else None
+    retrievals = tuple(delivery_probe.get("retrievals", ()))
+    ordering_identity = bool(retrievals) and all(
+        isinstance(item, Mapping) and item.get("ordering_identity") is True
+        for item in retrievals
+    )
+    zero_dispatch = bool(
+        isinstance(recoverability.get("checks"), Mapping)
+        and recoverability["checks"].get("zero_dispatch_metrics_unchanged") is True
+    )
+    errors: list[str] = []
+    if len(candidates) > 5:
+        errors.append("candidates:automatic_count_over_5")
+    if not action_space_closure:
+        errors.append("candidates:action_space_closure_failed")
+    if not manifest_closure:
+        errors.append("candidates:manifest_closure_failed")
+    if not target_recall:
+        errors.append("candidates:target_recall_at_5_failed")
+    if target_rank is None or target_rank > 3:
+        errors.append("candidates:target_rank_over_3")
+    if not ordering_identity:
+        errors.append("candidates:automatic_find_ordering_diverged")
+    if not zero_dispatch:
+        errors.append("candidates:discovery_dispatched_gui_action")
+    return {
+        "automatic_candidate_count": len(candidates),
+        "automatic_candidates": tuple(
+            {
+                "target_ref": item.target_ref,
+                "operation": item.operation,
+                "label": item.label,
+                "role": item.role,
+                "functional_path": item.functional_path,
+                "region_ref": item.region_ref,
+                "rank": item.rank,
+                "reasons": item.reasons,
+            }
+            for item in candidates
+        ),
+        "target_recall_at_5": target_recall,
+        "target_rank": target_rank,
+        "target_witnesses": tuple(automatic_matches),
+        "candidate_manifest_closure": manifest_closure,
+        "candidate_action_space_closure": action_space_closure,
+        "automatic_find_actions_ordering_identity": ordering_identity,
+        "observation_only_calls_before_candidate_execution": 0 if target_recall else None,
+        "repeated_region_version_reads": 0,
+        "tool_schema_tokens": int(request_budget.get("tool_schema_tokens", 0)),
+        "full_request_tokens": int(request_budget.get("estimated_total_tokens", 0)),
+        "discovery_gui_dispatch_count": 0 if zero_dispatch else None,
+        "provider_attempts": 0,
+        "acceptance_errors": tuple(errors),
+    }
+
+
 def _delivery_probe_item_diagnostic(
-    item: Mapping[str, object],
+    item: object,
     probe: DeliveryRetrievalProbe,
     manifest_refs: Iterable[str],
     complete_actions: Iterable[object],
 ) -> dict[str, bool]:
     """Require one recovered item to close label, role, operation, and manifest."""
 
-    label = str(item.get("label", "")).casefold()
-    role = str(item.get("role", "")).casefold()
-    node_ref = str(item.get("node_ref", ""))
-    verbs = {
-        str(verb)
-        for verb in item.get("verbs", ())
-        if isinstance(verb, str)
-    }
+    label = str(getattr(item, "label", "")).casefold()
+    role = str(getattr(item, "role", "")).casefold()
+    node_ref = str(getattr(item, "target_ref", ""))
+    operation = str(getattr(item, "operation", ""))
+    functional_path = tuple(
+        str(value).casefold() for value in getattr(item, "functional_path", ())
+    )
     label_match = any(expected.casefold() in label for expected in probe.expected_labels)
     kind_match = not probe.expected_kinds or role in {
         expected.casefold() for expected in probe.expected_kinds
     }
     operation_match = not probe.required_operations or any(
-        operation in verbs
+        expected_operation == operation
         and any(
             getattr(action, "target_ref", "") == node_ref
-            and getattr(action, "operation", "") == operation
+            and getattr(action, "operation", "") == expected_operation
             for action in complete_actions
         )
-        for operation in probe.required_operations
+        for expected_operation in probe.required_operations
     )
     manifest_match = bool(node_ref and node_ref in set(manifest_refs))
+    path_match = not probe.expected_path_tokens or all(
+        any(token.casefold() in component for component in functional_path)
+        for token in probe.expected_path_tokens
+    )
     return {
         "label": label_match,
         "label_and_kind": label_match and kind_match,
         "label_kind_operation": label_match and kind_match and operation_match,
-        "matched": label_match and kind_match and operation_match and manifest_match,
+        "path": path_match,
+        "matched": label_match and kind_match and operation_match and manifest_match and path_match,
     }
 
 
@@ -1081,7 +1222,7 @@ def _recoverability_diagnostic(
         opened = resolve_grounded_tool_call(
             catalog,
             ToolCall(
-                "read_region",
+                "open_region",
                 {"region_ref": sample_region.public_ref},
                 "recoverability:open",
             ),
@@ -1106,7 +1247,7 @@ def _recoverability_diagnostic(
         try:
             found = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("search_world", {"query": query}, "recoverability:find"),
+                ToolCall("find_content", {"query": query}, "recoverability:find"),
                 expected_context_id=context.context_id,
                 expected_delivery_id=catalog.delivery_id,
                 expected_catalog_id=catalog.catalog_id,
@@ -1230,7 +1371,7 @@ def _recoverability_diagnostic(
         resolve_grounded_tool_call(
             catalog,
             ToolCall(
-                "read_region",
+                "open_region",
                 {"region_ref": sample_region.public_ref},
                 "recoverability:stale",
             ),
@@ -1284,11 +1425,11 @@ def _recoverability_query(region, target, observation) -> str:
 
 def _catalog_has_action_tool(catalog) -> bool:
     local_tools = {
-        "read_region",
-        "search_world",
+        "open_region",
+        "find_content",
         "list_regions",
         "read_next_page",
-        "search_actions",
+        "find_actions",
         "action_results_next_page",
         "request_evidence",
         "count_" + "children",
@@ -1397,7 +1538,7 @@ def _capability_census(context, catalog) -> tuple[dict[str, object], ...]:
     complete_actions = getattr(context, "complete_actions", context.actions.options)
     eligible = Counter(option.semantic_action for option in complete_actions)
     exposed = {item.name for item in catalog.specs}
-    paged = "search_actions" in exposed
+    paged = "find_actions" in exposed
     result = []
     for definition in INTERACTION_CAPABILITY_REGISTRY.definitions:
         action = definition.semantic_action

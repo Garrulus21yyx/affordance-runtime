@@ -566,7 +566,7 @@ def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> t
     elif isinstance(result.decision, ProtocolFeedback):
         modes.append(result.decision.kind.value)
     elif isinstance(result.decision, RequestActionPage):
-        modes.append("search_actions")
+        modes.append("find_actions")
     elif isinstance(result.decision, SelectAction):
         modes.append(_semantic_action(result) or "select_action")
     else:
@@ -597,7 +597,7 @@ def _prohibited_repeat(result: StepResult) -> str:
         }
         return guidance[result.decision.kind.value]
     if isinstance(result.decision, RequestActionPage):
-        return "Do not repeat search_actions with the same query without new evidence."
+        return "Do not repeat find_actions with the same query without new evidence."
     if isinstance(result.decision, SelectAction):
         operation = _semantic_action(result) or "the same action"
         target_id = result.execution.request.intent.target_id if result.execution is not None else ""

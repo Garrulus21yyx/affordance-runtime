@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from affordance_runtime.actions.paging import ActionPager, InternalActionPage
 from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
-from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
+from affordance_runtime.agent.context.action_candidate_projection import (
+    close_action_candidates,
+    project_action_candidates,
+)
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
 from affordance_runtime.agent.context.budgets import (
     BoundedSection,
@@ -166,6 +169,23 @@ class ContextBuilder:
             grounding.index,
             context_id=identity.context_id,
         )
+        candidate_projection = project_action_candidates(
+            complete_page.options,
+            action_space_id=action_space.action_space_id,
+            world_observation_id=observation.observation_id,
+            region_index=current_region_index,
+            query=actions.active_query,
+            instruction=task.instruction,
+            objectives=tuple(item.objective for item in goal_plan.items),
+            done_when=tuple(item.done_when for item in goal_plan.items),
+            recent_outcomes=history_items,
+            allowed_action_ids=(
+                frozenset(item.action_id for item in actions.options)
+                if actions.active_query
+                else None
+            ),
+            top_k=None if actions.active_query else 5,
+        )
         return _fit_context(
             identity.context_id,
             task,
@@ -189,6 +209,8 @@ class ContextBuilder:
             control_feedback or {},
             self.include_public_text_evidence,
             complete_page.options,
+            action_space.action_space_id,
+            candidate_projection,
         )
 
     def page(
@@ -201,7 +223,9 @@ class ContextBuilder:
         relevance_role: str = "",
         cursor: str = "",
     ) -> InternalActionPage:
-        labels = {item.target_id: item.label for item in observation.targets}
+        targets = {item.target_id: item for item in observation.targets}
+        labels = {target_id: item.label for target_id, item in targets.items()}
+        region_index = WorldDeliveryIndex.from_observation(observation, action_space.options)
         return self.pager.page(
             action_space,
             None,
@@ -209,6 +233,12 @@ class ContextBuilder:
             target_id=target_id,
             relevance_role=relevance_role or None,
             labels=labels,
+            roles={target_id: item.role for target_id, item in targets.items()},
+            states={target_id: item.state for target_id, item in targets.items()},
+            functional_paths={
+                target_id: region_index.functional_path_for_target(target_id)
+                for target_id in targets
+            },
             cursor=cursor,
             page_size=min(
                 self.budget.max_action_options,
@@ -345,6 +375,8 @@ def _fit_context(
     control_feedback: dict[str, object],
     include_public_text_evidence: bool,
     complete_actions,
+    action_space_id: str,
+    action_candidates,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
@@ -394,6 +426,8 @@ def _fit_context(
         runtime_controls,
         control_feedback,
         complete_actions,
+        action_space_id,
+        action_candidates,
     )
 
 

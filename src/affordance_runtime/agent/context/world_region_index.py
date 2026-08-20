@@ -100,6 +100,10 @@ class WorldDeliveryIndex:
     target_region_keys: Mapping[str, str] = field(default_factory=dict, repr=False)
     fact_region_keys: Mapping[str, str] = field(default_factory=dict, repr=False)
     action_region_keys: Mapping[str, str] = field(default_factory=dict, repr=False)
+    target_functional_paths: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not self.world_observation_id.strip():
@@ -130,6 +134,13 @@ class WorldDeliveryIndex:
             raise ValueError("delivery target partition is not complete and disjoint")
         if len(self.fact_region_keys) != sum(len(item.member_fact_ids) for item in regions):
             raise ValueError("delivery fact partition is not complete and disjoint")
+        paths = {
+            str(target_id): tuple(str(item) for item in path if str(item).strip())
+            for target_id, path in dict(self.target_functional_paths).items()
+        }
+        if any(target_id not in self.target_region_keys for target_id in paths):
+            raise ValueError("functional path points outside the target partition")
+        object.__setattr__(self, "target_functional_paths", freeze_json(paths))
         object.__setattr__(self, "regions", regions)
 
     @classmethod
@@ -149,7 +160,8 @@ class WorldDeliveryIndex:
         action_keys = {
             action_id: region.key for region in regions for action_id in region.member_action_ids
         }
-        return cls(observation.observation_id, regions, target_keys, fact_keys, action_keys)
+        paths = _target_functional_paths(observation, regions, target_keys)
+        return cls(observation.observation_id, regions, target_keys, fact_keys, action_keys, paths)
 
     @property
     def public_refs(self) -> tuple[str, ...]:
@@ -176,6 +188,13 @@ class WorldDeliveryIndex:
 
     def region_for_action(self, action_id: str) -> WorldRegion | None:
         return self.get(str(self.action_region_keys.get(action_id, "")))
+
+    def functional_path_for_target(self, target_id: str) -> tuple[str, ...]:
+        path = self.target_functional_paths.get(target_id)
+        if path:
+            return tuple(path)
+        region = self.region_for_target(target_id)
+        return region.scope_path if region is not None else ()
 
 
 @dataclass(frozen=True)
@@ -391,6 +410,42 @@ def _functional_partition(
             tuple(seed["scope_path"]),  # type: ignore[arg-type]
         ))
     return tuple(result)
+
+
+def _target_functional_paths(
+    observation: WorldObservation,
+    regions: tuple[WorldRegion, ...],
+    target_region_keys: Mapping[str, str],
+) -> dict[str, tuple[str, ...]]:
+    """Return bounded public label paths; never expose private structure IDs."""
+
+    targets = {item.target_id: item for item in observation.targets}
+    regions_by_key = {item.key: item for item in regions}
+    result: dict[str, tuple[str, ...]] = {}
+    for target_id, target in targets.items():
+        region = regions_by_key.get(str(target_region_keys.get(target_id, "")))
+        values = list(region.scope_path if region is not None else ())
+        ancestors: list[str] = []
+        current = target
+        visited = {target_id}
+        while len(ancestors) < 6:
+            parent_id = current.relations.get("parent_id")
+            if not isinstance(parent_id, str) or parent_id in visited:
+                break
+            parent = targets.get(parent_id)
+            if parent is None:
+                break
+            visited.add(parent_id)
+            if parent.label.strip():
+                ancestors.append(parent.label.strip())
+            current = parent
+        values.extend(reversed(ancestors))
+        if target.label.strip():
+            values.append(target.label.strip())
+        bounded = tuple(dict.fromkeys(item[:160] for item in values if item.strip()))[-8:]
+        if bounded:
+            result[target_id] = bounded
+    return result
 
 
 def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits) -> set[str]:

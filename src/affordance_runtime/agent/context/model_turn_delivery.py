@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 
+from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
 from affordance_runtime.agent.context.compact_world_renderer import (
     DeliveryManifest,
     WorldDeliveryView,
@@ -30,6 +31,7 @@ class ModelTurnDelivery:
     delivery_id: str
     context_id: str
     world_observation_id: str
+    action_candidates: ActionCandidateProjection
     includes_images: bool = False
 
     def __post_init__(self) -> None:
@@ -41,6 +43,21 @@ class ModelTurnDelivery:
             raise ValueError("model turn delivery requires current Context identity")
         if self.view.manifest.world_observation_id != self.world_observation_id:
             raise ValueError("model turn delivery manifest belongs to another World")
+        if not isinstance(self.action_candidates, ActionCandidateProjection):
+            raise TypeError("model turn delivery requires typed action candidates")
+        if self.action_candidates.world_observation_id != self.world_observation_id:
+            raise ValueError("model turn candidates belong to another World")
+        if any(
+            item.target_ref not in self.view.manifest.executable_refs
+            for item in self.action_candidates.candidates
+        ):
+            raise ValueError("every action candidate must enter the same DeliveryManifest")
+        if any(
+            destination.target_ref not in self.view.manifest.executable_refs
+            for item in self.action_candidates.candidates
+            for destination in item.destinations
+        ):
+            raise ValueError("every candidate destination must enter the same DeliveryManifest")
         if type(self.includes_images) is not bool:
             raise TypeError("model turn delivery image selection must be boolean")
 
@@ -57,11 +74,8 @@ def build_model_turn_delivery(
 ) -> ModelTurnDelivery:
     """Build the one selected delivery for one current ActionPolicy call."""
 
-    search_action_refs = frozenset(
-        item.target_ref
-        for item in context.actions.options
-        if context.actions.active_query or context.actions.active_target_filter
-    )
+    if context.action_candidates is None:
+        raise ValueError("AgentContext requires a candidate projection before model delivery")
     view = render_compact_actor_world(
         context.actor_world,
         context.grounding,
@@ -71,9 +85,7 @@ def build_model_turn_delivery(
         delivery_lens=context.delivery_lens,
         selected_region_keys=_selected_region_keys(context),
         selected_cursor=context.delivery_lens.page_cursor if context.delivery_lens is not None else "",
-        search_action_refs=search_action_refs,
-        action_options=context.complete_actions,
-        preference_text=_delivery_preference_text(context),
+        action_candidates=context.action_candidates,
         max_rendered_bytes=max_rendered_bytes,
     )
     payload = {
@@ -88,6 +100,7 @@ def build_model_turn_delivery(
             "fact_refs": view.manifest.fact_refs,
             "region_refs": view.manifest.region_refs,
         },
+        "action_candidates": context.action_candidates.projection_id,
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -97,6 +110,7 @@ def build_model_turn_delivery(
         f"delivery:{digest}",
         context.context_id,
         view.manifest.world_observation_id,
+        context.action_candidates,
         include_images,
     )
 
@@ -120,17 +134,3 @@ def _selected_region_keys(context: AgentContext) -> frozenset[str]:
                     selected.append(region.key)
                     break
     return frozenset(selected)
-
-
-def _delivery_preference_text(context: AgentContext) -> str:
-    values = [context.task.instruction]
-    values.extend(item.objective for item in context.goal_plan.items)
-    if context.recent_steps.items:
-        latest = context.recent_steps.items[-1]
-        if latest.target is not None:
-            values.extend((latest.target.role, latest.target.label, *latest.target.context))
-        values.extend(str(value) for value in latest.transition.values())
-    lens = context.delivery_lens
-    if lens is not None and lens.query:
-        values.append(lens.query)
-    return " ".join(value for value in values if value)

@@ -1207,29 +1207,44 @@ low-ranked actions remain in the complete current action index.
 The model-visible candidate contract is a typed component of `WorldDeliveryView`, not another ActionSpace:
 
 ```text
+ActionCandidateDestination(
+  target_ref: ERef,
+  label: str,
+  role: str,
+  functional_path: tuple[str, ...],
+  region_ref: RRef,
+  public_state: PublicActionDecisionState,
+)
+
 ActionCandidate(
+  action_id: ActionId,
   target_ref: ERef,
   operation: SemanticOperation,
   label: str,
   role: str,
   functional_path: tuple[str, ...],
   region_ref: RRef,
-  current_state: PublicActionDecisionState,
+  public_state: PublicActionDecisionState,
   rank: int,
-  match_reasons: tuple[CandidateMatchReason, ...],
+  reasons: tuple[CandidateMatchReason, ...],
+  destination_required: bool,
+  destinations: tuple[ActionCandidateDestination, ...],
 )
 
 ActionCandidateProjection(
   world_observation_id: str,
   action_space_id: str,
-  candidates: tuple[ActionCandidate, ...],  # at most five
-  searchable_action_count: int,
+  candidates: tuple[ActionCandidate, ...],  # at most five for automatic; current ActionPage for search
+  scope: automatic | search,
+  projection_id: str,
 )
 ```
 
-Every candidate E-ref must be present in the same `DeliveryManifest` and resolve to exactly one current
-`ActionOption`. `match_reasons` is a closed presentation vocabulary such as `objective_text`, `functional_path`,
-`role_compatible`, `newly_revealed`, and `state_ready`; it is not task progress or an authorization reason.
+Every candidate source E-ref and every offered destination E-ref must be present in the same `DeliveryManifest`; the
+source plus destination set must resolve to exactly one current `ActionOption`. `reasons` uses the closed presentation
+vocabulary `exact_label | lexical_match | path_match | role_compatible | state_ready | newly_revealed |
+repeated_penalty | already_satisfied_penalty | risk_penalty | effect_penalty`; it is not task progress or an
+authorization reason.
 
 The deterministic rank is a delivery preference only. It never removes the PageMap, changes facts/actions, reads
 benchmark identity, or claims semantic relevance authority. On the same page, fresh World is still acquired and the
@@ -1241,15 +1256,15 @@ A structure-first first turn should therefore resemble this shape rather than a 
 
 ```yaml
 observation:
-  page: {title: "Dashboard / Magento Admin", coverage: complete}
+  page: {title: "Control Center", coverage: complete}
   page_map:
-    - "[R1] navigation 'Primary' labels=[Dashboard, Sales, Reports] actions=12"
-    - "[R2] main 'Dashboard' sections=4 actions=18"
-    - "[R3] table 'Last Orders' rows=5 columns=[Customer, Total, Status]"
+    - "[R1] navigation 'Primary' labels=[Overview, Activity, Reports] actions=12"
+    - "[R2] main 'Overview' sections=4 actions=18"
+    - "[R3] table 'Recent activity' rows=5 columns=[Owner, Time, Status]"
   action_candidates:
-    - "rank=1 [E7] activate link 'Reports' path='Primary navigation > Reports' reasons=[objective_text, role_compatible]"
+    - "rank=1 [E7] activate link 'Reports' path='Primary navigation > Reports' reasons=[lexical_match, path_match, role_compatible, state_ready]"
   active_view:
-    - "[E7] link 'Reports' context='Primary navigation' verbs=[activate]"
+    - "[N4] status 'All systems ready' read_only=true"
   recovery:
     - "open_region(region_ref=R2)"
     - "find_content(query=<text>)"
@@ -1408,6 +1423,23 @@ The policy decision is therefore mechanical at the interface boundary:
 Natural language is used to search and reason; execution always names a current E-ref. Runtime never silently chooses
 between same-label controls from a pure semantic string.
 
+The implemented candidate owner is split only by representation, not authority. `actions/paging.py` owns the pure
+`ActionCandidateRanker`; `agent/context/action_candidate_projection.py` closes its ranked existing `ActionOption`s into
+disposable public candidates; `ContextBuilder` supplies the current TaskGoal, GoalPlan text, complete ActionSpace,
+functional paths/public state, and recent typed outcomes; `ModelTurnDelivery` requires the typed projection and proves
+every candidate source E-ref and every current offered destination E-ref are present in its own Manifest.
+`compact_world_renderer.py` renders that object directly and never parses its output back into refs. The ranker uses
+normalized exact/lexical/fuzzy and path matches,
+role/operation compatibility, ready/newly-revealed state, repeated/no-progress and already-satisfied penalties, and
+declared risk/effect penalties. Its closed explanation vocabulary is `exact_label`, `lexical_match`, `path_match`,
+`role_compatible`, `state_ready`, `newly_revealed`, `repeated_penalty`, `already_satisfied_penalty`, `risk_penalty`, and
+`effect_penalty`; these values authorize nothing and prove no task progress.
+
+The cutover deleted the former renderer preference parser, stopword helper, direct-action renderer and its locked
+fixtures. It also deleted the old enum/schema/prompt/resolution names instead of aliasing or normalizing them. The
+complete ActionSpace, ActionPager authority/paging, DeliveryManifest, stable operation ToolCatalog, Resolver,
+Admission, Binder, Executor, and CoreAgentLoop remain singular and unchanged in responsibility.
+
 Typed visual crop delivery is a later sub-gate of the same World-read/perception boundary, not part of the
 structural baseline. When benchmark evidence requires it, `open_region` may request a visual view backed by current
 BrowserGym geometry and the existing image-admission path. The next request receives a typed current image part;
@@ -1430,9 +1462,9 @@ of the current partition, so removing orphan regions may renumber a table withou
 
 Every region also carries a bounded structural `scope_path` derived from current public document/ancestor labels.
 Table/grid descriptors state `available_filter_controls` from their current legal text/select actions. ActiveView
-orders modal/focused/changed and bounded top-level navigation regions before lexical direct-action promotion and
-read-only data. These are presentation facts only; they neither classify a region as an answer nor change ActionSpace
-legality.
+orders modal/focused/changed and bounded top-level navigation regions before the remaining exact regions, while the
+typed `ActionCandidates` block carries the shared path-aware action ordering. These are presentation facts only; they
+neither classify a region as an answer nor change ActionSpace legality.
 
 BrowserGym canonical semantics now collapses a native wrapper/anchor pair only when ancestry, normalized accessible
 label (and non-conflicting title), at-least-90% smaller-box overlap, identical semantic/primitive offers, and exactly
@@ -2599,9 +2631,9 @@ wrong. The smallest coherent correction keeps one ManagerReview semantic call an
 
 No live benchmark, model tuning, new role, second state store, or second GUI loop is part of this convergence
 increment. The former role-frequency implementation result remains historical local evidence and is superseded by
-run8/run10. Steps 1–8 are now implemented and provider-free verified; no live run is claimed.
-Current status: **ManagerReview direct terminal response implemented / provider-free verification passed /
-fresh W1b live witness pending / W1b blocked / non-closed**.
+run8/run10. T3.3 is now implemented and provider-free verified; no live run is claimed.
+Current status: **T3.3 implementation complete / provider-free candidate/read-action verification passed /
+W1b-Agent active next / live verification pending / non-closed**.
 
 ### End-to-end chain audit and remaining convergence plan
 
@@ -2638,14 +2670,13 @@ Two branches are intentional and must not be mistaken for legacy control paths:
 
 The remaining convergence work is bounded and ordered:
 
-1. **T3.3 delivery convergence — active.** Replace production `_preferred_action_refs`/`DirectActions` with one pure,
-   deterministic Top-5 candidate ranker. Perform one breaking tool-name cutover to `open_region`, `find_content`, and
-   `find_actions`, with no aliases; `find_actions` must reuse that ranker over the complete current ActionSpace. Remove
-   immediate `actionable`, `verbs`, and `action_refs` fields from region/content results and delete tests that preserve
-   the old names or mixed contracts. Do not add a persistent candidate store, another registry, or an LLM selector.
-2. **W1b-Agent evidence.** After provider-free candidate properties and fresh-context review pass, run the frozen
-   breadth evidence through the existing manager-guided benchmark composition. This remains the fastest falsifiable
-   test of the GUI-agent mainline.
+1. **T3.3 delivery convergence — implemented and provider-free verified.** Production
+   `_preferred_action_refs`/`DirectActions` and the three old public tool names are removed. One pure deterministic
+   ranker owns both automatic Top-5 projection and `find_actions` ordering over the complete current ActionSpace;
+   region/content results no longer duplicate action inventory. The six-page provider-free gate and bounded
+   fresh-context review passed without P0/P1.
+2. **W1b-Agent evidence — active next.** Run the frozen breadth evidence through the existing manager-guided benchmark
+   composition. This remains the fastest falsifiable test of the GUI-agent mainline.
 3. **Product entry/result convergence.** Lift the already typed explicit execution mode into the product composition
    facade so a caller can choose standalone or manager-guided execution without using the benchmark runner as the only
    mission entry. Project both terminal paths through one public run-result envelope: standalone carries the formal

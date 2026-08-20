@@ -309,14 +309,14 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert not {"actions.entities", "actions.groups"}.intersection(public)
     observation = payload["observation"]
     assert isinstance(observation, str)
-    assert "[E1] textbox \"Username\"" in observation
-    assert "[E2] textbox \"Password\"" in observation
-    assert "[E3] button \"Login\"" in observation
+    assert "[E1] type_text textbox \"Username\"" in observation
+    assert "[E2] type_text textbox \"Password\"" in observation
+    assert "[E3] activate button \"Login\"" in observation
     focused_ref = next(item.ref for item in context.grounding.entities if item.role == "focused_context")
     viewport_ref = next(item.ref for item in context.grounding.entities if item.role == "viewport")
-    assert f'[{focused_ref}] focused_context "Current keyboard focus"' in observation
-    assert f'[{viewport_ref}] viewport "Current page viewport"' not in observation
-    assert "search_actions" in {item.name for item in catalog.specs}
+    assert f'[{focused_ref}] press_key focused_context "Current keyboard focus"' in observation
+    assert f'[{viewport_ref}] scroll viewport "Current page viewport"' in observation
+    assert "find_actions" in {item.name for item in catalog.specs}
 
 
 def test_actor_world_delivers_boolean_state_without_model_visible_facets() -> None:
@@ -414,10 +414,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "press_key",
         "scroll",
         "pin_fact",
-        "read_region",
-        "search_world",
+        "open_region",
+        "find_content",
         "list_regions",
-        "search_actions",
+        "find_actions",
         "ask_user",
         "wait",
         "abort",
@@ -699,8 +699,8 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "press",
         "scroll",
         "pin",
-        "read",
-        "search",
+        "open",
+        "find",
         "list",
         "ask",
         "wait",
@@ -818,7 +818,10 @@ def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "pin_fact")
     assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
-    evidence_ref = next(iter(context.private_fact_bindings))
+    evidence_ref = next(
+        ref for ref in _delivery(context).manifest.fact_refs
+        if ref in context.private_fact_bindings
+    )
 
     assert "value" not in spec.input_schema["properties"]
     resolution = _resolve_catalog_call(
@@ -859,7 +862,10 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
     assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
-    refs = tuple(context.private_fact_bindings)
+    refs = tuple(
+        ref for ref in _delivery(context).manifest.fact_refs
+        if ref in context.private_fact_bindings
+    )
     assert len(refs) >= 2
     first = _resolve_catalog_call(
         first_catalog,
@@ -903,7 +909,10 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
 def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
     context = _context()
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    evidence_ref = next(iter(context.private_fact_bindings))
+    evidence_ref = next(
+        ref for ref in _delivery(context).manifest.fact_refs
+        if ref in context.private_fact_bindings
+    )
     first = _resolve_catalog_call(
         first_catalog,
         ToolCall(
@@ -972,7 +981,7 @@ def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> Non
     assert invalid_failure.reason.startswith("invalid_tool_arguments")
 
 
-def test_search_actions_has_one_natural_language_input_and_runtime_owned_continuation() -> None:
+def test_find_actions_has_one_natural_language_input_and_runtime_owned_continuation() -> None:
     context = _context()
     context = replace(
         context,
@@ -987,7 +996,7 @@ def test_search_actions_has_one_natural_language_input_and_runtime_owned_continu
         ),
     )
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in catalog.specs if item.name == "search_actions")
+    spec = next(item for item in catalog.specs if item.name == "find_actions")
     continuation = next(
         item for item in catalog.specs if item.name == "action_results_next_page"
     )
@@ -996,7 +1005,7 @@ def test_search_actions_has_one_natural_language_input_and_runtime_owned_continu
     assert continuation.input_schema["properties"] == {}
     resolution = _resolve_catalog_call(
         catalog,
-        ToolCall("search_actions", {"query": "like"}),
+        ToolCall("find_actions", {"query": "like"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(resolution.decision, RequestActionPage)
@@ -1011,14 +1020,14 @@ def test_search_actions_has_one_natural_language_input_and_runtime_owned_continu
     assert next_page.cursor == "cursor:test"
 
 
-def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
+def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> None:
     task = TaskGoal(
         "task:watch4-synthetic",
         "Open the requested navigation section.",
         allowed_effects=("external_ui_interaction",),
         risk_profile=RiskProfile.LOW,
     )
-    source_id = "obs:watch4-synthetic"
+    source_id = "obs:duplicate-label-discovery"
     revision = f"revision:{source_id}"
     schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
 
@@ -1044,15 +1053,15 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     world = fused_world(
         source_id,
         (
-            SemanticTarget("target:readonly", "link", "Bestsellers"),
+            SemanticTarget("target:readonly", "heading", "Settings"),
             SemanticTarget("target:close", "button", "Close menu"),
-            SemanticTarget("target:bestsellers-tab", "tab", "Bestsellers"),
-            SemanticTarget("target:bestsellers-link", "link", "Bestsellers"),
+            SemanticTarget("target:settings-tab", "tab", "Settings"),
+            SemanticTarget("target:settings-link", "link", "Settings"),
         ),
         bindings=(
             binding("target:close"),
-            binding("target:bestsellers-tab"),
-            binding("target:bestsellers-link"),
+            binding("target:settings-tab"),
+            binding("target:settings-link"),
         ),
         surface="browsergym",
     )
@@ -1064,8 +1073,8 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     readonly_ref = context.grounding.target_refs["target:readonly"]
     close_ref = context.grounding.target_refs["target:close"]
     actionable_refs = {
-        context.grounding.target_refs["target:bestsellers-tab"],
-        context.grounding.target_refs["target:bestsellers-link"],
+        context.grounding.target_refs["target:settings-tab"],
+        context.grounding.target_refs["target:settings-link"],
     }
     assert readonly_ref.startswith("N")
     assert close_ref.startswith("E")
@@ -1080,16 +1089,15 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
         region_index=context.region_index,
         observation=world,
         action="find",
-        query="Bestsellers",
+        query="Settings",
     )
     matches = inspected.items
-    assert any(match["node_ref"] == readonly_ref and match["actionable"] is False for match in matches)
-    assert any(
-        match["node_ref"] in actionable_refs
-        and match["actionable"] is True
-        and "activate" in match["verbs"]
+    assert any(match["node_ref"] == readonly_ref for match in matches)
+    assert all(
+        not {"actionable", "verbs", "action_refs"}.intersection(match)
         for match in matches
     )
+    assert not any(match.get("node_ref") in actionable_refs for match in matches)
 
     initial = ToolCall("activate", {"target": "E114"}, "call:initial")
     with pytest.raises(GroundedToolResolutionError) as captured:
@@ -1110,7 +1118,7 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
 
     request = _resolve_catalog_call(
         catalog,
-        ToolCall("search_actions", {"query": "definitely-not-present"}, "call:find"),
+        ToolCall("find_actions", {"query": "definitely-not-present"}, "call:find"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(request, RequestActionPage)
@@ -1128,7 +1136,7 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     monitor = EpisodeMonitor()
     local = LocalToolResult(
         context.context_id,
-        "search_world",
+        "find_content",
         {"query": "definitely-not-present"},
         {"action": "find", "matches": (), "total_count": 0},
     )
@@ -1199,7 +1207,7 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     opened = _resolve_catalog_call(
         catalog,
-        ToolCall("read_region", {"region_ref": "R1"}, "provider-call:read"),
+        ToolCall("open_region", {"region_ref": "R1"}, "provider-call:read"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(opened, LocalToolResult)
@@ -1429,20 +1437,12 @@ def test_shared_target_semantics_are_hoisted_and_inconsistent_actor_refs_fail_cl
         next_cursor="",
     )
     actions = close_action_candidates(raw_page, grounding, context_id=context.context_id)
-    context = replace(context, actions=actions, complete_actions=actions.options)
-
-    public = _bound_public_context(context)
-    assert "actions" not in public
-    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    tool = next(item for item in catalog.specs if item.name == "activate")
-    assert tool.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
-    with pytest.raises(GroundedToolResolutionError) as captured:
-        _resolve_catalog_call(
-            catalog,
-            ToolCall("activate", {"target": "E2"}),
-            expected_context_id=context.context_id,
+    with pytest.raises(ValueError, match="candidates are outside"):
+        replace(
+            context,
+            actions=actions,
+            complete_actions=actions.options,
         )
-    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
 
 def test_invalid_compact_target_fails_after_one_provider_call() -> None:

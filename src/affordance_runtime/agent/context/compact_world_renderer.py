@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldNodeView,
     ActorWorldSnapshot,
@@ -201,9 +202,7 @@ def render_compact_actor_world(
     expanded_refs: frozenset[str] | None = None,
     selected_region_keys: frozenset[str] | None = None,
     selected_cursor: str = "",
-    search_action_refs: frozenset[str] | None = None,
-    action_options: Sequence[object] = (),
-    preference_text: str = "",
+    action_candidates: ActionCandidateProjection | None = None,
     max_rendered_bytes: int | None = None,
     force_region_delivery: bool = False,
     limits: DeliveryLimits = DELIVERY_LIMITS_V1,
@@ -235,10 +234,8 @@ def render_compact_actor_world(
         delivery_lens=delivery_lens,
         selected_region_keys=selected_region_keys or frozenset(),
         expanded_refs=expanded_refs or frozenset(),
-        search_action_refs=search_action_refs or frozenset(),
-        action_options=action_options,
+        action_candidates=action_candidates,
         selected_cursor=selected_cursor,
-        preference_text=preference_text,
         max_rendered_bytes=max_rendered_bytes,
         limits=limits,
     )
@@ -280,10 +277,8 @@ def _render_page_map(
     delivery_lens: WorldDeliveryLens | None,
     selected_region_keys: frozenset[str],
     expanded_refs: frozenset[str],
-    search_action_refs: frozenset[str],
-    action_options: Sequence[object],
+    action_candidates: ActionCandidateProjection | None,
     selected_cursor: str,
-    preference_text: str,
     max_rendered_bytes: int | None,
     limits: DeliveryLimits,
 ) -> WorldDeliveryView:
@@ -294,7 +289,7 @@ def _render_page_map(
         page_identity += f" route={_value(page_route)}"
     lines = [
         "compact_world format=compact_ax.v2",
-        "projection=page_map public_content=folded recovery=read_region/search_world/search_actions",
+        "projection=page_map public_content=folded recovery=open_region/find_content/find_actions",
         f"{page_identity} coverage={_index_coverage(index)}",
         f"PageMap regions={len(index.regions)}",
     ]
@@ -324,7 +319,7 @@ def _render_page_map(
             exact_region_keys.add(lens.selected_region_key)
         elif lens.kind == "find":
             matches = _find_matches(index, lens.query, observation, grounding, delivered)
-            search_lines = _render_search_matches(matches, observation, grounding, verbs, manifest)
+            search_lines = _render_search_matches(matches, observation, grounding, manifest)
         elif lens.kind == "view_all":
             offset = _decode_simple_cursor(lens.page_cursor, len(index.regions))
             exact_region_keys.update(item.key for item in index.regions[offset : offset + 2])
@@ -332,11 +327,6 @@ def _render_page_map(
         region.key
         for region in index.regions
         if _region_public_refs(region, grounding).intersection(expanded_refs)
-    )
-    exact_region_keys.update(
-        region.key
-        for region in index.regions
-        if _region_public_refs(region, grounding).intersection(search_action_refs)
     )
     explicit_region_key = (
         lens.selected_region_key
@@ -350,18 +340,20 @@ def _render_page_map(
         lens_scoped=bool(explicit_region_key),
     )
     exact_region_keys.update(default_region_order)
-    preferred_action_refs = (
-        ()
-        if explicit_region_key
-        else _preferred_action_refs(action_options, preference_text)
-    )
-
-    if search_action_refs:
-        action_matches = _action_search_matches(search_action_refs, index, observation, grounding)
-        search_lines.extend(_render_search_matches(action_matches, observation, grounding, verbs, manifest))
     if search_lines:
-        lines.append("SearchResults exact=true")
+        lines.append(f"ContentSearchResults exact=true count={len(search_lines)}")
         lines.extend(search_lines)
+
+    if action_candidates is not None and action_candidates.candidates:
+        lines.extend(_render_action_candidates(
+            action_candidates,
+            delivered,
+            grounding,
+            verbs,
+            manifest,
+            index,
+            observation,
+        ))
 
     lines.append("ActiveView exact=true")
     rendered_any = False
@@ -374,10 +366,11 @@ def _render_page_map(
     regions_by_key = {item.key: item for item in index.regions}
 
     # Modal/current-change and top-level navigation regions remain ahead of
-    # lexical direct-action promotion. This is display ranking only.
+    # the remaining exact region order. Candidate ordering is displayed in its
+    # own typed block above and does not change region or action authority.
     priority_keys = tuple(
         key for key in ordered_region_keys
-        if _precedes_direct_actions(regions_by_key[key], observation)
+        if _precedes_candidates(regions_by_key[key], observation)
     )
     for region_key in priority_keys:
         region_lines = _render_world_region(
@@ -393,18 +386,6 @@ def _render_page_map(
         rendered_any = True
         rendered_region_count += 1
 
-    direct_lines = _render_direct_actions(
-        preferred_action_refs,
-        delivered,
-        grounding,
-        verbs,
-        manifest,
-        index,
-        observation,
-    )
-    if direct_lines:
-        lines.extend(direct_lines)
-        rendered_any = True
     for region_key in ordered_region_keys:
         if region_key in priority_keys:
             continue
@@ -686,22 +667,25 @@ def _slice_region_node(node: ActorWorldNodeView, wanted: frozenset[str]) -> Acto
     )
 
 
-def _render_search_matches(matches, observation, grounding, verbs, manifest) -> list[str]:
+def _render_search_matches(matches, observation, grounding, manifest) -> list[str]:
     targets = {item.target_id: item for item in observation.targets}
     by_ref = {ref: targets[target_id] for target_id, ref in grounding.target_refs.items() if target_id in targets}
     lines: list[str] = []
     for item in matches:
         ref = str(item.get("node_ref", ""))
-        if ref and ref in by_ref and manifest.node(ref, executable=bool(verbs.get(ref, ()))):
+        if ref.startswith("N") and ref in by_ref and manifest.node(ref, executable=False):
             target = by_ref[ref]
             line = f"  [{ref}] {target.role} {_value(target.label)}"
-            state = _model_state(target.state, interactive=bool(verbs.get(ref, ())))
+            state = _model_state(target.state, interactive=False)
             if state:
                 line += " " + " ".join(f"{_short_field(k)}={_value(v)}" for k, v in state.items())
-            if verbs.get(ref):
-                line += f" verbs={_value(verbs[ref])}"
-            else:
-                line += " read_only=true"
+            line += " read_only=true"
+            context = item.get("structural_context") or item.get("region_ref")
+            if context:
+                line += f" context={_value(context)}"
+            lines.append(line)
+        elif item.get("role") != "fact":
+            line = f"  {item.get('role', 'content')} {_value(item.get('label', ''))} read_only=true"
             context = item.get("structural_context") or item.get("region_ref")
             if context:
                 line += f" context={_value(context)}"
@@ -738,9 +722,21 @@ def _default_active_regions(
         for region in regions:
             if region.role in {"navigation", "menubar", "toolbar"} and _bounded_region(region, limits):
                 selected.append(region.key)
-        for region in regions:
-            if region.role in {"main", "form", "table", "grid"} and _bounded_region(region, limits):
-                selected.append(region.key)
+        primary = next(
+            (
+                region.key for region in regions
+                if region.role in {"main", "form"} and _bounded_region(region, limits)
+            ),
+            next(
+                (
+                    region.key for region in regions
+                    if region.role in {"table", "grid"} and _bounded_region(region, limits)
+                ),
+                "",
+            ),
+        )
+        if primary:
+            selected.append(primary)
     if not lens_scoped and not any(
         region.key in selected and region.counts.get("actions", 0) > 0
         for region in regions
@@ -760,7 +756,7 @@ def _default_active_regions(
     return tuple(dict.fromkeys(selected))
 
 
-def _precedes_direct_actions(region: WorldRegion, observation: WorldObservation) -> bool:
+def _precedes_candidates(region: WorldRegion, observation: WorldObservation) -> bool:
     if region.role in {"alert", "alertdialog", "dialog", "navigation", "menubar", "toolbar"}:
         return True
     states = {item.target_id: item.state for item in observation.targets}
@@ -771,67 +767,8 @@ def _precedes_direct_actions(region: WorldRegion, observation: WorldObservation)
     )
 
 
-_PREFERENCE_STOPWORDS = frozenset({
-    "and", "are", "for", "from", "get", "into", "name", "names", "that",
-    "the", "this", "top", "with",
-})
-
-
-def _preferred_action_refs(
-    action_options: Sequence[object],
-    preference_text: str,
-    *,
-    limit: int = 4,
-) -> tuple[str, ...]:
-    """Rank current executable targets for delivery, never for legality."""
-
-    terms = {
-        item
-        for item in re.findall(r"[^\W_]+", preference_text.casefold())
-        if len(item) >= 3 and item not in _PREFERENCE_STOPWORDS
-    }
-    if not terms:
-        return ()
-    scored: list[tuple[int, int, str]] = []
-    for order, option in enumerate(action_options):
-        ref = str(getattr(option, "target_ref", ""))
-        operation = str(getattr(option, "operation", ""))
-        if not re.fullmatch(r"E[1-9][0-9]{0,2}", ref) or not operation:
-            continue
-        label = str(getattr(option, "target_label", "")).casefold()
-        role = str(getattr(option, "target_role", "")).casefold()
-        state = getattr(option, "target_state", {})
-        public_state = " ".join(
-            str(value).casefold()
-            for value in state.values()
-            if isinstance(value, str | int | float)
-        ) if isinstance(state, Mapping) else ""
-        searchable = " ".join((label, role, public_state))
-        score = sum(
-            2 if term == label.strip() else 1
-            for term in terms
-            if term in searchable
-        )
-        if score:
-            scored.append((-score, order, ref))
-    result: list[str] = []
-    ranked = sorted(scored)
-    strongest = ranked[0][0] if ranked else 0
-    for negative_score, _order, ref in ranked:
-        # When a precise label match exists, do not promote weaker substring
-        # ancestors into the direct-action block. They remain available through
-        # their normal navigation region.
-        if strongest <= -2 and negative_score != strongest:
-            continue
-        if ref not in result:
-            result.append(ref)
-        if len(result) == limit:
-            break
-    return tuple(result)
-
-
-def _render_direct_actions(
-    refs: Sequence[str],
+def _render_action_candidates(
+    projection: ActionCandidateProjection,
     delivered,
     grounding,
     verbs,
@@ -839,35 +776,72 @@ def _render_direct_actions(
     index,
     observation,
 ) -> list[str]:
-    if not refs:
-        return []
+    heading = "SearchResults" if projection.scope == "search" else "ActionCandidates"
+    lines = [f"{heading} exact=true count={len(projection.candidates)}"]
     target_id_by_ref = {ref: target_id for target_id, ref in grounding.target_refs.items()}
-    targets = {item.target_id: item for item in observation.targets}
-    lines = ["  DirectActions exact=true"]
-    rendered = 0
-    for ref in refs:
-        target_id = target_id_by_ref.get(ref, "")
-        target = targets.get(target_id)
-        region = index.region_for_target(target_id) if target_id else None
-        if target is None or region is None or not verbs.get(ref):
+    for candidate in projection.candidates:
+        target_id = target_id_by_ref.get(candidate.target_ref, "")
+        if not target_id or candidate.operation not in verbs.get(candidate.target_ref, ()):
             continue
-        root = _region_root_actor_node(region, delivered, observation)
-        sliced = _slice_region_node(root, frozenset({ref})) if root is not None else None
-        if sliced is None:
+        region = index.region_for_action(candidate.action_id) or index.region_for_target(target_id)
+        if region is None:
             continue
+        manifest.node(candidate.target_ref, executable=True)
+        for destination in candidate.destinations:
+            manifest.node(destination.target_ref, executable=True)
         context, headers = _action_structural_context(target_id, region, observation)
-        # The E-ref belongs to the exact executable node below.  Keep this
-        # structural annotation ref-free so the manifest and rendered text
-        # preserve one atomic occurrence per exact target.
-        descriptor = f"    direct_action region=[{region.public_ref}]"
+        descriptor = (
+            f"  rank={candidate.rank} [{candidate.target_ref}] {candidate.operation} "
+            f"{candidate.role} {_value(candidate.label)} "
+            f"path={_value(candidate.functional_path)} region=[{candidate.region_ref}] "
+            f"verbs={_value(verbs[candidate.target_ref])}"
+        )
+        state = _model_state(candidate.public_state, interactive=True)
+        if state:
+            descriptor += f" state={_value(state)}"
+        actor_node = _actor_node_for_ref(delivered, candidate.target_ref)
+        if actor_node is not None:
+            evidence = {
+                key: ref
+                for key, ref in actor_node.state_evidence.items()
+                if key in state and ref.startswith("F")
+            }
+            for ref in evidence.values():
+                manifest.fact(ref)
+            if evidence:
+                descriptor += f" state_evidence={_value(evidence)}"
         if context:
             descriptor += f" context={_value(context)}"
         if headers:
             descriptor += f" headers={_value(headers)}"
+        if candidate.destinations:
+            descriptor += " destinations=" + _value(tuple({
+                "target": destination.target_ref,
+                "label": destination.label,
+                "role": destination.role,
+                "path": destination.functional_path,
+                "region": destination.region_ref,
+                "state": destination.public_state,
+            } for destination in candidate.destinations))
+        descriptor += f" reasons={_value(candidate.reasons)}"
         lines.append(descriptor)
-        lines.extend(_render_node(sliced, verbs, manifest, depth=3, parent_label=""))
-        rendered += 1
-    return lines if rendered else []
+    return lines if len(lines) > 1 else []
+
+
+def _actor_node_for_ref(delivered, ref: str):
+    def visit(node):
+        if node.ref == ref:
+            return node
+        for child in node.children:
+            if (found := visit(child)) is not None:
+                return found
+        return None
+
+    for document in delivered.documents:
+        for root in document.roots:
+            if (found := visit(root)) is not None:
+                return found
+    return None
 
 
 def _region_root_actor_node(region, delivered, observation):
@@ -1028,7 +1002,7 @@ def _region_descriptor_text(region: WorldRegion, limits: DeliveryLimits) -> str:
         parts.append(f"available_filter_controls={region.counts.get('filter_controls', 0)}")
     if region.state_badges:
         parts.append(f"state={_value(region.state_badges)}")
-    parts.append("recovery=read_region")
+    parts.append("recovery=open_region")
     while _estimate_tokens(" ".join(parts)) > limits.descriptor_tokens and "labels=" in " ".join(parts):
         parts = [item for item in parts if not item.startswith("labels=")]
     text = " ".join(parts)
@@ -1072,25 +1046,19 @@ def _find_matches(index, query, observation, grounding, delivered=None) -> tuple
         target_id: (region.public_ref, grounding.target_refs.get(target_id, ""))
         for region in index.regions for target_id in region.member_target_ids
     }
-    entity_by_ref = {item.ref: item for item in grounding.entities}
     matches: list[Mapping[str, object]] = []
     for target in observation.targets:
         values = [target.role, target.label, *(str(value) for value in target.state.values())]
         if needle not in " ".join(values).casefold():
             continue
         region_ref, node_ref = locations.get(target.target_id, ("", ""))
-        entity = entity_by_ref.get(node_ref)
-        verbs = tuple(entity.verbs) if entity is not None else ()
         matches.append({
             "region_ref": region_ref,
-            "node_ref": node_ref,
+            "node_ref": node_ref if node_ref.startswith("N") else "",
             "role": target.role,
             "label": target.label,
             "structural_context": region_ref,
             "state": target.state,
-            "actionable": bool(verbs),
-            "verbs": verbs,
-            "action_refs": (node_ref,) if node_ref.startswith("E") and verbs else (),
         })
     fact_public_refs = _fact_public_refs(delivered, grounding)
     for fact in observation.facts:
@@ -1100,7 +1068,9 @@ def _find_matches(index, query, observation, grounding, delivered=None) -> tuple
         region = index.region_for_fact(fact.fact_id)
         matches.append({
             "region_ref": region.public_ref if region else "",
-            "node_ref": locations.get(fact.subject_id, ("", ""))[1],
+            "node_ref": (
+                ref if (ref := locations.get(fact.subject_id, ("", ""))[1]).startswith("N") else ""
+            ),
             "role": "fact",
             "label": fact.predicate,
             "value": fact.value,
@@ -1108,9 +1078,6 @@ def _find_matches(index, query, observation, grounding, delivered=None) -> tuple
                 (fact.subject_id, fact.predicate, repr(fact.value)),
                 fact_public_refs.get(("", fact.predicate, repr(fact.value)), ""),
             ),
-            "actionable": False,
-            "verbs": (),
-            "action_refs": (),
         })
     return tuple(matches)
 
@@ -1137,26 +1104,6 @@ def _fact_public_refs(delivered, grounding) -> Mapping[tuple[str, str, str], str
     for fact in delivered.global_facts:
         result.setdefault(("", fact.field, repr(fact.value)), fact.evidence_ref)
     return result
-
-
-def _action_search_matches(refs, index, observation, grounding) -> tuple[Mapping[str, object], ...]:
-    targets = {item.target_id: item for item in observation.targets}
-    reverse = {ref: target_id for target_id, ref in grounding.target_refs.items()}
-    result = []
-    for ref in sorted(refs, key=_ref_order):
-        target_id = reverse.get(ref)
-        target = targets.get(target_id or "")
-        if target is None:
-            continue
-        region = index.region_for_target(target.target_id)
-        result.append({
-            "region_ref": region.public_ref if region else "",
-            "node_ref": ref,
-            "role": target.role,
-            "label": target.label,
-            "structural_context": region.heading if region else "",
-        })
-    return tuple(result)
 
 
 def _region_items(region, observation, grounding) -> tuple[Mapping[str, object], ...]:
@@ -1214,17 +1161,11 @@ def _region_items(region, observation, grounding) -> tuple[Mapping[str, object],
 
 
 def _target_item(region, target, grounding) -> Mapping[str, object]:
-    ref = grounding.target_refs.get(target.target_id, "")
-    entity = next((item for item in grounding.entities if item.ref == ref), None)
     return {
         "region_ref": region.public_ref,
-        "node_ref": ref,
         "role": target.role,
         "label": target.label,
         "state": target.state,
-        "actionable": bool(entity and entity.verbs),
-        "verbs": entity.verbs if entity else (),
-        "action_refs": (ref,) if entity and entity.verbs else (),
     }
 
 
@@ -1313,10 +1254,6 @@ def _is_model_ref(value: str) -> bool:
 
 def _estimate_tokens(text: str) -> int:
     return max(1, (len(text.encode("utf-8")) + 3) // 4) if text else 0
-
-
-def _ref_order(value: str) -> tuple[str, int]:
-    return value[:1], int(value[1:]) if value[1:].isdigit() else 0
 
 
 def _value(value: object) -> str:

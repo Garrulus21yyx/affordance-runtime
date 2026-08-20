@@ -368,11 +368,15 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
 
     assert 'group "Products"' in observation
     assert 'row "MacBook Pro"' in observation
-    button_line = next(line for line in observation.splitlines() if f"[{option.target_ref}] button" in line)
+    button_line = next(
+        line for line in observation.splitlines()
+        if f"[{option.target_ref}] activate button" in line
+    )
     assert '"Add to cart"' in button_line
     assert 'verbs=["activate","press_key"]' in button_line
+    assert 'path=["MacBook Pro","Add to cart"]' in button_line
+    assert 'context=["Products","MacBook Pro"]' in button_line
     assert observation.index('group "Products"') < observation.index('row "MacBook Pro"')
-    assert observation.index('row "MacBook Pro"') < observation.index('button "Add to cart"')
     encoded = json.dumps(observation)
     assert "entity:" not in encoded
     assert "observation:" not in encoded

@@ -78,7 +78,7 @@ class ScriptedModel:
                     "ask_user",
                     "wait",
                     "abort",
-                    "search_actions",
+                    "find_actions",
                     "request_evidence",
                 }
                 name = next(tool.name for tool in info.function_tools if tool.name not in controls)

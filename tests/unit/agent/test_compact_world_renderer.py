@@ -124,7 +124,7 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
 
     assert "projection=page_map" in rendered
     assert "public_content=folded" in rendered
-    assert "recovery=read_region/search_world/search_actions" in rendered
+    assert "recovery=open_region/find_content/find_actions" in rendered
     assert "PageMap regions=15" in rendered
     assert "R1" in rendered.manifest.region_refs
     assert 'Post 1' in rendered
@@ -167,9 +167,7 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
     assert len(found.items) == 1
     assert found.items[0]["region_ref"] == "R5"
     assert found.items[0]["label"] == "Post 5"
-    assert found.items[0]["actionable"] is False
-    assert found.items[0]["verbs"] == ()
-    assert found.items[0]["action_refs"] == ()
+    assert not {"actionable", "verbs", "action_refs"}.intersection(found.items[0])
     assert isinstance(all_regions, Page)
     assert len(all_regions.items) == 5
 

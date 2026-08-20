@@ -1397,7 +1397,7 @@ cap returns `context_capacity`. Provider caching may be reported separately but 
 full pages still consume attention and preserve the same distraction. No model selector,
 summarizer, embedding index, second World, second Tool Registry, or provider-specific cache becomes part of T3.2.
 
-##### T3.3: automatic current-action candidates and read/action interface separation — active next gate
+##### T3.3: automatic current-action candidates and read/action interface separation — provider-free passed
 
 The successful task-0 run12 proves the GUI route and final response, but it also falsifies the claim that the current
 first-view promotion is efficient enough. After `REPORTS` was opened, the complete ActionSpace contained the
@@ -1482,6 +1482,42 @@ Magento-specific branch:
   region still enter the next normal ActiveView/Manifest;
 - `ActionCandidateProjection` changes neither World/ActionSpace digests nor GUI dispatch counters and cannot bypass
   resolver/admission/Binder.
+
+The implementation and provider-free verification completed on 2026-08-20. The shared deterministic ranker now owns
+both automatic Top-5 projection and explicit `find_actions` ordering; the renderer receives a typed
+`ActionCandidateProjection`, and `ModelTurnDelivery` rejects any candidate absent from its own current Manifest. The
+breaking public cutover leaves only `open_region(region_ref)`, `find_content(query)`, and `find_actions(query)` for
+these scopes. Current `src/` and `tests/` contain none of the three old public names, `DirectActions`, or
+`_preferred_action_refs`. Focused T3.3/semantic/tool/paging/integration tests passed `153`; the full suite passed
+`1,343` with `16` skips; Ruff and `git diff --check` passed. The first bounded independent fresh-context audit exposed
+one P1: destination-required actions could project a source candidate without closing their current destination
+E-refs into the same Manifest. The candidate projection owner now carries typed destinations, the renderer closes
+them, and both `AgentContext` and `ModelTurnDelivery` reject incomplete destination authority; a generic `drag_to`
+property verifies the unchanged Resolver, Admission, and Binder chain. The second fresh-context audit confirmed that
+repair but exposed an evidence P1: the task-0 witness did not distinguish same-label functional paths. The evaluator
+now requires declared path tokens and persists matched paths, while the evidence statement below bounds the initial
+Dashboard capture separately from the pending live post-Reports state. The final independent re-audit found no P0/P1.
+
+The successful persisted six-page diagnostic is
+`evidence/w1b-world-t33-provider-free-run4/w1b-world-summary.json`. Each row used local BrowserGym capture and
+deterministic projection only; no provider or GUI action dispatch occurred:
+
+| task | auto count | Recall@5 | rank | candidate∈Manifest | candidate∈ActionSpace | auto/find identity | observation-only calls | repeated reads | schema tokens | request tokens | discovery dispatch |
+|---:|---:|---:|---:|:---:|:---:|:---:|---:|---:|---:|---:|---:|
+| 0 | 5 | 1 | 2 | yes | yes | yes | 0 | 0 | 1,701 | 7,893 | 0 |
+| 7 | 5 | 1 | 1 | yes | yes | yes | 0 | 0 | 1,614 | 5,966 | 0 |
+| 21 | 5 | 1 | 1 | yes | yes | yes | 0 | 0 | 1,902 | 7,703 | 0 |
+| 27 | 5 | 1 | 1 | yes | yes | yes | 0 | 0 | 1,683 | 6,221 | 0 |
+| 44 | 5 | 1 | 1 | yes | yes | yes | 0 | 0 | 1,902 | 7,309 | 0 |
+| 266 | 5 | 1 | 2 | yes | yes | yes | 0 | 0 | 1,749 | 7,650 | 0 |
+
+All six cases recorded `provider_attempts=0`, empty acceptance errors, and the unchanged World/ActionSpace/execution
+properties. The task-0 row is explicitly an initial-Dashboard witness and its probe now requires the `dashboard`
+page-scope token. That token binds the witness to the captured initial Dashboard but does not disambiguate functional
+paths within the same page. This six-page capture does not replay the later post-Reports World and does not claim to
+prove that live route. The generic held-out duplicate-label fixture proves the bounded path-ranking property without
+adding a site rule; the real post-Reports behavior remains part of the pending W1b-Agent live falsification. This is
+provider-free candidate/read-action evidence, not a W1b-Agent live success claim.
 
 Only after this gate and fresh-context review may the project run the next W1b-Agent breadth evidence. T3.3 does not
 reopen T3.2 lossless World/recoverability evidence; it replaces the insufficient `DirectActions` ranking/presentation
@@ -1654,12 +1690,11 @@ real BrowserGym observation
 ```
 
 The completed foundation order was source-semantics correction, `scroll`/`press_key`, capability census, measured
-`find_actions` filtering, complete-request token admission, the T3.1 recovery skeleton, and the provider-free T3.2
-PageMap/ActiveView/DeliveryManifest contract. Run12 then supplied a successful task-0 route plus a concrete efficiency
-counterexample. The active order is now T3.3 automatic ActionCandidates and read/action interface separation,
-provider-free held-out candidate properties, fresh-context review, then W1b-Agent breadth evidence. T3.4 guarded
-same-form batching is evaluated only afterward. `hover`/`focus` remains evidence-triggered rather than blocking these
-delivery gates.
+`find_actions` filtering, complete-request token admission, the T3.1 recovery skeleton, the provider-free T3.2
+PageMap/ActiveView/DeliveryManifest contract, and T3.3 automatic ActionCandidates/read-action separation with its
+held-out properties and fresh-context review. W1b-Agent breadth evidence is active next. T3.4 guarded same-form
+batching is evaluated only afterward. `hover`/`focus` remains evidence-triggered rather than blocking these delivery
+gates.
 No W1b failure authorizes one tool per element, a second registry/executor, raw Playwright, `search_tools`, or an LLM
 tool-legality evaluator. Large external MCP/WoT/SaaS discovery remains outside G5.
 
@@ -1918,7 +1953,7 @@ verified locally with the T3 W1b-World budget rerun. That rerun also invalidated
 branch as semantic-safe compression evidence. T3.1 subsequently passed a six-page provider-free round-trip gate, and
 T3.2 now passes the stricter semantic/cost gate for the single
 `World + ActionSpace -> DeliveryIndex -> PageMap/ActiveView/SearchResults -> DeliveryManifest -> stable tools` chain.
-The repaired fresh-context audit passed with no P0/P1/P2. A later authorized task-0 GLM-4.6 attempt reached policy but
+The repaired T3.2 fresh-context audit passed with no P0/P1/P2. A later authorized task-0 GLM-4.6 attempt reached policy but
 made no GUI dispatch: the old polymorphic `inspect_world(action, region_ref?, query?, cursor?)` contract invited the
 model to put natural-language search text into an opaque cursor. The run was stopped on request and is retained as a
 schema-clarity failure, not a task failure. The pre-T3.3 replacement contract used `read_region(region_ref)`,
@@ -1927,6 +1962,8 @@ public names with `open_region`, `find_content`, and `find_actions`. Runtime-pri
 by dynamically offering zero-argument `read_next_page()` or `action_results_next_page()`. Semantic action schemas no
 longer expose advisory `expected_outcome`, and `wait(reason)` uses a Runtime-owned five-second bound. CoreLoop, Binder,
 Executor, ActionSpace authority, and browser dispatch semantics are unchanged.
+T3.3 now passes its six-page provider-free candidate/read-action gate and independent bounded audit; W1b-Agent is the
+active next gate, live verification is pending, and the work remains non-closed.
 The first post-migration provider-free attempt at
 `evidence/w1b-world-t32-readable-tool-schema-run4/` passed all functional recovery checks but failed the existing 2k
 Tool Schema cost gate on five pages. The correction retained each intent/scope/authority statement and removed only

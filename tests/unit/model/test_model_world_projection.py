@@ -380,7 +380,7 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
     assert "binding:country" not in rendered
 
 
-def test_complete_action_inventory_still_offers_search_actions_recovery() -> None:
+def test_complete_action_inventory_still_offers_find_actions_recovery() -> None:
     observation = fused_world(
         "world:single-action",
         (SemanticTarget("target:1", "button", "Submit"),),
@@ -411,10 +411,10 @@ def test_complete_action_inventory_still_offers_search_actions_recovery() -> Non
     _, catalog = catalog_for(context)
 
     assert not context.actions.has_more
-    assert "search_actions" in {item.name for item in catalog.specs}
+    assert "find_actions" in {item.name for item in catalog.specs}
 
 
-def test_search_world_resolves_as_zero_dispatch_local_tool() -> None:
+def test_find_content_resolves_as_zero_dispatch_local_tool() -> None:
     observation = fused_world(
         "world:inspect",
         (
@@ -434,18 +434,18 @@ def test_search_world_resolves_as_zero_dispatch_local_tool() -> None:
 
     resolution = resolve_catalog_call(
         catalog,
-        ToolCall("search_world", {"query": "ABC-123"}),
+        ToolCall("find_content", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
 
     decision = resolution.decision
-    assert decision.tool_name == "search_world"
+    assert decision.tool_name == "find_content"
     assert decision.result["kind"] == "Matches"
     assert decision.result["items"][0]["label"] == "Issue ID ABC-123"
 
 
-def test_search_world_recovers_fact_missing_from_actor_snapshot() -> None:
+def test_find_content_recovers_fact_missing_from_actor_snapshot() -> None:
     observation = fused_world(
         "world:full-recovery",
         (SemanticTarget("target:issue", "StaticText", "Visible shell"),),
@@ -495,7 +495,7 @@ def test_search_world_recovers_fact_missing_from_actor_snapshot() -> None:
 
     resolution = resolve_catalog_call(
         catalog,
-        ToolCall("search_world", {"query": "ABC-123"}),
+        ToolCall("find_content", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
@@ -505,7 +505,7 @@ def test_search_world_recovers_fact_missing_from_actor_snapshot() -> None:
     assert resolution.decision.result["items"][0]["value"] == "ABC-123"
 
 
-def test_search_world_reports_partial_world_coverage() -> None:
+def test_find_content_reports_partial_world_coverage() -> None:
     observation = fused_world(
         "world:partial-recovery",
         (SemanticTarget("target:issue", "StaticText", "Issue ABC-123"),),
@@ -523,7 +523,7 @@ def test_search_world_reports_partial_world_coverage() -> None:
 
     resolution = resolve_catalog_call(
         catalog,
-        ToolCall("search_world", {"query": "ABC-123"}),
+        ToolCall("find_content", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
@@ -564,7 +564,7 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
     _, first_catalog = catalog_for(first)
     opened = resolve_catalog_call(
         first_catalog,
-        ToolCall("read_region", {"region_ref": "R1"}),
+        ToolCall("open_region", {"region_ref": "R1"}),
         expected_context_id=first.context_id,
         expected_catalog_id=first_catalog.catalog_id,
     ).decision
@@ -686,7 +686,7 @@ def test_expanded_region_projects_source_structure_sibling_and_current_refs() ->
     assert f'[{current_ref}] button "Buy" pressed=false verbs=["activate"]' in rendered
 
 
-def test_explicit_region_lens_keeps_navigation_folded_out_of_executable_manifest() -> None:
+def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_remain_executable() -> None:
     source = SurfaceObservation(
         "world:scoped-lens",
         "dom",
@@ -783,16 +783,16 @@ def test_explicit_region_lens_keeps_navigation_folded_out_of_executable_manifest
         observation=context.current_observation,
         delivery_lens=lens,
         selected_region_keys=frozenset({main_region.key}),
-        action_options=context.complete_actions,
+        action_candidates=context.action_candidates,
     )
 
     home_ref = context.grounding.target_refs["target:home"]
     filter_ref = context.grounding.target_refs["target:filter"]
-    assert home_ref not in rendered.manifest.executable_refs
+    assert home_ref in rendered.manifest.executable_refs
     assert filter_ref in rendered.manifest.executable_refs
     assert navigation_region.public_ref in rendered.manifest.region_refs
     assert rendered.coverage["folded_regions"] >= 1
-    assert f'[{home_ref}] link "Home"' not in rendered.text
+    assert f"region [{navigation_region.public_ref}]" not in rendered.text
 
 
 def test_recent_steps_keep_the_complete_episode_history() -> None:
