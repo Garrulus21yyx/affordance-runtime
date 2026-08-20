@@ -146,6 +146,8 @@ class ManagerDecisionModel(BaseModel):
     subtask: SubtaskContractModel | None = None
     question: str = Field(default="", max_length=1000)
     reason: str = Field(default="", max_length=500)
+    final_response: object | None = None
+    final_response_evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
 
     @model_validator(mode="after")
     def _shape(self) -> ManagerDecisionModel:
@@ -159,6 +161,11 @@ class ManagerDecisionModel(BaseModel):
                 raise ValueError("ask_user requires a question")
         elif self.question:
             raise ValueError("only ask_user can carry a question")
+        if self.route == "request_finalization":
+            if self.final_response is None:
+                raise ValueError("request_finalization requires a direct final_response")
+        elif self.final_response is not None or self.final_response_evidence_refs:
+            raise ValueError("only request_finalization can carry final response fields")
         return self
 
 
@@ -456,6 +463,11 @@ class ModelBackedMissionManager:
                 subtask,
                 response.question,
                 response.reason,
+                response.final_response,
+                _canonical_evidence_refs(
+                    response.final_response_evidence_refs,
+                    invocation.public_evidence_refs,
+                ),
             )
         except (TypeError, ValueError):
             return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "manager contract invalid", False))
@@ -585,7 +597,12 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
         )
         projection = _audit_world_payload(review_request)
         review_projection = projection.payload
-        public_evidence_refs = projection.public_evidence_refs
+        allowed = set(request.allowed_evidence_refs)
+        public_evidence_refs = {
+            public: canonical
+            for public, canonical in projection.public_evidence_refs.items()
+            if canonical in allowed
+        }
     payload = {
         "mode": request.mode.value,
         "task": _manager_task_payload(request.original_task),
@@ -602,6 +619,10 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
             sorted(public_evidence_refs, key=_public_fact_sort_key)
         ),
     }
+    if request.mode is ManagerRequestMode.REVIEW_AND_ROUTE:
+        payload["public_final_response_schema"] = to_json_compatible(
+            request.final_response_schema
+        )
     return _RolePrompt(
         _messages(MISSION_MANAGER_INSTRUCTIONS, payload),
         {"task_plan": payload},
@@ -780,6 +801,8 @@ def _compact_role_shape(schema: type[BaseModel]) -> Mapping[str, object]:
         "subtask": "object|null",
         "question": "string",
         "reason": "string",
+        "final_response": "direct public JSON value|null",
+        "final_response_evidence_refs": "[offered_F_ref]",
     }
 
 

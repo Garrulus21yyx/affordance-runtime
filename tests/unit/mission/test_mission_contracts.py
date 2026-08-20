@@ -96,6 +96,8 @@ def test_manager_review_carries_assessment_route_and_working_proposals_together(
             ),
         ),
         reason="Current evidence supports final formatting.",
+        final_response={"answer": "42"},
+        final_response_evidence_refs=("fact:obs:answer",),
     )
 
     proposal = decision.state_proposal(0)
@@ -111,8 +113,8 @@ def test_evidence_boundary_accepts_exact_identity_and_is_the_only_state_writer()
     decision = ManagerDecision(
         ManagerAssessment.SATISFIED,
         ManagerRoute.REQUEST_FINALIZATION,
-        (record.evidence_ref,),
-        (
+        evidence_refs=(record.evidence_ref,),
+        working_outcomes=(
             WorkingOutcomeProposal(
                 "outcome:answer",
                 ManagerAssessment.SATISFIED,
@@ -120,11 +122,13 @@ def test_evidence_boundary_accepts_exact_identity_and_is_the_only_state_writer()
                 "answer visible",
             ),
         ),
-        (
+        working_facts=(
             WorkingFactProposal(
                 "answer", record.evidence_ref, record.value, "final response candidate"
             ),
         ),
+        final_response={"answer": "42"},
+        final_response_evidence_refs=(record.evidence_ref,),
     )
     mission = MissionState.empty()
 
@@ -152,9 +156,46 @@ def test_evidence_boundary_rejection_does_not_change_mission_state() -> None:
                 "unsupported",
             ),
         ),
+        final_response={"answer": "unsupported"},
+        final_response_evidence_refs=("fact:missing",),
     )
 
     rejected = AuditBoundary().accept(mission, decision.state_proposal(0), bundle)
 
     assert not rejected.accepted
     assert rejected.mission_state is mission
+
+
+@pytest.mark.parametrize(
+    "route,kwargs",
+    [
+        (ManagerRoute.EXECUTE_SUBTASK, {"subtask": SubtaskContract("Do work", "Work is done"), "final_response": {}}),
+        (ManagerRoute.ASK_USER, {"question": "Which value?", "final_response": {}}),
+        (ManagerRoute.BLOCKED, {"final_response": {}}),
+    ],
+)
+def test_non_final_routes_reject_terminal_response_fields(route, kwargs) -> None:
+    with pytest.raises(ValueError, match="only request_finalization"):
+        ManagerDecision(ManagerAssessment.UNKNOWN, route, **kwargs)
+
+
+def test_request_finalization_rejects_missing_direct_response() -> None:
+    with pytest.raises(ValueError, match="complete final_response"):
+        ManagerDecision(
+            ManagerAssessment.SATISFIED,
+            ManagerRoute.REQUEST_FINALIZATION,
+            final_response_evidence_refs=("fact:answer",),
+        )
+
+
+def test_manager_decision_model_accepts_direct_business_value_without_tool_envelope() -> None:
+    model = ManagerDecisionModel.model_validate(
+        {
+            "assessment": "satisfied",
+            "route": "request_finalization",
+            "final_response": {"answer": "42"},
+            "final_response_evidence_refs": ("F1",),
+        }
+    )
+
+    assert model.final_response == {"answer": "42"}

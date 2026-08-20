@@ -604,7 +604,7 @@ class CoreAgentLoop:
         elif isinstance(decision, Wait):
             result = await self._wait(environment, task, state, decision)
         elif isinstance(decision, FinalResponse):
-            ready = _final_response_available(task, state, self.runtime_controls)
+            ready = _final_response_available(task, state)
             result = _same_world_step(
                 state,
                 decision,
@@ -1216,12 +1216,7 @@ def _repeats_recovery_signature(signal, selection) -> bool:
 def _final_response_available(
     task: TaskGoal,
     state: RunState,
-    runtime_controls: tuple[str, ...],
 ) -> bool:
-    if "submit_final_response" in runtime_controls:
-        return bool(task.requested_outputs)
-    if "yield_subtask" in runtime_controls:
-        return False
     return bool(task.requested_outputs) and (
         state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE
     )

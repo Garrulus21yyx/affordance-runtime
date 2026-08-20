@@ -18,7 +18,6 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    FinalResponse,
     LocalToolResult,
     ProtocolFeedback,
     ProtocolFeedbackKind,
@@ -589,49 +588,6 @@ def test_invalid_compact_arguments_make_only_one_provider_call() -> None:
     assert isinstance(outcome.output.decision, LocalToolResult)
     assert outcome.output.decision.tool_name == "tool_rejected"
     assert port.calls == 1
-
-
-def test_compact_json_finalizing_turn_uses_same_single_catalog_resolver() -> None:
-    @dataclass
-    class FinalResponsePort:
-        provider: str = "fixture"
-        model: str = "compact-json"
-        endpoint_class: str = "fixture"
-        supports_multimodal: bool = False
-        last_call: ModelCallRecord | None = None
-
-        async def generate_structured(self, messages, output_schema, config, **kwargs):
-            del messages, output_schema, config, kwargs
-            return GroundedToolCommandPayload(
-                name="submit_final_response",
-                arguments={"response": "Done"},
-            )
-
-    base = _context()
-    context = replace(
-        base,
-        runtime_controls=("submit_final_response",),
-        task=replace(
-            base.task,
-            final_response_contract={
-                "json_schema": {"type": "string", "minLength": 1}
-            },
-        ),
-    )
-    adapter = CompactJsonDecisionPort(
-        FinalResponsePort(),
-        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
-        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
-    )
-
-    outcome = asyncio.run(adapter.generate(_action_request(context)))
-
-    assert outcome.failure is None
-    assert isinstance(outcome.output.decision, FinalResponse)
-    assert outcome.output.decision.content == "Done"
-    assert [spec.name for spec in adapter.last_catalog_specs] == [
-        "submit_final_response"
-    ]
 
 
 def test_grounding_rejection_preserves_the_single_initial_attempt_in_trace() -> None:

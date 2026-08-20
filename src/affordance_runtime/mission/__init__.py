@@ -34,6 +34,11 @@ from affordance_runtime.mission.contracts import (
     WorkingOutcomeProposal,
     WorkingStateProposal,
 )
+from affordance_runtime.mission.finalization import (
+    FinalResponseBoundary,
+    FinalResponseBoundaryResult,
+    FinalResponseRejection,
+)
 from affordance_runtime.mission.goal_projection import subtask_goal_resolution
 from affordance_runtime.mission.monitor import EpisodeMonitor, EpisodeMonitorConfig
 from affordance_runtime.mission.supervisor import MissionRunResult, MissionSupervisor
@@ -58,6 +63,9 @@ __all__ = [
     "EpisodeMonitorRecommendation",
     "EpisodeMonitorTransition",
     "ExecutionMode",
+    "FinalResponseBoundary",
+    "FinalResponseBoundaryResult",
+    "FinalResponseRejection",
     "RecoveryKind",
     "RecoverySignal",
     "ManagerDecision",

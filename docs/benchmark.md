@@ -34,8 +34,9 @@ Every live run records, per case:
   offered targets missing from Actor View, action-decision-state coverage, semantic-group/structural-closure failures,
   action-page or read-recovery use, and the selected screenshot route;
 - for long-horizon runs: mission rounds, episode boundaries, compact-history/fold counts, pinned/promoted facts,
-  every ManagerReview/optional-Auditor trigger kind, semantic-verifier outcomes, skipped mechanical-verification counts, and
-  role-specific model costs;
+  every ManagerReview/optional-Auditor trigger kind, semantic-verifier outcomes, skipped mechanical-verification
+  counts, FinalResponseBoundary admission/rejection, STOP/send/post-capture/native-evaluation counts, and role-specific
+  model costs (with Finalizer model calls required to remain zero in manager-guided mode);
 - complete provider-request tokens split where available across stable instructions, task/plan, Actor View, episode
   memory, native tool schemas, and images; repair amplification, completion tokens, and elapsed time;
 - typed environment, provider, Runtime, and task failures.
@@ -110,13 +111,13 @@ an unconditional second final Auditor add cost and a new failure surface after s
 
 The attempted replacement made W1b standalone with Manager/Auditor calls `0/0`. Run8 below falsified that choice and
 the associated final-response composition. The active target now expects one initial Manager call and one
-episode-boundary ManagerReview call for a normal one-episode W1b retrieval, no Auditor, one final-response-only model
-call, one STOP/send, and one native evaluation. Additional ManagerReview calls require a meaningful new episode exit;
+episode-boundary ManagerReview call for a normal one-episode W1b retrieval, no Auditor, no separate Finalizer model
+call, one mechanical FinalResponseBoundary admission, one STOP/send, and one native evaluation. Additional
+ManagerReview calls require a meaningful new episode exit;
 an independent Auditor requires an explicit strict-verification policy for a high-risk or durable ambiguous claim.
-The former provider-free role-frequency result remains historical local evidence but is superseded. The converged
-ManagerReview/final-response implementation now passes provider-free verification with the expected 2/0/1 role
-frequency and one STOP/post-capture/native-evaluation sequence. No post-change live witness has run; W1b live
-verification is pending and W1b/W2 remain non-closed.
+The former provider-free role-frequency result remains historical local evidence but is superseded. Run10 has now
+reopened terminal composition; the expected role frequency is `2/0/0` (Manager/Auditor/Finalizer). W1b/W2 remain
+blocked/non-closed until the direct ManagerReview response path is implemented and verified.
 
 ### 2026-08-20 DeepSeek run8 Manager/final-response counterexample
 
@@ -127,11 +128,47 @@ model turn advertised `runtime_controls=["final_response"]`, while the JSON-sing
 offered only ordinary GUI/read tools and accepted only `GroundedToolCommandPayload`. No actual final-response tool
 existed in the catalog. The model's final JSON was rejected, and the only legal fallback was to keep reading.
 
-The new acceptance contract is structural rather than prompt-based: execution turns cannot advertise final response;
-after ManagerReview requests finalization, the catalog must contain exactly one
-`submit_final_response(response=<public schema>)` operation and no GUI/read tools. JSON-single-command and native-tool
-transports must resolve that operation to the same existing `FinalResponse`. This evidence reopens the composition;
-it does not justify a larger prompt, another Auditor, or another GUI loop.
+Run8 established that execution turns cannot merely advertise a response capability absent from the actual terminal
+contract. The first attempted fix—a final-response-only tool catalog—is now itself superseded by run10. The active
+contract is that ManagerReview carries the direct public response object only with `request_finalization`, after which
+a mechanical FinalResponseBoundary validates and sends it. This evidence does not justify a larger prompt, another
+Auditor, another Finalizer role, or another GUI loop.
+
+### 2026-08-20 DeepSeek run10 finalizer-envelope counterexample
+
+Run10 completed the GUI work and DeepSeek produced the correct public response object:
+
+```json
+{
+  "task_type": "RETRIEVE",
+  "status": "SUCCESS",
+  "retrieved_data": ["Quest Lumaflex™ Band"],
+  "error_details": null
+}
+```
+
+The one-turn Finalizer prompt asked for `submit_final_response`, while the compact-json model boundary still required
+the generic `{name, arguments}` tool envelope. The direct, schema-correct business object was therefore rejected as
+`json_invalid` (`name` missing/invalid and `arguments` missing), after which the mission became blocked and the
+official result failed. GUI navigation, date filtering, answer extraction, provider behavior, and answer content were
+all correct.
+
+Run10 falsifies the separate LLM Finalizer/tool-envelope architecture. The replacement contract is:
+
+```text
+ManagerReview(review_and_route)
+  -> route=request_finalization
+  -> final_response=<direct public schema value>
+  -> final_response_evidence_refs=[...]
+  -> mechanical FinalResponseBoundary
+  -> one STOP/send -> one fresh capture -> one native evaluation
+```
+
+There is no finalizer prompt/model call, finalizing CoreAgentLoop episode, `submit_final_response` catalog entry, or
+JSON/native ActionPolicy tool envelope on this path. Provider-free verification now proves the normal W1b synthetic
+frequency Manager/Auditor/Finalizer `2/0/0`, one boundary admission, one STOP, one post-STOP capture, and one native
+evaluation, plus typed zero-send schema/evidence/latch rejection. This is local implementation evidence only; the
+fresh official W1b witness remains pending and the gate remains non-closed.
 
 ### 2026-08-20 DeepSeek run4 provider-recovery witness
 
@@ -251,8 +288,8 @@ routing is total but over-frequent: terminal and operational/stall paths bypass 
 final-audit requests invoke it. Run7 falsified that cadence; the target is optional commit/final-uncertainty
 verification. `AuditorRoleRequest` carries a
 narrow typed task projection, so neither the role port nor trace sees `TaskGoal.inputs`; Auditor has only the
-`AuditDeltaModel` output contract. The WebArena public final-response
-schema is visible only to Finalizer.
+`AuditDeltaModel` output contract. The WebArena public final-response schema is visible only to
+`ManagerReview(review_and_route)` and the mechanical FinalResponseBoundary, never ActionPolicy or Auditor.
 
 Focused owner/cross-owner tests passed (`110 passed`) and the full provider-free suite passed (`1339 passed, 19
 skipped`); Ruff passed. The fresh six-page read-only diagnostic is stored at
@@ -477,7 +514,7 @@ defined below. It does not extend Simple GoalPlan into cross-episode progress.
 | G3. Local transition projection — local verification passed | binding-selected verification contract, typed parameters, fresh evidence, Recent Steps | dispatch stays in ActionResult; supported before/after transition and optional local postcondition are projected; TaskGoal criteria remain in TaskEvaluator | family is selected once; after-only evidence can prove a postcondition; target-scoped evidence rules hold; unresolved semantics stay unknown and non-blocking |
 | G4. Short-loop live proof — witness passed / cohort deferred | the predeclared Like witness; frozen cohort retained as regression | official case evidence through the existing runner | witness reaches official success without old refs, reversal, unrelated controls, or case logic; no broad MiniWoB generalization claim until its cohort runs |
 | Model invocation boundary convergence — implemented / locally verified | shared provider/model invocation exit for current model roles | `ModelInvocationResult[T]` carries typed output/failure, `ModelMetadata`, physical attempts, repair diagnostics, role diagnostics, and lineage; production policy ports return only this envelope; PydanticAI remains native-tool transport; compact-json remains a compatibility shim | focused/unit/integration tests prove attempts are retained, retry and role repair stay distinct, instrumentation reads the explicit result, and GUI Runtime authority is unchanged; W1/W2 benchmark verification remains pending |
-| G5. WebArena-Verified long horizon — ManagerReview/final-response implementation complete; provider-free verification passed; W1b live pending / non-closed | episode history/working set; initial Manager plus combined episode review/replan; exceptional independent Auditor; final-response-only catalog; official BrowserGym integration | one governed World/ActionSpace -> ActionPolicy -> existing Binder/Executor; W1b normally uses two Manager calls, zero Auditor calls, and one finalizer; W2 adds review calls only for typed episode events | provider-free combined-review, strategy convergence, catalog parity, malformed-response, and STOP ordering properties pass; official live capability evidence remains required |
+| G5. WebArena-Verified long horizon — ManagerReview present; terminal response contract reopened by run10 / non-closed | episode history/working set; initial Manager plus combined episode review/replan; exceptional independent Auditor; mechanical FinalResponseBoundary; official BrowserGym integration | one governed World/ActionSpace -> ActionPolicy -> existing Binder/Executor; W1b normally uses two Manager calls, zero Auditor/Finalizer calls, then one boundary admission and one send; W2 adds review calls only for typed episode events | provider-free direct-response coherence, evidence/schema admission, one-send/STOP ordering, and a fresh official live capability witness remain required |
 | G6. Adaptive-observation value | paired structured-only/adaptive cohort after G5 baseline | the same Runtime and action policy differ only by typed visual supplementation | report success, visual calls, tokens, and latency; zero visual acquisition cannot support an adaptive-observation claim |
 | G7. Desktop long horizon — later | OSWorld-Verified smoke, then release-pinned OSWorld V2 | desktop/window/file/clipboard surfaces and reproducible harness | setup verification passes and infrastructure failures remain separate |
 
@@ -699,10 +736,10 @@ frozen official Gym task ID/revision
        -> BrowserGym action -> fresh World -> ActionOutcomeProjector
   -> outcome/stall/failure -> fresh bounded MissionReviewBundle
        -> Manager(review_and_route) returns assessment + next route together
+       -> request_finalization also carries direct final_response + evidence refs
        -> working-state proposals -> mechanical AuditBoundary
   -> repeat bounded episodes without resetting the BrowserGym case
-  -> request_finalization -> final-response-only ToolCatalog
-  -> submit_final_response(response=<public schema>) -> existing FinalResponse
+  -> request_finalization -> mechanical FinalResponseBoundary -> existing FinalResponse
   -> environment-owned send_msg_to_user/STOP
   -> BrowserGym-integrated WebArena-Verified evaluator
   -> existing TaskEvaluator/native outcome mapping
@@ -724,10 +761,11 @@ TaskEvaluator lifecycle.
 Before STOP, the native WebArena state is running/incomplete and is not model-visible semantic progress. After STOP,
 the integrated evaluator is the sole official authority. The public instruction and official final-response schema
 may enter TaskGoal; expected answers, evaluator configuration, backend state, and private task metadata may not. The
-final-response schema is projected only in the `submit_final_response` tool on the finalizing turn. That catalog
-contains no GUI/read tools. ManagerReview's cited working evidence is re-resolved by exact value identity against the
-fresh final capture; W1b task 0 does not call Auditor. The shared ToolCatalog/resolver mechanically validates the
-response against the public schema and leaves official success solely to the native evaluator.
+final-response schema and bounded admitted candidate evidence enter only `ManagerReview(review_and_route)`, never an
+ActionPolicy turn. Only `request_finalization` may carry a direct response value and supporting evidence refs.
+FinalResponseBoundary re-resolves cited evidence against the same fresh ManagerReview bundle/version, validates the public schema and
+one-send latch, and constructs the existing FinalResponse; W1b task 0 does not call Auditor or a separate Finalizer.
+Official success remains solely with the native evaluator.
 
 #### W0: pin and prove environment readiness
 
@@ -803,12 +841,14 @@ pending before W2.
    ManagerReview may propose cited semantic working outcomes; the boundary validates lineage/version rather than
    semantic truth. An independent Auditor is disabled by default and admitted only by a strict high-risk/durable-claim
    policy. Unsupported claims leave MissionState unchanged.
-6. **One terminal authority and one real finalization protocol — implemented and provider-free verified.** Ordinary episodes cannot
-   offer STOP/FinalResponse. After an admitted `request_finalization`, expose only
-   `submit_final_response(response=<public schema>)`, with no GUI/read tools, and resolve both JSON-single-command and
-   native-tool calls to the existing FinalResponse. Reuse `DispatchStatus.NOT_SENT|SENT|SENT_UNKNOWN` plus one case
-   latch, reacquire fresh state, and accept only the integrated WebArena-Verified result. Quarantine the offline
-   `eval-tasks` helper from W1b/W2 composition.
+6. **One terminal authority and direct finalization protocol — implemented and provider-free verified after run10.** Ordinary episodes cannot offer
+   STOP/FinalResponse. `ManagerReview(review_and_route)` receives the public response schema and may carry a direct
+   response value only with `request_finalization`. A mechanical FinalResponseBoundary validates route/value/schema,
+   evidence lineage against that same fresh review bundle/version, and one case latch, then constructs the existing
+   FinalResponse. It uses neither the
+   ActionPolicy ToolCatalog nor JSON/native tool-call envelopes. Reuse
+   `DispatchStatus.NOT_SENT|SENT|SENT_UNKNOWN`, reacquire fresh state once, and accept only the integrated
+   WebArena-Verified result. Quarantine the offline `eval-tasks` helper from W1b/W2 composition.
 7. **Isolation and bounded failures — existing foundation retained.** Every official reset starts with empty in-memory MissionState, working facts,
    and episode history; none crosses a case boundary and W2 performs no checkpoint resume. ManagerReview/optional Auditor use the
    existing provider bridge, bounded repair/retry, and typed failure routing; exhaustion returns control or fails the
@@ -825,11 +865,13 @@ or hidden evidence pin rejection; one oscillation-triggered yield and Manager re
 remaining the only success authority. Also prove that premature FinalResponse is unavailable in an ordinary episode,
 `YIELDED` never becomes a benchmark outcome, user wait resumes without replanning, cancellation does not audit, and
 the same BrowserGym adapter survives episode boundaries without a reset. Also prove: normal W1b task 0 invokes
-Manager exactly twice (initial + review), Auditor zero times, and Finalizer once; review returns assessment and next
-route in one result; budget/stall reaches one review call without silently repeating the same contract; deterministic
+Manager exactly twice (initial + review), Auditor zero times, and Finalizer zero times; review returns assessment,
+next route, and—only for `request_finalization`—the direct schema-valid response plus supporting evidence refs in one
+result; budget/stall reaches one review call without silently repeating the same contract; deterministic
 pinned-fact promotion invokes no Auditor; exceptional strict verification invokes Auditor at most once; finalizing
-catalog contains only `submit_final_response`; malformed final output cannot fall back to read/search; JSON/native
-wire paths converge on one FinalResponse. Cover bounded role failure and AuditBoundary rejection; a composition test
+admission invokes no ToolCatalog or ActionPolicy provider call; malformed final output cannot fall back to
+read/search; one mechanical boundary constructs one FinalResponse. Cover bounded role failure, FinalResponseBoundary
+rejection, and AuditBoundary rejection; a composition test
 must fail if the offline evaluator helper is wired into W1b/W2.
 
 #### W1b: compatibility smokes
@@ -927,8 +969,9 @@ model-visible `F#` refs/counts in `audit_evidence`, retains the 4096-record Worl
 `invalid_tool_arguments` or `tool_grounding_gap` rather than `schema_error`. Targeted local verification passed, but
 this historical gate is superseded: a short W1b compatibility task must not prove the mandatory
 `Manager -> Auditor -> Manager -> final Auditor` cadence. Run8 later showed that removing Manager entirely was also
-counterproductive. The current gate is `Manager(initial) -> CoreAgentLoop -> Manager(review_and_route) ->
-submit_final_response -> native evaluator`, with Auditor calls fixed at zero for task 0.
+counterproductive. Run10 then rejected a correct answer at the generic tool envelope. The current gate is
+`Manager(initial) -> CoreAgentLoop -> Manager(review_and_route + final_response) -> FinalResponseBoundary -> native
+evaluator`, with Auditor and Finalizer calls fixed at zero for task 0.
 
 A second 2026-08-19 W1b task-0 diagnostic reached an earlier inner-loop failure. After `REPORTS` opened, the fresh
 World contained `Bestsellers`, but that structure-visible link did not enter the current `ActionSpace` or model-visible
@@ -1354,6 +1397,108 @@ cap returns `context_capacity`. Provider caching may be reported separately but 
 full pages still consume attention and preserve the same distraction. No model selector,
 summarizer, embedding index, second World, second Tool Registry, or provider-specific cache becomes part of T3.2.
 
+##### T3.3: automatic current-action candidates and read/action interface separation — active next gate
+
+The successful task-0 run12 proves the GUI route and final response, but it also falsifies the claim that the current
+first-view promotion is efficient enough. After `REPORTS` was opened, the complete ActionSpace contained the
+Reports-path `Bestsellers` action. The current shallow lexical promotion emphasized a same-label Dashboard
+`Bestsellers` tab instead; the policy then called `read_region` three times before `search_actions("Bestsellers")`
+recovered the intended executable target. The immediate read results also repeated `actionable`, `action_refs`, and
+`verbs`, making content inspection look like a second action-discovery interface. This is an action-candidate ranking
+and tool-presentation defect, not missing World authority, Manager planning, or Binder execution.
+
+Run12's first request is retained as the cost/presentation baseline: it delivered 13 PageMap regions, seven exact
+expanded regions, 61 visible actions, no screenshot or history, approximately 7,847 World tokens and 1,685 Tool-Schema
+tokens (9,904 provider-reported prompt tokens). It did contain the executable `REPORTS` control and the policy selected
+it correctly. It also expanded detailed Orders/Search/Dashboard-Bestsellers tables that were unnecessary for that
+navigation decision. T3.3 must improve the post-navigation candidate ranking and first-view signal density without
+misreporting this successful first step as a missing-action failure.
+
+T3.3 evolves the existing delivery owner rather than adding another registry or planner:
+
+```text
+TaskGoal + current GoalPlan objectives
++ fresh complete ActionSpace
++ WorldDeliveryIndex functional paths
++ recent semantic outcomes
+  -> deterministic ActionCandidateProjection(top_k=5)
+  -> ActionCandidates + exact structural closure in DeliveryManifest
+  -> existing stable operation tools
+
+complete ActionSpace
+  -> the same ranker
+  -> search_actions(query) fallback
+```
+
+Mission mode does not expose `SubtaskContract` as another ranking input: its active objective is already projected by
+the existing deterministic one-item GoalPlan boundary.
+
+The implementation owners are fixed before code changes:
+
+| Owner | Required change | Forbidden shortcut |
+|---|---|---|
+| `agent/context/world_region_index.py` | expose deterministic functional paths and region ownership for every current ActionOption without adding task state | site menu rules, selectors, expected routes, or another World |
+| `agent/context/compact_world_renderer.py` plus the existing model-turn delivery seam | replace shallow `_preferred_action_refs`/DirectActions output with typed Top-5 ActionCandidates and exact candidate closure | parsing rendered strings, a second candidate store, or an LLM selector |
+| `actions/paging.py` / existing action-search owner | make `search_actions` reuse the same rank features/order over the complete ActionSpace | a separate fuzzy-search truth or search-time execution |
+| `model/policy/grounded_tool_catalog.py` and current local-result contracts | keep public tool names stable; remove immediate read-result `actionable/action_refs/verbs` duplication while preserving next-view promotion | merging read/content/action tools or silently choosing an E-ref |
+| existing request/benchmark instrumentation | record candidate count, Recall@k/rank witnesses, observation-only calls before target action, repeated region-version reads, request tokens, and candidate/search provenance | benchmark values entering production ranking |
+
+No CoreLoop, Manager, GoalCompiler, ActionSpaceBuilder, Binder, SurfaceAdapter, browser session, or task verifier owner
+changes in T3.3.
+
+The model uses semantic labels, roles, paths, state, and match reasons to reason, but every actual GUI call still
+submits a current E-ref. T3.3 introduces no pure-semantic execution target and no `A*` namespace. Ranking is advisory:
+it may fold lower-ranked detail but cannot delete PageMap entries, facts, actions, or recovery routes, and it cannot
+authorize a call. Candidate refs must exist in the same `DeliveryManifest` and current ActionSpace before the existing
+resolver/admission/Binder path accepts them.
+
+The tool scopes are frozen as follows:
+
+| Tool | Question answered | Result contract |
+|---|---|---|
+| `read_region(region_ref)` | what exact content is inside this known PageMap region? | content/table/status/result plus coverage/version; no immediate duplicate `action_refs` or `verbs`; legal controls appear through the next exact ActiveView |
+| `search_world(query)` | where is this readable fact/value/text in the complete current World? | read-only N/F evidence with region location; no executable candidate merely because text belongs to a control |
+| `search_actions(query)` | which current legal controls can perform this intent? | ranked current E-ref candidates from the complete ActionSpace, installed into the next SearchResults/Manifest |
+
+No alias tools are added during migration. Existing public names remain stable while result payloads are narrowed at
+their current owners.
+
+The provider-free T3.3 gate is property-based and includes held-out duplicate-label/path fixtures rather than a
+Magento-specific branch:
+
+- every candidate is a current executable ActionOption, is printed once with label/role/functional path/current
+  decision state, and appears in the same Manifest;
+- with two same-label controls under different functional paths, the objective/path-compatible option ranks above the
+  unrelated overview control; the declared target has `Recall@5=1` and rank at most 3;
+- rank input may use normalized lexical/BM25/fuzzy match, path, role/operation compatibility, newly-revealed state,
+  already-satisfied state, typed no-progress history, and declared effect risk, but never case identity, an answer,
+  selector, private binding, or an LLM/embedding call;
+- all non-promoted actions remain recoverable through `search_actions`, which uses the same ranker and currentness
+  algebra rather than a second filtering implementation;
+- when a target is already present in ActionCandidates, a scripted policy can execute it without `read_region`; a
+  live cohort separately reports observation-only calls before the first target action rather than making one model
+  trajectory the provider-free oracle;
+- `read_region` and `search_world` return no duplicate executable inventory, while controls in a successfully opened
+  region still enter the next normal ActiveView/Manifest;
+- `ActionCandidateProjection` changes neither World/ActionSpace digests nor GUI dispatch counters and cannot bypass
+  resolver/admission/Binder.
+
+Only after this gate and fresh-context review may the project run the next W1b-Agent breadth evidence. T3.3 does not
+reopen T3.2 lossless World/recoverability evidence; it replaces the insufficient `DirectActions` ranking/presentation
+layer above it.
+
+##### T3.4: guarded same-form batch — deferred efficiency gate
+
+`set_form_fields` is not part of candidate-recall repair. It may be implemented only after T3.3 and a held-out form
+slice show that repeated policy calls, rather than candidate discovery, dominate cost. The proposed operation accepts
+one current form E-ref and two-to-four distinct current field assignments using only installed `type_text` or
+`select_option` primitives. Every child must belong to that form and be non-destructive; Filter/Submit, navigation,
+dialog opening, upload, and any declared observation-barrier action are forbidden. Runtime stops the sequence on the
+first currentness, URL, focus, validation, binding, or action-inventory change and reports completed/remaining fields.
+Every physical primitive remains visible in dispatch metrics. Failure to preserve the existing
+ActionSpace/Binder/Executor/currentness path leaves this operation unsupported; no generic multi-action queue or hidden
+menu/navigation workflow is an acceptable substitute.
+
 The initial-overview policy is explicit. Every profile receives the semantic PageMap. `structure-first.v1` sends no
 image by default. `screenshot-ax.v1` may attach one resized current viewport image when the model/profile supports it;
 Canvas/maps/charts, incomplete AX coverage, visually encoded state, or an admitted grounding/evidence need justify the
@@ -1483,9 +1628,12 @@ real BrowserGym observation
 ```
 
 The completed foundation order was source-semantics correction, `scroll`/`press_key`, capability census, measured
-`find_actions` filtering, complete-request token admission, and the T3.1 recovery skeleton. The active order is now the
-single T3.2 PageMap/ActiveView/DeliveryManifest convergence sequence above, followed by one task-0 witness and then
-W1b-Agent. `hover`/`focus` remains evidence-triggered rather than blocking this delivery gate.
+`find_actions` filtering, complete-request token admission, the T3.1 recovery skeleton, and the provider-free T3.2
+PageMap/ActiveView/DeliveryManifest contract. Run12 then supplied a successful task-0 route plus a concrete efficiency
+counterexample. The active order is now T3.3 automatic ActionCandidates and read/action interface separation,
+provider-free held-out candidate properties, fresh-context review, then W1b-Agent breadth evidence. T3.4 guarded
+same-form batching is evaluated only afterward. `hover`/`focus` remains evidence-triggered rather than blocking these
+delivery gates.
 No W1b failure authorizes one tool per element, a second registry/executor, raw Playwright, `search_tools`, or an LLM
 tool-legality evaluator. Large external MCP/WoT/SaaS discovery remains outside G5.
 
@@ -1569,10 +1717,12 @@ Prompt/model/settings: frozen for all 12 cases
 ```
 
 Each role call records `trigger_kind`, request mode, semantic subtask ID, input/output tokens, latency, and outcome.
-Acceptance requires W1b task 0 Manager/Auditor/Finalizer counts `2/0/1`. It rejects a ManagerReview call caused only by
+Acceptance requires W1b task 0 Manager/Auditor/Finalizer counts `2/0/0`, one FinalResponseBoundary admission, and at
+most one STOP/send. It rejects a ManagerReview call caused only by
 an action, page change, local read/search, or context rollover; rejects an Auditor call caused by budget, stall,
-ordinary outcome proposal, exact fact, or finalization; and rejects any finalizing catalog that contains a GUI/read
-tool. W2 does not require a fixed Manager count—it requires every call to have one admitted episode event trigger.
+ordinary outcome proposal, exact fact, or finalization; rejects any finalizer provider call or finalizing ToolCatalog;
+and rejects a response whose cited evidence is not current/admitted. W2 does not require a fixed Manager count—it
+requires every call to have one admitted episode event trigger.
 
 Infrastructure-only timeout may be calibrated during W1, then must be frozen before cohort selection. No prompt,
 model, budget, pacing, tool, or context change is allowed within the proof cohort. A changed variant is a new arm with
@@ -1734,7 +1884,9 @@ legacy-engine path. Every serialized run identity records `runtime=core`. This e
 makes no new live MiniWoB performance claim until the paired cohorts below have run. The outer mission layer described
 for G5 is now an executable W1a product path for local contracts: thin mission roles, accepted MissionState, bounded
 episodes, `yield_subtask`, official BrowserGym finalization, and native terminal mapping are implemented and verified
-locally. The real-page T0 W1b-World gate is passed, T1 BrowserGym `scroll`/`press_key` installation is verified
+locally. This refers to the environment send/post-STOP capability, not the model-to-terminal response contract:
+run10 reopened that contract and the direct ManagerReview -> FinalResponseBoundary path is pending. The real-page T0
+W1b-World gate is passed, T1 BrowserGym `scroll`/`press_key` installation is verified
 through real conformance plus the T1 W1b-World rerun, and T3 complete-request admission/repeated-failure breaker is
 verified locally with the T3 W1b-World budget rerun. That rerun also invalidated the `action_focused recovery=none`
 branch as semantic-safe compression evidence. T3.1 subsequently passed a six-page provider-free round-trip gate, and

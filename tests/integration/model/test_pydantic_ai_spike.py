@@ -20,8 +20,7 @@ import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
-from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
-from affordance_runtime.agent.decisions import FinalResponse, ProtocolFeedback, ProtocolFeedbackKind
+from affordance_runtime.agent.decisions import ProtocolFeedback, ProtocolFeedbackKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -249,41 +248,6 @@ def test_standalone_native_path_does_not_invent_a_context_only_final_response_tu
         assert state.step_count == 0
         assert state.last_step is None
         assert scripted.offered_tools == []
-
-    asyncio.run(scenario())
-
-
-def test_pydantic_ai_native_finalizing_turn_uses_the_single_catalog_tool() -> None:
-    async def scenario() -> None:
-        scripted = ScriptedModel(
-            [("submit_final_response", {"response": "Shared state is enabled."})]
-        )
-        policy = _policy(scripted.build())
-        task = replace(
-            shared_task(),
-            requested_outputs=("answer",),
-            inputs={
-                PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: {
-                    "json_schema": {"type": "string", "minLength": 1}
-                }
-            },
-        )
-        world = shared_world("finalizing", True)
-        evaluation = await SharedTaskEvaluator().evaluate(task, world)
-        context = ContextBuilder().build(
-            task,
-            world,
-            ActionSpaceBuilder().build(task, world),
-            evaluation,
-            runtime_controls=("submit_final_response",),
-        )
-
-        result = await policy.port.generate(ModelDecisionRequest("request:final", context))
-
-        assert result.failure is None
-        assert isinstance(result.output.decision, FinalResponse)
-        assert result.output.decision.content == "Shared state is enabled."
-        assert scripted.offered_tools == [("submit_final_response",)]
 
     asyncio.run(scenario())
 

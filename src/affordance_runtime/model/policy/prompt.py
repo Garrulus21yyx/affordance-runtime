@@ -24,14 +24,7 @@ def _load_prompt(name: str, key: str) -> tuple[str, str]:
 _prompt_version, _prompt_instructions = _load_prompt("grounded_agent.yaml", "actor")
 MODEL_POLICY_PROMPT_VERSION: Final = _prompt_version
 MODEL_POLICY_INSTRUCTIONS: Final = _prompt_instructions
-_final_version, _final_instructions = _load_prompt("final_response.yaml", "finalizer")
-FINAL_RESPONSE_PROMPT_VERSION: Final = _final_version
-FINAL_RESPONSE_INSTRUCTIONS: Final = _final_instructions
-
-
 __all__ = [
-    "FINAL_RESPONSE_INSTRUCTIONS",
-    "FINAL_RESPONSE_PROMPT_VERSION",
     "MODEL_POLICY_INSTRUCTIONS",
     "MODEL_POLICY_PROMPT_VERSION",
 ]

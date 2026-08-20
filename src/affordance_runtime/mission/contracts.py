@@ -13,6 +13,7 @@ from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
+from affordance_runtime.model.policy.strict_json import validate_json_tree
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -164,6 +165,8 @@ class ManagerDecision:
     subtask: SubtaskContract | None = None
     question: str = ""
     reason: str = ""
+    final_response: object | None = None
+    final_response_evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.assessment, ManagerAssessment):
@@ -194,6 +197,24 @@ class ManagerDecision:
             raise ValueError("only ask_user can carry a question")
         if self.reason:
             _bounded_text(self.reason, "manager reason")
+        object.__setattr__(
+            self,
+            "final_response_evidence_refs",
+            _bounded_unique(
+                self.final_response_evidence_refs,
+                "final_response_evidence_refs",
+            ),
+        )
+        if self.route is ManagerRoute.REQUEST_FINALIZATION:
+            if self.final_response is None:
+                raise ValueError("request_finalization requires a complete final_response")
+            validate_json_tree(self.final_response)
+            frozen_response = freeze_json(self.final_response)
+            if len(str(frozen_response).encode("utf-8")) > 8_000:
+                raise ValueError("final_response exceeds its bounded JSON size")
+            object.__setattr__(self, "final_response", frozen_response)
+        elif self.final_response is not None or self.final_response_evidence_refs:
+            raise ValueError("only request_finalization can carry final response fields")
 
     def state_proposal(self, base_mission_version: int) -> WorkingStateProposal | None:
         if not (self.working_outcomes or self.working_facts or self.invalidate_fact_keys):
@@ -423,6 +444,8 @@ class ManagerRoleRequest:
     review_world: WorldObservation | None = None
     evidence_bundle: EvidenceBundle | None = None
     candidate_output_keys: tuple[str, ...] = ()
+    final_response_schema: Mapping[str, object] = field(default_factory=dict)
+    allowed_evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, ManagerRequestMode):
@@ -436,15 +459,31 @@ class ManagerRoleRequest:
             "candidate_output_keys",
             _keys(self.candidate_output_keys, "candidate_output_keys"),
         )
+        object.__setattr__(self, "final_response_schema", freeze_json(self.final_response_schema))
+        object.__setattr__(
+            self,
+            "allowed_evidence_refs",
+            _bounded_evidence_refs(self.allowed_evidence_refs),
+        )
         review_fields = (self.active_subtask, self.review_world, self.evidence_bundle)
         if self.mode is ManagerRequestMode.INITIAL_PLAN:
-            if any(item is not None for item in review_fields) or self.recovery is not None:
+            if (
+                any(item is not None for item in review_fields)
+                or self.recovery is not None
+                or self.final_response_schema
+                or self.allowed_evidence_refs
+            ):
                 raise ValueError("initial_plan cannot carry an episode review")
-        elif not all(item is not None for item in review_fields) or self.recovery is None:
+        elif (
+            not all(item is not None for item in review_fields)
+            or self.recovery is None
+        ):
             raise ValueError("review_and_route requires one complete fresh review bundle")
         if self.review_world is not None and self.evidence_bundle is not None:
             if self.review_world.observation_id != self.evidence_bundle.observation_id:
                 raise ValueError("manager review evidence must describe its fresh World")
+            if any(self.evidence_bundle.resolve(ref) is None for ref in self.allowed_evidence_refs):
+                raise ValueError("allowed ManagerReview evidence must belong to its bundle")
 
 
 @dataclass(frozen=True)
@@ -736,6 +775,15 @@ def _bounded_unique(values: tuple[str, ...], field_name: str) -> tuple[str, ...]
         raise ValueError(f"{field_name} must be bounded and unique")
     for item in result:
         _bounded_text(item, field_name)
+    return result
+
+
+def _bounded_evidence_refs(values: tuple[str, ...]) -> tuple[str, ...]:
+    result = tuple(str(item) for item in values)
+    if len(result) > _MAX_AUDIT_EVIDENCE_RECORDS or len(set(result)) != len(result):
+        raise ValueError("allowed_evidence_refs must be bounded and unique")
+    for item in result:
+        _bounded_text(item, "allowed_evidence_refs")
     return result
 
 

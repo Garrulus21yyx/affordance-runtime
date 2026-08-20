@@ -58,6 +58,18 @@ class RunTraceSink(Protocol):
         dispatch_status: str,
     ) -> None: ...
 
+    def final_response_boundary_evaluated(
+        self,
+        *,
+        mission_version: int,
+        review_world_observation_id: str,
+        schema_digest: str,
+        cited_evidence_refs: tuple[str, ...],
+        admitted: bool,
+        rejection_code: str,
+        response_digest: str,
+    ) -> None: ...
+
     def step_completed(self, step_number: int, result: object) -> None: ...
     def run_paused(self, state: object) -> None: ...
 
@@ -113,6 +125,10 @@ class NullRunTraceSink:
         dispatch_status: str,
     ) -> None:
         del stop_send_count, post_stop_capture_count, native_evaluator_count, dispatch_status
+        return None
+
+    def final_response_boundary_evaluated(self, **event: object) -> None:
+        del event
         return None
 
     def step_completed(self, step_number: int, result: object) -> None:
@@ -222,7 +238,6 @@ class RunTraceRecorder:
             assessment=_enum_value(getattr(output, "assessment", "")),
             route=_enum_value(getattr(output, "route", "")),
             optional_auditor_trigger=(trigger_kind if role == "auditor" else ""),
-            finalizer_call=int(role == "finalizer"),
             input_tokens=int(getattr(metadata, "prompt_tokens", 0)),
             output_tokens=int(getattr(metadata, "completion_tokens", 0)),
             latency_ms=float(getattr(metadata, "latency_ms", 0.0)),
@@ -247,6 +262,29 @@ class RunTraceRecorder:
             post_stop_capture_count=post_stop_capture_count,
             native_evaluator_count=native_evaluator_count,
             dispatch_status=dispatch_status,
+        )
+
+    def final_response_boundary_evaluated(
+        self,
+        *,
+        mission_version: int,
+        review_world_observation_id: str,
+        schema_digest: str,
+        cited_evidence_refs: tuple[str, ...],
+        admitted: bool,
+        rejection_code: str,
+        response_digest: str,
+    ) -> None:
+        self._emit(
+            "final_response_boundary_evaluated",
+            mission_version=mission_version,
+            review_world_observation_id=review_world_observation_id,
+            schema_digest=schema_digest,
+            cited_evidence_refs=cited_evidence_refs,
+            cited_evidence_count=len(cited_evidence_refs),
+            admitted=admitted,
+            rejection_code=rejection_code,
+            response_digest=response_digest,
         )
 
     def step_completed(self, step_number: int, result: object) -> None:

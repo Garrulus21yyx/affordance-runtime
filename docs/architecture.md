@@ -69,6 +69,12 @@ only GUI/read tools and accepted only `GroundedToolCommandPayload`. The model's 
 back into repeated `read_region(R4/R7)` calls. This is a composition defect: a declared control was absent from the
 actual wire/catalog contract.
 
+Run10 then falsified the replacement that implemented finalization as a one-turn LLM episode with a
+`submit_final_response` tool. DeepSeek produced the exact public response object, but the compact-json bridge expected
+the generic `{name, arguments}` tool envelope and rejected the correct value as `json_invalid`. The task therefore
+failed after correct GUI execution and correct answer generation. This is not a model, evidence, or native-evaluator
+failure; it proves that a terminal business value must not be forced through the ordinary GUI tool-call wire.
+
 The converged target is therefore neither mandatory MEA nor manager-free standalone execution. One Manager model role
 has two event modes: `initial_plan` creates the first `SubtaskContract`; `review_and_route` reads one bounded fresh
 episode review bundle, judges the non-authoritative outcome proposal, and in the same call either requests
@@ -77,15 +83,22 @@ ordinary `Executor -> Auditor -> Manager` chain. An independent Auditor remains 
 or durable cross-episode semantic claim that cannot be adequately reviewed from the bounded public bundle. It is not
 used for W1b task 0, ordinary navigation, stalls, exact current public facts, or a second final check.
 
-Finalization is a distinct protocol phase. Ordinary execution exposes GUI/read tools plus `yield_subtask`, but never
-`final_response`. After an admitted ManagerReview `request_finalization`, the next model call exposes only one
-provider-neutral `submit_final_response` tool whose `response` argument is the public environment schema; GUI/read
-tools are absent. Both native-tool and JSON-single-command transports resolve that tool to the existing
-`FinalResponse`, followed by one STOP/send and one native evaluation. Supervisor, evidence admission, and the native
-verifier remain mechanical authorities. Phase 13 implementation and provider-free verification are complete: the
-normal composition is two Manager calls, zero Auditor calls, one finalizer call, one STOP/send, one post-STOP capture,
-and one native evaluation; stalled strategies and malformed final responses fail typed. No post-change live witness
-has run, so W1b live verification is pending and W1b/W2 remain non-closed.
+Finalization remains a distinct terminal phase, but it has no separate model role and no ToolCatalog. On the
+`review_and_route` call, ManagerReview sees the bounded admitted candidate evidence plus the public final-response
+schema. If it chooses `request_finalization`, the same typed `ManagerDecision` must carry exactly one
+`final_response` value and the evidence refs that support it. A mechanical `FinalResponseBoundary` checks route/value
+coherence, public JSON-Schema conformance, evidence lineage/currentness, and the one-send latch; it does not interpret
+the answer or declare success. It then constructs the existing `FinalResponse`, performs one STOP/send, reacquires
+once, and invokes the native evaluator once. Ordinary ActionPolicy turns never expose final response, and no
+`submit_final_response`, generic `{name, arguments}` envelope, finalizing CoreAgentLoop episode, or finalizer repair
+exists on the mission path.
+
+The normal target composition is therefore two Manager calls (initial + review), zero Auditor calls, zero Finalizer
+calls, one mechanical FinalResponseBoundary admission, one STOP/send, one post-STOP capture, and one native
+evaluation. The run10 convergence repair is now implemented and provider-free verified: the old finalizer path is
+deleted, direct ManagerDecision/schema/evidence/latch admission is covered, and the normal synthetic path proves
+`2/0/0` role frequency with one boundary admission, STOP, post-STOP capture, and native evaluation. W1b live
+verification and W2 remain blocked/non-closed until a fresh live witness succeeds.
 
 #### 2026-08-20 ActionPolicy provider-transport recovery
 
@@ -281,7 +294,7 @@ verification, and `request_finalization`; this paragraph records the historical 
 provider/environment/authentication/timeout failures retain typed operational outcomes. Waiting-user and confirmation
 keep their existing paths; an unsupported episode state fails typed instead of falling through to Auditor.
 
-Auditor and Finalizer no longer share a general task payload. `AuditorRoleRequest` itself carries a typed
+Auditor no longer shares a general task payload with ManagerReview. `AuditorRoleRequest` itself carries a typed
 `AuditorTaskProjection`, so the role port and trace receive only the original public instruction,
 subtask-relevant constraints, `objective/done_when`, relevant accepted state/facts, a fresh public audit World,
 bounded sanitized episode evidence, public evidence refs, base mission version, and an explicit audit yield reason.
@@ -382,11 +395,12 @@ Auditor/context-capacity acceptance path. After the AuditView repair, the same-c
 made one Auditor provider attempt, accepted the cited `top1_bestseller_2022` fact, requested final audit, and delivered
 the final response `Quest Lumaflex™ Band`; the official case outcome remains `blocked` because the native evaluator
 returned `verified_terminal_task_failure` after receiving plain text instead of the public WebArena final-response
-JSON schema. The local repair keeps the public final-response contract in task intake and exposes it only on the
-`final_response` turn, but run7 proved that its skip predicate is too narrow: an accepted semantic outcome with no
-promoted fact still triggers a second Auditor. Run8 then proved the context-only final-response control is not a real
-JSON tool contract. The active convergence target replaces both paths with combined ManagerReview and the dedicated
-`submit_final_response` catalog before `send_msg_to_user`. Neither witness reproduced the read-only
+JSON schema. The local repair keeps the public final-response contract in task intake, but run7 proved that its skip
+predicate is too narrow: an accepted semantic outcome with no promoted fact still triggers a second Auditor. Run8
+then proved the context-only final-response control was not a real submission contract, and run10 proved that forcing
+the correct response through a generic tool envelope is equally wrong. The active convergence target replaces all
+three paths with combined ManagerReview carrying the candidate response and a mechanical FinalResponseBoundary
+before `send_msg_to_user`. None of these witnesses reproduced the read-only
 E-ref, repair target-swap, or inspect/action-page loop.
 The same traces also falsified the assumption that `compact_ax.v1` alone is an adequate cost policy. The `watch3`
 ActionPolicy calls repeatedly repaid a full compact Magento page, broad target enums, and cumulative history; its two
@@ -404,8 +418,8 @@ its long cross-site cohort with only eight retained turns and a static GoalPlan 
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
 across fresh executor episodes. The inner episode foundation, context retention, working-fact contracts, model
 invocation boundary convergence, existing mission foundation, `yield_subtask`, and official BrowserGym
-native-evaluator path are implemented and locally verified. Combined ManagerReview and the provider-neutral
-final-response catalog are also implemented and provider-free verified; their W1b live witness remains pending.
+native-evaluator path are implemented and locally verified. Combined ManagerReview is implemented; its terminal
+response contract is reopened because the separate finalizer/tool-envelope path failed live and must be removed.
 Existing model roles expose explicit `ModelInvocationResult`
 envelopes carrying metadata, physical attempts, repair diagnostics, and lineage, while compact-json remains a
 feature-frozen compatibility shim. No WebArena long-horizon benchmark capability claim follows from these local
@@ -439,7 +453,8 @@ manager-guided / long-horizon task
   -> optional independent Auditor only for a predeclared high-risk/durable ambiguous claim
   -> representation/protocol feedback stays in the episode until its bounded stall threshold
   -> TaskEvaluator COMPLETE/BLOCKED -> terminal authority, with no Auditor call
-  -> request_finalization -> final-response-only catalog -> one FinalResponse -> native evaluator
+  -> request_finalization(final_response + evidence refs)
+       -> mechanical FinalResponseBoundary -> one FinalResponse -> native evaluator
 ```
 
 This is one GUI execution chain with an optional long-horizon supervisor. Execution mode is selected explicitly by the
@@ -593,9 +608,9 @@ Original TaskGoal
        -> finalize | revised SubtaskContract | ask_user | blocked
        -> cited working-state proposals -> mechanical EvidenceBoundary
   -> TaskEvaluator COMPLETE/BLOCKED -> terminal, with no Auditor call
-  -> request_finalization -> final-response-only catalog
-       -> submit_final_response(response=<public schema>)
-       -> one native evaluation
+  -> request_finalization(final_response + evidence refs)
+       -> mechanical FinalResponseBoundary
+       -> one STOP/send -> one native evaluation
 ```
 
 ### Three state layers
@@ -742,6 +757,8 @@ operational stall, oscillation, or context capacity. Provider, environment, user
 the distinct lifecycle routes below.
 
 ManagerReview emits exactly one route: `execute_subtask`, `ask_user`, `blocked`, or `request_finalization`.
+Only `request_finalization` may carry `final_response` and `final_response_evidence_refs`; that route requires both,
+and every other route rejects them. The response is a candidate business value, not a tool call or success claim.
 Supervisor owns the legal outer transition, not model prose:
 
 | From | Typed input | Next |
@@ -762,9 +779,9 @@ Supervisor owns the legal outer transition, not model prose:
 | executing | environment loss or mission cancellation | mission blocked/failed or cancelled; never infer preserved progress |
 | auditing | accepted independent opinion | AuditBoundary validates cited lineage/version; resume the route admitted around that exceptional check |
 | auditing | rejection/unknown/provider/schema failure | commit nothing; return bounded evidence to one ManagerReview or fail when the mission budget is exhausted; never retry Auditor in place |
-| reviewing | `request_finalization` | fresh capture -> construct a final-response-only request; no second Manager or Auditor |
-| finalizing | admitted `submit_final_response(response)` | resolve to existing `FinalResponse`, deliver once, reacquire once, and run native evaluation once |
-| finalizing | malformed response or unavailable finalization tool | typed final-response protocol failure; no GUI/read fallback and no return to an ordinary action catalog |
+| reviewing | `request_finalization` + candidate response + evidence refs | mechanical FinalResponseBoundary admission against the same fresh review bundle/version; no second capture, Manager, Auditor, ActionPolicy, or tool call |
+| finalizing | boundary-admitted `FinalResponse` | deliver once, reacquire once, and run native evaluation once |
+| finalizing | missing/schema-invalid/unsupported response or invalid evidence lineage | typed `final_response_invalid`; no GUI/read fallback, model repair episode, or second send |
 | finalization check or native evaluation | not ready/failure | managing for recoverable missing work, otherwise terminal typed failure |
 | any nonterminal outer role | mission/user cancellation | terminal `cancelled`; no audit, retry, or MissionState mutation after cancellation |
 
@@ -776,11 +793,11 @@ terminates as typed `strategy_not_changed` with blocked status. This guard owns 
 
 `YIELDED` is added to the inner run status only as an absorbing executor-episode exit. It is never projected as
 TaskEvaluation success/failure and never becomes the case outcome. Long-horizon ordinary execution episodes offer
-`yield_subtask` but withhold environment STOP/`FinalResponse`. The finalizing phase exposes exactly one
-`submit_final_response` schema and no GUI/read/local-observation tools. For JSON-single-command providers the accepted
-envelope remains `{name, arguments}`; for native-tool providers it is the equivalent native call. Both resolve through
-one catalog entry to the existing `FinalResponse`, so `runtime_controls` can never advertise a capability absent from
-the actual provider contract. This is Supervisor-owned lifecycle capability selection, not GoalPlan-based action
+`yield_subtask` but withhold environment STOP/`FinalResponse`. There is no model-facing finalization phase: the
+ManagerReview result already carries the direct public response object, and FinalResponseBoundary validates it
+mechanically against the task-owned schema before constructing the existing `FinalResponse`. JSON-single-command and
+native-tool ActionPolicy envelopes are therefore irrelevant to terminal delivery. This is Supervisor-owned lifecycle
+handling, not GoalPlan-based action
 permission. BrowserGym is not reset between episodes; only the official per-case reset may initialize or clean the
 case.
 
@@ -871,7 +888,7 @@ cohort begins before the W1b smokes and independent audit pass:
    configured `WA_*` sites. Package discovery stays in benchmark composition. The BrowserGym backend accepts an
    already registered Gym task ID and must not gain a benchmark-prefix switch or another environment class.
 2. **Existing environment/CoreLoop lifecycle foundation.** Reuse the same `BrowserGymSurfaceAdapter` already opened by
-   the benchmark case. Add shared `initialize_from_world`, episode-only YIELDED, ordinary/finalizing tool modes, and a
+   the benchmark case. Add shared `initialize_from_world`, episode-only YIELDED, ordinary mission tool mode, and a
    final-response latch that reuses `DispatchStatus`; prove one existing adapter/reset/close path and one unchanged
    inner action loop. Do not add a physical CaseSession wrapper or terminal-delivery enum.
 3. **Existing episode-history extension.** Remove the eight-record caps from `RunState.recent_steps` and
@@ -895,10 +912,13 @@ cohort begins before the W1b smokes and independent audit pass:
    BrowserGym task. Mark the response as a requested output through existing TaskGoal fields. Do not read or translate
    expected answers, backend-state predicates, or evaluator internals.
 7. **Environment finalization.** Add the smallest optional environment capability needed by the existing
-   `FinalResponse` branch. After ManagerReview requests finalization, compile a one-tool catalog containing only
-   `submit_final_response(response=<public schema>)`; both provider wire modes resolve it to FinalResponse. BrowserGym
-   implements delivery with official `send_msg_to_user`/STOP and returns the normal step observation, reward,
-   termination flags, and info. Supervisor then follows the existing fresh-acquisition and TaskEvaluator path.
+   `FinalResponse` branch. Extend `ManagerDecision` so only `request_finalization` carries the direct public response
+   value and supporting evidence refs. A mechanical `FinalResponseBoundary` validates route/value coherence, the
+   task-owned public schema, cited evidence lineage/currentness, and the one-send latch, then constructs
+   `FinalResponse`. BrowserGym implements delivery with official `send_msg_to_user`/STOP and returns the normal step
+   observation, reward, termination flags, and info. Supervisor then follows the existing fresh-acquisition and
+   TaskEvaluator path. Delete the one-turn finalizing CoreLoop episode, finalizer prompt/model call,
+   `submit_final_response` catalog entry/resolver, and compact/native tool-envelope compatibility tests for that path.
 8. **Native task-state mapping.** Keep the MiniWoB `WOB_*` read-only probe inside its current profile. WebArena uses
    BrowserGym's ordinary step result: running before STOP, official terminal result after STOP. Do not invoke the
    evaluator speculatively every turn and do not infer success from page text.
@@ -906,31 +926,31 @@ cohort begins before the W1b smokes and independent audit pass:
    the existing generic benchmark contracts. Reuse `run_suite`, instrumentation, progress writing, case persistence,
    cleanup, and reporting; add no WebArena scheduler or retry owner. Remove or quarantine the existing offline
    `webarena-verified eval-tasks` helper from W1b/W2 composition so it cannot become a second official evaluator.
-10. **Semantic real-web delivery convergence (T3.1/T3.2).** Keep the implemented same-World lens lifecycle and local
-   `inspect_world(open_region | find | view_all)` recovery, but replace the shallow `WorldRegionIndex` presentation
-   with the single functional `WorldDeliveryIndex -> PageMap/ActiveView/SearchResults -> DeliveryManifest` path
-   defined below. Keep `find_actions` as the complete ActionSpace recovery owner; remove model-visible facet member
-   refs, the duplicate affordance list, regex ref discovery, and broad dynamic ref enums. A visual crop remains a
-   later typed image route and is not part of the current text-delivery claim. Prove both semantic discoverability and
-   token reduction before any model smoke. Do not add a model summarizer/selector, second renderer authority, second
-   browser session, or free-form semantic memory.
+10. **Semantic real-web delivery and action-candidate convergence (T3.1–T3.4).** Keep the implemented same-World lens
+   lifecycle and the single functional
+   `WorldDeliveryIndex -> PageMap/ActionCandidates/ActiveView/SearchResults -> DeliveryManifest` path. T3.2 owns
+   recoverable semantic delivery; T3.3 replaces shallow lexical DirectActions with a typed path-aware Top-5 candidate
+   projection and keeps `search_actions` as complete-ActionSpace fallback. Keep `read_region`, `search_world`, and
+   `search_actions` result scopes disjoint. Only after candidate recall passes may T3.4 evaluate guarded same-form
+   batching; navigation and Submit remain atomic. A visual crop remains a later typed image route. Do not add a model
+   selector, second renderer/ActionSpace/Binder, hidden navigation workflow, or free-form semantic memory.
 11. **Real-web World and verification.** Before treating the six site runs as agent smokes, run the real-page
    World/Actor-View gate in `docs/benchmark.md`: source semantics, offered-target conservation, action-decision state,
    structural closure, exact folded-fact recovery, inspect/search/view-all currentness, request-token metrics, and
    private-data isolation. Then run the official site smokes, independent fresh-context reader/code audit, and frozen
    W2 cohort. MiniWoB remains a regression surface and cannot substitute for this gate.
 
-`FinalResponse` remains the sole internal decision for terminal content, but models produce it only through the
-finalization catalog. For an environment without finalization capability, the existing rule remains: requested
+`FinalResponse` remains the sole internal decision for terminal content. In manager-guided mode its candidate value is
+produced in the existing ManagerReview result and admitted only by FinalResponseBoundary. For an environment without finalization capability, the existing rule remains: requested
 outputs are returned only after `TaskEvaluation=COMPLETE`. For an environment that advertises finalization,
-`submit_final_response` resolves to a candidate FinalResponse while native evaluation is still running; Supervisor
-delivers it once, reacquires the resulting observation, and only the subsequent native TaskEvaluation may produce
+an admitted ManagerReview response becomes a candidate FinalResponse while native evaluation is still running;
+Supervisor delivers it once, reacquires the resulting observation, and only the subsequent native TaskEvaluation may produce
 `DONE` or terminal failure. The response itself never proves completion, and a delivery error cannot fall back to
 ordinary GUI/read tools or local success.
 
 Terminal delivery adds only a case-scoped latch and reuses the existing `DispatchStatus.NOT_SENT | SENT |
-SENT_UNKNOWN`; it does not define another status enum. Schema/format rejection before dispatch leaves `NOT_SENT` and
-may use the existing bounded representation repair. A backend receipt yields `SENT`; timeout, transport loss, or
+SENT_UNKNOWN`; it does not define another status enum. Schema/evidence rejection by FinalResponseBoundary occurs
+before dispatch and performs no model repair or GUI fallback. A backend receipt yields `SENT`; timeout, transport loss, or
 cancellation after dispatch may yield `SENT_UNKNOWN`. Neither dispatched status is automatically retried. After
 either, Supervisor attempts one fresh post-STOP acquisition and native evaluation. Missing observation, evaluator
 error, or unresolved `SENT_UNKNOWN` produces a typed environment/evidence failure and never local success. The case
@@ -943,7 +963,8 @@ mission semantics inside CoreLoop, SurfaceAdapter, Binder, ActionOutcomeProjecto
 |---|---|
 | new outer `mission/` package | two-mode ManagerReview port, optional strict Auditor port, SupervisorState, MissionState, mechanical evidence admission, EpisodeMonitor function, and the outer transition function; no generic harness, physical session, provider, or history implementation |
 | `agent/core_loop.py`, `agent/run_state.py`, existing `AgentTurnView`/`project_step_result()`, and context projection | shared reset/from-current-World initialization, episode-only YIELDED, bounded working facts, projection-level generation-ref removal, private F-ref mapping, and byte-bounded retention/rendering of existing AgentTurnView records; add no CompactStep/HistoryProjector |
-| existing local tool catalog/resolver | `pin_fact`, `yield_subtask`, and phase-specific `submit_final_response`; the first two never dispatch BrowserGym, while the last resolves only to existing terminal delivery |
+| existing local tool catalog/resolver | `pin_fact` and `yield_subtask`; neither dispatches BrowserGym. Mission finalization does not enter this catalog |
+| mechanical `FinalResponseBoundary` | validate ManagerReview finalization route/value/schema/evidence coherence, construct existing `FinalResponse`, and enforce one-send admission; no model call, ToolCatalog, GUI grounding, or success judgment |
 | `pyproject.toml` BrowserGym optional dependency group | keep the already pinned official WebArena-Verified integration; do not vendor either repository or add another harness dependency |
 | `world/environment.py` and `world/orchestrator.py` | expose and route the backend's existing `send_msg_to_user` capability through the environment boundary; reuse `DispatchStatus` and return unsupported for environments without it |
 | existing `surfaces/browsergym/backend.py` and `surfaces/browsergym/environment.py` | reuse the already implemented registered Gym ID, one physical environment lifetime, `capture_current`, `send_msg_to_user`, and close paths; only lift terminal delivery through the product environment port and keep MiniWoB probing profile-specific |
@@ -1006,7 +1027,7 @@ BrowserGym raw source snapshot
   -> lossless public ActorWorldSnapshot normalization
   + current ActionSpace
   -> WorldDeliveryIndex
-  -> PageMap + exact ActiveView/SearchResults + DeliveryManifest
+  -> ActionCandidateProjection + PageMap + exact ActiveView/SearchResults + DeliveryManifest
   -> compact stable tool schemas
   -> ActionPolicy
 
@@ -1022,7 +1043,8 @@ These layers answer different questions and must not be collapsed:
 | `WorldObservation` | SurfaceAdapter plus World fusion normalize public entities, facts, relations, capabilities, provenance, freshness, and truthful source coverage | no silent task-directed pruning; source truncation remains explicit | sole current environment authority |
 | `ActorWorldSnapshot` | existing World projection normalizes the supported public delivery algebra without applying a model budget | no model-delivery or whole-context pruning; it may only reflect explicit upstream source coverage | disposable, lossless public normalization |
 | `WorldDeliveryIndex` / `WorldDeliveryView` | one delivery owner builds a semantic PageMap, exact current detail, and lossless search indexes | yes, only with structural closure and a same-World recovery route | disposable non-authoritative projection |
-| `DeliveryManifest` + stable tool schemas | the renderer names exactly which current refs are direct; PerTurnToolCatalog defines stable operation signatures; Runtime intersects selected refs with the current authoritative ActionSpace/evidence/region indexes | the complete inventory remains recoverable through `find_actions`/`inspect_world` | sole model-callability contract for this turn |
+| `ActionCandidateProjection` | ranks at most five current executable `ActionOption`s from TaskGoal/current GoalPlan text, functional paths, current state, and recent outcomes; candidates are rendered with their exact structural closure | yes; every non-promoted option remains in the complete action index and is recoverable through `search_actions` | disposable advisory delivery projection, never legality or binding authority |
+| `DeliveryManifest` + stable tool schemas | the renderer names exactly which current refs are direct; PerTurnToolCatalog defines stable operation signatures; Runtime intersects selected refs with the current authoritative ActionSpace/evidence/region indexes | actions remain recoverable through `search_actions`; content through `read_region`/`search_world`/`list_regions` | sole model-callability contract for this turn |
 | trace | existing observability stores complete typed inputs, source lineage, model exchange, and metrics | binary media may be content-addressed | audit evidence only; never control state |
 
 The projection owner performs deterministic presentation cleanup, structural closure, budget fitting, and coverage
@@ -1056,7 +1078,8 @@ atomic bounded page already satisfies the same clarity contract. Folded content 
 This section supersedes the earlier claim that the T3.1 six-page round-trip gate closed semantic compression. That
 gate proved that a caller which already knew what to request could recover current content; it did not prove functional
 region quality, first-view discoverability, search-to-action closure, or a non-duplicated ref/tool projection. Those
-properties are the active T3.2 convergence gate.
+properties formed the T3.2 provider-free convergence gate. Its lossless/recoverability contract is now retained as a
+regression boundary; T3.3 is the active candidate-ranking and read/action-presentation gate described below.
 
 The following earlier choices are explicitly replaced rather than retained as alternate paths:
 
@@ -1080,14 +1103,16 @@ BrowserGym raw observation
        |-> functional PageMap
        |-> complete public-content search index
        `-> complete current ActionSpace search index
+  -> deterministic ActionCandidateProjection(top_k=5)
   -> ephemeral WorldDeliveryLens
-  -> WorldDeliveryView(PageMap + exact ActiveView + exact SearchResults)
+  -> WorldDeliveryView(PageMap + ActionCandidates + exact ActiveView + exact SearchResults)
   -> typed DeliveryManifest
   -> small stable ToolCatalog
   -> ActionPolicy
        |-> current GUI action
-       |-> find_actions(...)                  # complete current ActionSpace
-       `-> inspect_world(...)                 # complete current public World
+       |-> search_actions(...)                # complete current ActionSpace
+       |-> read_region(...)                   # one known current region
+       `-> search_world(...)                  # complete current public content index
 ```
 
 The additional types are projections, not new authorities:
@@ -1095,6 +1120,7 @@ The additional types are projections, not new authorities:
 | Projection | Contents | Lifetime | Forbidden responsibility |
 |---|---|---|---|
 | `WorldDeliveryIndex` | deterministic functional-region partition plus private indexes over all current public targets/facts and all current ActionOptions | recomputable from one current World and ActionSpace | task progress, action permission, hidden selectors, rewritten facts, or model-visible member-ref lists |
+| `ActionCandidateProjection` | a bounded ranked view of current executable options, including operation, label, role, functional path, region, decision state, rank, and typed match reasons | recomputed for every model turn from fresh inputs; never persisted | creating actions, declaring relevance truth, action authorization, private binding, or task progress |
 | `WorldDeliveryLens` | one current region/search/view-all selection and cursor, represented by stable private keys or query rather than public E/N/F refs | bound to one `world_observation_id`; discarded after fresh acquisition | persistence, memory, MissionState, completion, or stable public element identity |
 | `WorldDeliveryView` | rendered PageMap, exact ActiveView/SearchResults, coverage, and a typed manifest of the refs that were printed as exact nodes/facts/regions | recomputable for one model call | a second World, semantic summary authority, or ref recovery by parsing rendered text |
 | `DeliveryManifest` | exact current executable/read-only/fact/region refs present in the rendered view | one context/catalog generation | action legality, private binding, or progress; it only constrains model-visible delivery |
@@ -1138,19 +1164,72 @@ available as an internal candidate, but fitting below the hard or former 16k sof
 provider payload. Every new page first sends a PageMap containing all functional regions. Its descriptors contain no
 E/N/F refs. Exact bounded top-level navigation controls are included in the accompanying ActiveView so the model can
 act without first searching; a large folded region retains only its exact heading/direct labels, counts, state and
-recovery handle. The exact ActiveView then contains, in priority order:
+recovery handle. PageMap/content delivery and action discovery are parallel outputs of the same current World rather
+than a chain in which the policy must read regions before it can discover an action. The exact first view contains,
+in priority order:
 
 1. dialog/alert content plus focused or changed regions;
 2. all bounded top-level navigation controls and their structural containers;
-3. the current bounded main/form/table/grid regions;
-4. concrete current `ActionOption` targets ranked by lexical overlap with `TaskGoal` and GoalPlan objectives; and
+3. an `ActionCandidates` block containing at most five current executable options ranked against `TaskGoal`, the
+   current GoalPlan objectives, functional paths, current state, and recent semantic outcomes; mission mode carries
+   its active subtask only through the existing deterministic one-item GoalPlan projection;
+4. only the bounded main/form/result region required to interpret those candidates or current task evidence; and
 5. the current region containing the latest semantic execution target.
 
-Step 4 ranks executable actions, not only regions. A promoted E-target carries the minimal functional-region closure:
+The first-view folding rule is explicit:
+
+| Content class | First-view treatment |
+|---|---|
+| current dialog/alert/error, focus, changed region, validation state | exact and structurally closed |
+| bounded primary navigation | exact controls plus PageMap descriptor |
+| Top-5 ActionCandidates | exact E-ref, operation, label, role, functional path, decision state, reasons, and closure |
+| formal/current task evidence and the active result/form needed for the present decision | exact when bounded; semantic row/card paging otherwise |
+| every other functional region | extractive PageMap descriptor with counts/state/recovery; no member E/N/F refs |
+
+“Other” means lower delivery priority, never absent from World or declared semantically irrelevant. The complete public
+content/action indexes remain available through their owning recovery tools.
+
+Candidate ranking operates on executable actions, not only regions. A promoted E-target carries the minimal
+functional-region closure:
 its ancestor path, nearest local heading/label, row/card/form/table context and headers where present, necessary public
-state, and current verbs. Strong exact-label matches suppress weaker substring ancestors only in the DirectActions
-promotion block; those ancestors remain available through the independently selected navigation regions. This ranking
-changes presentation only. It cannot create an ActionOption, add a verb, alter Binder legality, or infer a future path.
+state, and current verbs. The model reasons over the semantic label/path but executes by returning the current E-ref;
+no second `A*` namespace and no pure-semantic execution target are introduced. Non-promoted actions remain reachable
+through `search_actions`. This ranking changes presentation only. It cannot create an ActionOption, add a verb, alter
+Binder legality, or infer a future path.
+
+The first deterministic ranker is deliberately bounded and provider-free. It combines normalized lexical/BM25 or
+fuzzy label match, functional-path match, role/operation compatibility, current enabled/visible/selected state, and a
+newly-revealed bonus, then applies penalties for an already-satisfied state, a repeated no-progress action, and a
+declared destructive effect. It does not use embeddings, an LLM selector, a benchmark case name, or a known answer.
+Relevance is never binary deletion: low-ranked regions retain their PageMap descriptor and recovery route, and
+low-ranked actions remain in the complete current action index.
+
+The model-visible candidate contract is a typed component of `WorldDeliveryView`, not another ActionSpace:
+
+```text
+ActionCandidate(
+  target_ref: ERef,
+  operation: SemanticOperation,
+  label: str,
+  role: str,
+  functional_path: tuple[str, ...],
+  region_ref: RRef,
+  current_state: PublicActionDecisionState,
+  rank: int,
+  match_reasons: tuple[CandidateMatchReason, ...],
+)
+
+ActionCandidateProjection(
+  world_observation_id: str,
+  action_space_id: str,
+  candidates: tuple[ActionCandidate, ...],  # at most five
+  searchable_action_count: int,
+)
+```
+
+Every candidate E-ref must be present in the same `DeliveryManifest` and resolve to exactly one current
+`ActionOption`. `match_reasons` is a closed presentation vocabulary such as `objective_text`, `functional_path`,
+`role_compatible`, `newly_revealed`, and `state_ready`; it is not task progress or an authorization reason.
 
 The deterministic rank is a delivery preference only. It never removes the PageMap, changes facts/actions, reads
 benchmark identity, or claims semantic relevance authority. On the same page, fresh World is still acquired and the
@@ -1167,9 +1246,10 @@ observation:
     - "[R1] navigation 'Primary' labels=[Dashboard, Sales, Reports] actions=12"
     - "[R2] main 'Dashboard' sections=4 actions=18"
     - "[R3] table 'Last Orders' rows=5 columns=[Customer, Total, Status]"
+  action_candidates:
+    - "rank=1 [E7] activate link 'Reports' path='Primary navigation > Reports' reasons=[objective_text, role_compatible]"
   active_view:
     - "[E7] link 'Reports' context='Primary navigation' verbs=[activate]"
-    - "[E8] link 'Sales' context='Primary navigation' verbs=[activate]"
   recovery:
     - "read_region(region_ref=R2)"
     - "search_world(query=<text>)"
@@ -1187,23 +1267,67 @@ The exact names and serialization follow existing typed contracts, but the infor
 map, one exact current working set, one short semantic history, and stable tools. The folded `R2`/`R3` content does not
 leak member refs, and structure-first sends no image for this ordinary page.
 
-The complete current `ActionSpace` remains unchanged and internal. Direct actions come only from executable nodes
+The complete current `ActionSpace` remains unchanged and internal. Candidate actions come only from executable nodes
 printed exactly in the chosen delivery; actions in folded regions remain reachable through `search_actions`, which
-searches the complete current ActionSpace and promotes exact fresh matches into the next SearchResults/ActiveView.
+uses the same deterministic ranker over the complete current ActionSpace and promotes exact fresh matches into the
+next SearchResults/ActiveView. Automatic candidates are the ordinary route; `search_actions` is the explicit recall
+fallback when the candidate block is insufficient.
 The renderer emits `WorldDeliveryView(text, manifest)` directly. Tool exposure consumes the typed manifest; it must
 never rediscover refs with a regex over rendered text, a facet member list, or a previous tool enum.
 
 BrowserGym retains only closed adapter composites. `activate`, `type_text`, and native `select_option` each bind one
 current semantic action to a deterministic adapter route with an observation barrier; adapter-internal focus,
-scroll/fill/select and observation steps require no second policy decision. A future menu composite is admissible only
-when both endpoints and their descendant relation already exist in the current World, the adapter owns the entire
-physical route, and the final postcondition is observable. There is no generic `navigate_to(task_text)` operation.
+scroll/fill/select and observation steps require no second policy decision. Navigation, menu expansion, dialog
+appearance, Submit/Filter, and any action expected to change the page or current action inventory remain atomic Agent
+steps followed by a fresh World. There is no generic `navigate_to(task_text)` or hidden menu-solving workflow.
+
+After ActionCandidate retrieval passes its held-out gate, a separate efficiency increment may add one narrow
+`set_form_fields` composite for stable same-form editing. Its proposed public contract is:
+
+```text
+set_form_fields(
+  form: ERef,
+  assignments: tuple[FormFieldAssignment, ...],  # 2..4 distinct current fields
+)
+
+FormFieldAssignment(
+  field: ERef,
+  operation: Literal["type_text", "select_option"],
+  value: str,
+)
+```
+
+The ActionSpace may offer this operation only when the form and all fields exist in one current structural closure,
+each child already has the corresponding installed primitive binding, all effects are non-destructive, and no child
+contract declares navigation, submission, dialog opening, upload, or another observation barrier. Resolver/admission
+closes every submitted current E-ref to that exact form/field identity before execution. The adapter executes at most
+four primitives sequentially, checks target identity/currentness before each primitive, and stops at the first URL,
+focus, structural-action-inventory, validation, or binding change. Its typed outcome contains
+`completed_fields`, `remaining_fields`, and `interruption_reason`; GUI dispatch accounting still counts every physical
+primitive, and the CoreLoop receives one final fresh World. It may never include Filter/Submit or infer field values
+from task semantics. If these invariants cannot be implemented through the existing ActionSpace/Binder/Executor
+owners, the composite remains unsupported rather than creating a second execution path.
+
+Its only admissible lineage is:
+
+```text
+one current composite ActionOption
+  -> SelectAction(set_form_fields, current E refs and values)
+  -> existing resolver/admission/risk
+  -> one BoundActionRequest containing adapter-private child bindings
+  -> one Executor call
+  -> ordered PrimitiveReceipt[] inside the existing ActionResult
+  -> one final fresh World and ordinary ActionOutcome projection
+```
+
+CoreLoop still orchestrates one semantic execution for the turn; it never iterates a model-selected action queue.
 
 This ordering prevents the tool schema from forcing the entire page open:
 
 ```text
 full World -> full ActionSpace
-          -> DeliveryIndex -> PageMap/ActiveView/SearchResults
+          -> DeliveryIndex -> ActionCandidateProjection
+                           -> PageMap/ActionCandidates/ActiveView/SearchResults
           -> typed DeliveryManifest
           -> stable per-operation tools for delivered targets
           -> search_actions index over the full ActionSpace
@@ -1219,7 +1343,8 @@ state.
 
 #### Read-only progressive-disclosure tools
 
-Each public tool has one intent and only its required argument:
+The public names remain `read_region`, `search_world`, and `search_actions`; no alias tools are added during the
+migration. Their scopes are disjoint and each has only its required argument:
 
 ```text
 read_region(region_ref)
@@ -1229,11 +1354,15 @@ read_next_page()  # offered only when the prior World read has another page
 ```
 
 - `read_region` expands one current region as an exact structurally closed subtree, paged only at semantic row/card
-  boundaries.
+  boundaries. Its immediate local result is content-focused—summary, exact text/table/status/result content,
+  coverage, and change/version metadata. It does not duplicate `action_refs`, `verbs`, or a second affordance list.
+  If the expanded region contains legal controls, those controls appear normally as E-refs with verbs in the next
+  exact ActiveView and same DeliveryManifest.
 - `search_world` searches exact text, role, label, value, and public facts in the complete current World. It returns
   exact snippets, region locations, coverage, and `has_more`, never an opaque paging token. It also installs a current
   `find` lens, so the next ActionPolicy request contains those same exact matches as SearchResults instead of losing
-  their refs in sanitized history.
+  their N/F/R refs in sanitized history. It never returns an executable candidate merely because matching text is
+  attached to a control.
 - `list_regions` exposes every region in exact paged form when the directory or task-directed inspection is insufficient;
   it still obeys the hard request cap.
 - `read_next_page` continues only the prior successful World read. Runtime supplies the private cursor.
@@ -1261,6 +1390,18 @@ verbs; its next-turn E refs therefore exist in both the DeliveryManifest and the
 the base page, report applied filters/coverage and safe relaxations, and never become an empty action authority.
 When another action page exists, the next catalog offers zero-argument `action_results_next_page()`; no cursor or
 exact-target re-search is model-visible.
+
+The policy decision is therefore mechanical at the interface boundary:
+
+| Need | Route | Ref/result kind |
+|---|---|---|
+| execute an already shown current control | call its semantic GUI tool | current `E*` |
+| discover a legal current control not present in `ActionCandidates` | `search_actions(query)` | executable `E*` candidates |
+| open one known PageMap region | `read_region(region_ref)` | exact `R*` content, then normal next-view refs |
+| find an unknown fact or readable value anywhere in the current page | `search_world(query)` | read-only `N*`/`F*` evidence with `R*` location |
+
+Natural language is used to search and reason; execution always names a current E-ref. Runtime never silently chooses
+between same-label controls from a pure semantic string.
 
 Typed visual crop delivery is a later sub-gate of the same World-read/perception boundary, not part of the
 structural baseline. When benchmark evidence requires it, `open_region` may request a visual view backed by current
@@ -1535,7 +1676,7 @@ SemanticActionRegistry
   -> installed surface capability
   -> fresh World bindings
   -> current ActionSpace
-  -> ActionPager / find_actions
+  -> ActionCandidateProjection / ActionPager / search_actions
   -> PerTurnToolCatalog
   -> model tool call
   -> resolver -> admission/risk/confirmation -> Binder -> Executor
@@ -1549,7 +1690,8 @@ The four named layers remain distinct:
 | semantic registry | closed vocabulary and public parameter/effect contract | code/version scoped; a name here does not mean a surface implements it |
 | surface profile | operations whose adapter offer, primitive translation, private binding, and executor route are implemented | surface/version scoped |
 | `ActionSpace` | concrete operations currently legal for fresh World subjects | observation scoped |
-| `PerTurnToolCatalog` | the current action page and local/control utilities actually callable by the model | context/catalog scoped |
+| `ActionCandidateProjection` | at most five advisory current options ranked for first-view delivery; every ref still comes from ActionSpace | observation/context scoped and recomputed |
+| `PerTurnToolCatalog` | the current candidate/action page and local/control utilities actually callable by the model | context/catalog scoped |
 
 The global registry currently defines ten semantic operations:
 `activate`, `type_text`, `select_option`, `read`, `scroll`, `press_key`, `focus`, `drag_to`, `set_value`, and `hover`.
@@ -1569,8 +1711,9 @@ The bounded remediation order is:
 4. add `set_value` only when a declared benchmark page exposes a slider/spinbutton/value control that cannot be
    handled honestly by the installed operations; keep `read` in the observation/evidence path unless real-page
    measurements prove a separate read-only retrieval operation is necessary;
-5. add a diagnostic capability census and then strengthen `find_actions` with operation and region/role filtering
-   only where W1b demonstrates a retrieval failure.
+5. add a diagnostic capability census, then make the existing delivery owner automatically rank a bounded
+   `ActionCandidates` block and make `search_actions` reuse the same operation/region/path/role ranker as its fallback;
+   neither route may create or authorize actions.
 
 An installed operation does not require Runtime to understand its task-level value. Exact value actions may produce a
 mechanically closed local postcondition; event, navigation, hover, and other open actions may legitimately produce
@@ -1915,7 +2058,7 @@ pages.
 
 ```text
 WorldObservation -> lossless public ActorWorldSnapshot
-ActorWorldSnapshot + current ActionSpace -> WorldDeliveryIndex -> WorldDeliveryLens -> WorldDeliveryView + DeliveryManifest
+ActorWorldSnapshot + current ActionSpace -> WorldDeliveryIndex -> ActionCandidateProjection -> WorldDeliveryLens -> WorldDeliveryView + DeliveryManifest
 GoalPlan -> AgentGoalPlanView
 WorldDeliveryView + AgentGoalPlanView -> GroundedPolicyContextBinder
 ```
@@ -2220,32 +2363,36 @@ In initial_plan mode, use TaskGoal, accepted working state, the bounded public e
 to select exactly one bounded subtask.
 
 In review_and_route mode, assess the previous subtask from its contract, typed episode exit/recovery, fresh bounded
-public evidence, candidate outputs, and allowed evidence refs. In the same response choose exactly one next route:
-execute_subtask, request_finalization, ask_user, or blocked.
+public evidence, candidate outputs, allowed evidence refs, and the public final-response schema. In the same response
+choose exactly one next route: execute_subtask, request_finalization, ask_user, or blocked.
 
 Rules:
 - Treat the assessment as evidence-backed working judgment, not native-verifier truth.
 - Cite only offered evidence refs. Never invent GUI refs, selectors, actions, values, or completed outcomes.
 - If the previous strategy stalled or failed, an execute_subtask route must materially change objective, done_when,
   constraints, relevant facts, or candidate outputs. Increasing only the turn budget is not a new strategy.
-- Request finalization only when current evidence supports the requested result and constraints.
+- Request finalization only when current evidence supports the requested result and constraints. That route must carry
+  the complete direct final_response object plus its supporting evidence refs. Do not wrap it as a tool call.
 - Return only one value satisfying ManagerDecision; do not emit GUI tool calls or prose outside the schema.
 ```
 
 The optional Auditor keeps a separate narrow prompt only for an admitted strict-verification request. It returns one
 cited independent opinion and no route or subtask. W1b does not instantiate it.
 
-The finalizer is deliberately smaller than ActionPolicy and receives no ordinary ToolCatalog:
+There is no finalizer prompt. `FinalResponseBoundary` is mechanical and checks only the admitted ManagerReview result:
 
 ```text
-You are the final response formatter. Use the task instruction, public final-response schema, and admitted current
-candidate evidence. Call exactly one offered tool: submit_final_response. Put the complete public response object in
-its response argument. Do not call GUI/read tools, re-open evidence, change the task, or claim facts absent from the
-provided candidate evidence. Return no prose outside the tool call.
+route == request_finalization
++ direct final_response value
++ supporting current public evidence refs
++ TaskGoal public response JSON Schema
++ final-response latch is open
+-> existing FinalResponse
 ```
 
-These excerpts summarize the production YAML identities and are checked with prompt-contract tests. No live closure
-claim is permitted until the pending W1b witness succeeds.
+It performs no semantic completion judgment and no model repair. The ManagerReview excerpt above is the only prompt
+that assembles a mission-mode final response. These prompt/contract identities must be checked together. No live
+closure claim is permitted until the pending W1b witness succeeds.
 
 The canonical target GoalCompiler prompt is:
 
@@ -2369,7 +2516,7 @@ validation:
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | ManagerReview/final-response implementation complete; provider-free verification passed; W1b live pending / non-closed | preserve the unchanged inner GUI chain; W1b uses one initial Manager plan and one episode review in the normal case; the same review call assesses progress and selects the next route; independent Auditor is exceptional; finalization exposes one real provider-neutral response tool and no GUI/read tools; official live evidence remains required |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | ManagerReview implemented; finalization contract reopened by run10 / non-closed | preserve the unchanged inner GUI chain; W1b uses one initial Manager plan and one episode review in the normal case; the same review call assesses progress, selects the next route, and carries the final response when ready; independent Auditor is exceptional; a mechanical FinalResponseBoundary performs schema/evidence admission and one terminal send; remove the separate Finalizer/tool path before live verification |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:
@@ -2402,8 +2549,9 @@ Any follow-up fixes must preserve this boundary and be justified by a shared inv
 ### Phase 13 ManagerReview and final-response convergence plan
 
 Run7 proves that two semantic audit calls can fail after useful work is complete. Run8 proves that deleting Manager
-entirely and merely advertising `final_response` without a real catalog/wire operation is also wrong. The smallest
-coherent correction keeps the outer boundary but collapses ordinary review and replanning into one Manager call.
+entirely and merely advertising `final_response` without a real submission boundary is wrong. Run10 proves that
+adding a separate Finalizer LLM and forcing the correct business object through the generic tool envelope is also
+wrong. The smallest coherent correction keeps one ManagerReview semantic call and makes terminal admission mechanical.
 
 1. Keep explicit `standalone|manager_guided` composition. MiniWoB and product short tasks may remain standalone;
    WebArena W1b/W2 use manager-guided mode by manifest, never by task-text inference.
@@ -2414,7 +2562,8 @@ coherent correction keeps the outer boundary but collapses ordinary review and r
    evaluator data.
 3. Extend the existing `ManagerDecision` contract with a bounded working assessment
    (`not_applicable|satisfied|unsatisfied|unknown|blocked`), cited evidence refs, optional working-state proposals, one
-   route (`execute_subtask|request_finalization|ask_user|blocked`), and an optional replacement SubtaskContract. One
+   route (`execute_subtask|request_finalization|ask_user|blocked`), an optional replacement SubtaskContract, and
+   `final_response` plus `final_response_evidence_refs` only for `request_finalization`. One
    review call must both assess the prior episode and choose the next route; Supervisor must not call Auditor and then
    Manager for the ordinary case.
 4. Keep the existing `AuditBoundary` only as a mechanical evidence-admission boundary. It validates public lineage,
@@ -2425,25 +2574,29 @@ coherent correction keeps the outer boundary but collapses ordinary review and r
    durable ambiguous cross-episode claim. It is disabled for W1b task 0 and is never triggered by ordinary completion,
    navigation, read/search, budget rollover, stall, exact facts, or final evidence already reviewed from the current
    World.
-6. Repair finalization as one actual provider-neutral operation. Execution turns expose GUI/read tools plus
-   `yield_subtask`, never `final_response`. After `request_finalization`, build a catalog containing only
-   `submit_final_response(response=<public final schema>)`; expose no GUI/read tools. Native-tool and
-   JSON-single-command adapters must resolve this same catalog call to the existing `FinalResponse`. Then send/STOP
-   once, acquire once, and invoke the native evaluator once.
+6. Repair finalization as one mechanical boundary. Execution turns expose GUI/read tools plus `yield_subtask`, never
+   final response. ManagerReview receives the public response schema on `review_and_route` and returns the direct
+   business object only with `request_finalization`. `FinalResponseBoundary` validates route/value coherence, public
+   JSON Schema, cited evidence lineage/currentness, and the send latch; it then constructs the existing
+   `FinalResponse`. No native-tool or compact-json action envelope participates. Then send/STOP once, acquire once,
+   and invoke the native evaluator once.
 7. Delete superseded production paths and tests: mandatory `episode -> Auditor -> Manager`, final semantic re-audit,
-   W1b's manager-free special composition, context-only `final_response` advertising, JSON final-answer parsing that
-   bypasses ToolCatalog, and compatibility aliases for removed routes. Preserve one CoreAgentLoop, Binder, browser
-   session, MissionState, Supervisor, final delivery latch, and native completion authority.
+   W1b's manager-free special composition, context-only `final_response` advertising, the one-turn finalizing
+   CoreAgentLoop, finalizer prompt/model call, `submit_final_response` ToolCatalog/resolver path, and its wire-mode
+   compatibility aliases/tests. Preserve one CoreAgentLoop, Binder, browser session, MissionState, Supervisor,
+   mechanical FinalResponseBoundary, final delivery latch, and native completion authority.
 8. Prove provider-free frequency and protocol properties before another live run. Normal W1b task 0 has Manager calls
-   `2` (initial + outcome review), Auditor calls `0`, one finalizer call, and one STOP/native evaluation. A stalled
+   `2` (initial + outcome review), Auditor calls `0`, Finalizer calls `0`, one FinalResponseBoundary admission, and one
+   STOP/native evaluation. A stalled
    episode has one review/replan call and either a materially changed SubtaskContract or typed
-   `strategy_not_changed`. Finalizing catalogs contain only `submit_final_response`; malformed final responses cannot
-   fall back to `read_region`, and JSON/native wire paths produce the same `FinalResponse`.
+   `strategy_not_changed`. A missing or malformed ManagerReview final response is rejected before send, cannot fall
+   back to `read_region`, and never invokes ActionPolicy's JSON/native tool wire.
 
 No live benchmark, model tuning, new role, second state store, or second GUI loop is part of this convergence
-increment. The former role-frequency implementation result remains historical local evidence but is superseded by
-run8. The eight steps above are implemented and covered by provider-free owner/property/integration gates. Current
-status: **implementation complete / provider-free verification passed / W1b live pending / non-closed**.
+increment. The former role-frequency implementation result remains historical local evidence and is superseded by
+run8/run10. Steps 1–8 are now implemented and provider-free verified; no live run is claimed.
+Current status: **ManagerReview direct terminal response implemented / provider-free verification passed /
+fresh W1b live witness pending / W1b blocked / non-closed**.
 
 ## Removed at cutover
 
@@ -2482,12 +2635,20 @@ and summaries that existed only to support the old ledger-shaped context are no 
 - Keep BrowserGym raw capture and complete `WorldObservation` upstream of any model-facing cleanup. Deterministic
   cleanup, structural closure, token fitting, coverage, and optional future region selection stay behind the existing
   World-to-Actor projection seam; do not add a second DOM walker, browser tree, selector map, or `ModalityRouter`.
-  Deterministic task-text/BM25 ranking may choose which bounded regions expand, but it is a disposable preference and
-  cannot remove PageMap entries, World facts, ActionOptions, or recovery routes.
+  Deterministic TaskGoal/GoalPlan/path/BM25 ranking may choose at most five current ActionOptions and the bounded structural
+  closure shown with them, but it is a disposable preference and cannot remove PageMap entries, World facts,
+  ActionOptions, or recovery routes. The model executes the resulting current E-ref; Runtime does not ground a pure
+  semantic execution string.
 - Keep every current ActionOption either exact in the DeliveryManifest or reachable through `search_actions(query)`;
   keep every current public fact either exact or indexed behind a visible region and recoverable through
   `read_region(region_ref)`, `search_world(query)`, or `list_regions()`. Do not force every action target
   into the first `WorldDeliveryView`, and do not silently prefix-truncate omitted content.
+- Keep read and action discovery disjoint: `read_region` opens known content, `search_world` finds read-only facts,
+  and `search_actions` finds executable options. Immediate read results do not publish a duplicate affordance list;
+  legal controls from an opened region enter the next exact ActiveView through the ordinary Manifest path.
+- Keep navigation/page-changing actions atomic. A later `set_form_fields` experiment is limited to two-to-four
+  non-destructive fields in one current form, must stop on the first currentness/structure change, and cannot include
+  Filter/Submit or create a second Binder/Executor loop.
 - Keep generic memory/offload frameworks fail-open and outside W2 control; never permit cross-case recall.
 - Add a type only when it owns one non-duplicated invariant required by an episode or mission boundary.
 
@@ -2522,6 +2683,15 @@ with no P0/P1/P2. Per explicit user direction, this increment performs no live/p
 verified only at the provider-free contract level; live policy behavior remains unverified and requires separate
 future authorization.
 
+The successful run12 task-0 trajectory subsequently exposed the next delivery defect without reopening World
+authority: the full ActionSpace contained the Reports-path `Bestsellers` action, but the shallow automatic promotion
+favored a same-label Dashboard tab and the policy spent three observation-only region reads before explicit action
+search recovered the correct control. T3.3 therefore replaces the current lexical `DirectActions` preference with the
+typed, path-aware `ActionCandidateProjection` defined above and makes `search_actions` reuse that ranker. It also
+removes duplicated action semantics from immediate `read_region` results. This is a delivery/ranking increment only;
+T3.3 is not implemented or verified by the existing T3.2 evidence. The optional guarded `set_form_fields` contract is
+a later T3.4 efficiency gate and cannot be implemented as part of candidate-recall repair.
+
 - `TaskGoal` and fresh `WorldObservation` remain the user-intent and environment authorities.
 - A Ready GoalPlan is bounded, acyclic, versioned, projected once, and never treated as progress or proof.
 - Current-episode history survives beyond eight turns by retaining the existing projection-sanitized `AgentTurnView` records;
@@ -2542,6 +2712,9 @@ future authorization.
 - Folded PageMap descriptors contain no E/N/F refs; exact refs originate only from renderer-emitted
   `DeliveryManifest`; no separate model-visible affordance map or facet member-ref list exists; stable Tool Schemas do
   not enumerate the full current ref inventory.
+- Every automatic ActionCandidate is a current executable E-ref present in the same Manifest and ActionSpace; its
+  label/role/functional path/current state and closed match reasons are visible, while all non-promoted actions remain
+  recoverable through the same `search_actions` ranker.
 - `read_region`, `search_world`, `list_regions`, and `search_actions` promote exact results into the next current
   ActiveView/SearchResults with the same fresh resolver path. Paging tokens are Runtime-private: when another page
   exists, the next catalog alone offers zero-argument `read_next_page()` or `action_results_next_page()`. A caller need

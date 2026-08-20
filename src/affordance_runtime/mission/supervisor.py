@@ -4,19 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus
-from affordance_runtime.agent.working_facts import (
-    MAX_WORKING_FACTS,
-    WorkingFact,
-    is_public_scalar,
-)
+from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
-from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.boundary import AuditBoundary
@@ -38,6 +35,10 @@ from affordance_runtime.mission.contracts import (
     SupervisorState,
 )
 from affordance_runtime.mission.environment_projection import project_mission_environment
+from affordance_runtime.mission.finalization import (
+    FinalResponseBoundary,
+    FinalResponseRejection,
+)
 from affordance_runtime.mission.goal_projection import subtask_goal_resolution
 from affordance_runtime.mission.monitor import EpisodeMonitor
 from affordance_runtime.task.contracts import TaskGoal
@@ -60,11 +61,13 @@ class MissionRunResult:
     outcome: MissionOutcome = MissionOutcome.RUNNING
     manager_calls: int = 0
     auditor_calls: int = 0
-    finalizer_calls: int = 0
-    stop_send_calls: int = 0
-    post_stop_capture_calls: int = 0
-    native_evaluator_calls: int = 0
+    final_response_boundary_admission_count: int = 0
+    final_response_boundary_rejection_count: int = 0
+    stop_send_count: int = 0
+    post_stop_capture_count: int = 0
+    native_evaluator_count: int = 0
     boundary_rejections: int = 0
+    final_response_rejection_code: str = ""
     user_question: str = ""
     finalization: EnvironmentFinalization | None = None
 
@@ -126,6 +129,7 @@ class MissionSupervisor:
     manager: ManagerPort
     auditor: AuditorPort | None = None
     boundary: AuditBoundary = AuditBoundary()
+    final_response_boundary: FinalResponseBoundary = FinalResponseBoundary()
     max_rounds: int = 8
     strict_verification: bool = False
     trace_sink: RunTraceSink = NullRunTraceSink()
@@ -305,6 +309,8 @@ class MissionSupervisor:
                 review_world=current_world,
                 evidence_bundle=evidence,
                 candidate_output_keys=active_subtask.candidate_output_keys,
+                final_response_schema=_public_final_response_schema(task),
+                allowed_evidence_refs=_allowed_current_evidence_refs(evidence),
             )
             review = await self.manager.decide(review_request)
             manager_calls += 1
@@ -351,6 +357,55 @@ class MissionSupervisor:
                     manager_calls,
                     auditor_calls,
                     boundary_rejections,
+                )
+
+            if decision.route is ManagerRoute.REQUEST_FINALIZATION:
+                if not getattr(environment, "supports_finalization", False):
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.FINALIZATION_NOT_READY,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
+                boundary_result = self.final_response_boundary.admit(
+                    decision,
+                    review_request,
+                    mission,
+                    already_finalized=False,
+                )
+                _record_final_response_boundary(
+                    self.trace_sink,
+                    review_request,
+                    decision,
+                    boundary_result,
+                )
+                if not boundary_result.admitted or boundary_result.response is None:
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.FINALIZATION_NOT_READY,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                        final_response_boundary_rejection_count=1,
+                        final_response_rejection_code=(
+                            boundary_result.rejection_code.value
+                            if boundary_result.rejection_code is not None
+                            else FinalResponseRejection.FINAL_RESPONSE_INVALID.value
+                        ),
+                    )
+                return await self._finalize(
+                    runtime,
+                    environment,
+                    task,
+                    state,
+                    mission,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
+                    boundary_result.response,
                 )
 
             if self.strict_verification and active_subtask.related_audit_ids:
@@ -415,34 +470,6 @@ class MissionSupervisor:
                     )
                 mission = admitted.mission_state
 
-            if decision.route is ManagerRoute.REQUEST_FINALIZATION:
-                if (
-                    decision.assessment is not ManagerAssessment.SATISFIED
-                    or not decision.evidence_refs
-                ):
-                    return _result(
-                        state,
-                        mission,
-                        MissionOutcome.FINALIZATION_NOT_READY,
-                        manager_calls,
-                        auditor_calls,
-                        boundary_rejections,
-                    )
-                return await self._finalize(
-                    runtime,
-                    environment,
-                    task,
-                    state,
-                    mission,
-                    manager_calls,
-                    auditor_calls,
-                    boundary_rejections,
-                    tuple(
-                        record
-                        for evidence_ref in decision.evidence_refs
-                        if (record := evidence.resolve(evidence_ref)) is not None
-                    ),
-                )
             terminal = _non_execution_manager_result(
                 decision,
                 state,
@@ -476,97 +503,12 @@ class MissionSupervisor:
         manager_calls: int,
         auditor_calls: int,
         boundary_rejections: int,
-        manager_candidate_records: tuple[EvidenceRecord, ...],
+        response: FinalResponse,
     ) -> MissionRunResult:
-        if not getattr(environment, "supports_finalization", False):
-            return _result(
-                state,
-                mission,
-                MissionOutcome.FINALIZATION_NOT_READY,
-                manager_calls,
-                auditor_calls,
-                boundary_rejections,
-            )
-        acquisition = await environment.capture(
-            WorldObservationRequest(
-                ObservationRequestKind.POLICY_REQUEST,
-                "fresh final-response evidence",
-            )
-        )
-        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            state.status = RunStatus.FAILED
-            return _result(
-                state,
-                mission,
-                MissionOutcome.FINALIZATION_NOT_READY,
-                manager_calls,
-                auditor_calls,
-                boundary_rejections,
-            )
-        state.current_world = acquisition.observation
-        final_evidence = EvidenceBundle.from_world(state.current_world)
-        final_working_facts = _current_finalization_facts(
-            manager_candidate_records,
-            mission.finalization_working_facts(),
-            final_evidence,
-        )
-        if not final_working_facts:
-            return _result(
-                state,
-                mission,
-                MissionOutcome.FINALIZATION_NOT_READY,
-                manager_calls,
-                auditor_calls,
-                boundary_rejections,
-            )
-        final_contract = SubtaskContract(
-            "Format the single final response from admitted current candidate evidence.",
-            "Exactly one submit_final_response call matches the public response schema.",
-            relevant_fact_keys=tuple(item.key for item in mission.accepted_facts),
-            candidate_output_keys=("final_response",),
-            episode_turn_budget=1,
-        )
-        finalizing_runtime = runtime.with_runtime_controls(
-            ("submit_final_response",),
-            episode_monitor=None,
-        )
-        final_state = await finalizing_runtime.initialize_from_world(
-            task,
-            state.current_world,
-            subtask_goal_resolution(task, final_contract),
-            max_turns=1,
-            yield_on_budget_exhaustion=False,
-            working_facts=final_working_facts,
-        )
-        final_state = await finalizing_runtime.continue_task(environment, task, final_state)
-        _record_role_invocation(
-            self.trace_sink,
-            "finalizer",
-            1,
-            {"runtime_control": "submit_final_response"},
-            {"decision": final_state.last_step.decision if final_state.last_step else None},
-            trigger_kind="request_finalization",
-            subtask_id="final_response",
-            mission_version=mission.version,
-        )
-        decision = final_state.last_step.decision if final_state.last_step is not None else None
-        if not isinstance(decision, FinalResponse):
-            final_state.status = RunStatus.FAILED
-            _record_finalization_protocol(self.trace_sink, 0, 0, 0, "not_sent")
-            return _result(
-                final_state,
-                mission,
-                MissionOutcome.FINALIZATION_NOT_READY,
-                manager_calls,
-                auditor_calls,
-                boundary_rejections,
-                finalizer_calls=1,
-                stop_send_calls=0,
-            )
-        finalization = await environment.finalize(decision.content)
+        finalization = await environment.finalize(response.content)
         delivered = finalization.result.dispatch_status is not DispatchStatus.NOT_SENT
         if not delivered or finalization.post_acquisition is None:
-            final_state.status = RunStatus.FAILED
+            state.status = RunStatus.FAILED
             _record_finalization_protocol(
                 self.trace_sink,
                 1,
@@ -575,28 +517,28 @@ class MissionSupervisor:
                 finalization.result.dispatch_status.value,
             )
             return _result(
-                final_state,
+                state,
                 mission,
                 MissionOutcome.FINALIZED,
                 manager_calls,
                 auditor_calls,
                 boundary_rejections,
-                finalizer_calls=1,
-                stop_send_calls=1,
-                post_stop_capture_calls=int(finalization.post_acquisition is not None),
+                final_response_boundary_admission_count=1,
+                stop_send_count=1,
+                post_stop_capture_count=int(finalization.post_acquisition is not None),
                 delivered=delivered,
                 finalization=finalization,
             )
         post = finalization.post_acquisition
         if post.status is not AcquisitionStatus.ACQUIRED or post.observation is None:
-            final_state.status = RunStatus.FAILED
+            state.status = RunStatus.FAILED
         else:
-            final_state.current_world = post.observation
-            final_state.current_task_evaluation = await runtime.task_evaluator.evaluate(
+            state.current_world = post.observation
+            state.current_task_evaluation = await runtime.task_evaluator.evaluate(
                 task, post.observation
             )
-            final_state.status = _status_for_terminal_evaluation(
-                final_state.current_task_evaluation.status
+            state.status = _status_for_terminal_evaluation(
+                state.current_task_evaluation.status
             )
         _record_finalization_protocol(
             self.trace_sink,
@@ -606,16 +548,16 @@ class MissionSupervisor:
             finalization.result.dispatch_status.value,
         )
         return _result(
-            final_state,
+            state,
             mission,
             MissionOutcome.FINALIZED,
             manager_calls,
             auditor_calls,
             boundary_rejections,
-            finalizer_calls=1,
-            stop_send_calls=1,
-            post_stop_capture_calls=1,
-            native_evaluator_calls=int(
+            final_response_boundary_admission_count=1,
+            stop_send_count=1,
+            post_stop_capture_count=1,
+            native_evaluator_count=int(
                 post.status is AcquisitionStatus.ACQUIRED
                 and post.observation is not None
             ),
@@ -632,10 +574,12 @@ def _result(
     auditor_calls: int,
     boundary_rejections: int,
     *,
-    finalizer_calls: int = 0,
-    stop_send_calls: int = 0,
-    post_stop_capture_calls: int = 0,
-    native_evaluator_calls: int = 0,
+    final_response_boundary_admission_count: int = 0,
+    final_response_boundary_rejection_count: int = 0,
+    stop_send_count: int = 0,
+    post_stop_capture_count: int = 0,
+    native_evaluator_count: int = 0,
+    final_response_rejection_code: str = "",
     delivered: bool = False,
     finalization: EnvironmentFinalization | None = None,
     user_question: str = "",
@@ -655,11 +599,13 @@ def _result(
         outcome,
         manager_calls,
         auditor_calls,
-        finalizer_calls,
-        stop_send_calls,
-        post_stop_capture_calls,
-        native_evaluator_calls,
+        final_response_boundary_admission_count,
+        final_response_boundary_rejection_count,
+        stop_send_count,
+        post_stop_capture_count,
+        native_evaluator_count,
         boundary_rejections,
+        final_response_rejection_code,
         user_question,
         finalization,
     )
@@ -831,70 +777,28 @@ def _subtask_strategy(subtask: SubtaskContract) -> tuple[object, ...]:
     )
 
 
-def _current_finalization_facts(
-    manager_records: tuple[EvidenceRecord, ...],
-    admitted_facts: tuple[WorkingFact, ...],
-    current_bundle: EvidenceBundle,
-) -> tuple[WorkingFact, ...]:
-    """Re-resolve final candidates against the post-review fresh observation."""
+def _public_final_response_schema(task: TaskGoal) -> Mapping[str, object]:
+    contract = task.inputs.get(PUBLIC_FINAL_RESPONSE_CONTRACT_KEY)
+    if isinstance(contract, Mapping):
+        schema = contract.get("json_schema")
+        if isinstance(schema, Mapping) and schema:
+            return schema
+    return {}
 
-    facts: list[WorkingFact] = []
-    seen: set[tuple[object, ...]] = set()
-    candidates = (
-        *(
-            (f"manager_candidate_{index}", record, "ManagerReview cited candidate evidence")
-            for index, record in enumerate(manager_records, start=1)
-        ),
-        *((item.key, item.record, item.purpose) for item in admitted_facts),
-    )
-    for key, prior, purpose in candidates:
-        identity = _evidence_value_identity(prior)
-        if identity in seen:
-            continue
-        current = next(
-            (
-                record
-                for record in current_bundle.evidence_records
-                if _current_public_fact(record, current_bundle)
-                and _evidence_value_identity(record) == identity
-            ),
-            None,
+
+def _allowed_current_evidence_refs(bundle: EvidenceBundle) -> tuple[str, ...]:
+    sources = set(bundle.source_observation_ids)
+    return tuple(
+        record.evidence_ref
+        for record in bundle.evidence_records
+        if (
+            record.kind == "fact"
+            and is_public_scalar(record.value)
+            and record.observation_id == bundle.observation_id
+            and record.source_observation_id in sources
+            and record.has_typed_source
+            and bundle.source_coverages.get(record.source_observation_id, "") != "stale"
         )
-        if current is None:
-            continue
-        seen.add(identity)
-        facts.append(WorkingFact(key, current, 0, purpose))
-        if len(facts) == MAX_WORKING_FACTS:
-            break
-    return tuple(facts)
-
-
-def _evidence_value_identity(record: EvidenceRecord) -> tuple[object, ...]:
-    stable_source = (
-        "" if record.source_id == record.source_observation_id else record.source_id
-    )
-    return (
-        record.kind,
-        stable_source,
-        record.source_modality,
-        record.source_assurance,
-        record.subject_id,
-        record.predicate,
-        to_json_compatible(record.value),
-        record.artifact_kind,
-        record.output_id,
-        record.public_summary,
-    )
-
-
-def _current_public_fact(record: EvidenceRecord, bundle: EvidenceBundle) -> bool:
-    return bool(
-        record.kind == "fact"
-        and is_public_scalar(record.value)
-        and record.observation_id == bundle.observation_id
-        and record.source_observation_id in set(bundle.source_observation_ids)
-        and record.has_typed_source
-        and bundle.source_coverages.get(record.source_observation_id, "") != "stale"
     )
 
 
@@ -979,6 +883,33 @@ def _record_finalization_protocol(
             post_stop_capture_count=post_stop_capture_count,
             native_evaluator_count=native_evaluator_count,
             dispatch_status=dispatch_status,
+        )
+
+
+def _record_final_response_boundary(
+    trace_sink: RunTraceSink,
+    review: ManagerRoleRequest,
+    decision: ManagerDecision,
+    result,
+) -> None:
+    recorder = getattr(trace_sink, "final_response_boundary_evaluated", None)
+    if callable(recorder):
+        recorder(
+            mission_version=review.mission_state.version,
+            review_world_observation_id=(
+                review.review_world.observation_id
+                if review.review_world is not None
+                else ""
+            ),
+            schema_digest=result.schema_digest,
+            cited_evidence_refs=decision.final_response_evidence_refs,
+            admitted=result.admitted,
+            rejection_code=(
+                result.rejection_code.value
+                if result.rejection_code is not None
+                else ""
+            ),
+            response_digest=result.response_digest,
         )
 
 

@@ -261,10 +261,11 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
     instrumentation.set_custom_metric("mission_accepted_facts", 0)
     instrumentation.set_custom_metric("mission_boundary_rejections", 0)
     instrumentation.set_custom_metric("mission_final_response_delivered", 0)
-    instrumentation.set_custom_metric("mission_finalizer_calls", 0)
-    instrumentation.set_custom_metric("mission_stop_send_calls", 0)
-    instrumentation.set_custom_metric("mission_post_stop_capture_calls", 0)
-    instrumentation.set_custom_metric("mission_native_evaluator_calls", 0)
+    instrumentation.set_custom_metric("final_response_boundary_admission_count", 0)
+    instrumentation.set_custom_metric("final_response_boundary_rejection_count", 0)
+    instrumentation.set_custom_metric("stop_send_count", 0)
+    instrumentation.set_custom_metric("post_stop_capture_count", 0)
+    instrumentation.set_custom_metric("native_evaluator_count", 0)
     instrumentation.set_custom_metric("semantic_verifier_skipped_mechanical_count", 0)
     instrumentation.set_custom_metric("finalization_reused_evidence_count", 0)
     instrumentation.set_custom_metric("optional_auditor_calls", 0)
@@ -285,13 +286,20 @@ async def _run_mission(case, runtime, environment, task, composition, instrument
         state_holder["state"] = result.state
     instrumentation.set_custom_metric("mission_manager_calls", result.manager_calls)
     instrumentation.set_custom_metric("mission_auditor_calls", result.auditor_calls)
-    instrumentation.set_custom_metric("mission_finalizer_calls", result.finalizer_calls)
-    instrumentation.set_custom_metric("mission_stop_send_calls", result.stop_send_calls)
     instrumentation.set_custom_metric(
-        "mission_post_stop_capture_calls", result.post_stop_capture_calls
+        "final_response_boundary_admission_count",
+        result.final_response_boundary_admission_count,
     )
     instrumentation.set_custom_metric(
-        "mission_native_evaluator_calls", result.native_evaluator_calls
+        "final_response_boundary_rejection_count",
+        result.final_response_boundary_rejection_count,
+    )
+    instrumentation.set_custom_metric("stop_send_count", result.stop_send_count)
+    instrumentation.set_custom_metric(
+        "post_stop_capture_count", result.post_stop_capture_count
+    )
+    instrumentation.set_custom_metric(
+        "native_evaluator_count", result.native_evaluator_count
     )
     instrumentation.set_custom_metric("optional_auditor_calls", result.auditor_calls)
     instrumentation.set_custom_metric("mission_state_version", result.mission_state.version)
@@ -304,7 +312,7 @@ async def _run_mission(case, runtime, environment, task, composition, instrument
         for event in instrumentation.trace_recorder.events
         if event.get("event") == "mission_role_invocation"
     )
-    for role in ("manager", "auditor", "finalizer"):
+    for role in ("manager", "auditor"):
         triggers = {
             str(event.get("trigger_kind", "unknown"))
             for event in role_events

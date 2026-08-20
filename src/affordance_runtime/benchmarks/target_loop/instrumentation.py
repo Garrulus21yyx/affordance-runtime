@@ -175,6 +175,9 @@ class BenchmarkInstrumentation:
     def finalization_protocol(self, **counts) -> None:
         self.trace_recorder.finalization_protocol(**counts)
 
+    def final_response_boundary_evaluated(self, **event) -> None:
+        self.trace_recorder.final_response_boundary_evaluated(**event)
+
     def step_completed(self, step_number: int, result) -> None:
         self.trace_recorder.step_completed(step_number, result)
         execution = getattr(result, "execution", None)

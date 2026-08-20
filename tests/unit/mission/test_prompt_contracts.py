@@ -52,14 +52,14 @@ def test_grounded_agent_prompt_has_no_mixed_final_response_instruction() -> None
     assert "Never emit final JSON or prose directly" in prompt
 
 
-def test_final_response_prompt_identity_is_one_tool_and_no_evidence_reopen() -> None:
-    prompt = _prompt("final_response.yaml", "finalizer")
+def test_manager_owns_direct_terminal_value_and_no_finalizer_prompt_exists() -> None:
+    prompt = _prompt("mission_manager.yaml", "manager")
+    finalizer = files("affordance_runtime.model").joinpath("policy/prompts/final_response.yaml")
 
-    assert "You are the final response formatter." in prompt
-    assert "submit_final_response" in prompt
-    assert "Do not call GUI/read tools" in prompt
-    assert "reopen evidence" in prompt
-    assert "emit prose" in prompt
+    assert "direct final_response business value" in prompt
+    assert "Never call submit_final_response" in prompt
+    assert "{name, arguments}" in prompt
+    assert not finalizer.is_file()
 
 
 def test_optional_auditor_prompt_cannot_plan_route_or_mutate_state() -> None:

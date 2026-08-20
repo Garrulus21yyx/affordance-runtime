@@ -4,10 +4,8 @@ import asyncio
 import json
 from dataclasses import dataclass, replace
 
-import pytest
-
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
-from affordance_runtime.agent import FinalResponse, YieldSubtask
+from affordance_runtime.agent import YieldSubtask
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decision_capability import DecisionCapability
@@ -15,21 +13,22 @@ from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.mission import (
+    EvidenceBundle,
+    FinalResponseBoundary,
+    FinalResponseRejection,
     ManagerAssessment,
     ManagerDecision,
+    ManagerRecoveryView,
     ManagerRequestMode,
+    ManagerRoleRequest,
     ManagerRoute,
     MissionOutcome,
+    MissionState,
     MissionSupervisor,
     SubtaskContract,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
-from affordance_runtime.model.policy.grounded_tool_catalog import (
-    compile_grounded_action_catalog,
-    resolve_grounded_action_call,
-)
-from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolResolutionError
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
 from tests.support.model_delivery import delivery_for
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
@@ -56,19 +55,14 @@ FINAL_SCHEMA = {
 FINAL_VALUE = {
     "task_type": "RETRIEVE",
     "status": "SUCCESS",
-    "retrieved_data": ["Done"],
+    "retrieved_data": ["Quest Lumaflex™ Band"],
     "error_details": None,
 }
 
 
 class UnknownEvaluator:
     async def evaluate(self, task, observation):
-        return TaskEvaluation(
-            task.task_id,
-            observation.observation_id,
-            TaskEvaluationStatus.UNKNOWN,
-            "pre-STOP",
-        )
+        return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "pre-STOP")
 
 
 class PostStopEvaluator:
@@ -78,11 +72,7 @@ class PostStopEvaluator:
 
     async def evaluate(self, task, observation):
         self.calls += 1
-        status = (
-            TaskEvaluationStatus.COMPLETE
-            if self.fake.final_messages
-            else TaskEvaluationStatus.UNKNOWN
-        )
+        status = TaskEvaluationStatus.COMPLETE if self.fake.final_messages else TaskEvaluationStatus.UNKNOWN
         return TaskEvaluation(
             task.task_id,
             observation.observation_id,
@@ -93,9 +83,7 @@ class PostStopEvaluator:
 
 
 @dataclass
-class YieldThenFinalPolicy:
-    malformed: bool = False
-
+class YieldPolicy:
     def __post_init__(self):
         self.contexts = []
 
@@ -105,19 +93,14 @@ class YieldThenFinalPolicy:
 
     async def decide(self, context):
         self.contexts.append(context)
-        if context.runtime_controls == ("submit_final_response",):
-            if self.malformed:
-                return YieldSubtask(context.context_id, "outcome_proposed", "illegal fallback")
-            return FinalResponse(
-                context.context_id,
-                json.dumps(FINAL_VALUE, separators=(",", ":")),
-            )
         return YieldSubtask(context.context_id, "outcome_proposed", "candidate ready")
 
 
-class SatisfiedManager:
-    def __init__(self):
+class DirectResponseManager:
+    def __init__(self, *, response=FINAL_VALUE, use_allowed_ref: bool = True):
         self.requests = []
+        self.response = response
+        self.use_allowed_ref = use_allowed_ref
 
     async def decide(self, request):
         self.requests.append(request)
@@ -128,25 +111,20 @@ class SatisfiedManager:
                 subtask=SubtaskContract("Read answer", "Answer is visible"),
             )
         else:
-            record = next(
-                item
-                for item in request.evidence_bundle.evidence_records
-                if item.kind == "fact" and item.value == "Done"
-            )
+            refs = request.allowed_evidence_refs[:1] if self.use_allowed_ref else ("fact:disallowed",)
             decision = ManagerDecision(
                 ManagerAssessment.SATISFIED,
                 ManagerRoute.REQUEST_FINALIZATION,
-                (record.evidence_ref,),
+                evidence_refs=refs,
                 reason="Current evidence supports the response.",
+                final_response=self.response,
+                final_response_evidence_refs=refs,
             )
         return ModelInvocationResult(output=decision)
 
 
 def _env_task(*, fail_final: bool = False):
-    raw = raw_observation(
-        ax_node("input", "textbox", "Answer", value="Done"),
-        goal="Complete the long task.",
-    )
+    raw = raw_observation(ax_node("input", "textbox", "Answer", value="Done"), goal="Complete the long task.")
     fake = FakeBrowserGym(raw, fail_final=fail_final)
     env, task = open_fake(fake)
     task = replace(
@@ -161,84 +139,94 @@ def _env_task(*, fail_final: bool = False):
     return fake, env, task
 
 
-def _context(runtime_controls):
+def _context():
     _, env, task = _env_task()
     world = asyncio.run(env.reset(task)).observation
     evaluation = asyncio.run(UnknownEvaluator().evaluate(task, world))
-    context = ContextBuilder().build(
+    return ContextBuilder().build(
         task,
         world,
         ActionSpaceBuilder().build(task, world),
         evaluation,
         observation_capabilities=env.observation_capabilities,
-        runtime_controls=runtime_controls,
+        runtime_controls=("yield_subtask",),
     )
-    return context
 
 
-def test_ordinary_executor_catalog_has_no_final_response_operation() -> None:
-    context = _context(("yield_subtask",))
+def _boundary_input(*, allowed: bool = True, response=FINAL_VALUE):
+    _, env, task = _env_task()
+    world = asyncio.run(env.reset(task)).observation
+    bundle = EvidenceBundle.from_world(world)
+    ref = bundle.evidence_records[0].evidence_ref
+    subtask = SubtaskContract("Read answer", "Answer is visible")
+    request = ManagerRoleRequest(
+        ManagerRequestMode.REVIEW_AND_ROUTE,
+        task,
+        MissionState.empty(),
+        recovery=ManagerRecoveryView("outcome_proposed", True, subtask),
+        active_subtask=subtask,
+        review_world=world,
+        evidence_bundle=bundle,
+        final_response_schema=FINAL_SCHEMA,
+        allowed_evidence_refs=(ref,) if allowed else (),
+    )
+    decision = ManagerDecision(
+        ManagerAssessment.SATISFIED,
+        ManagerRoute.REQUEST_FINALIZATION,
+        final_response=response,
+        final_response_evidence_refs=(ref,),
+    )
+    return request, decision
+
+
+def test_ordinary_action_policy_catalog_never_contains_submit_final_response() -> None:
+    context = _context()
     catalog = compile_grounded_action_catalog(context, delivery_for(context))
     names = {item.spec.name for item in catalog.tools}
 
     assert "yield_subtask" in names
     assert "submit_final_response" not in names
-    assert "final_response" not in names
 
 
-def test_finalizing_catalog_contains_only_dynamic_submit_final_response() -> None:
-    context = _context(("submit_final_response",))
-    catalog = compile_grounded_action_catalog(context, delivery_for(context))
+def test_run10_direct_business_object_is_admitted_without_tool_envelope() -> None:
+    request, decision = _boundary_input()
 
-    assert [item.spec.name for item in catalog.tools] == ["submit_final_response"]
-    assert catalog.specs[0].input_schema["properties"]["response"] == FINAL_SCHEMA
+    result = FinalResponseBoundary().admit(decision, request, MissionState.empty(), already_finalized=False)
+
+    assert result.admitted
+    assert json.loads(result.response.content) == FINAL_VALUE
 
 
-def test_json_and_native_envelopes_resolve_through_same_catalog_to_same_final_response() -> None:
-    context = _context(("submit_final_response",))
-    delivery = delivery_for(context)
-    catalog = compile_grounded_action_catalog(context, delivery)
-    calls = (
-        ToolCall("submit_final_response", {"response": FINAL_VALUE}, "json-call"),
-        ToolCall("submit_final_response", {"response": FINAL_VALUE}, "native-call"),
+def test_schema_mismatch_and_disallowed_evidence_are_typed_zero_send_rejections() -> None:
+    request, malformed = _boundary_input(response={"status": "SUCCESS"})
+    schema_rejection = FinalResponseBoundary().admit(
+        malformed, request, MissionState.empty(), already_finalized=False
+    )
+    disallowed_request, valid = _boundary_input(allowed=False)
+    evidence_rejection = FinalResponseBoundary().admit(
+        valid, disallowed_request, MissionState.empty(), already_finalized=False
     )
 
-    decisions = [
-        resolve_grounded_action_call(
-            catalog,
-            call,
-            expected_context_id=context.context_id,
-            expected_delivery_id=delivery.delivery_id,
-            expected_catalog_id=catalog.catalog_id,
-        ).decision
-        for call in calls
-    ]
-
-    assert all(isinstance(item, FinalResponse) for item in decisions)
-    assert [json.loads(item.content) for item in decisions] == [FINAL_VALUE, FINAL_VALUE]
+    assert schema_rejection.rejection_code is FinalResponseRejection.FINAL_RESPONSE_INVALID
+    assert evidence_rejection.rejection_code is FinalResponseRejection.EVIDENCE_LINEAGE_INVALID
+    assert schema_rejection.response is None and evidence_rejection.response is None
 
 
-def test_malformed_final_response_is_typed_failure_and_cannot_fall_back_to_read_tools() -> None:
-    context = _context(("submit_final_response",))
-    delivery = delivery_for(context)
-    catalog = compile_grounded_action_catalog(context, delivery)
+def test_boundary_rejection_is_atomic_and_duplicate_finalization_is_rejected() -> None:
+    request, decision = _boundary_input(allowed=False)
+    mission = MissionState.empty()
 
-    with pytest.raises(GroundedToolResolutionError):
-        resolve_grounded_action_call(
-            catalog,
-            ToolCall("submit_final_response", {"response": {"status": "SUCCESS"}}),
-            expected_context_id=context.context_id,
-            expected_delivery_id=delivery.delivery_id,
-        )
+    rejected = FinalResponseBoundary().admit(decision, request, mission, already_finalized=False)
+    duplicate = FinalResponseBoundary().admit(decision, request, mission, already_finalized=True)
 
-    assert {item.spec.name for item in catalog.tools}.isdisjoint(
-        {"read_region", "search_world", "search_actions"}
-    )
+    assert mission == MissionState.empty()
+    assert not rejected.admitted
+    assert duplicate.rejection_code is FinalResponseRejection.ALREADY_FINALIZED
 
 
-def test_normal_mission_has_two_manager_zero_auditor_one_finalizer_one_stop_one_native_evaluation() -> None:
+def test_normal_mission_uses_two_manager_calls_no_finalizer_and_one_terminal_chain() -> None:
     fake, env, task = _env_task()
-    policy = YieldThenFinalPolicy()
+    policy = YieldPolicy()
     evaluator = PostStopEvaluator(fake)
     trace = RunTraceRecorder()
     runtime = compose_target_runtime(
@@ -249,52 +237,30 @@ def test_normal_mission_has_two_manager_zero_auditor_one_finalizer_one_stop_one_
     )
 
     result = asyncio.run(
-        MissionSupervisor(
-            SatisfiedManager(), None, max_rounds=2, trace_sink=trace
-        ).run(runtime, env, task)
+        MissionSupervisor(DirectResponseManager(), None, max_rounds=2, trace_sink=trace).run(runtime, env, task)
     )
 
     assert result.outcome is MissionOutcome.FINALIZED
-    assert (result.manager_calls, result.auditor_calls, result.finalizer_calls) == (2, 0, 1)
-    assert (
-        result.stop_send_calls,
-        result.post_stop_capture_calls,
-        result.native_evaluator_calls,
-    ) == (1, 1, 1)
-    assert fake.final_messages == [json.dumps(FINAL_VALUE, separators=(",", ":"))]
-    assert evaluator.calls == 3  # episode init, finalizing init, one post-STOP native evaluation
-    assert [context.runtime_controls for context in policy.contexts] == [
-        ("yield_subtask",),
-        ("submit_final_response",),
-    ]
-    assert [fact.value for fact in policy.contexts[1].working_facts] == ["Done"]
-    assert all(
-        fact.record.observation_id
-        == policy.contexts[1].current_observation.observation_id
-        for fact in policy.contexts[1].working_facts
-    )
-    manager_events = [
-        item
+    assert (result.manager_calls, result.auditor_calls) == (2, 0)
+    assert result.final_response_boundary_admission_count == 1
+    assert result.final_response_boundary_rejection_count == 0
+    assert (result.stop_send_count, result.post_stop_capture_count, result.native_evaluator_count) == (1, 1, 1)
+    assert [json.loads(item) for item in fake.final_messages] == [FINAL_VALUE]
+    assert evaluator.calls == 2  # episode initialization and exactly one post-STOP evaluation
+    assert len(policy.contexts) == 1
+    assert all("submit_final_response" not in context.runtime_controls for context in policy.contexts)
+    assert not any(
+        item["event"] == "mission_role_invocation" and item["role"] == "finalizer"
         for item in trace.events
-        if item["event"] == "mission_role_invocation" and item["role"] == "manager"
-    ]
-    assert [item["manager_request_mode"] for item in manager_events] == [
-        "initial_plan",
-        "review_and_route",
-    ]
-    assert manager_events[1]["assessment"] == "satisfied"
-    assert manager_events[1]["route"] == "request_finalization"
-    protocol = next(item for item in trace.events if item["event"] == "finalization_protocol")
-    assert (
-        protocol["stop_send_count"],
-        protocol["post_stop_capture_count"],
-        protocol["native_evaluator_count"],
-    ) == (1, 1, 1)
+    )
+    boundary_event = next(item for item in trace.events if item["event"] == "final_response_boundary_evaluated")
+    assert boundary_event["admitted"] is True
+    assert "Quest Lumaflex" not in json.dumps(boundary_event)
 
 
-def test_malformed_finalizing_turn_does_not_reopen_executor_or_send_stop() -> None:
+def test_invalid_response_causes_zero_send_and_no_second_policy_call() -> None:
     fake, env, task = _env_task()
-    policy = YieldThenFinalPolicy(malformed=True)
+    policy = YieldPolicy()
     runtime = compose_target_runtime(
         policy,
         ProductionActionOutcomeProjector(),
@@ -302,17 +268,22 @@ def test_malformed_finalizing_turn_does_not_reopen_executor_or_send_stop() -> No
         runtime_controls=("yield_subtask",),
     )
 
-    result = asyncio.run(MissionSupervisor(SatisfiedManager(), None, max_rounds=2).run(runtime, env, task))
+    result = asyncio.run(
+        MissionSupervisor(DirectResponseManager(response={"status": "SUCCESS"}), None, max_rounds=2).run(
+            runtime, env, task
+        )
+    )
 
     assert result.outcome is MissionOutcome.FINALIZATION_NOT_READY
-    assert result.finalizer_calls == 1
+    assert result.final_response_boundary_rejection_count == 1
+    assert result.stop_send_count == 0
     assert fake.final_messages == []
-    assert len(policy.contexts) == 2
+    assert len(policy.contexts) == 1
 
 
-def test_sent_unknown_does_not_retry_stop_and_still_runs_one_native_evaluation() -> None:
+def test_sent_unknown_does_not_retry_stop_and_evaluates_post_world_once() -> None:
     fake, env, task = _env_task(fail_final=True)
-    policy = YieldThenFinalPolicy()
+    policy = YieldPolicy()
     evaluator = PostStopEvaluator(fake)
     runtime = compose_target_runtime(
         policy,
@@ -321,13 +292,8 @@ def test_sent_unknown_does_not_retry_stop_and_still_runs_one_native_evaluation()
         runtime_controls=("yield_subtask",),
     )
 
-    result = asyncio.run(
-        MissionSupervisor(SatisfiedManager(), None, max_rounds=2).run(
-            runtime, env, task
-        )
-    )
+    result = asyncio.run(MissionSupervisor(DirectResponseManager(), None, max_rounds=2).run(runtime, env, task))
 
     assert len(fake.final_messages) == 1
-    assert result.stop_send_calls == 1
-    assert result.post_stop_capture_calls == 1
-    assert result.native_evaluator_calls == 1
+    assert (result.stop_send_count, result.post_stop_capture_count, result.native_evaluator_count) == (1, 1, 1)
+    assert evaluator.calls == 2
