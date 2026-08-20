@@ -28,7 +28,6 @@ from affordance_runtime.agent.decision_capability import (
 )
 from affordance_runtime.agent.decisions import (
     FinalResponse,
-    LocalToolResult,
     ProtocolFeedback,
     ProtocolFeedbackKind,
 )
@@ -51,6 +50,9 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
+)
+from affordance_runtime.model.policy.grounded_tool_rejection import (
+    grounded_tool_rejection_decision,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
@@ -287,12 +289,17 @@ class PydanticAIGroundedDecisionPort:
                             else "provider_envelope_invalid"
                         ),
                     )
-            if decision is None and not final_ready and resolution_error is not None:
-                decision = _tool_rejection_decision(
+            if (
+                decision is None
+                and not final_ready
+                and resolution_error is not None
+                and initial_call is not None
+            ):
+                decision = grounded_tool_rejection_decision(
                     resolution_error,
                     initial_call,
-                    catalog,
                     request.context_id,
+                    request.agent_context,
                 )
             if decision is None:
                 return self._invocation_failure(
@@ -763,8 +770,6 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     base_url = _required(env, f"{prefix}_BASE_URL")
     api_key = _required(env, f"{prefix}_API_KEY")
     model_id = _required(env, f"{prefix}_MODEL")
-    if model_id.casefold() == "glm-4.1v-thinking-flashx":
-        raise ValueError("glm-4.1v-thinking-flashx requires LLM_MODEL_ADAPTER=compact-json")
     selected_perception = DecisionPerceptionProfile(
         perception_profile
         or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
@@ -878,53 +883,6 @@ def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> Model
     if error.code is GroundedToolResolutionCode.GROUNDING_GAP:
         return _failure(ModelFailureKind.TOOL_GROUNDING_GAP, str(error))
     return _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, str(error))
-
-
-def _tool_rejection_decision(
-    error: GroundedToolResolutionError,
-    call: ToolCall | None,
-    catalog,
-    context_id: str,
-) -> LocalToolResult | None:
-    if call is None:
-        return None
-    operation = call.name
-    arguments = dict(call.arguments)
-    requested_ref = str(
-        arguments.get("target")
-        or arguments.get("exact_target")
-        or arguments.get("source")
-        or ""
-    )
-    matches = []
-    spec = next((item for item in catalog.specs if item.name == operation), None)
-    if spec is not None:
-        properties = spec.input_schema.get("properties") if isinstance(spec.input_schema, Mapping) else None
-        if isinstance(properties, Mapping):
-            for field in ("target", "exact_target", "source"):
-                schema = properties.get(field)
-                if isinstance(schema, Mapping) and isinstance(schema.get("enum"), Sequence):
-                    for ref in list(schema["enum"])[:3]:
-                        matches.append({"ref": ref, "verbs": (operation,)})
-                    break
-    return LocalToolResult(
-        context_id,
-        "tool_rejected",
-        {
-            "operation": operation,
-            "arguments": to_json_compatible(arguments),
-        },
-        {
-            "failure_kind": error.code.value,
-            "requested_operation": operation,
-            "requested_ref": requested_ref,
-            "why_rejected": error.detail or error.code.value,
-            "dispatch": "not_sent",
-            "world_changed": False,
-            "current_actionable_matches": tuple(matches),
-        },
-        call.call_id,
-    )
 
 
 def _protocol_feedback_decision(

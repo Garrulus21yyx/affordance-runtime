@@ -41,6 +41,9 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
+from affordance_runtime.model.policy.grounded_tool_rejection import (
+    grounded_tool_rejection_decision,
+)
 from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
     perception_uses_images,
@@ -136,8 +139,6 @@ class CompactJsonDecisionPort:
             raise ValueError("grounded-tools bridge requires a one-attempt transport")
         profile = DecisionPerceptionProfile(self.perception_profile)
         object.__setattr__(self, "perception_profile", profile)
-        if self.port.provider.casefold() != "zhipu" or self.port.model.casefold() != "glm-4.1v-thinking-flashx":
-            raise ValueError("compact JSON decision transport is admitted only for glm-4.1v-thinking-flashx")
         if not isinstance(self.context_binder, GroundedPolicyContextBinder):
             raise TypeError("grounded adapter requires one typed context binder")
 
@@ -210,16 +211,18 @@ class CompactJsonDecisionPort:
         if reconciliation.issue_code in _NON_NORMALIZABLE_ISSUES:
             # Unknown operation is not representation-equivalent. Preserve the
             # rejection and never make another provider call to choose a tool.
-            raise GroundedToolResolutionError(
+            error = GroundedToolResolutionError(
                 _resolution_code_for_reconciliation(reconciliation.issue_code)
             )
+            return self._rejection_resolution(request, original_call, error)
         elif (
             reconciliation.status is not ToolCallReconciliationStatus.EXACT
             and reconciliation.issue_code is not ToolCallIssueCode.INVALID_ARGUMENT
         ):
-            raise GroundedToolResolutionError(
+            error = GroundedToolResolutionError(
                 _resolution_code_for_reconciliation(reconciliation.issue_code)
             )
+            return self._rejection_resolution(request, original_call, error)
         try:
             decision = resolver(
                 catalog,
@@ -232,9 +235,29 @@ class CompactJsonDecisionPort:
             # Current target, grounding, stale-context, and semantic-argument
             # rejection are not repairable representations. Local catalog-aware
             # normalization already ran above; return the rejection unchanged.
-            raise exc
+            return self._rejection_resolution(request, original_call, exc)
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
         return decision, _metadata(
+            self.port,
+            self.perception_profile,
+            include_record=True,
+            prompt_version=self.context_binder.prompts.version,
+        )
+
+    def _rejection_resolution(
+        self,
+        request: ModelDecisionRequest,
+        call: ToolCall,
+        error: GroundedToolResolutionError,
+    ) -> tuple[GroundedActionResolution, ModelMetadata]:
+        object.__setattr__(self, "last_resolution_code", error.code)
+        decision = grounded_tool_rejection_decision(
+            error,
+            call,
+            request.context_id,
+            request.agent_context,
+        )
+        return GroundedActionResolution(decision), _metadata(
             self.port,
             self.perception_profile,
             include_record=True,

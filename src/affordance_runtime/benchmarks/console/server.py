@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from affordance_runtime.benchmarks.external_breadth.manifest import CAMPAIGN_ID, build_breadth_manifest
 from affordance_runtime.benchmarks.external_breadth.registry import load_registry_census
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.wire_capability import ActionPolicyWireCapability
 
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 _PROFILE_ID = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
@@ -38,6 +39,7 @@ class ConsoleRunSpec:
     goal_compiler_model: str = ""
     perception_profile: str = DecisionPerceptionProfile.STRUCTURE_FIRST.value
     profile: str = "CONSOLE_RUN"
+    action_wire_capability: str = ActionPolicyWireCapability.NATIVE_SINGLE_TOOL.value
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
@@ -51,6 +53,7 @@ class ConsoleRunSpec:
         if self.goal_compiler_mode == "disabled" and self.goal_compiler_model:
             raise ValueError("disabled GoalCompiler cannot select a model")
         DecisionPerceptionProfile(self.perception_profile)
+        ActionPolicyWireCapability(self.action_wire_capability)
         if _PROFILE_ID.fullmatch(self.profile) is None:
             raise ValueError("profile must be an uppercase bounded identifier")
 
@@ -126,11 +129,11 @@ class ConsoleRunManager:
             "action_models": [
                 {
                     "id": model,
-                    "adapter": _action_adapter(model),
                     "multimodal": model.casefold() == "glm-4.1v-thinking-flashx",
                 }
                 for model in action_models
             ],
+            "action_wire_capabilities": [item.value for item in ActionPolicyWireCapability],
             "goal_models": goal_models,
             "perception_profiles": [item.value for item in DecisionPerceptionProfile],
             "cases": [
@@ -234,7 +237,7 @@ class ConsoleRunManager:
             {
                 "LLM_ACTIVE_PROFILE": "zhipu",
                 "LLM_ZHIPU_MODEL": spec.action_model,
-                "LLM_MODEL_ADAPTER": _action_adapter(spec.action_model),
+                "LLM_ACTION_POLICY_WIRE_CAPABILITY": spec.action_wire_capability,
                 "LLM_DECISION_PERCEPTION": spec.perception_profile,
                 "LLM_GOAL_COMPILER_MODE": spec.goal_compiler_mode,
                 "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
@@ -380,10 +383,6 @@ def main() -> None:
         pass
     finally:
         server.server_close()
-
-
-def _action_adapter(model_id: str) -> str:
-    return "compact-json" if model_id.casefold() == "glm-4.1v-thinking-flashx" else "pydantic-ai"
 
 
 def _model_choices(defaults: tuple[str, ...], configured: str) -> list[str]:

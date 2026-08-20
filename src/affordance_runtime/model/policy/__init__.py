@@ -24,6 +24,7 @@ from affordance_runtime.model.policy.grounded_tool_port_bridge import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.wire_capability import ActionPolicyWireCapability
 
 __all__ = [
     "ModelBackedAgentPolicy",
@@ -42,4 +43,5 @@ __all__ = [
     "CompiledGroundedTool",
     "SelectorMode",
     "CompactJsonDecisionPort",
+    "ActionPolicyWireCapability",
 ]

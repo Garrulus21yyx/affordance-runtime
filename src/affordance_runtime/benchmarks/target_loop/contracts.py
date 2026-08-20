@@ -555,6 +555,7 @@ class BenchmarkCaseResult:
             "AskUser",
             "FinalResponse",
             "LocalToolResult",
+            "ProtocolFeedback",
             "RequestActionPage",
             "RequestObservation",
             "SelectAction",

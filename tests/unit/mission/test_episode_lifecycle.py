@@ -626,6 +626,9 @@ def test_repeated_multiple_calls_yield_protocol_stall_to_manager_without_auditor
     assert recovery.exit_kind == EpisodeYieldReason.PROTOCOL_STALL.value
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind.value == "protocol_stall"
+    assert manager.requests[1].environment.surface == "browser"
+    assert "read_current_world" in manager.requests[1].environment.available_capabilities
+    assert manager.requests[1].environment.unavailable_capabilities == ("public_web_search",)
 
 
 def test_strategy_convergence_guard_does_not_block_after_world_change() -> None:

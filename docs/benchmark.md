@@ -60,6 +60,37 @@ as a separate cohort and is not attributed to the adapter.
 
 ## Current evidence
 
+### 2026-08-20 T3.2 recovery-scope and wire-capability repair
+
+DeepSeek run2 is a progressive failure witness rather than a return to the original defect. Current `E19` and `E45`
+entered Catalog and dispatched; current `E59` was rejected only because `activate` was not one of its offered
+operations; no stale hidden ref was executed. Multi-call responses produced typed zero-dispatch feedback, and repeated
+feedback yielded `protocol_stall` directly to Manager with Auditor calls zero. The later failure was caused by Manager
+receiving no application/page/capability scope, DeepSeek's native wire repeatedly returning multiple calls, and the
+benchmark closed decision vocabulary rejecting `ProtocolFeedback` during report projection.
+
+The local repair adds one bounded `MissionEnvironmentView` to Manager, removes `<expired-ref-N>` from model history,
+selects ActionPolicy transport through `NATIVE_SINGLE_TOOL|JSON_SINGLE_COMMAND` provider capability, declares DeepSeek
+as JSON single-command, and adds `ProtocolFeedback` to benchmark projection without changing Runtime outcome. Both wire
+forms still converge on the same ToolCall/DeliveryManifest/Catalog/resolver/admission/Binder/Executor chain. The
+existing multi-call protocol feedback and Manager recovery path remains the exceptional fallback.
+
+Provider-free properties cover semantic history without ref aliases, bounded Manager scope without complete World or
+screenshots, current application/page/route-family projection, DeepSeek factory selection of the compact one-command
+transport, provider capability override validation, repeated protocol feedback with zero dispatch/Auditor calls zero,
+and successful formal `run.json`/`summary.json`/case-report serialization. No real provider, live WebArena task, or GUI
+mutation was run for this increment. The honest state is
+`T3.2 next-layer recovery implementation converged locally / provider-free verification passed /
+live success witness pending / non-closed`.
+
+Focused owner/cross-owner verification passes (`166 passed`); the full suite passes (`1348 passed, 19 skipped`), and
+Ruff/diff-check pass. The fresh six-page read-only diagnostic at
+`evidence/w1b-world-t32-next-layer-recovery-run3/` passes 6/6 with `ready=true`, `failure_origin=none`, no acceptance
+errors, request estimates `5171 / 5835 / 6679 / 6775 / 7075 / 11549`, and median `6727`. It loaded the repository
+WebArena URL environment but did not instantiate a model/provider or dispatch a GUI action. Run1 is retained as a
+failed environment witness: the first invocation omitted those URL settings, so all six cases failed before
+environment construction; it is not counted as product or projection evidence.
+
 ### 2026-08-20 T3.2 single-turn contract convergence
 
 The current provider-free increment closes four locally reproduced shared contract gaps without changing task
@@ -491,7 +522,7 @@ second time from project reporting. Reuse the mature owners exactly once:
 | task dataset, hard subset, task ID, template ID, revision, expected result | `webarena-verified` package | freeze only public task identity and selection metadata; never expose expected values to the model |
 | Gym registration, login, start URLs, tabs, Playwright tracing, STOP and evaluator invocation | `browsergym-webarena-verified` | import/configure the package and pass its registered task ID to the existing BrowserGym surface |
 | DOM/AX/screenshot acquisition and BrowserGym actions | existing `BrowserGymSurfaceAdapter` | generalize composition, not observation or execution semantics |
-| episode-level history | Qwen3-VL/Glass design signal, existing `project_step_result()` and `AgentTurnView` | close expired-ref sanitation in the existing projection, then retain those semantic records for the episode; the request renders older views compactly and the latest four in detail; deterministic folding occurs only on byte overflow |
+| episode-level history | Qwen3-VL/Glass design signal, existing `project_step_result()` and `AgentTurnView` | remove generation-local refs in the existing projection, then retain those semantic records for the episode; the request renders older views compactly and the latest four in detail; deterministic folding occurs only on byte overflow |
 | cross-stage planning and accepted state | LongHorizon-Harness MEA reference | adapt its Manager/Executor/Auditor role split, bounded rounds, route-pattern separation, repair policy, and human-gate patterns with attribution; do not import its generic Environment/orchestrator or textual task-state owners |
 | exact values required after navigation | project `pin_fact` local control contract | resolve current public evidence immediately; model never supplies the value or persists call-local refs |
 | task understanding and rolling GUI decisions | single existing ActionPolicy | long-horizon baseline deterministically projects SubtaskContract to one GoalPlan item; model GoalCompiler is disabled in this mode |
@@ -609,8 +640,9 @@ requests. This remains local contract evidence. A task-0 W1b diagnostic was subs
 shared boundary, but it did not close W1a or W1b: the real-page World/Actor gate and the complete six-site smokes remain
 pending before W2.
 
-4. **Thin mission roles — implemented locally.** Manager reads original TaskGoal, accepted MissionState, last typed exit/audit/failure, and
-   remaining budget; it emits one bounded SubtaskContract. Long-horizon mode deterministically projects that contract
+4. **Thin mission roles — implemented locally.** Manager reads original TaskGoal, accepted MissionState, last typed exit/audit/failure,
+   remaining budget, and a bounded ref-free MissionEnvironmentView from fresh public World; it emits one bounded
+   SubtaskContract. Long-horizon mode deterministically projects that contract
    to one GoalPlan item and disables the optional model GoalCompiler. ActionPolicy continues to own rolling GUI
    progress and receives only selected carry facts, current-episode history, fresh World/screenshot, and current tools.
 5. **Audit and accepted state — implemented locally.** Operational stall/oscillation rules may yield but never infer semantic completion.

@@ -79,6 +79,13 @@ def test_run_spec_rejects_unbounded_or_conflicting_inputs() -> None:
         ConsoleRunSpec("case", "glm-4.6", "disabled", "glm-4.7-flash")
     with pytest.raises(ValueError, match="uppercase"):
         ConsoleRunSpec("case", "glm-4.6", "model", "glm-4.7-flash", profile="shell;run")
+    with pytest.raises(ValueError, match="not a valid ActionPolicyWireCapability"):
+        ConsoleRunSpec(
+            "case",
+            "glm-4.6",
+            "disabled",
+            action_wire_capability="parallel_tools",
+        )
 
 
 def test_configuration_exposes_manifest_choices_without_secrets(
@@ -96,6 +103,10 @@ def test_configuration_exposes_manifest_choices_without_secrets(
         "timeout_s": 180.0,
     }]
     assert "configured-action" in {item["id"] for item in payload["action_models"]}
+    assert payload["action_wire_capabilities"] == [
+        "native_single_tool",
+        "json_single_command",
+    ]
     assert "configured-goal" in payload["goal_models"]
     assert "top-secret" not in json.dumps(payload)
 
@@ -115,12 +126,13 @@ def test_role_selection_only_changes_owned_environment(
         "miniwob-60-17",
         "glm-4.1v-thinking-flashx",
         "disabled",
+        action_wire_capability="json_single_command",
     ))
 
     assert enabled["LLM_ZHIPU_MODEL"] == "glm-4.6"
-    assert enabled["LLM_MODEL_ADAPTER"] == "pydantic-ai"
+    assert enabled["LLM_ACTION_POLICY_WIRE_CAPABILITY"] == "native_single_tool"
     assert enabled["LLM_GOAL_COMPILER_MODEL"] == "glm-4.7-flash"
-    assert disabled["LLM_MODEL_ADAPTER"] == "compact-json"
+    assert disabled["LLM_ACTION_POLICY_WIRE_CAPABILITY"] == "json_single_command"
     assert disabled["LLM_GOAL_COMPILER_MODE"] == "disabled"
     assert "LLM_GOAL_COMPILER_MODEL" not in disabled
 

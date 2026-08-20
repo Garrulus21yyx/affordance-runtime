@@ -21,6 +21,10 @@ from affordance_runtime.model.policy.perception import (
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
+from affordance_runtime.model.policy.wire_capability import (
+    ActionPolicyWireCapability,
+    action_policy_wire_capability,
+)
 from affordance_runtime.model.providers.port import ModelConfig, ModelPort, model_port_from_environment
 
 
@@ -42,10 +46,10 @@ def model_policy_from_environment(
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("model policy profile forbids provider fallback")
-    model_adapter = env.get("LLM_MODEL_ADAPTER", "compact-json").strip().casefold()
-    if model_adapter == "pydantic-ai":
+    wire_capability = action_policy_wire_capability(env)
+    if wire_capability is ActionPolicyWireCapability.NATIVE_SINGLE_TOOL:
         if model_port is not None:
-            raise ValueError("PydanticAI policy does not accept a compact-json model port")
+            raise ValueError("native single-tool policy owns its provider transport")
         from affordance_runtime.model.policy.pydantic_ai_bridge import (
             openai_compatible_pydantic_ai_policy_from_environment,
         )
@@ -55,8 +59,8 @@ def model_policy_from_environment(
             call_timeout_s=call_timeout_s,
             perception_profile=perception_profile,
         )
-    if model_adapter != "compact-json":
-        raise ValueError(f"unsupported LLM_MODEL_ADAPTER: {model_adapter}")
+    if wire_capability is not ActionPolicyWireCapability.JSON_SINGLE_COMMAND:
+        raise ValueError("unsupported ActionPolicy wire capability")
     port = model_port or model_port_from_environment(environment)
     configured_perception = perception_profile
     if configured_perception is None:
@@ -103,8 +107,8 @@ def model_roles_from_environment(
     goal_compiler_mode = env.get("LLM_GOAL_COMPILER_MODE", "model").strip().casefold()
     if goal_compiler_mode not in {"model", "disabled"}:
         raise ValueError("LLM_GOAL_COMPILER_MODE must be model or disabled")
-    model_adapter = env.get("LLM_MODEL_ADAPTER", "compact-json").strip().casefold()
-    if model_adapter == "compact-json":
+    wire_capability = action_policy_wire_capability(env)
+    if wire_capability is ActionPolicyWireCapability.JSON_SINGLE_COMMAND:
         shared_port = model_port_from_environment(env)
         policy = model_policy_from_environment(
             env,

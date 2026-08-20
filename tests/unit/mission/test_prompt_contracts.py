@@ -21,7 +21,7 @@ def _section_positions(prompt: str, sections: tuple[str, ...]) -> list[int]:
     return positions
 
 
-def test_manager_prompt_is_short_structured_and_hides_observation_surfaces() -> None:
+def test_manager_prompt_is_short_structured_and_limits_environment_projection() -> None:
     prompt = _prompt("mission_manager.yaml", "manager")
 
     sections = (
@@ -34,8 +34,10 @@ def test_manager_prompt_is_short_structured_and_hides_observation_surfaces() -> 
     _section_positions(prompt, sections)
     assert len(prompt) < 1700
     lowered = prompt.casefold()
-    for forbidden in ("screenshot", "world", "actionspace", "selector", "coordinate", "e/f ref"):
+    for forbidden in ("screenshot", "worldobservation", "actionspace", "selector", "coordinate", "e/f ref"):
         assert forbidden not in lowered
+    assert "MissionEnvironmentView" in prompt
+    assert "not a second environment authority" in prompt
     assert re.search(r"\bE[- ]?ref\b", prompt, flags=re.IGNORECASE) is None
     assert re.search(r"\bF[- ]?ref\b", prompt, flags=re.IGNORECASE) is None
 

@@ -233,7 +233,8 @@ def test_role_factory_uses_distinct_better_compiler_model(monkeypatch) -> None:
     roles = model_roles_from_environment({
         "LLM_ACTIVE_PROFILE": "zhipu", "LLM_ZHIPU_API_KEY": "secret",
         "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx", "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
-        "LLM_MODEL_ADAPTER": "compact-json", "LLM_INTERACTION_PROTOCOL": "grounded_tools.v2",
+        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+        "LLM_INTERACTION_PROTOCOL": "grounded_tools.v2",
     })
     assert roles.action_policy.port.port.model == "glm-4.1v-thinking-flashx"
     assert roles.goal_compiler.port.model == "glm-4.7-flash"
@@ -258,7 +259,6 @@ def test_role_factory_uses_aliyun_compiler_model_override(monkeypatch) -> None:
         "LLM_ALIYUN_API_KEY": "secret",
         "LLM_ALIYUN_MODEL": "glm-5.2",
         "LLM_GOAL_COMPILER_MODEL": "glm-5.2-compiler",
-        "LLM_MODEL_ADAPTER": "pydantic-ai",
     })
 
     assert roles.action_policy is action_policy
@@ -284,7 +284,6 @@ def test_role_factory_uses_deepseek_compiler_model_override(monkeypatch) -> None
         "LLM_DEEPSEEK_API_KEY": "secret",
         "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
         "LLM_GOAL_COMPILER_MODEL": "deepseek-v4-pro",
-        "LLM_MODEL_ADAPTER": "pydantic-ai",
     })
 
     assert roles.action_policy is action_policy
@@ -309,7 +308,6 @@ def test_pydantic_policy_keeps_distinct_compiler_model_override(monkeypatch) -> 
         "LLM_ZHIPU_API_KEY": "secret",
         "LLM_ZHIPU_MODEL": "glm-4.6",
         "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
-        "LLM_MODEL_ADAPTER": "pydantic-ai",
     })
 
     assert roles.action_policy is action_policy
@@ -328,7 +326,6 @@ def test_role_factory_can_explicitly_disable_goal_compiler(monkeypatch) -> None:
         "LLM_ZHIPU_MODEL": "glm-4.6",
         "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
         "LLM_GOAL_COMPILER_MODE": "disabled",
-        "LLM_MODEL_ADAPTER": "pydantic-ai",
     })
 
     assert roles.action_policy is action_policy

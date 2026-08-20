@@ -29,6 +29,7 @@ from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -475,7 +476,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     assert captured["resolution"].decision == normalized
 
 
-def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> None:
+def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
     base = {
         "LLM_ACTIVE_PROFILE": "zhipu",
         "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
@@ -502,17 +503,21 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
     assert prepared["temperature"] == 0.0
     assert prepared["parallel_tool_calls"] is False
 
-    with pytest.raises(ValueError, match="LLM_MODEL_ADAPTER=compact-json"):
-        zhipu_pydantic_ai_policy_from_environment(
-            {**base, "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx"},
-            call_timeout_s=5.0,
-        )
-
     selected = model_policy_from_environment(
-        {**base, "LLM_MODEL_ADAPTER": "pydantic-ai"},
+        {**base, "LLM_ACTION_POLICY_WIRE_CAPABILITY": "native_single_tool"},
         call_timeout_s=5.0,
     )
     assert isinstance(selected.port, PydanticAIGroundedDecisionPort)
+
+    compact = model_policy_from_environment(
+        {
+            **base,
+            "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+            "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+        },
+        call_timeout_s=5.0,
+    )
+    assert isinstance(compact.port, CompactJsonDecisionPort)
 
 
 def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
@@ -535,12 +540,11 @@ def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
     assert type(policy.port.model).__name__ == "ZaiModel"
 
 
-def test_pydantic_ai_factory_selects_deepseek_native_tool_profile() -> None:
+def test_factory_selects_deepseek_json_single_command_profile() -> None:
     selected = model_policy_from_environment(
         {
             "LLM_ACTIVE_PROFILE": "deepseek",
             "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-            "LLM_MODEL_ADAPTER": "pydantic-ai",
             "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY": "fixture-secret",
             "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
@@ -549,13 +553,8 @@ def test_pydantic_ai_factory_selects_deepseek_native_tool_profile() -> None:
         call_timeout_s=5.0,
     )
 
+    assert isinstance(selected.port, CompactJsonDecisionPort)
     assert selected.port.provider_id == "deepseek"
     assert selected.port.model_id == "deepseek-v4-flash"
-    assert selected.port.endpoint_host == "api.deepseek.com"
-    assert selected.port.supports_multimodal is False
-    assert type(selected.port.model).__name__ == "OpenAIChatModel"
-    prepared, _ = selected.port.model.prepare_request(
-        pydantic_bridge._ACTION_MODEL_SETTINGS,
-        ModelRequestParameters(),
-    )
-    assert prepared["parallel_tool_calls"] is False
+    assert selected.port.port.endpoint_class == "remote"
+    assert selected.port.port.supports_multimodal is False

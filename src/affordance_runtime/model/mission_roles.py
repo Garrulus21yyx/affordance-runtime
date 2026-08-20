@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
@@ -521,6 +522,7 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
         "last_typed_exit": request.last_typed_exit,
         "last_audit_or_failure_ref": request.last_audit_or_failure_ref,
         "remaining_rounds": request.remaining_rounds,
+        "environment": to_json_compatible(request.environment),
         "recovery": _manager_recovery_payload(request),
     }
     return _RolePrompt(
@@ -560,7 +562,10 @@ def _manager_recovery_payload(request: ManagerRoleRequest) -> Mapping[str, objec
             "missing_evidence": recovery.audit_guidance.missing_evidence,
             "recovery_hint": recovery.audit_guidance.recovery_hint,
         }
-    return payload
+    sanitized = sanitize_history_value(payload)
+    if not isinstance(sanitized, Mapping):
+        raise TypeError("Manager recovery projection must remain a mapping")
+    return sanitized
 
 
 def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:

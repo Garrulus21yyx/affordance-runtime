@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
-from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.contracts import AgentTurnView, sanitize_history_value
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.immutable import freeze_json
@@ -310,6 +310,48 @@ class ManagerRecoveryView:
 
 
 @dataclass(frozen=True)
+class MissionEnvironmentView:
+    """Bounded, ref-free projection of the fresh execution environment for Manager."""
+
+    surface: str = "unknown"
+    application: str = ""
+    page_title: str = ""
+    route_family: str = ""
+    available_capabilities: tuple[str, ...] = ()
+    unavailable_capabilities: tuple[str, ...] = ()
+    last_successful_transitions: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        surface = _ref_free_text(self.surface) or "unknown"
+        object.__setattr__(self, "surface", surface)
+        _bounded_text(surface, "environment surface", limit=80)
+        for name, value in (
+            ("environment application", self.application),
+            ("environment page title", self.page_title),
+            ("environment route family", self.route_family),
+        ):
+            clean = _ref_free_text(value)
+            object.__setattr__(self, name.removeprefix("environment ").replace(" ", "_"), clean)
+            if clean:
+                _bounded_text(clean, name, limit=240)
+        object.__setattr__(
+            self,
+            "available_capabilities",
+            _ref_free_unique(self.available_capabilities, "available_capabilities"),
+        )
+        object.__setattr__(
+            self,
+            "unavailable_capabilities",
+            _ref_free_unique(self.unavailable_capabilities, "unavailable_capabilities"),
+        )
+        object.__setattr__(
+            self,
+            "last_successful_transitions",
+            _ref_free_unique(self.last_successful_transitions, "last_successful_transitions")[-4:],
+        )
+
+
+@dataclass(frozen=True)
 class ManagerRoleRequest:
     original_task: TaskGoal
     mission_state: MissionState
@@ -317,10 +359,13 @@ class ManagerRoleRequest:
     last_audit_or_failure_ref: str = ""
     remaining_rounds: int = 0
     recovery: ManagerRecoveryView | None = None
+    environment: MissionEnvironmentView = field(default_factory=MissionEnvironmentView)
 
     def __post_init__(self) -> None:
         if self.recovery is not None and not isinstance(self.recovery, ManagerRecoveryView):
             raise TypeError("manager recovery view must be typed")
+        if not isinstance(self.environment, MissionEnvironmentView):
+            raise TypeError("manager environment view must be typed")
 
 
 @dataclass(frozen=True)
@@ -595,6 +640,21 @@ def _bounded_unique(values: tuple[str, ...], field_name: str) -> tuple[str, ...]
     for item in result:
         _bounded_text(item, field_name)
     return result
+
+
+def _ref_free_text(value: str) -> str:
+    sanitized = sanitize_history_value(value)
+    if not isinstance(sanitized, str):
+        raise TypeError("ref-free mission projection requires text")
+    return sanitized
+
+
+def _ref_free_unique(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:
+    bounded = _bounded_unique(values, field_name)
+    sanitized = tuple(
+        dict.fromkeys(clean for item in bounded if (clean := _ref_free_text(item)))
+    )
+    return _bounded_unique(sanitized, field_name)
 
 
 def _keys(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:

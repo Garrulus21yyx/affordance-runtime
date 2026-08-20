@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.contracts import AgentTurnView, sanitize_history_value
 from affordance_runtime.agent.decisions import (
     LocalToolResult,
     ProtocolFeedback,
@@ -522,9 +522,12 @@ def _recovery_evidence(
 
 
 def _bounded_argument_summary(arguments: Mapping[str, object]) -> Mapping[str, object]:
+    public_arguments = sanitize_history_value(arguments)
+    if not isinstance(public_arguments, Mapping):
+        return {}
     summary: dict[str, object] = {}
-    for key in sorted(str(item) for item in arguments)[:8]:
-        value = arguments[key]
+    for raw_key, value in sorted(public_arguments.items(), key=lambda item: str(item[0]))[:8]:
+        key = str(raw_key)
         if isinstance(value, str):
             summary[key] = value[:160]
         elif value is None or isinstance(value, bool | int | float):
@@ -575,14 +578,8 @@ def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> t
 def _prohibited_repeat(result: StepResult) -> str:
     if isinstance(result.decision, LocalToolResult):
         arguments = result.decision.arguments
-        subject = next(
-            (
-                str(arguments[name])[:120]
-                for name in ("region_ref", "query", "evidence_ref")
-                if name in arguments and str(arguments[name]).strip()
-            ),
-            "the same arguments",
-        )
+        query = sanitize_history_value(str(arguments.get("query", "")))
+        subject = str(query)[:120] if query else "the same semantic arguments"
         return (
             f"Do not repeat {result.decision.tool_name} on {subject} "
             "without new evidence."

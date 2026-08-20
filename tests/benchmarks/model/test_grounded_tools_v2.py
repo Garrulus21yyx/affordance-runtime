@@ -57,6 +57,9 @@ from affordance_runtime.model.policy.grounded_tool_port_bridge import (
     CompactJsonDecisionPort,
     GroundedToolCommandPayload,
 )
+from affordance_runtime.model.policy.grounded_tool_rejection import (
+    grounded_tool_rejection_decision,
+)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import _build_request as _action_request
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -65,7 +68,6 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 )
 from affordance_runtime.model.policy.pydantic_ai_bridge import (
     _attempt_token_delta,
-    _tool_rejection_decision,
     _tool_resolution_failure,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
@@ -572,7 +574,9 @@ def test_invalid_compact_arguments_make_only_one_provider_call() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is not None
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, LocalToolResult)
+    assert outcome.output.decision.tool_name == "tool_rejected"
     assert port.calls == 1
 
 
@@ -605,7 +609,9 @@ def test_grounding_rejection_preserves_the_single_initial_attempt_in_trace() -> 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
     trace = _policy_trace_event(1, context, outcome, adapter)
 
-    assert outcome.failure is not None
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, LocalToolResult)
+    assert outcome.output.decision.tool_name == "tool_rejected"
     assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
     assert tuple(item.status for item in adapter.last_generation_attempts) == ("accepted",)
     assert len(trace["generation_attempts"]) == 1
@@ -730,7 +736,9 @@ def test_unknown_tool_intent_is_rejected_after_one_provider_call() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is not None
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, LocalToolResult)
+    assert outcome.output.decision.result["dispatch"] == "not_sent"
     assert port.calls == 1
     assert adapter.last_model_call_count == 1
 
@@ -760,7 +768,9 @@ def test_unknown_tool_is_rejected_after_one_provider_call() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is not None
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, LocalToolResult)
+    assert outcome.output.decision.result["dispatch"] == "not_sent"
     assert port.calls == 1
 
 
@@ -1076,12 +1086,17 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
         _resolve_catalog_call(catalog, initial, expected_context_id=context.context_id)
     assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
-    feedback = _tool_rejection_decision(captured.value, initial, catalog, context.context_id)
+    feedback = grounded_tool_rejection_decision(
+        captured.value,
+        initial,
+        context.context_id,
+        context,
+    )
     assert isinstance(feedback, LocalToolResult)
     assert feedback.result["failure_kind"] == "tool_grounding_gap"
     assert feedback.result["dispatch"] == "not_sent"
     assert feedback.result["world_changed"] is False
-    assert feedback.result["current_actionable_matches"] == ()
+    assert feedback.result["available_operations"] == ()
 
     request = _resolve_catalog_call(
         catalog,
@@ -1228,11 +1243,12 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
 
     recent = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
 
-    assert recent["action"]["details"]["containers"] == ["<expired-ref-1>"]
+    assert recent["action"]["details"]["containers"] == []
     assert recent["result"]["details"] == {
-        "counts": {"<expired-ref-1>": 2},
+        "counts": {},
         "total": 2,
     }
+    assert "expired-ref" not in json.dumps(recent)
     assert not re.search(r"\bE[1-9][0-9]{0,2}\b", json.dumps(recent))
 
     trace = _policy_trace_event(
@@ -1447,7 +1463,9 @@ def test_invalid_compact_target_fails_after_one_provider_call() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is not None
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, LocalToolResult)
+    assert outcome.output.decision.result["dispatch"] == "not_sent"
     assert port.calls == 1
 
 
@@ -1484,7 +1502,12 @@ def test_invalid_compact_call_cannot_trigger_a_second_provider_call() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is not None
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, LocalToolResult)
+    assert outcome.output.decision.result["dispatch"] == "not_sent"
+    assert outcome.output.decision.result["target"]["role"] == "textbox"
+    assert "type_text" in outcome.output.decision.result["available_operations"]
+    assert "E2" not in repr(outcome.output.decision.result)
     assert port.calls == 1
 
 
@@ -1626,7 +1649,8 @@ def test_grounded_recent_steps_keep_all_compact_and_latest_four_detailed() -> No
 
     assert recent_steps["retained_count"] == 10
     assert len(recent_steps["earlier_actions"]) == 6
-    assert recent_steps["earlier_actions"][0]["outcome"] == "step-0 used <expired-ref-1>"
+    assert recent_steps["earlier_actions"][0]["outcome"] == "step-0 used"
+    assert "expired-ref" not in json.dumps(recent_steps)
     assert len(recent_steps["recent_trajectory"]) == 4
     assert recent_steps["recent_trajectory"][-1]["action"]["arguments"] == {"text": "9"}
 

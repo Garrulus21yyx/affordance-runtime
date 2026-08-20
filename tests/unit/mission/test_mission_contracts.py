@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
@@ -38,6 +39,7 @@ from affordance_runtime.mission import (
     ManagerRecoveryView,
     ManagerRoleRequest,
     ManagerRoute,
+    MissionEnvironmentView,
     MissionState,
     OutcomeProposal,
     PromoteFactProposal,
@@ -157,7 +159,7 @@ def test_episode_monitor_large_local_results_are_bounded_total_and_yield(
     assert second.recovery_signal.observed_evidence["item_count"] == 1
     assert second.recovery_signal.observed_evidence["same_result_count"] == 2
     assert second.recovery_signal.prohibited_immediate_repeat == (
-        "Do not repeat read_region on R14 without new evidence."
+        "Do not repeat read_region on the same semantic arguments without new evidence."
     )
     assert third.recommendation is EpisodeMonitorRecommendation.YIELD
 
@@ -249,8 +251,90 @@ def test_manager_context_hides_world_screenshot_action_space_and_trajectory() ->
     assert result.output == ManagerDecision(ManagerRoute.BLOCKED, reason="no route")
     assert "screenshot" not in serialized
     assert "action_space" not in serialized
-    assert "world" not in serialized
+    assert "observation_id" not in serialized
+    assert "targets" not in serialized
+    assert "bindings" not in serialized
     assert "trajectory" not in serialized
+
+
+def test_manager_context_receives_bounded_environment_scope() -> None:
+    port = _Port({"route": "blocked", "reason": "no route"})
+    manager = ModelBackedMissionManager(port)
+    environment = MissionEnvironmentView(
+        "browser",
+        "Magento Admin",
+        "Ordered Products Report",
+        "/admin/reports/",
+        ("navigate_current_ui", "activate", "read_current_world"),
+        ("public_web_search",),
+        ("activate REPORTS", "activate Ordered Products Report"),
+    )
+
+    asyncio.run(manager.decide(ManagerRoleRequest(
+        _task(),
+        MissionState.empty(),
+        environment=environment,
+    )))
+
+    payload = json.loads(port.messages[1].content)["environment"]
+    assert payload == {
+        "surface": "browser",
+        "application": "Magento Admin",
+        "page_title": "Ordered Products Report",
+        "route_family": "/admin/reports/",
+        "available_capabilities": ["navigate_current_ui", "activate", "read_current_world"],
+        "unavailable_capabilities": ["public_web_search"],
+        "last_successful_transitions": ["activate REPORTS", "activate Ordered Products Report"],
+    }
+
+
+def test_manager_context_strips_generation_refs_from_environment_and_recovery() -> None:
+    port = _Port({"route": "blocked", "reason": "no route"})
+    manager = ModelBackedMissionManager(port)
+    environment = MissionEnvironmentView(
+        "browser",
+        "Magento Admin E19",
+        "Ordered Products Report <expired-ref-1>",
+        "/admin/reports/",
+        ("activate", "read_current_world"),
+        ("public_web_search",),
+        ("activate E19", "read_region R14", "inspect <expired-ref-2>"),
+    )
+    signal = RecoverySignal(
+        RecoveryKind.CONTROL_STALL,
+        "local_tool_result:sha256:abc",
+        {
+            "arguments": {
+                "region_ref": "R14",
+                "evidence_ref": "F2",
+                "target": "E59",
+                "query": "2022",
+            },
+            "same_result_count": 2,
+        },
+        ("read_region",),
+        "Do not repeat read_region on R14 or <expired-ref-3>.",
+    )
+    recovery = ManagerRecoveryView(
+        "control_stall",
+        False,
+        SubtaskContract("Read the current report", "The report value is visible"),
+        signal,
+    )
+
+    asyncio.run(manager.decide(ManagerRoleRequest(
+        _task(),
+        MissionState.empty(),
+        recovery=recovery,
+        environment=environment,
+    )))
+
+    payload = json.loads(port.messages[1].content)
+    serialized = json.dumps(payload)
+    assert not re.search(r"\b[ENFR][1-9][0-9]{0,3}\b", serialized)
+    assert "expired-ref" not in serialized
+    assert payload["environment"]["application"] == "Magento Admin"
+    assert payload["recovery"]["repeated_arguments"] == {"query": "2022"}
 
 
 def test_manager_context_receives_bounded_recovery_and_audit_guidance() -> None:

@@ -12,7 +12,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const refs = Object.fromEntries([
   "systemSignal", "systemLabel", "systemDetail", "runForm", "caseSelect", "caseMeta",
-  "actionModel", "adapterReadout", "thinkingReadout", "goalModel", "goalModelField",
+  "actionModel", "actionWireCapability", "thinkingReadout", "goalModel", "goalModelField",
   "perceptionSelect", "profileInput", "launchButton", "stopButton", "formError", "runStatus",
   "runClock", "eventCount", "turnCount", "executionCount", "outcomeReadout", "eventRail",
   "emptyState", "inspectorSummary", "jsonInspector", "copyButton", "stdoutToggle", "stdoutOutput",
@@ -41,6 +41,7 @@ async function initialize() {
     state.config = await api("/api/config");
     state.config.cases.forEach((item) => refs.caseSelect.append(option(item.case_id, `${item.case_id} · ${item.task_id}`)));
     state.config.action_models.forEach((item) => refs.actionModel.append(option(item.id, item.id)));
+    state.config.action_wire_capabilities.forEach((item) => refs.actionWireCapability.append(option(item, item)));
     state.config.goal_models.forEach((item) => refs.goalModel.append(option(item, item)));
     state.config.perception_profiles.forEach((item) => refs.perceptionSelect.append(option(item, item)));
     refs.perceptionSelect.value = "structure-first.v1";
@@ -64,9 +65,9 @@ function updateCaseMeta() {
 }
 
 function updateModelReadout() {
-  const item = state.config?.action_models.find((entry) => entry.id === refs.actionModel.value);
-  refs.adapterReadout.textContent = item?.adapter || "—";
-  refs.thinkingReadout.textContent = item?.adapter === "pydantic-ai" ? "disabled · 512" : "provider profile";
+  refs.thinkingReadout.textContent = refs.actionWireCapability.value === "native_single_tool"
+    ? "disabled · 512"
+    : "provider profile";
 }
 
 document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
@@ -76,6 +77,7 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
 }));
 refs.caseSelect.addEventListener("change", updateCaseMeta);
 refs.actionModel.addEventListener("change", updateModelReadout);
+refs.actionWireCapability.addEventListener("change", updateModelReadout);
 
 refs.runForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -83,6 +85,7 @@ refs.runForm.addEventListener("submit", async (event) => {
   const payload = {
     case_id: refs.caseSelect.value,
     action_model: refs.actionModel.value,
+    action_wire_capability: refs.actionWireCapability.value,
     goal_compiler_mode: state.goalMode,
     goal_compiler_model: state.goalMode === "model" ? refs.goalModel.value : "",
     perception_profile: refs.perceptionSelect.value,

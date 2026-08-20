@@ -92,7 +92,7 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
         "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
         "LLM_ZHIPU_API_KEY": "fixture",
         "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
-        "LLM_MODEL_ADAPTER": "compact-json",
+        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
         "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
     }
     policy = model_policy_from_environment(environment)

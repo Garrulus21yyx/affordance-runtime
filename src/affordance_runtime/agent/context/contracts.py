@@ -12,35 +12,60 @@ from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 
 _GENERATION_REF = re.compile(r"\b[ENFR][1-9][0-9]{0,3}\b")
+_LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]{0,3}>", re.IGNORECASE)
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
 
 
 def sanitize_history_value(value: object) -> object:
     """Remove observation-generation identity before a value enters episode history."""
 
-    return _sanitize_history_value(value, {})
+    return _sanitize_history_value(value)
 
 
-def _sanitize_history_value(value: object, refs: dict[str, str]) -> object:
+def _sanitize_history_value(value: object) -> object:
     if isinstance(value, str):
-        return _GENERATION_REF.sub(lambda match: _expired_ref(match.group(0), refs), value)
+        return _strip_generation_refs(value)
     if isinstance(value, Mapping):
-        return {
-            str(_sanitize_history_value(str(key), refs)): _sanitize_history_value(item, refs)
-            for key, item in value.items()
-            if str(key) not in _PRIVATE_HISTORY_KEYS and not str(key).endswith("_ref")
-        }
+        sanitized: dict[str, object] = {}
+        for key, item in value.items():
+            raw_key = str(key)
+            if (
+                raw_key in _PRIVATE_HISTORY_KEYS
+                or raw_key.endswith("_ref")
+                or _GENERATION_REF.fullmatch(raw_key)
+            ):
+                continue
+            clean_key = _strip_generation_refs(raw_key)
+            if not clean_key:
+                continue
+            if isinstance(item, str) and _ref_only(item):
+                continue
+            sanitized[clean_key] = _sanitize_history_value(item)
+        return sanitized
     if isinstance(value, tuple | list):
-        return tuple(_sanitize_history_value(item, refs) for item in value)
+        return tuple(
+            _sanitize_history_value(item)
+            for item in value
+            if not isinstance(item, str) or not _ref_only(item)
+        )
     return value
 
 
-def _expired_ref(ref: str, refs: dict[str, str]) -> str:
-    replacement = refs.get(ref)
-    if replacement is None:
-        replacement = f"<expired-ref-{len(refs) + 1}>"
-        refs[ref] = replacement
-    return replacement
+def _strip_generation_refs(value: str) -> str:
+    cleaned = _LEGACY_EXPIRED_REF.sub("", value)
+    cleaned = _GENERATION_REF.sub("", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\[\s*\]", "", cleaned)
+    cleaned = re.sub(r"\s+([,;:)\]])", r"\1", cleaned)
+    cleaned = re.sub(r"([(\[])\s+", r"\1", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip(" ,;:-")
+
+
+def _ref_only(value: str) -> bool:
+    return bool(
+        _GENERATION_REF.search(value) or _LEGACY_EXPIRED_REF.search(value)
+    ) and not _strip_generation_refs(value)
 
 
 @dataclass(frozen=True)

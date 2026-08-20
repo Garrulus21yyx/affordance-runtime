@@ -34,6 +34,7 @@ from affordance_runtime.mission.contracts import (
     SupervisorPhase,
     SupervisorState,
 )
+from affordance_runtime.mission.environment_projection import project_mission_environment
 from affordance_runtime.mission.goal_projection import subtask_goal_resolution
 from affordance_runtime.mission.monitor import EpisodeMonitor
 from affordance_runtime.task.contracts import TaskGoal
@@ -169,6 +170,10 @@ class MissionSupervisor:
                 last_ref,
                 remaining_budget,
                 manager_recovery,
+                project_mission_environment(
+                    current_world,
+                    state.recent_steps if state is not None else (),
+                ),
             )
             decision_result = await self.manager.decide(
                 manager_request

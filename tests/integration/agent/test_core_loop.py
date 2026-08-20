@@ -197,7 +197,7 @@ class CorePolicy:
             step = context.recent_steps.items[-1]
             assert step.semantic_action == "count_children"
             assert step.semantic_summary["result"] == {
-                "counts": {"<expired-ref-1>": 2, "<expired-ref-2>": 3},
+                "counts": {},
                 "total": 5,
             }
             return Abort(context.context_id, "count observed", AbortCategory.USER_REQUEST)
@@ -317,7 +317,7 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
         assert state.execution_count == 0
         assert state.observation_count == 1
         assert state.recent_steps[0].semantic_summary["result"] == {
-            "counts": {"<expired-ref-1>": 2, "<expired-ref-2>": 3},
+            "counts": {},
             "total": 5,
         }
 

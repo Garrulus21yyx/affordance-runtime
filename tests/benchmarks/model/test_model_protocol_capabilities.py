@@ -25,11 +25,13 @@ from affordance_runtime.benchmarks.model_protocol import (
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposition
 from affordance_runtime.model.policy import (
     GROUNDED_TOOLS_PROTOCOL,
+    ActionPolicyWireCapability,
     CompactJsonDecisionPort,
     ModelBackedAgentPolicy,
 )
 from affordance_runtime.model.policy import factory as model_policy_factory
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.wire_capability import action_policy_wire_capability
 from affordance_runtime.model.providers.port import ModelConfig
 
 
@@ -69,6 +71,24 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
         "select_action", "request_evidence", "request_action_page", "ask_user",
         "count_children", "wait", "abort", "yield_subtask",
     }
+
+
+def test_provider_profile_declares_wire_capability_without_model_id_branching() -> None:
+    assert action_policy_wire_capability({"LLM_ACTIVE_PROFILE": "deepseek"}) is (
+        ActionPolicyWireCapability.JSON_SINGLE_COMMAND
+    )
+    assert action_policy_wire_capability({"LLM_ACTIVE_PROFILE": "zhipu"}) is (
+        ActionPolicyWireCapability.NATIVE_SINGLE_TOOL
+    )
+    assert action_policy_wire_capability({
+        "LLM_ACTIVE_PROFILE": "zhipu",
+        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+    }) is ActionPolicyWireCapability.JSON_SINGLE_COMMAND
+    with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
+        action_policy_wire_capability({
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_ACTION_POLICY_WIRE_CAPABILITY": "parallel_tools",
+        })
 
 
 def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:

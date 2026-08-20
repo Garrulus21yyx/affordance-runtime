@@ -7,7 +7,12 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.decisions import LocalToolResult, RequestObservation, SelectAction
+from affordance_runtime.agent.decisions import (
+    LocalToolResult,
+    ProtocolFeedback,
+    RequestObservation,
+    SelectAction,
+)
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
@@ -248,7 +253,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             for item in diagnostics.get("structured_output_violations", ())
         )
     decision = outcome
-    if isinstance(decision, (SelectAction, RequestObservation, LocalToolResult)):
+    if isinstance(decision, (SelectAction, RequestObservation, LocalToolResult, ProtocolFeedback)):
         event["outcome"] = type(decision).__name__
         event["decision"] = _decision_trace(decision)
         if isinstance(decision, SelectAction):
@@ -320,6 +325,9 @@ def _decision_trace(decision):
         "category",
         "tool_name",
         "arguments",
+        "call_count",
+        "detail",
+        "kind",
     ):
         item = getattr(decision, name, None)
         if item not in (None, ""):

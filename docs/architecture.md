@@ -14,6 +14,55 @@ task-completion authority.
 
 ### Implementation status
 
+#### 2026-08-20 recovery scope and provider-wire convergence
+
+The failed DeepSeek run2 did not reproduce the earlier DeliveryManifest authority gap: current `E19` and `E45` were
+accepted and dispatched, an unsupported operation on current `E59` was rejected, repeated multi-call responses
+produced zero dispatch, and `protocol_stall` returned directly to Manager with no Auditor call. It exposed the next
+bounded contract layer instead: Manager lacked execution-environment scope, DeepSeek's native-tool wire did not
+reliably honor the single-call request, model history still rendered generation-local refs as expired placeholders,
+and benchmark reporting omitted the new typed `ProtocolFeedback` decision.
+
+Manager now receives one immutable `MissionEnvironmentView` projected deterministically from the fresh public World:
+
+```text
+fresh WorldObservation
+  -> MissionEnvironmentView(
+       surface, application, page_title, route_family,
+       available/unavailable capabilities,
+       at most four successful semantic transitions)
+  -> Manager -> SubtaskContract -> existing CoreAgentLoop
+```
+
+The environment projection and one-shot Manager recovery projection carry no E/N/F/R refs, legacy expired-ref aliases,
+observation identity, screenshot, complete World, action trajectory, private route, query/fragment, provider transcript,
+or benchmark answer. They are current scope guidance, not environment
+authority or mission memory. `MissionState` remains audit-owned; an operational stall still does not create audited
+state. Model recent-step history likewise contains no expired-ref aliases: generation-local identity is removed, while
+typed rejection feedback keeps the attempted operation, semantic role/label, observed failure, and currently available
+operations. Full call/ref identity remains trace-only.
+
+ActionPolicy wire selection is now owned by the typed provider capability
+`NATIVE_SINGLE_TOOL|JSON_SINGLE_COMMAND`, optionally declared through
+`LLM_ACTION_POLICY_WIRE_CAPABILITY`; it is not selected by a model-ID branch or the retired
+`LLM_MODEL_ADAPTER` switch. DeepSeek profiles declare `JSON_SINGLE_COMMAND` and reuse the existing compact one-command
+schema. The benchmark console carries the capability as an explicit run field rather than deriving it from the selected
+model ID. Native and JSON wires converge immediately on one `ToolCall`, then share the same `ModelTurnDelivery`, Catalog,
+resolver, admission, Binder, Executor, and fresh-World path. `multiple_tool_calls -> ProtocolFeedback -> protocol_stall`
+remains the exceptional fail-closed fallback, not DeepSeek's expected operating path.
+
+Benchmark projection now includes `ProtocolFeedback` in its closed decision vocabulary and preserves it as its own
+type. A provider-free long-horizon counterexample proves repeated protocol feedback has zero GUI execution, reaches
+Manager blocked with Auditor calls zero, and still writes `run.json`, `summary.json`, and the case report. This
+increment does not change World compression, DeliveryManifest, Auditor, GoalPlan, Binder, or the CoreAgentLoop control
+chain, and it adds no action queue, arbitrary multi-action execution, `fill_form`, `SemanticTargetSelector`, VLM
+fallback, or second GUI loop. No live task or real provider was run for this increment; live success remains pending
+and the work is non-closed. Focused owner/cross-owner tests pass (`166 passed`), the full suite passes (`1348 passed,
+19 skipped`), and Ruff/diff-check pass. The fresh six-page read-only gate at
+`evidence/w1b-world-t32-next-layer-recovery-run3/` passes 6/6 with `ready=true`, no acceptance errors, median request
+estimate `6727`, and no provider attempts or GUI actions. The preceding run1 is retained as configuration-failure
+evidence because it omitted the repository's WebArena URL environment.
+
 #### 2026-08-20 single-turn delivery and audit-routing convergence
 
 The current local implementation has one per-turn delivery owner. `GroundedPolicyContextBinder.model_turn_delivery()`
@@ -411,7 +460,7 @@ TaskGoal, but Runtime does not pretend to detect implicit reliance on a stale va
 
 | Role | Reads | Produces | Must not do |
 |---|---|---|---|
-| Manager | original TaskGoal, accepted MissionState, last exit/audit ref/failure, remaining round budget, and at most one Supervisor-projected recovery view for the immediately following decision | one `ManagerDecision` and optional bounded `SubtaskContract` | inspect screenshots/current World, read an unbounded executor trajectory, persist recovery as progress/memory, execute GUI actions, or mark outcomes audited/completed |
+| Manager | original TaskGoal, accepted MissionState, last exit/audit ref/failure, remaining round budget, one ref-free `MissionEnvironmentView` from fresh public World, and at most one Supervisor-projected recovery view for the immediately following decision | one `ManagerDecision` and optional bounded `SubtaskContract` | inspect screenshots/complete World, read an unbounded executor trajectory, treat environment scope as accepted progress, persist recovery as progress/memory, execute GUI actions, or mark outcomes audited/completed |
 | ActionPolicy | original TaskGoal, one local GoalPlan, selected carry facts, episode working set, fresh World/current screenshot, current tools, compact older and detailed recent renderings of existing AgentTurnView records | one existing semantic/local control tool call | read previous episode trajectories, write MissionState, or decide formal completion |
 | EpisodeMonitor | existing StepResult/AgentTurnView and current World fingerprint | operational event and continue/yield recommendation | infer semantic task progress or choose a recovery plan |
 | Auditor | original public instruction, subtask-relevant constraints and `objective/done_when`, relevant pre-episode MissionState/facts, fresh public audit World, bounded sanitized episode evidence, allowed public evidence refs, base mission version, and explicit audit reason | the sole `AuditDelta` contract with `audited_satisfied/unsatisfied/unknown/blocked`, fact promotions/invalidations, missing evidence, recovery hint | read `TaskGoal.inputs`, final-response/tool schemas, hidden evaluator/provider data, mutate GUI, or directly write MissionState |
@@ -424,7 +473,7 @@ EpisodeMonitor emits only mechanically supported events such as `STATE_CHANGED`,
 force an early yield after a frozen threshold; Manager owns the recovery choice.
 
 The Supervisor does not reduce a mechanically explained stall to a bare `evidence_gap`. For
-`control_stall|grounding_stall|capability_gap`, it routes directly to Manager and skips Auditor because no semantic
+`control_stall|grounding_stall|capability_gap|protocol_stall`, it routes directly to Manager and skips Auditor because no semantic
 completion claim is being assessed. The one-shot `ManagerRecoveryView` wraps the Monitor-owned `RecoverySignal` and
 adds only episode-local projection facts: whether the public World changed, the prior SubtaskContract, and the bounded
 attempted modes. It is consumed by the next Manager call and is neither written to MissionState nor retained as a
@@ -650,7 +699,7 @@ mission semantics inside CoreLoop, SurfaceAdapter, Binder, ActionOutcomeProjecto
 | Existing owner | Permitted change |
 |---|---|
 | new outer `mission/` package | Manager/Auditor ports and attributed prompt adaptations, SupervisorState, MissionState, AuditDelta admission, EpisodeMonitor function, and the outer transition function; no generic harness, physical session, provider, or history implementation |
-| `agent/core_loop.py`, `agent/run_state.py`, existing `AgentTurnView`/`project_step_result()`, and context projection | shared reset/from-current-World initialization, episode-only YIELDED, bounded working facts, projection-level expired-ref sanitation, private F-ref mapping, and byte-bounded retention/rendering of existing AgentTurnView records; add no CompactStep/HistoryProjector |
+| `agent/core_loop.py`, `agent/run_state.py`, existing `AgentTurnView`/`project_step_result()`, and context projection | shared reset/from-current-World initialization, episode-only YIELDED, bounded working facts, projection-level generation-ref removal, private F-ref mapping, and byte-bounded retention/rendering of existing AgentTurnView records; add no CompactStep/HistoryProjector |
 | existing local tool catalog/resolver | `pin_fact` and `yield_subtask`; neither dispatches BrowserGym nor declares success |
 | `pyproject.toml` BrowserGym optional dependency group | keep the already pinned official WebArena-Verified integration; do not vendor either repository or add another harness dependency |
 | `world/environment.py` and `world/orchestrator.py` | expose and route the backend's existing `send_msg_to_user` capability through the environment boundary; reuse `DispatchStatus` and return unsupported for environments without it |
@@ -1406,8 +1455,8 @@ current `PerTurnToolCatalog` is exposed as a PydanticAI `ExternalToolset`, so a 
 tool call but never executes Python or GUI code inside the framework. Runtime resolves that call against the opaque
 current binding and remains the final validation authority.
 
-The temporary `PydanticAIGroundedDecisionPort` reuses the existing policy seam during migration. It is not a second
-permanent model abstraction. There is no global retry orchestrator: each provider adapter owns its explicit bounded
+The native `PydanticAIGroundedDecisionPort` and JSON-single-command compatibility transport reuse the existing policy
+seam. They are wire adapters, not a second model or GUI abstraction. There is no global retry orchestrator: each provider adapter owns its explicit bounded
 recovery so every physical call remains traceable. The PydanticAI action adapter disables SDK retries and reserves the
 overall deadline for at most two transport attempts plus bounded `Retry-After`/exponential backoff. Provider categories
 remain distinct in attempt evidence even though the public Agent failure is deliberately safe and compact. A watchdog
@@ -1416,10 +1465,11 @@ HTTP and structured-response code is reduced to the bounded compact path plus hi
 superseded pieces are removed. The compact-json path is a feature-frozen compatibility shim: it maps one provider
 response into the same public ToolCall/typed-decision representation as native tools, then enters the same Runtime
 catalog, admission, resolver, Binder, Executor, and TaskEvaluator path. It owns no ActionSpace, binding, dispatch,
-risk, task progress, task completion, or alternate loop. The compact exception currently applies to
-`glm-4.1v-thinking-flashx`, whose
-OpenAI-compatible response envelope is not a standard chat-completion/tool-call response;
-`LLM_MODEL_ADAPTER=compact-json` selects it.
+risk, task progress, task completion, or alternate loop. The typed `ActionPolicyWireCapability` selects
+`NATIVE_SINGLE_TOOL` or `JSON_SINGLE_COMMAND` from provider-profile capability, with an explicit
+`LLM_ACTION_POLICY_WIRE_CAPABILITY` override for configured profiles. DeepSeek uses the single-command JSON wire
+because live evidence shows its native tool response may contain several calls despite `parallel_tool_calls=false`;
+the Runtime fallback still rejects any unexpected multi-call envelope with zero dispatch.
 
 Standard text models such as `glm-4.6` use the PydanticAI native-tool path. Provider cohort composition accepts either
 grounded transport and derives identity from its owning adapter; the frozen same-model Mistral A/B path retains its

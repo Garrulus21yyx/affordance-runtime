@@ -247,6 +247,19 @@ def test_public_typed_projection_strings_use_closed_vocabularies(changes) -> Non
         BenchmarkCaseResult("case:one", "failed", True, "", 1.0, **changes)
 
 
+def test_protocol_feedback_is_in_the_closed_decision_vocabulary() -> None:
+    result = BenchmarkCaseResult(
+        "case:protocol",
+        "failed",
+        True,
+        "",
+        1.0,
+        last_decision_type="ProtocolFeedback",
+    )
+
+    assert result.last_decision_type == "ProtocolFeedback"
+
+
 def test_partial_and_completed_episode_truth_are_mutually_exclusive() -> None:
     with pytest.raises(ValueError, match="partial"):
         BenchmarkCaseResult(

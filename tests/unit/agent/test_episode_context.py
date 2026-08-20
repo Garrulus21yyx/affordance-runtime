@@ -86,11 +86,72 @@ def test_projected_history_removes_generation_local_entity_and_fact_refs() -> No
     )
 
     projected = project_step_result(result)
-
-    assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", json.dumps(to_json_compatible({
+    encoded = json.dumps(to_json_compatible({
         "summary": projected.semantic_summary,
         "reason": projected.reason,
-    })))
+    }))
+
+    assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
+    assert "expired-ref" not in encoded
+
+
+def test_rejected_action_history_keeps_semantics_and_capability_not_ref_identity() -> None:
+    world = shared_world("observation:rejected", False)
+    decision = LocalToolResult(
+        "context:test",
+        "tool_rejected",
+        {"operation": "activate", "arguments": {"target": "E59"}},
+        {
+            "attempted_operation": "activate",
+            "target": {"role": "focused_context", "label": "REPORTS"},
+            "failure_reason": "operation is not offered for the current target",
+            "available_operations": ("press_key",),
+            "dispatch": "not_sent",
+            "world_changed": False,
+        },
+    )
+    projected = project_step_result(StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world.observation_id),
+        feedback="tool_rejected",
+    ))
+    encoded = json.dumps(to_json_compatible(render_episode_history((projected,))))
+
+    assert projected.semantic_summary["result"]["target"] == {
+        "role": "focused_context",
+        "label": "REPORTS",
+    }
+    assert projected.semantic_summary["result"]["available_operations"] == ("press_key",)
+    assert "E59" not in encoded
+    assert "expired-ref" not in encoded
+
+
+def test_history_sanitizer_removes_legacy_expired_ref_aliases() -> None:
+    decision = LocalToolResult(
+        "context:test",
+        "tool_rejected",
+        {"summary": "activate <expired-ref-1>"},
+        {
+            "failure_reason": "<expired-ref-2> is not actionable",
+            "available_operations": ("press_key",),
+        },
+    )
+    world = shared_world("observation:legacy-alias", False)
+
+    projected = project_step_result(StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world.observation_id),
+        feedback="tool_rejected",
+    ))
+    encoded = json.dumps(to_json_compatible(render_episode_history((projected,))))
+
+    assert "expired-ref" not in encoded
+    assert "activate" in encoded
+    assert "press_key" in encoded
 
 
 def test_irreducible_history_overflow_yields_with_typed_reason() -> None:

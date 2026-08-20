@@ -5,7 +5,13 @@ from types import SimpleNamespace
 from affordance_runtime.actions import (
     ActionBinding,
 )
-from affordance_runtime.agent import RunStatus, SelectAction, YieldSubtask
+from affordance_runtime.agent import (
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
+    RunStatus,
+    SelectAction,
+    YieldSubtask,
+)
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -18,6 +24,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingEnvironment,
 )
+from affordance_runtime.benchmarks.target_loop.reporting import write_run_report
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import (
     ActionOutcome,
@@ -210,6 +217,84 @@ def test_long_horizon_runner_projects_outer_mission_outcome_and_metrics() -> Non
     assert result.measurements["mission_state_version"].value == 0
     assert result.measurements["mission_boundary_rejections"].value == 1
     assert len(manager.requests) == 2
+
+
+def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_path) -> None:
+    class ProtocolPolicy:
+        @property
+        def supported_decisions(self):
+            return frozenset()
+
+        async def decide(self, context):
+            return ProtocolFeedback(
+                context.context_id,
+                ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS,
+                2,
+                "multiple_tool_calls",
+            )
+
+    class Manager:
+        def __init__(self):
+            self.decisions = [
+                ManagerDecision(
+                    ManagerRoute.EXECUTE_SUBTASK,
+                    SubtaskContract(
+                        "Enter the remaining values one at a time",
+                        "Both values are visible",
+                        episode_turn_budget=6,
+                    ),
+                ),
+                ManagerDecision(ManagerRoute.BLOCKED, reason="protocol recovery exhausted"),
+            ]
+
+        async def decide(self, request):
+            del request
+            return ModelInvocationResult(output=self.decisions.pop(0))
+
+    class NoAuditor:
+        async def audit(self, request):
+            del request
+            raise AssertionError("protocol stall must bypass Auditor")
+
+    case = BenchmarkCase(
+        "mission-protocol-stall",
+        "suite",
+        "protocol feedback projection",
+        lambda: TaskGoal("mission-protocol", "Complete the current UI task."),
+        lambda _metrics: ScriptedEnvironment(initial_observation=fused_world("protocol-stall")),
+        lambda _metrics: BenchmarkComposition(
+            ProtocolPolicy(),
+            ActionOutcomeProjector(),
+            UnknownEvaluator(),
+            mission_manager=Manager(),
+            mission_auditor=NoAuditor(),
+            long_horizon=True,
+        ),
+        (RunStatus.BLOCKED,),
+        2.0,
+        7,
+        ("observations",),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    suite = asyncio.run(run_suite(BenchmarkManifest(
+        "target-loop-manifest.v1",
+        "suite",
+        "deterministic",
+        7,
+        (case,),
+    )))
+    result = suite.cases[0]
+    write_run_report(suite, str(tmp_path))
+
+    assert result.status == "blocked"
+    assert result.last_decision_type == "ProtocolFeedback"
+    assert result.measurements["executions"].value == 0
+    assert result.measurements["mission_manager_calls"].value == 2
+    assert result.measurements["mission_auditor_calls"].value == 0
+    assert (tmp_path / "run.json").is_file()
+    assert (tmp_path / "summary.json").is_file()
+    assert (tmp_path / "cases" / "mission-protocol-stall.json").is_file()
 
 
 def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:
