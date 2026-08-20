@@ -1487,6 +1487,31 @@ Only after this gate and fresh-context review may the project run the next W1b-A
 reopen T3.2 lossless World/recoverability evidence; it replaces the insufficient `DirectActions` ranking/presentation
 layer above it.
 
+The T3.3 cutover gate also checks removal, not only addition:
+
+- production and contract tests contain no `DirectActions`, `_preferred_action_refs`, or separate automatic-candidate
+  ordering beside the shared ranker;
+- immediate `read_region` and `search_world` results contain no `actionable`, `verbs`, or `action_refs`; a control
+  discovered while reading becomes executable only through the next current Manifest/ActiveView;
+- `search_actions` and automatic Top-5 delivery produce the same ordering for the same objective/query inputs and
+  differ only in their declared search scope;
+- the removed finalizer prompt, finalizer ActionPolicy episode, and `submit_final_response` ToolCatalog path remain
+  absent;
+- `native_single_tool` and `json_single_command` remain supported wire adapters and are verified to converge on the
+  same Catalog/resolver/admission/Binder path. Their coexistence is not counted as a second GUI chain.
+
+After the provider-free T3.3 gate, the frozen implementation order is:
+
+1. one bounded fresh-context review of the candidate/read-action boundary;
+2. W1b-Agent breadth evidence using the existing explicit manager-guided benchmark composition;
+3. product-facade convergence so callers can explicitly select `standalone|manager_guided` without entering through
+   the benchmark runner, plus one mechanical public result envelope for standalone `TaskOutcome` and admitted mission
+   final responses;
+4. T3.4 guarded same-form batching only if measured W1b turns/tokens justify it.
+
+The third step does not introduce task-text mode inference, a routing model, another Manager, another CoreLoop, or a
+second completion authority. It exposes an already existing composition choice and normalizes its public return shape.
+
 ##### T3.4: guarded same-form batch — deferred efficiency gate
 
 `set_form_fields` is not part of candidate-recall repair. It may be implemented only after T3.3 and a held-out form

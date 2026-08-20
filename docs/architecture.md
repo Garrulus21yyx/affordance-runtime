@@ -2598,6 +2598,63 @@ run8/run10. Steps 1–8 are now implemented and provider-free verified; no live 
 Current status: **ManagerReview direct terminal response implemented / provider-free verification passed /
 fresh W1b live witness pending / W1b blocked / non-closed**.
 
+### End-to-end chain audit and remaining convergence plan
+
+The 2026-08-20 repository-wide read follows the path from natural-language intake to the delivered result rather than
+auditing only the inner GUI loop. The current authoritative path is:
+
+```text
+NaturalLanguageTaskRequest
+  -> ThinTaskIntake -> TaskGoal
+  -> explicit standalone | manager_guided composition
+     |-> standalone: start/revision GoalCompiler -> advisory GoalPlan
+     `-> manager_guided: Manager -> SubtaskContract -> deterministic one-item GoalPlan
+                         (model GoalCompiler disabled)
+  -> one TargetRuntime / CoreAgentLoop
+  -> fresh World -> complete ActionSpace -> ModelTurnDelivery + DeliveryManifest
+  -> one ActionPolicy -> Resolver -> Admission -> Binder -> Executor
+  -> fresh World -> ActionOutcomeProjector -> TaskEvaluator/native verifier
+  -> structured task outcome or mechanically admitted ManagerReview final response
+```
+
+The GUI authority and execution path are singular: both execution modes reuse the same `TargetRuntime`, ActionSpace,
+Manifest, resolver, Binder, browser session, action-outcome projection, and TaskEvaluator. Manager runs only at task
+start and meaningful episode exits. The ordinary W1b composition installs no Auditor; the optional Auditor remains
+available only for an explicitly configured strict high-risk/durable claim. The former finalizer ActionPolicy episode,
+finalizer prompt, and `submit_final_response` tool path have been removed.
+
+Two branches are intentional and must not be mistaken for legacy control paths:
+
+- `standalone|manager_guided` is an explicit orchestration choice. It must never be inferred from task wording, and
+  manager-guided mode must continue to disable model GoalCompiler so that only one planner decomposes a subtask.
+- `native_single_tool|json_single_command` is a provider wire capability. Both adapters terminate at the same
+  `ToolCall -> Catalog -> Resolver -> Admission -> Binder` boundary. The JSON adapter remains required while supported
+  providers cannot reliably emit one native tool call; it owns no alternate World, action registry, or execution path.
+
+The remaining convergence work is bounded and ordered:
+
+1. **T3.3 delivery convergence — active.** Replace production `_preferred_action_refs`/`DirectActions` with one pure,
+   deterministic Top-5 candidate ranker. `search_actions` must reuse that ranker over the complete current ActionSpace.
+   Remove immediate `actionable`, `verbs`, and `action_refs` fields from `read_region`/`search_world` results and delete
+   tests that preserve those old contracts. Do not add a persistent candidate store, another registry, or an LLM
+   selector.
+2. **W1b-Agent evidence.** After provider-free candidate properties and fresh-context review pass, run the frozen
+   breadth evidence through the existing manager-guided benchmark composition. This remains the fastest falsifiable
+   test of the GUI-agent mainline.
+3. **Product entry/result convergence.** Lift the already typed explicit execution mode into the product composition
+   facade so a caller can choose standalone or manager-guided execution without using the benchmark runner as the only
+   mission entry. Project both terminal paths through one public run-result envelope: standalone carries the formal
+   `TaskOutcome`; manager-guided carries the admitted final response plus post-STOP native evaluation. This is a
+   mechanical facade change, not a router model, third loop, or new completion authority.
+4. **T3.4 only if measured.** Evaluate guarded same-form batching only when W1b evidence shows that repeated field
+   turns, rather than candidate discovery or output delivery, dominate cost.
+
+Removal searches at T3.3 cutover must prove that production code and contract tests no longer contain
+`DirectActions`, `_preferred_action_refs`, or read-result action inventory. They must also prove that the already
+removed finalizer prompt/tool/episode does not return. Provider wire adapters, `ModelInvocationResult`, explicit
+execution modes, E-ref execution, `DeliveryManifest`, and the single Binder/Executor path are preservation targets,
+not compatibility debt to delete.
+
 ## Removed at cutover
 
 The legacy `AgentLoop`, `AgentLoopState`, `ControlTransition`, `ControlContinuation`, `ControlFeedback`,
