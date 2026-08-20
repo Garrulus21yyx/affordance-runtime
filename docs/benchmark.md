@@ -1149,8 +1149,8 @@ full current WorldObservation
   -> current WorldDeliveryLens
   -> complete region directory + exact expanded subtrees
   -> ActionPolicy
-       |-> search_actions(query) # searches complete current ActionSpace
-       `-> read_region/search_world/list_regions over complete public World
+       |-> find_actions(query) # searches complete current ActionSpace
+       `-> open_region/find_content/list_regions over complete public World
 ```
 
 The full World remains the sole environment authority. `WorldRegionIndex` and `WorldDeliveryLens` are disposable
@@ -1159,8 +1159,8 @@ state badges, changed flag, and coverage. They never replace exact prices, IDs, 
 text. Expanded regions preserve exact public values, relations, current refs, and structural closure. The split
 read-only tools perform zero BrowserGym dispatch and support:
 
-- `read_region(region_ref)`: exact structurally closed, semantically paged subtree;
-- `search_world(query)`: exact current public text/role/label/value/fact matches with region location;
+- `open_region(region_ref)`: exact structurally closed, semantically paged subtree;
+- `find_content(query)`: exact current public text/role/label/value/fact matches with region location;
 - `list_regions()`: exact paged fallback when the directory is insufficient;
 - dynamically offered `read_next_page()`: continuation with Runtime-private paging state; and
 - structural inspection only in the verified baseline. Typed current screenshot crop/visual zoom remains a later
@@ -1168,7 +1168,7 @@ read-only tools perform zero BrowserGym dispatch and support:
 
 Every read call is bound to current World/context/catalog identity. Fresh acquisition invalidates old R/E refs,
 private paging state, query results, and lens state. Direct tool targets must be present in exact delivered content;
-actions in folded regions remain reachable through `search_actions`. No region selector may alter the complete ActionSpace or
+actions in folded regions remain reachable through `find_actions`. No region selector may alter the complete ActionSpace or
 private bindings.
 
 The historical T3.1 gate covered the following round-trip properties. Passing them remains regression evidence, not
@@ -1427,7 +1427,7 @@ TaskGoal + current GoalPlan objectives
 
 complete ActionSpace
   -> the same ranker
-  -> search_actions(query) fallback
+  -> find_actions(query) fallback
 ```
 
 Mission mode does not expose `SubtaskContract` as another ranking input: its active objective is already projected by
@@ -1439,8 +1439,8 @@ The implementation owners are fixed before code changes:
 |---|---|---|
 | `agent/context/world_region_index.py` | expose deterministic functional paths and region ownership for every current ActionOption without adding task state | site menu rules, selectors, expected routes, or another World |
 | `agent/context/compact_world_renderer.py` plus the existing model-turn delivery seam | replace shallow `_preferred_action_refs`/DirectActions output with typed Top-5 ActionCandidates and exact candidate closure | parsing rendered strings, a second candidate store, or an LLM selector |
-| `actions/paging.py` / existing action-search owner | make `search_actions` reuse the same rank features/order over the complete ActionSpace | a separate fuzzy-search truth or search-time execution |
-| `model/policy/grounded_tool_catalog.py` and current local-result contracts | keep public tool names stable; remove immediate read-result `actionable/action_refs/verbs` duplication while preserving next-view promotion | merging read/content/action tools or silently choosing an E-ref |
+| `actions/paging.py` / existing action-search owner | make `find_actions` reuse the same rank features/order over the complete ActionSpace | a separate fuzzy-search truth or search-time execution |
+| `model/policy/grounded_tool_catalog.py` and current local-result contracts | perform one breaking rename to `open_region`/`find_content`/`find_actions`, remove the old names without aliases, and remove immediate region/content-result `actionable/action_refs/verbs` duplication while preserving next-view promotion | merging read/content/action tools, retaining aliases, or silently choosing an E-ref |
 | existing request/benchmark instrumentation | record candidate count, Recall@k/rank witnesses, observation-only calls before target action, repeated region-version reads, request tokens, and candidate/search provenance | benchmark values entering production ranking |
 
 No CoreLoop, Manager, GoalCompiler, ActionSpaceBuilder, Binder, SurfaceAdapter, browser session, or task verifier owner
@@ -1456,12 +1456,12 @@ The tool scopes are frozen as follows:
 
 | Tool | Question answered | Result contract |
 |---|---|---|
-| `read_region(region_ref)` | what exact content is inside this known PageMap region? | content/table/status/result plus coverage/version; no immediate duplicate `action_refs` or `verbs`; legal controls appear through the next exact ActiveView |
-| `search_world(query)` | where is this readable fact/value/text in the complete current World? | read-only N/F evidence with region location; no executable candidate merely because text belongs to a control |
-| `search_actions(query)` | which current legal controls can perform this intent? | ranked current E-ref candidates from the complete ActionSpace, installed into the next SearchResults/Manifest |
+| `open_region(region_ref)` | what exact content is inside this known PageMap region? | content/table/status/result plus coverage/version; no immediate duplicate `action_refs` or `verbs`; legal controls appear through the next exact ActiveView |
+| `find_content(query)` | where is this readable fact/value/text in the complete current World? | read-only N/F evidence with region location; no executable candidate merely because text belongs to a control |
+| `find_actions(query)` | which current legal controls can perform this intent? | ranked current E-ref candidates from the complete ActionSpace, installed into the next SearchResults/Manifest |
 
-No alias tools are added during migration. Existing public names remain stable while result payloads are narrowed at
-their current owners.
+This is one breaking cutover. No aliases are added. Historical evidence retains the old names as factual trace data;
+production code, prompt contracts, current tool-schema tests, and post-cutover evidence use only the new names.
 
 The provider-free T3.3 gate is property-based and includes held-out duplicate-label/path fixtures rather than a
 Magento-specific branch:
@@ -1473,12 +1473,12 @@ Magento-specific branch:
 - rank input may use normalized lexical/BM25/fuzzy match, path, role/operation compatibility, newly-revealed state,
   already-satisfied state, typed no-progress history, and declared effect risk, but never case identity, an answer,
   selector, private binding, or an LLM/embedding call;
-- all non-promoted actions remain recoverable through `search_actions`, which uses the same ranker and currentness
+- all non-promoted actions remain recoverable through `find_actions`, which uses the same ranker and currentness
   algebra rather than a second filtering implementation;
-- when a target is already present in ActionCandidates, a scripted policy can execute it without `read_region`; a
+- when a target is already present in ActionCandidates, a scripted policy can execute it without `open_region`; a
   live cohort separately reports observation-only calls before the first target action rather than making one model
   trajectory the provider-free oracle;
-- `read_region` and `search_world` return no duplicate executable inventory, while controls in a successfully opened
+- `open_region` and `find_content` return no duplicate executable inventory, while controls in a successfully opened
   region still enter the next normal ActiveView/Manifest;
 - `ActionCandidateProjection` changes neither World/ActionSpace digests nor GUI dispatch counters and cannot bypass
   resolver/admission/Binder.
@@ -1491,9 +1491,10 @@ The T3.3 cutover gate also checks removal, not only addition:
 
 - production and contract tests contain no `DirectActions`, `_preferred_action_refs`, or separate automatic-candidate
   ordering beside the shared ranker;
-- immediate `read_region` and `search_world` results contain no `actionable`, `verbs`, or `action_refs`; a control
+- current product schemas contain no `read_region`, `search_world`, or `search_actions` aliases; immediate
+  `open_region` and `find_content` results contain no `actionable`, `verbs`, or `action_refs`; a control
   discovered while reading becomes executable only through the next current Manifest/ActiveView;
-- `search_actions` and automatic Top-5 delivery produce the same ordering for the same objective/query inputs and
+- `find_actions` and automatic Top-5 delivery produce the same ordering for the same objective/query inputs and
   differ only in their declared search scope;
 - the removed finalizer prompt, finalizer ActionPolicy episode, and `submit_final_response` ToolCatalog path remain
   absent;
@@ -1920,8 +1921,9 @@ T3.2 now passes the stricter semantic/cost gate for the single
 The repaired fresh-context audit passed with no P0/P1/P2. A later authorized task-0 GLM-4.6 attempt reached policy but
 made no GUI dispatch: the old polymorphic `inspect_world(action, region_ref?, query?, cursor?)` contract invited the
 model to put natural-language search text into an opaque cursor. The run was stopped on request and is retained as a
-schema-clarity failure, not a task failure. The replacement contract uses `read_region(region_ref)`,
-`search_world(query)`, `list_regions()`, and `search_actions(query)`; Runtime-private continuation state is exposed only
+schema-clarity failure, not a task failure. The pre-T3.3 replacement contract used `read_region(region_ref)`,
+`search_world(query)`, `list_regions()`, and `search_actions(query)`; T3.3 supersedes the first, second, and fourth
+public names with `open_region`, `find_content`, and `find_actions`. Runtime-private continuation state is exposed only
 by dynamically offering zero-argument `read_next_page()` or `action_results_next_page()`. Semantic action schemas no
 longer expose advisory `expected_outcome`, and `wait(reason)` uses a Runtime-owned five-second bound. CoreLoop, Binder,
 Executor, ActionSpace authority, and browser dispatch semantics are unchanged.

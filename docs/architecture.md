@@ -930,8 +930,8 @@ cohort begins before the W1b smokes and independent audit pass:
    lifecycle and the single functional
    `WorldDeliveryIndex -> PageMap/ActionCandidates/ActiveView/SearchResults -> DeliveryManifest` path. T3.2 owns
    recoverable semantic delivery; T3.3 replaces shallow lexical DirectActions with a typed path-aware Top-5 candidate
-   projection and keeps `search_actions` as complete-ActionSpace fallback. Keep `read_region`, `search_world`, and
-   `search_actions` result scopes disjoint. Only after candidate recall passes may T3.4 evaluate guarded same-form
+   projection and keeps `find_actions` as complete-ActionSpace fallback. Keep `open_region`, `find_content`, and
+   `find_actions` result scopes disjoint. Only after candidate recall passes may T3.4 evaluate guarded same-form
    batching; navigation and Submit remain atomic. A visual crop remains a later typed image route. Do not add a model
    selector, second renderer/ActionSpace/Binder, hidden navigation workflow, or free-form semantic memory.
 11. **Real-web World and verification.** Before treating the six site runs as agent smokes, run the real-page
@@ -1043,8 +1043,8 @@ These layers answer different questions and must not be collapsed:
 | `WorldObservation` | SurfaceAdapter plus World fusion normalize public entities, facts, relations, capabilities, provenance, freshness, and truthful source coverage | no silent task-directed pruning; source truncation remains explicit | sole current environment authority |
 | `ActorWorldSnapshot` | existing World projection normalizes the supported public delivery algebra without applying a model budget | no model-delivery or whole-context pruning; it may only reflect explicit upstream source coverage | disposable, lossless public normalization |
 | `WorldDeliveryIndex` / `WorldDeliveryView` | one delivery owner builds a semantic PageMap, exact current detail, and lossless search indexes | yes, only with structural closure and a same-World recovery route | disposable non-authoritative projection |
-| `ActionCandidateProjection` | ranks at most five current executable `ActionOption`s from TaskGoal/current GoalPlan text, functional paths, current state, and recent outcomes; candidates are rendered with their exact structural closure | yes; every non-promoted option remains in the complete action index and is recoverable through `search_actions` | disposable advisory delivery projection, never legality or binding authority |
-| `DeliveryManifest` + stable tool schemas | the renderer names exactly which current refs are direct; PerTurnToolCatalog defines stable operation signatures; Runtime intersects selected refs with the current authoritative ActionSpace/evidence/region indexes | actions remain recoverable through `search_actions`; content through `read_region`/`search_world`/`list_regions` | sole model-callability contract for this turn |
+| `ActionCandidateProjection` | ranks at most five current executable `ActionOption`s from TaskGoal/current GoalPlan text, functional paths, current state, and recent outcomes; candidates are rendered with their exact structural closure | yes; every non-promoted option remains in the complete action index and is recoverable through `find_actions` | disposable advisory delivery projection, never legality or binding authority |
+| `DeliveryManifest` + stable tool schemas | the renderer names exactly which current refs are direct; PerTurnToolCatalog defines stable operation signatures; Runtime intersects selected refs with the current authoritative ActionSpace/evidence/region indexes | actions remain recoverable through `find_actions`; content through `open_region`/`find_content`/`list_regions` | sole model-callability contract for this turn |
 | trace | existing observability stores complete typed inputs, source lineage, model exchange, and metrics | binary media may be content-addressed | audit evidence only; never control state |
 
 The projection owner performs deterministic presentation cleanup, structural closure, budget fitting, and coverage
@@ -1110,9 +1110,9 @@ BrowserGym raw observation
   -> small stable ToolCatalog
   -> ActionPolicy
        |-> current GUI action
-       |-> search_actions(...)                # complete current ActionSpace
-       |-> read_region(...)                   # one known current region
-       `-> search_world(...)                  # complete current public content index
+       |-> find_actions(...)                  # complete current ActionSpace
+       |-> open_region(...)                   # one known current region
+       `-> find_content(...)                  # complete current public content index
 ```
 
 The additional types are projections, not new authorities:
@@ -1194,7 +1194,7 @@ functional-region closure:
 its ancestor path, nearest local heading/label, row/card/form/table context and headers where present, necessary public
 state, and current verbs. The model reasons over the semantic label/path but executes by returning the current E-ref;
 no second `A*` namespace and no pure-semantic execution target are introduced. Non-promoted actions remain reachable
-through `search_actions`. This ranking changes presentation only. It cannot create an ActionOption, add a verb, alter
+through `find_actions`. This ranking changes presentation only. It cannot create an ActionOption, add a verb, alter
 Binder legality, or infer a future path.
 
 The first deterministic ranker is deliberately bounded and provider-free. It combines normalized lexical/BM25 or
@@ -1251,16 +1251,16 @@ observation:
   active_view:
     - "[E7] link 'Reports' context='Primary navigation' verbs=[activate]"
   recovery:
-    - "read_region(region_ref=R2)"
-    - "search_world(query=<text>)"
-    - "search_actions(query=<text>)"
+    - "open_region(region_ref=R2)"
+    - "find_content(query=<text>)"
+    - "find_actions(query=<text>)"
 history:
   - "1. activate 'REPORTS' in Primary navigation -> menu expanded"
 tools:
   - "activate(target=E*)"
-  - "read_region(region_ref=R*)"
-  - "search_world(query=<text>)"
-  - "search_actions(query=<text>)"
+  - "open_region(region_ref=R*)"
+  - "find_content(query=<text>)"
+  - "find_actions(query=<text>)"
 ```
 
 The exact names and serialization follow existing typed contracts, but the information topology is fixed: one compact
@@ -1268,9 +1268,9 @@ map, one exact current working set, one short semantic history, and stable tools
 leak member refs, and structure-first sends no image for this ordinary page.
 
 The complete current `ActionSpace` remains unchanged and internal. Candidate actions come only from executable nodes
-printed exactly in the chosen delivery; actions in folded regions remain reachable through `search_actions`, which
+printed exactly in the chosen delivery; actions in folded regions remain reachable through `find_actions`, which
 uses the same deterministic ranker over the complete current ActionSpace and promotes exact fresh matches into the
-next SearchResults/ActiveView. Automatic candidates are the ordinary route; `search_actions` is the explicit recall
+next SearchResults/ActiveView. Automatic candidates are the ordinary route; `find_actions` is the explicit recall
 fallback when the candidate block is insufficient.
 The renderer emits `WorldDeliveryView(text, manifest)` directly. Tool exposure consumes the typed manifest; it must
 never rediscover refs with a regex over rendered text, a facet member list, or a previous tool enum.
@@ -1330,7 +1330,7 @@ full World -> full ActionSpace
                            -> PageMap/ActionCandidates/ActiveView/SearchResults
           -> typed DeliveryManifest
           -> stable per-operation tools for delivered targets
-          -> search_actions index over the full ActionSpace
+          -> find_actions index over the full ActionSpace
 ```
 
 `WorldDeliveryLens` is the only same-page delivery preference. It is a small discriminated value for
@@ -1341,28 +1341,33 @@ summary, remembered World, or progress authority. Stateless provider calls recei
 working set again; delta-only delivery is deferred because this Runtime does not rely on provider-side conversation
 state.
 
-#### Read-only progressive-disclosure tools
+#### Progressive-disclosure and action-discovery tools
 
-The public names remain `read_region`, `search_world`, and `search_actions`; no alias tools are added during the
-migration. Their scopes are disjoint and each has only its required argument:
+T3.3 performs one breaking public-name cutover. The final names are `open_region`, `find_content`, and
+`find_actions`; the former `read_region`, `search_world`, and `search_actions` names are removed rather than retained
+as aliases. Historical traces and evidence continue to use their original names. The final scopes are disjoint and
+each tool has only its required argument:
 
 ```text
-read_region(region_ref)
-search_world(query)
+open_region(region_ref)
+find_content(query)
+find_actions(query)
 list_regions()
 read_next_page()  # offered only when the prior World read has another page
 ```
 
-- `read_region` expands one current region as an exact structurally closed subtree, paged only at semantic row/card
+- `open_region` expands one known current region as an exact structurally closed subtree, paged only at semantic row/card
   boundaries. Its immediate local result is content-focused—summary, exact text/table/status/result content,
   coverage, and change/version metadata. It does not duplicate `action_refs`, `verbs`, or a second affordance list.
   If the expanded region contains legal controls, those controls appear normally as E-refs with verbs in the next
   exact ActiveView and same DeliveryManifest.
-- `search_world` searches exact text, role, label, value, and public facts in the complete current World. It returns
+- `find_content` searches exact text, role, label, value, and public facts in the complete current World. It returns
   exact snippets, region locations, coverage, and `has_more`, never an opaque paging token. It also installs a current
   `find` lens, so the next ActionPolicy request contains those same exact matches as SearchResults instead of losing
   their N/F/R refs in sanitized history. It never returns an executable candidate merely because matching text is
   attached to a control.
+- `find_actions` searches only the complete current legal ActionSpace and returns ranked executable E-ref candidates.
+  It never executes, guesses a future-page control, or treats a read-only label match as an action.
 - `list_regions` exposes every region in exact paged form when the directory or task-directed inspection is insufficient;
   it still obeys the hard request cap.
 - `read_next_page` continues only the prior successful World read. Runtime supplies the private cursor.
@@ -1384,7 +1389,7 @@ Only `Opened`, non-empty `Matches`, and `Page` replace the same-World lens. `Emp
 reports the searched fields and mechanically safe relaxations. Invalid, stale, and capacity outcomes leave lens,
 ActionPage, World, and dispatch counters unchanged. None can be repaired by substituting another ref.
 
-`search_actions(query)` remains separate and searches only the complete current legal ActionSpace. A non-empty result installs
+`find_actions(query)` remains separate and searches only the complete current legal ActionSpace. A non-empty result installs
 the existing ActionPage and exact labeled SearchResults containing role, label, structural context, current state and
 verbs; its next-turn E refs therefore exist in both the DeliveryManifest and the normal resolver. Empty results retain
 the base page, report applied filters/coverage and safe relaxations, and never become an empty action authority.
@@ -1396,9 +1401,9 @@ The policy decision is therefore mechanical at the interface boundary:
 | Need | Route | Ref/result kind |
 |---|---|---|
 | execute an already shown current control | call its semantic GUI tool | current `E*` |
-| discover a legal current control not present in `ActionCandidates` | `search_actions(query)` | executable `E*` candidates |
-| open one known PageMap region | `read_region(region_ref)` | exact `R*` content, then normal next-view refs |
-| find an unknown fact or readable value anywhere in the current page | `search_world(query)` | read-only `N*`/`F*` evidence with `R*` location |
+| discover a legal current control not present in `ActionCandidates` | `find_actions(query)` | executable `E*` candidates |
+| open one known PageMap region | `open_region(region_ref)` | exact `R*` content, then normal next-view refs |
+| find an unknown fact or readable value anywhere in the current page | `find_content(query)` | read-only `N*`/`F*` evidence with `R*` location |
 
 Natural language is used to search and reason; execution always names a current E-ref. Runtime never silently chooses
 between same-label controls from a pure semantic string.
@@ -1419,7 +1424,7 @@ currentness error; it cannot be repaired by guessing a new region or element.
 The task-0 reopening had two architecture defects and one expression defect. The captured Actor had not lost the five
 product rows: the old partition put the table schema in `R14 table` and its rows in an unrelated top-level `R15
 rowgroup`. `table | grid | list` are now atomic semantic containers. Descendant `rowgroup | row | listitem` nodes
-cannot become sibling regions; `read_region(table)` returns its schema on every page plus complete row items, and
+cannot become sibling regions; `open_region(table)` returns its schema on every page plus complete row items, and
 reports `source_coverage`, `region_membership`, and `result_page` separately. Public R numbers remain ephemeral handles
 of the current partition, so removing orphan regions may renumber a table without changing its exact resolver identity.
 
@@ -1676,7 +1681,7 @@ SemanticActionRegistry
   -> installed surface capability
   -> fresh World bindings
   -> current ActionSpace
-  -> ActionCandidateProjection / ActionPager / search_actions
+  -> ActionCandidateProjection / ActionPager / find_actions
   -> PerTurnToolCatalog
   -> model tool call
   -> resolver -> admission/risk/confirmation -> Binder -> Executor
@@ -1712,7 +1717,7 @@ The bounded remediation order is:
    handled honestly by the installed operations; keep `read` in the observation/evidence path unless real-page
    measurements prove a separate read-only retrieval operation is necessary;
 5. add a diagnostic capability census, then make the existing delivery owner automatically rank a bounded
-   `ActionCandidates` block and make `search_actions` reuse the same operation/region/path/role ranker as its fallback;
+   `ActionCandidates` block and make `find_actions` reuse the same operation/region/path/role ranker as its fallback;
    neither route may create or authorize actions.
 
 An installed operation does not require Runtime to understand its task-level value. Exact value actions may produce a
@@ -2634,10 +2639,10 @@ Two branches are intentional and must not be mistaken for legacy control paths:
 The remaining convergence work is bounded and ordered:
 
 1. **T3.3 delivery convergence — active.** Replace production `_preferred_action_refs`/`DirectActions` with one pure,
-   deterministic Top-5 candidate ranker. `search_actions` must reuse that ranker over the complete current ActionSpace.
-   Remove immediate `actionable`, `verbs`, and `action_refs` fields from `read_region`/`search_world` results and delete
-   tests that preserve those old contracts. Do not add a persistent candidate store, another registry, or an LLM
-   selector.
+   deterministic Top-5 candidate ranker. Perform one breaking tool-name cutover to `open_region`, `find_content`, and
+   `find_actions`, with no aliases; `find_actions` must reuse that ranker over the complete current ActionSpace. Remove
+   immediate `actionable`, `verbs`, and `action_refs` fields from region/content results and delete tests that preserve
+   the old names or mixed contracts. Do not add a persistent candidate store, another registry, or an LLM selector.
 2. **W1b-Agent evidence.** After provider-free candidate properties and fresh-context review pass, run the frozen
    breadth evidence through the existing manager-guided benchmark composition. This remains the fastest falsifiable
    test of the GUI-agent mainline.
@@ -2650,7 +2655,8 @@ The remaining convergence work is bounded and ordered:
    turns, rather than candidate discovery or output delivery, dominate cost.
 
 Removal searches at T3.3 cutover must prove that production code and contract tests no longer contain
-`DirectActions`, `_preferred_action_refs`, or read-result action inventory. They must also prove that the already
+`DirectActions`, `_preferred_action_refs`, `read_region`, `search_world`, `search_actions`, or read-result action
+inventory. They must also prove that the already
 removed finalizer prompt/tool/episode does not return. Provider wire adapters, `ModelInvocationResult`, explicit
 execution modes, E-ref execution, `DeliveryManifest`, and the single Binder/Executor path are preservation targets,
 not compatibility debt to delete.
@@ -2696,12 +2702,12 @@ and summaries that existed only to support the old ledger-shaped context are no 
   closure shown with them, but it is a disposable preference and cannot remove PageMap entries, World facts,
   ActionOptions, or recovery routes. The model executes the resulting current E-ref; Runtime does not ground a pure
   semantic execution string.
-- Keep every current ActionOption either exact in the DeliveryManifest or reachable through `search_actions(query)`;
+- Keep every current ActionOption either exact in the DeliveryManifest or reachable through `find_actions(query)`;
   keep every current public fact either exact or indexed behind a visible region and recoverable through
-  `read_region(region_ref)`, `search_world(query)`, or `list_regions()`. Do not force every action target
+  `open_region(region_ref)`, `find_content(query)`, or `list_regions()`. Do not force every action target
   into the first `WorldDeliveryView`, and do not silently prefix-truncate omitted content.
-- Keep read and action discovery disjoint: `read_region` opens known content, `search_world` finds read-only facts,
-  and `search_actions` finds executable options. Immediate read results do not publish a duplicate affordance list;
+- Keep read and action discovery disjoint: `open_region` opens known content, `find_content` finds read-only facts,
+  and `find_actions` finds executable options. Immediate region/content results do not publish a duplicate affordance list;
   legal controls from an opened region enter the next exact ActiveView through the ordinary Manifest path.
 - Keep navigation/page-changing actions atomic. A later `set_form_fields` experiment is limited to two-to-four
   non-destructive fields in one current form, must stop on the first currentness/structure change, and cannot include
@@ -2744,8 +2750,9 @@ The successful run12 task-0 trajectory subsequently exposed the next delivery de
 authority: the full ActionSpace contained the Reports-path `Bestsellers` action, but the shallow automatic promotion
 favored a same-label Dashboard tab and the policy spent three observation-only region reads before explicit action
 search recovered the correct control. T3.3 therefore replaces the current lexical `DirectActions` preference with the
-typed, path-aware `ActionCandidateProjection` defined above and makes `search_actions` reuse that ranker. It also
-removes duplicated action semantics from immediate `read_region` results. This is a delivery/ranking increment only;
+typed, path-aware `ActionCandidateProjection` defined above and makes `find_actions` reuse that ranker. It also
+performs the one-time `open_region`/`find_content`/`find_actions` cutover and removes duplicated action semantics from
+immediate region/content results. This is a delivery/ranking increment only;
 T3.3 is not implemented or verified by the existing T3.2 evidence. The optional guarded `set_form_fields` contract is
 a later T3.4 efficiency gate and cannot be implemented as part of candidate-recall repair.
 
@@ -2771,8 +2778,8 @@ a later T3.4 efficiency gate and cannot be implemented as part of candidate-reca
   not enumerate the full current ref inventory.
 - Every automatic ActionCandidate is a current executable E-ref present in the same Manifest and ActionSpace; its
   label/role/functional path/current state and closed match reasons are visible, while all non-promoted actions remain
-  recoverable through the same `search_actions` ranker.
-- `read_region`, `search_world`, `list_regions`, and `search_actions` promote exact results into the next current
+  recoverable through the same `find_actions` ranker.
+- `open_region`, `find_content`, `list_regions`, and `find_actions` promote exact results into the next current
   ActiveView/SearchResults with the same fresh resolver path. Paging tokens are Runtime-private: when another page
   exists, the next catalog alone offers zero-argument `read_next_page()` or `action_results_next_page()`. A caller need
   not copy an opaque cursor or remember a ref from sanitized history, and an empty action search cannot erase the base
