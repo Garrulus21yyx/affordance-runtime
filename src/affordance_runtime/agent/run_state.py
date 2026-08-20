@@ -64,6 +64,7 @@ class EpisodeYieldReason(StrEnum):
     STRATEGY_STALL = "strategy_stall"
     FAILED_STRATEGY = "failed_strategy"
     PROTOCOL_STALL = "protocol_stall"
+    ENVIRONMENT_RECOVERY = "environment_recovery"
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ class StepResult:
     policy_target_refs: Mapping[str, str] = field(default_factory=dict)
     action_page_result: Mapping[str, object] = field(default_factory=dict)
     recovery_signal: RecoverySignal | None = None
+    yield_reason: EpisodeYieldReason | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status_after, RunStatus):
@@ -100,7 +102,11 @@ class StepResult:
                 raise ValueError("action outcome requires an execution")
             if (
                 self.action_outcome.request_id != self.execution.request.request_id
-                or self.action_outcome.before_observation_id != self.before_world.observation_id
+                or self.action_outcome.before_observation_id
+                not in {
+                    self.before_world.observation_id,
+                    self.execution.request.world_observation_id,
+                }
                 or self.action_outcome.after_observation_id != self.after_world.observation_id
             ):
                 raise ValueError("step action outcome does not match its worlds and execution")
@@ -120,6 +126,11 @@ class StepResult:
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("step recovery signal must be typed")
+        if self.yield_reason is not None:
+            if not isinstance(self.yield_reason, EpisodeYieldReason):
+                raise TypeError("step yield reason must be typed")
+            if self.status_after is not RunStatus.YIELDED:
+                raise ValueError("step yield reason requires YIELDED status")
         if self.failure_code is not None and not isinstance(self.failure_code, AgentFailureCode):
             raise TypeError("step failure code must be typed")
         if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
@@ -227,8 +238,11 @@ class RunState:
 
     @property
     def sent_unknown_count(self) -> int:
-        result = self.last_step.execution.result if self.last_step and self.last_step.execution else None
-        return int(result is not None and result.dispatch_status.value == "sent_unknown")
+        execution = self.last_step.execution if self.last_step else None
+        return sum(
+            attempt.result.dispatch_status.value == "sent_unknown"
+            for attempt in execution.attempts
+        ) if execution is not None else 0
 
     def next_context_generation(self) -> int:
         self.context_generation += 1
@@ -272,14 +286,16 @@ class RunState:
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result
         self.status = result.status_after
-        if isinstance(result.decision, YieldSubtask) and self.status is RunStatus.YIELDED:
+        if result.yield_reason is not None and self.status is RunStatus.YIELDED:
+            self.yield_reason = result.yield_reason
+        elif isinstance(result.decision, YieldSubtask) and self.status is RunStatus.YIELDED:
             self.yield_reason = EpisodeYieldReason(result.decision.kind)
         elif self.status is RunStatus.YIELDED and result.feedback.startswith("episode_monitor:"):
             self.yield_reason = EpisodeYieldReason(result.feedback.removeprefix("episode_monitor:"))
         if consume_step:
             self.remaining_steps = max(0, self.remaining_steps - 1)
         self.observation_count += int(acquired_new_world)
-        self.execution_count += int(result.execution is not None)
+        self.execution_count += result.execution.attempt_count if result.execution is not None else 0
         self.step_count += int(consume_step)
         self.action_page = result.action_page
         if acquired_new_world:

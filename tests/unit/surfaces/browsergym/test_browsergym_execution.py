@@ -4,13 +4,16 @@ import sys
 from dataclasses import replace
 from types import ModuleType
 
+import pytest
+
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.execution import ActionError, DispatchStatus, ExecutionDiagnosticPhase
 from affordance_runtime.surfaces.browsergym.backend import _with_stable_private_control_properties
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
 )
+from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
@@ -513,7 +516,76 @@ def test_step_exception_after_dispatch_is_sent_unknown_without_retry() -> None:
     result = outcome.result
     assert result.dispatch_status is DispatchStatus.SENT_UNKNOWN
     assert result.error is ActionError.EXECUTION_FAILED
+    assert len(result.diagnostics) == 1
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.phase is ExecutionDiagnosticPhase.DISPATCH_WAIT
+    assert diagnostic.exception_type == "RuntimeError"
+    assert diagnostic.exception_module == "builtins"
+    assert diagnostic.safe_message == "after dispatch"
+    assert diagnostic.dispatch_crossed is True
+    assert diagnostic.elapsed_ms >= 0
+    assert diagnostic.traceback_ref.startswith("traceback:sha256:")
     assert len(fake.actions) == 1 and environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_open_preserves_reset_failure_when_cleanup_also_fails() -> None:
+    class FailingOpenBrowserGym:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def reset(self, *, seed):
+            del seed
+            raise ValueError("reset primary")
+
+        def close(self):
+            raise TimeoutError("cleanup secondary")
+
+    with pytest.raises(ValueError, match="reset primary") as caught:
+        BrowserGymSurfaceAdapter.open(
+            "browsergym/test",
+            1,
+            gym_factory=FailingOpenBrowserGym,
+        )
+
+    diagnostic = getattr(caught.value, "__affordance_cleanup_diagnostic__")
+    assert diagnostic.phase is ExecutionDiagnosticPhase.CLEANUP
+    assert diagnostic.exception_type == "TimeoutError"
+    assert diagnostic.safe_message == "cleanup secondary"
+
+
+def test_independent_uncertain_dispatch_recapture_drains_its_own_diagnostic() -> None:
+    class FailingCaptures(FakeBrowserGym):
+        capture_attempt = 0
+
+        def capture_current(self):
+            self.capture_attempt += 1
+            raise RuntimeError(f"capture-{self.capture_attempt}-raw")
+
+    raw = raw_observation(ax_node("1", "button", "okay"))
+    fake = FailingCaptures(raw, raw, fail_step=True)
+    environment, task = open_fake(fake)
+    world = start_environment(environment, task)
+    request = request_for(world, task, "activate")
+
+    outcome = asyncio.run(environment.execute(request))
+    recovery = asyncio.run(
+        environment.world.recover_execution_observation(
+            request,
+            WorldObservationRequest(
+                ObservationRequestKind.POST_ACTION_FALLBACK,
+                "held-out uncertain recovery",
+                request.verification_needs,
+            ),
+        )
+    )
+
+    assert [item.safe_message for item in outcome.result.diagnostics] == [
+        "after dispatch",
+        "capture-1-raw",
+    ]
+    assert [item.safe_message for item in recovery.diagnostics] == ["capture-2-raw"]
+    assert environment.surface.take_execution_diagnostics() == ()
     asyncio.run(environment.close())
 
 

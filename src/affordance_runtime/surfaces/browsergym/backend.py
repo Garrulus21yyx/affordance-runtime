@@ -261,6 +261,18 @@ class ThreadBoundBrowserGym:
                         "task": verifier,
                         "latency_ms": (time.perf_counter() - started) * 1000,
                     }
+                elif name == "session_health":
+                    page = getattr(unwrapped, "page", None)
+                    context = getattr(page, "context", None)
+                    browser = getattr(context, "browser", None)
+                    value = {
+                        "page_closed": page.is_closed() if page is not None else None,
+                        "browser_connected": (
+                            browser.is_connected()
+                            if browser is not None and callable(getattr(browser, "is_connected", None))
+                            else None
+                        ),
+                    }
                 elif name == "capture_current":
                     self.last_capture_thread_ident = threading.get_ident()
                     getter = getattr(unwrapped, "_get_obs", None)
@@ -296,12 +308,18 @@ class ThreadBoundBrowserGym:
             except BaseException as exc:
                 outcome.set_exception(exc)
 
-    def _call(self, name: str, *args: object, **kwargs: object) -> object:
+    def _call(
+        self,
+        name: str,
+        *args: object,
+        wait_timeout_s: float = 180.0,
+        **kwargs: object,
+    ) -> object:
         if self._closed:
             raise RuntimeError("BrowserGym owner thread is closed")
         outcome: Future[object] = Future()
         self._commands.put((name, args, kwargs, outcome))
-        return outcome.result(timeout=180)
+        return outcome.result(timeout=wait_timeout_s)
 
     def reset(self, *, seed: int):
         return self._call("reset", seed=seed)
@@ -316,6 +334,9 @@ class ThreadBoundBrowserGym:
 
     def currentness_probe(self, bid: str):
         return self._call("currentness_probe", bid)
+
+    def session_health(self):
+        return self._call("session_health", wait_timeout_s=5.0)
 
     def capture_current(self):
         if not self.supports_capture_current:

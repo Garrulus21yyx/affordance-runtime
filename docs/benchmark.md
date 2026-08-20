@@ -61,6 +61,41 @@ as a separate cohort and is not attributed to the adapter.
 
 ## Current evidence
 
+### 2026-08-20 BrowserGym run9 uncertain-dispatch counterexample
+
+Run9 is not evidence that the agent needed more steps or another read tool. The first relevant environment fault was a
+BrowserGym action dispatch whose `gym_environment.step()` raised after dispatch may have crossed. The old adapter
+collapsed the exception to `sent_unknown / execution_failed` without retaining its type, phase, duration, sanitized
+message, or traceback reference. Post-action acquisition then failed, and a later cleanup `TimeoutError` was projected
+as `case_failure_code=cleanup_exception`, erasing the temporal primary fault from the formal report.
+
+The repaired provider-free contract records one typed dispatch diagnostic and preserves the control result unchanged.
+The existing loop consumes the normal post-action acquisition before escalating, permits one additional independent
+fresh capture, and asks the existing action-outcome projector whether current public World proves the effect. Proven
+effects continue normally. Unknown effects yield recovery; session loss becomes a typed operational failure. Only
+registry-declared state-setting actions may be freshly rebound and replayed once after an explicitly unsatisfied
+postcondition; generic activation remains zero-replay.
+
+`target-loop-case.v9` records causal order rather than one lossy bucket:
+
+```yaml
+primary_failure:
+  code: action_dispatch_uncertain
+  phase: dispatch_wait
+  diagnostic_ref: execution-diagnostic:...
+recovery_failures:
+  - post_action_acquisition_failed
+secondary_failures:
+  - cleanup_exception
+terminal_failure: environment_unresponsive  # only when fresh capture and health cannot recover
+```
+
+The cleanup exception also has a typed cleanup-phase diagnostic. Legacy `case_failure_code` keeps the earlier uncertain
+dispatch as primary even if cleanup subsequently times out. Provider-free verification passes (`1329 passed,
+19 skipped`; Ruff and `git diff --check` pass), including the internal-safety benchmark projection. No real provider,
+live BrowserGym/WebArena task, or live witness has been run. Run9 is historical failure evidence, live
+re-verification is pending, and this work remains non-closed.
+
 ### 2026-08-20 DeepSeek run7 role-frequency counterexample
 
 Live evidence at `evidence/live/w1b-one-task-0-deepseek-v4-flash-staged-timeout-run7/` reached the correct task result:

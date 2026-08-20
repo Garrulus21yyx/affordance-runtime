@@ -16,6 +16,45 @@ task-completion authority.
 
 ### Implementation status
 
+#### 2026-08-20 BrowserGym uncertain-dispatch diagnostics and recovery
+
+Run9 exposed an environment-boundary observability and ordering defect. A BrowserGym `step()` exception crossed the
+dispatch boundary, but the adapter retained only `sent_unknown / execution_failed`; a later cleanup timeout then
+became the visible case failure because no earlier typed component fact existed. The adapter now preserves both kinds
+of truth without allowing diagnostic strings to steer control:
+
+```text
+BrowserGym dispatch
+  -> ActionResult(dispatch_status=sent_unknown, error=execution_failed)
+  -> bounded ExecutionDiagnostic(phase, safe exception identity/message, elapsed,
+                                 dispatch-crossed flag, session facts, traceback ref)
+  -> existing post-action acquisition
+  -> at most one independent fresh recapture (two capture attempts total)
+  -> existing ActionOutcome projector over fresh World
+       effect/postcondition resolved -> continue; dispatch truth remains sent_unknown
+       explicitly unsatisfied + registry-declared replay-safe state action
+         -> fresh ActionSpace admission + existing Binder + one replay
+       unresolved + live session -> yield environment_recovery
+       unresolved + lost/unknown session -> typed environment_unresponsive
+```
+
+`ExecutionDiagnostic` is immutable observational data owned where an exception is first caught. It records a bounded
+sanitized message and content-addressed traceback reference; it is not legality or retry authority. BrowserGym owns a
+bounded same-thread page/browser health probe. The interaction capability registry is the sole replay-safety owner:
+only `type_text`, `select_option`, and `set_value` are replay-safe after an explicitly unsatisfied fresh observation;
+generic `activate` is not replayed. Replay reuses the current ActionSpace builder, admission, risk policy, Binder,
+executor, and outcome projector, so this adds neither a queue nor a second GUI chain.
+
+Benchmark instrumentation observes the typed execution outcome in temporal order. Its primary failure is
+`action_dispatch_uncertain` with the dispatch diagnostic; failed recapture is a recovery failure; a cleanup timeout is
+a secondary `cleanup_exception` with its own cleanup-phase diagnostic. Cleanup cannot replace the earlier primary
+failure in the compatibility `case_failure_code`. The case schema is `target-loop-case.v9`.
+
+This increment does not change Manager, Auditor, GoalPlan, DeliveryManifest, World compression, or the ordinary
+Binder/CoreAgentLoop authority chain. Provider-free verification passes (`1329 passed, 19 skipped`; Ruff and
+`git diff --check` pass). No live GUI, WebArena, or model-provider witness has been run for this change. Run9 remains
+the counterexample, not closure evidence, so live verification is pending and the status is non-closed.
+
 #### 2026-08-20 ManagerReview/finalization convergence reopened
 
 DeepSeek run7 reached the correct 2022 Bestsellers answer with six successful GUI dispatches and ten first-attempt
@@ -1590,9 +1629,13 @@ needed only to distinguish changed from unchanged. Therefore `before=unknown, af
 `observed_change=unknown, local_postcondition=satisfied`. A generic event may expose structural or visual change while
 leaving its semantic outcome unknown or not applicable. Screenshot change alone never proves task success.
 
-`sent_unknown` never enters local outcome projection: Runtime cannot safely attribute a later observation to a
-dispatch it cannot establish. The uncertain-dispatch path pauses for user resolution and must not automatically repeat
-the possibly executed action. This is dispatch safety, not an action-effect judgment.
+`sent_unknown` remains dispatch truth, but a causally immediate fresh post-action World may enter the normal local
+outcome projector. That projection does not rewrite the receipt: it only determines whether the observable outcome is
+now resolved. A satisfied postcondition (or an applicable, proven local effect) continues normally. An unresolved
+outcome yields recovery instead of immediately pausing for user resolution. Runtime may repeat the action only when a
+fresh World explicitly proves the postcondition unsatisfied and the interaction registry declares that state-setting
+action replay-safe; it then freshly admits, risk-checks, and binds exactly one replay. Generic activation is never
+replayed. This is bounded dispatch recovery, not a new action-effect authority.
 
 An optional `expected_outcome` is one bounded natural-language intent description for later policy reflection. Runtime
 does not convert it into a predicate, artifact obligation, GoalPlan status, or completion claim. Exact local

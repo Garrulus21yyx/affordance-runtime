@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
+from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -43,7 +44,7 @@ from affordance_runtime.agent.policy import (
     TaskEvaluator,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
+from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitController, WaitController
 from affordance_runtime.evaluation.contracts import (
@@ -54,7 +55,12 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
-from affordance_runtime.execution.contracts import DispatchStatus
+from affordance_runtime.execution.contracts import (
+    DispatchStatus,
+    ExecutionOutcome,
+    SessionHealth,
+    SessionHealthStatus,
+)
 from affordance_runtime.goals.compiler import (
     GoalCompiler,
     GoalCompileTrigger,
@@ -818,18 +824,16 @@ class CoreAgentLoop:
                 execution=execution,
                 feedback=f"action_not_sent:{execution.result.error or 'unknown'}",
             )
-        if execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
-            return StepResult(
-                decision,
-                state.current_world,
-                state.current_world,
-                state.current_task_evaluation,
-                RunStatus.WAITING_USER,
-                execution=execution,
-                feedback="action_effect_unknown",
-            )
-        post = execution.post_acquisition
+        execution = await self._recover_post_dispatch_observation(environment, execution)
+        post = execution.recovery_acquisitions[-1] if execution.recovery_acquisitions else execution.post_acquisition
         if post is None or post.status is not AcquisitionStatus.ACQUIRED or post.observation is None:
+            if execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
+                return await self._unresolved_dispatch_step(
+                    environment,
+                    state,
+                    decision,
+                    execution,
+                )
             failure_code = (
                 AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE
                 if post is not None and post.status is AcquisitionStatus.CAPABILITY_UNAVAILABLE
@@ -854,6 +858,37 @@ class CoreAgentLoop:
             execution.result,
             after,
         )
+        if execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
+            if action_outcome.local_postcondition is LocalPostconditionStatus.UNKNOWN:
+                return StepResult(
+                    decision,
+                    state.current_world,
+                    after,
+                    await validated_task_evaluation(self.task_evaluator, task, after),
+                    RunStatus.YIELDED,
+                    execution,
+                    action_outcome,
+                    feedback="action_dispatch_uncertain:effect_unresolved",
+                    yield_reason=EpisodeYieldReason.UNCERTAIN_EFFECT,
+                )
+            if (
+                action_outcome.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+                and INTERACTION_CAPABILITY_REGISTRY.require(
+                    selection.semantic_action,
+                ).replay_safe_after_uncertain_dispatch
+            ):
+                replay = await self._replay_after_uncertain_dispatch(
+                    environment,
+                    task,
+                    state,
+                    decision,
+                    context_id,
+                    selection,
+                    after,
+                    execution,
+                )
+                if replay is not None:
+                    return replay
         task_evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
         return StepResult(
             decision,
@@ -867,6 +902,209 @@ class CoreAgentLoop:
                 action_outcome.observed_change,
                 action_outcome.local_postcondition,
             ),
+        )
+
+    async def _recover_post_dispatch_observation(
+        self,
+        environment: WorldEnvironment,
+        execution: ExecutionOutcome,
+    ) -> ExecutionOutcome:
+        """Allow at most two fresh captures total for one dispatch attempt."""
+
+        post = execution.post_acquisition
+        if (
+            execution.result.dispatch_status is not DispatchStatus.SENT_UNKNOWN
+            or post is None
+            or post.status is AcquisitionStatus.ACQUIRED
+            or execution.recovery_acquisitions
+        ):
+            return execution
+        observation_request = WorldObservationRequest(
+            ObservationRequestKind.POST_ACTION_FALLBACK,
+            "recover uncertain dispatch observation",
+            execution.request.verification_needs,
+        )
+        recover = getattr(environment, "recover_execution_observation", None)
+        if callable(recover):
+            recovered = await recover(execution.request, observation_request)
+            result = replace(
+                execution.result,
+                diagnostics=(*execution.result.diagnostics, *recovered.diagnostics),
+            )
+            return replace(
+                execution,
+                result=result,
+                recovery_acquisitions=(recovered.acquisition,),
+            )
+        recovery = await environment.capture(
+            observation_request
+        )
+        return replace(execution, recovery_acquisitions=(recovery,))
+
+    async def _unresolved_dispatch_step(
+        self,
+        environment: WorldEnvironment,
+        state: RunState,
+        decision: SelectAction,
+        execution: ExecutionOutcome,
+    ) -> StepResult:
+        probe = getattr(environment, "session_health", None)
+        try:
+            health = (
+                await probe(execution.request)
+                if callable(probe)
+                else SessionHealth(SessionHealthStatus.UNKNOWN)
+            )
+        except Exception:
+            health = SessionHealth(SessionHealthStatus.UNKNOWN)
+        if execution.result.diagnostics:
+            last = execution.result.diagnostics[-1]
+            execution = replace(
+                execution,
+                result=replace(
+                    execution.result,
+                    diagnostics=(
+                        *execution.result.diagnostics[:-1],
+                        replace(
+                            last,
+                            page_closed=health.page_closed,
+                            browser_connected=health.browser_connected,
+                        ),
+                    ),
+                ),
+            )
+        if health.status is SessionHealthStatus.ALIVE:
+            return StepResult(
+                decision,
+                state.current_world,
+                state.current_world,
+                state.current_task_evaluation,
+                RunStatus.YIELDED,
+                execution=execution,
+                feedback="post_action_acquisition_failed:environment_recovery",
+                yield_reason=EpisodeYieldReason.ENVIRONMENT_RECOVERY,
+            )
+        exception_class = next(
+            (item.exception_type for item in execution.all_diagnostics if item.exception_type),
+            "EnvironmentUnavailable",
+        )
+        return StepResult(
+            decision,
+            state.current_world,
+            state.current_world,
+            state.current_task_evaluation,
+            RunStatus.FAILED,
+            execution=execution,
+            feedback="environment_unresponsive:unresolved_action_effect",
+            runtime_failure=RuntimeFailure(
+                FailureStage.SESSION,
+                FailureKind.CALL_FAILED,
+                "environment_unresponsive",
+                exception_class=exception_class,
+            ),
+        )
+
+    async def _replay_after_uncertain_dispatch(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+        decision: SelectAction,
+        context_id: str,
+        selection,
+        after: WorldObservation,
+        execution: ExecutionOutcome,
+    ) -> StepResult | None:
+        """Freshly rebind and replay one explicitly replay-safe state-setting action."""
+
+        action_space = self.action_space_builder.build(task, after)
+        matches = tuple(
+            option
+            for option in action_space.options
+            if option.semantic_action == selection.semantic_action
+            and option.target_id == selection.target_id
+            and option.schema_digest == selection.schema_digest
+            and option.verification_contract_digest == selection.verification_contract_digest
+        )
+        if len(matches) != 1:
+            return None
+        admission = self.action_space_builder.try_admit(
+            matches[0],
+            dict(selection.parameters),
+            selection.destination_id,
+            selection.expected_outcome,
+        )
+        if admission.admitted is None:
+            return None
+        replay_selection = admission.admitted
+        if self.risk_policy.assess(task, replay_selection).decision is not RiskDecisionKind.ALLOW:
+            return None
+        try:
+            replay_request = self.binder.bind_for_execution(
+                replay_selection,
+                after,
+                context_id,
+                task,
+                tool_call_id=decision.tool_call_id,
+            )
+        except BindingError:
+            return None
+        if not environment.is_current(replay_request):
+            return None
+        retry = await environment.execute(replay_request)
+        retry = await self._recover_post_dispatch_observation(environment, retry)
+        combined = replace(
+            retry,
+            prior_attempts=(*execution.prior_attempts, execution.current_attempt),
+        )
+        if retry.result.dispatch_status is DispatchStatus.NOT_SENT:
+            evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
+            return StepResult(
+                decision,
+                state.current_world,
+                after,
+                evaluation,
+                self._status_for_task(task, evaluation),
+                execution=combined,
+                feedback="uncertain_dispatch_replay_not_sent",
+            )
+        post = retry.recovery_acquisitions[-1] if retry.recovery_acquisitions else retry.post_acquisition
+        if post is None or post.status is not AcquisitionStatus.ACQUIRED or post.observation is None:
+            return await self._unresolved_dispatch_step(environment, state, decision, combined)
+        replay_after = post.observation
+        outcome = await validated_action_outcome(
+            self.action_outcome_projector,
+            task,
+            after,
+            replay_request,
+            retry.result,
+            replay_after,
+        )
+        evaluation = await validated_task_evaluation(self.task_evaluator, task, replay_after)
+        if (
+            retry.result.dispatch_status is DispatchStatus.SENT_UNKNOWN
+            and outcome.local_postcondition is LocalPostconditionStatus.UNKNOWN
+        ):
+            return StepResult(
+                decision,
+                state.current_world,
+                replay_after,
+                evaluation,
+                RunStatus.YIELDED,
+                combined,
+                outcome,
+                feedback="action_dispatch_uncertain:replay_effect_unresolved",
+                yield_reason=EpisodeYieldReason.UNCERTAIN_EFFECT,
+            )
+        return StepResult(
+            decision,
+            state.current_world,
+            replay_after,
+            evaluation,
+            self._status_for_task(task, evaluation),
+            combined,
+            outcome,
+            feedback=f"uncertain_dispatch_replayed:{_action_feedback(outcome.observed_change, outcome.local_postcondition)}",
         )
 
     async def _refresh_stale_binding(self, environment, task, state, decision) -> StepResult:

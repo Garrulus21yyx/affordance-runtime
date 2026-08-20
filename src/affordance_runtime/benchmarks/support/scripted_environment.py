@@ -229,6 +229,7 @@ class ScriptedSurfaceAdapter:
                 result.transport_success,
                 result.error,
                 dict(result.adapter_evidence),
+                result.diagnostics,
             )
         self._post_pending = result.dispatch_status is not DispatchStatus.NOT_SENT
         if self._post_pending:

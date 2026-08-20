@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from affordance_runtime.agent import AgentFailureCode, RunStatus
+from affordance_runtime.agent import AgentFailureCode, EpisodeYieldReason, RunStatus
 from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -13,6 +13,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigi
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.evaluation import TaskOutcomeFact, TaskOutcomeKind
+from affordance_runtime.execution import DispatchStatus, ExecutionDiagnostic, ExecutionDiagnosticPhase
 
 
 def _snapshot(
@@ -205,6 +206,91 @@ def test_cleanup_is_secondary_to_runtime_reason() -> None:
     assert projected.cleanup_failure_code == "cleanup_exception"
     assert projected.cleanup_exception_class == "RuntimeError"
     assert projected.measurements["cleanup_failures"].value == 1
+
+
+def test_uncertain_dispatch_remains_primary_when_cleanup_also_fails() -> None:
+    instrumentation = BenchmarkInstrumentation(
+        failure_origin=CaseFailureOrigin.EXECUTION,
+        failure_code="action_dispatch_uncertain",
+        exception_class="TimeoutError",
+        primary_execution_failure_code="action_dispatch_uncertain",
+        primary_execution_failure_phase="dispatch_wait",
+        primary_execution_diagnostic_ref="execution-diagnostic:" + "a" * 24,
+        recovery_failure_codes=["post_action_acquisition_failed"],
+    )
+    instrumentation.record_cleanup_failure("cleanup_exception", TimeoutError())
+
+    projected = project_case_result(
+        "case",
+        None,
+        instrumentation,
+        30_000.0,
+        "dispatch uncertain; acquisition failed; cleanup timed out",
+        final_snapshot=_snapshot(reason="environment_unresponsive"),
+    )
+
+    assert projected.case_failure_code == "action_dispatch_uncertain"
+    assert projected.failure_origin is CaseFailureOrigin.EXECUTION
+    assert projected.primary_failure_code == "action_dispatch_uncertain"
+    assert projected.primary_failure_phase == "dispatch_wait"
+    assert projected.primary_diagnostic_ref.endswith("a" * 24)
+    assert projected.recovery_failure_codes == ("post_action_acquisition_failed",)
+    assert projected.secondary_failure_codes == ("cleanup_exception",)
+    assert projected.cleanup_failure_code == "cleanup_exception"
+    assert projected.cleanup_diagnostic is not None
+    assert projected.cleanup_diagnostic.phase.value == "cleanup"
+    assert projected.cleanup_diagnostic.exception_type == "TimeoutError"
+    assert projected.cleanup_diagnostic.traceback_ref.startswith("traceback:sha256:")
+
+
+def test_instrumentation_only_promotes_unresolved_sent_unknown_to_case_failure() -> None:
+    diagnostic = ExecutionDiagnostic(
+        "execution-diagnostic:" + "b" * 24,
+        ExecutionDiagnosticPhase.DISPATCH_WAIT,
+        "TimeoutError",
+        "builtins",
+        "dispatch timed out",
+        30_000.0,
+        True,
+        traceback_ref="traceback:sha256:" + "c" * 64,
+    )
+    attempt = SimpleNamespace(
+        result=SimpleNamespace(
+            dispatch_status=DispatchStatus.SENT_UNKNOWN,
+            diagnostics=(diagnostic,),
+        ),
+        post_acquisition=None,
+        recovery_acquisitions=(),
+    )
+    execution = SimpleNamespace(attempts=(attempt,))
+    recorder = SimpleNamespace(step_completed=lambda *_args: None)
+
+    resolved = BenchmarkInstrumentation(trace_recorder=recorder)
+    resolved.step_completed(
+        1,
+        SimpleNamespace(
+            execution=execution,
+            yield_reason=None,
+            status_after=RunStatus.RUNNING,
+            runtime_failure=None,
+        ),
+    )
+    assert resolved.failure_origin is CaseFailureOrigin.NONE
+    assert resolved.primary_execution_failure_code == ""
+
+    unresolved = BenchmarkInstrumentation(trace_recorder=recorder)
+    unresolved.step_completed(
+        1,
+        SimpleNamespace(
+            execution=execution,
+            yield_reason=EpisodeYieldReason.UNCERTAIN_EFFECT,
+            status_after=RunStatus.YIELDED,
+            runtime_failure=None,
+        ),
+    )
+    assert unresolved.failure_origin is CaseFailureOrigin.EXECUTION
+    assert unresolved.primary_execution_failure_code == "action_dispatch_uncertain"
+    assert unresolved.primary_execution_failure_phase == "dispatch_wait"
 
 
 def test_custom_metric_cannot_override_canonical_metric() -> None:

@@ -251,10 +251,10 @@ def _forbidden_case(seed: int) -> BenchmarkCase:
 
 def _sent_unknown_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
-        "sent-unknown-no-replay", "internal-safety", "SENT_UNKNOWN stops without replay",
+        "sent-unknown-no-replay", "internal-safety", "SENT_UNKNOWN yields after bounded observation recovery",
         shared_task, lambda _metrics: shared_environment("dom", sent_unknown=True),
         lambda _metrics: BenchmarkComposition.atomic(policy_for("scripted-model"), CurrentFactActionOutcomeProjector(), SharedTaskEvaluator()),
-        (RunStatus.WAITING_USER,), 10.0, seed,
+        (RunStatus.YIELDED,), 10.0, seed,
         ("sent_unknown_count", "duplicate_unknown_attempts"),
         _expect(sent_unknown_count=1, duplicate_unknown_attempts=0),
     )

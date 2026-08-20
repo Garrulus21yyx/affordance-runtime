@@ -7,6 +7,7 @@ from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    EpisodeYieldReason,
     LocalToolResult,
     RequestActionPage,
     RunStatus,
@@ -28,7 +29,14 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
+from affordance_runtime.evaluation.action_outcome_projector import ProductionActionOutcomeProjector
+from affordance_runtime.execution.contracts import (
+    ActionError,
+    ActionResult,
+    DispatchStatus,
+    SessionHealth,
+    SessionHealthStatus,
+)
 from affordance_runtime.goals import NotRequired, NotRequiredGoalCompiler
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
@@ -98,6 +106,59 @@ def _task() -> TaskGoal:
         success_criteria=({"target_id": "shared-toggle", "state": {"enabled": True}},),
         risk_profile=RiskProfile.LOW,
     )
+
+
+def _text_world(observation_id: str, value: str) -> WorldObservation:
+    target = SemanticTarget("shared-input", "textbox", "Shared value", {"value": value})
+    binding = ActionBinding(
+        binding_id=f"binding:{observation_id}",
+        world_observation_id=observation_id,
+        source_observation_id=observation_id,
+        source_revision=f"revision:{observation_id}",
+        target_fingerprint=f"fingerprint:{observation_id}",
+        target_id=target.target_id,
+        source_target_id=target.target_id,
+        surface="dom",
+        executor_id="dom",
+        semantic_action="type_text",
+        primitive_action="fill",
+        effect_category="local_reversible",
+        semantic_effects=("shared_value_changed",),
+        parameter_schema={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        payload={"selector": "#shared-input"},
+        risk=ActionRisk.LOW,
+    )
+    fact = StateFact(f"fact:{observation_id}:value", target.target_id, "value", value, observation_id)
+    source = SurfaceObservation(
+        observation_id,
+        "dom",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (target,),
+        (fact,),
+        (binding,),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
+class TextTaskEvaluator:
+    async def evaluate(self, task, observation):
+        value = observation.targets[0].state.get("value")
+        status = TaskEvaluationStatus.COMPLETE if value == "done" else TaskEvaluationStatus.INCOMPLETE
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            status,
+            "value check",
+            completion_evidence_refs=(observation.facts[0].fact_id,) if value == "done" else (),
+        )
 
 
 def _count_world() -> WorldObservation:
@@ -251,6 +312,22 @@ class CoreActionOutcomeProjector:
         )
 
 
+class DispatchPostconditionProjector:
+    async def evaluate(self, task, before, request, result, after):
+        del task, result
+        changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
+        return ActionOutcome(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
+            ObservedChange.CHANGED if changed else ObservedChange.UNCHANGED,
+            LocalPostconditionStatus.SATISFIED if changed else LocalPostconditionStatus.UNSATISFIED,
+            EvidenceMethod.STRUCTURAL,
+            "postcondition satisfied" if changed else "postcondition unsatisfied",
+            (after.facts[0].fact_id,),
+        )
+
+
 def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
     return TargetRuntime(
         AgentDecisionPorts(CorePolicy(choice)),
@@ -302,6 +379,181 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
                 state.last_step,
                 decision=replace(state.last_step.decision, tool_call_id="provider-call:wrong"),
             )
+
+    asyncio.run(scenario())
+
+
+def test_sent_unknown_with_fresh_proven_effect_continues_without_user_wait() -> None:
+    async def scenario() -> None:
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("uncertain_dispatch_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(_world("after", True),),
+            results=(
+                ActionResult(
+                    "*",
+                    DispatchStatus.SENT_UNKNOWN,
+                    "dom",
+                    False,
+                    ActionError.EXECUTION_FAILED,
+                ),
+            ),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.DONE
+        assert state.current_world.observation_id == "after"
+        assert state.execution_count == 1
+        assert environment.execute_calls == 1
+        assert environment.capture_calls == 0
+        assert state.last_step is not None
+        assert state.last_step.execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN
+        assert state.last_step.action_outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
+
+    asyncio.run(scenario())
+
+
+def test_sent_unknown_gets_one_bounded_fresh_recapture_before_control_recovery() -> None:
+    async def scenario() -> None:
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("uncertain_dispatch_recapture_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(),
+            independent_observations=(_world("recovered", True),),
+            results=(
+                ActionResult(
+                    "*",
+                    DispatchStatus.SENT_UNKNOWN,
+                    "dom",
+                    False,
+                    ActionError.EXECUTION_FAILED,
+                ),
+            ),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.DONE
+        assert state.current_world.observation_id == "recovered"
+        assert environment.execute_calls == 1
+        assert environment.capture_calls == 1
+        assert state.last_step is not None
+        assert len(state.last_step.execution.recovery_acquisitions) == 1
+        with pytest.raises(ValueError, match="requires SENT_UNKNOWN"):
+            replace(
+                state.last_step.execution,
+                result=replace(
+                    state.last_step.execution.result,
+                    dispatch_status=DispatchStatus.SENT,
+                    transport_success=True,
+                    error=None,
+                ),
+            )
+
+    asyncio.run(scenario())
+
+
+def test_explicitly_replay_safe_state_action_rebinds_once_after_unsatisfied_world() -> None:
+    async def scenario() -> None:
+        task = TaskGoal(
+            "set-shared-value",
+            "Set shared value",
+            allowed_effects=("shared_value_changed",),
+            risk_profile=RiskProfile.LOW,
+        )
+
+        @dataclass
+        class TextPolicy:
+            async def decide(self, context):
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    {"text": "done"},
+                    tool_call_id="provider-call:text",
+                )
+
+        runtime = TargetRuntime(
+            AgentDecisionPorts(TextPolicy()),
+            ProductionActionOutcomeProjector(),
+            TextTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("uncertain_dispatch_replay_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_text_world("before", ""),
+            post_observations=(
+                _text_world("first-post", ""),
+                _text_world("replayed-post", "done"),
+            ),
+            results=(
+                ActionResult(
+                    "*", DispatchStatus.SENT_UNKNOWN, "dom", False,
+                    ActionError.EXECUTION_FAILED,
+                ),
+                ActionResult("*", DispatchStatus.SENT, "dom", True),
+            ),
+        )
+
+        state = await runtime.run_task(environment, task)
+
+        assert state.status is RunStatus.DONE
+        assert environment.execute_calls == 2
+        assert state.execution_count == 2
+        assert state.last_step is not None
+        assert state.last_step.execution.attempt_count == 2
+        assert state.last_step.execution.attempts[0].result.dispatch_status is DispatchStatus.SENT_UNKNOWN
+        assert state.last_step.action_outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
+
+    asyncio.run(scenario())
+
+
+def test_failed_recapture_with_live_session_yields_environment_recovery() -> None:
+    async def scenario() -> None:
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("environment_recovery_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(),
+            independent_observations=(),
+            repeat_last_observation=False,
+            results=(
+                ActionResult(
+                    "*", DispatchStatus.SENT_UNKNOWN, "dom", False,
+                    ActionError.EXECUTION_FAILED,
+                ),
+            ),
+        )
+
+        async def session_health(_request):
+            return SessionHealth(
+                SessionHealthStatus.ALIVE,
+                page_closed=False,
+                browser_connected=True,
+            )
+
+        environment.session_health = session_health
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.YIELDED
+        assert state.yield_reason is EpisodeYieldReason.ENVIRONMENT_RECOVERY
+        assert environment.execute_calls == 1
+        assert environment.capture_calls == 1
+        assert state.last_step is not None
+        assert state.last_step.feedback == "post_action_acquisition_failed:environment_recovery"
 
     asyncio.run(scenario())
 

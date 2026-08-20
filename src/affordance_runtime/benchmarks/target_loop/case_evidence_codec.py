@@ -19,6 +19,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricMeasurement,
     TerminalReasonCode,
 )
+from affordance_runtime.execution import ExecutionDiagnostic, ExecutionDiagnosticPhase
 
 
 def public_case_evidence(result: BenchmarkCaseResult) -> dict[str, object]:
@@ -47,7 +48,7 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
     if payload["schema_version"] != payload["case_schema_version"]:
         raise ValueError("public case schema identity is inconsistent")
     if payload["schema_version"] not in {
-        "target-loop-case.v6", "target-loop-case.v7", CASE_SCHEMA_VERSION,
+        "target-loop-case.v6", "target-loop-case.v7", "target-loop-case.v8", CASE_SCHEMA_VERSION,
     }:
         raise ValueError("public case evidence schema is unsupported")
     measurements = {}
@@ -94,6 +95,15 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         if item.name != "failure_reason"
     }
     values["failure_reason"] = ""
+    values["recovery_failure_codes"] = tuple(values["recovery_failure_codes"])
+    values["secondary_failure_codes"] = tuple(values["secondary_failure_codes"])
+    cleanup_diagnostic = values["cleanup_diagnostic"]
+    if cleanup_diagnostic is not None:
+        if not isinstance(cleanup_diagnostic, dict):
+            raise ValueError("public cleanup diagnostic is malformed")
+        cleanup_diagnostic = dict(cleanup_diagnostic)
+        cleanup_diagnostic["phase"] = ExecutionDiagnosticPhase(cleanup_diagnostic["phase"])
+        values["cleanup_diagnostic"] = ExecutionDiagnostic(**cleanup_diagnostic)
     values["measurements"] = measurements
     values["failure_facts"] = facts
     failure_origin = values["failure_origin"]

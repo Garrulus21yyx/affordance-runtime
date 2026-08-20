@@ -116,6 +116,16 @@ async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResu
                 "environment_factory_exception",
                 exc,
             )
+            cleanup_diagnostic = getattr(
+                exc,
+                "__affordance_cleanup_diagnostic__",
+                None,
+            )
+            if cleanup_diagnostic is not None:
+                instrumentation.record_cleanup_diagnostic(
+                    "cleanup_exception",
+                    cleanup_diagnostic,
+                )
             raise _CaseStageError("environment factory", exc) from exc
         try:
             task = case.task_factory()
@@ -169,10 +179,15 @@ async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResu
         result = state_holder.get("state")
     finally:
         if environment is not None:
+            cleanup_started = time.perf_counter()
             try:
                 await _close(environment)
             except Exception as exc:
-                instrumentation.record_cleanup_failure("cleanup_exception", exc)
+                instrumentation.record_cleanup_failure(
+                    "cleanup_exception",
+                    exc,
+                    started_at=cleanup_started,
+                )
                 failure = _append_failure(failure, "cleanup failed")
     state = state_holder.get("state")
     if state is not None:

@@ -34,6 +34,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
     TaskOutcomeKind,
 )
+from affordance_runtime.execution.contracts import ExecutionDiagnostic
 from affordance_runtime.goals.compiler import GoalCompiler, NotRequiredGoalCompiler
 from affordance_runtime.mission.contracts import ExecutionMode, MissionOutcome
 from affordance_runtime.risk.policy import RiskPolicy
@@ -44,11 +45,12 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
-CASE_SCHEMA_VERSION = "target-loop-case.v8"
+CASE_SCHEMA_VERSION = "target-loop-case.v9"
 SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
     {
         "target-loop-case.v6",
         "target-loop-case.v7",
+        "target-loop-case.v8",
         CASE_SCHEMA_VERSION,
     }
 )
@@ -451,6 +453,13 @@ class BenchmarkCaseResult:
     cleanup_failure_code: str = ""
     cleanup_exception_class: str = ""
     cleanup_failures: int = 0
+    primary_failure_code: str = ""
+    primary_failure_phase: str = ""
+    primary_diagnostic_ref: str = ""
+    recovery_failure_codes: tuple[str, ...] = ()
+    secondary_failure_codes: tuple[str, ...] = ()
+    terminal_failure_code: str = ""
+    cleanup_diagnostic: ExecutionDiagnostic | None = None
     watchdog_triggered: bool = False
     harness_integrity_code: str = ""
     harness_integrity_failures: int = 0
@@ -487,6 +496,10 @@ class BenchmarkCaseResult:
             self.agent_failure_code,
             self.cleanup_failure_code,
             self.cleanup_exception_class,
+            self.primary_failure_code,
+            self.primary_failure_phase,
+            self.primary_diagnostic_ref,
+            self.terminal_failure_code,
             self.harness_integrity_code,
             self.mission_outcome,
             self.mission_last_ref,
@@ -501,6 +514,24 @@ class BenchmarkCaseResult:
             for value in text_fields
         ):
             raise TypeError("benchmark case text fields must be bounded strings")
+        object.__setattr__(self, "recovery_failure_codes", tuple(self.recovery_failure_codes))
+        object.__setattr__(self, "secondary_failure_codes", tuple(self.secondary_failure_codes))
+        if any(
+            not isinstance(value, str) or _FACT_CODE.fullmatch(value) is None
+            for value in (*self.recovery_failure_codes, *self.secondary_failure_codes)
+        ):
+            raise ValueError("benchmark chronological failure codes must be bounded identifiers")
+        if self.primary_failure_phase not in {"", "pre_dispatch", "dispatch_wait", "post_capture", "cleanup"}:
+            raise ValueError("benchmark primary failure phase is outside the closed vocabulary")
+        if self.primary_diagnostic_ref and re.fullmatch(
+            r"execution-diagnostic:[0-9a-f]{24}", self.primary_diagnostic_ref,
+        ) is None:
+            raise ValueError("benchmark primary diagnostic reference is invalid")
+        if self.cleanup_diagnostic is not None:
+            if not isinstance(self.cleanup_diagnostic, ExecutionDiagnostic):
+                raise TypeError("benchmark cleanup diagnostic must be typed")
+            if self.cleanup_diagnostic.phase.value != "cleanup":
+                raise ValueError("benchmark cleanup diagnostic phase must be cleanup")
         if (
             not self.case_id
             or self.status not in {str(item) for item in RunStatus if item is not RunStatus.RUNNING}

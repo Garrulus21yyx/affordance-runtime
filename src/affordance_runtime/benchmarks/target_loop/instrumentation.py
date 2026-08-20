@@ -6,6 +6,7 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from time import perf_counter
 
 from affordance_runtime.agent.decisions import (
     LocalToolResult,
@@ -15,11 +16,20 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.run_state import EpisodeYieldReason, RunStatus
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus, ExecutionOutcome
+from affordance_runtime.execution import (
+    ActionError,
+    ActionResult,
+    DispatchStatus,
+    ExecutionDiagnostic,
+    ExecutionDiagnosticPhase,
+    ExecutionOutcome,
+    execution_diagnostic_from_exception,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
@@ -84,6 +94,11 @@ class BenchmarkInstrumentation:
     cleanup_failure_code: str = ""
     cleanup_exception_class: str = ""
     cleanup_failures: int = 0
+    cleanup_diagnostic: ExecutionDiagnostic | None = None
+    primary_execution_failure_code: str = ""
+    primary_execution_failure_phase: str = ""
+    primary_execution_diagnostic_ref: str = ""
+    recovery_failure_codes: list[str] = field(default_factory=list)
     watchdog_code: str = ""
     watchdog_exception_class: str = ""
     environment_reset_acquisitions: int = 0
@@ -162,6 +177,60 @@ class BenchmarkInstrumentation:
 
     def step_completed(self, step_number: int, result) -> None:
         self.trace_recorder.step_completed(step_number, result)
+        execution = getattr(result, "execution", None)
+        if execution is None:
+            return
+        attempts = tuple(getattr(execution, "attempts", ()))
+        uncertain = next(
+            (
+                attempt
+                for attempt in attempts
+                if str(attempt.result.dispatch_status) == "sent_unknown"
+            ),
+            None,
+        )
+        unresolved_uncertainty = (
+            getattr(result, "yield_reason", None)
+            in {
+                EpisodeYieldReason.UNCERTAIN_EFFECT,
+                EpisodeYieldReason.ENVIRONMENT_RECOVERY,
+            }
+            or (
+                getattr(result, "status_after", None) is RunStatus.FAILED
+                and getattr(getattr(result, "runtime_failure", None), "code", "")
+                == "environment_unresponsive"
+            )
+        )
+        if (
+            uncertain is not None
+            and unresolved_uncertainty
+            and not self.primary_execution_failure_code
+        ):
+            diagnostic = uncertain.result.diagnostics[0] if uncertain.result.diagnostics else None
+            self.primary_execution_failure_code = "action_dispatch_uncertain"
+            self.primary_execution_failure_phase = (
+                str(diagnostic.phase) if diagnostic is not None else "dispatch_wait"
+            )
+            self.primary_execution_diagnostic_ref = (
+                diagnostic.diagnostic_ref if diagnostic is not None else ""
+            )
+            if self.failure_origin is CaseFailureOrigin.NONE:
+                self.failure_origin = CaseFailureOrigin.EXECUTION
+                self.failure_code = self.primary_execution_failure_code
+                self.exception_class = (
+                    diagnostic.exception_type if diagnostic is not None else "ExecutionUncertain"
+                )
+        acquisitions = tuple(
+            acquisition
+            for attempt in attempts
+            for acquisition in (
+                *((attempt.post_acquisition,) if attempt.post_acquisition is not None else ()),
+                *attempt.recovery_acquisitions,
+            )
+        )
+        if any(str(item.status) != "acquired" for item in acquisitions):
+            if "post_action_acquisition_failed" not in self.recovery_failure_codes:
+                self.recovery_failure_codes.append("post_action_acquisition_failed")
 
     def run_paused(self, state) -> None:
         self.trace_recorder.run_paused(state)
@@ -202,12 +271,38 @@ class BenchmarkInstrumentation:
             self.watchdog_code = code
             self.watchdog_exception_class = type(exception).__name__
 
-    def record_cleanup_failure(self, code: str, exception: Exception) -> None:
+    def record_cleanup_failure(
+        self,
+        code: str,
+        exception: Exception,
+        *,
+        started_at: float | None = None,
+    ) -> None:
         if self.cleanup_failures:
             return
         self.cleanup_failures = 1
         self.cleanup_failure_code = code
         self.cleanup_exception_class = type(exception).__name__
+        self.cleanup_diagnostic = execution_diagnostic_from_exception(
+            exception,
+            phase=ExecutionDiagnosticPhase.CLEANUP,
+            started_at=started_at if started_at is not None else perf_counter(),
+            dispatch_crossed=False,
+        )
+
+    def record_cleanup_diagnostic(
+        self,
+        code: str,
+        diagnostic: ExecutionDiagnostic,
+    ) -> None:
+        if self.cleanup_failures:
+            return
+        if diagnostic.phase is not ExecutionDiagnosticPhase.CLEANUP:
+            raise ValueError("attached cleanup diagnostic must have cleanup phase")
+        self.cleanup_failures = 1
+        self.cleanup_failure_code = code
+        self.cleanup_exception_class = diagnostic.exception_type
+        self.cleanup_diagnostic = diagnostic
 
 
 @dataclass

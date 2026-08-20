@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import inspect
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from time import perf_counter
 from typing import Callable, Protocol
 
-from affordance_runtime.execution import ActionError, ActionResult, BoundActionRequest, DispatchStatus
+from affordance_runtime.execution import (
+    ActionError,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+    ExecutionDiagnostic,
+    ExecutionDiagnosticPhase,
+    SessionHealth,
+    SessionHealthStatus,
+    execution_diagnostic_from_exception,
+)
 from affordance_runtime.goals import GoalPredicateValueType, GoalSemanticContract
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymBindingStore,
@@ -101,6 +112,7 @@ class BrowserGymPort(Protocol):
     def send_msg_to_user(self, content: str) -> tuple[dict[str, object], object, object, object, dict[str, object]]: ...
     def capture_current(self) -> tuple[dict[str, object], dict[str, object]]: ...
     def currentness_probe(self, bid: str) -> object: ...
+    def session_health(self) -> object: ...
     def close(self) -> None: ...
 
 
@@ -228,6 +240,11 @@ class BrowserGymSurfaceAdapter:
     _pending_acquisition_id: str = field(default="", init=False, repr=False)
     _pending_projection: BrowserGymProjection | None = field(default=None, init=False, repr=False)
     _pending_error_code: str = field(default="", init=False, repr=False)
+    _pending_execution_diagnostics: list[ExecutionDiagnostic] = field(
+        default_factory=list,
+        init=False,
+        repr=False,
+    )
     _final_response_sent: bool = field(default=False, init=False, repr=False)
 
     surface: str = field(default="browsergym", init=False)
@@ -322,8 +339,24 @@ class BrowserGymSurfaceAdapter:
                 marked_candidate_policy_available=marked_candidate_policy_available,
             )
             return environment
-        except BaseException:
-            gym_environment.close()
+        except BaseException as primary:
+            cleanup_started = perf_counter()
+            try:
+                gym_environment.close()
+            except BaseException as cleanup:
+                try:
+                    setattr(
+                        primary,
+                        "__affordance_cleanup_diagnostic__",
+                        execution_diagnostic_from_exception(
+                            cleanup,
+                            phase=ExecutionDiagnosticPhase.CLEANUP,
+                            started_at=cleanup_started,
+                            dispatch_crossed=False,
+                        ),
+                    )
+                except BaseException:
+                    pass
             raise
 
     def initialize_task(self, task: TaskGoal) -> None:
@@ -380,6 +413,7 @@ class BrowserGymSurfaceAdapter:
         if len({item.acquisition_id for item in requests}) != 1:
             raise ValueError("BrowserGym grouped acquisition must conserve one identity")
         acquisition_id = requests[0].acquisition_id
+        started = perf_counter()
         try:
             if self._pending_raw is not None and not self._pending_acquisition_id:
                 self._pending_acquisition_id = acquisition_id
@@ -407,7 +441,21 @@ class BrowserGymSurfaceAdapter:
                 self._prepare_frame(raw, snapshot, observation_id, revision)
             self._pending_acquisition_id = acquisition_id
             return self._project_requests(requests)
-        except Exception:
+        except Exception as exc:
+            if self._pending_error_code in {
+                "step_failed_after_dispatch",
+                "post_action_projection_failed",
+                "final_response_failed_after_dispatch",
+                "post_final_projection_failed",
+            }:
+                self._pending_execution_diagnostics.append(
+                    execution_diagnostic_from_exception(
+                        exc,
+                        phase=ExecutionDiagnosticPhase.POST_CAPTURE,
+                        started_at=started,
+                        dispatch_crossed=True,
+                    )
+                )
             return tuple(
                 SelectedObservationResult.failed(
                     request,
@@ -446,9 +494,10 @@ class BrowserGymSurfaceAdapter:
         self._pending_snapshot = None
         self._pending_projection = None
         self._pending_acquisition_id = ""
+        started = perf_counter()
         try:
             raw, reward, terminated, truncated, info = self.gym_environment.step(action)
-        except BaseException:
+        except BaseException as exc:
             self._pending_error_code = "step_failed_after_dispatch"
             return ActionResult(
                 request.request_id,
@@ -457,6 +506,14 @@ class BrowserGymSurfaceAdapter:
                 False,
                 ActionError.EXECUTION_FAILED,
                 self._currentness_evidence(1, 1),
+                (
+                    execution_diagnostic_from_exception(
+                        exc,
+                        phase=ExecutionDiagnosticPhase.DISPATCH_WAIT,
+                        started_at=started,
+                        dispatch_crossed=True,
+                    ),
+                ),
             )
         result = ActionResult(
             request.request_id,
@@ -482,8 +539,20 @@ class BrowserGymSurfaceAdapter:
                 task_info=current_task_info,
             )
             self._prepare_frame(raw, snapshot, observation_id, revision)
-        except Exception:
+        except Exception as exc:
             self._pending_error_code = "post_action_projection_failed"
+            result = replace(
+                result,
+                diagnostics=(
+                    *result.diagnostics,
+                    execution_diagnostic_from_exception(
+                        exc,
+                        phase=ExecutionDiagnosticPhase.POST_CAPTURE,
+                        started_at=started,
+                        dispatch_crossed=True,
+                    ),
+                ),
+            )
         return result
 
     async def finalize(self, content: str) -> ActionResult:
@@ -501,9 +570,10 @@ class BrowserGymSurfaceAdapter:
         self._pending_snapshot = None
         self._pending_projection = None
         self._pending_acquisition_id = ""
+        started = perf_counter()
         try:
             raw, reward, terminated, truncated, info = self.gym_environment.send_msg_to_user(content)
-        except BaseException:
+        except BaseException as exc:
             self._pending_error_code = "final_response_failed_after_dispatch"
             return ActionResult(
                 "final-response",
@@ -512,6 +582,14 @@ class BrowserGymSurfaceAdapter:
                 False,
                 ActionError.EXECUTION_FAILED,
                 {"effectful_dispatch_count": 1},
+                (
+                    execution_diagnostic_from_exception(
+                        exc,
+                        phase=ExecutionDiagnosticPhase.DISPATCH_WAIT,
+                        started_at=started,
+                        dispatch_crossed=True,
+                    ),
+                ),
             )
         result = ActionResult(
             "final-response",
@@ -537,9 +615,52 @@ class BrowserGymSurfaceAdapter:
                 task_info=current_task_info,
             )
             self._prepare_frame(raw, snapshot, observation_id, revision)
-        except Exception:
+        except Exception as exc:
             self._pending_error_code = "post_final_projection_failed"
+            result = replace(
+                result,
+                diagnostics=(
+                    *result.diagnostics,
+                    execution_diagnostic_from_exception(
+                        exc,
+                        phase=ExecutionDiagnosticPhase.POST_CAPTURE,
+                        started_at=started,
+                        dispatch_crossed=True,
+                    ),
+                ),
+            )
         return result
+
+    async def session_health(self) -> SessionHealth:
+        if self._closed:
+            return SessionHealth(SessionHealthStatus.LOST, page_closed=True, browser_connected=False)
+        probe = getattr(self.gym_environment, "session_health", None)
+        if not callable(probe):
+            return SessionHealth(SessionHealthStatus.UNKNOWN)
+        try:
+            raw = probe()
+        except BaseException:
+            return SessionHealth(SessionHealthStatus.UNKNOWN)
+        raw = raw if isinstance(raw, dict) else {}
+        page_closed = raw.get("page_closed") if type(raw.get("page_closed")) is bool else None
+        browser_connected = (
+            raw.get("browser_connected")
+            if type(raw.get("browser_connected")) is bool
+            else None
+        )
+        status = (
+            SessionHealthStatus.LOST
+            if page_closed is True or browser_connected is False
+            else SessionHealthStatus.ALIVE
+            if page_closed is False and browser_connected is True
+            else SessionHealthStatus.UNKNOWN
+        )
+        return SessionHealth(status, page_closed, browser_connected)
+
+    def take_execution_diagnostics(self) -> tuple[ExecutionDiagnostic, ...]:
+        diagnostics = tuple(self._pending_execution_diagnostics)
+        self._pending_execution_diagnostics.clear()
+        return diagnostics
 
     def is_current(self, request: BoundActionRequest) -> bool:
         private = self.bindings.get(request.binding.binding_id)

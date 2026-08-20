@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from affordance_runtime.execution.contracts import (
     ActionDispatchCancelled,
@@ -12,7 +12,10 @@ from affordance_runtime.execution.contracts import (
     BoundActionRequest,
     DispatchStatus,
     ExecutionCancelled,
+    ExecutionObservationRecovery,
     ExecutionOutcome,
+    SessionHealth,
+    SessionHealthStatus,
 )
 from affordance_runtime.goals.contracts import GoalSemanticContract, merge_goal_semantic_contracts
 from affordance_runtime.task.contracts import TaskGoal
@@ -793,8 +796,43 @@ class ObservationAcquisitionCoordinator:
                 post_plan,
             )
         except AcquisitionCancelled as exc:
+            take_diagnostics = getattr(adapter, "take_execution_diagnostics", None)
+            if callable(take_diagnostics):
+                diagnostics = tuple(take_diagnostics())
+                if diagnostics:
+                    result = replace(result, diagnostics=(*result.diagnostics, *diagnostics))
             raise ExecutionCancelled(ExecutionOutcome(request, result, exc.acquisition)) from exc
+        take_diagnostics = getattr(adapter, "take_execution_diagnostics", None)
+        if callable(take_diagnostics):
+            diagnostics = tuple(take_diagnostics())
+            if diagnostics:
+                result = replace(result, diagnostics=(*result.diagnostics, *diagnostics))
         return ExecutionOutcome(request, result, post)
+
+    async def session_health(self, request: BoundActionRequest) -> SessionHealth:
+        """Probe health through the adapter that owns this execution surface."""
+
+        adapter = self._surface_adapter(request.binding.surface)
+        probe = getattr(adapter, "session_health", None) if adapter is not None else None
+        if not callable(probe):
+            return SessionHealth(SessionHealthStatus.UNKNOWN)
+        health = await probe()
+        if not isinstance(health, SessionHealth):
+            raise TypeError("surface session health probe must return SessionHealth")
+        return health
+
+    async def recover_execution_observation(
+        self,
+        action_request: BoundActionRequest,
+        observation_request: WorldObservationRequest,
+    ) -> ExecutionObservationRecovery:
+        """Capture and drain diagnostics as one recovery-boundary transaction."""
+
+        adapter = self._surface_adapter(action_request.binding.surface)
+        acquisition = await self.capture(observation_request)
+        take_diagnostics = getattr(adapter, "take_execution_diagnostics", None)
+        diagnostics = tuple(take_diagnostics()) if callable(take_diagnostics) else ()
+        return ExecutionObservationRecovery(acquisition, diagnostics)
 
     def _cancelled_execution(
         self,
@@ -998,6 +1036,19 @@ class UnifiedWorldEnvironment:
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:
         return await self.acquisition_coordinator.execute(request)
+
+    async def session_health(self, request: BoundActionRequest) -> SessionHealth:
+        return await self.acquisition_coordinator.session_health(request)
+
+    async def recover_execution_observation(
+        self,
+        action_request: BoundActionRequest,
+        observation_request: WorldObservationRequest,
+    ) -> ExecutionObservationRecovery:
+        return await self.acquisition_coordinator.recover_execution_observation(
+            action_request,
+            observation_request,
+        )
 
     @property
     def supports_finalization(self) -> bool:

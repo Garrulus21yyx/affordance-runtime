@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
@@ -144,8 +145,15 @@ def project_case_result(
         latency_ms=latency_ms,
         measurements=measurements,
         terminal_reason_code=legacy.terminal_reason_code,
-        termination_origin=legacy.termination_origin,
-        case_failure_code=legacy.case_failure_code,
+        termination_origin=(
+            "component"
+            if instrumentation.primary_execution_failure_code
+            else legacy.termination_origin
+        ),
+        case_failure_code=(
+            instrumentation.primary_execution_failure_code
+            or legacy.case_failure_code
+        ),
         partial_episode_available=result is None and metadata is not None,
         latest_semantic_attempt_key_digest=(metadata.latest_semantic_attempt_key_digest if metadata else ""),
         same_attempt_streak=metadata.same_attempt_streak if metadata else 0,
@@ -175,6 +183,17 @@ def project_case_result(
         cleanup_failure_code=cleanup_code,
         cleanup_exception_class=_safe_exception_class(instrumentation.cleanup_exception_class),
         cleanup_failures=instrumentation.cleanup_failures,
+        primary_failure_code=instrumentation.primary_execution_failure_code,
+        primary_failure_phase=instrumentation.primary_execution_failure_phase,
+        primary_diagnostic_ref=instrumentation.primary_execution_diagnostic_ref,
+        recovery_failure_codes=tuple(instrumentation.recovery_failure_codes),
+        secondary_failure_codes=(cleanup_code,) if cleanup_code else (),
+        terminal_failure_code=public_runtime_failure,
+        cleanup_diagnostic=(
+            replace(instrumentation.cleanup_diagnostic, safe_message="")
+            if instrumentation.cleanup_diagnostic is not None
+            else None
+        ),
         watchdog_triggered=(bool(instrumentation.watchdog_code)),
         harness_integrity_code=integrity_code,
         harness_integrity_failures=int(bool(metric_collisions)),

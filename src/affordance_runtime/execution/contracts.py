@@ -34,6 +34,76 @@ class ActionError(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ExecutionDiagnosticPhase(StrEnum):
+    PRE_DISPATCH = "pre_dispatch"
+    DISPATCH_WAIT = "dispatch_wait"
+    POST_CAPTURE = "post_capture"
+    CLEANUP = "cleanup"
+
+
+class SessionHealthStatus(StrEnum):
+    ALIVE = "alive"
+    LOST = "lost"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class SessionHealth:
+    status: SessionHealthStatus
+    page_closed: bool | None = None
+    browser_connected: bool | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, SessionHealthStatus):
+            raise TypeError("session health status must be typed")
+        if any(value is not None and type(value) is not bool for value in (
+            self.page_closed,
+            self.browser_connected,
+        )):
+            raise TypeError("session health facts must be boolean or unknown")
+
+
+@dataclass(frozen=True)
+class ExecutionDiagnostic:
+    diagnostic_ref: str
+    phase: ExecutionDiagnosticPhase
+    exception_type: str
+    exception_module: str
+    safe_message: str
+    elapsed_ms: float
+    dispatch_crossed: bool
+    page_closed: bool | None = None
+    browser_connected: bool | None = None
+    traceback_ref: str = ""
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"execution-diagnostic:[0-9a-f]{24}", self.diagnostic_ref) is None:
+            raise ValueError("execution diagnostic identity is invalid")
+        if not isinstance(self.phase, ExecutionDiagnosticPhase):
+            raise TypeError("execution diagnostic phase must be typed")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", self.exception_type) is None:
+            raise ValueError("execution diagnostic exception type is invalid")
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,199}", self.exception_module) is None:
+            raise ValueError("execution diagnostic exception module is invalid")
+        if (
+            not isinstance(self.safe_message, str)
+            or len(self.safe_message) > 500
+            or any(ord(character) < 32 for character in self.safe_message)
+        ):
+            raise ValueError("execution diagnostic message must be bounded public text")
+        if isinstance(self.elapsed_ms, bool) or not isinstance(self.elapsed_ms, int | float) or self.elapsed_ms < 0:
+            raise ValueError("execution diagnostic elapsed time is invalid")
+        if type(self.dispatch_crossed) is not bool:
+            raise TypeError("execution diagnostic dispatch flag must be boolean")
+        if any(value is not None and type(value) is not bool for value in (
+            self.page_closed,
+            self.browser_connected,
+        )):
+            raise TypeError("execution diagnostic session facts must be boolean or unknown")
+        if self.traceback_ref and re.fullmatch(r"traceback:sha256:[0-9a-f]{64}", self.traceback_ref) is None:
+            raise ValueError("execution diagnostic traceback reference is invalid")
+
+
 @dataclass(frozen=True)
 class ActionIntent:
     semantic_action: str
@@ -125,6 +195,7 @@ class ActionResult:
     transport_success: bool
     error: ActionError | None = None
     adapter_evidence: dict[str, Any] = field(default_factory=dict)
+    diagnostics: tuple[ExecutionDiagnostic, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.dispatch_status, DispatchStatus):
@@ -144,6 +215,50 @@ class ActionResult:
         if inconsistent:
             raise ValueError("action result dispatch status, transport success, and error are inconsistent")
         object.__setattr__(self, "adapter_evidence", freeze_json(self.adapter_evidence))
+        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        if (
+            len(self.diagnostics) > 8
+            or any(not isinstance(item, ExecutionDiagnostic) for item in self.diagnostics)
+            or len({item.diagnostic_ref for item in self.diagnostics}) != len(self.diagnostics)
+        ):
+            raise ValueError("action result execution diagnostics are invalid")
+
+
+@dataclass(frozen=True)
+class ExecutionAttempt:
+    request: BoundActionRequest
+    result: ActionResult
+    post_acquisition: ObservationAcquisition | None
+    recovery_acquisitions: tuple[ObservationAcquisition, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_execution_attempt(
+            self.request,
+            self.result,
+            self.post_acquisition,
+            self.recovery_acquisitions,
+        )
+
+
+@dataclass(frozen=True)
+class ExecutionObservationRecovery:
+    acquisition: ObservationAcquisition
+    diagnostics: tuple[ExecutionDiagnostic, ...] = ()
+
+    def __post_init__(self) -> None:
+        from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationAcquisition
+
+        if not isinstance(self.acquisition, ObservationAcquisition):
+            raise TypeError("execution recovery acquisition must be typed")
+        if self.acquisition.origin is not AcquisitionOrigin.INDEPENDENT_CAPTURE:
+            raise ValueError("execution recovery requires an independent capture")
+        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        if (
+            len(self.diagnostics) > 8
+            or any(not isinstance(item, ExecutionDiagnostic) for item in self.diagnostics)
+            or len({item.diagnostic_ref for item in self.diagnostics}) != len(self.diagnostics)
+        ):
+            raise ValueError("execution recovery diagnostics are invalid")
 
 
 @dataclass(frozen=True)
@@ -153,24 +268,84 @@ class ExecutionOutcome:
     request: BoundActionRequest
     result: ActionResult
     post_acquisition: ObservationAcquisition | None
+    recovery_acquisitions: tuple[ObservationAcquisition, ...] = ()
+    prior_attempts: tuple[ExecutionAttempt, ...] = ()
 
     def __post_init__(self) -> None:
-        from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationAcquisition
-
         if not isinstance(self.request, BoundActionRequest):
             raise TypeError("execution outcome request must be typed")
-        if not isinstance(self.result, ActionResult):
-            raise TypeError("execution outcome result must be typed")
-        if self.result.request_id != self.request.request_id or self.result.backend != self.request.binding.executor_id:
-            raise ValueError("execution outcome request/result lineage mismatch")
-        dispatched = self.result.dispatch_status is not DispatchStatus.NOT_SENT
-        if dispatched != (self.post_acquisition is not None):
-            raise ValueError("execution outcome dispatch/post-acquisition shape mismatch")
-        if self.post_acquisition is not None:
-            if not isinstance(self.post_acquisition, ObservationAcquisition):
-                raise TypeError("execution post acquisition must be typed")
-            if self.post_acquisition.origin is not AcquisitionOrigin.POST_ACTION:
-                raise ValueError("execution post acquisition must have POST_ACTION origin")
+        _validate_execution_attempt(
+            self.request,
+            self.result,
+            self.post_acquisition,
+            self.recovery_acquisitions,
+        )
+        object.__setattr__(self, "prior_attempts", tuple(self.prior_attempts))
+        if (
+            len(self.prior_attempts) > 1
+            or any(not isinstance(item, ExecutionAttempt) for item in self.prior_attempts)
+        ):
+            raise ValueError("execution outcome recovery is bounded to one replay")
+
+    @property
+    def current_attempt(self) -> ExecutionAttempt:
+        return ExecutionAttempt(
+            self.request,
+            self.result,
+            self.post_acquisition,
+            self.recovery_acquisitions,
+        )
+
+    @property
+    def attempts(self) -> tuple[ExecutionAttempt, ...]:
+        return (*self.prior_attempts, self.current_attempt)
+
+    @property
+    def attempt_count(self) -> int:
+        return len(self.prior_attempts) + 1
+
+    @property
+    def all_diagnostics(self) -> tuple[ExecutionDiagnostic, ...]:
+        return tuple(
+            diagnostic
+            for attempt in self.attempts
+            for diagnostic in attempt.result.diagnostics
+        )
+
+
+def _validate_execution_attempt(
+    request: BoundActionRequest,
+    result: ActionResult,
+    post_acquisition: ObservationAcquisition | None,
+    recovery_acquisitions: tuple[ObservationAcquisition, ...],
+) -> None:
+    from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationAcquisition
+
+    if not isinstance(request, BoundActionRequest) or not isinstance(result, ActionResult):
+        raise TypeError("execution attempt request and result must be typed")
+    if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+        raise ValueError("execution attempt request/result lineage mismatch")
+    dispatched = result.dispatch_status is not DispatchStatus.NOT_SENT
+    if dispatched != (post_acquisition is not None):
+        raise ValueError("execution attempt dispatch/post-acquisition shape mismatch")
+    if post_acquisition is not None and (
+        not isinstance(post_acquisition, ObservationAcquisition)
+        or post_acquisition.origin is not AcquisitionOrigin.POST_ACTION
+    ):
+        raise ValueError("execution post acquisition must be typed POST_ACTION")
+    recovery = tuple(recovery_acquisitions)
+    if len(recovery) > 1 or any(
+        not isinstance(item, ObservationAcquisition)
+        or item.origin is not AcquisitionOrigin.INDEPENDENT_CAPTURE
+        for item in recovery
+    ):
+        raise ValueError("execution recovery permits one independent fresh capture")
+    if recovery and (
+        result.dispatch_status is not DispatchStatus.SENT_UNKNOWN
+        or post_acquisition is None
+        or post_acquisition.status.value == "acquired"
+    ):
+        raise ValueError("execution recovery requires SENT_UNKNOWN with a failed normal post acquisition")
 
 
 class ActionDispatchCancelled(asyncio.CancelledError):
