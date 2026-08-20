@@ -9,8 +9,16 @@ from typing import Mapping
 
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
-from affordance_runtime.agent.context.compact_world_renderer import inspect_actor_world
+from affordance_runtime.agent.context.compact_world_renderer import (
+    DeliveryManifest,
+    Matches,
+    Opened,
+    Page,
+    inspect_actor_world,
+    inspect_outcome_public,
+)
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -45,47 +53,53 @@ from affordance_runtime.world.observation_needs import ObservationPurpose
 
 
 @dataclass(frozen=True)
-class _FindActionsBinding:
-    target_ids_by_ref: Mapping[str, str]
+class _SearchActionsBinding:
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        query = str(arguments["query"]).strip()
+        return RequestActionPage(
+            context_id,
+            query,
+            tool_call_id=tool_call_id,
+        )
+
+
+@dataclass(frozen=True)
+class _ActionResultsNextPageBinding:
     active_query: str
     active_target_id: str
     active_relevance_role: str
     next_cursor: str
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        query = str(arguments.get("query", ""))
-        target_ref = str(arguments.get("exact_target", ""))
-        relevance_role = str(arguments.get("relevance_role", ""))
-        cursor = str(arguments.get("cursor", ""))
-        continuing = bool(cursor)
-        if target_ref:
-            try:
-                target_id = self.target_ids_by_ref[target_ref]
-            except KeyError as exc:
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                    "exact_target is not present in the current executable action set",
-                ) from exc
-        else:
-            target_id = ""
-        if continuing:
-            query = query or self.active_query
-            target_id = target_id or self.active_target_id
-            relevance_role = relevance_role or self.active_relevance_role
-        elif not arguments:
-            query = self.active_query
-            target_id = self.active_target_id
-            relevance_role = self.active_relevance_role
-            cursor = self.next_cursor
+        if arguments or not self.next_cursor:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return RequestActionPage(
             context_id,
-            query,
-            target_id,
-            relevance_role,
-            cursor,
+            self.active_query,
+            self.active_target_id,
+            self.active_relevance_role,
+            self.next_cursor,
             tool_call_id,
-            target_ref,
         )
+
+
+@dataclass(frozen=True)
+class _ManifestBoundAction:
+    inner: object
+    manifest: DeliveryManifest
+
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        for name in ("target", "source", "destination"):
+            value = arguments.get(name)
+            if isinstance(value, str) and not self.manifest.admits_executable(value):
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.GROUNDING_GAP,
+                    f"{name} is not exact in the current DeliveryManifest",
+                )
+        resolver = getattr(self.inner, "resolve", None)
+        if not callable(resolver):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        return resolver(arguments, context_id, tool_call_id)
 
 
 @dataclass(frozen=True)
@@ -131,15 +145,10 @@ class _ControlBinding:
                 tool_call_id,
             )
         if self.kind == "wait":
-            max_wait_ms = arguments["max_wait_ms"]
-            if type(max_wait_ms) is not int:
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.INVALID_ARGUMENTS
-                )
             return Wait(
                 context_id,
                 str(arguments["reason"]),
-                max_wait_ms,
+                5_000,
                 tool_call_id,
             )
         if self.kind == "abort":
@@ -244,84 +253,159 @@ class _PinFactBinding:
 
 
 @dataclass(frozen=True)
-class _InspectWorldBinding:
+class _WorldReadBinding:
     context: AgentContext
+    kind: str
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        action = str(arguments["action"])
-        region_ref = str(arguments.get("region_ref", ""))
-        query = str(arguments.get("query", ""))
-        cursor = str(arguments.get("cursor", ""))
-        if action == "open_region" and not region_ref:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                "open_region requires region_ref",
-            )
-        if action == "find" and not query.strip():
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                "find requires query",
-            )
-        if self.context.current_observation is None or self.context.region_index is None:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.CATALOG_INVALID,
-                "inspect_world requires current world region index",
-            )
-        try:
-            region = (
-                self.context.region_index.resolve_public_ref(region_ref)
-                if action == "open_region"
-                else None
-            )
-            result = inspect_actor_world(
-                self.context.actor_world,
-                self.context.grounding,
-                region_index=self.context.region_index,
-                observation=self.context.current_observation,
-                action=action,
-                region_ref=region_ref,
-                query=query,
-                cursor=cursor,
-            )
-        except ValueError as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                str(exc),
-            ) from exc
-        except KeyError as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                "region_ref is not present in the current world",
-            ) from exc
-        lens = None
-        public_result = dict(result)
-        if action == "open_region":
-            lens = WorldDeliveryLens(
-                self.context.current_observation.observation_id,
-                region.key if region is not None else "",
-                cursor,
-            )
+        observation, region_index = _current_world_read_authority(self.context)
+        region_ref = ""
+        query = ""
+        page_cursor = ""
+        if self.kind == "region":
+            tool_name = "read_region"
+            action = "open_region"
+            region_ref = str(arguments["region_ref"])
+        elif self.kind == "find":
+            tool_name = "search_world"
+            action = "find"
+            query = str(arguments["query"]).strip()
+        elif self.kind == "view_all":
+            tool_name = "list_regions"
+            action = "view_all"
+        elif self.kind == "continue":
+            if arguments:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+            lens = self.context.delivery_lens
+            if lens is None or not lens.next_cursor:
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.INVALID_ARGUMENTS,
+                    "no current World read has another page",
+                )
+            tool_name = "read_next_page"
+            page_cursor = lens.next_cursor
+            if lens.kind == "region":
+                action = "open_region"
+                region = region_index.get(lens.selected_region_key)
+                if region is None:
+                    raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
+                region_ref = region.public_ref
+            elif lens.kind == "find":
+                action = "find"
+                query = lens.query
+            elif lens.kind == "view_all":
+                action = "view_all"
+            else:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        else:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+
+        result = inspect_actor_world(
+            self.context.actor_world,
+            self.context.grounding,
+            region_index=region_index,
+            observation=observation,
+            action=action,
+            region_ref=region_ref,
+            query=query,
+            cursor=page_cursor,
+        )
+        lens = _next_world_delivery_lens(
+            observation.observation_id,
+            region_index,
+            action,
+            region_ref,
+            query,
+            page_cursor,
+            result,
+        )
+        public_arguments: Mapping[str, object]
+        if tool_name == "read_region":
+            public_arguments = {"region_ref": region_ref}
+        elif tool_name == "search_world":
+            public_arguments = {"query": query}
+        else:
+            public_arguments = {}
         return LocalToolResult(
             context_id,
-            "inspect_world",
-            {
-                "action": action,
-                "region_ref": region_ref,
-                "query": query,
-                "cursor": cursor,
-            },
-            public_result,
+            tool_name,
+            public_arguments,
+            inspect_outcome_public(result),
             tool_call_id,
             delivery_lens=lens,
         )
 
 
+def _current_world_read_authority(context: AgentContext):
+    if context.current_observation is None or context.region_index is None:
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.CATALOG_INVALID,
+            "World reading requires a current observation and region index",
+        )
+    return context.current_observation, context.region_index
+
+
+def _next_world_delivery_lens(
+    observation_id,
+    region_index,
+    action,
+    region_ref,
+    query,
+    page_cursor,
+    result,
+):
+    if isinstance(result, Opened):
+        region = region_index.resolve_public_ref(region_ref)
+        return WorldDeliveryLens(
+            observation_id,
+            "region",
+            region.key,
+            "",
+            page_cursor,
+            result.next_cursor,
+        )
+    if isinstance(result, Matches) and result.items:
+        return WorldDeliveryLens(
+            observation_id,
+            "find",
+            "",
+            query[:120],
+            page_cursor,
+            result.next_cursor,
+        )
+    if isinstance(result, Page):
+        return WorldDeliveryLens(
+            observation_id,
+            "view_all",
+            "",
+            "",
+            page_cursor,
+            result.next_cursor,
+        )
+    return None
+
+
 def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
+    delivery: ModelTurnDelivery,
 ) -> GroundedToolCatalog:
     if phase is not GroundedToolPhase.ACTION_SELECTION:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    if delivery.context_id != context.context_id:
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.STALE_CATALOG,
+            "ModelTurnDelivery belongs to another Context",
+        )
+    if delivery.manifest.world_observation_id != getattr(
+        context.current_observation,
+        "observation_id",
+        delivery.manifest.world_observation_id,
+    ):
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.STALE_CATALOG,
+            "ModelTurnDelivery belongs to another World",
+        )
     registered: list[RegisteredGroundedTool] = []
 
     purposes: set[str] = set()
@@ -329,38 +413,49 @@ def compile_grounded_tool_catalog(
         if _observation_tool_needed(context, capability):
             purposes.update(set(capability["purposes"]) & _AGENT_PURPOSES)
     if purposes:
-        refs = context.grounding.private_subject_bindings()
+        refs = {
+            ref: subject
+            for ref, subject in context.grounding.private_subject_bindings().items()
+            if ref in delivery.manifest.exact_refs
+        }
         subjects = {"current_world": "current_world", **refs}
         ordered_purposes = tuple(sorted(purposes))
         registered.append(RegisteredGroundedTool(
             ToolSpec(
                 "request_evidence",
-                "Declare a semantic evidence gap. Runtime admits the need and chooses the provider, source, assurance, and acquisition mode.",
+                "Request missing current-world evidence; Runtime chooses how to obtain it.",
                 _evidence_request_schema(ordered_purposes, subjects),
             ),
             _EvidenceBinding(ordered_purposes, subjects),
         ))
 
     registered.extend(
-        RegisteredGroundedTool(item.public_spec, item)
+        RegisteredGroundedTool(
+            item.public_spec,
+            _ManifestBoundAction(item, delivery.manifest),
+        )
         for item in GroundedToolCompiler().compile(
-            context.actions.options,
+            context.complete_actions,
             context_id=context.context_id,
         )
     )
 
-    child_counts = _countable_child_groups(context.actor_world)
+    child_counts = {
+        ref: count
+        for ref, count in _countable_child_groups(context.actor_world).items()
+        if ref in delivery.manifest.exact_refs
+    }
     if child_counts:
         registered.append(RegisteredGroundedTool(
             ToolSpec(
                 "count_children",
-                "Mechanically count direct children of selected complete repeated groups and return each count plus the total.",
+                "Count direct children in current complete repeated groups.",
                 _object_schema(
                     {
                         "containers": {
                             "type": "array",
                             "description": "all relevant repeated-group references from the current observation",
-                            "items": {"type": "string", "enum": list(child_counts)},
+                            "items": {"type": "string", "pattern": "^[EN][1-9][0-9]{0,2}$"},
                             "minItems": 1,
                             "maxItems": len(child_counts),
                         }
@@ -376,6 +471,8 @@ def compile_grounded_tool_catalog(
             public: canonical
             for public, canonical in context.private_fact_bindings.items()
             if (
+                public in delivery.manifest.fact_refs
+                and
                 (record := context.evidence_index.resolve_record(canonical)) is not None
                 and is_public_scalar(record.value)
             )
@@ -384,19 +481,22 @@ def compile_grounded_tool_catalog(
             registered.append(RegisteredGroundedTool(
                 ToolSpec(
                     "pin_fact",
-                    "Retain one exact scalar value from current observation public evidence for use later in this executor episode. Runtime reads the value; never provide it yourself.",
+                    "Remember one current scalar F-ref for this episode.",
                     _object_schema(
                         {
                             "key": {
                                 "type": "string",
+                                "description": "name for the remembered fact",
                                 "pattern": "^[a-z][a-z0-9_]{0,63}$",
                             },
                             "evidence_ref": {
                                 "type": "string",
-                                "enum": list(eligible),
+                                "description": "current scalar F-ref",
+                                "pattern": "^F[1-9][0-9]{0,3}$",
                             },
                             "purpose": {
                                 "type": "string",
+                                "description": "why it is needed later",
                                 "minLength": 1,
                                 "maxLength": 240,
                             },
@@ -412,66 +512,116 @@ def compile_grounded_tool_catalog(
                 ),
             ))
 
-    regions = context.region_index.public_refs if context.region_index is not None else ()
-    registered.append(RegisteredGroundedTool(
-        ToolSpec(
-            "inspect_world",
-            "Read folded current observation public world content without browser dispatch. Use open_region for a region, find for exact text/role/label/value/fact search, or view_all for paged exact fallback.",
-            _object_schema(
-                {
-                    "action": {
-                        "type": "string",
-                        "enum": ["open_region", "find", "view_all"],
+    registered.extend((
+        RegisteredGroundedTool(
+            ToolSpec(
+                "read_region",
+                "Read one current folded R-region; no browser action.",
+                _object_schema(
+                    {
+                        "region_ref": {
+                            "type": "string",
+                            "description": "current PageMap R-ref",
+                            "pattern": "^R[1-9][0-9]{0,3}$",
+                        }
                     },
-                    "region_ref": {"type": "string", "enum": list(regions)},
-                    "query": {"type": "string", "maxLength": 120},
-                    "cursor": {"type": "string", "maxLength": 512},
-                },
-                ("action",),
+                    ("region_ref",),
+                ),
             ),
+            _WorldReadBinding(context, "region"),
         ),
-        _InspectWorldBinding(context),
+        RegisteredGroundedTool(
+            ToolSpec(
+                "search_world",
+                "Search readable content in the complete current World; no browser action.",
+                _object_schema(
+                    {
+                        "query": {
+                            "type": "string",
+                            "description": "text to find in the current World",
+                            "minLength": 1,
+                            "maxLength": 120,
+                        }
+                    },
+                    ("query",),
+                ),
+            ),
+            _WorldReadBinding(context, "find"),
+        ),
+        RegisteredGroundedTool(
+            ToolSpec(
+                "list_regions",
+                "List current PageMap region records; no browser action.",
+                _object_schema({}),
+            ),
+            _WorldReadBinding(context, "view_all"),
+        ),
+        RegisteredGroundedTool(
+            ToolSpec(
+                "search_actions",
+                "Search legal current actions. Use a visible E-ref directly instead.",
+                _object_schema(
+                    {
+                        "query": {
+                            "type": "string",
+                            "description": "desired current control or action",
+                            "minLength": 1,
+                            "maxLength": 120,
+                        }
+                    },
+                    ("query",),
+                ),
+            ),
+            _SearchActionsBinding(),
+        ),
     ))
-
-    registered.append(RegisteredGroundedTool(
-        ToolSpec(
-            "find_actions",
-            "Search the complete current observation legal ActionSpace. Filters are AND. exact_target means that exact executable target, not an ancestor or region. Use cursor only to continue the same search.",
-            _object_schema({
-                "query": {"type": "string", "maxLength": 120},
-                "exact_target": {"type": "string", "pattern": "^E[1-9][0-9]{0,2}$"},
-                "cursor": {"type": "string", "maxLength": 512},
-            }),
-        ),
-        _FindActionsBinding(
-            {
-                ref: target_id
-                for option in context.actions.options
-                for ref, target_id in (
-                    (option.target_ref, option.target_id),
-                    *((item.grounding_ref, item.destination_id) for item in option.destinations.items),
-                )
-                if ref
-            },
-            context.actions.active_query,
-            context.actions.active_target_filter,
-            context.actions.active_relevance_filter,
-            context.actions.next_cursor,
-        ),
-    ))
+    if (
+        context.delivery_lens is not None
+        and context.delivery_lens.world_observation_id
+        == getattr(context.current_observation, "observation_id", "")
+        and context.delivery_lens.next_cursor
+    ):
+        registered.append(RegisteredGroundedTool(
+            ToolSpec(
+                "read_next_page",
+                "Continue the prior World read; Runtime owns paging.",
+                _object_schema({}),
+            ),
+            _WorldReadBinding(context, "continue"),
+        ))
+    if context.actions.next_cursor:
+        registered.append(RegisteredGroundedTool(
+            ToolSpec(
+                "action_results_next_page",
+                "Continue current action results; Runtime owns paging.",
+                _object_schema({}),
+            ),
+            _ActionResultsNextPageBinding(
+                context.actions.active_query,
+                context.actions.active_target_filter,
+                context.actions.active_relevance_filter,
+                context.actions.next_cursor,
+            ),
+        ))
 
     if "yield_subtask" in context.runtime_controls:
         registered.append(RegisteredGroundedTool(
             ToolSpec(
                 "yield_subtask",
-                "End only this executor episode for Manager/Auditor review. This sends no browser action and does not claim task success.",
+                "Return this executor episode for review without claiming success.",
                 _object_schema(
                     {
                         "kind": {
                             "type": "string",
+                            "description": "review outcome",
                             "enum": ["ready_for_audit", "stalled", "blocked", "capability_gap"],
                         },
-                        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+                        "reason": {
+                            "type": "string",
+                            "description": "brief explanation",
+                            "minLength": 1,
+                            "maxLength": 500,
+                        },
                     },
                     ("kind", "reason"),
                 ),
@@ -483,12 +633,18 @@ def compile_grounded_tool_catalog(
         RegisteredGroundedTool(
             ToolSpec(
                 "ask_user",
-                "Pause for task information unavailable from the interface. Never use this for action authorization or risk confirmation.",
+                "Ask for task information unavailable in the interface.",
                 _object_schema(
                     {
-                        "question": {"type": "string", "minLength": 1, "maxLength": 1000},
+                        "question": {
+                            "type": "string",
+                            "description": "one clear question",
+                            "minLength": 1,
+                            "maxLength": 1000,
+                        },
                         "requested_fields": {
                             "type": "array",
+                            "description": "facts only the user can provide",
                             "items": {"type": "string", "minLength": 1, "maxLength": 120},
                             "maxItems": 8,
                         },
@@ -501,13 +657,17 @@ def compile_grounded_tool_catalog(
         RegisteredGroundedTool(
             ToolSpec(
                 "wait",
-                "Wait briefly for the current interface to settle, then observe again.",
+                "Wait five seconds, then observe a fresh World.",
                 _object_schema(
                     {
-                        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-                        "max_wait_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+                        "reason": {
+                            "type": "string",
+                            "description": "what is still loading or changing",
+                            "minLength": 1,
+                            "maxLength": 500,
+                        },
                     },
-                    ("reason", "max_wait_ms"),
+                    ("reason",),
                 ),
             ),
             _ControlBinding("wait"),
@@ -515,12 +675,18 @@ def compile_grounded_tool_catalog(
         RegisteredGroundedTool(
             ToolSpec(
                 "abort",
-                "Stop when the task cannot continue safely or with current capabilities.",
+                "Stop when safe progress is impossible.",
                 _object_schema(
                     {
-                        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+                        "reason": {
+                            "type": "string",
+                            "description": "brief explanation",
+                            "minLength": 1,
+                            "maxLength": 500,
+                        },
                         "category": {
                             "type": "string",
+                            "description": "stop category",
                             "enum": ["policy", "safety", "unsupported", "no_progress", "user_request"],
                         },
                     },
@@ -549,15 +715,29 @@ def compile_grounded_tool_catalog(
     encoded_bytes = len(encoded.encode())
     if len(specs) > MAX_GROUNDED_TOOL_COUNT or encoded_bytes > MAX_GROUNDED_WORKSPACE_BYTES:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    digest = hashlib.sha256(f"{context.context_id}\0{encoded}".encode()).hexdigest()[:32]
+    digest = hashlib.sha256(
+        f"{context.context_id}\0{delivery.delivery_id}\0{encoded}".encode()
+    ).hexdigest()[:32]
     catalog_id = f"grounded-catalog:{digest}"
     return GroundedToolCatalog(
-        catalog_id, context.context_id, tuple(registered), encoded_bytes
+        catalog_id,
+        context.context_id,
+        delivery.delivery_id,
+        delivery.manifest,
+        tuple(registered),
+        encoded_bytes,
     )
 
 
-def compile_grounded_action_catalog(context: AgentContext) -> GroundedToolCatalog:
-    return compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+def compile_grounded_action_catalog(
+    context: AgentContext,
+    delivery: ModelTurnDelivery,
+) -> GroundedToolCatalog:
+    return compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+    )
 
 
 def resolve_grounded_tool_call(
@@ -565,10 +745,15 @@ def resolve_grounded_tool_call(
     call: ToolCall,
     *,
     expected_context_id: str,
+    expected_delivery_id: str,
     expected_catalog_id: str | None = None,
 ) -> GroundedActionResolution:
-    if catalog.context_id != expected_context_id or (
+    if (
+        catalog.context_id != expected_context_id
+        or catalog.delivery_id != expected_delivery_id
+        or (
         expected_catalog_id is not None and catalog.catalog_id != expected_catalog_id
+        )
     ):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
     try:
@@ -604,12 +789,14 @@ def resolve_grounded_action_call(
     call: ToolCall,
     *,
     expected_context_id: str,
+    expected_delivery_id: str,
     expected_catalog_id: str | None = None,
 ) -> GroundedActionResolution:
     outcome = resolve_grounded_tool_call(
         catalog,
         call,
         expected_context_id=expected_context_id,
+        expected_delivery_id=expected_delivery_id,
         expected_catalog_id=expected_catalog_id,
     )
     if not isinstance(outcome, GroundedActionResolution):
@@ -626,9 +813,14 @@ def _evidence_request_schema(
     subjects: Mapping[str, str],
 ) -> Mapping[str, object]:
     visual_property = ObservationPurpose.VISUAL_PROPERTY.value
-    subject_schema = {"type": "string", "enum": list(subjects)}
+    subject_schema = {
+        "type": "string",
+        "description": "current_world or current E/N ref",
+        "pattern": "^(current_world|[EN][1-9][0-9]{0,2})$",
+    }
     property_schema = {
         "type": "string",
+        "description": "visual property to inspect",
         "enum": ["color", "icon", "visual_state", "appearance"],
     }
     variants: list[Mapping[str, object]] = []
@@ -636,7 +828,11 @@ def _evidence_request_schema(
     if non_property_purposes:
         variants.append(_object_schema(
             {
-                "purpose": {"type": "string", "enum": list(non_property_purposes)},
+                "purpose": {
+                    "type": "string",
+                    "description": "kind of missing evidence",
+                    "enum": list(non_property_purposes),
+                },
                 "subject": subject_schema,
             },
             ("purpose", "subject"),
@@ -644,7 +840,11 @@ def _evidence_request_schema(
     if visual_property in purposes:
         variants.append(_object_schema(
             {
-                "purpose": {"type": "string", "enum": [visual_property]},
+                "purpose": {
+                    "type": "string",
+                    "description": "kind of missing evidence",
+                    "enum": [visual_property],
+                },
                 "subject": subject_schema,
                 "property": property_schema,
             },

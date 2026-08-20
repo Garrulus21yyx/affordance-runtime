@@ -7,8 +7,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
-from affordance_runtime.model.policy.grounded_tool_catalog import resolve_grounded_tool_call
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler, SelectorMode
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
@@ -18,6 +18,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     RegisteredGroundedTool,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
+from tests.support.model_delivery import resolve_catalog_call
 
 _CONTEXT = "context:" + "a" * 64
 
@@ -98,6 +99,8 @@ def _catalog(tool) -> GroundedToolCatalog:
     return GroundedToolCatalog(
         "grounded-catalog:" + "b" * 32,
         _CONTEXT,
+        "delivery:" + "d" * 64,
+        DeliveryManifest("world:test", tuple(f"E{index}" for index in range(1, 65))),
         (RegisteredGroundedTool(tool.public_spec, tool),),
         1,
     )
@@ -109,7 +112,7 @@ def test_single_target_uses_stable_operation_and_explicit_target() -> None:
     assert tool.public_spec.name == "activate"
     assert tool.selector_mode is SelectorMode.CURRENT_TARGET
     assert tool.public_spec.input_schema["required"] == ("target",)
-    assert tool.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
+    assert tool.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
 
 
 def test_one_stable_tool_contains_all_current_targets() -> None:
@@ -117,9 +120,7 @@ def test_one_stable_tool_contains_all_current_targets() -> None:
 
     assert len(tools) == 1
     assert tools[0].public_spec.name == "activate"
-    assert tools[0].public_spec.input_schema["properties"]["target"]["enum"] == (
-        "E1", "E2", "E3",
-    )
+    assert tools[0].public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
     assert len(tools[0].private_resolutions) == 3
 
 
@@ -131,11 +132,11 @@ def test_unary_selector_schema_is_referentially_closed(count: int) -> None:
         item.selector_values["target"] for item in tool.private_resolutions
     )
 
-    assert tool.public_spec.input_schema["properties"]["target"]["enum"] == offered
+    assert tool.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
     assert len(set(offered)) == len(offered)
     for resolution in tool.private_resolutions:
         target = resolution.selector_values["target"]
-        outcome = resolve_grounded_tool_call(
+        outcome = resolve_catalog_call(
             catalog,
             ToolCall("activate", {"target": target}),
             expected_context_id=_CONTEXT,
@@ -160,7 +161,7 @@ def test_tool_name_and_shape_do_not_depend_on_state_or_candidate_order() -> None
             )
         )
 
-    assert signatures == {("activate", ("expected_outcome", "target"), ("target",))}
+    assert signatures == {("activate", ("target",), ("target",))}
 
 
 def test_multiple_operations_are_registry_names_without_suffixes() -> None:
@@ -170,7 +171,7 @@ def test_multiple_operations_are_registry_names_without_suffixes() -> None:
     )
 
     assert tuple(tool.public_spec.name for tool in tools) == ("activate", "type_text")
-    assert tuple(tools[1].public_spec.input_schema["properties"]) == ("expected_outcome", "target", "text")
+    assert tuple(tools[1].public_spec.input_schema["properties"]) == ("target", "text")
 
 
 def test_business_enums_merge_publicly_but_remain_exact_per_target() -> None:
@@ -181,17 +182,17 @@ def test_business_enums_merge_publicly_but_remain_exact_per_target() -> None:
     catalog = _catalog(tool)
 
     assert tool.public_spec.input_schema["properties"]["value"]["enum"] == ("A", "B", "C")
-    accepted = resolve_grounded_tool_call(
+    accepted = resolve_catalog_call(
         catalog,
-        ToolCall("select_option", {"target": "E2", "value": "C", "expected_outcome": "value C is selected"}),
+        ToolCall("select_option", {"target": "E2", "value": "C"}),
         expected_context_id=_CONTEXT,
     )
     assert isinstance(accepted, GroundedActionResolution)
     assert accepted.decision.action_id == "action:2"
     assert accepted.decision.parameters == {"value": "C"}
-    assert accepted.decision.expected_outcome == "value C is selected"
+    assert accepted.decision.expected_outcome == ""
     with pytest.raises(GroundedToolResolutionError) as failure:
-        resolve_grounded_tool_call(
+        resolve_catalog_call(
             catalog,
             ToolCall("select_option", {"target": "E1", "value": "C"}),
             expected_context_id=_CONTEXT,
@@ -209,11 +210,11 @@ def test_required_destination_uses_source_and_destination_and_resolves_exact_pai
     catalog = _catalog(tool)
 
     assert tool.selector_mode is SelectorMode.CURRENT_ENDPOINTS
-    assert set(tool.public_spec.input_schema["properties"]) == {"source", "destination", "expected_outcome"}
+    assert set(tool.public_spec.input_schema["properties"]) == {"source", "destination"}
     assert tuple(tool.public_spec.input_schema["required"]) == ("source", "destination")
-    assert tool.public_spec.input_schema["properties"]["source"]["enum"] == ("E1", "E2")
-    assert tool.public_spec.input_schema["properties"]["destination"]["enum"] == ("E8", "E9")
-    outcome = resolve_grounded_tool_call(
+    assert tool.public_spec.input_schema["properties"]["source"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert tool.public_spec.input_schema["properties"]["destination"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    outcome = resolve_catalog_call(
         catalog,
         ToolCall("drag_to", {"source": "E2", "destination": "E9"}),
         expected_context_id=_CONTEXT,
@@ -221,7 +222,7 @@ def test_required_destination_uses_source_and_destination_and_resolves_exact_pai
     assert outcome.decision.action_id == "action:2"
     assert outcome.decision.destination_id == "right"
     with pytest.raises(GroundedToolResolutionError):
-        resolve_grounded_tool_call(
+        resolve_catalog_call(
             catalog,
             ToolCall("drag_to", {"source": "E1", "destination": "E9"}),
             expected_context_id=_CONTEXT,
@@ -232,14 +233,14 @@ def test_invalid_or_stale_reference_never_resolves() -> None:
     tool = _compile(_candidate(1), _candidate(2))[0]
     catalog = _catalog(tool)
     with pytest.raises(GroundedToolResolutionError) as invalid:
-        resolve_grounded_tool_call(
+        resolve_catalog_call(
             catalog,
             ToolCall("activate", {"target": "E99"}),
             expected_context_id=_CONTEXT,
         )
     assert invalid.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
     with pytest.raises(GroundedToolResolutionError) as stale:
-        resolve_grounded_tool_call(
+        resolve_catalog_call(
             catalog,
             ToolCall("activate", {"target": "E1"}),
             expected_context_id="context:" + "d" * 64,

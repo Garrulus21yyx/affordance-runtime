@@ -6,6 +6,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from io import BytesIO
+from urllib.parse import urlsplit, urlunsplit
 
 from PIL import Image
 
@@ -367,6 +368,9 @@ def _viewport_subject(
     target_id = "viewport:current"
     width, height = _viewport_dimensions(raw)
     state = {"subject.kind": "viewport", "scroll_extent_source": "viewport"}
+    page_route = _public_page_route(raw.get("url"))
+    if page_route:
+        state["page.route"] = page_route
     target = SemanticTarget(target_id, "viewport", "Current page viewport", state, {})
     structure = ObservationStructureNode(
         "structure:viewport:current",
@@ -412,6 +416,20 @@ def _viewport_subject(
         height,
     )
     return target, structure, public, private
+
+
+def _public_page_route(value: object) -> str:
+    """Expose the visible origin/path while excluding query, fragment, and credentials."""
+
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    host = parsed.hostname
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit((parsed.scheme, host, parsed.path or "/", "", ""))[:1_000]
 
 
 def _focused_context_subject(

@@ -19,8 +19,9 @@ from affordance_runtime.agent import (
     Abort,
     AskUser,
     LocalToolResult,
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
     RequestActionPage,
-    RequestObservation,
     SelectAction,
     Wait,
 )
@@ -32,6 +33,7 @@ from affordance_runtime.agent.context.compact_world_renderer import inspect_acto
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.benchmarks.target_loop.instrumentation import _policy_trace_event
@@ -52,7 +54,6 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.grounded_tool_port_bridge import (
-    _TOOL_INTENT_REPAIR_CODES,
     CompactJsonDecisionPort,
     GroundedToolCommandPayload,
 )
@@ -60,12 +61,10 @@ from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import _build_request as _action_request
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
-    ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
 from affordance_runtime.model.policy.pydantic_ai_bridge import (
     _attempt_token_delta,
-    _intent_preservation_error,
     _tool_rejection_decision,
     _tool_resolution_failure,
 )
@@ -92,6 +91,19 @@ from tests.support.surfaces.browsergym.projection_support import project_browser
 from tests.support.world import fused_world
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"grounded-tools-v2-tests")
+
+
+def _delivery(context, *, include_images: bool = False):
+    return build_model_turn_delivery(context, include_images=include_images)
+
+
+def _compile_catalog(context, phase=GroundedToolPhase.ACTION_SELECTION):
+    return compile_grounded_tool_catalog(context, phase, _delivery(context))
+
+
+def _resolve_catalog_call(catalog, call, **kwargs):
+    kwargs.setdefault("expected_delivery_id", catalog.delivery_id)
+    return resolve_grounded_tool_call(catalog, call, **kwargs)
 
 
 @dataclass
@@ -189,10 +201,16 @@ def _nested_context():
 
 
 def _bound_public_context(context) -> dict[str, object]:
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    delivery = _delivery(context)
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+    )
     messages = GroundedPolicyContextBinder().action_messages(
         _action_request(context),
         catalog.specs,
+        delivery,
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
         include_tool_menu=True,
@@ -252,16 +270,14 @@ def _selector_context(*, operation: str, schema: dict[str, object]):
 
 def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     public = json.dumps(_bound_public_context(context))
-    assert {
-        (item.ref, item.role, item.label) for item in context.grounding.entities
-    } == {
-        ("E1", "textbox", "Username"),
-        ("E2", "textbox", "Password"),
-        ("E3", "button", "Login"),
-        ("E4", "focused_context", "Current keyboard focus"),
-        ("E5", "viewport", "Current page viewport"),
+    assert {(item.role, item.label) for item in context.grounding.entities} == {
+        ("textbox", "Username"),
+        ("textbox", "Password"),
+        ("button", "Login"),
+        ("focused_context", "Current keyboard focus"),
+        ("viewport", "Current page viewport"),
     }
     assert all(
         item.marked for item in context.grounding.entities
@@ -284,11 +300,14 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert "[E1] textbox \"Username\"" in observation
     assert "[E2] textbox \"Password\"" in observation
     assert "[E3] button \"Login\"" in observation
-    assert "[E4] focused_context \"Current keyboard focus\"" in observation
-    assert "[E5] viewport \"Current page viewport\"" in observation
+    focused_ref = next(item.ref for item in context.grounding.entities if item.role == "focused_context")
+    viewport_ref = next(item.ref for item in context.grounding.entities if item.role == "viewport")
+    assert f'[{focused_ref}] focused_context "Current keyboard focus"' in observation
+    assert f'[{viewport_ref}] viewport "Current page viewport"' not in observation
+    assert "search_actions" in {item.name for item in catalog.specs}
 
 
-def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state() -> None:
+def test_actor_world_delivers_boolean_state_without_model_visible_facets() -> None:
     shades = (
         ("blue-a", "blue", True),
         ("blue-b", "blue", True),
@@ -342,12 +361,10 @@ def test_actor_world_indexes_complete_public_facet_collections_and_boolean_state
 
     public = _bound_public_context(context)
     observation = public["observation"]
-    assert "facets count=" in observation and "coverage=complete" in observation
-    assert (
-        'clickable.appearance.color_family="blue" members=["E1","E2","E3"]'
-        " count=3 completeness=complete_for_snapshot"
-    ) in observation
-    assert 'selected true=["E1","E2"] false=["E3"]' in observation
+    assert "projection=page_map" in observation and "coverage=complete" in observation
+    assert "facets count=" not in observation
+    assert "members=[" not in observation
+    assert "selected" in observation and "=true" in observation
 
 
 def test_structure_first_grounded_action_starts_from_public_structure_without_image() -> None:
@@ -371,7 +388,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "affordances", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
     assert public["task"]["instruction"] == context.task.instruction
     assert "actions" not in public
     assert "formal_evaluation" not in public["task"]
@@ -385,8 +402,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "press_key",
         "scroll",
         "pin_fact",
-        "inspect_world",
-        "find_actions",
+        "read_region",
+        "search_world",
+        "list_regions",
+        "search_actions",
         "ask_user",
         "wait",
         "abort",
@@ -497,7 +516,7 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
             ),
         ),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
 
     assert validate_value_issue(
@@ -518,27 +537,20 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
     ) is None
 
 
-def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
+def test_invalid_compact_arguments_make_only_one_provider_call() -> None:
     @dataclass
-    class CompactRepairPort:
+    class InvalidArgumentsPort:
         provider: str = "zhipu"
         model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = True
         last_call: ModelCallRecord | None = None
         calls: int = 0
-        repair_messages: tuple = ()
 
         async def generate_structured(self, messages, output_schema, config, **kwargs):
-            del config
+            del messages, output_schema, config, kwargs
             self.calls += 1
-            if self.calls == 1:
-                return GroundedToolCommandPayload(name="request_evidence", arguments={"target": "E1"})
-            self.repair_messages = tuple(messages)
-            return output_schema.model_validate({
-                "name": "request_evidence",
-                "arguments": {"purpose": "entity_discovery", "subject": "current_world"},
-            })
+            return GroundedToolCommandPayload(name="request_evidence", arguments={"target": "E1"})
 
     context = _context()
     context = replace(
@@ -551,7 +563,7 @@ def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
             ),
         ),
     )
-    port = CompactRepairPort()
+    port = InvalidArgumentsPort()
     adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
@@ -560,31 +572,13 @@ def test_compact_argument_repair_keeps_the_selected_observation_tool() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is None
-    assert isinstance(outcome.decision, RequestObservation)
-    assert outcome.decision.purpose == "entity_discovery"
-    assert port.calls == 2
-    assert adapter.last_argument_repair_count == 1
-    assert adapter.last_argument_violation_code == "invalid_action_parameters"
-    assert adapter.last_argument_violation_paths == ("arguments.purpose",)
-    assert adapter.last_selected_operation == "request_evidence"
-    assert adapter.last_repaired_operation_match is True
-    trace = _policy_trace_event(1, context, outcome.decision, adapter)
-    assert trace["decision"] == {
-        "kind": "RequestObservation",
-        "context_id": context.context_id,
-        "purpose": "entity_discovery",
-        "subject_id": "current_world",
-    }
-    repair_system = port.repair_messages[0].content
-    assert isinstance(repair_system, str)
-    assert '"selected_operation":"request_evidence"' in repair_system
-    assert '"field_paths":["arguments.purpose"]' in repair_system
+    assert outcome.failure is not None
+    assert port.calls == 1
 
 
-def test_failed_argument_repair_preserves_response_and_violation_in_trace() -> None:
+def test_grounding_rejection_preserves_the_single_initial_attempt_in_trace() -> None:
     @dataclass
-    class FailedArgumentRepairPort:
+    class GroundingGapPort:
         provider: str = "zhipu"
         model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
@@ -596,23 +590,12 @@ def test_failed_argument_repair_preserves_response_and_violation_in_trace() -> N
         async def generate_structured(self, messages, output_schema, config, **kwargs):
             del messages, output_schema, config
             self.calls += 1
-            if self.calls == 1:
-                return GroundedToolCommandPayload(
-                    name="activate", arguments={"target": "E99"}
-                )
-            self.last_transcript = {
-                "openinference.span.kind": "LLM",
-                "llm.input_messages": [{"role": "system", "content": "repair"}],
-                "llm.output_messages": [{"role": "assistant", "content": "{\"arguments\":{}}"}],
-                "status": "schema_error",
-            }
-            raise StructuredOutputError(
-                "repair response omitted name",
-                violations=(StructuredOutputViolation("name", "missing"),),
+            return GroundedToolCommandPayload(
+                name="activate", arguments={"target": "E99"}
             )
 
     context = _context()
-    port = FailedArgumentRepairPort()
+    port = GroundingGapPort()
     adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
@@ -623,22 +606,13 @@ def test_failed_argument_repair_preserves_response_and_violation_in_trace() -> N
     trace = _policy_trace_event(1, context, outcome, adapter)
 
     assert outcome.failure is not None
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == (
-        "initial", "argument_repair",
-    )
-    assert tuple(item.status for item in adapter.last_generation_attempts) == (
-        "accepted", "schema_error",
-    )
-    assert adapter.last_structured_output_repair_failed is True
-    assert len(trace["generation_attempts"]) == 2
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
+    assert tuple(item.status for item in adapter.last_generation_attempts) == ("accepted",)
+    assert len(trace["generation_attempts"]) == 1
     assert trace["generation_attempts"][0]["status"] == "accepted"
-    assert trace["generation_attempts"][1]["status"] == "schema_error"
-    assert trace["generation_attempts"][1]["violations"] == [
-        {"field_path": "name", "code": "missing"}
-    ]
 
 
-def test_compact_bridge_normalizes_nested_parameters_without_model_repair() -> None:
+def test_compact_bridge_normalizes_nested_parameters_locally() -> None:
     @dataclass
     class NestedParametersPort:
         provider: str = "zhipu"
@@ -668,7 +642,6 @@ def test_compact_bridge_normalizes_nested_parameters_without_model_repair() -> N
     assert outcome.failure is None
     assert isinstance(outcome.decision, SelectAction)
     assert port.calls == 1
-    assert adapter.last_argument_repair_count == 0
     assert adapter.last_resolution_code.value == "accepted"
 
 
@@ -703,57 +676,52 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "affordances", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
         "press",
         "scroll",
         "pin",
-        "inspect",
-        "find",
+        "read",
+        "search",
+        "list",
         "ask",
         "wait",
         "abort",
     }
     assert all("E1(" not in item["description"] for item in public["tools"])
     assert all(
-        "current observation" in item["description"]
+        "current" in item["description"]
         for item in public["tools"]
         if item["name"] not in {"ask_user", "wait", "abort"}
     )
     assert all(
-        "Runtime revalidates existence, currentness, and legality" in item["description"]
+        "current executable" in item["description"]
         for item in public["tools"]
         if item["name"] in {"type_text", "activate"}
     )
     assert all("memory" not in item["input_schema"]["properties"] for item in public["tools"])
-    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "affordances", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
 
 
-def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
+def test_unknown_tool_intent_is_rejected_after_one_provider_call() -> None:
     @dataclass
-    class ToolIntentRepairPort:
+    class UnknownToolPort:
         provider: str = "zhipu"
         model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
         supports_multimodal: bool = False
         last_call: ModelCallRecord | None = None
         calls: int = 0
-        repair_messages: tuple = ()
 
         async def generate_structured(self, messages, output_schema, config, **kwargs):
-            del config
+            del messages, config, kwargs
             self.calls += 1
-            if self.calls == 1:
-                return output_schema.model_validate({"name": "click", "arguments": {}})
-            self.repair_messages = tuple(messages)
-            return output_schema.model_validate(
-                {"name": "activate", "arguments": {"target": "E3"}}
-            )
+            return output_schema.model_validate({"name": "click", "arguments": {}})
 
     context = _context()
-    port = ToolIntentRepairPort()
+    port = UnknownToolPort()
     adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
@@ -762,27 +730,14 @@ def test_unknown_tool_intent_gets_one_bounded_model_reemission() -> None:
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is None
-    assert port.calls == 2
-    assert adapter.last_model_call_count == 2
-    assert adapter.last_tool_intent_repair_count == 1
-    assert adapter.last_argument_repair_count == 0
-    assert adapter.last_routing_normalization == "bounded_model_reemission"
-    assert adapter.last_routing_original_operation == "click"
-    assert adapter.last_routing_normalized_operation == "activate"
-    repair_system = port.repair_messages[0].content
-    assert isinstance(repair_system, str)
-    assert '"issue_code":"unknown_tool"' in repair_system
-    assert '"emit_one_complete_call":true' in repair_system
+    assert outcome.failure is not None
+    assert port.calls == 1
+    assert adapter.last_model_call_count == 1
 
 
-def test_only_unknown_tool_names_use_the_did_you_mean_reemission_path() -> None:
-    assert _TOOL_INTENT_REPAIR_CODES == {ToolCallIssueCode.UNKNOWN_TOOL}
-
-
-def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> None:
+def test_unknown_tool_is_rejected_after_one_provider_call() -> None:
     @dataclass
-    class FailedToolIntentRepairPort:
+    class UnknownToolPort:
         provider: str = "zhipu"
         model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
@@ -796,7 +751,7 @@ def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> 
             return GroundedToolCommandPayload(name="click", arguments={})
 
     context = _context()
-    port = FailedToolIntentRepairPort()
+    port = UnknownToolPort()
     adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
@@ -806,16 +761,14 @@ def test_tool_intent_repair_is_never_retried_or_chained_to_argument_repair() -> 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert outcome.failure is not None
-    assert port.calls == 2
-    assert adapter.last_tool_intent_repair_count == 1
-    assert adapter.last_argument_repair_count == 0
+    assert port.calls == 1
 
 
 def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
-    outcome = resolve_grounded_tool_call(
+    outcome = _resolve_catalog_call(
         catalog,
         ToolCall(
             "activate",
@@ -831,6 +784,8 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     assert set(catalog.__dataclass_fields__) == {
         "catalog_id",
         "context_id",
+        "delivery_id",
+        "manifest",
         "tools",
         "serialized_bytes",
     }
@@ -840,12 +795,13 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
 
 def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "pin_fact")
-    evidence_ref = spec.input_schema["properties"]["evidence_ref"]["enum"][0]
+    assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
+    evidence_ref = next(iter(context.private_fact_bindings))
 
     assert "value" not in spec.input_schema["properties"]
-    resolution = resolve_grounded_tool_call(
+    resolution = _resolve_catalog_call(
         catalog,
         ToolCall(
             "pin_fact",
@@ -880,11 +836,12 @@ def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
 
 def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
     context = _context()
-    first_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
-    refs = tuple(spec.input_schema["properties"]["evidence_ref"]["enum"])
+    assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
+    refs = tuple(context.private_fact_bindings)
     assert len(refs) >= 2
-    first = resolve_grounded_tool_call(
+    first = _resolve_catalog_call(
         first_catalog,
         ToolCall(
             "pin_fact",
@@ -895,9 +852,9 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     ).decision
     assert isinstance(first, LocalToolResult) and first.working_fact is not None
     pinned = replace(context, working_facts=(first.working_fact,))
-    catalog = compile_grounded_tool_catalog(pinned, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(pinned, GroundedToolPhase.ACTION_SELECTION)
 
-    same = resolve_grounded_tool_call(
+    same = _resolve_catalog_call(
         catalog,
         ToolCall(
             "pin_fact",
@@ -911,7 +868,7 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     assert same.result["status"] == "already_pinned"
 
     with pytest.raises(GroundedToolResolutionError) as captured:
-        resolve_grounded_tool_call(
+        _resolve_catalog_call(
             catalog,
             ToolCall(
                 "pin_fact",
@@ -925,10 +882,9 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
 
 def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
     context = _context()
-    first_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
-    evidence_ref = spec.input_schema["properties"]["evidence_ref"]["enum"][0]
-    first = resolve_grounded_tool_call(
+    first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    evidence_ref = next(iter(context.private_fact_bindings))
+    first = _resolve_catalog_call(
         first_catalog,
         ToolCall(
             "pin_fact",
@@ -945,10 +901,10 @@ def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> 
             for index in range(16)
         ),
     )
-    catalog = compile_grounded_tool_catalog(full, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(full, GroundedToolPhase.ACTION_SELECTION)
 
     with pytest.raises(GroundedToolResolutionError) as captured:
-        resolve_grounded_tool_call(
+        _resolve_catalog_call(
             catalog,
             ToolCall(
                 "pin_fact",
@@ -962,10 +918,10 @@ def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> 
 
 def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     for invalid in ("F999", next(iter(context.private_fact_bindings.values()))):
         with pytest.raises(GroundedToolResolutionError) as captured:
-            resolve_grounded_tool_call(
+            _resolve_catalog_call(
                 catalog,
                 ToolCall(
                     "pin_fact",
@@ -974,7 +930,10 @@ def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema()
                 ),
                 expected_context_id=context.context_id,
             )
-        assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+        assert captured.value.code in {
+            GroundedToolResolutionCode.INVALID_ARGUMENTS,
+            GroundedToolResolutionCode.GROUNDING_GAP,
+        }
 
 
 def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> None:
@@ -993,7 +952,7 @@ def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> Non
     assert invalid_failure.reason.startswith("invalid_tool_arguments")
 
 
-def test_find_actions_exposes_search_filters_and_maps_current_refs_privately() -> None:
+def test_search_actions_has_one_natural_language_input_and_runtime_owned_continuation() -> None:
     context = _context()
     context = replace(
         context,
@@ -1007,56 +966,29 @@ def test_find_actions_exposes_search_filters_and_maps_current_refs_privately() -
             next_cursor="cursor:test",
         ),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in catalog.specs if item.name == "find_actions")
-    target_ref = context.actions.options[0].target_ref
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in catalog.specs if item.name == "search_actions")
+    continuation = next(
+        item for item in catalog.specs if item.name == "action_results_next_page"
+    )
 
-    assert set(spec.input_schema["properties"]) == {
-        "query",
-        "exact_target",
-        "cursor",
-    }
-    resolution = resolve_grounded_tool_call(
+    assert set(spec.input_schema["properties"]) == {"query"}
+    assert continuation.input_schema["properties"] == {}
+    resolution = _resolve_catalog_call(
         catalog,
-        ToolCall("find_actions", {"query": "like", "exact_target": target_ref}),
+        ToolCall("search_actions", {"query": "like"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(resolution.decision, RequestActionPage)
     assert resolution.decision.query == "like"
-    assert resolution.decision.exact_target_ref == target_ref
-    assert resolution.decision.target_id == next(
-        target_id for target_id, ref in context.grounding.target_refs.items() if ref == target_ref
-    )
-
-    legacy = ProviderCallNormalizer().normalize(
-        ToolCall("find_actions", {"query": "like", "target": target_ref}),
+    assert resolution.decision.cursor == ""
+    next_page = _resolve_catalog_call(
         catalog,
-    )
-    assert legacy.status is ToolCallReconciliationStatus.EXACT
-    assert legacy.exact_call is not None
-    assert "exact_target" in legacy.exact_call.arguments
-    assert "target" not in legacy.exact_call.arguments
-
-
-def test_tool_call_repair_cannot_change_intent_target_or_operation() -> None:
-    changed_target = _intent_preservation_error(
-        ToolCall("activate", {"target": "E114", "expected_outcome": "open bestsellers"}, "call:1"),
-        ToolCall("activate", {"target": "E14", "expected_outcome": "open bestsellers"}, "call:2"),
-    )
-    changed_operation = _intent_preservation_error(
-        ToolCall("activate", {"target": "E1"}, "call:1"),
-        ToolCall("inspect_world", {"action": "find", "query": "E1"}, "call:2"),
-    )
-    equivalent = _intent_preservation_error(
-        ToolCall("find_actions", {"target": "E1", "query": "reports"}, "call:1"),
-        ToolCall("find_actions", {"exact_target": "E1", "query": "reports"}, "call:2"),
-    )
-
-    assert changed_target is not None
-    assert changed_target.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT
-    assert changed_operation is not None
-    assert changed_operation.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT
-    assert equivalent is None
+        ToolCall("action_results_next_page", {}),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(next_page, RequestActionPage)
+    assert next_page.cursor == "cursor:test"
 
 
 def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
@@ -1107,7 +1039,7 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     action_space = ActionSpaceBuilder().build(task, world)
     evaluation = TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
     context = ContextBuilder().build(task, world, action_space, evaluation)
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
     readonly_ref = context.grounding.target_refs["target:readonly"]
     close_ref = context.grounding.target_refs["target:close"]
@@ -1120,10 +1052,7 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     assert all(ref.startswith("E") for ref in actionable_refs)
 
     activate_spec = next(item for item in catalog.specs if item.name == "activate")
-    activate_targets = set(activate_spec.input_schema["properties"]["target"]["enum"])
-    assert readonly_ref not in activate_targets
-    assert close_ref in activate_targets
-    assert actionable_refs <= activate_targets
+    assert activate_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
 
     inspected = inspect_actor_world(
         context.actor_world,
@@ -1133,7 +1062,7 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
         action="find",
         query="Bestsellers",
     )
-    matches = inspected["matches"]
+    matches = inspected.items
     assert any(match["node_ref"] == readonly_ref and match["actionable"] is False for match in matches)
     assert any(
         match["node_ref"] in actionable_refs
@@ -1142,27 +1071,21 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
         for match in matches
     )
 
-    initial = ToolCall("activate", {"target": "E114", "expected_outcome": "open Bestsellers"}, "call:initial")
+    initial = ToolCall("activate", {"target": "E114"}, "call:initial")
     with pytest.raises(GroundedToolResolutionError) as captured:
-        resolve_grounded_tool_call(catalog, initial, expected_context_id=context.context_id)
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+        _resolve_catalog_call(catalog, initial, expected_context_id=context.context_id)
+    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
-    changed = _intent_preservation_error(
-        initial,
-        ToolCall("activate", {"target": close_ref, "expected_outcome": "open Bestsellers"}, "call:repair"),
-    )
-    assert changed is not None
-    assert changed.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT
     feedback = _tool_rejection_decision(captured.value, initial, catalog, context.context_id)
     assert isinstance(feedback, LocalToolResult)
-    assert feedback.result["failure_kind"] == "invalid_tool_arguments"
+    assert feedback.result["failure_kind"] == "tool_grounding_gap"
     assert feedback.result["dispatch"] == "not_sent"
     assert feedback.result["world_changed"] is False
-    assert any(match["ref"] in actionable_refs for match in feedback.result["current_actionable_matches"])
+    assert feedback.result["current_actionable_matches"] == ()
 
-    request = resolve_grounded_tool_call(
+    request = _resolve_catalog_call(
         catalog,
-        ToolCall("find_actions", {"query": "definitely-not-present"}, "call:find"),
+        ToolCall("search_actions", {"query": "definitely-not-present"}, "call:find"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(request, RequestActionPage)
@@ -1180,8 +1103,8 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     monitor = EpisodeMonitor()
     local = LocalToolResult(
         context.context_id,
-        "inspect_world",
-        {"action": "find", "query": "definitely-not-present"},
+        "search_world",
+        {"query": "definitely-not-present"},
         {"action": "find", "matches": (), "total_count": 0},
     )
     local_step = replace(empty_step, decision=local, feedback="local_tool_result", action_page_result={})
@@ -1194,7 +1117,7 @@ def test_watch4_synthetic_action_recovery_convergence_witness() -> None:
     assert yielded.recommendation is EpisodeMonitorRecommendation.YIELD
 
 
-def test_cumulative_provider_usage_is_delta_counted_for_repair_attempts() -> None:
+def test_cumulative_provider_usage_is_delta_counted_across_physical_attempts() -> None:
     previous = (
         ModelGenerationAttempt(
             1,
@@ -1207,30 +1130,30 @@ def test_cumulative_provider_usage_is_delta_counted_for_repair_attempts() -> Non
         ),
     )
 
-    repair_input, raw_cumulative = _attempt_token_delta(
+    next_input, raw_cumulative = _attempt_token_delta(
         previous,
         {},
         SimpleNamespace(input_tokens=31442),
         "input_tokens",
     )
-    assert repair_input == 15844
+    assert next_input == 15844
     assert raw_cumulative == 31442
-    assert previous[0].prompt_tokens + repair_input == 31442
+    assert previous[0].prompt_tokens + next_input == 31442
 
 
 @pytest.mark.parametrize(
     ("name", "arguments", "decision_type"),
     (
         ("ask_user", {"question": "Which account?", "requested_fields": ["account"]}, AskUser),
-        ("wait", {"reason": "page is loading", "max_wait_ms": 250}, Wait),
+        ("wait", {"reason": "page is loading"}, Wait),
         ("abort", {"reason": "capability unavailable", "category": "unsupported"}, Abort),
     ),
 )
 def test_grounded_catalog_exposes_the_current_core_control_algebra(name, arguments, decision_type) -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
-    outcome = resolve_grounded_tool_call(
+    outcome = _resolve_catalog_call(
         catalog,
         ToolCall(name, arguments, "provider-call:control"),
         expected_context_id=context.context_id,
@@ -1241,25 +1164,34 @@ def test_grounded_catalog_exposes_the_current_core_control_algebra(name, argumen
 
 
 def test_grounded_catalog_does_not_expose_propose_done() -> None:
-    catalog = compile_grounded_tool_catalog(_context(), GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(_context(), GroundedToolPhase.ACTION_SELECTION)
 
     assert "propose_done" not in {item.name for item in catalog.specs}
 
 
 def test_grounded_catalog_counts_complete_current_children_without_mutating_world() -> None:
     context = _nested_context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    opened = _resolve_catalog_call(
+        catalog,
+        ToolCall("read_region", {"region_ref": "R1"}, "provider-call:read"),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(opened, LocalToolResult)
+    assert opened.delivery_lens is not None
+    context = replace(context, delivery_lens=opened.delivery_lens)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "count_children")
-    containers = spec.input_schema["properties"]["containers"]["items"]["enum"]
+    container_schema = spec.input_schema["properties"]["containers"]["items"]
     group_ref = next(
         item.ref for item in context.grounding.entities
         if item.role == "generic" and item.label == "Choices"
     )
-    assert containers == (group_ref,) or containers == [group_ref]
+    assert container_schema["pattern"] == r"^[EN][1-9][0-9]{0,2}$"
     root = context.actor_world.documents[0].roots[0]
     assert "member_count" not in root.state
 
-    outcome = resolve_grounded_tool_call(
+    outcome = _resolve_catalog_call(
         catalog,
         ToolCall("count_children", {"containers": [group_ref]}, "provider-call:count"),
         expected_context_id=context.context_id,
@@ -1381,7 +1313,7 @@ def test_compact_action_payload_defers_tool_semantics_to_catalog_resolution() ->
 
 def test_provider_normalizer_unwraps_only_unambiguous_nested_parameters() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     target = next(item.ref for item in context.grounding.entities if "activate" in item.verbs)
     normalizer = ProviderCallNormalizer()
 
@@ -1404,7 +1336,7 @@ def test_provider_normalizer_unwraps_only_unambiguous_nested_parameters() -> Non
     assert conflicting.field_paths == ("arguments.parameters",)
 
 
-def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_difference() -> None:
+def test_shared_target_semantics_are_hoisted_and_inconsistent_actor_refs_fail_closed() -> None:
     context = _context()
     selected = []
     seen_refs = set()
@@ -1471,24 +1403,23 @@ def test_shared_target_semantics_are_hoisted_and_actor_selects_only_scope_differ
         next_cursor="",
     )
     actions = close_action_candidates(raw_page, grounding, context_id=context.context_id)
-    context = replace(context, actions=actions)
+    context = replace(context, actions=actions, complete_actions=actions.options)
 
     public = _bound_public_context(context)
     assert "actions" not in public
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     tool = next(item for item in catalog.specs if item.name == "activate")
-    assert tool.input_schema["properties"]["target"]["enum"] == ("E1", "E2")
-    outcome = resolve_grounded_tool_call(
-        catalog,
-        ToolCall("activate", {"target": "E2"}),
-        expected_context_id=context.context_id,
-    )
-    assert isinstance(outcome, GroundedActionResolution)
-    assert isinstance(outcome.decision, SelectAction)
-    assert outcome.decision.action_id == actions.options[1].action_id
+    assert tool.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("activate", {"target": "E2"}),
+            expected_context_id=context.context_id,
+        )
+    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
 
-def test_invalid_compact_target_gets_one_bounded_repair_then_fails_closed() -> None:
+def test_invalid_compact_target_fails_after_one_provider_call() -> None:
     @dataclass
     class InvalidTargetPort:
         provider: str = "zhipu"
@@ -1517,14 +1448,12 @@ def test_invalid_compact_target_gets_one_bounded_repair_then_fails_closed() -> N
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert outcome.failure is not None
-    assert port.calls == 2
-    assert adapter.last_argument_repair_count == 1
-    assert adapter.last_argument_violation_paths == ("arguments.target",)
+    assert port.calls == 1
 
 
-def test_compact_argument_repair_may_explicitly_reemit_a_different_current_target() -> None:
+def test_invalid_compact_call_cannot_trigger_a_second_provider_call() -> None:
     @dataclass
-    class DriftingRepairPort:
+    class InvalidArgumentsPort:
         provider: str = "zhipu"
         model: str = "glm-4.1v-thinking-flashx"
         endpoint_class: str = "fixture"
@@ -1535,12 +1464,7 @@ def test_compact_argument_repair_may_explicitly_reemit_a_different_current_targe
         async def generate_structured(self, messages, output_schema, config, **kwargs):
             del messages, output_schema, config
             self.calls += 1
-            if self.calls == 1:
-                return GroundedToolCommandPayload(name="type_text", arguments={"target": "E2"})
-            return GroundedToolCommandPayload(
-                name="type_text",
-                arguments={"target": "E3", "text": "secret"},
-            )
+            return GroundedToolCommandPayload(name="type_text", arguments={"target": "E2"})
 
     context = _selector_context(
         operation="type_text",
@@ -1551,7 +1475,7 @@ def test_compact_argument_repair_may_explicitly_reemit_a_different_current_targe
             "additionalProperties": False,
         },
     )
-    port = DriftingRepairPort()
+    port = InvalidArgumentsPort()
     adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
@@ -1560,10 +1484,8 @@ def test_compact_argument_repair_may_explicitly_reemit_a_different_current_targe
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is None
-    assert port.calls == 2
-    assert adapter.last_argument_repair_count == 1
-    assert adapter.last_argument_violation_paths == ("arguments.text",)
+    assert outcome.failure is not None
+    assert port.calls == 1
 
 
 def test_grounding_projection_carries_bounded_interaction_history_without_duplication() -> None:
@@ -1672,13 +1594,13 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
         ),
     )
 
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
     previous = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
     assert previous["action"]["details"]["purpose"] == "criterion_verification"
     descriptions = {item.name: item.description for item in catalog.specs}
     assert "request_evidence" in descriptions
-    assert "Runtime admits the need" in descriptions["request_evidence"]
+    assert "Runtime chooses how" in descriptions["request_evidence"]
 
 
 def test_grounded_recent_steps_keep_all_compact_and_latest_four_detailed() -> None:
@@ -1832,14 +1754,12 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
 
 def test_single_target_action_still_requires_the_current_public_reference() -> None:
     context = _context()
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     activate = next(item for item in catalog.specs if item.name == "activate")
 
     assert to_json_compatible(activate.input_schema)["required"] == ["target"]
-    assert to_json_compatible(activate.input_schema)["properties"]["target"]["enum"] == [
-        item.target_ref for item in context.actions.options if item.operation == "activate"
-    ]
-    outcome = resolve_grounded_tool_call(
+    assert to_json_compatible(activate.input_schema)["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    outcome = _resolve_catalog_call(
         catalog,
         ToolCall("activate", {"target": "E3"}),
         expected_context_id=context.context_id,
@@ -1847,10 +1767,8 @@ def test_single_target_action_still_requires_the_current_public_reference() -> N
     assert isinstance(outcome, GroundedActionResolution)
 
 
-def test_action_schema_retry_repairs_the_same_model_decision() -> None:
-    class RepairPort(_ActionPort):
-        repair_messages: tuple = ()
-
+def test_action_schema_error_returns_same_episode_feedback_after_one_provider_call() -> None:
+    class SchemaErrorPort(_ActionPort):
         async def generate_structured(self, messages, output_schema, config, **kwargs):
             if self.calls == 0:
                 self.calls += 1
@@ -1858,8 +1776,6 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
                     "private action response",
                     violations=(StructuredOutputViolation("target", "string_type"),),
                 )
-            if self.calls == 1:
-                self.repair_messages = tuple(messages)
             return await super().generate_structured(
                 messages,
                 output_schema,
@@ -1868,7 +1784,7 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
             )
 
     context = _context()
-    port = RepairPort()
+    port = SchemaErrorPort()
     adapter = CompactJsonDecisionPort(
         port,
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
@@ -1878,28 +1794,17 @@ def test_action_schema_retry_repairs_the_same_model_decision() -> None:
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
     assert outcome.failure is None
-    assert port.calls == 2
-    assert adapter.last_schema_repair_count == 1
+    assert outcome.output is not None
+    assert isinstance(outcome.output.decision, ProtocolFeedback)
+    assert outcome.output.decision.kind is ProtocolFeedbackKind.REPRESENTATION_ERROR
+    assert port.calls == 1
     assert adapter.last_structured_output_violations == (StructuredOutputViolation("target", "string_type"),)
-    assert adapter.last_structured_output_repair_attempted is True
-    assert adapter.last_structured_output_repair_failed is False
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == (
-        "initial",
-        "structured_output_repair",
-    )
-    assert tuple(item.status for item in adapter.last_generation_attempts) == (
-        "schema_error",
-        "accepted",
-    )
-    repair_system = port.repair_messages[0].content
-    assert isinstance(repair_system, str)
-    assert '"field_path":"target"' in repair_system
-    assert "JSON tool call with fields name and arguments" in repair_system
-    assert "private action response" not in repair_system
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
+    assert tuple(item.status for item in adapter.last_generation_attempts) == ("schema_error",)
 
 
-def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repair() -> None:
-    class FailingRepairPort(_ActionPort):
+def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provider_call() -> None:
+    class FailingSchemaPort(_ActionPort):
         async def generate_structured(self, messages, output_schema, config, **kwargs):
             del messages, output_schema, config
             self.calls += 1
@@ -1915,23 +1820,19 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repa
 
     context = _context()
     adapter = CompactJsonDecisionPort(
-        FailingRepairPort(),
+        FailingSchemaPort(),
         ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
     )
 
     outcome = asyncio.run(adapter.generate(_action_request(context)))
 
-    assert outcome.failure is not None
-    assert outcome.failure.kind.value == "schema_error"
-    assert outcome.failure.attempt_origin.value == "network"
-    assert adapter.last_model_call_count == 2
-    assert adapter.last_structured_output_repair_attempted is True
-    assert adapter.last_structured_output_repair_failed is True
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == (
-        "initial",
-        "structured_output_repair",
-    )
+    assert outcome.failure is None
+    assert outcome.output is not None
+    assert isinstance(outcome.output.decision, ProtocolFeedback)
+    assert outcome.output.decision.kind is ProtocolFeedbackKind.REPRESENTATION_ERROR
+    assert adapter.last_model_call_count == 1
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
     assert all(item.status == "schema_error" for item in adapter.last_generation_attempts)
     trace = _policy_trace_event(1, context, outcome, adapter)
     assert trace["structured_output_validation_stage"] == "provider_response_to_grounded_command"
@@ -1940,13 +1841,7 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_failed_repa
             "field_path": "decision.action.tool_name",
             "code": "missing_required_field",
         },
-        {
-            "field_path": "decision.action.tool_name",
-            "code": "missing_required_field",
-        },
     )
-    assert trace["structured_output_repair_attempted"] is True
-    assert trace["structured_output_repair_failed"] is True
 
 
 def test_aria_hidden_ancestor_removes_layout_only_control_from_execution_visibility() -> None:

@@ -12,10 +12,6 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent import RequestObservation
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.model.policy.grounded_tool_catalog import (
-    compile_grounded_tool_catalog,
-    resolve_grounded_tool_call,
-)
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.surfaces.browsergym.binding import BrowserGymVisualBinding
 from affordance_runtime.surfaces.browsergym.semantics import PRIVATE_CONTROL_PROPERTIES_KEY
@@ -39,6 +35,7 @@ from affordance_runtime.world import (
     SourceAcquisitionStatus,
     WorldObservationRequest,
 )
+from tests.support.model_delivery import catalog_for, resolve_catalog_call
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
     ax_node,
@@ -576,11 +573,10 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
                 ),
                 observation_capabilities=environment.observation_capabilities,
             )
-            from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 
-            catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+            _, catalog = catalog_for(context)
             assert "request_evidence" in {item.name for item in catalog.specs}
-            decision = resolve_grounded_tool_call(
+            decision = resolve_catalog_call(
                 catalog,
                 ToolCall(
                     "request_evidence",

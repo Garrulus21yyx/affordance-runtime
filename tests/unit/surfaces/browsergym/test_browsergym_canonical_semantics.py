@@ -462,6 +462,74 @@ def test_dom_clickable_wrapper_with_multiple_native_controls_is_not_collapsed() 
     }
 
 
+def test_nested_native_wrapper_and_anchor_project_one_semantic_action() -> None:
+    raw = raw_observation(
+        ax_node(
+            "tab-wrapper",
+            "tab",
+            "Bestsellers",
+            properties=(("selected", True),),
+            child_ids=("tab-anchor",),
+        ),
+        ax_node(
+            "tab-anchor",
+            "link",
+            "Bestsellers",
+            parent_id="tab-wrapper",
+        ),
+    )
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["tab-wrapper"]["bbox"] = [10, 20, 120, 30]
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["tab-anchor"]["bbox"] = [10, 20, 120, 30]
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["tab-anchor"]["selected"] = False
+
+    analysis = analyze_browsergym_semantics(raw)
+    projection = _projection(raw)
+
+    assert [(item.private_bid, item.role, item.accessible_name) for item in analysis.controls] == [
+        ("tab-anchor", "tab", "Bestsellers")
+    ]
+    assert analysis.inventory.recognized_target_count == 1
+    assert dict(analysis.controls[0].public_state)["selected"] is True
+    assert [(item.role, item.label) for item in _page_targets(projection.world)] == [
+        ("tab", "Bestsellers")
+    ]
+    assert len({
+        item.target_id
+        for item in _page_bindings(projection.world)
+        if item.semantic_action == "activate"
+    }) == 1
+    private_ids = {
+        item.private_element_id
+        for item in projection.private_bindings
+        if hasattr(item, "private_element_id")
+    }
+    assert private_ids == {"tab-anchor"}
+    assert {item.private_bid for item in analysis.structure} >= {"tab-wrapper", "tab-anchor"}
+
+
+def test_native_wrapper_with_two_independent_controls_is_not_collapsed() -> None:
+    raw = raw_observation(
+        ax_node(
+            "tab-wrapper",
+            "tab",
+            "Bestsellers",
+            child_ids=("primary", "secondary"),
+        ),
+        ax_node("primary", "link", "Bestsellers", parent_id="tab-wrapper"),
+        ax_node("secondary", "button", "More", parent_id="tab-wrapper"),
+    )
+    for bid in ("tab-wrapper", "primary", "secondary"):
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid]["bbox"] = [10, 20, 120, 30]
+
+    controls = canonicalize_browsergym_controls(raw)
+
+    assert {(item.private_bid, item.role) for item in controls} == {
+        ("tab-wrapper", "tab"),
+        ("primary", "link"),
+        ("secondary", "button"),
+    }
+
+
 def test_exact_duplicate_is_merged_and_conflicting_same_bid_fails_typed() -> None:
     node = ax_node("same", "button", "Save")
     raw = raw_observation(node, copy.deepcopy(node))

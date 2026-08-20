@@ -173,7 +173,7 @@ class CorePolicy:
             if self.turns == 1:
                 return RequestActionPage(context.context_id, query="toggle")
             assert context.actions.active_query == "toggle"
-            assert context.recent_steps.items[-1].semantic_action == "find_actions"
+            assert context.recent_steps.items[-1].semantic_action == "search_actions"
             return Abort(context.context_id, "page observed", AbortCategory.USER_REQUEST)
         if self.choice == "wait":
             if self.turns == 1:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 
@@ -31,7 +32,6 @@ class GroundedToolResolutionCode(StrEnum):
     DESTINATION_UNAVAILABLE = "destination_unavailable"
     UNSUPPORTED_DESTINATION_MODE = "unsupported_destination_mode"
     GROUNDING_FALLBACK_UNAVAILABLE = "grounding_fallback_unavailable"
-    REPAIR_CHANGED_INTENT = "repair_changed_intent"
     CATALOG_INVALID = "grounded_tool_catalog_invalid"
     UNKNOWN_TOOL = "unknown_tool"
     INVALID_ARGUMENT = "invalid_argument"
@@ -66,12 +66,20 @@ class GroundedToolCatalog:
 
     catalog_id: str
     context_id: str
+    delivery_id: str
+    manifest: DeliveryManifest
     tools: tuple[RegisteredGroundedTool, ...]
     serialized_bytes: int
 
     def __post_init__(self) -> None:
-        if not self.catalog_id.startswith("grounded-catalog:") or not self.context_id.startswith("context:"):
+        if (
+            not self.catalog_id.startswith("grounded-catalog:")
+            or not self.context_id.startswith("context:")
+            or not self.delivery_id.startswith("delivery:")
+        ):
             raise ValueError("grounded catalog identity is invalid")
+        if not isinstance(self.manifest, DeliveryManifest):
+            raise TypeError("grounded catalog requires the current DeliveryManifest")
         if (
             not 1 <= len(self.tools) <= MAX_GROUNDED_TOOL_COUNT
             or len({item.spec.name for item in self.tools}) != len(self.tools)

@@ -180,6 +180,11 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
     physical = _physical_properties(raw)
     dom_properties = _dom_properties(raw)
     suppressed_clickable_bids = _suppressed_dom_clickable_bids(records, dom_properties)
+    suppressed_native_bids, native_alias_records = _nested_native_control_aliases(
+        records,
+        physical,
+        dom_semantics,
+    )
     by_node_id: dict[str, list[_AxRecord]] = {}
     for record in records:
         by_node_id.setdefault(record.node_id, []).append(record)
@@ -187,9 +192,10 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
     seen_controls: set[str] = set()
     option_owners: dict[str, str] = {}
     for record in records:
-        if record.bid in suppressed_clickable_bids:
+        if record.bid in suppressed_clickable_bids or record.bid in suppressed_native_bids:
             continue
-        spec = browsergym_role_spec(record.role)
+        canonical_record = native_alias_records.get(record.bid, record)
+        spec = browsergym_role_spec(canonical_record.role)
         if spec is None or not spec.observable or not record.node_id or (spec.executable and not record.bid):
             continue
         identity = record.bid or f"node:{record.node_id}"
@@ -213,10 +219,13 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
                 )
         controls.append(
             _canonical_control(
-                record,
+                canonical_record,
                 spec,
                 options,
-                physical.get(record.bid),
+                _alias_physical_state(
+                    physical.get(record.bid),
+                    canonical_record.state,
+                ) if canonical_record is not record else physical.get(record.bid),
                 dom_semantics.get(record.bid),
             )
         )
@@ -227,7 +236,9 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         if record.bid not in suppressed_clickable_bids and record.role in diagnostic_roles
     )
     recognized = sum(
-        record.bid not in suppressed_clickable_bids and is_inventory_target_browsergym_role(record.role)
+        record.bid not in suppressed_clickable_bids
+        and record.bid not in suppressed_native_bids
+        and is_inventory_target_browsergym_role(record.role)
         for record in records
     )
     structure_by_node_id: dict[str, CanonicalBrowserStructureNode] = {}
@@ -581,6 +592,142 @@ def _owned_native_executable_controls(
                 continue
             pending.extend(record.child_ids)
     return frozenset(native)
+
+
+def _nested_native_control_aliases(
+    records: tuple[_AxRecord, ...],
+    physical: dict[str, object],
+    dom_semantics: dict[str, _DomSemanticEvidence],
+) -> tuple[frozenset[str], dict[str, _AxRecord]]:
+    """Collapse one proven native wrapper/anchor interaction.
+
+    The descendant BID remains the physical identity. The wrapper contributes
+    its stronger semantic role and state only when ancestry, label/title,
+    geometry, operation algebra, and single-control ownership all agree.
+    """
+
+    by_bid = {item.bid: item for item in records if item.bid}
+    suppressed: set[str] = set()
+    aliases: dict[str, _AxRecord] = {}
+    for wrapper in records:
+        wrapper_spec = browsergym_role_spec(wrapper.role)
+        if (
+            not wrapper.bid
+            or wrapper_spec is None
+            or not wrapper_spec.executable
+            or wrapper.role == "clickable"
+        ):
+            continue
+        owned = _all_native_executable_descendants(wrapper, records)
+        if len(owned) != 1:
+            continue
+        anchor_bid = next(iter(owned))
+        anchor = by_bid.get(anchor_bid)
+        anchor_spec = browsergym_role_spec(anchor.role) if anchor is not None else None
+        if (
+            anchor is None
+            or anchor_spec is None
+            or anchor.role == "clickable"
+            or anchor_bid in aliases
+            or _offer_signature(wrapper_spec) != _offer_signature(anchor_spec)
+            or not _same_public_control_label(wrapper, anchor, dom_semantics)
+        ):
+            continue
+        wrapper_box = _float_physical_bbox(physical.get(wrapper.bid))
+        anchor_box = _float_physical_bbox(physical.get(anchor_bid))
+        if (
+            wrapper_box is None
+            or anchor_box is None
+            or not _same_control_overlap(wrapper_box, anchor_box)
+        ):
+            continue
+        merged_state = dict(anchor.state)
+        merged_state.update(dict(wrapper.state))
+        aliases[anchor_bid] = replace(
+            anchor,
+            role=wrapper.role,
+            name=anchor.name or wrapper.name,
+            state=tuple(merged_state.items()),
+        )
+        suppressed.add(wrapper.bid)
+    return frozenset(suppressed), aliases
+
+
+def _offer_signature(spec: BrowserGymRoleSpec) -> tuple[tuple[str, str], ...]:
+    return tuple((item.semantic_action, item.primitive_action) for item in spec.offers)
+
+
+def _same_public_control_label(
+    left: _AxRecord,
+    right: _AxRecord,
+    dom_semantics: dict[str, _DomSemanticEvidence],
+) -> bool:
+    left_evidence = dom_semantics.get(left.bid)
+    right_evidence = dom_semantics.get(right.bid)
+    left_label = _normalized_control_label(left, left_evidence)
+    right_label = _normalized_control_label(right, right_evidence)
+    if not left_label or left_label != right_label:
+        return False
+    left_title = _normalized_dom_title(left_evidence)
+    right_title = _normalized_dom_title(right_evidence)
+    return not (left_title and right_title) or left_title == right_title
+
+
+def _normalized_control_label(
+    record: _AxRecord,
+    dom_evidence: _DomSemanticEvidence | None,
+) -> str:
+    values = dict(dom_evidence.state) if dom_evidence is not None else {}
+    label = record.name or str(values.get("semantic.dom.attribute.title", ""))
+    return " ".join(label.split()).casefold()
+
+
+def _normalized_dom_title(dom_evidence: _DomSemanticEvidence | None) -> str:
+    values = dict(dom_evidence.state) if dom_evidence is not None else {}
+    return " ".join(str(values.get("semantic.dom.attribute.title", "")).split()).casefold()
+
+
+def _all_native_executable_descendants(
+    owner: _AxRecord,
+    records: tuple[_AxRecord, ...],
+) -> frozenset[str]:
+    by_node_id = {item.node_id: item for item in records if item.node_id}
+    pending = list(owner.child_ids)
+    visited: set[str] = set()
+    result: set[str] = set()
+    while pending:
+        node_id = pending.pop()
+        if not node_id or node_id in visited:
+            continue
+        visited.add(node_id)
+        record = by_node_id.get(node_id)
+        if record is None:
+            continue
+        spec = browsergym_role_spec(record.role)
+        if record.role != "clickable" and record.bid and spec is not None and spec.executable:
+            result.add(record.bid)
+        pending.extend(record.child_ids)
+    return frozenset(result)
+
+
+def _alias_physical_state(
+    physical: object,
+    merged_state: tuple[tuple[str, SemanticScalar], ...],
+) -> object:
+    if not isinstance(physical, dict):
+        return physical
+    result = dict(physical)
+    state = dict(merged_state)
+    for key in ("selected", "active", "focused"):
+        if isinstance(state.get(key), bool):
+            result[key] = state[key]
+    return result
+
+
+def _float_physical_bbox(value: object) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, dict):
+        return None
+    return _float_bbox(value.get("bbox"))
 
 
 def _preferred_clickable_record(

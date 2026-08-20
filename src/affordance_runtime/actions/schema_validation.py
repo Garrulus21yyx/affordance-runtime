@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -169,6 +170,8 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
     if "enum" in schema and value not in schema["enum"]:
         raise ValueError(f"{path} is not in the allowed enum")
     if isinstance(value, str):
+        if "pattern" in schema and re.fullmatch(str(schema["pattern"]), value) is None:
+            raise ValueError(f"{path} does not match the required pattern")
         if "minLength" in schema and len(value) < schema["minLength"]:
             raise ValueError(f"{path} is shorter than minimum length")
         if "maxLength" in schema and len(value) > schema["maxLength"]:

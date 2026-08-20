@@ -18,21 +18,19 @@ from affordance_runtime.execution import ActionError, ActionResult, DispatchStat
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.contracts import ModelInvocationResult, ModelMetadata
+from affordance_runtime.model.policy.contracts import ModelMetadata
 from affordance_runtime.world import AcquisitionStatus, ObservationAcquisition
 
 
 @dataclass
 class BenchmarkInstrumentation:
     policy_calls: int = 0
-    policy_schema_repair_count: int = 0
     goal_compiler_calls: int = 0
     goal_compiler_provider_attempts: int = 0
     goal_compiler_schema_repair_count: int = 0
     goal_compiler_contract_repair_count: int = 0
     goal_compiler_ready_count: int = 0
     goal_compiler_unavailable_count: int = 0
-    tool_argument_repair_count: int = 0
     valid_tool_call_count: int = 0
     zero_tool_call_count: int = 0
     multiple_tool_call_count: int = 0
@@ -235,16 +233,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["tool_resolution_code"] = str(diagnostics.get("tool_resolution_code", ""))
         event["tool_catalog_count"] = int(diagnostics.get("tool_catalog_count", 0))
         event["tool_catalog_bytes"] = int(diagnostics.get("tool_catalog_bytes", 0))
-        event["tool_argument_repair_count"] = int(diagnostics.get("tool_argument_repair_count", 0))
-        event["tool_argument_violation_code"] = str(diagnostics.get("tool_argument_violation_code", ""))
-        event["tool_argument_violation_paths"] = tuple(diagnostics.get("tool_argument_violation_paths", ()))
-        event["tool_argument_selected_operation"] = str(diagnostics.get("tool_argument_selected_operation", ""))
-        event["tool_argument_repaired_operation_match"] = bool(
-            diagnostics.get("tool_argument_repaired_operation_match", False)
-        )
-        event["tool_routing_normalization"] = str(diagnostics.get("tool_routing_normalization", ""))
-        event["tool_routing_original_operation"] = str(diagnostics.get("tool_routing_original_operation", ""))
-        event["tool_routing_normalized_operation"] = str(diagnostics.get("tool_routing_normalized_operation", ""))
         event["model_image_input_count"] = int(diagnostics.get("model_image_input_count", 0))
         event["policy_model_call_count"] = int(diagnostics.get("policy_model_call_count", 0))
         event["model_invocation"] = to_json_compatible(invocation)
@@ -258,12 +246,6 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["structured_output_violations"] = tuple(
             {"field_path": item.field_path, "code": item.code}
             for item in diagnostics.get("structured_output_violations", ())
-        )
-        event["structured_output_repair_attempted"] = bool(
-            diagnostics.get("structured_output_repair_attempted", False)
-        )
-        event["structured_output_repair_failed"] = bool(
-            diagnostics.get("structured_output_repair_failed", False)
         )
     decision = outcome
     if isinstance(decision, (SelectAction, RequestObservation, LocalToolResult)):
@@ -430,18 +412,10 @@ class CountingDecisionPort:
         diagnostics = outcome.diagnostics
         model_calls = int(diagnostics.get("policy_model_call_count", len(attempts)))
         self.instrumentation.provider_attempts += max(model_calls, len(attempts))
-        self.instrumentation.policy_schema_repair_count += _repair_count(outcome)
         _record_dynamic_tool_metrics(self.instrumentation, diagnostics)
         self.instrumentation.provider_retry_count += int(diagnostics.get("provider_retry_count", 0))
         self.instrumentation.fallback_count += int(diagnostics.get("fallback_count", 0))
         return outcome
-
-
-def _repair_count(invocation: ModelInvocationResult[object]) -> int:
-    return sum(
-        item.get("kind") in {"structured_output_repair", "argument_repair", "tool_intent_repair", "tool_call_repair"}
-        for item in invocation.repair_diagnostics
-    )
 
 
 def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, object]) -> None:
@@ -460,7 +434,6 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
         setattr(instrumentation, field, getattr(instrumentation, field) + 1)
     instrumentation.tool_catalog_count += int(diagnostics.get("tool_catalog_count", 0))
     instrumentation.tool_catalog_bytes += int(diagnostics.get("tool_catalog_bytes", 0))
-    instrumentation.tool_argument_repair_count += int(diagnostics.get("tool_argument_repair_count", 0))
     for name in (
         "system_tokens",
         "task_plan_tokens",

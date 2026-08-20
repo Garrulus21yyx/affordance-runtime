@@ -216,7 +216,6 @@ def test_custom_metric_cannot_override_canonical_metric() -> None:
 def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
     instrumentation = BenchmarkInstrumentation(
         valid_tool_call_count=2,
-        tool_argument_repair_count=1,
         zero_tool_call_count=1,
         multiple_tool_call_count=1,
         unknown_tool_call_count=1,
@@ -231,7 +230,6 @@ def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
 
     for name, expected in {
         "valid_tool_call_count": 2,
-        "tool_argument_repair_count": 1,
         "zero_tool_call_count": 1,
         "multiple_tool_call_count": 1,
         "unknown_tool_call_count": 1,

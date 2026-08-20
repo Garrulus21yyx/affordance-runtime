@@ -10,6 +10,9 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 )
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import (
+    Matches,
+    Opened,
+    Page,
     inspect_actor_world,
     render_compact_actor_world,
 )
@@ -17,13 +20,13 @@ from affordance_runtime.agent.context.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
 )
-from affordance_runtime.agent.context.world_region_index import WorldRegion, WorldRegionIndex
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import SemanticTarget
 from tests.support.world import fused_world
 
 
-def test_compact_world_conserves_complete_groups_states_and_affordances() -> None:
+def test_compact_world_conserves_complete_groups_states_and_inline_verbs() -> None:
     roots = tuple(_post(index) for index in range(1, 8)) + (
         ActorWorldNodeView("E22", "button", "Submit"),
     )
@@ -33,15 +36,13 @@ def test_compact_world_conserves_complete_groups_states_and_affordances() -> Non
     rendered = render_compact_actor_world(snapshot, grounding, include_images=False)
 
     assert rendered.count('StaticText "@nibh"') == 7
-    assert rendered.count('clickable "like" active[F') == 7
+    assert rendered.count("clickable active[F") == 7
     assert '[E22] button "Submit" verbs=["activate"]' in rendered
     for index in range(1, 8):
-        group_ref = f"E{(index - 1) * 3 + 1}"
         like_ref = f"E{(index - 1) * 3 + 3}"
-        group = rendered.index(f'[{group_ref}] group "media"')
-        author = rendered.index('StaticText "@nibh"', group)
-        like = rendered.index(f'[{like_ref}] clickable "like"', author)
-        assert group < author < like
+        post = rendered.text.index(f'StaticText "Post {index}"')
+        like = rendered.text.index(f"[{like_ref}] clickable", post)
+        assert post < like
 
 
 def test_compact_world_drops_projection_scaffolding_but_not_public_semantics() -> None:
@@ -56,7 +57,7 @@ def test_compact_world_drops_projection_scaffolding_but_not_public_semantics() -
     assert "source_refs" not in rendered
     assert "semantic.dom.tag" not in rendered
     assert "appearance.color_family" not in rendered
-    assert "N1" not in rendered
+    assert '[N1] StaticText "@nibh" read_only=true' in rendered
     assert "@nibh" in rendered
     assert "active[F1]=false" in rendered
 
@@ -109,24 +110,25 @@ def test_executable_and_readonly_refs_render_with_separate_contracts() -> None:
 def test_region_delivery_folds_with_recoverable_directory() -> None:
     snapshot = _snapshot(tuple(_post(index) for index in range(1, 16)))
     grounding = _grounding(post_count=15, include_submit=False)
+    observation = _observation(15)
 
     rendered = render_compact_actor_world(
         snapshot,
         grounding,
         include_images=False,
-        region_index=_region_index(15),
+        region_index=_region_index(15, observation.observation_id),
+        observation=observation,
         expanded_refs=frozenset({"E3"}),
         max_rendered_bytes=700,
     )
 
-    assert "delivery=region_lens" in rendered
-    assert "non_action_content=folded" in rendered
-    assert "recovery=inspect_world" in rendered
-    assert "recovery=none" not in rendered
-    assert "region_directory" in rendered
-    assert "region [R1]" in rendered
+    assert "projection=page_map" in rendered
+    assert "public_content=folded" in rendered
+    assert "recovery=read_region/search_world/search_actions" in rendered
+    assert "PageMap regions=15" in rendered
+    assert "R1" in rendered.manifest.region_refs
     assert 'Post 1' in rendered
-    assert 'region [R15]' in rendered
+    assert "R15" in rendered.manifest.region_refs
 
 
 def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() -> None:
@@ -159,16 +161,17 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
         action="view_all",
     )
 
-    assert opened["action"] == "open_region"
-    assert 'Post 5' in opened["content"]
-    assert found["total_count"] == 1
-    assert found["matches"][0]["region_ref"] == "R5"
-    assert found["matches"][0]["snippet"] == "StaticText Post 5"
-    assert found["matches"][0]["actionable"] is False
-    assert found["matches"][0]["verbs"] == ()
-    assert found["matches"][0]["action_refs"] == ()
-    assert found["matches"][0]["currentness"]["observation_id"] == observation.observation_id
-    assert all_regions["total_count"] == 5
+    assert isinstance(opened, Opened)
+    assert any(item["label"] == "Post 5" for item in opened.items)
+    assert isinstance(found, Matches)
+    assert len(found.items) == 1
+    assert found.items[0]["region_ref"] == "R5"
+    assert found.items[0]["label"] == "Post 5"
+    assert found.items[0]["actionable"] is False
+    assert found.items[0]["verbs"] == ()
+    assert found.items[0]["action_refs"] == ()
+    assert isinstance(all_regions, Page)
+    assert len(all_regions.items) == 5
 
 
 def _observation(post_count: int):
@@ -183,8 +186,8 @@ def _observation(post_count: int):
     return fused_world("S1", tuple(targets), surface="dom")
 
 
-def _region_index(post_count: int, observation_id: str = "world:test") -> WorldRegionIndex:
-    return WorldRegionIndex(
+def _region_index(post_count: int, observation_id: str = "world:test") -> WorldDeliveryIndex:
+    return WorldDeliveryIndex(
         observation_id,
         tuple(
             WorldRegion(

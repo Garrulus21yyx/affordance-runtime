@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from types import SimpleNamespace
 
-from affordance_runtime.agent import Abort, AskUser, YieldSubtask
+from affordance_runtime.agent import (
+    Abort,
+    AskUser,
+    LocalToolResult,
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
+    YieldSubtask,
+)
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.core_loop import _world_fingerprint
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.run_state import RunStatus
+from affordance_runtime.agent.run_state import EpisodeYieldReason, RunStatus
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.mission import (
@@ -17,14 +25,17 @@ from affordance_runtime.mission import (
     AuditDeltaStatus,
     AuditorRoleRequest,
     ManagerDecision,
+    ManagerRecoveryView,
     ManagerRoleRequest,
     ManagerRoute,
     MissionOutcome,
+    MissionState,
     MissionSupervisor,
     OutcomeProposal,
     PromoteFactProposal,
     SubtaskContract,
 )
+from affordance_runtime.mission.supervisor import _episode_route, _EpisodeRoute, _repeats_failed_strategy
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
 from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
@@ -56,6 +67,16 @@ class CompleteEvaluator:
             TaskEvaluationStatus.COMPLETE,
             "terminal complete",
             completion_evidence_refs=(observation.facts[0].fact_id,),
+        )
+
+
+class BlockedEvaluator:
+    async def evaluate(self, task, observation):
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.BLOCKED,
+            "terminal blocked",
         )
 
 
@@ -103,6 +124,42 @@ class PolicyFailurePolicy:
     async def decide(self, context):
         self.contexts.append(context)
         return PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload")
+
+
+@dataclass
+class RepeatedSearchPolicy:
+    contexts: list[object]
+
+    @property
+    def supported_decisions(self):
+        return frozenset({DecisionCapability.REQUEST_EVIDENCE, DecisionCapability.YIELD_SUBTASK})
+
+    async def decide(self, context):
+        self.contexts.append(context)
+        return LocalToolResult(
+            context.context_id,
+            "search_world",
+            {"query": "2022"},
+            {"kind": "Matches", "items": (), "total_count": 0},
+        )
+
+
+@dataclass
+class RepeatedProtocolPolicy:
+    contexts: list[object]
+
+    @property
+    def supported_decisions(self):
+        return frozenset()
+
+    async def decide(self, context):
+        self.contexts.append(context)
+        return ProtocolFeedback(
+            context.context_id,
+            ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS,
+            2,
+            "multiple_tool_calls",
+        )
 
 
 @dataclass
@@ -253,7 +310,7 @@ def test_auditor_failure_terminates_without_reexecuting_same_gui_subtask() -> No
     assert len(policy.contexts) == 1
 
 
-def test_repeated_policy_failure_limit_does_not_first_block_without_manager_route() -> None:
+def test_policy_failure_is_typed_operational_terminal_and_never_audited() -> None:
     _, env, task = _env_task()
     policy = PolicyFailurePolicy([])
     runtime = _runtime(policy)
@@ -272,13 +329,13 @@ def test_repeated_policy_failure_limit_does_not_first_block_without_manager_rout
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=4).run(runtime, env, task))
 
     assert result.state is not None
-    assert result.outcome is MissionOutcome.AUDITOR_SCHEMA_FAILURE
-    assert result.state.status is RunStatus.YIELDED
+    assert result.outcome is MissionOutcome.OPERATIONAL_FAILURE
+    assert result.state.status is RunStatus.FAILED
     assert result.state.failure_code is None
-    assert result.supervisor_state.last_typed_episode_exit != "repeated_failure_limit"
-    assert len(policy.contexts) == 3
-    assert len(manager.requests) == 3
-    assert len(auditor.requests) == 3
+    assert result.supervisor_state.last_typed_episode_exit == "operational_failure"
+    assert len(policy.contexts) == 1
+    assert len(manager.requests) == 1
+    assert len(auditor.requests) == 0
 
 
 def test_pre_stop_incomplete_task_evaluation_does_not_become_subtask_unsatisfied() -> None:
@@ -312,7 +369,24 @@ def test_terminal_task_evaluation_ends_case_without_writing_subtask_mission_outc
     assert auditor.requests == []
 
 
-def test_unknown_missing_evidence_retry_success_counts_both_auditor_calls() -> None:
+def test_blocked_task_evaluation_ends_case_without_calling_auditor() -> None:
+    _, env, task = _env_task()
+    policy = YieldPolicy([])
+    runtime = _runtime(policy, BlockedEvaluator())
+    contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
+    manager = ManagerScript([ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)], [])
+    auditor = AuditorScript([], [])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=1).run(runtime, env, task))
+
+    assert result.state is not None
+    assert result.state.status is RunStatus.BLOCKED
+    assert result.outcome is MissionOutcome.TASK_BLOCKED
+    assert result.mission_state.version == 0
+    assert auditor.requests == []
+
+
+def test_unknown_missing_evidence_returns_manager_guidance_after_one_auditor_call() -> None:
     fake, env, task = _env_task()
     policy = YieldPolicy([])
     runtime = _runtime(policy)
@@ -322,10 +396,10 @@ def test_unknown_missing_evidence_retry_success_counts_both_auditor_calls() -> N
 
     result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=1).run(runtime, env, task))
 
-    assert len(auditor.requests) == 2
-    assert result.auditor_calls == 2
-    assert fake.capture_count == 2
-    assert result.mission_state.version == 1
+    assert len(auditor.requests) == 1
+    assert result.auditor_calls == 1
+    assert fake.capture_count == 1
+    assert result.mission_state.version == 0
 
 
 def test_accepted_carry_fact_enters_later_episode_without_becoming_fresh_world_fact() -> None:
@@ -423,6 +497,13 @@ def test_world_fingerprint_uses_stable_public_semantics_not_observation_id() -> 
 
 def test_mission_role_invocations_enter_trace_sink() -> None:
     _, env, task = _env_task()
+    task = replace(
+        task,
+        inputs={
+            "public_final_response_contract": {"json_schema": {"secret_final": "hidden"}},
+            "hidden_benchmark_reward": 1,
+        },
+    )
     policy = YieldPolicy([])
     runtime = _runtime(policy)
     contract = SubtaskContract("Read value", "Value is read", episode_turn_budget=1)
@@ -436,6 +517,9 @@ def test_mission_role_invocations_enter_trace_sink() -> None:
     assert [item["role"] for item in events] == ["manager", "auditor"]
     assert events[0]["role_request"]["remaining_rounds"] == 1
     assert events[1]["role_request"]["yield_reason"] == "ready_for_audit"
+    assert "inputs" not in events[1]["role_request"]["task"]
+    assert "secret_final" not in repr(events[1]["role_request"])
+    assert "hidden_benchmark_reward" not in repr(events[1]["role_request"])
     assert events[1]["model_invocation"]["output"]["status"] == "audited_satisfied"
 
 
@@ -471,3 +555,161 @@ def test_cancellation_does_not_audit_retry_or_write_mission_state() -> None:
     assert result.state.status is RunStatus.CANCELLED
     assert auditor.requests == []
     assert result.mission_state.version == 0
+
+
+def test_control_stall_routes_directly_to_manager_and_blocks_unchanged_strategy() -> None:
+    _, env, task = _env_task()
+    policy = RepeatedSearchPolicy([])
+    runtime = _runtime(policy)
+    contract = SubtaskContract(
+        "Find the 2022 result",
+        "The 2022 result is visible",
+        episode_turn_budget=6,
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+        ],
+        [],
+    )
+    auditor = AuditorScript([], [])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.STRATEGY_NOT_CHANGED
+    assert result.status is RunStatus.BLOCKED
+    assert result.supervisor_state.last_ref == "strategy_not_changed"
+    assert auditor.requests == []
+    assert len(manager.requests) == 3
+    recovery = manager.requests[1].recovery
+    assert recovery is not None
+    assert recovery.exit_kind == "control_stall"
+    assert recovery.world_changed is False
+    assert recovery.attempted_modes == ("search_world",)
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.observed_evidence["arguments"] == {"query": "2022"}
+    assert recovery.recovery_signal.observed_evidence["item_count"] == 0
+    assert recovery.recovery_signal.observed_evidence["same_result_count"] == 3
+    assert manager.requests[2].recovery is not None
+    assert manager.requests[2].recovery.strategy_revision_required is True
+
+
+def test_repeated_multiple_calls_yield_protocol_stall_to_manager_without_auditor() -> None:
+    _, env, task = _env_task()
+    policy = RepeatedProtocolPolicy([])
+    runtime = _runtime(policy)
+    contract = SubtaskContract(
+        "Enter the remaining values one field at a time",
+        "Both fields contain the requested values",
+        episode_turn_budget=6,
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="protocol recovery exhausted"),
+        ],
+        [],
+    )
+    auditor = AuditorScript([], [])
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=2).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert result.execution_count == 0
+    assert len(policy.contexts) == 3
+    assert auditor.requests == []
+    assert len(manager.requests) == 2
+    recovery = manager.requests[1].recovery
+    assert recovery is not None
+    assert recovery.exit_kind == EpisodeYieldReason.PROTOCOL_STALL.value
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.kind.value == "protocol_stall"
+
+
+def test_strategy_convergence_guard_does_not_block_after_world_change() -> None:
+    contract = SubtaskContract("Continue collection", "Collection is complete")
+    recovery = ManagerRecoveryView(
+        "control_stall",
+        True,
+        contract,
+        attempted_modes=("search_world",),
+    )
+
+    assert _repeats_failed_strategy(
+        ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+        recovery,
+    ) is False
+
+
+def test_only_recovery_exits_bypass_auditor() -> None:
+    direct = {
+        reason
+        for reason in EpisodeYieldReason
+        if _episode_route(
+            SimpleNamespace(
+                status=RunStatus.YIELDED,
+                yield_reason=reason,
+                current_task_evaluation=SimpleNamespace(status=TaskEvaluationStatus.UNKNOWN),
+            )
+        )
+        is _EpisodeRoute.MANAGER_RECOVERY
+    }
+
+    assert direct == set(EpisodeYieldReason) - {EpisodeYieldReason.READY_FOR_AUDIT}
+
+
+def test_unknown_audit_guidance_reaches_only_the_next_manager_request() -> None:
+    _, env, task = _env_task()
+    runtime = _runtime(YieldPolicy([]))
+    contract = SubtaskContract("Read the report", "The filtered ranking is visible")
+    changed_contract = SubtaskContract(
+        "Open a report with date controls",
+        "A date-filtered report is visible",
+        constraints=("Do not reuse the dashboard summary.",),
+    )
+    manager = ManagerScript(
+        [
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract),
+            ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, changed_contract),
+            ManagerDecision(ManagerRoute.BLOCKED, reason="no supported route"),
+        ],
+        [],
+    )
+    auditor = AuditorScript(
+        [
+            AuditDelta(
+                AuditDeltaStatus.UNKNOWN,
+                0,
+                missing_evidence=("a report filtered to 2022",),
+                recovery_hint="Navigate to a report view exposing date controls.",
+            ),
+            AuditDelta(
+                AuditDeltaStatus.UNKNOWN,
+                0,
+                missing_evidence=("ranking derived from that report",),
+                recovery_hint="Do not use the dashboard summary as year-specific evidence.",
+            ),
+            AuditDelta(AuditDeltaStatus.UNKNOWN, 0),
+        ],
+        [],
+    )
+
+    result = asyncio.run(MissionSupervisor(manager, auditor, max_rounds=3).run(runtime, env, task))
+
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert len(auditor.requests) == 2
+    assert len(manager.requests) == 3
+    recovery = manager.requests[1].recovery
+    assert recovery is not None
+    assert recovery.exit_kind == "audit:evidence_gap"
+    assert recovery.audit_guidance is not None
+    assert recovery.audit_guidance.missing_evidence == ("a report filtered to 2022",)
+    assert "date controls" in recovery.audit_guidance.recovery_hint
+    second_recovery = manager.requests[2].recovery
+    assert second_recovery is not None
+    assert second_recovery.audit_guidance is not None
+    assert second_recovery.audit_guidance.missing_evidence == ("ranking derived from that report",)
+    assert "dashboard summary" in second_recovery.audit_guidance.recovery_hint
+    assert result.mission_state == MissionState.empty()

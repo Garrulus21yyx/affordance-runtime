@@ -655,6 +655,24 @@ def test_environment_factory_selects_aliyun_profile_without_exposing_key() -> No
     assert "aliyun-secret" not in repr(port)
 
 
+def test_environment_factory_selects_deepseek_profile_without_exposing_key() -> None:
+    port = model_port_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "deepseek-secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+        }
+    )
+
+    assert port.provider == "deepseek"
+    assert port.model == "deepseek-v4-flash"
+    assert port.supports_multimodal is False
+    assert port.structured_output_mode is StructuredOutputMode.JSON_OBJECT_PROMPT_SCHEMA
+    assert port.thinking_mode is None
+    assert "deepseek-secret" not in repr(port)
+
+
 def test_zhipu_text_profile_requests_json_object_and_embeds_schema_in_prompt() -> None:
     server, thread, requests = _serve(
         {

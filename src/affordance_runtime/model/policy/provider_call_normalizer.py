@@ -135,18 +135,6 @@ def _normalize_nested_parameters(
         and "parameters" not in properties
     ):
         return ToolCall(call.name, dict(arguments["parameters"]), call.call_id)
-    if (
-        call.name == "find_actions"
-        and isinstance(arguments, Mapping)
-        and isinstance(properties, Mapping)
-        and "exact_target" in properties
-        and "target" not in properties
-        and "target" in arguments
-        and "exact_target" not in arguments
-    ):
-        normalized = dict(arguments)
-        normalized["exact_target"] = normalized.pop("target")
-        return ToolCall(call.name, normalized, call.call_id)
     return call
 
 

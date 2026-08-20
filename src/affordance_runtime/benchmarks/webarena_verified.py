@@ -15,8 +15,8 @@ from typing import Any, Iterable, Mapping
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent.context.budgets import serialized_size
-from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
@@ -71,7 +71,8 @@ WA_DEFAULT_TIMEOUT_S = 0.0
 WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
 WA_FINAL_OUTPUT_ID = "webarena_final_response"
 WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
-WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v1"
+WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v3"
+WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v1"
 _W1B_PRIVATE_MARKERS = (
     "browsergym_id",
@@ -87,6 +88,57 @@ _W1B_PRIVATE_MARKERS = (
     "reward",
     "benchmark_oracle",
 )
+
+
+@dataclass(frozen=True)
+class DeliveryRetrievalProbe:
+    """Frozen public-only retrieval witness; never passed to production."""
+
+    query: str
+    expected_labels: tuple[str, ...]
+    expected_kinds: tuple[str, ...] = ()
+    required_operations: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DeliveryProbe:
+    """Evaluator-only discoverability contract frozen before W1b execution."""
+
+    site_key: str
+    title_route_tokens: tuple[str, ...]
+    required_region_labels: tuple[str, ...]
+    retrievals: tuple[DeliveryRetrievalProbe, ...]
+
+
+# Public UI vocabulary only. These fixtures contain no benchmark identity,
+# expected answer, private binding, selector, or evaluator state and are never
+# supplied to ContextBuilder, ranking, the binder, or a model request.
+WA_W1B_DELIVERY_PROBES: Mapping[int, DeliveryProbe] = {
+    0: DeliveryProbe(
+        "shopping_admin", ("admin", "dashboard"), ("document",),
+        (DeliveryRetrievalProbe("Bestsellers", ("bestsellers",), ("tab", "link"), ("activate",)),),
+    ),
+    7: DeliveryProbe(
+        "map", ("map", "openstreetmap"), ("document",),
+        (DeliveryRetrievalProbe("Search", ("search",), ("searchbox", "textbox"), ("type_text",)),),
+    ),
+    21: DeliveryProbe(
+        "shopping", ("headphones",), ("document",),
+        (DeliveryRetrievalProbe("Reviews", ("reviews",), ("link", "tab"), ("activate",)),),
+    ),
+    27: DeliveryProbe(
+        "reddit", ("reddit", "postmill"), ("document",),
+        (DeliveryRetrievalProbe("Search", ("search",), ("searchbox",), ("type_text",)),),
+    ),
+    44: DeliveryProbe(
+        "gitlab", ("gitlab",), ("document",),
+        (DeliveryRetrievalProbe("Todos", ("to-do", "todo"), ("link",), ("activate",)),),
+    ),
+    266: DeliveryProbe(
+        "wikipedia-map", ("wikipedia", "map"), ("document",),
+        (DeliveryRetrievalProbe("Search", ("search",), ("searchbox", "textbox"), ("type_text",)),),
+    ),
+}
 
 @dataclass(frozen=True)
 class WebArenaVerifiedCaseRef:
@@ -556,18 +608,39 @@ async def inspect_webarena_verified_w1b_world(
         cases.append(report)
         case_path = output_dir / f"w1b-world-task-{case_ref.task_id}.json"
         case_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    delivered_tokens = sorted(
+        int(item.get("request_budget", {}).get("estimated_total_tokens", 0))
+        for item in cases
+        if item.get("status") == "ok"
+    )
+    median_tokens = (
+        (delivered_tokens[(len(delivered_tokens) - 1) // 2] + delivered_tokens[len(delivered_tokens) // 2]) / 2
+        if delivered_tokens else 0
+    )
+    aggregate_errors = (
+        ("cost:six_page_median_over_9k",) if median_tokens > 9_000 else ()
+    )
     summary = {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "stage": "w1b-world",
         "selection_seed": seed,
         "case_count": len(cases),
-        "ready": all(item.get("status") == "ok" and not item.get("acceptance_errors") for item in cases),
+        "ready": (
+            not aggregate_errors
+            and all(item.get("status") == "ok" and not item.get("acceptance_errors") for item in cases)
+        ),
         "failure_origin": "none" if all(item.get("status") == "ok" for item in cases) else "environment_or_projection",
-        "acceptance_errors": tuple(
+        "acceptance_errors": (*aggregate_errors, *tuple(
             error
             for case in cases
             for error in case.get("acceptance_errors", ())
-        ),
+        )),
+        "cost_gate": {
+            "new_page_tokens": tuple(delivered_tokens),
+            "median_tokens": median_tokens,
+            "each_limit": 12_000,
+            "median_limit": 9_000,
+        },
         "cases": cases,
     }
     (output_dir / "w1b-world-summary.json").write_text(
@@ -609,14 +682,33 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             observation_capabilities=environment.observation_capabilities,
             runtime_controls=("yield_subtask",),
         )
-        catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-        request_budget = _w1b_request_budget(context, catalog)
-        rendered = render_compact_actor_world(
-            context.actor_world,
-            context.grounding,
-            include_images=False,
+        binder = GroundedPolicyContextBinder()
+        request = ModelDecisionRequest(
+            request_id=f"diagnostic:{context.context_id}",
+            agent_context=context,
         )
-        return _w1b_world_success(case_ref, environment, task, observation, action_space, context, catalog, rendered, request_budget)
+        delivery = binder.model_turn_delivery(
+            request,
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        )
+        catalog = compile_grounded_tool_catalog(
+            context,
+            GroundedToolPhase.ACTION_SELECTION,
+            delivery,
+        )
+        request_budget = _w1b_request_budget(request, catalog, delivery, binder)
+        return _w1b_world_success(
+            case_ref,
+            environment,
+            task,
+            observation,
+            action_space,
+            context,
+            catalog,
+            delivery.view,
+            request_budget,
+        )
     except Exception as exc:
         return _w1b_world_failure(
             case_ref,
@@ -643,18 +735,18 @@ def _w1b_world_success(
     action_space,
     context,
     catalog,
-    rendered: str,
+    rendered,
     request_budget: Mapping[str, object],
 ) -> dict[str, Any]:
     source_counts = _source_counts(observation)
     actor_refs, actor_paths = _actor_ref_index(context.actor_world)
-    tool_refs = _tool_schema_refs(catalog)
-    option_refs = _action_option_refs(context)
-    missing_tool_refs = tuple(sorted(set(tool_refs) - set(actor_refs)))
+    tool_refs = tuple(rendered.manifest.executable_refs)
+    option_refs = _action_option_refs(context, complete=True)
+    missing_tool_refs = tuple(sorted(set(tool_refs) - set(option_refs)))
     state_metrics = _action_state_metrics(context, actor_refs)
     closure_violations = _structural_closure_violations(context.actor_world, actor_paths)
-    leak_markers = _private_leak_markers(rendered, catalog)
-    find_actions_offered = "find_actions" in {item.name for item in catalog.specs}
+    leak_markers = _private_leak_markers(rendered.text, catalog)
+    search_actions_offered = "search_actions" in {item.name for item in catalog.specs}
     recoverability = _recoverability_diagnostic(
         environment,
         task,
@@ -662,6 +754,15 @@ def _w1b_world_success(
         action_space,
         context,
         catalog,
+    )
+    delivery_probe = _delivery_probe_diagnostic(
+        WA_W1B_DELIVERY_PROBES[case_ref.task_id],
+        task,
+        observation,
+        action_space,
+        context,
+        catalog,
+        rendered,
     )
     acceptance_errors = []
     if missing_tool_refs:
@@ -672,9 +773,11 @@ def _w1b_world_success(
         acceptance_errors.append(f"structural_closure_violations:{len(closure_violations)}")
     if leak_markers:
         acceptance_errors.append(f"private_model_input_leaks:{len(leak_markers)}")
-    if context.actions.has_more and not find_actions_offered:
-        acceptance_errors.append("partial_action_inventory_without_find_actions")
+    if context.actions.has_more and not search_actions_offered:
+        acceptance_errors.append("partial_action_inventory_without_search_actions")
     acceptance_errors.extend(recoverability["acceptance_errors"])
+    acceptance_errors.extend(delivery_probe["acceptance_errors"])
+    acceptance_errors.extend(_w1b_cost_errors(request_budget))
     return {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "status": "ok",
@@ -698,8 +801,15 @@ def _w1b_world_success(
             "total_node_count": sum(item.total_node_count for item in context.actor_world.documents),
             "source_coverage": tuple(to_json_compatible(item) for item in context.actor_world.sources),
             "serialized_bytes": serialized_size(context.actor_world),
-            "rendered_bytes": len(rendered.encode()),
-            "rendered_token_estimate": max(1, math.ceil(len(rendered) / 4)),
+            "rendered_bytes": len(rendered.text.encode()),
+            "rendered_token_estimate": max(1, math.ceil(len(rendered.text) / 4)),
+            "delivery_projection": rendered.projection,
+            "manifest": {
+                "executable": len(rendered.manifest.executable_refs),
+                "readonly": len(rendered.manifest.readonly_refs),
+                "facts": len(rendered.manifest.fact_refs),
+                "regions": len(rendered.manifest.region_refs),
+            },
         },
         "tools": {
             "offered_tool_target_count": len(tool_refs),
@@ -707,13 +817,13 @@ def _w1b_world_success(
             "actor_missing_offered_targets": missing_tool_refs,
             "catalog_tool_count": len(catalog.specs),
             "catalog_serialized_bytes": catalog.serialized_bytes,
-            "find_actions_offered": find_actions_offered,
+            "search_actions_offered": search_actions_offered,
         },
         "action_inventory": {
             "visible_count": context.actions.page_size,
             "total_count": context.actions.total_count,
             "partial": context.actions.has_more,
-            "recovery": "find_actions" if context.actions.has_more else "not_required",
+            "recovery": "search_actions" if context.actions.has_more else "not_required",
         },
         "capability_census": _capability_census(context, catalog),
         "decision_state": state_metrics,
@@ -727,6 +837,7 @@ def _w1b_world_success(
             "markers": leak_markers,
         },
         "recoverability": recoverability,
+        "delivery_probe": delivery_probe,
         "perception_route": {
             "profile": "TEXT_ONLY",
             "image_attached": False,
@@ -736,16 +847,33 @@ def _w1b_world_success(
     }
 
 
-def _w1b_request_budget(context, catalog) -> dict[str, object]:
-    binder = GroundedPolicyContextBinder()
-    request = ModelDecisionRequest(
-        request_id=f"diagnostic:{context.context_id}",
-        agent_context=context,
-    )
+def _w1b_cost_errors(request_budget: Mapping[str, object]) -> tuple[str, ...]:
+    errors: list[str] = []
+    delivered = int(request_budget.get("estimated_total_tokens", 0))
+    full = int(request_budget.get("full_candidate_tokens", 0))
+    history = int(request_budget.get("history_tokens", 0))
+    tool_schemas = int(request_budget.get("tool_schema_tokens", 0))
+    if delivered > 12_000:
+        errors.append("cost:new_page_over_12k")
+    if history > 1_500:
+        errors.append("cost:history_over_1_5k")
+    if tool_schemas > 2_000:
+        errors.append("cost:tool_schema_over_2k")
+    if full > 12_000 and delivered > math.floor(full * 0.70):
+        errors.append("cost:large_full_reduction_under_30_percent")
+    if 0 < full <= 12_000 and delivered > math.ceil(full * 1.05):
+        errors.append("cost:delivery_over_valid_full_by_more_than_5_percent")
+    if delivered > math.floor(90_368 * 0.60):
+        errors.append("cost:task0_baseline_reduction_under_40_percent")
+    return tuple(errors)
+
+
+def _w1b_request_budget(request, catalog, delivery, binder) -> dict[str, object]:
     try:
         admitted = binder.action_request(
             request,
             catalog.specs,
+            delivery,
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             include_tool_menu=False,
@@ -753,6 +881,162 @@ def _w1b_request_budget(context, catalog) -> dict[str, object]:
         return admitted.breakdown.as_diagnostics()
     except ModelRequestCapacityError as exc:
         return exc.breakdown.as_diagnostics()
+
+
+def _delivery_probe_diagnostic(
+    probe: DeliveryProbe,
+    task: TaskGoal,
+    observation,
+    action_space,
+    context,
+    catalog,
+    rendered,
+) -> dict[str, Any]:
+    """Evaluate frozen public UI witnesses outside the production request path."""
+
+    errors: list[str] = []
+    page_text = rendered.text.casefold()
+    identity = any(token.casefold() in page_text for token in probe.title_route_tokens)
+    if not identity:
+        errors.append("delivery_probe:page_identity_missing")
+    regions = all(label.casefold() in page_text for label in probe.required_region_labels)
+    if not regions:
+        errors.append("delivery_probe:required_region_missing")
+
+    recoveries: list[dict[str, object]] = []
+    for retrieval in probe.retrievals:
+        resolved = resolve_grounded_tool_call(
+            catalog,
+            ToolCall("search_world", {"query": retrieval.query}),
+            expected_context_id=context.context_id,
+            expected_delivery_id=catalog.delivery_id,
+            expected_catalog_id=catalog.catalog_id,
+        ).decision
+        items = tuple(resolved.result.get("items", ()))
+        label_found = False
+        kind_found = False
+        operation_found = False
+        lens = getattr(resolved, "delivery_lens", None)
+        search_result_visible = False
+        manifest_ref_visible = False
+        joint_matches: tuple[Mapping[str, object], ...] = ()
+        if items and lens is not None:
+            builder = ContextBuilder()
+            next_page = builder.page_for_delivery_lens(
+                action_space,
+                observation,
+                lens,
+                context.region_index,
+            )
+            next_context = builder.build(
+                task,
+                observation,
+                action_space,
+                TaskEvaluation(
+                    task.task_id,
+                    observation.observation_id,
+                    TaskEvaluationStatus.INCOMPLETE,
+                    "w1b-world delivery probe rerender",
+                ),
+                action_page=next_page,
+                delivery_lens=lens,
+                region_index=context.region_index,
+            )
+            next_view = build_model_turn_delivery(
+                next_context,
+                include_images=False,
+            ).view
+            search_result_visible = "SearchResults exact=true" in next_view.text
+            item_diagnostics = tuple(
+                _delivery_probe_item_diagnostic(
+                    item,
+                    retrieval,
+                    next_view.manifest.exact_refs,
+                    next_context.complete_actions,
+                )
+                for item in items
+                if isinstance(item, Mapping)
+            )
+            label_found = any(item["label"] for item in item_diagnostics)
+            kind_found = any(item["label_and_kind"] for item in item_diagnostics)
+            operation_found = any(item["label_kind_operation"] for item in item_diagnostics)
+            manifest_ref_visible = any(item["matched"] for item in item_diagnostics)
+            joint_matches = tuple(
+                item for item, diagnostic in zip(
+                    (item for item in items if isinstance(item, Mapping)),
+                    item_diagnostics,
+                    strict=True,
+                )
+                if diagnostic["matched"]
+            )
+        passed = bool(search_result_visible and joint_matches)
+        if not passed:
+            errors.append(f"delivery_probe:retrieval_failed:{retrieval.query}")
+        recoveries.append({
+            "query": retrieval.query,
+            "item_count": len(items),
+            "label_found": label_found,
+            "kind_found": kind_found,
+            "operation_found": operation_found,
+            "search_results_visible": search_result_visible,
+            "manifest_ref_visible": manifest_ref_visible,
+            "joint_match_count": len(joint_matches),
+            "matched_refs": tuple(str(item.get("node_ref", "")) for item in joint_matches),
+            "passed": passed,
+        })
+
+    target_related_route = bool(recoveries and all(item["passed"] for item in recoveries))
+    if not target_related_route:
+        errors.append("delivery_probe:target_route_missing")
+    return {
+        "probe_version": WA_W1B_DELIVERY_PROBE_VERSION,
+        "site_key": probe.site_key,
+        "page_identity": identity,
+        "required_regions": regions,
+        "retrievals": tuple(recoveries),
+        "target_related_route": target_related_route,
+        "probe_visible_to_production": False,
+        "provider_attempts": 0,
+        "acceptance_errors": tuple(errors),
+    }
+
+
+def _delivery_probe_item_diagnostic(
+    item: Mapping[str, object],
+    probe: DeliveryRetrievalProbe,
+    manifest_refs: Iterable[str],
+    complete_actions: Iterable[object],
+) -> dict[str, bool]:
+    """Require one recovered item to close label, role, operation, and manifest."""
+
+    label = str(item.get("label", "")).casefold()
+    role = str(item.get("role", "")).casefold()
+    node_ref = str(item.get("node_ref", ""))
+    verbs = {
+        str(verb)
+        for verb in item.get("verbs", ())
+        if isinstance(verb, str)
+    }
+    label_match = any(expected.casefold() in label for expected in probe.expected_labels)
+    kind_match = not probe.expected_kinds or role in {
+        expected.casefold() for expected in probe.expected_kinds
+    }
+    operation_match = not probe.required_operations or any(
+        operation in verbs
+        and any(
+            getattr(action, "target_ref", "") == node_ref
+            and getattr(action, "operation", "") == operation
+            for action in complete_actions
+        )
+        for operation in probe.required_operations
+    )
+    manifest_match = bool(node_ref and node_ref in set(manifest_refs))
+    return {
+        "label": label_match,
+        "label_and_kind": label_match and kind_match,
+        "label_kind_operation": label_match and kind_match and operation_match,
+        "matched": label_match and kind_match and operation_match and manifest_match,
+    }
 
 
 def _recoverability_diagnostic(
@@ -797,15 +1081,17 @@ def _recoverability_diagnostic(
         opened = resolve_grounded_tool_call(
             catalog,
             ToolCall(
-                "inspect_world",
-                {"action": "open_region", "region_ref": sample_region.public_ref},
+                "read_region",
+                {"region_ref": sample_region.public_ref},
                 "recoverability:open",
             ),
             expected_context_id=context.context_id,
+            expected_delivery_id=catalog.delivery_id,
             expected_catalog_id=catalog.catalog_id,
         ).decision
-        open_content = str(opened.result.get("content", ""))
-        checks["open_region"] = bool(open_content.strip())
+        open_items = tuple(opened.result.get("items", ()))
+        open_content = json.dumps(to_json_compatible(open_items), ensure_ascii=False)
+        checks["open_region"] = bool(open_items)
         if not checks["open_region"]:
             errors.append("recoverability:open_region_empty")
         if sample_target is not None and sample_target.label and sample_target.label not in open_content:
@@ -820,11 +1106,12 @@ def _recoverability_diagnostic(
         try:
             found = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("inspect_world", {"action": "find", "query": query}, "recoverability:find"),
+                ToolCall("search_world", {"query": query}, "recoverability:find"),
                 expected_context_id=context.context_id,
+                expected_delivery_id=catalog.delivery_id,
                 expected_catalog_id=catalog.catalog_id,
             ).decision
-            matches = tuple(found.result.get("matches", ()))
+            matches = tuple(found.result.get("items", ()))
             checks["find"] = bool(matches)
             if not matches:
                 errors.append("recoverability:find_no_match")
@@ -835,31 +1122,59 @@ def _recoverability_diagnostic(
     try:
         viewed = resolve_grounded_tool_call(
             catalog,
-            ToolCall("inspect_world", {"action": "view_all"}, "recoverability:view_all"),
+            ToolCall("list_regions", {}, "recoverability:view_all"),
             expected_context_id=context.context_id,
+            expected_delivery_id=catalog.delivery_id,
             expected_catalog_id=catalog.catalog_id,
         ).decision
-        page = viewed.result.get("page", {})
-        regions = tuple(viewed.result.get("regions", ()))
+        regions = tuple(viewed.result.get("items", ()))
+        viewed_lens = getattr(viewed, "delivery_lens", None)
+        next_cursor = getattr(viewed_lens, "next_cursor", "")
         checks["view_all"] = any(
             isinstance(item, Mapping) and item.get("region_ref") == sample_region.public_ref
             for item in regions
-        ) or bool(page.get("has_more"))
+        ) or bool(next_cursor)
         if not checks["view_all"]:
             errors.append("recoverability:view_all_missing_regions")
-        if page.get("has_more"):
-            cursor = str(page.get("next_cursor", ""))
+        if next_cursor:
+            if viewed_lens is None:
+                errors.append("recoverability:view_all_missing_lens")
+                checks["continuation"] = False
+                raise ValueError("view_all continuation requires a delivery lens")
+            continuation_context = ContextBuilder().build(
+                task,
+                observation,
+                action_space,
+                TaskEvaluation(
+                    task.task_id,
+                    observation.observation_id,
+                    TaskEvaluationStatus.INCOMPLETE,
+                    "w1b-world recoverability continuation",
+                ),
+                delivery_lens=viewed_lens,
+                region_index=region_index,
+            )
+            continuation_delivery = build_model_turn_delivery(
+                continuation_context,
+                include_images=False,
+            )
+            continuation_catalog = compile_grounded_tool_catalog(
+                continuation_context,
+                GroundedToolPhase.ACTION_SELECTION,
+                continuation_delivery,
+            )
             continued = resolve_grounded_tool_call(
-                catalog,
-                ToolCall("inspect_world", {"action": "view_all", "cursor": cursor}, "recoverability:view_all:2"),
-                expected_context_id=context.context_id,
-                expected_catalog_id=catalog.catalog_id,
+                continuation_catalog,
+                ToolCall("read_next_page", {}, "recoverability:view_all:2"),
+                expected_context_id=continuation_context.context_id,
+                expected_delivery_id=continuation_catalog.delivery_id,
+                expected_catalog_id=continuation_catalog.catalog_id,
             ).decision
-            checks["cursor"] = bool(continued.result.get("regions", ()))
-            if not checks["cursor"]:
-                errors.append("recoverability:view_all_cursor_empty")
+            checks["continuation"] = bool(continued.result.get("items", ()))
+            if not checks["continuation"]:
+                errors.append("recoverability:view_all_continuation_empty")
         else:
-            checks["cursor"] = True
+            checks["continuation"] = True
     except Exception as exc:
         return _recoverability_failure("view_all", exc)
     if lens is not None and sample_target_id:
@@ -880,17 +1195,17 @@ def _recoverability_diagnostic(
                 delivery_lens=lens,
                 region_index=region_index,
             )
-            next_catalog = compile_grounded_tool_catalog(next_context, GroundedToolPhase.ACTION_SELECTION)
-            rendered = render_compact_actor_world(
-                next_context.actor_world,
-                next_context.grounding,
+            next_delivery = build_model_turn_delivery(
+                next_context,
                 include_images=False,
-                region_index=next_context.region_index,
-                observation=next_context.current_observation,
-                selected_region_keys=frozenset({lens.selected_region_key}),
-                selected_cursor=lens.cursor,
                 max_rendered_bytes=1,
             )
+            next_catalog = compile_grounded_tool_catalog(
+                next_context,
+                GroundedToolPhase.ACTION_SELECTION,
+                next_delivery,
+            )
+            rendered = next_delivery.view
             action_target_id = next(
                 (
                     option.target_id
@@ -915,11 +1230,12 @@ def _recoverability_diagnostic(
         resolve_grounded_tool_call(
             catalog,
             ToolCall(
-                "inspect_world",
-                {"action": "open_region", "region_ref": sample_region.public_ref},
+                "read_region",
+                {"region_ref": sample_region.public_ref},
                 "recoverability:stale",
             ),
             expected_context_id="context:" + "0" * 64,
+            expected_delivery_id=catalog.delivery_id,
             expected_catalog_id=catalog.catalog_id,
         )
         errors.append("recoverability:stale_context_not_rejected")
@@ -968,8 +1284,12 @@ def _recoverability_query(region, target, observation) -> str:
 
 def _catalog_has_action_tool(catalog) -> bool:
     local_tools = {
-        "inspect_world",
-        "find_actions",
+        "read_region",
+        "search_world",
+        "list_regions",
+        "read_next_page",
+        "search_actions",
+        "action_results_next_page",
         "request_evidence",
         "count_" + "children",
         "pin_fact",
@@ -1060,10 +1380,10 @@ def _tool_schema_refs(catalog) -> tuple[str, ...]:
     return tuple(dict.fromkeys(refs))
 
 
-def _action_option_refs(context) -> tuple[str, ...]:
+def _action_option_refs(context, *, complete: bool = False) -> tuple[str, ...]:
     return tuple(dict.fromkeys(
         ref
-        for option in context.actions.options
+        for option in (context.complete_actions if complete else context.actions.options)
         for ref in (
             option.target_ref,
             *(item.grounding_ref for item in option.destinations.items),
@@ -1074,9 +1394,10 @@ def _action_option_refs(context) -> tuple[str, ...]:
 
 def _capability_census(context, catalog) -> tuple[dict[str, object], ...]:
     supported = {item.semantic_action: item for item in BROWSERGYM_INTERACTION_PROFILE.capabilities}
-    eligible = Counter(option.semantic_action for option in context.actions.options)
+    complete_actions = getattr(context, "complete_actions", context.actions.options)
+    eligible = Counter(option.semantic_action for option in complete_actions)
     exposed = {item.name for item in catalog.specs}
-    paged = bool(context.actions.has_more and "find_actions" in exposed)
+    paged = "search_actions" in exposed
     result = []
     for definition in INTERACTION_CAPABILITY_REGISTRY.definitions:
         action = definition.semantic_action
@@ -1115,7 +1436,7 @@ def _action_state_metrics(context, actor_refs: Mapping[str, object]) -> dict[str
     retained = 0
     total = 0
     mismatches = []
-    for option in context.actions.options:
+    for option in context.complete_actions:
         node = actor_refs.get(option.target_ref)
         entity = grounding.get(option.target_ref)
         if node is None or entity is None or option.operation not in entity.verbs:

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.decisions import LocalToolResult, RequestActionPage, RequestObservation, SelectAction
+from affordance_runtime.agent.decisions import (
+    LocalToolResult,
+    ProtocolFeedback,
+    RequestActionPage,
+    RequestObservation,
+    SelectAction,
+)
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import (
@@ -82,13 +90,25 @@ class EpisodeMonitor:
                 self.repeated_failure_key = failure_key
                 self.repeated_failure_count = 1
             if failure_key == self.recovery_in_progress_key:
+                signal = _recovery_signal(
+                    result,
+                    events,
+                    failure_key,
+                    same_result_count=self.repeated_failure_count,
+                )
                 return EpisodeMonitorTransition(
                     tuple(events),
                     EpisodeMonitorRecommendation.YIELD,
-                    _recovery_kind(result, events).value,
+                    signal.kind.value,
+                    signal,
                 )
             if self.repeated_failure_count == 2:
-                signal = _recovery_signal(result, events, failure_key)
+                signal = _recovery_signal(
+                    result,
+                    events,
+                    failure_key,
+                    same_result_count=self.repeated_failure_count,
+                )
                 self.recovery_in_progress_key = failure_key
                 return EpisodeMonitorTransition(
                     tuple(events),
@@ -145,10 +165,18 @@ class EpisodeMonitor:
                 }
             )
             if failure_key == self.recovery_in_progress_key:
+                signal = _recovery_signal(
+                    result,
+                    events,
+                    failure_key,
+                    kind=RecoveryKind.STATE_OSCILLATION,
+                    same_result_count=max(2, self.repeated_failure_count),
+                )
                 return EpisodeMonitorTransition(
                     tuple(events),
                     EpisodeMonitorRecommendation.YIELD,
                     RecoveryKind.STATE_OSCILLATION.value,
+                    signal,
                 )
             signal = _recovery_signal(result, events, failure_key, kind=RecoveryKind.STATE_OSCILLATION)
             self.recovery_in_progress_key = failure_key
@@ -258,13 +286,21 @@ def _repeated_failure_key(
             }
         )
     if isinstance(result.decision, LocalToolResult):
+        return _stable_key({
+            "kind": "local_tool_result",
+            "world": after_world,
+            "tool": result.decision.tool_name,
+            "canonical_args": to_json_compatible(result.decision.arguments),
+            "result": to_json_compatible(result.decision.result),
+            "task_progress": _task_progress_digest(result.task_evaluation),
+        })
+    if isinstance(result.decision, ProtocolFeedback):
         return _stable_key(
             {
-                "kind": "local_tool_result",
+                "kind": "protocol_feedback",
                 "world": after_world,
-                "tool": result.decision.tool_name,
-                "canonical_args": to_json_compatible(result.decision.arguments),
-                "result": to_json_compatible(result.decision.result),
+                "failure": result.decision.kind.value,
+                "call_count": result.decision.call_count,
                 "task_progress": _task_progress_digest(result.task_evaluation),
             }
         )
@@ -417,7 +453,18 @@ def _world_digest(world) -> str:
 
 
 def _stable_key(payload: dict[str, object]) -> str:
-    return json.dumps(to_json_compatible(payload), sort_keys=True, separators=(",", ":"))
+    canonical = _canonical_json(payload)
+    kind = str(payload.get("kind", "attempt"))[:80]
+    return f"{kind}:sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        to_json_compatible(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 def _recovery_signal(
@@ -426,22 +473,69 @@ def _recovery_signal(
     failure_key: str,
     *,
     kind: RecoveryKind | None = None,
+    same_result_count: int = 1,
 ) -> RecoverySignal:
     selected_kind = kind or _recovery_kind(result, events)
     attempted = _attempted_modes(result, events)
     return RecoverySignal(
         selected_kind,
         failure_key,
-        {
-            "feedback": result.feedback,
-            "events": tuple(item.value for item in events),
-            "dispatch": _dispatch_status(result),
-            "task_evaluation": result.task_evaluation.status.value,
-        },
+        _recovery_evidence(result, events, same_result_count),
         attempted,
-        _prohibited_repeat(result, failure_key),
+        _prohibited_repeat(result),
         1,
     )
+
+
+def _recovery_evidence(
+    result: StepResult,
+    events: list[EpisodeMonitorEvent],
+    same_result_count: int,
+) -> Mapping[str, object]:
+    base: dict[str, object] = {
+        "feedback": result.feedback[:160],
+        "events": tuple(item.value for item in events),
+        "dispatch": _dispatch_status(result),
+        "task_evaluation": result.task_evaluation.status.value,
+    }
+    if not isinstance(result.decision, LocalToolResult):
+        return base
+    public_result = to_json_compatible(result.decision.result)
+    result_mapping = public_result if isinstance(public_result, Mapping) else {}
+    items = result_mapping.get("items", ())
+    item_count = (
+        len(items)
+        if isinstance(items, Sequence) and not isinstance(items, str | bytes)
+        else int(result_mapping.get("total_count", 0) or 0)
+    )
+    return {
+        **base,
+        "tool": result.decision.tool_name,
+        "arguments": _bounded_argument_summary(result.decision.arguments),
+        "result_kind": str(result_mapping.get("kind", type(public_result).__name__))[:80],
+        "item_count": item_count,
+        "coverage": str(result_mapping.get("coverage", ""))[:80],
+        "result_digest": "sha256:"
+        + hashlib.sha256(_canonical_json(public_result).encode()).hexdigest(),
+        "same_result_count": max(1, same_result_count),
+    }
+
+
+def _bounded_argument_summary(arguments: Mapping[str, object]) -> Mapping[str, object]:
+    summary: dict[str, object] = {}
+    for key in sorted(str(item) for item in arguments)[:8]:
+        value = arguments[key]
+        if isinstance(value, str):
+            summary[key] = value[:160]
+        elif value is None or isinstance(value, bool | int | float):
+            summary[key] = value
+        elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            summary[key] = f"[{len(value)} items]"
+        elif isinstance(value, Mapping):
+            summary[key] = f"{{{len(value)} fields}}"
+        else:
+            summary[key] = type(value).__name__
+    return summary
 
 
 def _recovery_kind(result: StepResult, events: list[EpisodeMonitorEvent]) -> RecoveryKind:
@@ -449,6 +543,8 @@ def _recovery_kind(result: StepResult, events: list[EpisodeMonitorEvent]) -> Rec
         return RecoveryKind.STATE_OSCILLATION
     if isinstance(result.decision, LocalToolResult | RequestActionPage):
         return RecoveryKind.CONTROL_STALL
+    if isinstance(result.decision, ProtocolFeedback):
+        return RecoveryKind.PROTOCOL_STALL
     if EpisodeMonitorEvent.CAPABILITY_GAP in events:
         return RecoveryKind.CAPABILITY_GAP
     if result.feedback in {"binding_unavailable"} or result.feedback.startswith("action_not_sent:"):
@@ -464,8 +560,10 @@ def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> t
     modes = []
     if isinstance(result.decision, LocalToolResult):
         modes.append(result.decision.tool_name)
+    elif isinstance(result.decision, ProtocolFeedback):
+        modes.append(result.decision.kind.value)
     elif isinstance(result.decision, RequestActionPage):
-        modes.append("find_actions")
+        modes.append("search_actions")
     elif isinstance(result.decision, SelectAction):
         modes.append(_semantic_action(result) or "select_action")
     else:
@@ -474,10 +572,33 @@ def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> t
     return tuple(dict.fromkeys(item for item in modes if item))
 
 
-def _prohibited_repeat(result: StepResult, fallback: str) -> str:
+def _prohibited_repeat(result: StepResult) -> str:
+    if isinstance(result.decision, LocalToolResult):
+        arguments = result.decision.arguments
+        subject = next(
+            (
+                str(arguments[name])[:120]
+                for name in ("region_ref", "query", "evidence_ref")
+                if name in arguments and str(arguments[name]).strip()
+            ),
+            "the same arguments",
+        )
+        return (
+            f"Do not repeat {result.decision.tool_name} on {subject} "
+            "without new evidence."
+        )
+    if isinstance(result.decision, ProtocolFeedback):
+        return "Return exactly one offered tool call; do not repeat a multi-call response."
+    if isinstance(result.decision, RequestActionPage):
+        return "Do not repeat search_actions with the same query without new evidence."
     if isinstance(result.decision, SelectAction):
-        return _action_key(result)
-    return fallback
+        operation = _semantic_action(result) or "the same action"
+        target_id = result.execution.request.intent.target_id if result.execution is not None else ""
+        target = _public_target(result, target_id)
+        label = str(target.get("label", "")).strip()[:120]
+        suffix = f" on {label}" if label else ""
+        return f"Do not repeat {operation}{suffix} without new evidence."
+    return "Do not immediately repeat the same failed attempt without new evidence."
 
 
 def _dispatch_status(result: StepResult) -> str:

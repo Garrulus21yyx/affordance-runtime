@@ -63,6 +63,7 @@ class EpisodeYieldReason(StrEnum):
     STATE_OSCILLATION = "state_oscillation"
     STRATEGY_STALL = "strategy_stall"
     FAILED_STRATEGY = "failed_strategy"
+    PROTOCOL_STALL = "protocol_stall"
 
 
 @dataclass(frozen=True)

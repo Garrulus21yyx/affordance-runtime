@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +13,7 @@ from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.agent import LocalToolResult, SelectAction
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.run_state import RunStatus, StepResult
 from affordance_runtime.evaluation import EvidenceMethod, TaskEvaluation, TaskEvaluationStatus
@@ -29,16 +30,19 @@ from affordance_runtime.mission import (
     AuditBundle,
     AuditDelta,
     AuditDeltaStatus,
+    AuditGuidance,
     AuditorRoleRequest,
     EpisodeMonitor,
     EpisodeMonitorRecommendation,
     ManagerDecision,
+    ManagerRecoveryView,
     ManagerRoleRequest,
     ManagerRoute,
     MissionState,
     OutcomeProposal,
     PromoteFactProposal,
     RecoveryKind,
+    RecoverySignal,
     SubtaskContract,
     subtask_goal_resolution,
 )
@@ -86,7 +90,7 @@ def test_episode_monitor_recovers_then_yields_repeated_local_tool_result() -> No
     evaluation = _evaluation(world)
     decision = LocalToolResult(
         "context:1",
-        "inspect_world",
+        "search_world",
         {"action": "find", "query": "missing"},
         {"action": "find", "matches": (), "total_count": 0},
     )
@@ -109,6 +113,87 @@ def test_episode_monitor_recovers_then_yields_repeated_local_tool_result() -> No
     assert second.recovery_signal is not None
     assert second.recovery_signal.kind is RecoveryKind.CONTROL_STALL
     assert third.recommendation is EpisodeMonitorRecommendation.YIELD
+    assert third.recovery_signal is not None
+    assert third.recovery_signal.kind is RecoveryKind.CONTROL_STALL
+    assert third.recovery_signal.observed_evidence["same_result_count"] == 3
+
+
+@pytest.mark.parametrize("payload_size", (100_000, 1_000_000))
+def test_episode_monitor_large_local_results_are_bounded_total_and_yield(
+    payload_size: int,
+) -> None:
+    world = _world()
+    payload = "x" * payload_size
+    decision = LocalToolResult(
+        "context:1",
+        "read_region",
+        {"region_ref": "R14"},
+        {
+            "kind": "Opened",
+            "items": ({"label": payload, "role": "row"},),
+            "coverage": "partial",
+        },
+    )
+    step = StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world),
+        RunStatus.RUNNING,
+        feedback="local_tool_result",
+    )
+    monitor = EpisodeMonitor()
+
+    first = monitor.evaluate(step, (), "world:digest")
+    second = monitor.evaluate(step, (), "world:digest")
+    third = monitor.evaluate(step, (), "world:digest")
+
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second.recovery_signal is not None
+    assert second.recovery_signal.kind is RecoveryKind.CONTROL_STALL
+    assert len(second.recovery_signal.stable_signature) < 100
+    assert payload not in second.recovery_signal.stable_signature
+    assert second.recovery_signal.observed_evidence["item_count"] == 1
+    assert second.recovery_signal.observed_evidence["same_result_count"] == 2
+    assert second.recovery_signal.prohibited_immediate_repeat == (
+        "Do not repeat read_region on R14 without new evidence."
+    )
+    assert third.recommendation is EpisodeMonitorRecommendation.YIELD
+
+
+def test_episode_monitor_local_result_signature_is_canonical_across_field_order() -> None:
+    world = _world()
+
+    def recovered(result) -> object:
+        decision = LocalToolResult(
+            "context:1",
+            "search_world",
+            {"query": "Bestsellers", "scope": "current_world"},
+            result,
+        )
+        step = StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world),
+            RunStatus.RUNNING,
+            feedback="local_tool_result",
+        )
+        monitor = EpisodeMonitor()
+        monitor.evaluate(step, (), "world:digest")
+        return monitor.evaluate(step, (), "world:digest")
+
+    left = recovered({"kind": "Matches", "coverage": "partial", "items": ({"a": 1, "b": 2},)})
+    right = recovered({"items": ({"b": 2, "a": 1},), "coverage": "partial", "kind": "Matches"})
+
+    assert left.recovery_signal is not None
+    assert right.recovery_signal is not None
+    assert left.recovery_signal.stable_signature == right.recovery_signal.stable_signature
+    assert (
+        left.recovery_signal.observed_evidence["result_digest"]
+        == right.recovery_signal.observed_evidence["result_digest"]
+    )
 
 
 @dataclass
@@ -168,6 +253,57 @@ def test_manager_context_hides_world_screenshot_action_space_and_trajectory() ->
     assert "trajectory" not in serialized
 
 
+def test_manager_context_receives_bounded_recovery_and_audit_guidance() -> None:
+    port = _Port({"route": "blocked", "reason": "no route"})
+    manager = ModelBackedMissionManager(port)
+    prior = SubtaskContract("Find the year", "The year is visible")
+    signal = RecoverySignal(
+        RecoveryKind.CONTROL_STALL,
+        "local_tool_result:sha256:abc",
+        {
+            "tool": "search_world",
+            "arguments": {"query": "2022"},
+            "item_count": 0,
+            "same_result_count": 3,
+            "result_digest": "sha256:def",
+        },
+        ("search_world",),
+        "Do not repeat search_world on 2022 without new evidence.",
+    )
+    recovery = ManagerRecoveryView(
+        "control_stall",
+        False,
+        prior,
+        signal,
+        ("read_region", "search_world"),
+        AuditGuidance(
+            ("a report filtered to 2022",),
+            "Navigate to a report view exposing date controls.",
+        ),
+    )
+
+    asyncio.run(manager.decide(ManagerRoleRequest(
+        _task(),
+        MissionState.empty(),
+        "episode:yielded:control_stall",
+        "control_stall",
+        3,
+        recovery,
+    )))
+
+    payload = json.loads(port.messages[1].content)["recovery"]
+    assert payload["authority"] == "temporary_non_authoritative_guidance"
+    assert payload["scope"] == "next_manager_decision_only"
+    assert payload["exit_kind"] == "control_stall"
+    assert payload["world_changed"] is False
+    assert payload["attempted_modes"] == ["read_region", "search_world"]
+    assert payload["repeated_arguments"] == {"query": "2022"}
+    assert payload["result"] == "empty"
+    assert payload["repeat_count"] == 3
+    assert payload["prohibited_repeat"].startswith("Do not repeat search_world")
+    assert payload["audit_guidance"]["missing_evidence"] == ["a report filtered to 2022"]
+
+
 def test_manager_route_is_closed_and_subtask_projects_to_one_goal_plan_without_compiler() -> None:
     contract = SubtaskContract("Collect the answer.", "The answer is visible.")
     decision = ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)
@@ -194,7 +330,7 @@ def test_manager_and_auditor_return_model_invocation_result_and_failures_do_not_
     bundle = AuditBundle.from_world(world)
 
     manager_result = asyncio.run(manager.decide(ManagerRoleRequest(task, mission)))
-    auditor_result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    auditor_result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
         task,
         SubtaskContract("Read answer", "Answer visible"),
         mission,
@@ -231,8 +367,17 @@ def test_auditor_context_uses_public_world_view_evidence_and_compact_history() -
         for index in range(5)
     )
 
-    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    task = replace(
         _task(),
+        inputs={
+            PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: {
+                "json_schema": {"type": "object", "properties": {"secret_final": {"type": "string"}}}
+            },
+            "hidden_benchmark_reward": 1,
+        },
+    )
+    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
+        task,
         SubtaskContract("Read answer", "Answer visible"),
         MissionState.empty(),
         world,
@@ -245,11 +390,17 @@ def test_auditor_context_uses_public_world_view_evidence_and_compact_history() -
     assert result.accepted
     payload = json.loads(port.messages[1].content)
     audit_world = payload["audit_world"]
-    assert audit_world["format"] == "compact_ax.v1"
+    assert audit_world["format"] == "compact_ax.v2"
     assert 'text "Answer" value[F1]="42"' in audit_world["observation"]
     assert "facts" not in audit_world
     assert "artifacts" not in audit_world
     assert "audit_bundle" not in payload
+    serialized = json.dumps(payload)
+    assert PUBLIC_FINAL_RESPONSE_CONTRACT_KEY not in serialized
+    assert "secret_final" not in serialized
+    assert "hidden_benchmark_reward" not in serialized
+    assert "send_msg_to_user" not in serialized
+    assert "STOP" not in serialized
     assert "F1" in payload["audit_evidence"]["visible_refs"]
     assert payload["audit_evidence"]["visible_ref_count"] == len(payload["audit_evidence"]["visible_refs"])
     assert result.output is not None
@@ -289,7 +440,7 @@ def test_auditor_history_bounds_large_transition_evidence_before_provider_call()
         for index in range(8)
     )
 
-    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
         _task(),
         SubtaskContract("Read answer", "Answer visible"),
         MissionState.empty(),
@@ -327,7 +478,7 @@ def test_auditor_delivery_exposes_structure_text_as_public_fact_evidence() -> No
     assert fused.observation is not None
     world = fused.observation
 
-    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
         _task(),
         SubtaskContract("Read answer", "Answer visible"),
         MissionState.empty(),
@@ -355,7 +506,7 @@ def test_auditor_context_capacity_failure_is_typed_and_does_not_call_provider() 
     auditor = ModelBackedMissionAuditor(port, request_budget=ModelRequestBudget(admission_limit=1))
     world = _world("42")
 
-    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
         _task(),
         SubtaskContract("Read answer", "Answer visible"),
         MissionState.empty(),
@@ -384,7 +535,7 @@ def test_auditor_schema_repair_diagnostics_keep_initial_and_repair_breakdowns() 
     auditor = ModelBackedMissionAuditor(port)
     world = _world("42")
 
-    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
         _task(),
         SubtaskContract("Read answer", "Answer visible"),
         MissionState.empty(),
@@ -401,6 +552,27 @@ def test_auditor_schema_repair_diagnostics_keep_initial_and_repair_breakdowns() 
     breakdowns = result.diagnostics["request_breakdowns"]
     assert [item["phase"] for item in breakdowns] == ["auditor_initial", "auditor_schema_repair"]
     assert result.diagnostics["phase"] == "auditor_schema_repair"
+    repair_messages = json.dumps([item.model_dump() for item in port.messages])
+    assert "required_shape" in repair_messages
+    assert "base_mission_version" in repair_messages
+    assert "compact_world" not in repair_messages
+    assert "Find the answer and submit it" not in repair_messages
+
+
+def test_auditor_request_rejects_non_audit_yield_reason() -> None:
+    world = _world("42")
+
+    with pytest.raises(ValueError, match="explicit audit boundary"):
+        AuditorRoleRequest.from_authorities(
+            _task(),
+            SubtaskContract("Read answer", "Answer visible"),
+            MissionState.empty(),
+            world,
+            (),
+            "protocol_stall",
+            (),
+            AuditBundle.from_world(world),
+        )
 
 
 def test_new_roles_do_not_reference_adapter_last_diagnostics() -> None:
@@ -410,7 +582,9 @@ def test_new_roles_do_not_reference_adapter_last_diagnostics() -> None:
 
     source = inspect.getsource(roles)
     assert "last_call" not in source
-    assert "last_transcript" not in source
+    assert "last_transcript" not in inspect.getsource(roles.ModelBackedMissionManager)
+    assert "last_transcript" not in inspect.getsource(roles.ModelBackedMissionAuditor)
+    assert "last_transcript" in inspect.getsource(roles._bounded_invalid_role_output)
     assert "last_adapter" not in source
     assert "last_diagnostic" not in source
 
@@ -525,7 +699,7 @@ def test_auditor_delivery_keeps_model_visible_late_evidence_refs() -> None:
     port = _Port({"status": "unknown", "base_mission_version": 0})
     auditor = ModelBackedMissionAuditor(port)
 
-    result = asyncio.run(auditor.audit(AuditorRoleRequest(
+    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
         _task(),
         SubtaskContract("Read answer", "Answer visible"),
         MissionState.empty(),

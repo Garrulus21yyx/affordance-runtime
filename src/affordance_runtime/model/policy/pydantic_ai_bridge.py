@@ -26,7 +26,12 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
-from affordance_runtime.agent.decisions import FinalResponse, LocalToolResult
+from affordance_runtime.agent.decisions import (
+    FinalResponse,
+    LocalToolResult,
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
@@ -56,11 +61,9 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 from affordance_runtime.model.policy.request_admission import (
     ModelRequestBreakdown,
     ModelRequestCapacityError,
-    admit_model_request,
     request_breakdown_diagnostics,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
-from affordance_runtime.model.providers.port import ModelMessage
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
@@ -69,6 +72,7 @@ _ACTION_MODEL_SETTINGS = {
     "thinking": False,
     "max_tokens": 1024,
     "temperature": 0.0,
+    "parallel_tool_calls": False,
 }
 
 
@@ -191,8 +195,14 @@ class PydanticAIGroundedDecisionPort:
                 request,
             )
 
+        delivery = None
         try:
-            catalog = compile_grounded_action_catalog(request.agent_context)
+            delivery = self.context_binder.model_turn_delivery(
+                request,
+                supports_multimodal=self.supports_multimodal,
+                perception_profile=self.perception_profile,
+            )
+            catalog = compile_grounded_action_catalog(request.agent_context, delivery)
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
@@ -202,6 +212,7 @@ class PydanticAIGroundedDecisionPort:
             admitted = self.context_binder.action_request(
                 request,
                 catalog.specs,
+                delivery,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
                 include_tool_menu=False,
@@ -230,12 +241,13 @@ class PydanticAIGroundedDecisionPort:
                 self.model,
                 instructions=instructions,
                 output_type=str if final_ready else [str, DeferredToolRequests],
+                retries=0,
             )
             usage = RunUsage()
-            # Initial decision and tool repair may each make one explicit
-            # provider retry. SDK-level retry stays disabled so none of those
-            # physical attempts disappear from the trace.
-            limits = UsageLimits(request_limit=4)
+            # One semantic decision may make one explicit transport retry.
+            # SDK-level output/tool retry stays disabled so it cannot become
+            # an implicit second policy call.
+            limits = UsageLimits(request_limit=2)
             result = await self._run_provider_call(
                 lambda: agent.run(
                     user_prompt,
@@ -255,54 +267,30 @@ class PydanticAIGroundedDecisionPort:
             else:
                 decision, resolution_error, initial_call = _resolve_deferred(result.output, catalog, request.context_id)
                 self._set_tool_resolution(resolution_error, accepted=decision is not None)
-            if decision is None and not final_ready and _representation_repair_allowed(resolution_error):
-                repair_prompt, repair_specs = _repair_input(
-                    result.output,
-                    catalog,
-                    request.context_id,
-                    resolution_error,
-                )
-                repair_toolset = ExternalToolset(
-                    [
-                        ToolDefinition(
-                            name=spec.name,
-                            description=spec.description,
-                            parameters_json_schema=to_json_compatible(spec.input_schema),
-                            strict=True,
-                        )
-                        for spec in repair_specs
-                    ],
-                    id=catalog.catalog_id,
-                )
-                repair_transcript = _repair_input_transcript(repair_prompt)
-                self._admit_repair_request(
-                    repair_transcript,
-                    repair_specs,
-                    repair_payload=repair_prompt,
-                )
-                result = await self._run_provider_call(
-                    lambda: agent.run(
-                        repair_prompt,
-                        toolsets=[repair_toolset],
-                        usage=usage,
-                        usage_limits=limits,
-                        model_settings=_ACTION_MODEL_SETTINGS,
-                    ),
-                    phase="tool_call_repair",
-                    specs=repair_specs,
-                    input_messages=repair_transcript,
-                    provider_error_type=ModelAPIError,
-                )
-                decision, resolution_error, repaired_call = _resolve_deferred(result.output, catalog, request.context_id)
-                intent_error = _intent_preservation_error(initial_call, repaired_call)
-                if intent_error is not None:
-                    decision = None
-                    resolution_error = intent_error
-                self._set_tool_resolution(resolution_error, accepted=decision is not None)
+                if (
+                    resolution_error is not None
+                    and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
+                ):
+                    decision = _protocol_feedback_decision(
+                        request.context_id,
+                        result.output,
+                        resolution_error,
+                    )
+                elif decision is None and (resolution_error is None or initial_call is None):
+                    decision = ProtocolFeedback(
+                        request.context_id,
+                        ProtocolFeedbackKind.REPRESENTATION_ERROR,
+                        0,
+                        (
+                            resolution_error.code.value
+                            if resolution_error is not None
+                            else "provider_envelope_invalid"
+                        ),
+                    )
             if decision is None and not final_ready and resolution_error is not None:
                 decision = _tool_rejection_decision(
                     resolution_error,
-                    repaired_call if "repaired_call" in locals() and repaired_call is not None else initial_call,
+                    initial_call,
                     catalog,
                     request.context_id,
                 )
@@ -310,26 +298,29 @@ class PydanticAIGroundedDecisionPort:
                 return self._invocation_failure(
                     _tool_resolution_failure(resolution_error),
                     request,
+                    delivery,
                 )
         except asyncio.CancelledError:
             self._invocation_failure(
                 _failure(ModelFailureKind.TIMEOUT, "model invocation was cancelled"),
                 request,
+                delivery,
             )
             raise
         except UsageLimitExceeded:
-            return self._invocation_failure(
-                _failure(
-                    ModelFailureKind.SCHEMA_ERROR,
-                    "model exceeded the bounded decision repair allowance",
-                ),
+            return self._protocol_feedback_invocation(
                 request,
+                delivery,
+                semantic_started,
+                "provider_request_limit_exhausted",
             )
         except UnexpectedModelBehavior as error:
             self._record_local_failure(error, "pydantic_ai_output_validation", catalog.specs)
-            return self._invocation_failure(
-                _failure(ModelFailureKind.SCHEMA_ERROR, "model tool response violated the grounded contract"),
+            return self._protocol_feedback_invocation(
                 request,
+                delivery,
+                semantic_started,
+                "provider_envelope_invalid",
             )
         except _ProviderCallExhausted as error:
             detail = error.detail
@@ -342,6 +333,7 @@ class PydanticAIGroundedDecisionPort:
                     retry_after_s=detail.retry_after_s,
                 ),
                 request,
+                delivery,
             )
         except ModelRequestCapacityError as error:
             self._append_request_breakdown(error.breakdown)
@@ -352,17 +344,20 @@ class PydanticAIGroundedDecisionPort:
                     attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
                 ),
                 request,
+                delivery,
             )
         except GroundedToolResolutionError as exc:
             self._set_tool_resolution(exc, accepted=False)
             return self._invocation_failure(
                 _tool_resolution_failure(exc),
                 request,
+                delivery,
             )
         except (ValueError, TypeError):
             return self._invocation_failure(
                 _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, "grounded tool response could not be resolved"),
                 request,
+                delivery,
             )
         except Exception as error:
             self._record_local_failure(error, "local_runtime", catalog.specs)
@@ -372,6 +367,7 @@ class PydanticAIGroundedDecisionPort:
                     "PydanticAI decision adapter failed locally",
                 ),
                 request,
+                delivery,
             )
 
         invocation_prompt_tokens = sum(item.prompt_tokens for item in self.last_generation_attempts)
@@ -402,9 +398,48 @@ class PydanticAIGroundedDecisionPort:
             output=ResolvedModelDecision(decision, metadata),
             metadata=metadata,
             attempts=self.last_generation_attempts,
-            repair_diagnostics=self._repair_diagnostics(),
             diagnostics=self._diagnostics(),
-            lineage=self._lineage(request),
+            lineage=self._lineage(request, delivery),
+        )
+        object.__setattr__(self, "last_invocation_result", invocation)
+        return invocation
+
+    def _protocol_feedback_invocation(
+        self,
+        request: ModelDecisionRequest,
+        delivery,
+        semantic_started: float,
+        detail: str,
+    ) -> ModelInvocationResult[ResolvedModelDecision]:
+        prompt_tokens = sum(item.prompt_tokens for item in self.last_generation_attempts)
+        completion_tokens = sum(item.completion_tokens for item in self.last_generation_attempts)
+        metadata = ModelMetadata(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            endpoint_class="openai-compatible",
+            prompt_version=self.context_binder.prompts.version,
+            schema_version=GROUNDED_TOOLS_PROTOCOL,
+            latency_ms=(time.perf_counter() - semantic_started) * 1000,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            transient_retry_count=self.last_provider_retry_count,
+            grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
+            perception_profile=self.perception_profile.value,
+            endpoint_host=self.endpoint_host,
+        )
+        decision = ProtocolFeedback(
+            request.context_id,
+            ProtocolFeedbackKind.REPRESENTATION_ERROR,
+            0,
+            detail,
+        )
+        invocation = ModelInvocationResult(
+            output=ResolvedModelDecision(decision, metadata),
+            metadata=metadata,
+            attempts=self.last_generation_attempts,
+            diagnostics=self._diagnostics(),
+            lineage=self._lineage(request, delivery),
         )
         object.__setattr__(self, "last_invocation_result", invocation)
         return invocation
@@ -413,35 +448,32 @@ class PydanticAIGroundedDecisionPort:
         self,
         failure: ModelFailure,
         request: ModelDecisionRequest,
+        delivery=None,
     ) -> ModelInvocationResult[ResolvedModelDecision]:
         invocation = ModelInvocationResult(
             failure=failure,
             attempts=self.last_generation_attempts,
-            repair_diagnostics=self._repair_diagnostics(),
             diagnostics=self._diagnostics(),
-            lineage=self._lineage(request),
+            lineage=self._lineage(request, delivery),
         )
         object.__setattr__(self, "last_invocation_result", invocation)
         return invocation
 
-    def _lineage(self, request: ModelDecisionRequest) -> Mapping[str, object]:
-        return {
+    def _lineage(self, request: ModelDecisionRequest, delivery=None) -> Mapping[str, object]:
+        lineage = {
             "role": "ActionPolicy",
             "adapter": "pydantic-ai",
             "request_id": request.request_id,
             "context_id": request.context_id,
         }
-
-    def _repair_diagnostics(self) -> tuple[Mapping[str, object], ...]:
-        return tuple(
-            {
-                "kind": "tool_call_repair",
-                "phase": item.phase,
-                "status": item.status,
-            }
-            for item in self.last_generation_attempts
-            if item.phase == "tool_call_repair"
-        )
+        if delivery is not None:
+            lineage.update(
+                {
+                    "delivery_id": delivery.delivery_id,
+                    "world_observation_id": delivery.world_observation_id,
+                }
+            )
+        return lineage
 
     def _diagnostics(self) -> Mapping[str, object]:
         return {
@@ -457,9 +489,6 @@ class PydanticAIGroundedDecisionPort:
                 self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
             ),
             "tool_resolution_detail": self.last_tool_resolution_detail,
-            "tool_argument_repair_count": sum(
-                1 for item in self.last_generation_attempts if item.phase == "tool_call_repair"
-            ),
             **request_breakdown_diagnostics(
                 self.last_request_breakdowns,
                 provider_reported_prompt_tokens=sum(item.prompt_tokens for item in self.last_generation_attempts),
@@ -478,22 +507,6 @@ class PydanticAIGroundedDecisionPort:
             return
         object.__setattr__(self, "last_tool_resolution_code", error.code)
         object.__setattr__(self, "last_tool_resolution_detail", error.detail)
-
-    def _admit_repair_request(
-        self,
-        repair_transcript: object,
-        specs: tuple[object, ...],
-        *,
-        repair_payload: object,
-    ) -> None:
-        admitted = admit_model_request(
-            messages=(ModelMessage(role="user", content=json.dumps(to_json_compatible(repair_transcript), sort_keys=True)),),
-            tools=tuple(spec for spec in specs if isinstance(spec, ToolSpec)),
-            budget=self.context_binder.request_budget,
-            phase="tool_call_repair",
-            repair_payload=_safe_prompt_projection(repair_payload),
-        )
-        self._append_request_breakdown(admitted.breakdown)
 
     async def _run_provider_call(
         self,
@@ -717,30 +730,36 @@ class PydanticAIGroundedDecisionPort:
         self._record_provider_failure(detail, phase, specs, (), latency_ms=0.0)
 
 
-def zhipu_pydantic_ai_policy_from_environment(
+def openai_compatible_pydantic_ai_policy_from_environment(
     environment: Mapping[str, str] | None = None,
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
 ) -> ModelBackedAgentPolicy:
-    """Build the PydanticAI policy for Zhipu or Aliyun OpenAI-compatible endpoints."""
+    """Build native-tool policy transport for supported OpenAI-compatible profiles."""
 
     if not 1 < call_timeout_s <= 300:
         raise ValueError("PydanticAI policy timeout must be in (1, 300]")
     try:
         from openai import AsyncOpenAI
+        from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.models.zai import ZaiModel
+        from pydantic_ai.providers.deepseek import DeepSeekProvider
         from pydantic_ai.providers.zai import ZaiProvider
     except ImportError as exc:
         raise RuntimeError("install the pydantic-ai project extra") from exc
 
     env = os.environ if environment is None else environment
     profile = env.get("LLM_ACTIVE_PROFILE", "").strip().casefold()
-    if profile not in {"zhipu", "aliyun"}:
-        raise ValueError("PydanticAI model adapter supports only zhipu or aliyun profiles")
+    if profile not in {"zhipu", "aliyun", "deepseek"}:
+        raise ValueError("PydanticAI model adapter requires a supported OpenAI-compatible profile")
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("PydanticAI model adapter forbids provider fallback")
-    prefix = "LLM_ZHIPU" if profile == "zhipu" else "LLM_ALIYUN"
+    prefix = {
+        "zhipu": "LLM_ZHIPU",
+        "aliyun": "LLM_ALIYUN",
+        "deepseek": "LLM_DEEPSEEK",
+    }[profile]
     base_url = _required(env, f"{prefix}_BASE_URL")
     api_key = _required(env, f"{prefix}_API_KEY")
     model_id = _required(env, f"{prefix}_MODEL")
@@ -760,7 +779,11 @@ def zhipu_pydantic_ai_policy_from_environment(
         timeout=transport_timeout_s,
         max_retries=0,
     )
-    model = ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
+    model = (
+        OpenAIChatModel(model_id, provider=DeepSeekProvider(openai_client=client))
+        if profile == "deepseek"
+        else ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
+    )
     port = PydanticAIGroundedDecisionPort(
         model=model,
         provider_id=profile,
@@ -773,6 +796,21 @@ def zhipu_pydantic_ai_policy_from_environment(
         max_provider_retry_delay_s=retry_delay_budget_s,
     )
     return ModelBackedAgentPolicy(port, call_timeout_s=call_timeout_s)
+
+
+def zhipu_pydantic_ai_policy_from_environment(
+    environment: Mapping[str, str] | None = None,
+    *,
+    call_timeout_s: float = 90.0,
+    perception_profile: DecisionPerceptionProfile | str | None = None,
+) -> ModelBackedAgentPolicy:
+    """Compatibility entry point for existing Zhipu/Aliyun callers."""
+
+    return openai_compatible_pydantic_ai_policy_from_environment(
+        environment,
+        call_timeout_s=call_timeout_s,
+        perception_profile=perception_profile,
+    )
 
 
 def _endpoint_host(base_url: str) -> str:
@@ -808,6 +846,7 @@ def _resolve_deferred(output, catalog, context_id: str):
             catalog,
             reconciliation.exact_call,
             expected_context_id=context_id,
+            expected_delivery_id=catalog.delivery_id,
             expected_catalog_id=catalog.catalog_id,
         ).decision, None, reconciliation.exact_call
     except GroundedToolResolutionError as exc:
@@ -830,57 +869,11 @@ def _reconciliation_error(reconciliation) -> GroundedToolResolutionError:
     return GroundedToolResolutionError(code, detail)
 
 
-def _representation_repair_allowed(error: GroundedToolResolutionError | None) -> bool:
-    if error is None:
-        return True
-    return False
-
-
-def _intent_preservation_error(
-    initial_call: ToolCall | None,
-    repaired_call: ToolCall | None,
-) -> GroundedToolResolutionError | None:
-    if initial_call is None or repaired_call is None:
-        return None
-    before = _intent_fingerprint(initial_call)
-    after = _intent_fingerprint(repaired_call)
-    if before == after:
-        return None
-    return GroundedToolResolutionError(
-        GroundedToolResolutionCode.REPAIR_CHANGED_INTENT,
-        json.dumps(
-            {"initial": before, "repaired": after},
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )[:500],
-    )
-
-
-def _intent_fingerprint(call: ToolCall) -> Mapping[str, object]:
-    arguments = dict(call.arguments)
-    target = arguments.get("exact_target", arguments.get("target", ""))
-    source = arguments.get("source", "")
-    destination = arguments.get("destination", "")
-    semantic_arguments = {
-        key: value
-        for key, value in arguments.items()
-        if key not in {"target", "exact_target", "source", "destination"}
-    }
-    return {
-        "operation": call.name,
-        "target": target,
-        "source": source,
-        "destination": destination,
-        "arguments": to_json_compatible(semantic_arguments),
-    }
-
-
 def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> ModelFailure:
     if error is None:
         return _failure(
             ModelFailureKind.SCHEMA_ERROR,
-            "model did not produce one valid current tool call after bounded repair",
+            "model did not produce one valid current tool call",
         )
     if error.code is GroundedToolResolutionCode.GROUNDING_GAP:
         return _failure(ModelFailureKind.TOOL_GROUNDING_GAP, str(error))
@@ -934,6 +927,20 @@ def _tool_rejection_decision(
     )
 
 
+def _protocol_feedback_decision(
+    context_id: str,
+    output,
+    error: GroundedToolResolutionError,
+) -> ProtocolFeedback:
+    calls = getattr(output, "calls", ())
+    return ProtocolFeedback(
+        context_id,
+        ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS,
+        min(len(calls), 32),
+        error.code.value,
+    )
+
+
 def _final_response_ready(context) -> bool:
     if "final_response" in context.runtime_controls:
         return context.task.requested_output_ids.total_count > 0
@@ -956,98 +963,6 @@ def _resolve_final_response(output, context_id: str) -> FinalResponse | None:
         return FinalResponse(context_id, output)
     except ValueError:
         return None
-
-
-def _repair_input(output, catalog, context_id: str, error: GroundedToolResolutionError | None):
-    from pydantic_ai import DeferredToolRequests
-
-    spec = _selected_repair_spec(output, catalog, DeferredToolRequests)
-    message = _repair_message(output, catalog, DeferredToolRequests, context_id, error)
-    return message, (spec,)
-
-
-def _selected_repair_spec(output, catalog, deferred_type) -> ToolSpec:
-    if isinstance(output, deferred_type) and len(output.calls) == 1:
-        call = output.calls[0]
-        spec = next((item for item in catalog.specs if item.name == call.tool_name), None)
-        if spec is not None:
-            return spec
-    raise GroundedToolResolutionError(
-        GroundedToolResolutionCode.INVALID_ARGUMENTS,
-        "representation repair requires exactly one known current operation",
-    )
-
-
-def _repair_message(
-    output,
-    catalog,
-    deferred_type,
-    context_id: str,
-    error: GroundedToolResolutionError | None = None,
-) -> str:
-    if isinstance(output, deferred_type) and len(output.calls) == 1:
-        call = output.calls[0]
-        spec = next((item for item in catalog.specs if item.name == call.tool_name), None)
-        if spec is not None:
-            schema = json.dumps(
-                to_json_compatible(spec.input_schema),
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-            guidance = ""
-            try:
-                reconciliation = ProviderCallNormalizer().normalize(
-                    ToolCall(
-                        call.tool_name,
-                        call.args_as_dict(raise_if_invalid=True),
-                        call.tool_call_id,
-                    ),
-                    catalog,
-                )
-                if reconciliation.did_you_mean:
-                    candidates = [
-                        {
-                            "tool": candidate.tool_name,
-                            "arguments": to_json_compatible(candidate.public_arguments),
-                        }
-                        for candidate in reconciliation.did_you_mean[:3]
-                    ]
-                    guidance = (
-                        " Candidate corrections: "
-                        + json.dumps(candidates, separators=(",", ":"), ensure_ascii=False)
-                        + "."
-                    )
-                elif reconciliation.status is ToolCallReconciliationStatus.EXACT:
-                    assert reconciliation.exact_call is not None
-                    try:
-                        resolve_grounded_action_call(
-                            catalog,
-                            reconciliation.exact_call,
-                            expected_context_id=context_id,
-                            expected_catalog_id=catalog.catalog_id,
-                        )
-                    except GroundedToolResolutionError as exc:
-                        guidance = f" Runtime rejection: {str(exc)}."
-            except (ValueError, TypeError):
-                pass
-            sealed = {
-                "operation": call.tool_name,
-                "target_identity": _call_selector_identity(call),
-                "semantic_arguments": _call_semantic_arguments(call),
-            }
-            rejection = str(error) if error is not None else "invalid representation"
-            return (
-                "Repair only the representation of this one tool call. "
-                "Do not change operation, target/source/destination identity, semantic arguments, or intended local outcome. "
-                f"Validator rejection: {rejection}. "
-                f"Sealed identity: {json.dumps(sealed, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}. "
-                f"Allowed operation schema: {schema}.{guidance} "
-                "Re-emit exactly one tool call for the same sealed identity."
-            )
-    raise GroundedToolResolutionError(
-        GroundedToolResolutionCode.INVALID_ARGUMENTS,
-        "representation repair requires exactly one known current operation",
-    )
 
 
 def _pydantic_prompt(messages, image_inputs: Sequence[AgentImageInput], binary_content_type):
@@ -1075,34 +990,6 @@ def _initial_input_transcript(instructions: str, user_prompt: object) -> list[di
         {"role": "system", "content": instructions},
         {"role": "user", "content": _safe_prompt_projection(user_prompt)},
     ]
-
-
-def _call_selector_identity(call) -> Mapping[str, object]:
-    try:
-        arguments = call.args_as_dict(raise_if_invalid=True)
-    except (TypeError, ValueError):
-        arguments = {}
-    return {
-        key: to_json_compatible(arguments.get(key, ""))
-        for key in ("target", "exact_target", "source", "destination")
-        if key in arguments
-    }
-
-
-def _call_semantic_arguments(call) -> Mapping[str, object]:
-    try:
-        arguments = call.args_as_dict(raise_if_invalid=True)
-    except (TypeError, ValueError):
-        return {}
-    return {
-        key: to_json_compatible(value)
-        for key, value in arguments.items()
-        if key not in {"target", "exact_target", "source", "destination"}
-    }
-
-
-def _repair_input_transcript(repair_prompt: str) -> object:
-    return [{"role": "repair", "content": _safe_prompt_projection(repair_prompt)}]
 
 
 def _safe_prompt_projection(value: object) -> object:
@@ -1303,5 +1190,6 @@ def _zhipu_supports_multimodal(model_id: str) -> bool:
 
 __all__ = [
     "PydanticAIGroundedDecisionPort",
+    "openai_compatible_pydantic_ai_policy_from_environment",
     "zhipu_pydantic_ai_policy_from_environment",
 ]

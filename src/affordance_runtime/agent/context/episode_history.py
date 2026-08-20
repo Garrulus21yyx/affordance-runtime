@@ -190,7 +190,15 @@ def _foldable(item: Mapping[str, object]) -> bool:
         "unchanged",
         "no_effect",
     }
-    return tool in {"wait", "find_actions", "inspect_world"} or unchanged or outcome in {
+    return tool in {
+        "wait",
+        "search_actions",
+        "action_results_next_page",
+        "read_region",
+        "search_world",
+        "list_regions",
+        "read_next_page",
+    } or unchanged or outcome in {
         "unchanged",
         "no_effect",
         "no effect",

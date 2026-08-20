@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 from affordance_runtime.agent.context.budgets import BoundedSection
-from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.episode_history import render_episode_history
+from affordance_runtime.agent.context.model_turn_delivery import (
+    ModelTurnDelivery,
+    build_model_turn_delivery,
+)
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.working_facts import public_working_facts
 from affordance_runtime.immutable import to_json_compatible
@@ -36,7 +38,7 @@ from affordance_runtime.model.policy.request_admission import (
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
 
-_PUBLIC_E_REF = re.compile(r"\bE[1-9][0-9]*\b")
+_MODEL_HISTORY_MAX_BYTES = 6 * 1024
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class GroundedPolicyContextBinder:
         self,
         request: ModelDecisionRequest,
         tools: tuple[ToolSpec, ...],
+        delivery: ModelTurnDelivery,
         *,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
@@ -72,6 +75,7 @@ class GroundedPolicyContextBinder:
         return self.action_request(
             request,
             tools,
+            delivery,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
             include_tool_menu=include_tool_menu,
@@ -81,29 +85,25 @@ class GroundedPolicyContextBinder:
         self,
         request: ModelDecisionRequest,
         tools: tuple[ToolSpec, ...],
+        delivery: ModelTurnDelivery,
         *,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
         include_tool_menu: bool,
     ) -> AdmittedModelRequest:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
-        full = self._candidate(
+        if delivery.context_id != request.context_id:
+            raise ValueError("model turn delivery belongs to another Context")
+        if delivery.includes_images != include_images:
+            raise ValueError("model turn delivery image selection is inconsistent")
+        selected = self._candidate(
             request,
             tools,
+            delivery,
             include_images=include_images,
             include_tool_menu=include_tool_menu,
-            force_region_delivery=False,
         )
-        lens = self._candidate(
-            request,
-            tools,
-            include_images=include_images,
-            include_tool_menu=include_tool_menu,
-            force_region_delivery=True,
-            max_actor_bytes=max(4_096, self.request_budget.soft_target_tokens * 3),
-        )
-        selected = lens if lens.breakdown.estimated_total_tokens < full.breakdown.estimated_total_tokens else full
-        selected_projection = "region_lens" if selected is lens else "full"
+        selected_projection = delivery.view.projection
         try:
             admitted = admit_model_request(
                 messages=selected.messages,
@@ -117,10 +117,10 @@ class GroundedPolicyContextBinder:
             raise ModelRequestCapacityError(
                 replace(
                     exc.breakdown,
-                    prefit_estimated_total_tokens=full.breakdown.estimated_total_tokens,
+                    prefit_estimated_total_tokens=selected.breakdown.estimated_total_tokens,
                     delivery_projection=selected_projection,
-                    full_candidate_tokens=full.breakdown.estimated_total_tokens,
-                    lens_candidate_tokens=lens.breakdown.estimated_total_tokens,
+                    full_candidate_tokens=0,
+                    lens_candidate_tokens=selected.breakdown.estimated_total_tokens,
                     expanded_region_count=selected.expanded_region_count,
                     folded_region_count=selected.folded_region_count,
                     direct_action_count=selected.direct_action_count,
@@ -132,10 +132,10 @@ class GroundedPolicyContextBinder:
             admitted.tools,
             replace(
                 admitted.breakdown,
-                prefit_estimated_total_tokens=full.breakdown.estimated_total_tokens,
+                prefit_estimated_total_tokens=selected.breakdown.estimated_total_tokens,
                 delivery_projection=selected_projection,
-                full_candidate_tokens=full.breakdown.estimated_total_tokens,
-                lens_candidate_tokens=lens.breakdown.estimated_total_tokens,
+                full_candidate_tokens=0,
+                lens_candidate_tokens=selected.breakdown.estimated_total_tokens,
                 expanded_region_count=selected.expanded_region_count,
                 folded_region_count=selected.folded_region_count,
                 direct_action_count=selected.direct_action_count,
@@ -147,21 +147,22 @@ class GroundedPolicyContextBinder:
         self,
         request: ModelDecisionRequest,
         tools: tuple[ToolSpec, ...],
+        delivery: ModelTurnDelivery,
         *,
         include_images: bool,
         include_tool_menu: bool,
-        force_region_delivery: bool,
         max_actor_bytes: int | None = None,
     ) -> "_PolicyRequestCandidate":
         sections = self._public_context_sections(
             request.agent_context,
             include_images,
+            delivery,
             max_actor_bytes=max_actor_bytes,
-            force_region_delivery=force_region_delivery,
         )
-        observation = str(sections["public"]["observation"])
-        delivered_refs = _delivered_refs(observation)
-        direct_tools = _direct_tools_for_delivery(tools, delivered_refs)
+        view = sections["delivery_view"]
+        if view is not delivery.view:
+            raise ValueError("policy observation must use the supplied ModelTurnDelivery")
+        direct_tools = tools
         public = dict(sections["public"])
         if include_tool_menu:
             public["tools"] = _tool_menu(direct_tools)
@@ -180,11 +181,12 @@ class GroundedPolicyContextBinder:
             component_payloads=component_payloads,
             image_inputs=request.image_inputs if include_images else (),
         )
-        expanded, folded = _region_counts(observation)
-        direct_refs = _tool_refs(direct_tools)
+        expanded = int(view.coverage.get("expanded_regions", 0))
+        folded = int(view.coverage.get("folded_regions", 0))
+        direct_refs = frozenset(view.manifest.executable_refs)
         searchable = sum(
             1
-            for option in request.agent_context.actions.options
+            for option in request.agent_context.complete_actions
             if option.target_ref not in direct_refs
         )
         return _PolicyRequestCandidate(
@@ -194,7 +196,7 @@ class GroundedPolicyContextBinder:
             breakdown,
             expanded,
             folded,
-            len(request.agent_context.actions.options) - searchable,
+            len(request.agent_context.complete_actions) - searchable,
             searchable,
         )
 
@@ -202,39 +204,35 @@ class GroundedPolicyContextBinder:
     def _public_context(
         context: AgentContext,
         include_images: bool,
+        delivery: ModelTurnDelivery,
     ) -> dict[str, object]:
-        return dict(GroundedPolicyContextBinder._public_context_sections(context, include_images)["public"])
+        return dict(
+            GroundedPolicyContextBinder._public_context_sections(
+                context,
+                include_images,
+                delivery,
+            )["public"]
+        )
 
     @staticmethod
     def _public_context_sections(
         context: AgentContext,
         include_images: bool,
+        delivery: ModelTurnDelivery,
         *,
-        expanded_refs: frozenset[str] | None = None,
         max_actor_bytes: int | None = None,
-        force_region_delivery: bool = False,
     ) -> dict[str, object]:
+        del max_actor_bytes
+        if delivery.context_id != context.context_id:
+            raise ValueError("model turn delivery belongs to another Context")
+        if delivery.includes_images != include_images:
+            raise ValueError("model turn delivery image selection is inconsistent")
         task = _task(context)
-        observation = render_compact_actor_world(
-            context.actor_world,
-            context.grounding,
-            include_images=include_images,
-            region_index=context.region_index,
-            observation=context.current_observation,
-            expanded_refs=expanded_refs,
-            selected_region_keys=_selected_region_keys(context),
-            selected_cursor=context.delivery_lens.cursor if context.delivery_lens is not None else "",
-            max_rendered_bytes=max_actor_bytes,
-            force_region_delivery=force_region_delivery,
-        )
+        view = delivery.view
+        observation = view.text
         recent_steps = render_episode_history(
             context.recent_steps.items,
-            context.history_byte_budget,
-        )
-        affordances = tuple(
-            {"ref": item.ref, "verbs": item.verbs}
-            for item in context.grounding.entities
-            if item.verbs
+            min(context.history_byte_budget, _MODEL_HISTORY_MAX_BYTES),
         )
         working_set = public_working_facts(context.working_facts) if context.working_facts else ()
         public: dict[str, object] = {
@@ -242,7 +240,6 @@ class GroundedPolicyContextBinder:
             "observation": observation,
             "goal_plan": _goal_plan(context),
             "recent_steps": recent_steps,
-            "affordances": affordances,
         }
         if context.control_feedback:
             public["control_feedback"] = project_public_value(context.control_feedback)
@@ -251,10 +248,25 @@ class GroundedPolicyContextBinder:
         return {
             "public": public,
             "task_plan": {"task": task, "goal_plan": public["goal_plan"]},
-            "actor_world": {"observation": observation, "affordances": affordances},
+            "actor_world": {"observation": observation},
             "history": {"recent_steps": recent_steps, "control_feedback": context.control_feedback},
             "working_set": working_set,
+            "delivery_view": view,
+            "delivery_id": delivery.delivery_id,
         }
+
+    def model_turn_delivery(
+        self,
+        request: ModelDecisionRequest,
+        *,
+        supports_multimodal: bool,
+        perception_profile: DecisionPerceptionProfile,
+    ) -> ModelTurnDelivery:
+        include_images = self._include_images(request, supports_multimodal, perception_profile)
+        return build_model_turn_delivery(
+            request.agent_context,
+            include_images=include_images,
+        )
 
     @staticmethod
     def _include_images(
@@ -385,79 +397,6 @@ def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
         }
         for item in tools
     )
-
-
-def _tool_refs(tools: tuple[ToolSpec, ...]) -> frozenset[str]:
-    refs: set[str] = set()
-    for spec in tools:
-        properties = spec.input_schema.get("properties") if isinstance(spec.input_schema, Mapping) else None
-        if not isinstance(properties, Mapping):
-            continue
-        for name in ("target", "source", "destination"):
-            field = properties.get(name)
-            enum = field.get("enum") if isinstance(field, Mapping) else None
-            if isinstance(enum, tuple | list):
-                refs.update(str(item) for item in enum if isinstance(item, str) and item.startswith("E"))
-    return frozenset(refs)
-
-
-def _delivered_refs(observation: str) -> frozenset[str]:
-    return frozenset(_PUBLIC_E_REF.findall(observation))
-
-
-def _direct_tools_for_delivery(tools: tuple[ToolSpec, ...], delivered_refs: frozenset[str]) -> tuple[ToolSpec, ...]:
-    result: list[ToolSpec] = []
-    for spec in tools:
-        schema = to_json_compatible(spec.input_schema)
-        if not isinstance(schema, Mapping):
-            result.append(spec)
-            continue
-        properties = schema.get("properties")
-        if not isinstance(properties, Mapping):
-            result.append(spec)
-            continue
-        changed = False
-        empty_selector = False
-        next_properties = dict(properties)
-        for name in ("target", "source", "destination"):
-            field = next_properties.get(name)
-            if not isinstance(field, Mapping):
-                continue
-            enum = field.get("enum")
-            if not isinstance(enum, tuple | list) or not any(isinstance(item, str) and item.startswith("E") for item in enum):
-                continue
-            filtered = [item for item in enum if isinstance(item, str) and item in delivered_refs]
-            changed = True
-            if not filtered:
-                empty_selector = True
-                break
-            next_field = dict(field)
-            next_field["enum"] = filtered
-            next_properties[name] = next_field
-        if empty_selector:
-            continue
-        if changed:
-            next_schema = dict(schema)
-            next_schema["properties"] = next_properties
-            result.append(ToolSpec(spec.name, spec.description, next_schema))
-        else:
-            result.append(spec)
-    return tuple(result)
-
-
-def _region_counts(observation: str) -> tuple[int, int]:
-    if "delivery=region_lens" not in observation:
-        return 0, 0
-    expanded = observation.count(" expanded=true")
-    folded = observation.count(" expanded=false")
-    return expanded, folded
-
-
-def _selected_region_keys(context: AgentContext) -> frozenset[str]:
-    lens = context.delivery_lens
-    if lens is None or not lens.selected_region_key:
-        return frozenset()
-    return frozenset({lens.selected_region_key})
 
 
 @dataclass(frozen=True)

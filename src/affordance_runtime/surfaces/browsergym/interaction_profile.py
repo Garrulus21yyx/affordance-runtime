@@ -83,10 +83,11 @@ _COMMON_EDIT_AVAILABILITY = (
 _PRIMITIVE_EXECUTION_REQUIREMENTS = {
     "click": _COMMON_ACTIVATION_AVAILABILITY,
     "fill": _COMMON_EDIT_AVAILABILITY,
-    # BrowserGym's select_option route operates on an attached native <select>
-    # and retries Playwright with force.  Visibility and generic editability are
-    # therefore not execution preconditions; the canonical option-domain check
-    # below remains the proof that this route is backed by a native select.
+    # BrowserGym's select_option route is a closed adapter composite over an
+    # attached native <select>: the current option domain fixes the physical
+    # route, Playwright performs the internal interaction, and the binding's
+    # observation barrier requests one fresh World afterward.  No intermediate
+    # semantic choice or generic navigation macro is involved.
     "select_option": ("attached", "enabled", "not_readonly"),
     "drag_and_drop": _COMMON_ACTIVATION_AVAILABILITY,
     "press": ("attached", "visible", "enabled", "focusable"),

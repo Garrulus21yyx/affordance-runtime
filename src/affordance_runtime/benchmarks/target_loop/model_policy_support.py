@@ -1,6 +1,7 @@
 """Local HTTP existing-ModelPort profile for fixed shared-state cases."""
 
 import json
+import re
 import threading
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,11 +35,14 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                     if properties[name].get("enum")
                 }
                 if "target" in option["input_schema"]["required"] and "target" not in arguments:
-                    arguments["target"] = next(
-                        item["ref"]
-                        for item in context["affordances"]
-                        if option["name"] in item["verbs"]
+                    operation = re.escape(option["name"])
+                    match = re.search(
+                        rf"\[(E[1-9][0-9]{{0,2}})\][^\n]*verbs=[^\n]*\b{operation}\b",
+                        context["observation"],
                     )
+                    if match is None:
+                        raise ValueError("fixture model could not find a delivered executable target")
+                    arguments["target"] = match.group(1)
                 decision = {"name": option["name"], "arguments": arguments}
                 payload = json.dumps(
                     {

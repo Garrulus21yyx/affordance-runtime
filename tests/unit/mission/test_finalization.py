@@ -39,12 +39,9 @@ from affordance_runtime.mission import (
     SupervisorState,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
-from affordance_runtime.model.policy.grounded_tool_catalog import (
-    GroundedToolPhase,
-    compile_grounded_tool_catalog,
-)
 from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationRequestKind, WorldObservationRequest
 from affordance_runtime.world.finalization import EnvironmentFinalization
+from tests.support.model_delivery import catalog_for
 from tests.support.observation_acquisition import acquired_acquisition
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
@@ -315,6 +312,9 @@ def test_all_mission_outcomes_have_closed_non_yielded_run_status() -> None:
         MissionOutcome.CANCELLED: RunStatus.CANCELLED,
         MissionOutcome.TASK_COMPLETE: RunStatus.DONE,
         MissionOutcome.TASK_BLOCKED: RunStatus.BLOCKED,
+        MissionOutcome.STRATEGY_NOT_CHANGED: RunStatus.BLOCKED,
+        MissionOutcome.OPERATIONAL_FAILURE: RunStatus.FAILED,
+        MissionOutcome.UNHANDLED_EPISODE_STATE: RunStatus.FAILED,
         MissionOutcome.ROUND_BUDGET_EXHAUSTED: RunStatus.BLOCKED,
     }
 
@@ -334,7 +334,7 @@ def test_ordinary_episode_catalog_exposes_yield_but_not_final_response_or_stop()
         runtime_controls=("yield_subtask",),
     )
 
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    _, catalog = catalog_for(context)
     names = {tool.spec.name for tool in catalog.tools}
 
     assert "yield_subtask" in names

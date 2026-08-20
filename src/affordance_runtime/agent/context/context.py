@@ -10,7 +10,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.budgets import BoundedSection
-from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTaskView, AgentTurnView
+from affordance_runtime.agent.context.contracts import (
+    AgentActionOptionView,
+    AgentActionPageView,
+    AgentTaskView,
+    AgentTurnView,
+)
 from affordance_runtime.agent.working_facts import WorkingFact, validate_working_fact_collection
 from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
@@ -18,7 +23,7 @@ from affordance_runtime.immutable import freeze_json
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
     from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
-    from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
+    from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
     from affordance_runtime.world.contracts import WorldObservation
 
@@ -163,7 +168,7 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
-    region_index: WorldRegionIndex | None = field(
+    region_index: WorldDeliveryIndex | None = field(
         default=None,
         repr=False,
         compare=False,
@@ -173,6 +178,12 @@ class AgentContext:
     history_byte_budget: int = field(default=16 * 1024, repr=False, compare=False)
     runtime_controls: tuple[str, ...] = ()
     control_feedback: Mapping[str, object] = field(default_factory=dict)
+    complete_actions: tuple[AgentActionOptionView, ...] = field(
+        default_factory=tuple,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -189,7 +200,7 @@ class AgentContext:
         )
         bindings = dict(self.private_fact_bindings)
         if any(
-            re.fullmatch(r"F[1-9][0-9]{0,2}", ref) is None
+            re.fullmatch(r"F[1-9][0-9]{0,3}", ref) is None
             or not isinstance(canonical, str)
             or not canonical.startswith("fact:")
             for ref, canonical in bindings.items()
@@ -206,9 +217,13 @@ class AgentContext:
             raise ValueError("AgentContext runtime controls must be bounded and unique")
         object.__setattr__(self, "runtime_controls", controls)
         object.__setattr__(self, "control_feedback", freeze_json(dict(self.control_feedback)))
+        complete_actions = tuple(self.complete_actions) or tuple(self.actions.options)
+        if len({item.action_id for item in complete_actions}) != len(complete_actions):
+            raise ValueError("AgentContext complete action index must be unique")
+        object.__setattr__(self, "complete_actions", complete_actions)
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
-        from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
+        from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
         from affordance_runtime.world.contracts import WorldObservation
 
@@ -227,7 +242,7 @@ class AgentContext:
             ):
                 raise ValueError("AgentContext delivery lens must belong to current observation")
         if self.region_index is not None:
-            if not isinstance(self.region_index, WorldRegionIndex):
+            if not isinstance(self.region_index, WorldDeliveryIndex):
                 raise TypeError("AgentContext region index must be typed")
             if (
                 self.current_observation is not None

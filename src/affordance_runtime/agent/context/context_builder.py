@@ -14,25 +14,22 @@ from affordance_runtime.agent.context.actor_world_snapshot import project_actor_
 from affordance_runtime.agent.context.budgets import (
     BoundedSection,
     ContextProjectionBudget,
-    serialized_size,
 )
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
 from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
-from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
 )
-from affordance_runtime.agent.context.projection import project_action_page
+from affordance_runtime.agent.context.projection import project_action_page, project_action_space
 from affordance_runtime.agent.context.task_projection import project_task
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_projection import (
     ModelWorldView,
-    fit_model_world,
     project_model_world,
 )
-from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
-from affordance_runtime.agent.working_facts import WorkingFact, public_working_facts
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.goals.plan import Failed, GoalPlanResolution, NeedsInput
@@ -65,16 +62,13 @@ class ContextBuilder:
         working_facts: tuple[WorkingFact, ...] = (),
         runtime_controls: tuple[str, ...] = (),
         delivery_lens: WorldDeliveryLens | None = None,
-        region_index: WorldRegionIndex | None = None,
+        region_index: WorldDeliveryIndex | None = None,
         control_feedback: dict[str, object] | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
         if delivery_lens is not None and delivery_lens.world_observation_id != observation.observation_id:
             raise ValueError("delivery lens belongs to a previous observation")
-        current_region_index = region_index or WorldRegionIndex.from_observation(observation)
-        if current_region_index.world_observation_id != observation.observation_id:
-            raise ValueError("region index belongs to a previous observation")
         default_page = self.page(action_space, observation)
         page = action_page or default_page
         if page.action_space_id != action_space.action_space_id:
@@ -85,6 +79,22 @@ class ContextBuilder:
             {item.target_id: item.label for item in observation.targets},
             self.budget.max_destinations_per_option,
         )
+        complete_projected_actions = project_action_space(
+            action_space,
+            {item.target_id: item.label for item in observation.targets},
+        )
+        complete_action_ids = {item.action_id for item in complete_projected_actions.options}
+        current_region_index = region_index
+        if (
+            current_region_index is None
+            or set(current_region_index.action_region_keys) != complete_action_ids
+        ):
+            current_region_index = WorldDeliveryIndex.from_observation(
+                observation,
+                complete_projected_actions.options,
+            )
+        if current_region_index.world_observation_id != observation.observation_id:
+            raise ValueError("region index belongs to a previous observation")
         shown_actions = projected_actions.options
         pinned_targets = _pinned_targets(
             shown_actions,
@@ -102,6 +112,7 @@ class ContextBuilder:
             pinned_targets,
             observation_capabilities=project_acquisition_offers(observation_capabilities),
             observation_cursor="",
+            lossless_public=True,
         )
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
@@ -122,10 +133,18 @@ class ContextBuilder:
         history_total = len(recent_steps) if recent_step_total_count is None else recent_step_total_count
         if history_total < len(recent_steps):
             raise ValueError("recent step total cannot be smaller than the retained steps")
+        complete_page = AgentActionPageView(
+            complete_projected_actions.options,
+            len(complete_projected_actions.options),
+            len(complete_projected_actions.options),
+            False,
+            False,
+            ("exact_target", "query", "cursor"),
+        )
         grounding = self.grounding_projection.project(
             observation,
             world,
-            actions,
+            complete_page,
         )
         goal_plan = _current_goal_plan(
             task,
@@ -139,9 +158,14 @@ class ContextBuilder:
             page,
             context_generation,
             goal_plan,
-            _tool_catalog_digest(actions, world, grounding, runtime_controls, delivery_lens),
+            _tool_catalog_digest(complete_page, world, grounding, runtime_controls, delivery_lens),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
+        complete_page = close_action_candidates(
+            complete_page,
+            grounding.index,
+            context_id=identity.context_id,
+        )
         return _fit_context(
             identity.context_id,
             task,
@@ -157,7 +181,6 @@ class ContextBuilder:
             ),
             grounding,
             self.budget,
-            pinned_targets,
             working_facts,
             history_total,
             runtime_controls,
@@ -165,6 +188,7 @@ class ContextBuilder:
             current_region_index,
             control_feedback or {},
             self.include_public_text_evidence,
+            complete_page.options,
         )
 
     def page(
@@ -199,11 +223,11 @@ class ContextBuilder:
         action_space: ActionSpace,
         observation: WorldObservation,
         lens: WorldDeliveryLens,
-        region_index: WorldRegionIndex | None = None,
+        region_index: WorldDeliveryIndex | None = None,
     ) -> InternalActionPage:
         if lens.world_observation_id != observation.observation_id:
             raise ValueError("delivery lens belongs to a previous observation")
-        current_region_index = region_index or WorldRegionIndex.from_observation(observation)
+        current_region_index = region_index or WorldDeliveryIndex.from_observation(observation)
         if current_region_index.world_observation_id != observation.observation_id:
             raise ValueError("region index belongs to a previous observation")
         selected_targets = set(current_region_index.member_target_ids(lens.selected_region_key))
@@ -313,99 +337,64 @@ def _fit_context(
     history: BoundedSection[AgentTurnView],
     grounding: GroundingProjectionResult,
     budget: ContextProjectionBudget,
-    pinned_target_ids: tuple[str, ...],
     working_facts: tuple[WorkingFact, ...],
     current_step_index: int,
     runtime_controls: tuple[str, ...],
     delivery_lens: WorldDeliveryLens | None,
-    region_index: WorldRegionIndex,
+    region_index: WorldDeliveryIndex,
     control_feedback: dict[str, object],
     include_public_text_evidence: bool,
+    complete_actions,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
         include_public_text=include_public_text_evidence,
     )
-    while True:
-        fact_refs = _public_fact_refs(world.facts.items, task_evaluation)
-        task_view = project_task(
-            task,
-            task_evaluation,
-            world.facts.items,
-            fact_refs,
-            grounding.index.target_refs,
-            include_final_response_contract="final_response" in runtime_controls,
-        )
-        private_fact_bindings = _current_public_fact_bindings(
+    fact_refs = _public_fact_refs(world.facts.items, task_evaluation)
+    task_view = project_task(
+        task,
+        task_evaluation,
+        world.facts.items,
+        fact_refs,
+        grounding.index.target_refs,
+        include_final_response_contract="final_response" in runtime_controls,
+    )
+    private_fact_bindings = _current_public_fact_bindings(
+        observation,
+        evidence_index,
+        fact_refs,
+    )
+    return AgentContext(
+        context_id,
+        task_view,
+        goal_plan,
+        actions,
+        history,
+        project_actor_world_snapshot(
             observation,
-            evidence_index,
-            fact_refs,
-        )
-        context = AgentContext(
-            context_id,
-            task_view,
-            goal_plan,
-            actions,
-            history,
-            project_actor_world_snapshot(
-                observation,
-                world,
-                grounding.index,
-                grounding.images,
-                # Actor structure is measured by the enclosing serialized-byte
-                # budget.  Do not cut a short document at an arbitrary node
-                # prefix before that measurement occurs.
-                max_structure_nodes=None,
-                max_structure_bytes=(
-                    budget.max_total_serialized_bytes // 2
-                    if budget.max_total_serialized_bytes < 64 * 1024
-                    else budget.max_total_serialized_bytes * 3 // 4
-                ),
-                fact_refs=fact_refs,
-            ),
-            grounding.images,
+            world,
             grounding.index,
-            working_facts,
-            private_fact_bindings,
-            evidence_index,
-            observation,
-            delivery_lens,
-            region_index,
-            current_step_index,
-            budget.max_history_serialized_bytes,
-            runtime_controls,
-            control_feedback,
-        )
-        if _semantic_serialized_size(context) <= budget.max_total_serialized_bytes:
-            return context
-        try:
-            smaller_world = fit_model_world(
-                world,
-                max(1, serialized_size(world) - 1),
-                pinned_target_ids,
-                allow_target_removal=False,
-            )
-        except ValueError:
-            smaller_world = world
-        if smaller_world != world:
-            world = smaller_world
-            continue
-        raise ValueError("AgentContext fixed sections exceed the total serialized byte budget")
-
-
-def _semantic_serialized_size(context: AgentContext) -> int:
-    payload = to_json_compatible({
-        "task": context.task,
-        "actor_world": context.actor_world,
-        "goal_plan": context.goal_plan,
-        "recent_steps": render_episode_history(
-            context.recent_steps.items,
-            context.history_byte_budget,
+            grounding.images,
+            # Actor is the lossless supported-public normalization. Model
+            # delivery fitting belongs only to WorldDeliveryView.
+            max_structure_nodes=None,
+            max_structure_bytes=None,
+            fact_refs=fact_refs,
         ),
-        "working_set": public_working_facts(context.working_facts),
-        "control_feedback": context.control_feedback,
-    })
-    return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+        grounding.images,
+        grounding.index,
+        working_facts,
+        private_fact_bindings,
+        evidence_index,
+        observation,
+        delivery_lens,
+        region_index,
+        current_step_index,
+        budget.max_history_serialized_bytes,
+        runtime_controls,
+        control_feedback,
+        complete_actions,
+    )
 
 
 def _evidence_index(observation: WorldObservation, *, include_public_text: bool) -> WorldEvidenceIndex:

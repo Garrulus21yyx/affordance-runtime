@@ -10,7 +10,6 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
@@ -24,6 +23,7 @@ from affordance_runtime.world.regular_lattice import (
     VisibleNumericLabel,
     derive_regular_lattice,
 )
+from tests.support.model_delivery import catalog_for
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from tests.support.surfaces.browsergym.projection_support import (
     project_browsergym_observation,
@@ -141,22 +141,15 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     world_representation = repr(context.actor_world)
     for field_name in ("grid_coordinate", "grid_membership", "grid_coordinate_confidence"):
         assert field_name in world_representation
-    public = GroundedPolicyContextBinder._public_context(
-        context,
-        False,
-    )
+    delivery, action_catalog = catalog_for(context)
+    public = GroundedPolicyContextBinder._public_context(context, False, delivery)
     observation = public["observation"]
-    target_line = next(
-        line for line in observation.splitlines() if f"[{candidate.target_ref}]" in line
-    )
-    assert "grid_coordinate[F" in target_line
-    assert "grid_membership=" not in target_line
-    assert "grid_coordinate_confidence=" not in target_line
-    from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
+    assert "projection=page_map" in observation
+    assert "grid_membership=" not in observation
+    assert "grid_coordinate_confidence=" not in observation
 
-    action_catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     activate = next(spec for spec in action_catalog.specs if spec.name == "activate")
-    assert candidate.target_ref in activate.input_schema["properties"]["target"]["enum"]
+    assert activate.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
     assert any(
         item.ref == candidate.target_ref and "activate" in item.verbs
         for item in context.grounding.entities

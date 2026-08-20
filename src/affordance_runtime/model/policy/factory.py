@@ -47,10 +47,10 @@ def model_policy_from_environment(
         if model_port is not None:
             raise ValueError("PydanticAI policy does not accept a compact-json model port")
         from affordance_runtime.model.policy.pydantic_ai_bridge import (
-            zhipu_pydantic_ai_policy_from_environment,
+            openai_compatible_pydantic_ai_policy_from_environment,
         )
 
-        return zhipu_pydantic_ai_policy_from_environment(
+        return openai_compatible_pydantic_ai_policy_from_environment(
             env,
             call_timeout_s=call_timeout_s,
             perception_profile=perception_profile,
@@ -150,6 +150,7 @@ def _goal_compiler_environment(environment: Mapping[str, str]) -> Mapping[str, s
     model_key = {
         "zhipu": "LLM_ZHIPU_MODEL",
         "aliyun": "LLM_ALIYUN_MODEL",
+        "deepseek": "LLM_DEEPSEEK_MODEL",
         "mistral": "LLM_MISTRAL_MODEL",
         "gemini": "LLM_GEMINI_MODEL",
         "local": "LLM_LOCAL_MODEL",

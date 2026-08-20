@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions import ActionSpaceBuilder
-from affordance_runtime.agent import Abort
 from affordance_runtime.agent.context import ContextBuilder, ModelFailureKind
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldDocumentView,
@@ -21,24 +20,18 @@ from affordance_runtime.agent.context.context import (
     AgentGroundingIndexView,
     AgentImageInput,
 )
-from affordance_runtime.agent.context.world_region_index import WorldRegion, WorldRegionIndex
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolPhase,
-    GroundedToolResolutionCode,
-    GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
-from affordance_runtime.model.policy.pydantic_ai_bridge import (
-    _intent_preservation_error,
-    _repair_input_transcript,
-    _representation_repair_allowed,
-)
 from affordance_runtime.model.policy.request_admission import ModelRequestBudget, estimate_model_request
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
@@ -58,18 +51,24 @@ async def _request():
         ActionSpaceBuilder().build(task, world),
         evaluation,
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    return ModelDecisionRequest("request:test", context), catalog
+    delivery = build_model_turn_delivery(context, include_images=False)
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+    )
+    return ModelDecisionRequest("request:test", context), catalog, delivery
 
 
 def test_complete_request_breakdown_covers_rendered_sections_and_is_deterministic() -> None:
     async def scenario() -> None:
-        request, catalog = await _request()
+        request, catalog, delivery = await _request()
         binder = GroundedPolicyContextBinder()
 
         first = binder.action_request(
             request,
             catalog.specs,
+            delivery,
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             include_tool_menu=False,
@@ -77,6 +76,7 @@ def test_complete_request_breakdown_covers_rendered_sections_and_is_deterministi
         second = binder.action_request(
             request,
             catalog.specs,
+            delivery,
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             include_tool_menu=False,
@@ -138,7 +138,7 @@ def test_image_tokens_are_dimension_based_not_compressed_byte_based() -> None:
 
 def test_soft_target_uses_recoverable_region_projection_without_mutating_context() -> None:
     async def scenario() -> None:
-        request, _catalog = await _request()
+        request, _catalog, _delivery = await _request()
         roots = tuple(
             ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
             for index in range(1, 240)
@@ -172,7 +172,7 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
                 ),
                 {f"target:{index}": f"E{index}" for index in range(1, 240)},
             ),
-            region_index=WorldRegionIndex(
+            region_index=WorldDeliveryIndex(
                 request.agent_context.current_observation.observation_id,
                 tuple(
                     WorldRegion(
@@ -213,10 +213,12 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
         )
         before_actor_world = request.agent_context.actor_world
         before_bindings = request.agent_context.private_fact_bindings
+        delivery = build_model_turn_delivery(request.agent_context, include_images=False)
 
         admitted = binder.action_request(
             request,
             (tool,),
+            delivery,
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             include_tool_menu=False,
@@ -224,22 +226,22 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
 
         payload = json.loads(admitted.messages[1].content)
         observation = payload["observation"]
-        assert "delivery=region_lens" in observation
-        assert "recovery=inspect_world" in observation
+        assert "projection=page_map" in observation
+        assert "recovery=read_region/search_world/search_actions" in observation
         assert "recovery=none" not in observation
         assert "[E1]" in observation
         assert request.agent_context.actor_world == before_actor_world
         assert request.agent_context.private_fact_bindings == before_bindings
         assert admitted.breakdown.admission_action == "admitted"
-        assert admitted.breakdown.delivery_projection == "region_lens"
-        assert admitted.breakdown.prefit_estimated_total_tokens > admitted.breakdown.estimated_total_tokens
+        assert admitted.breakdown.delivery_projection == "page_map"
+        assert admitted.breakdown.prefit_estimated_total_tokens == admitted.breakdown.estimated_total_tokens
 
     asyncio.run(scenario())
 
 
 def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_delivery() -> None:
     async def scenario() -> None:
-        request, _catalog = await _request()
+        request, _catalog, _delivery = await _request()
         total = 240
         roots = tuple(
             ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
@@ -274,7 +276,7 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
                 ),
                 {f"target:{index}": f"E{index}" for index in range(1, total + 1)},
             ),
-            region_index=WorldRegionIndex(
+            region_index=WorldDeliveryIndex(
                 request.agent_context.current_observation.observation_id,
                 tuple(
                     WorldRegion(
@@ -299,7 +301,7 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
             "Activate one current target.",
             {
                 "type": "object",
-                "properties": {"target": {"type": "string", "enum": [f"E{index}" for index in range(1, total + 1)]}},
+                "properties": {"target": {"type": "string", "pattern": r"^E[1-9][0-9]{0,2}$"}},
                 "required": ["target"],
             },
         )
@@ -313,10 +315,12 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
                 admission_limit=100_000,
             )
         )
+        delivery = build_model_turn_delivery(request.agent_context, include_images=False)
 
         admitted = binder.action_request(
             request,
             (broad_tool,),
+            delivery,
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             include_tool_menu=False,
@@ -325,23 +329,22 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
         payload = json.loads(admitted.messages[1].content)
         observation = payload["observation"]
         delivered_refs = set(re.findall(r"\bE[1-9][0-9]*\b", observation))
-        direct_refs = set(admitted.tools[0].input_schema["properties"]["target"]["enum"])
-        assert admitted.breakdown.delivery_projection == "region_lens"
+        target_schema = admitted.tools[0].input_schema["properties"]["target"]
+        assert admitted.breakdown.delivery_projection == "page_map"
         assert admitted.breakdown.expanded_region_count < len(large_context.region_index.regions)
-        assert direct_refs
-        assert direct_refs <= delivered_refs
-        assert len(direct_refs) < total
+        assert target_schema["pattern"] == r"^E[1-9][0-9]{0,2}$"
+        assert 0 < len(delivered_refs) < total
         assert admitted.breakdown.folded_region_count > 0
 
     asyncio.run(scenario())
 
 
-def test_soft_target_keeps_full_projection_when_region_lens_is_larger() -> None:
+def test_page_map_remains_default_when_full_projection_is_smaller() -> None:
     async def scenario() -> None:
-        request, _catalog = await _request()
+        request, _catalog, _delivery = await _request()
         context = replace(
             request.agent_context,
-            region_index=WorldRegionIndex(
+            region_index=WorldDeliveryIndex(
                 request.agent_context.current_observation.observation_id,
                 tuple(
                     WorldRegion(
@@ -380,19 +383,22 @@ def test_soft_target_keeps_full_projection_when_region_lens_is_larger() -> None:
                 admission_limit=100_000,
             )
         )
+        delivery = build_model_turn_delivery(request.agent_context, include_images=False)
 
         admitted = binder.action_request(
             request,
             (tool,),
+            delivery,
             supports_multimodal=False,
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
             include_tool_menu=False,
         )
 
         payload = json.loads(admitted.messages[1].content)
-        assert "delivery=region_lens" not in payload["observation"]
-        assert admitted.breakdown.delivery_projection == "full"
-        assert admitted.breakdown.prefit_estimated_total_tokens == admitted.breakdown.estimated_total_tokens
+        assert "projection=page_map" in payload["observation"]
+        assert admitted.breakdown.delivery_projection == "page_map"
+        assert admitted.breakdown.full_candidate_tokens == 0
+        assert admitted.breakdown.lens_candidate_tokens == admitted.breakdown.estimated_total_tokens
 
     asyncio.run(scenario())
 
@@ -423,7 +429,7 @@ class _FakeCompactPort:
 
 def test_irreducible_over_budget_returns_context_capacity_without_provider_attempt() -> None:
     async def scenario() -> None:
-        request, _catalog = await _request()
+        request, _catalog, _delivery = await _request()
         port = _FakeCompactPort()
         adapter = CompactJsonDecisionPort(
             port,
@@ -450,9 +456,9 @@ def _png(width: int, height: int) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + width.to_bytes(4, "big") + height.to_bytes(4, "big")
 
 
-def test_repair_request_has_separate_admission_and_bounded_repair_tokens() -> None:
+def test_schema_error_has_no_second_action_policy_request() -> None:
     async def scenario() -> None:
-        request, _catalog = await _request()
+        request, _catalog, _delivery = await _request()
         port = _FakeCompactPort(
             [
                 StructuredOutputError(
@@ -470,45 +476,11 @@ def test_repair_request_has_separate_admission_and_bounded_repair_tokens() -> No
 
         result = await adapter.generate(request)
 
+        assert result.failure is None
         assert result.output is not None
-        assert isinstance(result.output.decision, Abort)
-        assert port.calls == 2
+        assert port.calls == 1
         breakdowns = result.diagnostics["request_breakdowns"]
-        assert [item["phase"] for item in breakdowns] == ["initial", "structured_output_repair"]
+        assert [item["phase"] for item in breakdowns] == ["initial"]
         assert breakdowns[0]["repair_tokens"] == 0
-        assert breakdowns[1]["repair_tokens"] > 0
 
     asyncio.run(scenario())
-
-
-def test_narrow_representation_repair_transcript_excludes_original_context() -> None:
-    transcript = _repair_input_transcript(
-        "Repair only this call. Allowed operation schema: {\"type\":\"object\"}."
-    )
-    encoded = json.dumps(transcript)
-
-    assert "Repair only this call" in encoded
-    assert "compact_world" not in encoded
-    assert "recent_steps" not in encoded
-    assert "goal_plan" not in encoded
-    assert "image_url" not in encoded
-
-
-def test_representation_repair_rejects_stale_grounding_and_changed_intent() -> None:
-    assert not _representation_repair_allowed(
-        GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-    )
-    assert not _representation_repair_allowed(
-        GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-    )
-    assert not _representation_repair_allowed(
-        GroundedToolResolutionError(GroundedToolResolutionCode.GROUNDING_GAP)
-    )
-
-    changed = _intent_preservation_error(
-        ToolCall("activate", {"target": "E1", "expected_outcome": "open"}),
-        ToolCall("activate", {"target": "E2", "expected_outcome": "open"}),
-    )
-
-    assert changed is not None
-    assert changed.code is GroundedToolResolutionCode.REPAIR_CHANGED_INTENT

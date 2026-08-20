@@ -18,11 +18,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.model.policy.grounded_tool_catalog import (
-    compile_grounded_tool_catalog,
-    resolve_grounded_tool_call,
-)
-from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import TaskGoal
@@ -37,6 +32,7 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.support.action_contracts import verification_kwargs
+from tests.support.model_delivery import catalog_for, resolve_catalog_call
 from tests.support.world import fused_world
 
 _EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
@@ -224,7 +220,7 @@ def test_model_artifact_is_resolvable_without_exposing_its_private_value() -> No
     assert "secret" not in repr(context)
 
 
-def test_complete_context_respects_one_total_byte_budget() -> None:
+def test_actor_context_remains_lossless_under_legacy_total_byte_budget() -> None:
     observation = fused_world(
         "world:bounded",
         tuple(
@@ -236,6 +232,17 @@ def test_complete_context_respects_one_total_byte_budget() -> None:
                 {f"relation:{item}": "r" * 240 for item in range(8)},
             )
             for index in range(64)
+        ),
+        tuple(
+            StateFact(
+                f"fact:{target_index}:{fact_index}",
+                f"target:{target_index}",
+                f"public_fact:{fact_index}",
+                "f" * 240,
+                "world:bounded",
+            )
+            for target_index in range(64)
+            for fact_index in range(4)
         ),
         surface="dom",
     )
@@ -249,9 +256,15 @@ def test_complete_context_respects_one_total_byte_budget() -> None:
         _evaluation(task, observation.observation_id),
     )
 
-    assert serialized_size(context) <= budget.max_total_serialized_bytes
-    assert context.actor_world.traversal is not None
-    assert context.actor_world.traversal.status != "complete"
+    assert serialized_size(context) > budget.max_total_serialized_bytes
+    assert sum(item.retained_node_count for item in context.actor_world.documents) == 64
+    assert sum(
+        sum(fact.field.startswith("public_fact:") for fact in node.facts)
+        for document in context.actor_world.documents
+        for root in document.roots
+        for node in _walk_actor(root)
+    ) == 256
+    assert context.actor_world.traversal is None
 
 
 def test_action_page_reports_runtime_membership_and_truncation_truthfully() -> None:
@@ -335,11 +348,19 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
         ActionSpace(observation.observation_id, (option,)),
         _evaluation(task, observation.observation_id),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    rendered = render_compact_actor_world(context.actor_world, context.grounding, include_images=False)
+    _, catalog = catalog_for(context)
+    rendered = render_compact_actor_world(
+        context.actor_world,
+        context.grounding,
+        include_images=False,
+        region_index=context.region_index,
+        observation=context.current_observation,
+    )
 
     tool = next(item for item in catalog.specs if item.name == "select_option")
-    target_ref = tool.input_schema["properties"]["target"]["enum"][0]
+    target_ref = context.actions.options[0].target_ref
+    assert tool.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert target_ref in rendered.manifest.executable_refs
     actor_nodes = {
         node.ref: node
         for document in context.actor_world.documents
@@ -353,12 +374,12 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
     )
     for field in ("value", "selected_options", "option_domain", "expanded", "required"):
         assert node.state[field] == context.actions.options[0].target_state[field]
-    assert "state_coverage=" in rendered
+    assert "state_coverage=" not in rendered
     assert target_ref in rendered
     assert "binding:country" not in rendered
 
 
-def test_complete_action_inventory_still_offers_find_actions_recovery() -> None:
+def test_complete_action_inventory_still_offers_search_actions_recovery() -> None:
     observation = fused_world(
         "world:single-action",
         (SemanticTarget("target:1", "button", "Submit"),),
@@ -386,13 +407,13 @@ def test_complete_action_inventory_still_offers_find_actions_recovery() -> None:
         ActionSpace(observation.observation_id, (option,)),
         _evaluation(task, observation.observation_id),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    _, catalog = catalog_for(context)
 
     assert not context.actions.has_more
-    assert "find_actions" in {item.name for item in catalog.specs}
+    assert "search_actions" in {item.name for item in catalog.specs}
 
 
-def test_inspect_world_resolves_as_zero_dispatch_local_tool() -> None:
+def test_search_world_resolves_as_zero_dispatch_local_tool() -> None:
     observation = fused_world(
         "world:inspect",
         (
@@ -408,22 +429,22 @@ def test_inspect_world_resolves_as_zero_dispatch_local_tool() -> None:
         ActionSpace(observation.observation_id, ()),
         _evaluation(task, observation.observation_id),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    _, catalog = catalog_for(context)
 
-    resolution = resolve_grounded_tool_call(
+    resolution = resolve_catalog_call(
         catalog,
-        ToolCall("inspect_world", {"action": "find", "query": "ABC-123"}),
+        ToolCall("search_world", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
 
     decision = resolution.decision
-    assert decision.tool_name == "inspect_world"
-    assert decision.result["action"] == "find"
-    assert decision.result["matches"][0]["snippet"] == "StaticText Issue ID ABC-123"
+    assert decision.tool_name == "search_world"
+    assert decision.result["kind"] == "Matches"
+    assert decision.result["items"][0]["label"] == "Issue ID ABC-123"
 
 
-def test_inspect_world_find_recovers_fact_missing_from_actor_snapshot() -> None:
+def test_search_world_recovers_fact_missing_from_actor_snapshot() -> None:
     observation = fused_world(
         "world:full-recovery",
         (SemanticTarget("target:issue", "StaticText", "Visible shell"),),
@@ -469,20 +490,21 @@ def test_inspect_world_find_recovers_fact_missing_from_actor_snapshot() -> None:
             (),
         ),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    _, catalog = catalog_for(context)
 
-    resolution = resolve_grounded_tool_call(
+    resolution = resolve_catalog_call(
         catalog,
-        ToolCall("inspect_world", {"action": "find", "query": "ABC-123"}),
+        ToolCall("search_world", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
 
     assert resolution.decision.result["coverage"] == "complete"
-    assert resolution.decision.result["matches"][0]["snippet"] == "issue_id ABC-123"
+    assert resolution.decision.result["items"][0]["label"] == "issue_id"
+    assert resolution.decision.result["items"][0]["value"] == "ABC-123"
 
 
-def test_inspect_world_find_reports_partial_world_coverage() -> None:
+def test_search_world_reports_partial_world_coverage() -> None:
     observation = fused_world(
         "world:partial-recovery",
         (SemanticTarget("target:issue", "StaticText", "Issue ABC-123"),),
@@ -496,11 +518,11 @@ def test_inspect_world_find_reports_partial_world_coverage() -> None:
         ActionSpace(observation.observation_id, ()),
         _evaluation(task, observation.observation_id),
     )
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    _, catalog = catalog_for(context)
 
-    resolution = resolve_grounded_tool_call(
+    resolution = resolve_catalog_call(
         catalog,
-        ToolCall("inspect_world", {"action": "find", "query": "ABC-123"}),
+        ToolCall("search_world", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
@@ -538,10 +560,10 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
         replace(ContextProjectionBudget(), max_action_options=1)
     )
     first = builder.build(task, observation, action_space, evaluation)
-    first_catalog = compile_grounded_tool_catalog(first, GroundedToolPhase.ACTION_SELECTION)
-    opened = resolve_grounded_tool_call(
+    _, first_catalog = catalog_for(first)
+    opened = resolve_catalog_call(
         first_catalog,
-        ToolCall("inspect_world", {"action": "open_region", "region_ref": "R5"}),
+        ToolCall("read_region", {"region_ref": "R1"}),
         expected_context_id=first.context_id,
         expected_catalog_id=first_catalog.catalog_id,
     ).decision
@@ -567,12 +589,14 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
         context_generation=state.next_context_generation(),
         delivery_lens=state.delivery_lens,
     )
-    second_catalog = compile_grounded_tool_catalog(second, GroundedToolPhase.ACTION_SELECTION)
+    _, second_catalog = catalog_for(second)
     rendered = render_compact_actor_world(
         second.actor_world,
         second.grounding,
         include_images=False,
         region_index=second.region_index,
+        observation=second.current_observation,
+        delivery_lens=second.delivery_lens,
         selected_region_keys=frozenset({second.delivery_lens.selected_region_key}),
         max_rendered_bytes=100,
     )
@@ -580,9 +604,9 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
 
     assert state.delivery_lens.world_observation_id == observation.observation_id
     assert state.delivery_lens.selected_region_key
-    assert "delivery=region_lens" in rendered
-    assert activate.input_schema["properties"]["target"]["enum"] == [second.grounding.target_refs["target:5"]]
-    assert f'[{second.grounding.target_refs["target:5"]}] button "Button 5" verbs=["activate"]' in rendered
+    assert "projection=page_map" in rendered
+    assert activate.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert f'[{second.grounding.target_refs["target:1"]}] button "Button 1" verbs=["activate"]' in rendered
 
 
 def test_expanded_region_projects_source_structure_sibling_and_current_refs() -> None:

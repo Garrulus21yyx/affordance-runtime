@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from enum import StrEnum
 
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
@@ -18,10 +19,13 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.boundary import AuditBoundary
 from affordance_runtime.mission.contracts import (
     AuditBundle,
+    AuditDelta,
     AuditDeltaStatus,
+    AuditGuidance,
     AuditorPort,
     AuditorRoleRequest,
     ManagerPort,
+    ManagerRecoveryView,
     ManagerRoleRequest,
     ManagerRoute,
     MissionOutcome,
@@ -38,8 +42,10 @@ from affordance_runtime.world.acquisition import (
     ObservationRequestKind,
     WorldObservationRequest,
 )
+from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.finalization import EnvironmentFinalization
+from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 
 @dataclass(frozen=True)
@@ -96,6 +102,26 @@ class MissionRunResult:
 
 
 @dataclass(frozen=True)
+class _EpisodeAuditResult:
+    result: MissionRunResult
+    manager_recovery: ManagerRecoveryView | None = None
+
+
+class _EpisodeRoute(StrEnum):
+    """Total post-episode ownership decision; no route defaults to Auditor."""
+
+    TASK_COMPLETE = "task_complete"
+    TASK_BLOCKED = "task_blocked"
+    RUNTIME_BLOCKED = "runtime_blocked"
+    WAITING_USER = "waiting_user"
+    CANCELLED = "cancelled"
+    READY_FOR_AUDIT = "ready_for_audit"
+    MANAGER_RECOVERY = "manager_recovery"
+    OPERATIONAL_FAILURE = "operational_failure"
+    UNHANDLED = "unhandled"
+
+
+@dataclass(frozen=True)
 class MissionSupervisor:
     manager: ManagerPort
     auditor: AuditorPort
@@ -133,9 +159,17 @@ class MissionSupervisor:
         current_world = acquisition.observation
         last_exit = "task_start"
         last_ref = ""
+        manager_recovery: ManagerRecoveryView | None = None
         for round_index in range(self.max_rounds):
             remaining_budget = self.max_rounds - round_index
-            manager_request = ManagerRoleRequest(task, mission, last_exit, last_ref, remaining_budget)
+            manager_request = ManagerRoleRequest(
+                task,
+                mission,
+                last_exit,
+                last_ref,
+                remaining_budget,
+                manager_recovery,
+            )
             decision_result = await self.manager.decide(
                 manager_request
             )
@@ -160,6 +194,60 @@ class MissionSupervisor:
                 )
             decision = decision_result.output
             assert decision is not None
+            if _repeats_failed_strategy(decision, manager_recovery):
+                assert manager_recovery is not None
+                revision_request = replace(
+                    manager_request,
+                    recovery=replace(manager_recovery, strategy_revision_required=True),
+                )
+                decision_result = await self.manager.decide(revision_request)
+                _record_role_invocation(
+                    self.trace_sink,
+                    "manager",
+                    manager_calls + 1,
+                    revision_request,
+                    decision_result,
+                )
+                manager_calls += 1
+                if decision_result.failure is not None:
+                    supervisor = SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="manager_failure",
+                        last_ref="manager_failure",
+                        mission_round_budget=remaining_budget,
+                        opened_environment_ref=_environment_ref(environment),
+                    )
+                    return MissionRunResult(
+                        state,
+                        mission,
+                        supervisor,
+                        MissionOutcome.MANAGER_FAILURE,
+                        manager_calls=manager_calls,
+                        auditor_calls=auditor_calls,
+                        boundary_rejections=boundary_rejections,
+                    )
+                decision = decision_result.output
+                assert decision is not None
+                if _repeats_failed_strategy(decision, manager_recovery):
+                    if state is not None:
+                        state.status = RunStatus.BLOCKED
+                    supervisor = SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="blocked:strategy_not_changed",
+                        last_ref="strategy_not_changed",
+                        mission_round_budget=remaining_budget,
+                        opened_environment_ref=_environment_ref(environment),
+                    )
+                    return MissionRunResult(
+                        state,
+                        mission,
+                        supervisor,
+                        MissionOutcome.STRATEGY_NOT_CHANGED,
+                        manager_calls=manager_calls,
+                        auditor_calls=auditor_calls,
+                        boundary_rejections=boundary_rejections,
+                    )
+            manager_recovery = None
             if decision.route is ManagerRoute.ASK_USER:
                 supervisor = SupervisorState(
                     SupervisorPhase.WAITING_USER,
@@ -234,6 +322,7 @@ class MissionSupervisor:
                     finalization=final.finalization,
                 )
             assert decision.subtask is not None
+            episode_start_world = current_world
             state = await runtime.initialize_from_world(
                 task,
                 current_world,
@@ -243,7 +332,52 @@ class MissionSupervisor:
                 working_facts=mission.carry_working_facts(decision.subtask.relevant_fact_keys),
             )
             state = await runtime.continue_task(environment, task, state)
-            if state.status is RunStatus.CANCELLED:
+            episode_route = _episode_route(state)
+            if episode_route is _EpisodeRoute.TASK_COMPLETE:
+                state.status = RunStatus.DONE
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="task_evaluator:complete",
+                        last_ref="task_evaluator:complete",
+                    ),
+                    MissionOutcome.TASK_COMPLETE,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            if episode_route is _EpisodeRoute.TASK_BLOCKED:
+                state.status = RunStatus.BLOCKED
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="task_evaluator:blocked",
+                        last_ref="task_evaluator:blocked",
+                    ),
+                    MissionOutcome.TASK_BLOCKED,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            if episode_route is _EpisodeRoute.RUNTIME_BLOCKED:
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="runtime_blocked",
+                        last_ref="runtime_blocked",
+                    ),
+                    MissionOutcome.BLOCKED,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            if episode_route is _EpisodeRoute.CANCELLED:
                 return MissionRunResult(
                     state,
                     mission,
@@ -253,7 +387,7 @@ class MissionSupervisor:
                     auditor_calls=auditor_calls,
                     boundary_rejections=boundary_rejections,
                 )
-            if state.status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
+            if episode_route is _EpisodeRoute.WAITING_USER:
                 return MissionRunResult(
                     state,
                     mission,
@@ -285,13 +419,60 @@ class MissionSupervisor:
                     boundary_rejections=boundary_rejections,
                 )
             current_world = state.current_world
-            audit_result = await self._audit_episode(
+            if episode_route is _EpisodeRoute.OPERATIONAL_FAILURE:
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="operational_failure",
+                        last_ref=_operational_failure_ref(state),
+                        mission_round_budget=remaining_budget,
+                        opened_environment_ref=_environment_ref(environment),
+                    ),
+                    MissionOutcome.OPERATIONAL_FAILURE,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            if episode_route is _EpisodeRoute.UNHANDLED:
+                state.status = RunStatus.FAILED
+                return MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(
+                        SupervisorPhase.TERMINAL,
+                        last_typed_episode_exit="unhandled_episode_state",
+                        last_ref=f"{state.status.value}:{state.yield_reason or 'none'}",
+                        mission_round_budget=remaining_budget,
+                        opened_environment_ref=_environment_ref(environment),
+                    ),
+                    MissionOutcome.UNHANDLED_EPISODE_STATE,
+                    manager_calls=manager_calls,
+                    auditor_calls=auditor_calls,
+                    boundary_rejections=boundary_rejections,
+                )
+            if episode_route is _EpisodeRoute.MANAGER_RECOVERY:
+                manager_recovery = _episode_recovery_view(
+                    state,
+                    decision.subtask,
+                    episode_start_world,
+                )
+                assert state.yield_reason is not None
+                last_exit = f"episode:{state.status.value}:{state.yield_reason.value}"
+                last_ref = state.yield_reason.value
+                continue
+            if episode_route is not _EpisodeRoute.READY_FOR_AUDIT:
+                raise AssertionError("post-episode routing must be total")
+            episode_audit = await self._audit_episode(
                 environment,
                 task,
                 decision.subtask,
                 mission,
                 state,
+                episode_start_world,
             )
+            audit_result = episode_audit.result
             auditor_calls += audit_result.auditor_calls
             boundary_rejections += audit_result.boundary_rejections
             if audit_result.outcome in {
@@ -315,6 +496,7 @@ class MissionSupervisor:
             current_world = audit_result.state.current_world if audit_result.state is not None else current_world
             last_exit = _audit_manager_signal(audit_result, state)
             last_ref = audit_result.supervisor_state.last_ref
+            manager_recovery = episode_audit.manager_recovery
         return MissionRunResult(
             state,
             mission,
@@ -332,31 +514,26 @@ class MissionSupervisor:
         subtask: SubtaskContract,
         mission: MissionState,
         state: RunState,
-    ) -> MissionRunResult:
-        deterministic = state.current_task_evaluation
-        if deterministic.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
-            state.status = _status_for_terminal_evaluation(deterministic.status)
-            return MissionRunResult(
-                state,
-                mission,
-                SupervisorState(SupervisorPhase.TERMINAL, last_ref=f"task_evaluator:{deterministic.status.value}"),
-                (
-                    MissionOutcome.TASK_COMPLETE
-                    if deterministic.status is TaskEvaluationStatus.COMPLETE
-                    else MissionOutcome.TASK_BLOCKED
-                ),
-            )
+        episode_start_world: WorldObservation,
+    ) -> _EpisodeAuditResult:
+        if (
+            state.status is not RunStatus.YIELDED
+            or state.yield_reason is not EpisodeYieldReason.READY_FOR_AUDIT
+        ):
+            raise ValueError("episode Auditor requires explicit ready_for_audit")
         acquisition = await environment.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh audit capture"))
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            return MissionRunResult(
-                state,
-                mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref=f"audit_capture:{acquisition.status.value}"),
-                _audit_capture_failure_outcome(acquisition.status),
+            return _EpisodeAuditResult(
+                MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.MANAGER, last_ref=f"audit_capture:{acquisition.status.value}"),
+                    _audit_capture_failure_outcome(acquisition.status),
+                )
             )
         state.current_world = acquisition.observation
         bundle = AuditBundle.from_world(state.current_world)
-        request = AuditorRoleRequest(
+        request = AuditorRoleRequest.from_authorities(
             task,
             subtask,
             mission,
@@ -371,69 +548,47 @@ class MissionSupervisor:
         _record_role_invocation(self.trace_sink, "auditor", 1, request, result)
         if result.failure is not None:
             outcome = _auditor_failure_outcome(result.failure)
-            return MissionRunResult(
-                state,
-                mission,
-                SupervisorState(SupervisorPhase.TERMINAL, last_ref=outcome.value),
-                outcome,
-                auditor_calls=1,
+            return _EpisodeAuditResult(
+                MissionRunResult(
+                    state,
+                    mission,
+                    SupervisorState(SupervisorPhase.TERMINAL, last_ref=outcome.value),
+                    outcome,
+                    auditor_calls=1,
+                )
             )
         delta = result.output
         assert delta is not None
         calls = 1
         if delta.status is AuditDeltaStatus.UNKNOWN and delta.missing_evidence:
-            recaptured = await environment.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh audit recapture"))
-            if recaptured.status is not AcquisitionStatus.ACQUIRED or recaptured.observation is None:
-                return MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.MANAGER, last_ref=f"audit_recapture:{recaptured.status.value}"),
-                    _audit_capture_failure_outcome(recaptured.status),
-                    auditor_calls=1,
-                )
-            state.current_world = recaptured.observation
-            bundle = AuditBundle.from_world(state.current_world)
-            retry_request = AuditorRoleRequest(
-                task,
-                subtask,
-                mission,
-                state.current_world,
-                state.working_facts,
-                state.yield_reason.value if state.yield_reason else "unknown",
-                state.recent_steps,
-                bundle,
-                subtask.related_audit_ids,
-            )
-            retry = await self.auditor.audit(retry_request)
-            _record_role_invocation(self.trace_sink, "auditor", 2, retry_request, retry)
-            calls = 2
-            if retry.failure is not None:
-                outcome = _auditor_failure_outcome(retry.failure)
-                return MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.TERMINAL, last_ref=outcome.value),
-                    outcome,
-                    auditor_calls=2,
-                )
-            delta = retry.output
-            assert delta is not None
-            if delta.status is AuditDeltaStatus.UNKNOWN:
-                return MissionRunResult(
+            guidance = _audit_guidance(delta)
+            return _EpisodeAuditResult(
+                MissionRunResult(
                     state,
                     mission,
                     SupervisorState(SupervisorPhase.MANAGER, last_ref="evidence_gap"),
                     MissionOutcome.EVIDENCE_GAP,
-                    auditor_calls=2,
-                )
+                    auditor_calls=1,
+                ),
+                ManagerRecoveryView(
+                    "audit:evidence_gap",
+                    _world_changed(episode_start_world, state.current_world),
+                    subtask,
+                    recovery_signal=state.recovery_signal,
+                    attempted_modes=_episode_attempted_modes(state),
+                    audit_guidance=guidance,
+                ),
+            )
         accepted = self.boundary.accept(mission, delta, bundle)
-        return MissionRunResult(
-            state,
-            accepted.mission_state,
-            SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "audit_accepted"),
-            MissionOutcome.BOUNDARY_REJECTED if not accepted.accepted else MissionOutcome.RUNNING,
-            auditor_calls=calls,
-            boundary_rejections=int(not accepted.accepted),
+        return _EpisodeAuditResult(
+            MissionRunResult(
+                state,
+                accepted.mission_state,
+                SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "audit_accepted"),
+                MissionOutcome.BOUNDARY_REJECTED if not accepted.accepted else MissionOutcome.RUNNING,
+                auditor_calls=calls,
+                boundary_rejections=int(not accepted.accepted),
+            )
         )
 
     async def _finalize_if_ready(
@@ -472,7 +627,7 @@ class MissionSupervisor:
         auditor_calls = 0
         boundary_rejections = 0
         if not _accepted_facts_resolve_in_bundle(mission, bundle):
-            audit_request = AuditorRoleRequest(
+            audit_request = AuditorRoleRequest.from_authorities(
                 task,
                 final_contract,
                 mission,
@@ -577,6 +732,110 @@ def _status_for_terminal_evaluation(status: TaskEvaluationStatus) -> RunStatus:
     return RunStatus.RUNNING
 
 
+_MONITOR_EVENT_NAMES = frozenset(
+    {
+        "state_changed",
+        "no_observed_change",
+        "repeated_action",
+        "oscillation",
+        "formal_criterion_changed",
+        "provider_failure",
+        "environment_failure",
+        "capability_gap",
+    }
+)
+
+
+def _episode_route(state: RunState) -> _EpisodeRoute:
+    evaluation = state.current_task_evaluation.status
+    if evaluation is TaskEvaluationStatus.COMPLETE:
+        return _EpisodeRoute.TASK_COMPLETE
+    if evaluation is TaskEvaluationStatus.BLOCKED:
+        return _EpisodeRoute.TASK_BLOCKED
+    if state.status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
+        return _EpisodeRoute.WAITING_USER
+    if state.status is RunStatus.CANCELLED:
+        return _EpisodeRoute.CANCELLED
+    if state.status is RunStatus.FAILED:
+        return _EpisodeRoute.OPERATIONAL_FAILURE
+    if state.status is RunStatus.BLOCKED:
+        return _EpisodeRoute.RUNTIME_BLOCKED
+    if state.status is RunStatus.YIELDED:
+        if state.yield_reason is EpisodeYieldReason.READY_FOR_AUDIT:
+            return _EpisodeRoute.READY_FOR_AUDIT
+        if state.yield_reason is not None:
+            return _EpisodeRoute.MANAGER_RECOVERY
+    return _EpisodeRoute.UNHANDLED
+
+
+def _episode_recovery_view(
+    state: RunState,
+    prior_subtask: SubtaskContract,
+    episode_start_world: WorldObservation,
+) -> ManagerRecoveryView:
+    assert state.yield_reason is not None
+    return ManagerRecoveryView(
+        state.yield_reason.value,
+        _world_changed(episode_start_world, state.current_world),
+        prior_subtask,
+        recovery_signal=state.recovery_signal,
+        attempted_modes=_episode_attempted_modes(state),
+    )
+
+
+def _episode_attempted_modes(state: RunState) -> tuple[str, ...]:
+    modes = [
+        item.semantic_action
+        for item in state.recent_steps
+        if item.semantic_action and item.semantic_action not in _MONITOR_EVENT_NAMES
+    ]
+    if state.recovery_signal is not None:
+        modes.extend(item for item in state.recovery_signal.attempted_modes if item not in _MONITOR_EVENT_NAMES)
+    return tuple(dict.fromkeys(modes))[:32]
+
+
+def _world_changed(before: WorldObservation, after: WorldObservation) -> bool:
+    return public_world_semantic_digest(before) != public_world_semantic_digest(after)
+
+
+def _audit_guidance(delta: AuditDelta) -> AuditGuidance:
+    return AuditGuidance(delta.missing_evidence, delta.recovery_hint)
+
+
+def _operational_failure_ref(state: RunState) -> str:
+    if state.runtime_failure is not None:
+        return state.runtime_failure.code
+    if state.policy_failure is not None:
+        return state.policy_failure.kind.value
+    if state.failure_code is not None:
+        return state.failure_code.value
+    return "operational_failure"
+
+
+def _repeats_failed_strategy(
+    decision,
+    recovery: ManagerRecoveryView | None,
+) -> bool:
+    if (
+        recovery is None
+        or recovery.world_changed
+        or decision.route is not ManagerRoute.EXECUTE_SUBTASK
+        or decision.subtask is None
+    ):
+        return False
+    return _subtask_strategy(decision.subtask) == _subtask_strategy(recovery.prior_subtask)
+
+
+def _subtask_strategy(subtask: SubtaskContract) -> tuple[object, ...]:
+    return (
+        subtask.objective,
+        subtask.done_when,
+        subtask.constraints,
+        subtask.relevant_fact_keys,
+        subtask.candidate_output_keys,
+    )
+
+
 def _run_status_for_mission_outcome(outcome: MissionOutcome, state: RunState | None) -> RunStatus:
     if outcome is MissionOutcome.FINALIZED:
         evaluation = state.current_task_evaluation if state is not None else None
@@ -602,6 +861,9 @@ def _run_status_for_mission_outcome(outcome: MissionOutcome, state: RunState | N
         MissionOutcome.CANCELLED: RunStatus.CANCELLED,
         MissionOutcome.TASK_COMPLETE: RunStatus.DONE,
         MissionOutcome.TASK_BLOCKED: RunStatus.BLOCKED,
+        MissionOutcome.STRATEGY_NOT_CHANGED: RunStatus.BLOCKED,
+        MissionOutcome.OPERATIONAL_FAILURE: RunStatus.FAILED,
+        MissionOutcome.UNHANDLED_EPISODE_STATE: RunStatus.FAILED,
         MissionOutcome.ROUND_BUDGET_EXHAUSTED: RunStatus.BLOCKED,
     }
     return mapping[outcome]

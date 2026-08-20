@@ -7,6 +7,7 @@ import pytest
 from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.goals import Failed, GoalPlan, GoalPlanItem, NotRequired, Ready, Unsupported
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
@@ -51,10 +52,12 @@ def _context(world, resolution=None, recent_steps: tuple[AgentTurnView, ...] = (
 
 
 def _public(context):
-    catalog = compile_grounded_action_catalog(context)
+    delivery = build_model_turn_delivery(context, include_images=False)
+    catalog = compile_grounded_action_catalog(context, delivery)
     messages = GroundedPolicyContextBinder().action_messages(
         ModelDecisionRequest("model-request:g2", context),
         catalog.specs,
+        delivery,
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
         include_tool_menu=True,
@@ -66,7 +69,7 @@ def test_ready_goal_plan_is_direct_static_context_without_progress_projection() 
     world = _world("world:before", False)
     plan = _plan()
     public = _public(_context(world, Ready(1, plan)))
-    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "affordances", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
     assert "progress" not in public
     goal_plan = public["goal_plan"]
     assert goal_plan["resolution"] == "ready"

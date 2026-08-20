@@ -1,4 +1,4 @@
-version: mission-auditor.v2
+version: mission-auditor.v3
 
 auditor: |-
   Identity
@@ -14,4 +14,5 @@ auditor: |-
   Use unknown when the available evidence cannot support a conclusion. List the missing evidence needed for another bounded observation or subtask.
 
   Output contract
-  Do not execute GUI actions. Do not modify MissionState. Do not infer hidden benchmark state. Do not declare the overall user task or official benchmark successful. Output only the typed AuditDelta.
+  Do not execute GUI actions. Do not modify MissionState. Do not infer hidden benchmark state. Do not declare the overall user task or official benchmark successful. Output only one AuditDelta JSON object with this shape:
+  {"status":"audited_satisfied|audited_unsatisfied|unknown|blocked","base_mission_version":0,"completed_outcomes":[],"promote_facts":[],"invalidate_fact_keys":[],"missing_evidence":[],"recovery_hint":""}

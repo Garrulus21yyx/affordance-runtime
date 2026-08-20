@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
@@ -16,21 +17,18 @@ from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
+from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
-from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.decisions import FinalResponse, ProtocolFeedback, ProtocolFeedbackKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import EvaluatedOutput
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
-from affordance_runtime.model.policy.grounded_tool_contracts import (
-    GroundedToolCatalog,
-    GroundedToolResolutionCode,
-    GroundedToolResolutionError,
-    RegisteredGroundedTool,
-)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -41,7 +39,7 @@ from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
     zhipu_pydantic_ai_policy_from_environment,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
     SharedTaskEvaluator,
@@ -74,35 +72,45 @@ class ScriptedModel:
                     parts=[TextPart("Shared state is enabled.")],
                     provider_response_id=f"pydantic-response:{self.calls}",
                 )
-            if scripted == "first_gui_action":
+            if scripted == "first_gui_action" or scripted == "multiple_gui_actions":
                 controls = {
                     "ask_user",
                     "wait",
                     "abort",
-                    "find_actions",
+                    "search_actions",
                     "request_evidence",
                 }
                 name = next(tool.name for tool in info.function_tools if tool.name not in controls)
                 selected = next(tool for tool in info.function_tools if tool.name == name)
                 target_schema = selected.parameters_json_schema["properties"].get("target", {})
                 public = json.loads(messages[-1].parts[0].content)
-                target = next(
-                    item["ref"]
-                    for item in public["affordances"]
-                    if name in item["verbs"]
+                match = re.search(
+                    rf"\[(E[1-9][0-9]{{0,2}})\][^\n]*verbs=[^\n]*\b{re.escape(name)}\b",
+                    public["observation"],
                 )
+                assert match is not None
+                target = match.group(1)
                 arguments: dict[str, object] = {"target": target} if target_schema else {}
             else:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
-            return ModelResponse(
-                parts=[
+            parts = [
                     ToolCallPart(
                         name,
                         arguments,
                         tool_call_id=f"pydantic-call:{self.calls}",
                     )
-                ],
+                ]
+            if scripted == "multiple_gui_actions":
+                parts.append(
+                    ToolCallPart(
+                        name,
+                        arguments,
+                        tool_call_id=f"pydantic-call:{self.calls}:second",
+                    )
+                )
+            return ModelResponse(
+                parts=parts,
                 provider_response_id=f"pydantic-response:{self.calls}",
             )
 
@@ -151,14 +159,16 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert state.status is RunStatus.DONE
         assert state.execution_count == 1
         assert scripted.calls == 1
-        # FunctionModel strips unsupported thinking, while preserving the
-        # cross-model output/sampling budget. ZaiModel translates the same
-        # unified False value to extra_body.thinking.type=disabled.
-        assert scripted.model_settings == [{"max_tokens": 1024, "temperature": 0.0}]
+        # FunctionModel strips unsupported thinking while preserving the
+        # transport-level single-call prohibition and output/sampling budget.
+        assert scripted.model_settings == [
+            {"max_tokens": 1024, "temperature": 0.0, "parallel_tool_calls": False}
+        ]
         assert pydantic_bridge._ACTION_MODEL_SETTINGS == {
             "thinking": False,
             "max_tokens": 1024,
             "temperature": 0.0,
+            "parallel_tool_calls": False,
         }
         assert state.last_step is not None
         assert state.last_step.decision.tool_call_id == "pydantic-call:1"
@@ -170,6 +180,33 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert attempt.transcript["llm.output_messages"][0]["parts"][0]["tool_name"]
         assert policy.last_metadata is not None
         assert policy.last_metadata.latency_ms >= attempt.latency_ms > 0
+
+    asyncio.run(scenario())
+
+
+def test_multiple_provider_tool_calls_return_protocol_feedback_with_zero_dispatch() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["multiple_gui_actions"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("multiple-calls", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:multiple-calls", context))
+
+        assert result.failure is None
+        assert result.output is not None
+        decision = result.output.decision
+        assert isinstance(decision, ProtocolFeedback)
+        assert decision.kind is ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS
+        assert decision.call_count == 2
+        assert scripted.calls == 1
 
     asyncio.run(scenario())
 
@@ -249,7 +286,7 @@ def test_pydantic_ai_ask_user_preserves_question_and_runtime_resume() -> None:
     asyncio.run(scenario())
 
 
-def test_pydantic_ai_returns_invalid_arguments_feedback_without_repicking_in_repair() -> None:
+def test_pydantic_ai_returns_invalid_arguments_as_next_turn_feedback_without_provider_repair() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -425,7 +462,10 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
 
     decision, error, parsed = pydantic_bridge._resolve_deferred(
         output,
-        SimpleNamespace(catalog_id="grounded-catalog:test"),
+        SimpleNamespace(
+            catalog_id="grounded-catalog:test",
+            delivery_id="delivery:" + "d" * 64,
+        ),
         "context:test",
     )
 
@@ -433,59 +473,6 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     assert error is None
     assert parsed == normalized
     assert captured["resolution"].decision == normalized
-
-
-def test_pydantic_ai_repair_message_preserves_runtime_rejection_reason() -> None:
-    class RejectingBinding:
-        def resolve(self, arguments, context_id: str, tool_call_id: str):
-            del arguments, context_id, tool_call_id
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                "visual property requests require exactly one evidence property",
-            )
-
-    catalog = GroundedToolCatalog(
-        "grounded-catalog:test",
-        "context:test",
-        (
-            RegisteredGroundedTool(
-                ToolSpec(
-                    "request_evidence",
-                    "Request evidence.",
-                    {
-                        "type": "object",
-                        "properties": {
-                            "purpose": {"type": "string", "enum": ["target_disambiguation"]},
-                            "subject": {"type": "string", "enum": ["current_world"]},
-                        },
-                        "required": ["purpose", "subject"],
-                        "additionalProperties": False,
-                    },
-                ),
-                RejectingBinding(),
-            ),
-        ),
-        1,
-    )
-    output = DeferredToolRequests(
-        calls=[
-            ToolCallPart(
-                "request_evidence",
-                {"purpose": "target_disambiguation", "subject": "current_world"},
-                "call:1",
-            )
-        ]
-    )
-
-    message = pydantic_bridge._repair_message(
-        output,
-        catalog,
-        DeferredToolRequests,
-        "context:test",
-    )
-
-    assert "Runtime rejection" in message
-    assert "visual property requests require exactly one evidence property" in message
 
 
 def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> None:
@@ -513,6 +500,7 @@ def test_zhipu_pydantic_ai_factory_is_explicit_about_model_compatibility() -> No
     assert prepared["extra_body"]["thinking"]["type"] == "disabled"
     assert prepared["max_tokens"] == 1024
     assert prepared["temperature"] == 0.0
+    assert prepared["parallel_tool_calls"] is False
 
     with pytest.raises(ValueError, match="LLM_MODEL_ADAPTER=compact-json"):
         zhipu_pydantic_ai_policy_from_environment(
@@ -545,3 +533,29 @@ def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
     assert policy.port.endpoint_host == "aliyun.invalid"
     assert policy.port.supports_multimodal is False
     assert type(policy.port.model).__name__ == "ZaiModel"
+
+
+def test_pydantic_ai_factory_selects_deepseek_native_tool_profile() -> None:
+    selected = model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_MODEL_ADAPTER": "pydantic-ai",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "fixture-secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
+        call_timeout_s=5.0,
+    )
+
+    assert selected.port.provider_id == "deepseek"
+    assert selected.port.model_id == "deepseek-v4-flash"
+    assert selected.port.endpoint_host == "api.deepseek.com"
+    assert selected.port.supports_multimodal is False
+    assert type(selected.port.model).__name__ == "OpenAIChatModel"
+    prepared, _ = selected.port.model.prepare_request(
+        pydantic_bridge._ACTION_MODEL_SETTINGS,
+        ModelRequestParameters(),
+    )
+    assert prepared["parallel_tool_calls"] is False

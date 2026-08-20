@@ -4,6 +4,7 @@ import numpy as np
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.surfaces.browsergym import projection as projection_module
@@ -26,6 +27,13 @@ from tests.support.surfaces.browsergym.projection_support import (
 )
 
 _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-world-projection-tests")
+
+
+def test_public_page_route_excludes_credentials_query_and_fragment() -> None:
+    assert projection_module._public_page_route(
+        "https://user:secret@example.test:8443/catalog/item-7?token=private#details"
+    ) == "https://example.test:8443/catalog/item-7"
+    assert projection_module._public_page_route("javascript:alert(1)") == ""
 
 
 def _walk(node):
@@ -353,10 +361,8 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
         ),
     )
 
-    public = GroundedPolicyContextBinder._public_context(
-        context,
-        False,
-    )
+    delivery = build_model_turn_delivery(context, include_images=False)
+    public = GroundedPolicyContextBinder._public_context(context, False, delivery)
     option = next(item for item in context.actions.options if item.target_label == "Add to cart")
     observation = public["observation"]
 
@@ -412,7 +418,8 @@ def test_screenshot_is_typed_media_but_never_serialized_into_public_context() ->
         evaluation,
     )
     assert context.image_inputs[0].sha256 == media[0].sha256
-    serialized = json.dumps(GroundedPolicyContextBinder._public_context(context, False))
+    delivery = build_model_turn_delivery(context, include_images=False)
+    serialized = json.dumps(GroundedPolicyContextBinder._public_context(context, False, delivery))
     assert "image_inputs" not in serialized
     assert media[0].sha256 not in serialized
 

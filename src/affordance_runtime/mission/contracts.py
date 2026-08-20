@@ -13,7 +13,7 @@ from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
-from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.task.contracts import TaskGoal, criterion_id
 from affordance_runtime.world.contracts import WorldObservation
 
 _KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -62,6 +62,9 @@ class MissionOutcome(StrEnum):
     CANCELLED = "cancelled"
     TASK_COMPLETE = "task_complete"
     TASK_BLOCKED = "task_blocked"
+    STRATEGY_NOT_CHANGED = "strategy_not_changed"
+    OPERATIONAL_FAILURE = "operational_failure"
+    UNHANDLED_EPISODE_STATE = "unhandled_episode_state"
     ROUND_BUDGET_EXHAUSTED = "round_budget_exhausted"
 
 
@@ -90,6 +93,7 @@ class RecoveryKind(StrEnum):
     CONTROL_STALL = "control_stall"
     STRATEGY_STALL = "strategy_stall"
     CAPABILITY_GAP = "capability_gap"
+    PROTOCOL_STALL = "protocol_stall"
 
 
 @dataclass(frozen=True)
@@ -256,12 +260,67 @@ class SupervisorState:
 
 
 @dataclass(frozen=True)
+class AuditGuidance:
+    """Bounded Auditor advice for one immediately following Manager decision."""
+
+    missing_evidence: tuple[str, ...] = ()
+    recovery_hint: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "missing_evidence",
+            _bounded_unique(self.missing_evidence, "missing_evidence"),
+        )
+        if self.recovery_hint:
+            _bounded_text(self.recovery_hint, "recovery hint")
+        if not self.missing_evidence and not self.recovery_hint:
+            raise ValueError("audit guidance cannot be empty")
+
+
+@dataclass(frozen=True)
+class ManagerRecoveryView:
+    """Non-authoritative, one-shot recovery context owned by Supervisor routing."""
+
+    exit_kind: str
+    world_changed: bool
+    prior_subtask: SubtaskContract
+    recovery_signal: RecoverySignal | None = None
+    attempted_modes: tuple[str, ...] = ()
+    audit_guidance: AuditGuidance | None = None
+    strategy_revision_required: bool = False
+
+    def __post_init__(self) -> None:
+        _bounded_text(self.exit_kind, "recovery exit kind", limit=200)
+        if type(self.world_changed) is not bool:
+            raise TypeError("recovery world_changed must be boolean")
+        if not isinstance(self.prior_subtask, SubtaskContract):
+            raise TypeError("recovery prior_subtask must be typed")
+        if self.recovery_signal is not None and not isinstance(self.recovery_signal, RecoverySignal):
+            raise TypeError("manager recovery signal must be typed")
+        object.__setattr__(
+            self,
+            "attempted_modes",
+            _bounded_unique(self.attempted_modes, "attempted_modes"),
+        )
+        if self.audit_guidance is not None and not isinstance(self.audit_guidance, AuditGuidance):
+            raise TypeError("manager audit guidance must be typed")
+        if type(self.strategy_revision_required) is not bool:
+            raise TypeError("strategy revision flag must be boolean")
+
+
+@dataclass(frozen=True)
 class ManagerRoleRequest:
     original_task: TaskGoal
     mission_state: MissionState
     last_typed_exit: str = ""
     last_audit_or_failure_ref: str = ""
     remaining_rounds: int = 0
+    recovery: ManagerRecoveryView | None = None
+
+    def __post_init__(self) -> None:
+        if self.recovery is not None and not isinstance(self.recovery, ManagerRecoveryView):
+            raise TypeError("manager recovery view must be typed")
 
 
 @dataclass(frozen=True)
@@ -312,8 +371,54 @@ class AuditBundle:
 
 
 @dataclass(frozen=True)
+class AuditorTaskProjection:
+    """Role-specific public task slice; complete TaskGoal inputs never cross this boundary."""
+
+    task_id: str
+    revision: int
+    instruction: str
+    constraints: tuple[str, ...] = ()
+    related_success_criteria: tuple[Mapping[str, object], ...] = ()
+    related_requested_outputs: tuple[str, ...] = ()
+
+    @classmethod
+    def from_authorities(
+        cls,
+        task: TaskGoal,
+        subtask: SubtaskContract,
+    ) -> AuditorTaskProjection:
+        related = set(subtask.related_audit_ids)
+        outputs = set(subtask.candidate_output_keys)
+        return cls(
+            task.task_id,
+            task.revision,
+            task.instruction,
+            subtask.constraints,
+            tuple(item for item in task.success_criteria if criterion_id(item) in related),
+            tuple(item for item in task.requested_outputs if item in outputs),
+        )
+
+    def __post_init__(self) -> None:
+        if not self.task_id.strip() or not self.instruction.strip():
+            raise ValueError("Auditor task projection requires identity and instruction")
+        if type(self.revision) is not int or self.revision < 1:
+            raise ValueError("Auditor task projection revision must be positive")
+        object.__setattr__(self, "constraints", _bounded_unique(self.constraints, "audit task constraints"))
+        object.__setattr__(
+            self,
+            "related_success_criteria",
+            tuple(freeze_json(item) for item in self.related_success_criteria),
+        )
+        object.__setattr__(
+            self,
+            "related_requested_outputs",
+            _bounded_unique(self.related_requested_outputs, "audit requested outputs"),
+        )
+
+
+@dataclass(frozen=True)
 class AuditorRoleRequest:
-    original_task: TaskGoal
+    task: AuditorTaskProjection
     subtask: SubtaskContract
     pre_mission_state: MissionState
     after_world: WorldObservation
@@ -322,6 +427,58 @@ class AuditorRoleRequest:
     episode_history: tuple[AgentTurnView, ...]
     audit_bundle: AuditBundle
     related_audit_ids: tuple[str, ...] = ()
+
+    @classmethod
+    def from_authorities(
+        cls,
+        original_task: TaskGoal,
+        subtask: SubtaskContract,
+        pre_mission_state: MissionState,
+        after_world: WorldObservation,
+        working_facts: tuple[WorkingFact, ...],
+        yield_reason: str,
+        episode_history: tuple[AgentTurnView, ...],
+        audit_bundle: AuditBundle,
+        related_audit_ids: tuple[str, ...] = (),
+    ) -> AuditorRoleRequest:
+        return cls(
+            AuditorTaskProjection.from_authorities(original_task, subtask),
+            subtask,
+            pre_mission_state,
+            after_world,
+            working_facts,
+            yield_reason,
+            episode_history,
+            audit_bundle,
+            related_audit_ids,
+        )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.task, AuditorTaskProjection):
+            raise TypeError("auditor request requires a role-specific task projection")
+        if not isinstance(self.subtask, SubtaskContract):
+            raise TypeError("auditor request requires a typed subtask")
+        if not isinstance(self.pre_mission_state, MissionState):
+            raise TypeError("auditor request requires typed pre-MissionState")
+        if not isinstance(self.after_world, WorldObservation):
+            raise TypeError("auditor request requires a fresh typed WorldObservation")
+        if self.yield_reason not in {"ready_for_audit", "request_final_audit"}:
+            raise ValueError("Auditor is available only at an explicit audit boundary")
+        object.__setattr__(self, "working_facts", tuple(self.working_facts))
+        if any(not isinstance(item, WorkingFact) for item in self.working_facts):
+            raise TypeError("auditor working facts must be typed")
+        object.__setattr__(self, "episode_history", tuple(self.episode_history))
+        if any(not isinstance(item, AgentTurnView) for item in self.episode_history):
+            raise TypeError("auditor history must be public and typed")
+        if not isinstance(self.audit_bundle, AuditBundle):
+            raise TypeError("auditor request requires a typed audit bundle")
+        if self.audit_bundle.observation_id != self.after_world.observation_id:
+            raise ValueError("auditor bundle must describe the fresh audit world")
+        object.__setattr__(
+            self,
+            "related_audit_ids",
+            _ids(self.related_audit_ids, "related_audit_ids"),
+        )
 
 
 @dataclass(frozen=True)

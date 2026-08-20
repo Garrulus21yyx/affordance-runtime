@@ -23,6 +23,15 @@ from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canon
 
 _MAX_STRING = 240
 _MAX_STATE_FIELDS = 8
+_PUBLIC_DOM_FIELDS = frozenset({
+    "semantic.dom.attribute.type",
+    "semantic.dom.attribute.role",
+    "semantic.dom.attribute.title",
+    "semantic.dom.attribute.alt",
+    "semantic.dom.attribute.placeholder",
+    "semantic.dom.attribute.aria-label",
+    "semantic.dom.attribute.aria-description",
+})
 # State used to choose or avoid a currently offered semantic action must survive
 # generic metadata pressure.  This is a projection priority, not a second state
 # definition: values still come only from the authoritative SemanticTarget.
@@ -135,18 +144,40 @@ def project_model_world(
     observation_capabilities: tuple[ObservationCapabilityView, ...] = (),
     observation_cursor: str = "",
     observation_pager: ObservationPager = ObservationPager(),
+    *,
+    lossless_public: bool = False,
 ) -> ModelWorldView:
-    target_capacity = budget.observation_target_capacity(len(observation.targets))
+    # The normal product path has no target-count cap.  In that path this
+    # projection is the lossless supported public normalization consumed by
+    # ActorWorldSnapshot; model-budget folding belongs to WorldDeliveryView.
+    # Explicitly bounded test/caller profiles retain the historical bounded
+    # projection semantics.
+    target_capacity = (
+        max(1, len(observation.targets))
+        if lossless_public
+        else budget.observation_target_capacity(len(observation.targets))
+    )
     basis = observation_pager.begin(
         observation,
         pinned_target_ids=pinned_target_ids,
         cursor=observation_cursor,
         page_size=target_capacity,
-        min_exploration_slots=budget.observation_exploration_slots(len(observation.targets)),
+        min_exploration_slots=(
+            max(1, len(observation.targets))
+            if lossless_public
+            else budget.observation_exploration_slots(len(observation.targets))
+        ),
     )
     by_id = {item.target_id: item for item in observation.targets}
     ordered_targets = tuple(by_id[target_id] for target_id in basis.target_ids)
-    targets = tuple(_project_target(item, budget.max_relations_per_target) for item in ordered_targets)
+    targets = tuple(
+        _project_target(
+            item,
+            None if lossless_public else budget.max_relations_per_target,
+            lossless_public=lossless_public,
+        )
+        for item in ordered_targets
+    )
     target_ids = {item.target_id for item in targets}
     pinned_targets = set(pinned_target_ids)
     fact_counts: dict[str, int] = {}
@@ -163,15 +194,25 @@ def project_model_world(
         fact_candidates.append((
             _state_fact_priority(fact.subject_id, fact.predicate, pinned_targets, ordinal),
             PublicFactView(
-                canonical_fact_ref(fact.fact_id), fact.subject_id, _text(fact.predicate), _public_value(fact.value)
+                canonical_fact_ref(fact.fact_id),
+                fact.subject_id,
+                fact.predicate if lossless_public else _text(fact.predicate),
+                _public_value_lossless(fact.value) if lossless_public else _public_value(fact.value),
             ),
         ))
-    fact_candidates.extend(_public_text_fact_candidates(observation, ordered_targets, pinned_targets))
+    fact_candidates.extend(
+        _public_text_fact_candidates(
+            observation,
+            ordered_targets,
+            pinned_targets,
+            lossless_public=lossless_public,
+        )
+    )
     for _priority, fact in sorted(fact_candidates, key=lambda item: item[0]):
-        if len(projected_facts) >= budget.max_facts:
+        if not lossless_public and len(projected_facts) >= budget.max_facts:
             break
         count = fact_counts.get(fact.subject_id, 0)
-        if count >= budget.max_facts_per_target:
+        if not lossless_public and count >= budget.max_facts_per_target:
             continue
         projected_facts.append(fact)
         fact_counts[fact.subject_id] = count + 1
@@ -224,12 +265,16 @@ def project_model_world(
         if budget.max_total_serialized_bytes < 64 * 1024
         else budget.max_total_serialized_bytes * 3 // 4
     )
-    fitted = fit_model_world(
-        view,
-        fit_bytes,
-        pinned_target_ids,
-        pinned_output_ids,
-        target_groups=_semantic_target_groups(observation),
+    fitted = (
+        view
+        if lossless_public
+        else fit_model_world(
+            view,
+            fit_bytes,
+            pinned_target_ids,
+            pinned_output_ids,
+            target_groups=_semantic_target_groups(observation),
+        )
     )
     traversal = observation_pager.finish(
         basis,
@@ -390,6 +435,8 @@ def _public_text_fact_candidates(
     observation: WorldObservation,
     ordered_targets,
     pinned_targets: set[str],
+    *,
+    lossless_public: bool = False,
 ) -> list[tuple[tuple[int, int, int, str], PublicFactView]]:
     candidates: list[tuple[tuple[int, int, int, str], PublicFactView]] = []
     seen: set[str] = set()
@@ -401,7 +448,12 @@ def _public_text_fact_candidates(
         seen.add(ref)
         candidates.append((
             _text_fact_priority(target.target_id, target.role, pinned_targets, ordinal, source_rank=0),
-            PublicFactView(ref, target.target_id, "public.label", _public_value(label)),
+            PublicFactView(
+                ref,
+                target.target_id,
+                "public.label",
+                _public_value_lossless(label) if lossless_public else _public_value(label),
+            ),
         ))
     linked_targets = {
         (link.source_observation_id, link.source_target_id)
@@ -421,7 +473,12 @@ def _public_text_fact_candidates(
             seen.add(ref)
             candidates.append((
                 _text_fact_priority(node.structure_id, node.role, pinned_targets, ordinal, source_rank=source_rank),
-                PublicFactView(ref, node.structure_id, "public.label", _public_value(label)),
+                PublicFactView(
+                    ref,
+                    node.structure_id,
+                    "public.label",
+                    _public_value_lossless(label) if lossless_public else _public_value(label),
+                ),
             ))
             ordinal += 1
     return candidates
@@ -440,16 +497,22 @@ def _text_fact_priority(
     return (pinned_rank, 1, role_rank, f"{source_rank:02d}:{ordinal:08d}:{subject_id}")
 
 
-def _project_target(target, relation_limit: int) -> ModelTargetView:
-    public_state = _public_items(target.state)
+def _project_target(
+    target,
+    relation_limit: int | None,
+    *,
+    lossless_public: bool = False,
+) -> ModelTargetView:
+    projector = _public_items_lossless if lossless_public else _public_items
+    public_state = projector(target.state)
     public_state.sort(key=_state_projection_priority)
-    public_relations = _public_items(target.relations)
-    state = dict(public_state[:_MAX_STATE_FIELDS])
-    relations = dict(public_relations[:relation_limit])
+    public_relations = projector(target.relations)
+    state = dict(public_state if relation_limit is None else public_state[:_MAX_STATE_FIELDS])
+    relations = dict(public_relations if relation_limit is None else public_relations[:relation_limit])
     return ModelTargetView(
         target.target_id,
-        _text(target.role),
-        _text(target.label),
+        target.role if lossless_public else _text(target.role),
+        target.label if lossless_public else _text(target.label),
         state,
         relations,
         len(public_state),
@@ -465,7 +528,24 @@ def _state_projection_priority(item: tuple[str, object]) -> tuple[int, str]:
 
 
 def _public_items(value: Mapping[str, Any]) -> list[tuple[str, object]]:
-    return [(str(key), _public_value(item)) for key, item in value.items() if not _private_key(str(key))]
+    return [
+        (str(key), _public_value(item))
+        for key, item in value.items()
+        if not _private_key(str(key)) and _public_dom_field(str(key))
+    ]
+
+
+def _public_items_lossless(value: Mapping[str, Any]) -> list[tuple[str, object]]:
+    return [
+        (str(key), _public_value_lossless(item))
+        for key, item in value.items()
+        if not _private_key(str(key)) and _public_dom_field(str(key))
+    ]
+
+
+def _public_dom_field(key: str) -> bool:
+    normalized = key.casefold()
+    return not normalized.startswith("semantic.dom.") or normalized in _PUBLIC_DOM_FIELDS
 
 
 def _public_mapping(value: Mapping[str, Any], limit: int) -> dict[str, object]:
@@ -484,6 +564,20 @@ def _public_value(value: Any, depth: int = 0) -> Any:
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [_public_value(item, depth + 1) for item in list(value)[:_MAX_STATE_FIELDS]]
     return _text(str(value))
+
+
+def _public_value_lossless(value: Any) -> Any:
+    if isinstance(value, str) or value is None or isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, Mapping):
+        return {
+            str(key): _public_value_lossless(item)
+            for key, item in value.items()
+            if not _private_key(str(key)) and _public_dom_field(str(key))
+        }
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return [_public_value_lossless(item) for item in value]
+    return str(value)
 
 
 def _private_key(key: str) -> bool:

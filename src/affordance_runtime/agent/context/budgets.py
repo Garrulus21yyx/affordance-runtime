@@ -57,9 +57,9 @@ class ContextProjectionBudget:
     max_transition_evidence_refs: int = 16
     max_artifact_summaries: int = 16
     max_unresolved_items: int = 32
-    # Roughly 64k text tokens at the existing JSON-heavy projection density;
-    # short GUI trajectories therefore remain lossless. Older action summaries
-    # are compacted before this bound is approached.
+    # Legacy bound for explicitly bounded projection callers. ContextBuilder's
+    # supported-public Actor is lossless; provider delivery has its own request
+    # admission and WorldDeliveryView fitting boundary.
     max_total_serialized_bytes: int = 384 * 1024
 
     def __post_init__(self) -> None:

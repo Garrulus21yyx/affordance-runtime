@@ -588,11 +588,7 @@ def model_turn_payload(
             "count": int(diagnostics.get("tool_catalog_count", 0)),
             "bytes": int(diagnostics.get("tool_catalog_bytes", 0)),
             "specs": _json_value(diagnostics.get("tool_catalog_specs", ()), None),
-            "selected_operation": str(diagnostics.get("tool_argument_selected_operation", "")),
             "resolution_code": str(diagnostics.get("tool_resolution_code", "")),
-            "argument_repair_count": int(diagnostics.get("tool_argument_repair_count", 0)),
-            "argument_violation_code": str(diagnostics.get("tool_argument_violation_code", "")),
-            "argument_violation_paths": list(diagnostics.get("tool_argument_violation_paths", ())),
             "structured_output_violations": _json_value(
                 diagnostics.get("structured_output_violations", ()), None
             ),

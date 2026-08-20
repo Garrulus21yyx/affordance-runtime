@@ -19,8 +19,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 
-_EXPECTED_OUTCOME_FIELD = "expected_outcome"
-_RESERVED_NAMES = frozenset({"target", "source", "destination", _EXPECTED_OUTCOME_FIELD})
+_RESERVED_NAMES = frozenset({"target", "source", "destination"})
 
 
 class SelectorMode(StrEnum):
@@ -84,11 +83,10 @@ class CompiledGroundedTool:
                 GroundedToolResolutionCode.INVALID_ARGUMENTS
             )
         match = matches[0]
-        expected_outcome = _expected_outcome(arguments.get(_EXPECTED_OUTCOME_FIELD, ""))
         parameters = {
             name: value
             for name, value in arguments.items()
-            if name not in selector_names and name != _EXPECTED_OUTCOME_FIELD
+            if name not in selector_names
         }
         try:
             validate_value(parameters, match.parameter_schema, path="command")
@@ -102,7 +100,7 @@ class CompiledGroundedTool:
             parameters,
             match.destination_id or "",
             tool_call_id,
-            expected_outcome,
+            "",
         )
 
 
@@ -175,11 +173,6 @@ class GroundedToolCompiler:
             "properties": {
                 **selector_properties,
                 **business_properties,
-                _EXPECTED_OUTCOME_FIELD: {
-                    "type": "string",
-                    "description": "optional local outcome intent for this action; advisory, not task completion",
-                    "maxLength": 240,
-                },
             },
             "required": [*(field.public_name for field in fields), *business_required],
             "additionalProperties": False,
@@ -231,14 +224,13 @@ def _current_reference_selectors(
     SelectorMode,
 ]:
     if rows[0].destination is None:
-        targets = tuple(dict.fromkeys(row.option.target_ref for row in rows))
         field = CompiledSelectorField(
             "target",
             ("target.ref",),
             {
                 "type": "string",
-                "description": "currently offered target reference",
-                "enum": list(targets),
+                "description": "current executable E-ref",
+                "pattern": "^E[1-9][0-9]{0,2}$",
             },
         )
         return (
@@ -246,20 +238,14 @@ def _current_reference_selectors(
             tuple({"target": row.option.target_ref} for row in rows),
             SelectorMode.CURRENT_TARGET,
         )
-    sources = tuple(dict.fromkeys(row.option.target_ref for row in rows))
-    destinations = tuple(dict.fromkeys(
-        row.destination.grounding_ref
-        for row in rows
-        if row.destination is not None
-    ))
     fields = (
         CompiledSelectorField(
             "source",
             ("source.ref",),
             {
                 "type": "string",
-                "description": "currently offered source reference",
-                "enum": list(sources),
+                "description": "current executable source E-ref",
+                "pattern": "^E[1-9][0-9]{0,2}$",
             },
         ),
         CompiledSelectorField(
@@ -267,8 +253,8 @@ def _current_reference_selectors(
             ("destination.ref",),
             {
                 "type": "string",
-                "description": "currently offered destination reference",
-                "enum": list(destinations),
+                "description": "current executable destination E-ref",
+                "pattern": "^E[1-9][0-9]{0,2}$",
             },
         ),
     )
@@ -284,14 +270,6 @@ def _current_reference_selectors(
         ),
         SelectorMode.CURRENT_ENDPOINTS,
     )
-
-
-def _expected_outcome(value: object) -> str:
-    if value in (None, ""):
-        return ""
-    if not isinstance(value, str) or len(value) > 240:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-    return value.strip()
 
 
 def _merge_business_schemas(
@@ -369,12 +347,7 @@ def _description(
     fields: tuple[CompiledSelectorField, ...],
 ) -> str:
     endpoints = " and ".join(field.public_name for field in fields)
-    effects = ", ".join(rows[0].option.semantic_effects) or rows[0].option.effect_category
-    return (
-        f"{operation} using current observation {endpoints}. "
-        "Choose a reference whose current observation affordances include this operation; Runtime revalidates "
-        f"existence, currentness, and legality. Effect: {effects}; risk: {rows[0].option.risk}."
-    )[:500]
+    return f"Use {operation} on current executable {endpoints}."
 
 
 def _row_order(row: ConcreteActionCandidateRow) -> tuple[str, str]:

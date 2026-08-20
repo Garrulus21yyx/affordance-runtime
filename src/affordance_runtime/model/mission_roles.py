@@ -13,13 +13,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
-from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
 )
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
@@ -55,6 +56,7 @@ from affordance_runtime.model.providers.port import (
     model_port_from_environment,
     structured_output_repair_contract,
 )
+from affordance_runtime.task.contracts import TaskGoal
 
 _AUDIT_HISTORY_BYTES = 16 * 1024
 _AUDIT_RENDERED_WORLD_BYTES = 128 * 1024
@@ -157,6 +159,7 @@ class _RolePrompt:
     messages: tuple[ModelMessage, ...]
     component_payloads: Mapping[str, object]
     public_evidence_refs: Mapping[str, str] = field(default_factory=dict)
+    repair_context: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -203,15 +206,16 @@ async def _invoke_structured_role(
         response, attempts = await _generate_structured_role(port, config, messages, schema, initial_phase, attempts)
     except StructuredOutputError as exc:
         attempts = getattr(exc, "_mission_role_attempts", attempts)
-        repair_messages = _repair_messages(messages, exc)
+        repair_contract = _role_repair_contract(port, prompt, schema, exc)
+        repair_messages = _repair_messages(repair_contract)
         try:
             repair_admitted = admit_model_request(
                 messages=repair_messages,
                 tools=(),
                 budget=request_budget or ModelRequestBudget(max_output_tokens=config.max_tokens),
                 phase=repair_phase,
-                component_payloads=prompt.component_payloads,
-                repair_payload=structured_output_repair_contract(exc),
+                component_payloads={"repair": repair_contract},
+                repair_payload=repair_contract,
             )
             repair_messages = repair_admitted.messages
             breakdowns = breakdowns + (repair_admitted.breakdown,)
@@ -512,16 +516,51 @@ def mission_roles_from_environment(environment: Mapping[str, str] | None = None)
 
 def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
     payload = {
-        "task": _task_payload(request.original_task),
+        "task": _manager_task_payload(request.original_task),
         "mission_state": _mission_payload(request.mission_state),
         "last_typed_exit": request.last_typed_exit,
         "last_audit_or_failure_ref": request.last_audit_or_failure_ref,
         "remaining_rounds": request.remaining_rounds,
+        "recovery": _manager_recovery_payload(request),
     }
     return _RolePrompt(
         _messages(MISSION_MANAGER_INSTRUCTIONS, payload),
         {"task_plan": payload},
     )
+
+
+def _manager_recovery_payload(request: ManagerRoleRequest) -> Mapping[str, object] | None:
+    recovery = request.recovery
+    if recovery is None:
+        return None
+    signal = recovery.recovery_signal
+    evidence = dict(signal.observed_evidence) if signal is not None else {}
+    repeated_arguments = evidence.pop("arguments", {})
+    repeat_count = evidence.pop("same_result_count", 0)
+    item_count = evidence.get("item_count")
+    result = "empty" if item_count == 0 else "nonempty" if isinstance(item_count, int) else "unknown"
+    payload: dict[str, object] = {
+        "authority": "temporary_non_authoritative_guidance",
+        "scope": "next_manager_decision_only",
+        "exit_kind": recovery.exit_kind,
+        "world_changed": recovery.world_changed,
+        "attempted_modes": recovery.attempted_modes,
+        "repeated_arguments": repeated_arguments,
+        "result": result,
+        "repeat_count": repeat_count,
+        "observed_evidence": evidence,
+        "prohibited_repeat": (
+            signal.prohibited_immediate_repeat if signal is not None else ""
+        ),
+        "prior_subtask": to_json_compatible(recovery.prior_subtask),
+        "strategy_revision_required": recovery.strategy_revision_required,
+    }
+    if recovery.audit_guidance is not None:
+        payload["audit_guidance"] = {
+            "missing_evidence": recovery.audit_guidance.missing_evidence,
+            "recovery_hint": recovery.audit_guidance.recovery_hint,
+        }
+    return payload
 
 
 def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:
@@ -540,9 +579,9 @@ def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:
     except EpisodeHistoryCapacityError as exc:
         raise RoleInputCapacityError("audit history exceeds bounded context") from exc
     payload = {
-        "task": _task_payload(request.original_task),
-        "subtask": to_json_compatible(request.subtask),
-        "pre_mission_state": _mission_payload(request.pre_mission_state),
+        "task": _auditor_task_payload(request),
+        "subtask": _auditor_subtask_payload(request.subtask),
+        "pre_mission_state": _auditor_mission_payload(request),
         "audit_world": audit_world,
         "working_facts": tuple(
             {
@@ -575,6 +614,11 @@ def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:
         _messages(MISSION_AUDITOR_INSTRUCTIONS, payload),
         component_payloads,
         audit_projection.public_evidence_refs,
+        {
+            "base_mission_version": request.pre_mission_state.version,
+            "allowed_public_evidence_refs": public_refs,
+            "yield_reason": request.yield_reason,
+        },
     )
 
 
@@ -586,46 +630,155 @@ def _messages(instructions: str, payload: Mapping[str, object]) -> tuple[ModelMe
     )
 
 
-def _repair_messages(messages: tuple[ModelMessage, ...], error: StructuredOutputError) -> tuple[ModelMessage, ...]:
-    repair = {
+def _repair_messages(repair: Mapping[str, object]) -> tuple[ModelMessage, ...]:
+    return (
+        ModelMessage(
+            role="system",
+            content=(
+                "Repair representation only. Preserve the semantic claims in the invalid output. "
+                "Return exactly one replacement JSON object matching the declared shape."
+            ),
+        ),
+        ModelMessage(
+            role="user",
+            content=json.dumps(to_json_compatible(repair), separators=(",", ":"), ensure_ascii=False),
+        ),
+    )
+
+
+def _role_repair_contract(
+    port: ModelPort,
+    prompt: _RolePrompt,
+    schema: type[BaseModel],
+    error: StructuredOutputError,
+) -> Mapping[str, object]:
+    return {
         "repair": structured_output_repair_contract(error),
-        "instruction": "Return one complete replacement object using only the declared schema.",
+        "invalid_output": _bounded_invalid_role_output(port),
+        "required_shape": _compact_role_shape(schema),
+        "preserve": prompt.repair_context,
     }
-    return (*messages, ModelMessage(role="user", content=json.dumps(repair, separators=(",", ":"))))
 
 
-def _task_payload(task) -> Mapping[str, object]:
+def _bounded_invalid_role_output(port: ModelPort) -> str:
+    transcript = getattr(port, "last_transcript", None)
+    if not isinstance(transcript, Mapping):
+        return "[unavailable]"
+    messages = transcript.get("llm.output_messages")
+    if not isinstance(messages, list | tuple) or not messages:
+        return "[unavailable]"
+    last = messages[-1]
+    value = last.get("content") if isinstance(last, Mapping) else ""
+    if not isinstance(value, str):
+        value = json.dumps(to_json_compatible(value), separators=(",", ":"), ensure_ascii=False)
+    value = value.strip()
+    if len(value) > 8_192:
+        return value[:8_189] + "..."
+    return value or "[unavailable]"
+
+
+def _compact_role_shape(schema: type[BaseModel]) -> Mapping[str, object]:
+    if schema is AuditDeltaModel:
+        return {
+            "status": "audited_satisfied|audited_unsatisfied|unknown|blocked",
+            "base_mission_version": "integer",
+            "completed_outcomes": "[{audit_id,status,evidence_refs,summary}]",
+            "promote_facts": "[{key,evidence_ref,value,purpose}]",
+            "invalidate_fact_keys": "[snake_case_key]",
+            "missing_evidence": "[string]",
+            "recovery_hint": "string",
+        }
+    return {
+        "route": "execute_subtask|ask_user|blocked|request_final_audit",
+        "subtask": "object|null",
+        "question": "string",
+        "reason": "string",
+    }
+
+
+def _manager_task_payload(task: TaskGoal) -> Mapping[str, object]:
     return {
         "instruction": task.instruction,
         "constraints": task.constraints,
         "allowed_effects": task.allowed_effects,
         "forbidden_effects": task.forbidden_effects,
-        "public_inputs": task.inputs,
+        "public_inputs": _role_public_inputs(task),
         "success_criteria": task.success_criteria,
         "requested_outputs": task.requested_outputs,
         "risk_profile": task.risk_profile.value,
     }
 
 
+def _role_public_inputs(task: TaskGoal) -> Mapping[str, object]:
+    return {
+        key: value
+        for key, value in task.inputs.items()
+        if key != PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
+    }
+
+
+def _auditor_task_payload(request: AuditorRoleRequest) -> Mapping[str, object]:
+    task = request.task
+    return {
+        "instruction": task.instruction,
+        "constraints": task.constraints,
+        "related_success_criteria": task.related_success_criteria,
+        "related_requested_outputs": task.related_requested_outputs,
+    }
+
+
+def _auditor_subtask_payload(subtask: SubtaskContract) -> Mapping[str, object]:
+    return {
+        "objective": subtask.objective,
+        "done_when": subtask.done_when,
+        "constraints": subtask.constraints,
+    }
+
+
+def _auditor_mission_payload(request: AuditorRoleRequest) -> Mapping[str, object]:
+    mission = request.pre_mission_state
+    related_audits = set(request.related_audit_ids)
+    relevant_facts = set(request.subtask.relevant_fact_keys)
+    return {
+        "version": mission.version,
+        "audited_outcomes": tuple(
+            to_json_compatible(item)
+            for item in mission.audited_outcomes
+            if item.audit_id in related_audits
+        ),
+        "accepted_facts": tuple(
+            {
+                "key": item.key,
+                "value": item.record.value,
+                "evidence_ref": item.record.evidence_ref,
+                "accepted_at_version": item.accepted_at_version,
+            }
+            for item in mission.accepted_facts
+            if item.key in relevant_facts
+        ),
+        "audit_lineage": tuple(
+            item for item in mission.audit_lineage if item in related_audits
+        ),
+    }
+
+
 def _audit_world_payload(request: AuditorRoleRequest) -> _AuditWorldProjection:
     try:
         context = _auditor_delivery_context(request)
-        rendered = render_compact_actor_world(
-            context.actor_world,
-            context.grounding,
+        delivery = build_model_turn_delivery(
+            context,
             include_images=False,
-            region_index=context.region_index,
-            observation=context.current_observation,
             max_rendered_bytes=_AUDIT_RENDERED_WORLD_BYTES,
         )
+        rendered = delivery.view
     except ValueError as exc:
         raise RoleInputCapacityError("audit world exceeds bounded context") from exc
     public_evidence_refs = _visible_delivery_fact_refs(context, request, rendered)
     return _AuditWorldProjection({
         "observation_id": request.after_world.observation_id,
-        "format": "compact_ax.v1",
-        "delivery_projection": "region_lens" if "delivery=region_lens" in rendered else "full",
-        "observation": rendered,
+        "format": "compact_ax.v2",
+        "delivery_projection": rendered.projection,
+        "observation": rendered.text,
         "sources": tuple(
             {
                 "source_ref": item.source_ref,
@@ -645,9 +798,17 @@ def _audit_world_payload(request: AuditorRoleRequest) -> _AuditWorldProjection:
 
 
 def _auditor_delivery_context(request: AuditorRoleRequest):
-    action_space = ActionSpaceBuilder().build(request.original_task, request.after_world)
+    projected_task = TaskGoal(
+        request.task.task_id,
+        request.task.instruction,
+        constraints=request.task.constraints,
+        success_criteria=request.task.related_success_criteria,
+        requested_outputs=request.task.related_requested_outputs,
+        revision=request.task.revision,
+    )
+    action_space = ActionSpaceBuilder().build(projected_task, request.after_world)
     evaluation = TaskEvaluation(
-        request.original_task.task_id,
+        projected_task.task_id,
         request.after_world.observation_id,
         TaskEvaluationStatus.UNKNOWN,
         "auditor read-only delivery",
@@ -660,7 +821,7 @@ def _auditor_delivery_context(request: AuditorRoleRequest):
         ),
         include_public_text_evidence=True,
     ).build(
-        request.original_task,
+        projected_task,
         request.after_world,
         action_space,
         evaluation,
@@ -668,13 +829,13 @@ def _auditor_delivery_context(request: AuditorRoleRequest):
     )
 
 
-def _visible_delivery_fact_refs(context, request: AuditorRoleRequest, rendered: str) -> dict[str, str]:
+def _visible_delivery_fact_refs(context, request: AuditorRoleRequest, rendered) -> dict[str, str]:
     values: dict[str, str] = {}
     for public_ref, canonical_ref in sorted(
         context.private_fact_bindings.items(),
         key=lambda item: _public_fact_sort_key(item[0]),
     ):
-        if not _public_ref_visible(public_ref, rendered):
+        if public_ref not in rendered.manifest.fact_refs:
             continue
         record = request.audit_bundle.resolve(canonical_ref)
         if record is None and context.evidence_index is not None:
@@ -688,10 +849,6 @@ def _visible_delivery_fact_refs(context, request: AuditorRoleRequest, rendered: 
 def _public_fact_sort_key(public_ref: str) -> tuple[int, str]:
     suffix = public_ref[1:] if public_ref.startswith("F") else ""
     return (int(suffix) if suffix.isdecimal() else 0, public_ref)
-
-
-def _public_ref_visible(public_ref: str, rendered: str) -> bool:
-    return f"[{public_ref}]" in rendered or f" {public_ref} " in f" {rendered} "
 
 
 def _canonical_evidence_refs(refs: tuple[str, ...], public_refs: Mapping[str, str]) -> tuple[str, ...]:

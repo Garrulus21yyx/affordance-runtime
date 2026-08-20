@@ -44,6 +44,11 @@ class YieldSubtaskKind(StrEnum):
     CAPABILITY_GAP = "capability_gap"
 
 
+class ProtocolFeedbackKind(StrEnum):
+    MULTIPLE_TOOL_CALLS = "multiple_tool_calls"
+    REPRESENTATION_ERROR = "representation_error"
+
+
 def _require_context(context_id: str) -> None:
     if not context_id.strip():
         raise ValueError("decision requires context identity")
@@ -177,6 +182,25 @@ class LocalToolResult:
 
 
 @dataclass(frozen=True)
+class ProtocolFeedback:
+    """No-dispatch feedback for one invalid provider action envelope."""
+
+    context_id: str
+    kind: ProtocolFeedbackKind
+    call_count: int = 0
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        _require_context(self.context_id)
+        if not isinstance(self.kind, ProtocolFeedbackKind):
+            object.__setattr__(self, "kind", ProtocolFeedbackKind(self.kind))
+        if not 0 <= self.call_count <= 32:
+            raise ValueError("protocol feedback call count is outside bounds")
+        if len(self.detail) > 240:
+            raise ValueError("protocol feedback detail exceeds its bound")
+
+
+@dataclass(frozen=True)
 class YieldSubtask:
     """Local episode exit request; never dispatches to the environment."""
 
@@ -244,6 +268,7 @@ AgentDecision: TypeAlias = (
     | RequestActionPage
     | AskUser
     | LocalToolResult
+    | ProtocolFeedback
     | YieldSubtask
     | FinalResponse
     | Wait

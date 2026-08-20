@@ -18,11 +18,12 @@ from affordance_runtime.actions.capabilities import (
     InteractionCapabilityError,
     InteractionCapabilityIssueCode,
     InteractionSubjectKind,
+    ParameterContractKind,
     PrimitiveTranslator,
     VerificationContract,
 )
+from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.projection import project_action_space
-from affordance_runtime.model.policy.grounded_tool_catalog import resolve_grounded_tool_call
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
@@ -58,6 +59,7 @@ from affordance_runtime.world import (
     StateFact,
     WorldObservation,
 )
+from tests.support.model_delivery import resolve_catalog_call
 from tests.support.world import fused_world
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -170,6 +172,58 @@ def test_browsergym_t1_capabilities_are_installed_without_future_operations() ->
     assert {"hover", "focus", "set_value"}.isdisjoint(support)
 
 
+def test_browsergym_select_option_is_one_closed_observation_barrier_composite() -> None:
+    target = SemanticTarget("select:year", "combobox", "Date filter", {"value": ""})
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string", "enum": ["Year", "Month"]}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    binding = ActionBinding(
+        "binding:select-year",
+        "obs:select-year",
+        "obs:select-year",
+        "revision:select-year",
+        "fingerprint:select-year",
+        target.target_id,
+        target.target_id,
+        "browsergym",
+        "browsergym",
+        "select_option",
+        "select_option",
+        "local_reversible",
+        ("external_ui_interaction",),
+        schema,
+        {"bid": "private-select"},
+    )
+    task = TaskGoal(
+        "task:select-year",
+        "Select Year",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    world = fused_world(
+        "obs:select-year",
+        (target,),
+        bindings=(binding,),
+        surface="browsergym",
+    )
+
+    option, = ActionSpaceBuilder().build(task, world).options
+    capability = BROWSERGYM_INTERACTION_CAPABILITIES.resolve_action("select_option")
+
+    assert option.semantic_action == "select_option"
+    assert option.parameter_schema["properties"]["value"]["enum"] == ("Year", "Month")
+    assert option.observation_barrier is True
+    assert capability.semantic_definition.parameter_contract is ParameterContractKind.OPTION_VALUE
+    assert capability.support.primitive_actions == ("select_option",)
+    assert tuple(item.primitive_action for item in capability.translators) == ("select_option",)
+    assert "navigate_to" not in {
+        item.semantic_action for item in BROWSERGYM_INTERACTION_PROFILE.capabilities
+    }
+
+
 def test_composer_and_schema_contracts_fail_closed_with_typed_issues() -> None:
     profile = AdapterInteractionProfile(
         "fixture.v1",
@@ -258,6 +312,8 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     catalog = GroundedToolCatalog(
         "grounded-catalog:schema",
         "context:schema",
+        "delivery:" + "d" * 64,
+        DeliveryManifest("world:schema", ("E1",)),
         (RegisteredGroundedTool(compiled.public_spec, compiled),),
         1,
     )
@@ -268,7 +324,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     )
     assert normalized.status is ToolCallReconciliationStatus.EXACT
     assert normalized.exact_call == ToolCall(compiled.public_spec.name, arguments)
-    resolved = resolve_grounded_tool_call(
+    resolved = resolve_catalog_call(
         catalog,
         normalized.exact_call,
         expected_context_id="context:schema",
@@ -282,7 +338,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
 
     assert binding.parameter_schema == option.parameter_schema == projected.parameter_schema
     assert compiled.public_spec.input_schema["properties"]["text"] == binding.parameter_schema["properties"]["text"]
-    assert compiled.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
+    assert compiled.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
     assert compiled.public_spec.input_schema["required"] == ("target", "text")
     assert admitted is not None
     assert admitted.parameters == {"text": "beta"}
@@ -374,6 +430,8 @@ def test_unknown_tool_returns_bounded_current_names_without_guessing_arguments()
     catalog = GroundedToolCatalog(
         "grounded-catalog:owner",
         "context:owner",
+        "delivery:" + "e" * 64,
+        DeliveryManifest("world:owner", ("E1",)),
         (RegisteredGroundedTool(canonical.public_spec, canonical),),
         1,
     )

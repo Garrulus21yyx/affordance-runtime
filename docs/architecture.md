@@ -14,15 +14,71 @@ task-completion authority.
 
 ### Implementation status
 
+#### 2026-08-20 single-turn delivery and audit-routing convergence
+
+The current local implementation has one per-turn delivery owner. `GroundedPolicyContextBinder.model_turn_delivery()`
+constructs one immutable `ModelTurnDelivery` from the fresh `WorldObservation` and complete `ActionSpace`. The object
+contains the exact `WorldDeliveryView`, its typed `DeliveryManifest`, a `delivery_id`, and observation/context lineage.
+The ActionPolicy observation is `delivery.view.text`; `GroundedToolCatalog` consumes `delivery.manifest` directly;
+resolver/admission checks the same `delivery_id`; trace records that lineage without rebuilding it.
+
+```text
+fresh WorldObservation + complete ActionSpace
+  -> ModelTurnDelivery(WorldDeliveryView, DeliveryManifest, delivery_id, lineage)
+       -> GroundedPolicyContextBinder serializes view.text
+       -> GroundedToolCatalog consumes the same manifest object
+  -> provider returns at most one tool call
+  -> local normalizer -> resolver against the same delivery_id
+  -> SelectAction or typed local/protocol feedback
+  -> existing admission -> Binder -> Executor
+  -> fresh WorldObservation
+```
+
+The provider wire sets `parallel_tool_calls=false`. A provider that nevertheless returns multiple calls causes zero
+dispatch and typed `multiple_tool_calls` feedback in the same episode; Runtime neither selects the first call nor asks
+a repair model to choose another intent. Repetition follows the bounded monitor path to
+`protocol_stall -> YIELDED -> Manager recovery`. Action-call normalization may only preserve the exact operation,
+target, and semantic arguments. Invalid representation, stale delivery, and grounding errors return typed feedback;
+there is no ActionPolicy semantic-reselection repair path.
+
+The episode boundary is total rather than audit-by-default. `TaskEvaluator COMPLETE|BLOCKED` is terminal without
+Auditor. Only explicit `ready_for_audit` and explicit final-audit requests construct an `AuditorRoleRequest`.
+`control_stall|grounding_stall|capability_gap|protocol_stall` route to Manager with zero Auditor attempts, while
+provider/environment/authentication/timeout failures retain typed operational outcomes. Waiting-user and confirmation
+keep their existing paths; an unsupported episode state fails typed instead of falling through to Auditor.
+
+Auditor and Finalizer no longer share a general task payload. `AuditorRoleRequest` itself carries a typed
+`AuditorTaskProjection`, so the role port and trace receive only the original public instruction,
+subtask-relevant constraints, `objective/done_when`, relevant accepted state/facts, a fresh public audit World,
+bounded sanitized episode evidence, public evidence refs, base mission version, and an explicit audit yield reason.
+and receive neither `TaskGoal.inputs` nor the WebArena final-response schema. Its sole output contract is
+`AuditDeltaModel`, locally validated with at most one narrow JSON-object schema repair. The public final-response
+contract remains owned exclusively by the finalizing turn.
+
+The superseded production paths are deleted: ToolCatalog-side rendering and rendered-string/regex ref discovery,
+parallel Manifest caches, ActionPolicy tool-call/argument/intent repair and target reselection, operational-failure
+audit fallback, the shared role `_task_payload`, and repair-only diagnostics/metrics. The compact-json adapter remains
+a stateless wire compatibility facade over the same delivery/catalog/resolver chain; it owns no alternate World,
+Manifest, Binder, Executor, or GUI loop.
+
+This increment intentionally does not add `SemanticTargetSelector`, `fill_form`, arbitrary multi-action execution,
+an action queue, VLM fallback, or a second ActionSpace/Binder/Executor/GUI loop. The six-page provider-free diagnostic
+passes locally at `evidence/w1b-world-t32-contract-convergence-run1/`, with `ready=true`, no acceptance errors,
+provider-reported prompt tokens zero, and unchanged zero-dispatch recovery checks. No live/provider witness was run.
+Implementation convergence and live verification remain separate. Honest state:
+`T3.2 semantic delivery implementation converged locally / single-turn contract and audit routing repaired /
+provider-free verification passed / live W1b witness pending / non-closed`.
+
 Goal semantics remains non-closed after repeated Ready-path failures exposed two distinct problems. A Ready plan could
 contain internal activities such as locating controls and the policy could treat dependencies as current-screen gates;
 separately, the action path collapsed an observed UI change and satisfaction of a requested local outcome into one
 result. Phase 11 now converges that boundary: local action feedback is an observational transition projection, not a
 second evaluator of task meaning. `TaskEvaluator`/the native verifier remains the only formal evaluator and no
 Runtime-owned progress state returns. The Context delivery increment now also separates internal truth from model
-expression: Runtime and trace retain the full typed `WorldObservation` plus the exact bounded `ActorWorldSnapshot`
-projection, while ActionPolicy receives that projection's AX-style compact rendering with public E-refs, hierarchy,
-state, verbs, and truthful coverage. Its real seed-7 snapshot passed the local
+expression: Runtime and trace retain the full typed `WorldObservation`. The current pre-T3.2 path also creates a
+bounded `ActorWorldSnapshot` and renders it directly; T3.2 moves all model-budget omission into
+`WorldDeliveryView`, leaving the supported public Actor algebra lossless. ActionPolicy then receives the delivery
+view's AX-style compact rendering with public E-refs, hierarchy, state, verbs, and truthful coverage. Its real seed-7 snapshot passed the local
 gate. The subsequent formal G4 Like witness exposed a temporal reference defect: call-local E-refs were regenerated
 from each fresh World while complete historical observations retained former E-refs. Model-facing Recent Steps now
 renders only semantic targets, actions, and local transitions with expired refs removed; prior World renderings and
@@ -37,9 +93,11 @@ held-out generalization evidence, so G4 remains non-closed and its cohort is ret
 The 2026-08-18 W1b diagnostic then exposed a shared projection invariant rather than a drag-only defect: a target's
 bounded eight-field model state could silently drop an action-decision field such as a combobox `value` behind
 unrelated metadata. Fresh World and Recent Steps could therefore report the successful transition while the current
-ActionSpace omitted the resulting value and encouraged repetition. `WorldProjection` now prioritizes the existing
-supported action-decision fields before metadata, and `ActorWorldSnapshot` carries truthful per-node state counts so
-`compact_ax.v1` emits `state_coverage=retained/total` whenever state is partial. T0 then closed the real-web
+ActionSpace omitted the resulting value and encouraged repetition. `WorldProjection` then prioritized the existing
+supported action-decision fields before metadata, and the pre-T3.2 `ActorWorldSnapshot` carried truthful per-node
+state counts so `compact_ax.v1` emitted `state_coverage=retained/total` whenever state was partial. T3.2 keeps that
+case as a regression witness but treats any supported-field Actor deficit as a normalization violation; only
+WorldDeliveryView may fold it. T0 then closed the real-web
 source/projection contract without adding tools: BrowserGym drag evidence now depends on explicit supported authored
 semantics rather than browser-default properties; source structure retains projected controls with ancestors; bounded
 World/Actor projection preserves current tool targets, verbs, action-decision state, and truthful action overflow; and
@@ -53,10 +111,19 @@ T3 now admits the complete model request at the model-delivery boundary: the imm
 the derived hard cap return typed `context_capacity` before any provider attempt, and image estimates use
 model-visible dimensions rather than compressed screenshot bytes. The same increment also introduced an
 `action_focused` soft-target projection, but the six-site diagnostic proved only offered-target conservation and
-falsified non-action recoverability. T3.1 replaced that path with deterministic region delivery plus current
-`inspect_world`/`find_actions` recovery and passed the six-page provider-free gate. The later `watch4` provider run
-then falsified the downstream action/recovery contract rather than region recoverability itself. T3 request
-accounting and admission remain implemented. The repeated-failure breaker remains owned by `EpisodeMonitor`; stable
+falsified non-action recoverability. T3.1 replaced that path with a recoverable region-delivery skeleton and current
+`inspect_world`/`find_actions` routes. Its six-page provider-free gate proved current-World round-trip recovery and
+zero-dispatch inspection only; it did not prove that the first model view was a usable semantic page map, that a model
+could discover the recovery route, or that model-visible references and tools had one non-duplicated projection. T3.2
+now removes those duplicated projections and routes the lossless public Actor plus complete ActionSpace through one
+`WorldDeliveryIndex -> PageMap/ActiveView/SearchResults -> DeliveryManifest` path. Probe v2 requires the same recovered
+item to satisfy label, role, required operation, and next-Manifest membership; it cannot combine evidence from
+different results. The 2026-08-20 six-page provider-free run2 passed this semantic route and request-cost gate with no
+provider calls. The post-repair six-page run and independent fresh-context review now pass. Per explicit user
+direction, no live/provider witness is run in this increment; live behavior remains a separately authorized future
+gate, so T3.2 makes no live behavior or W1b-Agent completion claim. T3 request accounting and admission remain
+implemented. The repeated-failure breaker remains owned
+by `EpisodeMonitor`; stable
 `INCOMPLETE` task evaluation
 does not clear the same-failure streak, and the long-horizon supervisor consumes `repeated_failure_limit` as an
 operational blocked outcome without invoking Auditor, Manager, or ActionPolicy again. T2 hover/focus remains deferred
@@ -89,10 +156,13 @@ The same traces also falsified the assumption that `compact_ax.v1` alone is an a
 ActionPolicy calls repeatedly repaid a full compact Magento page, broad target enums, and cumulative history; its two
 representation repairs replayed the same large request and accounted for 28.7% of total prompt input. The later
 `auditview` witness still averaged about 11.3k ActionPolicy input tokens per turn without action repair. T3.2 is
-therefore the active delivery-cost increment: build the recoverable World lens before the direct tool subset, keep
-the complete ActionSpace behind `find_actions`, bound semantic history, and use a fresh narrow representation-repair
-request. This changes model delivery only; it does not add a second World, ActionSpace, planner, memory owner, or GUI
-loop.
+therefore reopened as one semantic-delivery convergence increment: produce a functional PageMap, expand a small exact
+ActiveView, derive a typed DeliveryManifest directly from the renderer, keep the complete public World and ActionSpace
+behind `inspect_world`/`find_actions`, remove duplicated affordance/facet/ref-enum payloads, bound semantic history,
+and replace ActionPolicy repair replay with local normalization or same-episode typed feedback. A request becoming
+smaller is not sufficient evidence; it must
+also make page purpose, exact current controls, coverage, and the recovery route directly understandable. This
+changes model delivery only; it does not add a second World, ActionSpace, planner, memory owner, or GUI loop.
 It no longer blocks the project mainline. The active capability gate is WebArena-Verified, but the former plan to run
 its long cross-site cohort with only eight retained turns and a static GoalPlan has been withdrawn before execution:
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
@@ -123,10 +193,10 @@ long task
        -> ActionPolicy chooses one offered tool
        -> existing admission -> Binder -> Executor
        -> fresh World -> local transition projection -> TaskEvaluator
-  -> yield or episode budget/stall boundary
-  -> fresh capture -> typed evaluation when available -> semantic Auditor only for UNKNOWN
-  -> AuditBoundary accepts evidence-backed state into MissionState
-  -> Manager selects the next bounded subtask
+  -> explicit ready_for_audit -> fresh capture -> Auditor -> AuditBoundary -> MissionState -> Manager
+  -> control/grounding/capability/protocol stall -> Manager recovery, with no Auditor call
+  -> representation/protocol feedback stays in the episode until its bounded stall threshold
+  -> TaskEvaluator COMPLETE/BLOCKED -> terminal authority, with no Auditor call
   -> one final native WebArena evaluation after finalization
 ```
 
@@ -210,13 +280,13 @@ SurfaceAdapter/Fusion as evidence in the same World; it is not a repetition- or 
 | [browser-use Agent](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/service.py) and [loop detector](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/views.py) | records normalized action hashes and page fingerprints, injects escalating repetition/stagnation nudges, suggests replanning after consecutive failures, and terminates only after a separate maximum-failure budget | adopt the detect -> recover/replan -> bounded stop separation, but use typed Runtime evidence and a single recovery turn instead of soft nudges at 5/8/12 repetitions |
 | [UI-TARS paper](https://arxiv.org/abs/2501.12326) and [prompt](https://github.com/bytedance/UI-TARS/blob/main/codes/ui_tars/prompt.py) | task, recent screenshots, and action/thought history drive milestone recognition, reflection, and the next action inside one model | keep semantic progress interpretation inside ActionPolicy |
 | [Qwen3-VL OSWorld agent](https://github.com/xlang-ai/OSWorld/blob/main/mm_agents/qwen3vl_agent.py) | with `history_n=4`, every earlier action remains as text while only the latest four responses/screenshots plus the current screenshot stay detailed | extend the existing `AgentTurnView` retention and sanitized `_recent_steps()` renderer to follow this window; close generation-local ref removal in the existing step projection rather than introducing a second CompactStep record |
-| [Glass Browser](https://github.com/lzw12w/glass-browser), [observation tools](https://github.com/lzw12w/glass-browser/blob/main/browser_agent/actions/observe.py), and [compactor](https://github.com/lzw12w/glass-browser/blob/main/browser_agent/agent/compact.py) | current DOM refs are snapshot-scoped; a full snapshot gives the page map, while `find_element` and `read_text` retrieve exact targeted content without repeatedly dumping the page; older snapshots/tool results are elided or folded and full trace remains separate | reuse the progressive-disclosure tool shape and elide-then-fold history order, not its JavaScript DOM walker, CSS-selector authority, browser session, provider-message compactor, or `LLMClient` |
+| [Glass Browser](https://github.com/lzw12w/glass-browser), [observation tools](https://github.com/lzw12w/glass-browser/blob/master/browser_agent/actions/observe.py), and [compactor](https://github.com/lzw12w/glass-browser/blob/master/browser_agent/agent/compact.py) | current DOM refs are snapshot-scoped; targeted reads avoid repeatedly dumping a page; older snapshots and tool results are elided before a rare model-summary fallback | reuse snapshot-scoped refs, targeted current reads, and the history-compaction shape; Glass addresses history/tool-result cost, not functional current-page segmentation, so do not treat it as the World-compression owner or import its browser/session/action loop |
 | [TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) [offload client](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/97f94654280b2932c35ba4806a491999ed244cc9/MemoryCore/src/offload-client/offload-api-client.ts) | generic tool-pair ingest, JSONL/raw-result offload, node summaries, and synchronous message compaction support progressive disclosure but do not understand GUI evidence authority or currentness | keep it out of the WebArena control path; after W2 it may implement a fail-open `HistoryOffloadPort`, with no MissionState writes or cross-case recall |
 | [BrowserGym](https://github.com/ServiceNow/BrowserGym) and [OSWorld](https://github.com/xlang-ai/OSWorld) | environment/native evaluators score formal task success separately from the policy's rolling interpretation | keep native/TaskEvaluator completion authority separate from action feedback |
 | [BrowserGym action space](https://browsergym.readthedocs.io/latest/core/action_space.html), [AgentLab GenericAgent](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/agents/generic_agent/generic_agent.py), and [Playwright actionability](https://playwright.dev/docs/actionability) | BrowserGym supplies a broader maintained primitive set; AgentLab fits observations to a model-aware prompt-token limit; Playwright owns live-element actionability and retry behavior | keep the small typed public action algebra, reuse BrowserGym/Playwright underneath it, and add model-aware admission at the provider boundary before widening capabilities; do not duplicate browser actionability or treat byte-only rendering as token admission |
-| [BrowserGym observation](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/observation.py), [AgentLab dynamic prompting](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/agents/dynamic_prompting.py), and [browser-use serializer](https://github.com/browser-use/browser-use/blob/main/browser_use/dom/serializer/serializer.py) | BrowserGym already acquires aligned DOM/AX/rendering/screenshot evidence; AgentLab reuses BrowserGym flattening and adds prompt/token fitting; browser-use performs structure-aware wrapper/text cleanup | keep BrowserGym as the only source acquisition owner; reuse pure normalization and token-fitting ideas after `WorldObservation`, but reject final line/prefix truncation and do not import another browser tree, selector map, agent loop, or session |
-| [Region4Web/PageDigest](https://arxiv.org/html/2605.07134) | partitions AXTree into functional regions; selected regions remain exact subtrees, non-selected regions retain purpose summaries, same-page updates use transitions, and `view_all` recovers from selection misses; reported median step observation falls 33% and cumulative observation 25% | adopt the region-directory + exact-expanded-subtree + `view_all` delivery contract; begin with deterministic extractive regions because the paper's learned decomposition/abstraction artifacts are not an available pinned dependency; do not make a learned selector or summary authoritative |
-| [FocusAgent](https://arxiv.org/html/2510.03204) | a lightweight LLM selects task-relevant AXTree line spans, leaves omission markers, and uses a soft high-recall prompt; it reports more than 50% observation reduction, but adds a retriever and can still omit needed content | retain as a later frozen A/B only; the baseline must be deterministically recoverable through `inspect_world`, and exact facts must not depend on an LLM deciding to keep their lines |
+| [BrowserGym observation](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/observation.py), [AgentLab dynamic prompting](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/agents/dynamic_prompting.py), and [browser-use serializer](https://github.com/browser-use/browser-use/blob/main/browser_use/dom/serializer/serializer.py) | BrowserGym already acquires aligned DOM/AX/rendering/screenshot evidence; AgentLab reuses BrowserGym flattening and adds modality flags, SoM, and token fitting; browser-use removes empty wrappers, duplicate attributes/text, obscured content, and collapsible decoration while printing interactive indices inline | keep BrowserGym as the only source acquisition owner; reuse AgentLab's preprocessing/token estimates and browser-use's pure cleanup rules at the existing projection seam, but reject AgentLab's final bottom-line truncation and do not import another browser tree, selector map, agent loop, or session |
+| [Region4Web/PageDigest](https://arxiv.org/html/2605.07134) | partitions AXTree into functional regions; selected regions remain exact subtrees, non-selected regions retain purpose/state abstractions, same-page updates use transitions, and `view_all` recovers from selection misses | adopt its visible PageMap + exact selected subtree + explicit fallback contract; the paper-advertised repository is not currently available as a pinned dependency, so the baseline uses deterministic extractive regions and does not claim parity with its trained decomposition/abstraction models |
+| [FocusAgent](https://arxiv.org/html/2510.03204) | a lightweight LLM selects task- and history-relevant AXTree line spans and leaves omission markers; it reports more than 50% observation reduction, but introduces a retriever and can still omit needed content | retain a task-aware line/region selector as a later frozen A/B only; the baseline first guarantees PageMap visibility and deterministic `inspect_world`/`find_actions` recovery, and exact facts never depend on an LLM deciding to preserve their lines |
 | [BrowserGym WebArena-Verified](https://github.com/ServiceNow/BrowserGym/tree/main/browsergym/webarena_verified) and [WebArena-Verified](https://github.com/ServiceNow/webarena-verified) | BrowserGym already owns task registration, login, start-page setup, Playwright tracing, STOP/final-response dispatch, and invocation of the audited deterministic evaluator | directly use the already pinned packages and existing `BrowserGymSurfaceAdapter`; do not build another physical CaseSession, WebArena driver, HAR recorder, task loader, evaluator, or agent loop |
 
 The 2026-08-18 source audit inspected LongHorizon-Harness `be2e7b4`, OSWorld/Qwen3-VL `091f5ef`, Agent S
@@ -270,11 +340,9 @@ Original TaskGoal
        -> existing SelectAction -> Binder -> BoundActionRequest -> Executor
        -> fresh World -> ActionOutcomeProjector -> TaskEvaluator
        -> existing AgentTurnView + optional evidence-backed working fact
-  -> yield or episode boundary
-  -> fresh capture -> typed evaluation when available
-  -> semantic Auditor only when outcome remains UNKNOWN
-  -> AuditBoundary -> accepted MissionState
-  -> Manager
+  -> explicit ready_for_audit -> fresh capture -> Auditor -> AuditBoundary -> accepted MissionState -> Manager
+  -> control/grounding/capability/protocol stall -> Manager, with no Auditor call
+  -> TaskEvaluator COMPLETE/BLOCKED -> terminal, with no Auditor call
   -> final native WebArena-Verified evaluation after one STOP
 ```
 
@@ -343,10 +411,10 @@ TaskGoal, but Runtime does not pretend to detect implicit reliance on a stale va
 
 | Role | Reads | Produces | Must not do |
 |---|---|---|---|
-| Manager | original TaskGoal, accepted MissionState, and a Supervisor-projected control view containing last exit/audit ref/failure and remaining round budget | one `ManagerDecision` and optional bounded `SubtaskContract` | inspect screenshots/current World, read executor trajectory, execute GUI actions, or mark outcomes audited/completed |
+| Manager | original TaskGoal, accepted MissionState, last exit/audit ref/failure, remaining round budget, and at most one Supervisor-projected recovery view for the immediately following decision | one `ManagerDecision` and optional bounded `SubtaskContract` | inspect screenshots/current World, read an unbounded executor trajectory, persist recovery as progress/memory, execute GUI actions, or mark outcomes audited/completed |
 | ActionPolicy | original TaskGoal, one local GoalPlan, selected carry facts, episode working set, fresh World/current screenshot, current tools, compact older and detailed recent renderings of existing AgentTurnView records | one existing semantic/local control tool call | read previous episode trajectories, write MissionState, or decide formal completion |
 | EpisodeMonitor | existing StepResult/AgentTurnView and current World fingerprint | operational event and continue/yield recommendation | infer semantic task progress or choose a recovery plan |
-| Auditor | TaskGoal, SubtaskContract, pre-episode MissionState, fresh after-World, working facts, yield reason, and the same bounded, projection-sanitized AgentTurnView episode history | `AuditDelta` with `audited_satisfied/unsatisfied/unknown/blocked`, fact promotions/invalidations, missing evidence, recovery hint | mutate GUI, trust executor self-report, read hidden evaluator data, or directly write MissionState |
+| Auditor | original public instruction, subtask-relevant constraints and `objective/done_when`, relevant pre-episode MissionState/facts, fresh public audit World, bounded sanitized episode evidence, allowed public evidence refs, base mission version, and explicit audit reason | the sole `AuditDelta` contract with `audited_satisfied/unsatisfied/unknown/blocked`, fact promotions/invalidations, missing evidence, recovery hint | read `TaskGoal.inputs`, final-response/tool schemas, hidden evaluator/provider data, mutate GUI, or directly write MissionState |
 | AuditBoundary | AuditDelta, existing EvidenceRecords, bounded AuditBundle, current MissionState version | one accepted/rejected MissionState update | reinterpret page semantics, choose role transitions, create GUI actions, or declare official success |
 | Supervisor | current phase, active SubtaskContract, last episode exit/failure/audit ref, role/case budgets, and the existing opened WorldEnvironment reference | next legal role transition and bounded role input | store audited facts/outcomes, own a second physical browser/session, reinterpret page semantics, create GUI actions, or declare official success |
 
@@ -354,6 +422,14 @@ Manager is called at task start and after an accepted audit, stall, or typed epi
 EpisodeMonitor emits only mechanically supported events such as `STATE_CHANGED`, `NO_OBSERVED_CHANGE`,
 `REPEATED_ACTION`, `OSCILLATION`, `FORMAL_CRITERION_CHANGED`, and typed provider/environment/capability gaps. It may
 force an early yield after a frozen threshold; Manager owns the recovery choice.
+
+The Supervisor does not reduce a mechanically explained stall to a bare `evidence_gap`. For
+`control_stall|grounding_stall|capability_gap`, it routes directly to Manager and skips Auditor because no semantic
+completion claim is being assessed. The one-shot `ManagerRecoveryView` wraps the Monitor-owned `RecoverySignal` and
+adds only episode-local projection facts: whether the public World changed, the prior SubtaskContract, and the bounded
+attempted modes. It is consumed by the next Manager call and is neither written to MissionState nor retained as a
+second memory. When Auditor is legitimately called and remains `unknown` after its one fresh recapture, Supervisor
+preserves the bounded `missing_evidence` and `recovery_hint` as `AuditGuidance` in that same one-shot view.
 
 The existing benchmark case scope and `BrowserGymSurfaceAdapter` already own one physical environment from
 `open()`/official reset through `close()`; no `CaseSession` class is added. The current `CoreAgentLoop.run()` still
@@ -372,13 +448,10 @@ meaning. A native terminal result ends the case immediately and cannot be conver
 `MissionState` contains no active subtask, latest failure, retry counter, phase, or remaining budget; those belong only
 to ephemeral `SupervisorState`. Manager sees a projection of both owners but writes neither.
 
-At an episode boundary, an existing typed criterion or exact local postcondition may deterministically evaluate the
-subtask. Natural-language `done_when` otherwise yields `UNKNOWN`; Runtime does not grow a semantic predicate engine to
-avoid an Auditor call. The semantic Auditor is read-only and evidence-backed. Its accepted result is working mission
-state named `AUDITED_*`, not the final WebArena truth. Final completion remains the integrated native evaluator result.
-If the Auditor returns `unknown` with missing evidence, Supervisor may request at most one additional read-only fresh
-capture and re-audit; it cannot use that path to execute a mutation. Repeated unknown returns to Manager as typed
-evidence gap rather than being guessed complete.
+At an explicit `ready_for_audit` boundary, the semantic Auditor is read-only and evidence-backed. Its accepted result
+is working mission state named `AUDITED_*`, not the final WebArena truth. Final completion remains the integrated
+native evaluator result. An `unknown` result returns bounded audit guidance to Manager; Supervisor does not make an
+unrequested second Auditor call for the episode.
 
 ActionPolicy may explicitly call `yield_subtask(kind, reason)`, where kind is `ready_for_audit`, `stalled`, `blocked`,
 or `capability_gap`. This is a local control result: it ends only the current episode, performs no BrowserGym STOP,
@@ -396,9 +469,11 @@ legal outer transition, not Manager prose:
 | waiting_user | user answer | caller revises TaskGoal/TaskContract through the existing revision boundary -> managing; no audit or implicit MissionState write |
 | managing | admitted `blocked` + typed reason | terminal outer `blocked`; preserve evidence and let the existing benchmark case `finally` close the environment |
 | managing | Manager transport/provider/schema/invalid output | apply only the frozen provider retry and one schema-repair budget; if still unresolved, terminal outer `failed` with no MissionState change |
-| executing | `yield_subtask`, episode budget, oscillation, or context capacity | `YIELDED` episode exit -> fresh capture -> auditing |
+| executing | `control_stall`, `grounding_stall`, `capability_gap`, or `protocol_stall` | preserve bounded mechanical recovery evidence -> managing directly; Auditor attempts = 0 |
+| executing | explicit `ready_for_audit` | `YIELDED` episode exit -> fresh capture -> auditing exactly once |
 | executing | waiting-user/confirmation | preserve this episode state and surface the existing wait; do not audit or replan |
-| executing | no-dispatch provider/schema/capability failure | return typed failure to Manager; audit only if an external effect may have occurred |
+| executing | multiple calls or representation error | same-episode typed protocol feedback with zero dispatch; repeated feedback yields `protocol_stall` -> managing |
+| executing | no-dispatch provider/timeout/authentication/environment failure | typed operational outcome under its retry/terminal contract; never audit as a subtask |
 | executing | environment loss or mission cancellation | mission blocked/failed or cancelled; never infer preserved progress |
 | auditing | accepted `AuditDelta` | atomically commit one MissionState version -> managing |
 | auditing | AuditBoundary rejection | commit nothing; record typed rejection in SupervisorState -> managing, consuming one mission round rather than retrying Auditor in place |
@@ -408,6 +483,12 @@ legal outer transition, not Manager prose:
 | final audit | accepted readiness | finalizing; obtain/deliver one existing `FinalResponse` and run native evaluation |
 | final audit or native evaluation | not ready/failure | managing for recoverable missing work, otherwise terminal typed failure |
 | any nonterminal outer role | mission/user cancellation | terminal `cancelled`; no audit, retry, or MissionState mutation after cancellation |
+
+Outer recovery has one deterministic convergence guard. For one unchanged public World, exit kind, recovery evidence,
+and prior subtask strategy, an identical Manager subtask is not executed again. Supervisor asks Manager to revise once
+with `strategy_revision_required=true`; changing only turn budget or audit linkage does not count as a new strategy.
+If objective, completion condition, constraints, relevant facts, and candidate outputs are still unchanged, the run
+terminates as typed `strategy_not_changed` with blocked status. This guard owns no task semantics and adds no planner.
 
 `YIELDED` is added to the inner run status only as an absorbing executor-episode exit. It is never projected as
 TaskEvaluation success/failure and never becomes the case outcome. Long-horizon ordinary execution episodes offer
@@ -534,13 +615,14 @@ cohort begins before the W1b smokes and independent audit pass:
    the existing generic benchmark contracts. Reuse `run_suite`, instrumentation, progress writing, case persistence,
    cleanup, and reporting; add no WebArena scheduler or retry owner. Remove or quarantine the existing offline
    `webarena-verified eval-tasks` helper from W1b/W2 composition so it cannot become a second official evaluator.
-10. **Recoverable real-web delivery (T3.1).** Replace `action_focused recovery=none` with the deterministic
-   `WorldRegionIndex -> WorldDeliveryLens -> region overview/exact expansion` path defined above. Add the single local
-   `inspect_world` tool for `open_region | find | view_all`, keep `find_actions` as the complete ActionSpace recovery
-   owner, bind every result to the current World/context/catalog, and support current BrowserGym screenshot crops for
-   visual zoom. Prove exact round-trip recovery of sampled folded public facts and zero GUI dispatch before any model
-   smoke. Do not add a model region selector, second renderer authority, second browser session, or free-form semantic
-   summary.
+10. **Semantic real-web delivery convergence (T3.1/T3.2).** Keep the implemented same-World lens lifecycle and local
+   `inspect_world(open_region | find | view_all)` recovery, but replace the shallow `WorldRegionIndex` presentation
+   with the single functional `WorldDeliveryIndex -> PageMap/ActiveView/SearchResults -> DeliveryManifest` path
+   defined below. Keep `find_actions` as the complete ActionSpace recovery owner; remove model-visible facet member
+   refs, the duplicate affordance list, regex ref discovery, and broad dynamic ref enums. A visual crop remains a
+   later typed image route and is not part of the current text-delivery claim. Prove both semantic discoverability and
+   token reduction before any model smoke. Do not add a model summarizer/selector, second renderer authority, second
+   browser session, or free-form semantic memory.
 11. **Real-web World and verification.** Before treating the six site runs as agent smokes, run the real-page
    World/Actor-View gate in `docs/benchmark.md`: source semantics, offered-target conservation, action-decision state,
    structural closure, exact folded-fact recovery, inspect/search/view-all currentness, request-token metrics, and
@@ -608,8 +690,10 @@ internally while publishing the same public world and semantic-action protocol a
 BrowserGym capture is one aligned source snapshot containing raw DOM, AXTree, rendering properties, and a screenshot.
 Its SurfaceAdapter performs the source-local canonical fusion exactly once, keyed by BrowserGym's stable private BID:
 AX role/name/state remain the higher-assurance accessible semantics, while bounded salient DOM attributes
-(`class`, `id`, `name`, `type`, `role`, `title`, `alt`, `placeholder`, `aria-label`, and `aria-description`) remain parallel public evidence
-under `semantic.dom.*` predicates. DOM evidence never overwrites an AX name and never becomes execution authority;
+(`type`, `role`, `title`, `alt`, `placeholder`, `aria-label`, and `aria-description`) may remain parallel public evidence
+under `semantic.dom.*` predicates. DOM `id`, `class`, `name`, `data-*`, selector fragments, and event-handler attributes
+remain source/trace evidence only; they are not public facts or fallback labels. DOM evidence never overwrites an AX
+name and never becomes execution authority;
 the BID itself and BrowserGym rendering attributes remain private. Missing accessible names are represented as
 unknown rather than causing the DOM evidence or executable capability to disappear. Viewport visibility is a
 presentation fact, not authority over the action inventory. A malformed DOMSnapshot or conflicting semantic evidence
@@ -626,8 +710,11 @@ chain is therefore:
 BrowserGym raw source snapshot
   -> BrowserGymSurfaceAdapter source interpretation
   -> full current WorldObservation authority
-  -> deterministic ActorWorldSnapshot projection
-  -> compact_ax.v1 model rendering + current tool schemas
+  -> lossless public ActorWorldSnapshot normalization
+  + current ActionSpace
+  -> WorldDeliveryIndex
+  -> PageMap + exact ActiveView/SearchResults + DeliveryManifest
+  -> compact stable tool schemas
   -> ActionPolicy
 
 full typed World / source evidence / provider request
@@ -640,12 +727,13 @@ These layers answer different questions and must not be collapsed:
 |---|---|---:|---|
 | raw source snapshot | BrowserGym supplies aligned DOM, AX, rendering, screenshot, frame, and private BID evidence | only as declared by the upstream source | source evidence, not the public world |
 | `WorldObservation` | SurfaceAdapter plus World fusion normalize public entities, facts, relations, capabilities, provenance, freshness, and truthful source coverage | no silent task-directed pruning; source truncation remains explicit | sole current environment authority |
-| `ActorWorldSnapshot` / `compact_ax.v1` | existing World projection and renderer make a bounded, public, model-readable view | yes, only with structural closure, coverage, and a recovery route | disposable non-authoritative projection |
-| current tool schemas | ActionSpace/PerTurnToolCatalog expose exactly which current refs support which verbs | may page a complete current inventory through the existing action pager | sole model-callability contract for this turn |
+| `ActorWorldSnapshot` | existing World projection normalizes the supported public delivery algebra without applying a model budget | no model-delivery or whole-context pruning; it may only reflect explicit upstream source coverage | disposable, lossless public normalization |
+| `WorldDeliveryIndex` / `WorldDeliveryView` | one delivery owner builds a semantic PageMap, exact current detail, and lossless search indexes | yes, only with structural closure and a same-World recovery route | disposable non-authoritative projection |
+| `DeliveryManifest` + stable tool schemas | the renderer names exactly which current refs are direct; PerTurnToolCatalog defines stable operation signatures; Runtime intersects selected refs with the current authoritative ActionSpace/evidence/region indexes | the complete inventory remains recoverable through `find_actions`/`inspect_world` | sole model-callability contract for this turn |
 | trace | existing observability stores complete typed inputs, source lineage, model exchange, and metrics | binary media may be content-addressed | audit evidence only; never control state |
 
 The projection owner performs deterministic presentation cleanup, structural closure, budget fitting, and coverage
-reporting. It always retains every target present in the offered tool schemas, that target's current verbs and
+reporting. It always retains every target named direct by the `DeliveryManifest`, that target's current verbs and
 action-decision state (`value`, selected options, checked/selected/active/expanded, required, option domain, and grid
 coordinate), and enough surrounding structure to interpret it. Structural closure includes the necessary ancestor
 chain, accessible label, current/focused state, enclosing dialog/form/card, table headers with complete retained rows,
@@ -667,17 +755,42 @@ no production projection may report `recovery=none` for omitted public content.
 
 World compression changes delivery granularity, not environment truth. The Runtime retains one complete current
 `WorldObservation`; no compressor, selector, region summary, expanded view, or model response may write back to it.
-The model receives a lossless structural normalization when it fits. When the complete request exceeds the soft cost
-target, it receives a region directory plus exact expanded subtrees. Folded content remains indexed and recoverable.
+The normal model view is progressive disclosure, not a full-view fallback selected only by capacity. Every turn
+contains a compact semantic PageMap, a small exact ActiveView, explicit delivery coverage, and recovery tools over the
+complete current public World and ActionSpace. A full normalized view is used only when it is actually smaller or an
+atomic bounded page already satisfies the same clarity contract. Folded content remains indexed and recoverable.
+
+This section supersedes the earlier claim that the T3.1 six-page round-trip gate closed semantic compression. That
+gate proved that a caller which already knew what to request could recover current content; it did not prove functional
+region quality, first-view discoverability, search-to-action closure, or a non-duplicated ref/tool projection. Those
+properties are the active T3.2 convergence gate.
+
+The following earlier choices are explicitly replaced rather than retained as alternate paths:
+
+| Superseded choice | Corrected contract |
+|---|---|
+| send normalized full World whenever it fits the soft target | progressive disclosure is the ordinary delivery; full is only a smaller valid candidate |
+| treat shallow AX root children as user-meaningful regions | partition deterministic functional regions and merge/split pathological fragments |
+| render a string and recover direct refs with regex | renderer returns text and a typed `DeliveryManifest` atomically |
+| repeat refs/verbs through facets, affordances, and Tool enums | print each exact node once with inline verbs; keep Tool Schemas stable |
+| return an inspect/search result only as a local-tool message | install a same-World lens/page and show the exact result in the next `SearchResults` |
+| compress by deleting non-action text | fold exact content behind a visible PageMap region and complete current index |
+| attach an overview screenshot because a page is large | always send a semantic PageMap; attach the current screenshot only by perception profile/evidence need |
 
 ```text
 BrowserGym raw observation
   -> BrowserGymSurfaceAdapter
   -> full current WorldObservation authority
-  -> deterministic ActorWorldSnapshot
-  -> deterministic WorldRegionIndex
+  -> lossless public ActorWorldSnapshot normalization
+  + complete current ActionSpace
+  -> deterministic WorldDeliveryIndex
+       |-> functional PageMap
+       |-> complete public-content search index
+       `-> complete current ActionSpace search index
   -> ephemeral WorldDeliveryLens
-  -> region overview + exact expanded subtrees + current tool page
+  -> WorldDeliveryView(PageMap + exact ActiveView + exact SearchResults)
+  -> typed DeliveryManifest
+  -> small stable ToolCatalog
   -> ActionPolicy
        |-> current GUI action
        |-> find_actions(...)                  # complete current ActionSpace
@@ -688,19 +801,35 @@ The additional types are projections, not new authorities:
 
 | Projection | Contents | Lifetime | Forbidden responsibility |
 |---|---|---|---|
-| `WorldRegionIndex` | deterministic partition of the current Actor snapshot; exact extractive descriptor, counts, coverage, changed state, and internal member references | recomputable from one current World | task progress, action permission, hidden selectors, or rewritten page facts |
-| `WorldDeliveryLens` | which current regions or search results are expanded and their page cursors | bound to one `world_observation_id`; discarded after fresh acquisition | persistence, memory, MissionState, completion, or stable public element identity |
-| region overview | call-local `R-ref`, landmark/role, exact heading or labels, node/item/action counts, state badges, changed flag, and expansion coverage | one model context/catalog generation | substituting a prose claim for an exact value |
-| expanded region | structurally closed exact public subtree with current E-refs, facts, relations, and eligible verbs | one model context/catalog generation | retaining stale refs after a new World |
+| `WorldDeliveryIndex` | deterministic functional-region partition plus private indexes over all current public targets/facts and all current ActionOptions | recomputable from one current World and ActionSpace | task progress, action permission, hidden selectors, rewritten facts, or model-visible member-ref lists |
+| `WorldDeliveryLens` | one current region/search/view-all selection and cursor, represented by stable private keys or query rather than public E/N/F refs | bound to one `world_observation_id`; discarded after fresh acquisition | persistence, memory, MissionState, completion, or stable public element identity |
+| `WorldDeliveryView` | rendered PageMap, exact ActiveView/SearchResults, coverage, and a typed manifest of the refs that were printed as exact nodes/facts/regions | recomputable for one model call | a second World, semantic summary authority, or ref recovery by parsing rendered text |
+| `DeliveryManifest` | exact current executable/read-only/fact/region refs present in the rendered view | one context/catalog generation | action legality, private binding, or progress; it only constrains model-visible delivery |
+
+This is a replacement of the current shallow `WorldRegionIndex -> rendered string -> regex refs` implementation, not
+a parallel index stack. `WorldDeliveryIndex` evolves/replaces that type, and the renderer returns
+`WorldDeliveryView(text, manifest)` instead of adding another stored state owner.
 
 #### Deterministic partition and normalization
 
-The first implementation does not add a region model. It partitions the existing public Actor tree using document
+The first implementation does not add a region model. It partitions the lossless public Actor tree using document
 roots, accessibility landmarks, dialogs, forms, tables, lists/feeds, heading-associated sections, and bounded groups
-of repeated siblings. Large collections are paged as complete rows/cards/items. A region descriptor is extractive:
-it may contain an exact heading, landmark role, bounded visible labels, item/action counts, control-state badges, and
-the latest observed-change marker. It must not paraphrase a price, identifier, date, user-authored text, selected
-value, error, or status.
+of repeated siblings. Shallow document children alone are not region boundaries: a giant unlabeled `generic` is split
+at descendant landmarks/headings/top-level menu groups, while empty generic nodes, isolated icon-font nodes, and tiny
+unlabeled fragments merge into the nearest meaningful ancestor. Large collections are paged as complete
+rows/cards/items. `DeliveryLimits.v1` is frozen before the six-page gate: an exact expanded region is paged above
+4,000 estimated tokens or 20 repeated items; top-level navigation is direct only up to 24 controls and 1,500 estimated
+tokens; and a descriptor is capped at 160 estimated tokens. An unlabeled generic is classified as giant and split when
+it contains at least two descendant heading/landmark boundaries or its normalized descendants exceed the exact-region
+limit. An empty/icon-only fragment has no normalized alphanumeric public text, action, value, or state after cleanup
+and must merge into a meaningful ancestor.
+
+A valid extractive descriptor contains `R-ref`, region kind, exact heading/name or bounded direct labels,
+item/action counts, coverage, applicable control-state badges, and the recovery operation. A generic region without an
+exact heading/name/direct label cannot be folded. Partition failure returns typed `delivery_partition_failed` and
+tries the normalized full candidate; it never drops the region. Only failure to fit that truthful fallback under the
+existing hard limit returns `context_capacity`. A descriptor must not paraphrase a price, identifier, date,
+user-authored text, selected value, error, or status.
 
 Before region folding, the existing deterministic cleanup may remove empty generic wrappers, duplicate
 `StaticText`/`InlineTextBox` copies, repeated icon glyphs, empty/default fields, private Runtime/provenance identifiers,
@@ -711,57 +840,139 @@ current recovery route.
 
 #### Default delivery and current tools
 
-Delivery is cost-first, not capacity-triggered. The normalized full Actor View is always available as an internal
-candidate, but fitting below the hard or former 16k soft limit does not make it the default provider payload. On a new
-page, the default lens sends the complete region directory plus the active dialog/focused form, bounded current
-main/viewport content, and top-level navigation needed to change region. On the same page, it recomputes those exact
-expanded subtrees from fresh World, retains the selected region keys, and adds the latest public transition summary.
-Every other region remains visible as one directory entry. A full view is sent only when it is smaller than the
-recoverable lens, an atomic relevant region requires it, or the model explicitly requests the paged `view_all` route.
+Delivery is semantic-first within a measured cost budget, not capacity-triggered. The normalized full Actor View is
+available as an internal candidate, but fitting below the hard or former 16k soft limit does not make it the default
+provider payload. Every new page first sends a PageMap containing all functional regions. Its descriptors contain no
+E/N/F refs. Exact bounded top-level navigation controls are included in the accompanying ActiveView so the model can
+act without first searching; a large folded region retains only its exact heading/direct labels, counts, state and
+recovery handle. The exact ActiveView then contains, in priority order:
 
-The complete current `ActionSpace` remains unchanged and internal. Direct `PerTurnToolCatalog` targets come only from
-exact content present in the chosen delivery; actions in folded regions remain reachable through `find_actions`, which
-searches the complete current ActionSpace and returns fresh current E-refs. Tool targets are selected after the lens,
-so the catalog cannot force every action-bearing region back open. The current implementation does the reverse by
-seeding lens expansion from every E-ref present in every Tool Schema; on pages with tens of actions that degenerates
-to a full-page delivery and is the primary T3.2 defect to remove.
+1. dialog/alert content plus focused or changed regions;
+2. all bounded top-level navigation controls and their structural containers;
+3. the current bounded main/form/table/grid regions;
+4. concrete current `ActionOption` targets ranked by lexical overlap with `TaskGoal` and GoalPlan objectives; and
+5. the current region containing the latest semantic execution target.
+
+Step 4 ranks executable actions, not only regions. A promoted E-target carries the minimal functional-region closure:
+its ancestor path, nearest local heading/label, row/card/form/table context and headers where present, necessary public
+state, and current verbs. Strong exact-label matches suppress weaker substring ancestors only in the DirectActions
+promotion block; those ancestors remain available through the independently selected navigation regions. This ranking
+changes presentation only. It cannot create an ActionOption, add a verb, alter Binder legality, or infer a future path.
+
+The deterministic rank is a delivery preference only. It never removes the PageMap, changes facts/actions, reads
+benchmark identity, or claims semantic relevance authority. On the same page, fresh World is still acquired and the
+same PageMap/ActiveView is recomputed; no stale page digest becomes environment truth. A full view is sent only when it
+is smaller than the valid PageMap view, an atomic bounded page requires it, or the model explicitly requests paged
+`view_all`.
+
+A structure-first first turn should therefore resemble this shape rather than a flattened full AX tree:
+
+```yaml
+observation:
+  page: {title: "Dashboard / Magento Admin", coverage: complete}
+  page_map:
+    - "[R1] navigation 'Primary' labels=[Dashboard, Sales, Reports] actions=12"
+    - "[R2] main 'Dashboard' sections=4 actions=18"
+    - "[R3] table 'Last Orders' rows=5 columns=[Customer, Total, Status]"
+  active_view:
+    - "[E7] link 'Reports' context='Primary navigation' verbs=[activate]"
+    - "[E8] link 'Sales' context='Primary navigation' verbs=[activate]"
+  recovery:
+    - "read_region(region_ref=R2)"
+    - "search_world(query=<text>)"
+    - "search_actions(query=<text>)"
+history:
+  - "1. activate 'REPORTS' in Primary navigation -> menu expanded"
+tools:
+  - "activate(target=E*)"
+  - "read_region(region_ref=R*)"
+  - "search_world(query=<text>)"
+  - "search_actions(query=<text>)"
+```
+
+The exact names and serialization follow existing typed contracts, but the information topology is fixed: one compact
+map, one exact current working set, one short semantic history, and stable tools. The folded `R2`/`R3` content does not
+leak member refs, and structure-first sends no image for this ordinary page.
+
+The complete current `ActionSpace` remains unchanged and internal. Direct actions come only from executable nodes
+printed exactly in the chosen delivery; actions in folded regions remain reachable through `search_actions`, which
+searches the complete current ActionSpace and promotes exact fresh matches into the next SearchResults/ActiveView.
+The renderer emits `WorldDeliveryView(text, manifest)` directly. Tool exposure consumes the typed manifest; it must
+never rediscover refs with a regex over rendered text, a facet member list, or a previous tool enum.
+
+BrowserGym retains only closed adapter composites. `activate`, `type_text`, and native `select_option` each bind one
+current semantic action to a deterministic adapter route with an observation barrier; adapter-internal focus,
+scroll/fill/select and observation steps require no second policy decision. A future menu composite is admissible only
+when both endpoints and their descendant relation already exist in the current World, the adapter owns the entire
+physical route, and the final postcondition is observable. There is no generic `navigate_to(task_text)` operation.
 
 This ordering prevents the tool schema from forcing the entire page open:
 
 ```text
 full World -> full ActionSpace
-          -> RegionIndex -> DeliveryLens -> Actor delivery
-          -> direct tool page for delivered targets
-          -> find_actions index over the full ActionSpace
+          -> DeliveryIndex -> PageMap/ActiveView/SearchResults
+          -> typed DeliveryManifest
+          -> stable per-operation tools for delivered targets
+          -> search_actions index over the full ActionSpace
 ```
 
-`WorldDeliveryLens` is the only same-page delivery preference. It stores region identity/cursor only and is invalidated
-by a page-identity change. A per-page digest is a deterministic rendering of `fresh World + current lens + latest
-transition`; it is not a mutable semantic summary, remembered World, or progress authority. A stateless provider call
-still receives enough fresh current state to act, but it does not receive every unchanged page node again.
+`WorldDeliveryLens` is the only same-page delivery preference. It is a small discriminated value for
+`region | find | view_all`, stores a private region key or bounded query plus Runtime-private paging state, and is invalidated by any fresh
+World whose observation identity differs. It stores no public E/N/F refs and no rendered text. A per-page delivery is
+therefore a deterministic rendering of `fresh World + current lens + latest transition`, not a mutable semantic
+summary, remembered World, or progress authority. Stateless provider calls receive the current PageMap and exact
+working set again; delta-only delivery is deferred because this Runtime does not rely on provider-side conversation
+state.
 
-#### One read-only progressive-disclosure tool
+#### Read-only progressive-disclosure tools
 
-`inspect_world` is one stable local/control tool, not a new GUI semantic capability:
+Each public tool has one intent and only its required argument:
 
 ```text
-inspect_world(
-  action = open_region | find | view_all,
-  region_ref = optional current R-ref,
-  query = optional bounded public-text query,
-  cursor = optional current page cursor,
-)
+read_region(region_ref)
+search_world(query)
+list_regions()
+read_next_page()  # offered only when the prior World read has another page
 ```
 
-- `open_region` expands one current region as an exact structurally closed subtree, paged only at semantic row/card
+- `read_region` expands one current region as an exact structurally closed subtree, paged only at semantic row/card
   boundaries.
-- `find` searches exact text, role, label, value, and public facts in the complete current World; it returns exact
-  snippets, region locations, coverage, and a cursor rather than a semantic answer.
-- `view_all` exposes every region in exact paged form when the directory or task-directed inspection is insufficient;
+- `search_world` searches exact text, role, label, value, and public facts in the complete current World. It returns
+  exact snippets, region locations, coverage, and `has_more`, never an opaque paging token. It also installs a current
+  `find` lens, so the next ActionPolicy request contains those same exact matches as SearchResults instead of losing
+  their refs in sanitized history.
+- `list_regions` exposes every region in exact paged form when the directory or task-directed inspection is insufficient;
   it still obeys the hard request cap.
+- `read_next_page` continues only the prior successful World read. Runtime supplies the private cursor.
 
-Typed visual crop delivery is outside T3.2. If later benchmark evidence requires it, it must use current BrowserGym
-geometry and the existing perception/image-admission path; image bytes never enter JSON history or local-tool results.
+The read-only outcome algebra is closed:
+
+```text
+Opened(items, next_cursor?)
+Matches(items, coverage, next_cursor?)
+Page(items, next_cursor?)
+Empty(query, coverage, safe_relaxations)
+InvalidRegion(region_ref)
+InvalidCursor(cursor)
+StaleContext(expected, actual)
+CapacityExceeded(required, hard_limit)
+```
+
+Only `Opened`, non-empty `Matches`, and `Page` replace the same-World lens. `Empty` retains the current/base lens and
+reports the searched fields and mechanically safe relaxations. Invalid, stale, and capacity outcomes leave lens,
+ActionPage, World, and dispatch counters unchanged. None can be repaired by substituting another ref.
+
+`search_actions(query)` remains separate and searches only the complete current legal ActionSpace. A non-empty result installs
+the existing ActionPage and exact labeled SearchResults containing role, label, structural context, current state and
+verbs; its next-turn E refs therefore exist in both the DeliveryManifest and the normal resolver. Empty results retain
+the base page, report applied filters/coverage and safe relaxations, and never become an empty action authority.
+When another action page exists, the next catalog offers zero-argument `action_results_next_page()`; no cursor or
+exact-target re-search is model-visible.
+
+Typed visual crop delivery is a later sub-gate of the same World-read/perception boundary, not part of the
+structural baseline. When benchmark evidence requires it, `open_region` may request a visual view backed by current
+BrowserGym geometry and the existing image-admission path. The next request receives a typed current image part;
+base64 bytes never enter JSON history or local-tool results.
 
 The resolver binds every request to the current `context_id`, `catalog_id`, `world_observation_id`, and call-local
 `R-ref`. The tool performs zero BrowserGym mutation and does not increment GUI execution count. It updates only the
@@ -769,18 +980,79 @@ ephemeral delivery lens and then returns control to the same ActionPolicy agains
 acquisition invalidates the lens, old R/E refs, cursors, and search results. A stale request fails with a typed
 currentness error; it cannot be repaired by guessing a new region or element.
 
+#### Structural-convergence increment (2026-08-20)
+
+The task-0 reopening had two architecture defects and one expression defect. The captured Actor had not lost the five
+product rows: the old partition put the table schema in `R14 table` and its rows in an unrelated top-level `R15
+rowgroup`. `table | grid | list` are now atomic semantic containers. Descendant `rowgroup | row | listitem` nodes
+cannot become sibling regions; `read_region(table)` returns its schema on every page plus complete row items, and
+reports `source_coverage`, `region_membership`, and `result_page` separately. Public R numbers remain ephemeral handles
+of the current partition, so removing orphan regions may renumber a table without changing its exact resolver identity.
+
+Every region also carries a bounded structural `scope_path` derived from current public document/ancestor labels.
+Table/grid descriptors state `available_filter_controls` from their current legal text/select actions. ActiveView
+orders modal/focused/changed and bounded top-level navigation regions before lexical direct-action promotion and
+read-only data. These are presentation facts only; they neither classify a region as an answer nor change ActionSpace
+legality.
+
+BrowserGym canonical semantics now collapses a native wrapper/anchor pair only when ancestry, normalized accessible
+label (and non-conflicting title), at-least-90% smaller-box overlap, identical semantic/primitive offers, and exactly
+one executable descendant all agree. The descendant BID remains the physical binding; the wrapper contributes its
+stronger role and public state such as `selected`. A second independent control or missing evidence leaves both
+controls untouched, and the raw AX structure remains in the trace.
+
+`EpisodeMonitor` is total over arbitrarily large local-tool results. It hashes canonical JSON into a bounded SHA-256
+stable signature and exposes only bounded readable evidence (`tool`, normalized arguments, result kind/count/coverage,
+result digest, repeat count). It never embeds the raw result in a `RecoverySignal`; the second identical no-progress
+result produces `RECOVER(control_stall)` and the next repetition produces `YIELD` rather than a Runtime exception.
+
 #### What may be semantically compressed
 
 Semantic abstraction is allowed only for navigation metadata whose non-authoritative nature is explicit:
 
 | Information | Compression rule |
 |---|---|
-| region purpose/map | may use exact headings/roles and, in a later A/B, a clearly advisory model label |
+| page identity and region purpose/map | always visible; use exact title/route, headings/roles, bounded direct labels and coverage; a later advisory model label cannot replace these fields |
+| bounded top-level navigation | list exact labels in PageMap and render their executable controls in ActiveView when bounded; do not put E-refs in folded descriptors or force an extra search merely to discover the page's main destinations |
+| active dialog/form/table and latest changed region | preserve exact structurally closed controls, values, headers, state, errors and eligible verbs |
+| repeated rows/cards/long static content | fold to exact schema/header, count, state and bounded samples; retain exact indexed content behind `inspect_world` |
 | counts and coarse state | may be derived deterministically when coverage is stated |
 | exact price/date/ID/value/status/user text | never paraphrase; preserve in expanded subtree or exact `find` result |
 | old episode actions | may use existing ref-free `AgentTurnView` compact rendering; full trace remains separate |
 | exact value needed after navigation | must use evidence-resolved `WorkingFact`, not free-form history summary |
 | formal completion or mission progress | never inferred by World compression |
+
+The following fields are internal indexing/trace data and are not model content: DOM/CSS/private IDs, source and
+observation lineage, empty generic/icon wrappers, duplicate InlineTextBox/parent labels, low-value appearance fields,
+facet member-ref arrays, full binding inventories, and a separate `affordances` list. Actor rendering prints each
+executable node once with its verbs:
+
+```text
+[E7] link "Reports" verbs=[activate]
+[N18] cell "Quest Lumaflex™ Band" read_only=true
+```
+
+The public ref namespaces are non-overlapping:
+
+```text
+E* = exact current executable target printed in ActiveView/SearchResults
+N* = exact current read-only node printed in ActiveView/SearchResults
+F* = exact current public scalar evidence printed in ActiveView/SearchResults
+R* = current PageMap region
+```
+
+Folded PageMap descriptors contain no E/N/F refs. Tool schemas use stable ref patterns and compact parameter shapes,
+not a repeated enum of every current E/F/R ref. Runtime performs the real check:
+
+```text
+tool call ref
+  -> current DeliveryManifest membership
+  -> current ActionSpace/evidence/region resolution
+  -> existing admission/currentness/Binder/Executor
+```
+
+The same ref appearing once in an exact observation line and once as the selected tool argument is necessary binding
+lineage. Repeating all refs and verbs in `affordances`, facet lists, tool menus and dynamic enums is not.
 
 An optional model-backed region classifier/selector is therefore not part of the baseline. It may later select among
 existing public region IDs or propose a bounded advisory purpose, but only in a predeclared A/B after deterministic
@@ -804,30 +1076,28 @@ yields at the existing episode boundary rather than creating an LLM summarizer o
 
 #### Narrow representation repair
 
-Representation repair is not a second policy turn and must not replay the full World, episode history, screenshots,
-GoalPlan, or unrelated Tool Schemas. Runtime first applies contract-backed local normalization. If one provider repair
-is still needed, its fresh request contains only the invalid call, the validator error, the one selected operation's
-schema, and the sealed operation/target/semantic arguments that may not change. Grounding, stale reference, target
-selection, or semantic-argument errors return typed feedback to the next normal policy turn; they are not repairable.
-
-The current PydanticAI path reuses `result.all_messages()` for repair, causing the original large request to be paid
-again and often doubling provider input. T3.2 replaces that behavior for representation-equivalent repair without
-adding another policy, provider abstraction, or execution route.
+ActionPolicy first applies contract-backed local normalization to one call. A malformed envelope or argument
+representation then returns typed same-episode feedback; it never replays the full World, selects one of multiple
+calls, changes operation/target, or invokes a semantic repair model. Grounding and stale-reference failures likewise
+return typed feedback for the next ordinary policy turn. The only remaining one-shot provider schema repair in this
+causal surface belongs to Auditor: it contains the invalid JSON object, validation error, compact `AuditDeltaModel`
+shape, version, allowed refs, and audit reason—never the original large audit context or final-response schema.
 
 #### Fitting order and hard failure
 
 Complete-request admission uses this fixed order:
 
-1. render the normalized full candidate and the recoverable cost-first lens candidate;
-2. choose the smaller candidate that preserves the declared directory/expansion/action-reachability invariants,
-   regardless of whether the full candidate fits the former soft target;
-3. compile the direct tool page only from exact targets in the chosen delivery, while indexing the complete ActionSpace
-   behind `find_actions`;
-4. page the largest repeated expanded region at row/card/item boundaries;
-5. attach only images selected by the existing perception profile, with their token estimates;
-6. re-estimate the complete request, including stable prompt, Task/GoalPlan, episode context, tools, repair payload,
+1. build one functional DeliveryIndex over the complete fresh World and current ActionSpace;
+2. render the semantic PageMap plus exact ActiveView/SearchResults and emit its typed DeliveryManifest;
+3. render the normalized full candidate only as a measured comparison, and choose full only when it is smaller and
+   satisfies the same PageMap/discoverability contract;
+4. expose compact stable operation schemas and validate selected refs against the DeliveryManifest, while indexing
+   the complete ActionSpace behind `find_actions`;
+5. page the largest repeated expanded region at row/card/item boundaries;
+6. attach only images selected by the existing perception profile, with their token estimates;
+7. re-estimate the complete request, including stable prompt, Task/GoalPlan, episode context, tools, repair payload,
    images, and output reserve;
-7. if even the directory and one useful exact page exceed the hard cap, return typed `context_capacity` before a
+8. if even the PageMap and one useful exact page exceed the hard cap, return typed `context_capacity` before a
    provider call.
 
 Prefix slicing, silent root deletion, semantic-group splitting, and `recovery=none` are not fitting strategies.
@@ -845,26 +1115,29 @@ for every current ActionOption:
   OR recoverable through find_actions
 ```
 
-This property is stronger than target conservation. A provider-free held-out gate must sample facts from folded
-regions and prove exact round-trip recovery, including non-action text/value facts, tables, repeated collections,
-dialogs, and visual crops. The same gate proves that inspection has zero GUI dispatch, fresh acquisition invalidates
-old refs, and trace can reconstruct which overview, expansion, search result, crop, and token estimate the policy saw.
+This property is stronger than target conservation. On the six frozen real pages the provider-free gate enumerates
+every current public target/fact and every ActionOption; held-out synthetic structures cover paging and exceptional
+coverage. It proves exact round-trip recovery for non-action text/value facts, tables, repeated collections and
+dialogs, plus zero GUI dispatch, search-to-next-view closure, fresh-ref invalidation, and trace reconstruction. Typed
+visual crop delivery has its own later gate and is not claimed by the structural baseline.
 
-Screenshot routing remains owned by the existing `DecisionPerceptionProfile`. Structured World stays the baseline;
-the current screenshot or a typed visual provider supplements it for the already declared profiles and evidence
-needs. Page size, repetition, long-horizon duration, or a policy stall alone does not activate a VLM and cannot replace
-the structured world.
+Screenshot routing remains owned by the existing `DecisionPerceptionProfile`. Every profile receives the semantic
+PageMap; an image is not the primary page overview. `structure-first.v1` sends no screenshot by default.
+`screenshot-ax.v1` may attach one resized current viewport screenshot alongside the same PageMap/ActiveView. Canvas,
+maps/charts, incomplete AX coverage, visually encoded state, or an admitted grounding/evidence need may select that
+profile or a current crop. No profile sends historical screenshots, a screenshot cannot replace the structural
+inventory, and page size, repetition, long-horizon duration, or a policy stall alone does not activate a VLM.
 
 Token control is a model-delivery concern, not a World-authority concern. Provider admission measures the complete
-request—stable prompt, Task/GoalPlan, Actor delivery, episode history, current native tool schemas, repair payload, and
+request—stable prompt, Task/GoalPlan, WorldDeliveryView, episode history, current native tool schemas, repair payload, and
 dimension-based image estimate—using the provider tokenizer when available and a conservative estimate otherwise; the
-existing byte bounds remain a safety backstop. T3.2 uses four explicit cost targets: a new-page action request is
-normally 8k–10k tokens, a steady same-page action request is normally 4k–7k, episode history is normally at most 1.5k,
-and a representation repair is normally at most 2k and 20% of its initial request. They are cost/attention targets,
-not correctness limits. An atomic relevant region may exceed them when exact content is necessary; only the hard cap
-causes typed refusal. Paired diagnostics must report full versus admitted tokens and recovery turns, so a smaller
-request that loses facts/actions cannot pass. Cost-first fitting uses the recoverable region directory/expansion path
-above, never the former action-focused omission path.
+existing byte bounds remain a safety backstop. T3.2 has exact cost gates: all six frozen new-page requests are at most
+12k provider input tokens with median at most 9k; ordinary task-0 same-page requests are at most 9k with p95 at most
+12k; history and Tool Schemas are at most 1.5k and 2k per request; ActionPolicy protocol feedback uses no repair
+provider request. A necessary atomic region may remain truthfully admitted above a target, but the cost gate then
+remains failed; only the hard cap causes typed refusal. Paired diagnostics must report full versus admitted tokens and
+recovery turns, so a smaller request that loses facts/actions cannot pass. Cost-first fitting uses the recoverable
+region directory/expansion path above, never the former action-focused omission path.
 
 The first WebArena task-0 diagnostic illustrates why both source semantics and projection quality are governed. The
 model received the task, `REPORTS`, and the Bestsellers table in a 512/583-node partial Actor View and selected
@@ -880,10 +1153,11 @@ External code is reused only at its valid boundary. BrowserGym remains the acqui
 AgentLab's token fitting and BrowserGym-backed flattening, browser-use's pure serializer/filter ideas, Glass's
 on-demand read pattern, and Region4Web's region-summary/view-all design are reference implementations. None is
 installed as another Agent, browser session, DOM authority, selector map, history owner, or control path. An optional
-model-backed region selector is admissible only after the deterministic T3.1 recoverability gate passes and a frozen
-W1b-Agent/held-out cohort still demonstrates a retrieval failure. It must implement the same projection port, select
+model-backed region selector is admissible only after the deterministic PageMap/DeliveryManifest gate and a frozen
+W1b-Agent/held-out cohort still demonstrate a retrieval failure. It must implement the same projection port, select
 existing public region IDs, report coverage, fail open to the deterministic/view-all path, and never mutate World or
-tools.
+tools. Region4Web's learned artifacts and FocusAgent's retriever are not currently available here as pinned drop-in
+dependencies; the document therefore distinguishes architectural alignment from direct code reuse.
 
 Current implementation has the full typed World, bounded semantic-group projection, action-state priority, per-node
 state coverage, current action paging, compact renderer, perception profiles, complete trace seam, complete request
@@ -902,12 +1176,15 @@ projection,
 dimension-based image token estimates, provider-preflight `context_capacity`, bounded repair admission,
 benchmark/trace request-budget metrics, and a three-strike repeated-failure breaker that resets on public World or
 operation/target/argument progress and public criterion/output progress rather than stable `INCOMPLETE` verifier
-status. The T3 GitLab diagnostic proved the old action-focused projection unsafe; T3.1 replaced it with
-`WorldRegionIndex`, `WorldDeliveryLens`, and `inspect_world` and passed the provider-free round-trip recovery gate.
-The live `watch3`/`auditview` evidence then proved that recovery alone does not make delivery efficient: full-page
-payloads remain the default, Tool-Schema refs expand most regions, cumulative history is republished, and repair
-replays the original context. T3.2 is the active cost-first delivery convergence increment described above. No
-Manager, GoalCompiler, VLM, second World, second browser session, or second GUI loop participates in this repair.
+status. The T3 GitLab diagnostic proved the old action-focused projection unsafe; T3.1 added
+`WorldRegionIndex`, `WorldDeliveryLens`, and `inspect_world`, and its provider-free gate proved bounded round-trip
+recovery. The live `watch3`/`auditview` evidence then proved that recovery alone does not make delivery efficient. The
+current cost-first implementation reduced one task-0 candidate from roughly 17.2k to 7.5k estimated tokens, but its
+first model view was not a functional PageMap: a giant generic region, empty/icon regions, internal facet refs, a
+repeated affordance map, and broad dynamic tool enums consumed attention. Direct refs were recovered by regex from the
+rendered string, so internal index refs could be mistaken for exact delivered targets. T3.2 is therefore reopened
+around the typed PageMap/ActiveView/DeliveryManifest and stable-tool contract described above. No Manager,
+GoalCompiler, VLM, second World, second browser session, or second GUI loop participates in this repair.
 
 A later W1b task-0 diagnostic exposed one additional inner Runtime contract gap rather than a policy or Manager
 failure: after a dynamic menu mutation, the newly visible `Bestsellers` link appeared in the public World but did not
@@ -1106,13 +1383,13 @@ Role request
   -> provider transport
   -> one or more physical provider attempts
   -> parsed output or typed provider/schema failure
-  -> role contract validation plus at most one bounded role repair
+  -> ActionPolicy local normalization/typed feedback, or a role-owned bounded repair where explicitly defined
   -> Runtime semantic validation where the role output asks for GUI work
 ```
 
 The provider/model invocation boundary owns wire envelopes, provider request/response shape, provider call IDs,
-transport retry, physical attempt transcripts, and basic schema parsing. The role boundary owns the
-ActionPolicy/GoalCompiler typed output contract and its single bounded schema/semantic repair. GUI Runtime authority
+transport retry, physical attempt transcripts, and basic schema parsing. GoalCompiler and the mission roles own their
+explicit bounded output repair; ActionPolicy owns no provider repair or semantic reselection. GUI Runtime authority
 stays with the current tool catalog, action legality, target currentness, argument validity, admission, private
 binding, dispatch, and task completion. PydanticAI cannot authorize GUI execution or completion.
 
@@ -1123,7 +1400,8 @@ keeps `last_metadata` and `last_provider_attempts` only as read-only properties 
 `last_invocation_result`. Trace and benchmark instrumentation consume the invocation result, not adapter-private
 `last_*` fields.
 
-PydanticAI owns provider clients, provider messages, native tool-call parsing, call IDs, and basic schema repair. The
+PydanticAI owns provider clients, provider messages, native tool-call parsing, and call IDs. Its ActionPolicy SDK
+retry is disabled; malformed or multiple deferred calls return typed Runtime feedback. The
 current `PerTurnToolCatalog` is exposed as a PydanticAI `ExternalToolset`, so a model proposes one deferred semantic
 tool call but never executes Python or GUI code inside the framework. Runtime resolves that call against the opaque
 current binding and remains the final validation authority.
@@ -1183,7 +1461,7 @@ diagnostics, action/result/outcome/evaluation facts, and the complete call-ID/re
 observation is written once; steps reference its identity, and binary media is content-addressed under `artifacts/`.
 Every provider attempt is recorded at the provider boundary as an OpenInference-shaped LLM transcript containing its
 input messages, exact current tool schema, output message or typed error, token usage, response ID, and semantic phase
-(`initial`, transport retry phases, `structured_output_repair`, `argument_repair`, or `tool_intent_repair`).
+(`initial`, transport retry phases, or a role-owned narrow schema repair such as Auditor `schema_repair`).
 `ModelInvocationResult` is the trace authority for attempts, metadata, repairs, role diagnostics, and lineage.
 Screenshot data URLs are replaced by content-addressed artifacts. Trace data never enters `RunState` or
 `AgentContext` and cannot affect control.
@@ -1257,8 +1535,8 @@ Task
   original instruction, constraints, permitted effects, formal task evaluation, requested outputs
   optional current SubtaskContract and only its selected audited carry facts
 Current Observation
-  one compact AX-style rendering of the latest fused public world, complete retained semantic groups,
-  current affordances, and current screenshot when selected
+  one semantic PageMap plus exact current ActiveView/SearchResults from the latest fused public world,
+  inline verbs, truthful delivery/source coverage, and the current screenshot only when selected
 Current Goal Plan
   standalone mode: optional compiler-produced advisory items
   long-horizon mode: deterministic one-item projection of the current SubtaskContract
@@ -1267,11 +1545,13 @@ Episode Memory
   followed by detailed renderings of the latest four AgentTurnView records;
   no previous-episode trajectory, prior World, prior screenshot, or call-local ref
 Current Tools
-  stable operation schemas; current E-refs and verbs remain in Observation/affordances
+  compact stable operation schemas; current E-refs and verbs exist only on exact Observation nodes,
+  and Runtime validates selected refs through the current DeliveryManifest and ActionSpace
 ```
 
-The latest `WorldObservation` is the only current environment authority; its fresh Actor projection is the only
-model-visible current-world view. ActionPolicy interprets the current task/subtask against that view; Runtime neither
+The latest `WorldObservation` is the only current environment authority; the fresh Actor-derived
+`WorldDeliveryView` is the only model-visible current-world view. ActionPolicy interprets the current task/subtask
+against that view; Runtime neither
 computes nor persists GoalPlan item status or a frontier. MissionState supplies audited
 cross-stage working evidence, not current UI state. Formal completion remains in TaskEvaluator/native evaluation. No
 model summary, Manager, Auditor, or separate progress-evaluator call is made per GUI step.
@@ -1299,47 +1579,51 @@ Episode Memory never publishes model-inferred `goal_advanced`, `goal_regressed`,
 TaskEvaluator, with their owners explicit. ActionPolicy infers current semantic relationships transiently from Task,
 optional GoalPlan, fresh World, selected carry facts, pinned facts, and episode transitions.
 
-Observation is bounded by serialized bytes, not a flat prefix of targets or structure nodes. Repeated sibling
-structures are packed as complete semantic groups: a group is retained with its labels, controls, and current state,
-or omitted as one unit. The current delivered lens exposes a stable direct tool subset whose targets occur in exact
-expanded subtrees. The complete current ActionSpace remains recoverable through stable `find_actions(query,
-exact_target?, cursor?)`; an objective-relative role filter is exposed only when a current objective exists. Filters
-are conjunctive, and an empty result cannot replace the base current ActionPage. Retrieval changes a result
-projection, not tool syntax, action authority, or private binding rules. Runtime still validates every returned public
-ref against the fresh catalog. A small page may still use full delivery when it is the cheaper valid candidate, but
-being below the former soft cap is not by itself a reason to expose the full inventory.
+Observation is bounded by serialized bytes, not a flat prefix of targets or structure nodes. The PageMap retains every
+functional region's exact extractive descriptor; repeated sibling structures are folded at row/card/item boundaries
+and remain indexed. The current lens exposes a small exact ActiveView whose executable refs are listed in a typed
+DeliveryManifest. The complete current ActionSpace remains recoverable through `find_actions(query, exact_target?,
+cursor?)`; an objective-relative role filter is exposed only when a current objective exists. Filters are conjunctive,
+and an empty result cannot replace the base current ActionPage. Retrieval promotes exact labeled matches into the
+next SearchResults/Manifest rather than merely recording a ref-bearing history result. Runtime still validates every
+selected ref against fresh authority. A small page may use full delivery only when it is the cheaper valid candidate
+and still supplies a usable PageMap; being below the former soft cap is not sufficient.
 
 The byte-bounded typed snapshot is not serialized field-for-field into the provider request. A pure compact renderer
 at the existing World-to-model boundary applies accessibility-tree presentation rules: empty structural generics and
 redundant inline text are elided without dropping their children; indentation preserves hierarchy; executable `E*`,
 inspectable `N*`, evidence `F*`, and region `R*` refs are printed only according to their non-overlapping current
-contracts; empty accessible names may use bounded public class tokens as a fallback label; useful current state,
+contracts; empty accessible names remain typed unknown rather than exposing DOM class/id/name tokens as labels; useful current state,
 non-tree relations, facts, coverage, traversal, and current verbs remain explicit. Evidence lineage, source membership,
 empty arrays, repeated contract keys, appearance decoration, Runtime IDs, and private binding data stay in typed trace
 rather than consuming model attention. This renderer is surface-neutral and never reads raw AX, DOM, private handles,
 task text, or benchmark identity.
 
-The bounded state projection preserves action-decision fields (`value`, selected options, Boolean control states,
-option domain, and semantic grid coordinate) ahead of unrelated metadata. If any remaining public state is omitted,
-the Actor node reports its retained and total field counts and the renderer exposes that partial coverage. Missing and
-not-projected are therefore distinct model-visible conditions; projection metadata never becomes page truth.
+The lossless supported public Actor normalization preserves every declared action-decision field (`value`, selected
+options, Boolean control states, option domain, and semantic grid coordinate). Explicitly partial BrowserGym source or
+World coverage remains marked as upstream partial coverage; it is not Actor omission. Only `WorldDeliveryView` may
+fold supported public fields for model budget, and its coverage plus recovery route distinguishes folded from absent.
+The legacy whole-context byte bound cannot call `fit_model_world` or shrink Actor facts/structure; provider request
+admission owns delivery capacity. Projection metadata never becomes page truth.
 
-Real-page projection follows the governance contract above: all targets named by the current tool schemas and their
-decision state are conserved; retained table/form/dialog/card content is structurally closed; omitted regions remain
+Real-page projection follows the governance contract above: all targets named direct by the current
+`DeliveryManifest` and their decision state are conserved; retained table/form/dialog/card content is structurally
+closed; omitted regions remain
 truthfully marked and recoverable; and token measurement covers the complete provider request rather than only the
 serialized World. MiniWoB full-retention witnesses protect regressions but do not prove these properties on complex
 pages.
 
 ```text
-WorldObservation -> ActorWorldSnapshot
-ActorWorldSnapshot -> WorldRegionIndex -> WorldDeliveryLens -> current Actor delivery
+WorldObservation -> lossless public ActorWorldSnapshot
+ActorWorldSnapshot + current ActionSpace -> WorldDeliveryIndex -> WorldDeliveryLens -> WorldDeliveryView + DeliveryManifest
 GoalPlan -> AgentGoalPlanView
-current Actor delivery + AgentGoalPlanView -> GroundedPolicyContextBinder
+WorldDeliveryView + AgentGoalPlanView -> GroundedPolicyContextBinder
 ```
 
 `GroundedPolicyContextBinder` remains the only ActionPolicy provider-message assembler. It renders only the current
-delivery projection through `compact_ax.v1`; a full Actor snapshot is used when it fits, otherwise the same renderer
-emits the region directory and exact expanded subtrees selected by the current lens. Completed turns contain no
+`WorldDeliveryView`; the renderer emits its text and typed manifest together, and the ToolCatalog consumes the
+manifest instead of parsing refs back from text. A normalized full Actor snapshot is only a measured candidate when it
+is smaller and satisfies the same PageMap/discoverability contract. Completed turns contain no
 observation text or executable ref. Manager
 and Auditor have separate bounded role prompts at the outer mission boundary and never reuse the grounded action
 tool catalog.
@@ -1382,7 +1666,7 @@ The convergence target keeps one GUI loop and one semantic action path:
 fresh WorldObservation
   -> ActionSpaceBuilder
        -> ActionOption(operation, semantic target, admitted binding modes)
-  -> Actor delivery + PerTurnToolCatalog
+  -> WorldDeliveryView + DeliveryManifest + PerTurnToolCatalog
   -> ActionPolicy selects one operation + current executable target
   -> Runtime admission
   -> BindingRouter
@@ -1415,9 +1699,10 @@ not need to intersect three distant lists:
 [E96] link "Bestsellers" actions=[activate, press_key]
 ```
 
-The ToolCatalog enum remains the final public target set. If a visible structure node has no structural BID but the
-current surface can truthfully offer a bounded visual binding, ActionSpaceBuilder may publish it as an `E*` target
-with the corresponding semantic verb. The binding mode remains a private execution detail. Otherwise it remains
+The typed `DeliveryManifest` is the final model-delivery ref set; stable Tool Schemas use ref patterns and Runtime
+validates the selected ref against both the manifest and current ActionSpace. If a visible structure node has no
+structural BID but the current surface can truthfully offer a bounded visual binding, ActionSpaceBuilder may publish
+it as an `E*` target with the corresponding semantic verb. The binding mode remains a private execution detail. Otherwise it remains
 `N*`; an invalid `activate(N*)` call cannot be promoted after selection. Surface/action projection records a typed,
 non-authoritative `why_not_eligible` reason such as `no_binding`, `not_visible`, `no_geometry`, `disabled`, `obscured`,
 or `unsupported`, so trace can distinguish unavailable execution evidence from projection loss without guessing page
@@ -1425,10 +1710,10 @@ semantics.
 
 These invariants must hold for every current delivery:
 
-1. every `E*` resolves to at least one current `ActionOption` and appears in the schema of each offered verb that it
-   supports;
-2. no `N*` appears in a GUI mutation-tool target enum;
-3. every schema target is rendered once with its semantic label, role, state needed for the action, and verbs;
+1. every displayed `E*` resolves to at least one current `ActionOption`, is listed in the current DeliveryManifest,
+   and prints every supported public verb inline;
+2. no `N*` is admitted by a GUI mutation tool;
+3. no E/N/F ref exists only in a folded region descriptor, facet/member list, separate affordance map, or Tool enum;
 4. a folded executable target remains recoverable through `find_actions`, while a folded read-only node remains
    recoverable through `inspect_world`; and
 5. fresh acquisition invalidates all prior E/N/F/R refs and neither repair nor retrieval guesses replacements.
@@ -1517,22 +1802,21 @@ satisfied local postcondition, formal criterion/output progress, or accepted use
 signature.
 
 In long-horizon mode, a stall yield is not task completion and must not become a terminal
-`REPEATED_FAILURE_LIMIT` on its first episode. The existing Auditor may retain only explicitly evidenced partial
-outcomes/facts; the accepted MissionState otherwise remains unchanged. Manager receives a bounded failed-strategy
-report—subtask, stall kind/signature, attempted modes, last public evidence, and recovery result—and must choose a
-different subtask route. Repetition of the same accepted failure signature in the next episode may exhaust the
-mission-level recovery budget and block. In short-task mode the same failed recovery consumes the existing bounded
-run budget and terminates truthfully when no outer Manager exists.
+`REPEATED_FAILURE_LIMIT` on its first episode. `control_stall`, `grounding_stall`, and `capability_gap` bypass Auditor:
+there is no semantic outcome to audit and MissionState remains unchanged. Manager receives the bounded one-shot
+recovery view and must choose a different subtask route. If it returns the same strategy, Supervisor requests one
+revision; a second unchanged answer terminates as typed `strategy_not_changed` before another episode opens. In
+short-task mode the same failed recovery consumes the existing bounded run budget and terminates truthfully when no
+outer Manager exists.
 
 #### Repair and discovery semantics
 
-Provider/tool repair is representation-preserving. It may repair malformed JSON, a field name, a value encoding, or
-another schema representation only when operation, semantic target, and task-facing arguments remain equivalent. A
-repair that changes `operation`, changes target identity, or substitutes another semantic argument is a new policy
-decision and is rejected as `repair_changed_intent`; it never dispatches. Invalid/stale/read-only targets return a
-normal next-turn typed grounding result with `dispatch=not_sent`, `world_changed=false`, the requested target
-semantics, the rejection reason, and up to three current actionable matches. They do not become terminal provider
-`schema_error` unless the provider response itself cannot be parsed after the bounded representation repair.
+Provider/tool normalization is local and representation-preserving. It may decode a field or value only when the
+single operation, semantic target, and task-facing arguments remain identical. Runtime never invokes a model to
+repair or reselect an ActionPolicy call. Multiple calls, malformed representation, and invalid/stale/read-only targets
+return normal next-turn typed feedback with `dispatch=not_sent`, `world_changed=false`, the requested target semantics,
+and the rejection reason. Repeated protocol feedback converges through `protocol_stall`; it does not become a
+terminal policy failure or an audit request.
 
 `inspect_world` and `find_actions` remain separate:
 
@@ -1659,19 +1943,19 @@ Tool handling is deterministic and bounded:
 1. Use strict provider schemas when supported.
 2. Validate every call again in Runtime.
 3. Normalize only representation-equivalent calls; never infer and execute a changed intent.
-4. The one bounded repair may change only representation. It must preserve operation, semantic target identity, and
-   task-facing argument meaning; otherwise return typed `repair_changed_intent` and execute nothing.
+4. Action-call errors return typed protocol/grounding feedback and execute nothing; Runtime never asks a repair model
+   to change or reselect operation, target, or task-facing arguments.
 5. For a known tool with invalid arguments, return public field violations and its exact schema. Invalid, stale,
    read-only, or unoffered current targets are grounding/admission feedback for the next ordinary policy turn, not a
    same-call opportunity to choose another target.
 6. For an admitted action whose binding is `VISUAL_ONLY_TARGET`, `GROUNDING_GAP`, or `GROUNDING_AMBIGUOUS`, route once
    through the same-turn `VisualGroundingPort` contract above. This is binding completion, not tool-call repair.
 7. For an unknown tool, return current names without pretending semantic equivalence.
-8. If the repaired call is still invalid, return a typed policy failure and execute nothing.
+8. If local normalization cannot produce one valid call, return typed feedback and execute nothing.
 9. If an admitted action becomes stale, acquire a fresh observation and let the next ordinary model turn replan; do
    not replay automatically.
 
-Repair results retain the provider `call_id`. They are dynamic tool results, not permanent prompt instructions.
+Protocol feedback retains causal call/delivery lineage. It is current-episode evidence, not a permanent instruction.
 
 ## Counting and arithmetic boundary
 
@@ -1690,11 +1974,11 @@ reasoning until benchmark evidence demonstrates a different shared failure after
 | What did a source observe? | SurfaceAdapter |
 | Which evidence should be acquired? | ObservationPolicy |
 | What is the current unified world? | WorldFusion / WorldObservation |
-| How is the current Actor tree grouped and what is folded? | deterministic `WorldRegionIndex`; it is recomputable from the current Actor snapshot and owns no facts |
-| Which current regions/details are delivered? | ephemeral `WorldDeliveryLens`; it is bound to one World/context generation and owns neither progress nor persistence |
-| What bounded public subset is shown to a model, with structural closure and truthful coverage? | existing World projection/renderer over the full Actor snapshot or current region delivery; this projection is disposable and cannot alter World or tool authority |
+| How is the current Actor tree grouped and indexed for delivery? | deterministic `WorldDeliveryIndex`; it derives functional regions plus content/action search indexes from fresh World and ActionSpace and owns no facts/actions |
+| Which current regions/details are preferred? | ephemeral `WorldDeliveryLens`; it is bound to one World/context generation and owns neither progress nor persistence |
+| What bounded public subset is shown to a model, with structural closure and truthful coverage? | disposable `WorldDeliveryView` containing PageMap + exact ActiveView/SearchResults; its typed DeliveryManifest records only refs printed exactly and cannot alter World or tool authority |
 | How can folded non-action content be recovered? | `inspect_world` resolves current regions/search results against the complete public World with zero GUI dispatch |
-| Which current actions are visible or retrievable? | existing ActionSpace pager and PerTurnToolCatalog; direct targets appear in exact delivered content and the remaining current inventory is reachable through `find_actions` |
+| Which current actions are visible or retrievable? | existing ActionSpace pager and PerTurnToolCatalog; stable Tool Schemas accept refs, DeliveryManifest restricts direct current refs, and the remaining current inventory is reachable through `find_actions` |
 | Should the current screenshot accompany the structured World? | existing `DecisionPerceptionProfile` and observation orchestration |
 | What did the user request? | caller / revisioned TaskGoal |
 | What semantic skeleton may help in standalone mode? | GoalCompiler proposes; GoalPlanBoundary validates and versions |
@@ -1741,14 +2025,14 @@ validation:
 | 4. Migrate observation, action paging, wait, ask/resume, done, confirmation, abort, and error paths | done | supported decisions have typed core-loop integration tests; confirmation continuations preserve one model-step count |
 | 5. Connect benchmark runners to the core loop | done | target benchmark exclusively executes `CoreAgentLoop`; reports persist `runtime=core` and raw per-case evidence |
 | 6. Cut over and delete the legacy cluster | done | public Runtime, CLI, and target benchmark use the core; old control state and projections are deleted |
-| 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, bounded repair, `ask_user`, and Runtime auto-completion pass |
+| 7. Validate PydanticAI against the current dynamic catalog and Runtime | done | Zhipu text and vision tool calls, `call_id`, typed invalid-call feedback, `ask_user`, and Runtime auto-completion pass |
 | 8. Select model transport by actual wire capability | done | native tools use `pydantic-ai`; 4.1V uses `compact-json`; both pass the same real click-button Runtime witness and `propose_done` is not model-visible |
 | 9. Converge the model/tool/context boundary and delete superseded paths | done | one typed AgentContext, one Actor world projection, one provider binder, stable registry-owned tools, and no legacy structured decision/parser/serialization path |
 | 10. Replace symbolic goal guidance with Simple GoalPlan | implementation complete; Ready delivered / behavior failed / non-closed | five-field plan is directly projected and compiler attempts are traced; live evidence includes both reversal of satisfied Likes and a Ready-plan zero-action stall |
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
 | Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | W1a implemented locally; T0/T1/T3 and T3.1 provider-free recovery verified; watch4 action/recovery convergence, Auditor AuditView evidence projection, and final-response contract delivery implemented locally; T3.2 cost-first model delivery active; W1b-Agent and W2 blocked | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; next converge delivery order (`fresh World -> lens -> direct tool subset`), bounded semantic history, and narrow representation repair with paired cost/recoverability evidence; then run one same-case finalization/native-evaluator witness and six-site smokes before W2 |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | T3.2 delivery/single-call/audit-routing implementation converged locally; provider-free six-page gate passed; live W1b-Agent and W2 pending / non-closed | retain the thin outer Manager/Auditor/MissionState and unchanged inner GUI chain; one `ModelTurnDelivery` supplies view + Manifest identity to Context, Catalog, resolver and trace; multiple calls stall through Manager; only explicit audit boundaries invoke Auditor; live evidence remains a separate gate |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:
@@ -1802,8 +2086,8 @@ and summaries that existed only to support the old ledger-shaped context are no 
 - Keep local action outcome partial and observational: prove exact postconditions only from typed contracts, return
   unknown elsewhere, and never turn arbitrary UI change into semantic progress or task completion.
 - Do not add per-step Manager/Auditor/reflection/summarizer calls, a second GUI evaluator loop, a second Binder, or
-  benchmark-specific product branches. The conditional semantic Auditor is read-only and runs only at episode
-  boundaries when existing typed evidence cannot close the subtask.
+  benchmark-specific product branches. The semantic Auditor is read-only and runs only after explicit
+  `ready_for_audit` or `request_final_audit` boundaries.
 - Import and configure `browsergym.webarena_verified`; do not copy its task dataset, login logic, Playwright tracing,
   final-response schema, backend/UI-state evaluators, or score aggregation into project code.
 - Reuse `BenchmarkManifest -> run_suite -> BenchmarkCaseResult`; WebArena composition may adapt official metadata into
@@ -1812,14 +2096,46 @@ and summaries that existed only to support the old ledger-shaped context are no 
   public task instruction and official response schema may reach TaskGoal/ActionPolicy.
 - Keep BrowserGym raw capture and complete `WorldObservation` upstream of any model-facing cleanup. Deterministic
   cleanup, structural closure, token fitting, coverage, and optional future region selection stay behind the existing
-  World-to-Actor projection seam; do not add a second DOM walker, browser tree, selector map, `ModalityRouter`, or
-  task-aware pruning authority.
-- Keep every currently offered target, verb, and action-decision state in Actor View. When other content is omitted,
-  report partial coverage and provide the existing paging/retrieval path rather than silent prefix truncation.
+  World-to-Actor projection seam; do not add a second DOM walker, browser tree, selector map, or `ModalityRouter`.
+  Deterministic task-text/BM25 ranking may choose which bounded regions expand, but it is a disposable preference and
+  cannot remove PageMap entries, World facts, ActionOptions, or recovery routes.
+- Keep every current ActionOption either exact in the DeliveryManifest or reachable through `search_actions(query)`;
+  keep every current public fact either exact or indexed behind a visible region and recoverable through
+  `read_region(region_ref)`, `search_world(query)`, or `list_regions()`. Do not force every action target
+  into the first `WorldDeliveryView`, and do not silently prefix-truncate omitted content.
 - Keep generic memory/offload frameworks fail-open and outside W2 control; never permit cross-case recall.
 - Add a type only when it owns one non-duplicated invariant required by an episode or mission boundary.
 
 ## Exit criteria
+
+The 2026-08-19 implementation now uses the single target chain described above: lossless supported-public Actor
+normalization plus complete ActionSpace feed one deterministic functional `WorldDeliveryIndex`; the typed renderer
+emits PageMap + ActiveView/SearchResults and its `DeliveryManifest`; stable operation schemas are checked first against
+that manifest and then the existing ActionSpace/Binder/Executor authority. Model-visible facets, a separate
+affordance list, rendered-text ref discovery, and full current-ref enums have been removed. Read-only inspect outcomes
+are closed and update only the same-World lens on success; compact-provider grounding/semantic failures no longer
+trigger a model call that could change intent. BrowserGym now publishes a credential/query/fragment-free current
+route as public viewport state, while DOM IDs/classes/names/data/event/selector fields remain private.
+
+The original run3 remains failed evidence: its probe could combine a label from one item with a role from another, and
+several public witnesses were not task-related executable routes. Probe v2 closes that evaluator gap. Task 21 was
+diagnosed independently before revision: the official page was a concrete headphones product page and `Reviews (12)`
+was the task-related executable link; the old `Search` witness was not. Task 44 likewise asks for the todos page and
+exposes `To-Do List` as an executable link; the old `Projects` heading was not an action route. No product ranking or
+site-specific execution branch was added.
+
+The first 2026-08-20 run2 passed the probe-v2 route, but independent audit then found that an explicitly bounded
+ContextBuilder profile could still shrink Actor facts after lossless projection while DeliveryIndex retained full World
+coverage. That P1 was repaired at ContextBuilder: whole-context fitting no longer removes Actor facts or structure;
+model capacity belongs to WorldDeliveryView and request admission. The post-repair run at
+`evidence/w1b-world-t32-probe-v2-lossless-run3/` passed all six pages with every retained/total Actor node count equal,
+zero provider attempts, and no acceptance error. Estimated new-page requests were
+`4,677 / 5,510 / 6,106 / 7,498 / 8,692 / 8,718` tokens (median `6,802`); complete per-request Tool Schemas were `1,739`
+or `1,879` tokens. The Tool architecture is unchanged: one stable schema per current operation plus the existing
+read/control tools; only repeated schema prose was removed. The repaired independent fresh-context re-audit passed
+with no P0/P1/P2. Per explicit user direction, this increment performs no live/provider witness. T3.2 is therefore
+verified only at the provider-free contract level; live policy behavior remains unverified and requires separate
+future authorization.
 
 - `TaskGoal` and fresh `WorldObservation` remain the user-intent and environment authorities.
 - A Ready GoalPlan is bounded, acyclic, versioned, projected once, and never treated as progress or proof.
@@ -1835,8 +2151,20 @@ and summaries that existed only to support the old ledger-shaped context are no 
   withholds STOP until finalizing, and closes through its existing `finally` path.
 - Every dispatched action has one matching result, fresh observation, and optional local outcome; stale calls never execute.
 - Held-out real WebArena pages, not only MiniWoB fixtures, prove that source semantics are correct, every offered
-  action target and its decision state survives projection, retained regions are structurally closed, omission is
-  truthful/recoverable, no hidden/private data leaks, and complete request-token metrics are persisted.
+  ActionOption and public fact is exact or recoverable, every PageMap descriptor satisfies the frozen
+  `DeliveryLimits.v1` grammar/thresholds, retained regions are structurally closed, omission is truthful, no
+  hidden/private data leaks, and complete request-token metrics are persisted.
+- Folded PageMap descriptors contain no E/N/F refs; exact refs originate only from renderer-emitted
+  `DeliveryManifest`; no separate model-visible affordance map or facet member-ref list exists; stable Tool Schemas do
+  not enumerate the full current ref inventory.
+- `read_region`, `search_world`, `list_regions`, and `search_actions` promote exact results into the next current
+  ActiveView/SearchResults with the same fresh resolver path. Paging tokens are Runtime-private: when another page
+  exists, the next catalog alone offers zero-argument `read_next_page()` or `action_results_next_page()`. A caller need
+  not copy an opaque cursor or remember a ref from sanitized history, and an empty action search cannot erase the base
+  ActionPage.
+- Across the six frozen real pages, every new-page request is at most 12k input tokens and the median is at most 9k;
+  Tool Schemas are at most 2k per request. A truthful atomic exception remains a recorded cost-gate failure rather than
+  silently passing because the request stayed under the hard cap.
 - Tests cover tolerant response parsing, plan/DAG invariants, revision invalidation, advisory failures, transcript
   preservation, five-section context, current-world precedence, single-owner verification-contract conservation,
   after-only postcondition proof, target-scoped transition evidence, non-blocking unknown, and private-field non-leakage.

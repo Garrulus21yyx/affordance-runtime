@@ -29,7 +29,7 @@ def test_model_invocation_result_requires_one_output_or_typed_failure() -> None:
     assert ModelInvocationResult(failure=failure).failure is failure
 
 
-def test_counting_decision_port_uses_invocation_attempts_without_repair_double_count() -> None:
+def test_counting_decision_port_counts_only_transport_attempts() -> None:
     class WrappedPort:
         async def generate(self, request):
             del request
@@ -38,14 +38,9 @@ def test_counting_decision_port_uses_invocation_attempts_without_repair_double_c
                 attempts=(
                     ModelGenerationAttempt(1, "initial", "grounded_tools.v2", "failed"),
                     ModelGenerationAttempt(2, "initial_provider_retry", "grounded_tools.v2", "accepted"),
-                    ModelGenerationAttempt(3, "tool_call_repair", "grounded_tools.v2", "schema_error"),
-                ),
-                repair_diagnostics=(
-                    {"kind": "transport_retry", "phase": "initial_provider_retry"},
-                    {"kind": "tool_call_repair", "phase": "tool_call_repair"},
                 ),
                 diagnostics={
-                    "policy_model_call_count": 3,
+                    "policy_model_call_count": 2,
                     "provider_retry_count": 1,
                 },
             )
@@ -57,11 +52,9 @@ def test_counting_decision_port_uses_invocation_attempts_without_repair_double_c
     assert [item.phase for item in outcome.attempts] == [
         "initial",
         "initial_provider_retry",
-        "tool_call_repair",
     ]
-    assert instrumentation.provider_attempts == 3
+    assert instrumentation.provider_attempts == 2
     assert instrumentation.provider_retry_count == 1
-    assert instrumentation.policy_schema_repair_count == 1
 
 
 def test_invocation_attempts_are_role_output_lineage_not_runtime_authority() -> None:

@@ -11,7 +11,7 @@ from affordance_runtime.actions.binder import ActionBinder, BindingError
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import project_step_result
-from affordance_runtime.agent.context.world_region_index import WorldRegionIndex
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.decisions import (
     Abort,
     AbortCategory,
@@ -19,6 +19,7 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     LocalToolResult,
+    ProtocolFeedback,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -374,6 +375,7 @@ class CoreAgentLoop:
             status_after=RunStatus.YIELDED,
             feedback=f"episode_monitor:{yield_reason.value}",
             failure_code=failure_code,
+            recovery_signal=getattr(transition, "recovery_signal", None),
         )
 
     async def resume_confirmation(
@@ -443,7 +445,7 @@ class CoreAgentLoop:
         if state.status is not RunStatus.RUNNING:
             raise ValueError("core step requires a running state")
         action_space = self.action_space_builder.build(task, state.current_world)
-        region_index = WorldRegionIndex.from_observation(state.current_world)
+        region_index = WorldDeliveryIndex.from_observation(state.current_world)
         lens = (
             state.delivery_lens
             if state.delivery_lens is not None
@@ -540,6 +542,7 @@ class CoreAgentLoop:
                 RequestActionPage,
                 AskUser,
                 LocalToolResult,
+                ProtocolFeedback,
                 YieldSubtask,
                 FinalResponse,
                 Wait,
@@ -571,6 +574,15 @@ class CoreAgentLoop:
                 state.current_task_evaluation,
                 RunStatus.RUNNING,
                 feedback="local_tool_result",
+            )
+        elif isinstance(decision, ProtocolFeedback):
+            result = StepResult(
+                decision,
+                state.current_world,
+                state.current_world,
+                state.current_task_evaluation,
+                RunStatus.RUNNING,
+                feedback=f"protocol_feedback:{decision.kind.value}",
             )
         elif isinstance(decision, YieldSubtask):
             result = _same_world_step(
@@ -755,9 +767,10 @@ class CoreAgentLoop:
                 RunStatus.RUNNING,
                 "recovery_repeat_rejected",
             )
-        page_issue = action_page.selection_issue(selection.action_id, selection.destination_id)
-        if page_issue is not None:
-            return _same_world_step(state, decision, RunStatus.BLOCKED, f"admission_rejected:{page_issue.code}")
+        # Model-visible selection authority is the current DeliveryManifest,
+        # enforced by the grounded catalog before this private action_id is
+        # created. The ActionPage is a retrieval projection, not a second
+        # legality gate; canonical ActionSpace admission above remains strict.
         risk = self.risk_policy.assess(task, selection)
         if risk.decision is RiskDecisionKind.BLOCK:
             return _same_world_step(state, decision, RunStatus.BLOCKED, "risk_blocked")
@@ -921,7 +934,9 @@ def _action_page_result_payload(page, decision: RequestActionPage) -> dict[str, 
     if decision.query:
         relaxations.append("shorten_query")
     return {
+        "kind": "Empty" if page.total_count == 0 else "Page",
         "applied_filters": applied,
+        "coverage": "complete_current_action_space",
         "total_count": page.total_count,
         "visible_count": len(page.visible_action_ids),
         "why_empty": (

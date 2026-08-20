@@ -20,6 +20,7 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     LocalToolResult,
+    ProtocolFeedback,
     RequestActionPage,
     RequestObservation,
     SelectAction,
@@ -44,6 +45,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             RequestActionPage,
             AskUser,
             LocalToolResult,
+            ProtocolFeedback,
             YieldSubtask,
             FinalResponse,
             Wait,
@@ -193,6 +195,12 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         return {"question": decision.question, "requested_fields": decision.requested_fields}
     if isinstance(decision, LocalToolResult):
         return project_public_value(decision.arguments)
+    if isinstance(decision, ProtocolFeedback):
+        return {
+            "kind": decision.kind.value,
+            "call_count": decision.call_count,
+            "detail": decision.detail,
+        }
     if isinstance(decision, YieldSubtask):
         return {"kind": decision.kind, "reason": _bounded(decision.reason)}
     if isinstance(decision, FinalResponse):
@@ -250,9 +258,11 @@ def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]
 def _control_tool_name(decision: AgentDecision) -> str:
     if isinstance(decision, LocalToolResult):
         return decision.tool_name
+    if isinstance(decision, ProtocolFeedback):
+        return "protocol_feedback"
     return {
         RequestObservation: "request_evidence",
-        RequestActionPage: "find_actions",
+        RequestActionPage: "search_actions",
         AskUser: "ask_user",
         FinalResponse: "final_response",
         Wait: "wait",

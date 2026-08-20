@@ -265,6 +265,32 @@ def test_role_factory_uses_aliyun_compiler_model_override(monkeypatch) -> None:
     assert roles.goal_compiler.port.model == "glm-5.2-compiler"
 
 
+def test_role_factory_uses_deepseek_compiler_model_override(monkeypatch) -> None:
+    from affordance_runtime.model import goal_compiler as module
+    from affordance_runtime.model.policy import factory
+
+    def build(environment):
+        port = ScriptedModelPort([])
+        port.model = environment["LLM_DEEPSEEK_MODEL"]
+        return port
+
+    action_policy = object()
+    monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
+    monkeypatch.setattr(module, "model_port_from_environment", build)
+
+    roles = model_roles_from_environment({
+        "LLM_ACTIVE_PROFILE": "deepseek",
+        "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+        "LLM_DEEPSEEK_API_KEY": "secret",
+        "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+        "LLM_GOAL_COMPILER_MODEL": "deepseek-v4-pro",
+        "LLM_MODEL_ADAPTER": "pydantic-ai",
+    })
+
+    assert roles.action_policy is action_policy
+    assert roles.goal_compiler.port.model == "deepseek-v4-pro"
+
+
 def test_pydantic_policy_keeps_distinct_compiler_model_override(monkeypatch) -> None:
     from affordance_runtime.model import goal_compiler as module
     from affordance_runtime.model.policy import factory
