@@ -52,7 +52,8 @@ from affordance_runtime.benchmarks.webarena_verified import (
 )
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.model.mission_roles import mission_roles_from_environment
+from affordance_runtime.mission.contracts import ExecutionMode
+from affordance_runtime.model.mission_roles import mission_manager_from_environment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 
@@ -116,14 +117,13 @@ def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
         evaluator = holder.get("evaluator")
         if evaluator is None:
             raise RuntimeError("WebArena-Verified W1b evaluator requested before environment setup")
-        manager, auditor = mission_roles_from_environment(os.environ)
         return BenchmarkComposition(
             model_policy_from_environment(os.environ, call_timeout_s=WA_W1B_MODEL_CALL_TIMEOUT_S),
             ProductionActionOutcomeProjector(),
             evaluator,
-            mission_manager=manager,
-            mission_auditor=auditor,
-            long_horizon=True,
+            mission_manager=mission_manager_from_environment(os.environ),
+            mission_auditor=None,
+            execution_mode=ExecutionMode.MISSION,
         )
 
     return BenchmarkCase(
@@ -142,9 +142,21 @@ def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
             "provider_attempts",
             "mission_manager_calls",
             "mission_auditor_calls",
+            "mission_finalizer_calls",
+            "mission_stop_send_calls",
+            "mission_post_stop_capture_calls",
+            "mission_native_evaluator_calls",
             "mission_final_response_delivered",
         ),
-        (),
+        _expect(
+            mission_manager_calls=2,
+            mission_auditor_calls=0,
+            mission_finalizer_calls=1,
+            mission_stop_send_calls=1,
+            mission_post_stop_capture_calls=1,
+            mission_native_evaluator_calls=1,
+            mission_final_response_delivered=1,
+        ),
     )
 
 

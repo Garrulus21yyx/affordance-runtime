@@ -1,163 +1,29 @@
 from __future__ import annotations
 
-import asyncio
-import json
-import re
-from dataclasses import dataclass, replace
-from types import SimpleNamespace
-
 import pytest
 
-from affordance_runtime.actions import INTERACTION_CAPABILITY_REGISTRY, ActionBinding, ActionRisk
-from affordance_runtime.actions.action_space import ActionSpaceBuilder
-from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.agent import (
-    LocalToolResult,
-    ProtocolFeedback,
-    ProtocolFeedbackKind,
-    SelectAction,
-)
-from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
-from affordance_runtime.agent.context.failures import ModelFailureKind
-from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
-from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.run_state import RunStatus, StepResult
-from affordance_runtime.evaluation import EvidenceMethod, TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.evaluation.contracts import (
-    ActionOutcome,
-    CriterionEvaluation,
-    CriterionEvaluationStatus,
-    LocalPostconditionStatus,
-    ObservedChange,
-)
-from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus, ExecutionOutcome
 from affordance_runtime.mission import (
     AuditBoundary,
-    AuditBundle,
-    AuditDelta,
-    AuditDeltaStatus,
-    AuditGuidance,
-    AuditorRoleRequest,
-    EpisodeMonitor,
-    EpisodeMonitorRecommendation,
+    EvidenceBundle,
+    ManagerAssessment,
     ManagerDecision,
     ManagerRecoveryView,
+    ManagerRequestMode,
     ManagerRoleRequest,
     ManagerRoute,
-    MissionEnvironmentView,
     MissionState,
-    OutcomeProposal,
-    PromoteFactProposal,
-    RecoveryKind,
-    RecoverySignal,
     SubtaskContract,
-    subtask_goal_resolution,
+    WorkingFactProposal,
+    WorkingOutcomeProposal,
 )
-from affordance_runtime.model.mission_roles import (
-    ModelBackedMissionAuditor,
-    ModelBackedMissionManager,
-    SubtaskContractModel,
-)
-from affordance_runtime.model.policy.contracts import ModelInvocationResult
-from affordance_runtime.model.policy.grounded_tool_catalog import GroundedLocalToolName
-from affordance_runtime.model.policy.request_admission import ModelRequestBudget
-from affordance_runtime.model.providers.port import StructuredOutputError, StructuredOutputViolation
-from affordance_runtime.task import RiskProfile, TaskGoal
-from affordance_runtime.world import (
-    ObservationSourceProfile,
-    ObservationStructureNode,
-    SemanticTarget,
-    StateFact,
-    SurfaceObservation,
-    WorldFusion,
-)
+from affordance_runtime.model.mission_roles import ManagerDecisionModel, SubtaskContractModel
+from affordance_runtime.task import TaskGoal
+from affordance_runtime.world import SemanticTarget, StateFact
 from tests.support.world import fused_world
 
 
 def _task() -> TaskGoal:
-    return TaskGoal(
-        "task:mission",
-        "Find the answer and submit it.",
-        allowed_effects=("external_ui_interaction",),
-        requested_outputs=("final_response",),
-        risk_profile=RiskProfile.LOW,
-    )
-
-
-def test_subtask_default_budget_is_fifteen_not_twenty() -> None:
-    contract = SubtaskContract("Read the report result", "The first product is known")
-    model_contract = SubtaskContractModel(
-        objective="Read the report result",
-        done_when="The first product is known",
-    )
-
-    assert contract.episode_turn_budget == 15
-    assert model_contract.episode_turn_budget == 15
-
-
-@pytest.mark.parametrize(
-    "tool_name",
-    tuple(item.semantic_action for item in INTERACTION_CAPABILITY_REGISTRY.definitions)
-    + tuple(item.value for item in GroundedLocalToolName),
-)
-def test_manager_subtask_model_rejects_concrete_tool_identifiers(tool_name: str) -> None:
-    objectives = [
-        f"Use the {tool_name} tool to inspect the report",
-        f"Call the {tool_name} operation to inspect the report",
-        f"Invoke the {tool_name} command to inspect the report",
-        f"Tool {tool_name} should inspect the report",
-        f"`{tool_name}` should inspect the report",
-        f"{tool_name}() should inspect the report",
-    ]
-    if "_" in tool_name:
-        objectives.append(f"Use {tool_name} to inspect the report")
-    for objective in objectives:
-        with pytest.raises(ValueError, match="implementation identifiers"):
-            SubtaskContractModel(
-                objective=objective,
-                done_when="The first product is known",
-            )
-
-
-def test_subtask_budget_contract_rejects_twenty_turns() -> None:
-    with pytest.raises(ValueError, match="less than or equal to 15"):
-        SubtaskContractModel(
-            objective="Read the report result",
-            done_when="The first product is known",
-            episode_turn_budget=20,
-        )
-    with pytest.raises(ValueError, match=r"within \[1, 15\]"):
-        SubtaskContract(
-            "Read the report result",
-            "The first product is known",
-            episode_turn_budget=20,
-        )
-
-
-@pytest.mark.parametrize(
-    "semantic_text",
-    (
-        "The order_id field is visible in the report",
-        "Use the current report to find order_id",
-        "Run the focus group analysis shown on the page",
-        "Run focus group analysis shown on the page",
-        "Use read-only mode when the page offers it",
-        "Use Focus for Teams to review the report",
-        "Use activate now",
-        "Call wait immediately",
-        "Invoke abort if progress is unsafe",
-        "Run scroll once",
-    ),
-)
-def test_manager_subtask_model_allows_semantic_text_that_only_resembles_tools(
-    semantic_text: str,
-) -> None:
-    contract = SubtaskContractModel(
-        objective=semantic_text,
-        done_when="The relevant report result is known",
-    )
-
-    assert contract.objective == semantic_text
+    return TaskGoal("task:mission", "Find the answer and submit it.", requested_outputs=("answer",))
 
 
 def _world(value: object = "42"):
@@ -166,1144 +32,129 @@ def _world(value: object = "42"):
     return fused_world("obs", (target,), (fact,), surface="browsergym")
 
 
-def _evaluation(world) -> TaskEvaluation:
-    return TaskEvaluation("task:mission", world.observation_id, TaskEvaluationStatus.INCOMPLETE, "not complete")
+def test_initial_manager_request_is_explicit_and_ref_free() -> None:
+    request = ManagerRoleRequest(
+        mode=ManagerRequestMode.INITIAL_PLAN,
+        original_task=_task(),
+        mission_state=MissionState.empty(),
+        remaining_rounds=4,
+    )
+
+    assert request.mode is ManagerRequestMode.INITIAL_PLAN
+    assert request.active_subtask is None
+    assert request.review_world is None
 
 
-def test_episode_monitor_recovers_then_yields_repeated_local_tool_result() -> None:
+def test_review_request_requires_one_complete_fresh_bundle() -> None:
     world = _world()
-    evaluation = _evaluation(world)
-    decision = LocalToolResult(
-        "context:1",
-        "search_world",
-        {"action": "find", "query": "missing"},
-        {"action": "find", "matches": (), "total_count": 0},
-    )
-    step = StepResult(
-        decision,
-        world,
-        world,
-        evaluation,
-        RunStatus.RUNNING,
-        feedback="local_tool_result",
-    )
-    monitor = EpisodeMonitor()
-
-    first = monitor.evaluate(step, (), "world:digest")
-    second = monitor.evaluate(step, (), "world:digest")
-    third = monitor.evaluate(step, (), "world:digest")
-
-    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert second.recovery_signal is not None
-    assert second.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    assert third.recommendation is EpisodeMonitorRecommendation.YIELD
-    assert third.recovery_signal is not None
-    assert third.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    assert third.recovery_signal.observed_evidence["same_result_count"] == 3
-
-
-@pytest.mark.parametrize(
-    ("kind", "expected_guidance"),
-    (
-        (ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS, "exactly one offered tool call"),
-        (ProtocolFeedbackKind.OUTPUT_TRUNCATED, "exhausted its output budget"),
-        (ProtocolFeedbackKind.EMPTY_FINAL_CONTENT, "non-empty final JSON command"),
-        (ProtocolFeedbackKind.JSON_INVALID, "valid JSON command"),
-    ),
-)
-def test_episode_monitor_feedback_preserves_protocol_failure_kind(
-    kind: ProtocolFeedbackKind,
-    expected_guidance: str,
-) -> None:
-    world = _world()
-    step = StepResult(
-        ProtocolFeedback("context:1", kind, 0, kind.value),
-        world,
-        world,
-        _evaluation(world),
-        RunStatus.RUNNING,
-        feedback=kind.value,
-    )
-    monitor = EpisodeMonitor()
-
-    monitor.evaluate(step, (), "world:digest")
-    transition = monitor.evaluate(step, (), "world:digest")
-
-    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert transition.recovery_signal is not None
-    assert transition.recovery_signal.kind is RecoveryKind.PROTOCOL_STALL
-    assert expected_guidance in transition.recovery_signal.prohibited_immediate_repeat
-    if kind is not ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS:
-        assert "multi-call" not in transition.recovery_signal.prohibited_immediate_repeat
-
-
-@pytest.mark.parametrize("payload_size", (100_000, 1_000_000))
-def test_episode_monitor_large_local_results_are_bounded_total_and_yield(
-    payload_size: int,
-) -> None:
-    world = _world()
-    payload = "x" * payload_size
-    decision = LocalToolResult(
-        "context:1",
-        "read_region",
-        {"region_ref": "R14"},
-        {
-            "kind": "Opened",
-            "items": ({"label": payload, "role": "row"},),
-            "coverage": "partial",
-        },
-    )
-    step = StepResult(
-        decision,
-        world,
-        world,
-        _evaluation(world),
-        RunStatus.RUNNING,
-        feedback="local_tool_result",
-    )
-    monitor = EpisodeMonitor()
-
-    first = monitor.evaluate(step, (), "world:digest")
-    second = monitor.evaluate(step, (), "world:digest")
-    third = monitor.evaluate(step, (), "world:digest")
-
-    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert second.recovery_signal is not None
-    assert second.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    assert len(second.recovery_signal.stable_signature) < 100
-    assert payload not in second.recovery_signal.stable_signature
-    assert second.recovery_signal.observed_evidence["item_count"] == 1
-    assert second.recovery_signal.observed_evidence["same_result_count"] == 2
-    assert second.recovery_signal.prohibited_immediate_repeat == (
-        "Do not repeat read_region on the same semantic arguments without new evidence."
-    )
-    assert third.recommendation is EpisodeMonitorRecommendation.YIELD
-
-
-def test_episode_monitor_local_result_signature_is_canonical_across_field_order() -> None:
-    world = _world()
-
-    def recovered(result) -> object:
-        decision = LocalToolResult(
-            "context:1",
-            "search_world",
-            {"query": "Bestsellers", "scope": "current_world"},
-            result,
+    subtask = SubtaskContract("Find answer", "Answer is visible")
+    recovery = ManagerRecoveryView("outcome_proposed", True, subtask)
+    with pytest.raises(ValueError, match="complete fresh review"):
+        ManagerRoleRequest(
+            mode=ManagerRequestMode.REVIEW_AND_ROUTE,
+            original_task=_task(),
+            mission_state=MissionState.empty(),
+            recovery=recovery,
+            active_subtask=subtask,
+            review_world=world,
         )
-        step = StepResult(
-            decision,
-            world,
-            world,
-            _evaluation(world),
-            RunStatus.RUNNING,
-            feedback="local_tool_result",
-        )
-        monitor = EpisodeMonitor()
-        monitor.evaluate(step, (), "world:digest")
-        return monitor.evaluate(step, (), "world:digest")
-
-    left = recovered({"kind": "Matches", "coverage": "partial", "items": ({"a": 1, "b": 2},)})
-    right = recovered({"items": ({"b": 2, "a": 1},), "coverage": "partial", "kind": "Matches"})
-
-    assert left.recovery_signal is not None
-    assert right.recovery_signal is not None
-    assert left.recovery_signal.stable_signature == right.recovery_signal.stable_signature
-    assert (
-        left.recovery_signal.observed_evidence["result_digest"]
-        == right.recovery_signal.observed_evidence["result_digest"]
-    )
 
 
-@dataclass
-class _Port:
-    payload: dict[str, object]
-    provider: str = "fixture"
-    model: str = "fixture-model"
-    endpoint_class: str = "fixture"
-    last_call: object | None = None
-    last_transcript: object | None = None
-    messages: tuple[object, ...] = ()
-
-    @property
-    def supports_multimodal(self):
-        return False
-
-    async def generate_structured(self, messages, output_schema, config):
-        del config
-        self.messages = tuple(messages)
-        return output_schema(**self.payload)
-
-
-@dataclass
-class _FailingPort(_Port):
-    async def generate_structured(self, messages, output_schema, config):
-        del messages, output_schema, config
-        raise RuntimeError("provider down")
-
-
-@dataclass
-class _RepairingPort(_Port):
-    calls: int = 0
-
-    async def generate_structured(self, messages, output_schema, config):
-        self.calls += 1
-        if self.calls == 1:
-            raise StructuredOutputError(
-                "invalid",
-                violations=(StructuredOutputViolation("$", "json_invalid"),),
-            )
-        return await super().generate_structured(messages, output_schema, config)
-
-
-def test_manager_context_hides_world_screenshot_action_space_and_trajectory() -> None:
-    port = _Port({"route": "blocked", "reason": "no route"})
-    manager = ModelBackedMissionManager(port)
-
-    result = asyncio.run(manager.decide(ManagerRoleRequest(_task(), MissionState.empty())))
-
-    assert isinstance(result, ModelInvocationResult)
-    payload = json.loads(port.messages[1].content)
-    serialized = json.dumps(payload).casefold()
-    assert result.output == ManagerDecision(ManagerRoute.BLOCKED, reason="no route")
-    assert "screenshot" not in serialized
-    assert "action_space" not in serialized
-    assert "observation_id" not in serialized
-    assert "targets" not in serialized
-    assert "bindings" not in serialized
-    assert "trajectory" not in serialized
-
-
-def test_manager_context_receives_bounded_environment_scope() -> None:
-    port = _Port({"route": "blocked", "reason": "no route"})
-    manager = ModelBackedMissionManager(port)
-    environment = MissionEnvironmentView(
-        "browser",
-        "Magento Admin",
-        "Ordered Products Report",
-        "/admin/reports/",
-        (
-            "navigate within the current application",
-            "activate an offered control",
-            "read content visible in the current application",
-        ),
-        ("search the public web outside the current application",),
-        ("activate REPORTS", "activate Ordered Products Report"),
-    )
-
-    asyncio.run(manager.decide(ManagerRoleRequest(
-        _task(),
-        MissionState.empty(),
-        environment=environment,
-    )))
-
-    payload = json.loads(port.messages[1].content)["environment"]
-    assert payload == {
-        "surface": "browser",
-        "application": "Magento Admin",
-        "page_title": "Ordered Products Report",
-        "route_family": "/admin/reports/",
-        "available_capabilities": [
-            "navigate within the current application",
-            "activate an offered control",
-            "read content visible in the current application",
-        ],
-        "unavailable_capabilities": [
-            "search the public web outside the current application",
-        ],
-        "last_successful_transitions": ["activate REPORTS", "activate Ordered Products Report"],
-    }
-
-
-def test_manager_context_strips_generation_refs_from_environment_and_recovery() -> None:
-    port = _Port({"route": "blocked", "reason": "no route"})
-    manager = ModelBackedMissionManager(port)
-    environment = MissionEnvironmentView(
-        "browser",
-        "Magento Admin E19",
-        "Ordered Products Report <expired-ref-1>",
-        "/admin/reports/",
-        ("activate an offered control", "read content visible in the current application"),
-        ("search the public web outside the current application",),
-        ("activate E19", "read_region R14", "inspect <expired-ref-2>"),
-    )
-    signal = RecoverySignal(
-        RecoveryKind.CONTROL_STALL,
-        "local_tool_result:sha256:abc",
+def test_initial_manager_produces_exactly_one_bounded_subtask() -> None:
+    model = ManagerDecisionModel.model_validate(
         {
-            "arguments": {
-                "region_ref": "R14",
-                "evidence_ref": "F2",
-                "target": "E59",
-                "query": "2022",
+            "assessment": "not_applicable",
+            "route": "execute_subtask",
+            "subtask": {
+                "objective": "Find the requested answer",
+                "done_when": "The requested answer is visible",
+                "episode_turn_budget": 8,
             },
-            "same_result_count": 2,
-        },
-        ("read_region",),
-        "Do not repeat read_region on R14 or <expired-ref-3>.",
-    )
-    recovery = ManagerRecoveryView(
-        "control_stall",
-        False,
-        SubtaskContract("Read the current report", "The report value is visible"),
-        signal,
+        }
     )
 
-    asyncio.run(manager.decide(ManagerRoleRequest(
-        _task(),
-        MissionState.empty(),
-        recovery=recovery,
-        environment=environment,
-    )))
-
-    payload = json.loads(port.messages[1].content)
-    serialized = json.dumps(payload)
-    assert not re.search(r"\b[ENFR][1-9][0-9]{0,3}\b", serialized)
-    assert "expired-ref" not in serialized
-    assert payload["environment"]["application"] == "Magento Admin"
-    assert payload["recovery"]["repeated_arguments"] == {"query": "2022"}
+    assert isinstance(model.subtask, SubtaskContractModel)
+    assert model.subtask.episode_turn_budget == 8
 
 
-def test_manager_context_receives_bounded_recovery_and_audit_guidance() -> None:
-    port = _Port({"route": "blocked", "reason": "no route"})
-    manager = ModelBackedMissionManager(port)
-    prior = SubtaskContract("Find the year", "The year is visible")
-    signal = RecoverySignal(
-        RecoveryKind.CONTROL_STALL,
-        "local_tool_result:sha256:abc",
-        {
-            "tool": "search_world",
-            "arguments": {"query": "2022"},
-            "item_count": 0,
-            "same_result_count": 3,
-            "result_digest": "sha256:def",
-        },
-        ("search_world",),
-        "Do not repeat search_world on 2022 without new evidence.",
+def test_manager_review_carries_assessment_route_and_working_proposals_together() -> None:
+    decision = ManagerDecision(
+        ManagerAssessment.SATISFIED,
+        ManagerRoute.REQUEST_FINALIZATION,
+        ("fact:obs:answer",),
+        (
+            WorkingOutcomeProposal(
+                "outcome:answer",
+                ManagerAssessment.SATISFIED,
+                ("fact:obs:answer",),
+                "answer visible",
+            ),
+        ),
+        (
+            WorkingFactProposal(
+                "answer", "fact:obs:answer", "42", "final response candidate"
+            ),
+        ),
+        reason="Current evidence supports final formatting.",
     )
-    recovery = ManagerRecoveryView(
-        "control_stall",
-        False,
-        prior,
-        signal,
-        ("read_region", "search_world"),
-        AuditGuidance(
-            ("a report filtered to 2022",),
-            "Navigate to a report view exposing date controls.",
+
+    proposal = decision.state_proposal(0)
+    assert proposal is not None
+    assert proposal.assessment is ManagerAssessment.SATISFIED
+    assert decision.route is ManagerRoute.REQUEST_FINALIZATION
+
+
+def test_evidence_boundary_accepts_exact_identity_and_is_the_only_state_writer() -> None:
+    world = _world()
+    bundle = EvidenceBundle.from_world(world)
+    record = next(item for item in bundle.evidence_records if item.kind == "fact")
+    decision = ManagerDecision(
+        ManagerAssessment.SATISFIED,
+        ManagerRoute.REQUEST_FINALIZATION,
+        (record.evidence_ref,),
+        (
+            WorkingOutcomeProposal(
+                "outcome:answer",
+                ManagerAssessment.SATISFIED,
+                (record.evidence_ref,),
+                "answer visible",
+            ),
+        ),
+        (
+            WorkingFactProposal(
+                "answer", record.evidence_ref, record.value, "final response candidate"
+            ),
         ),
     )
-
-    asyncio.run(manager.decide(ManagerRoleRequest(
-        _task(),
-        MissionState.empty(),
-        "episode:yielded:control_stall",
-        "control_stall",
-        3,
-        recovery,
-    )))
-
-    payload = json.loads(port.messages[1].content)["recovery"]
-    assert payload["authority"] == "temporary_non_authoritative_guidance"
-    assert payload["scope"] == "next_manager_decision_only"
-    assert payload["exit_kind"] == "control_stall"
-    assert payload["world_changed"] is False
-    assert payload["attempted_modes"] == ["read_region", "search_world"]
-    assert payload["repeated_arguments"] == {"query": "2022"}
-    assert payload["result"] == "empty"
-    assert payload["repeat_count"] == 3
-    assert payload["prohibited_repeat"].startswith("Do not repeat search_world")
-    assert payload["audit_guidance"]["missing_evidence"] == ["a report filtered to 2022"]
-
-
-def test_manager_route_is_closed_and_subtask_projects_to_one_goal_plan_without_compiler() -> None:
-    contract = SubtaskContract("Collect the answer.", "The answer is visible.")
-    decision = ManagerDecision(ManagerRoute.EXECUTE_SUBTASK, contract)
-    resolution = subtask_goal_resolution(_task(), contract)
-
-    assert decision.route is ManagerRoute.EXECUTE_SUBTASK
-    assert len(resolution.accepted_plan.items) == 1
-    item = resolution.accepted_plan.items[0]
-    assert item.id == "active_subtask"
-    assert item.objective == contract.objective
-    assert item.done_when == contract.done_when
-    assert item.depends_on == ()
-    assert item.final is False
-    with pytest.raises(ValueError):
-        ManagerDecision(ManagerRoute.REQUEST_FINAL_AUDIT, contract)
-
-
-def test_manager_and_auditor_return_model_invocation_result_and_failures_do_not_modify_state() -> None:
     mission = MissionState.empty()
-    manager = ModelBackedMissionManager(_FailingPort({}))
-    auditor = ModelBackedMissionAuditor(_FailingPort({}))
-    task = _task()
-    world = _world()
-    bundle = AuditBundle.from_world(world)
 
-    manager_result = asyncio.run(manager.decide(ManagerRoleRequest(task, mission)))
-    auditor_result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        task,
-        SubtaskContract("Read answer", "Answer visible"),
-        mission,
-        world,
-        (),
-        "ready_for_audit",
-        (),
-        bundle,
-    )))
+    accepted = AuditBoundary().accept(mission, decision.state_proposal(0), bundle)
 
-    assert isinstance(manager_result, ModelInvocationResult)
-    assert isinstance(auditor_result, ModelInvocationResult)
-    assert manager_result.failure is not None
-    assert auditor_result.failure is not None
+    assert accepted.accepted
+    assert accepted.mission_state.version == 1
+    assert accepted.mission_state.working_outcomes[0].outcome_id == "outcome:answer"
     assert mission == MissionState.empty()
 
 
-def test_auditor_context_uses_public_world_view_evidence_and_compact_history() -> None:
-    port = _Port({
-        "status": "audited_satisfied",
-        "base_mission_version": 0,
-        "completed_outcomes": ({
-            "audit_id": "audit:answer",
-            "status": "audited_satisfied",
-            "evidence_refs": ("F1",),
-            "summary": "answer visible",
-        },),
-    })
-    auditor = ModelBackedMissionAuditor(port)
-    world = _world("42")
-    bundle = AuditBundle.from_world(world)
-    history = tuple(
-        AgentTurnView("selectaction", "activate", reason=f"step-{index}")
-        for index in range(5)
-    )
-
-    task = replace(
-        _task(),
-        inputs={
-            PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: {
-                "json_schema": {"type": "object", "properties": {"secret_final": {"type": "string"}}}
-            },
-            "hidden_benchmark_reward": 1,
-        },
-    )
-    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        task,
-        SubtaskContract("Read answer", "Answer visible"),
-        MissionState.empty(),
-        world,
-        (),
-        "ready_for_audit",
-        history,
-        bundle,
-    )))
-
-    assert result.accepted
-    payload = json.loads(port.messages[1].content)
-    audit_world = payload["audit_world"]
-    assert audit_world["format"] == "compact_ax.v2"
-    assert 'text "Answer" value[F1]="42"' in audit_world["observation"]
-    assert "facts" not in audit_world
-    assert "artifacts" not in audit_world
-    assert "audit_bundle" not in payload
-    serialized = json.dumps(payload)
-    assert PUBLIC_FINAL_RESPONSE_CONTRACT_KEY not in serialized
-    assert "secret_final" not in serialized
-    assert "hidden_benchmark_reward" not in serialized
-    assert "send_msg_to_user" not in serialized
-    assert "STOP" not in serialized
-    assert "F1" in payload["audit_evidence"]["visible_refs"]
-    assert payload["audit_evidence"]["visible_ref_count"] == len(payload["audit_evidence"]["visible_refs"])
-    assert result.output is not None
-    assert result.output.completed_outcomes[0].evidence_refs == ("fact:obs:answer",)
-    assert payload["episode_history"]["retained_count"] == 5
-    assert len(payload["episode_history"]["recent_trajectory"]) == 4
-    assert len(payload["episode_history"]["earlier_actions"]) == 1
-
-
-def test_auditor_history_bounds_large_transition_evidence_before_provider_call() -> None:
-    port = _Port({"status": "unknown", "base_mission_version": 0})
-    auditor = ModelBackedMissionAuditor(port)
-    world = _world("42")
-    large_changes = tuple(
-        {
-            "subject_id": f"target:{index}",
-            "predicate": "public.label",
-            "before": "",
-            "after": "Quest Lumaflex Band " * 20,
-        }
-        for index in range(200)
-    )
-    history = tuple(
-        AgentTurnView(
-            "selectaction",
-            "activate",
-            AgentHistoricalTargetView("button", f"Step {index}"),
-            dispatch_status="sent",
-            local_postcondition="unknown",
-            transition={
-                "observed_change": "changed",
-                "evidence_method": "structural",
-                "fact_changes": large_changes,
-            },
-            reason="target changed",
-        )
-        for index in range(8)
-    )
-
-    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        _task(),
-        SubtaskContract("Read answer", "Answer visible"),
-        MissionState.empty(),
-        world,
-        (),
-        "ready_for_audit",
-        history,
-        AuditBundle.from_world(world),
-    )))
-
-    assert result.accepted
-    payload = json.loads(port.messages[1].content)
-    encoded = json.dumps(payload["episode_history"], ensure_ascii=False).encode()
-    assert len(encoded) <= 16 * 1024
-    assert "fact_changes" not in json.dumps(payload["episode_history"])
-    assert payload["episode_history"]["recent_trajectory"][-1]["result"]["transition"]["fact_change_count"] == 200
-
-
-def test_auditor_delivery_exposes_structure_text_as_public_fact_evidence() -> None:
-    port = _Port({"status": "unknown", "base_mission_version": 0})
-    auditor = ModelBackedMissionAuditor(port)
-    source = SurfaceObservation(
-        "obs:table",
-        "browsergym",
-        "rev:table",
-        ObservationSourceProfile.dom(),
-        structure=(
-            ObservationStructureNode("n:root", "table", "data-grid", child_structure_ids=("n:row",)),
-            ObservationStructureNode("n:row", "row", "#", parent_structure_id="n:root", child_structure_ids=("n:cell",)),
-            ObservationStructureNode("n:cell", "gridcell", "Quest Lumaflex™ Band", parent_structure_id="n:row"),
-        ),
-        structure_total_count=3,
-    )
-    fused = WorldFusion().fuse((source,))
-    assert fused.observation is not None
-    world = fused.observation
-
-    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        _task(),
-        SubtaskContract("Read answer", "Answer visible"),
-        MissionState.empty(),
-        world,
-        (),
-        "ready_for_audit",
-        (),
-        AuditBundle.from_world(world),
-    )))
-
-    assert result.accepted
-    payload = json.loads(port.messages[1].content)
-    assert "facts" not in payload["audit_world"]
-    assert "audit_bundle" not in payload
-    refs = payload["audit_evidence"]["visible_refs"]
-    assert refs
-    assert any(
-        f'fact.public.label[{ref}]="Quest Lumaflex™ Band"' in payload["audit_world"]["observation"]
-        for ref in refs
-    )
-
-
-def test_auditor_context_capacity_failure_is_typed_and_does_not_call_provider() -> None:
-    port = _Port({"status": "unknown", "base_mission_version": 0})
-    auditor = ModelBackedMissionAuditor(port, request_budget=ModelRequestBudget(admission_limit=1))
-    world = _world("42")
-
-    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        _task(),
-        SubtaskContract("Read answer", "Answer visible"),
-        MissionState.empty(),
-        world,
-        (),
-        "ready_for_audit",
-        (),
-        AuditBundle.from_world(world),
-    )))
-
-    assert result.failure is not None
-    assert result.failure.kind is ModelFailureKind.CONTEXT_CAPACITY
-    assert result.failure.reason == "context_capacity"
-    assert result.diagnostics["role"] == "auditor"
-    assert result.diagnostics["phase"] == "auditor_initial"
-    assert result.diagnostics["admission_action"] == "context_capacity"
-    assert result.diagnostics["provider_attempts"] == 0
-    assert result.diagnostics["estimated_total_tokens"] > result.diagnostics["admission_limit"]
-    assert result.diagnostics["actor_world_tokens"] > 0
-    assert result.diagnostics["evidence_tokens"] > 0
-    assert port.messages == ()
-
-
-def test_auditor_schema_repair_diagnostics_keep_initial_and_repair_breakdowns() -> None:
-    port = _RepairingPort({"status": "unknown", "base_mission_version": 0})
-    auditor = ModelBackedMissionAuditor(port)
-    world = _world("42")
-
-    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        _task(),
-        SubtaskContract("Read answer", "Answer visible"),
-        MissionState.empty(),
-        world,
-        (),
-        "ready_for_audit",
-        (),
-        AuditBundle.from_world(world),
-    )))
-
-    assert result.failure is None
-    assert port.calls == 2
-    assert result.diagnostics["provider_attempts"] == 2
-    breakdowns = result.diagnostics["request_breakdowns"]
-    assert [item["phase"] for item in breakdowns] == ["auditor_initial", "auditor_schema_repair"]
-    assert result.diagnostics["phase"] == "auditor_schema_repair"
-    repair_messages = json.dumps([item.model_dump() for item in port.messages])
-    assert "required_shape" in repair_messages
-    assert "base_mission_version" in repair_messages
-    assert "compact_world" not in repair_messages
-    assert "Find the answer and submit it" not in repair_messages
-
-
-def test_auditor_request_rejects_non_audit_yield_reason() -> None:
-    world = _world("42")
-
-    with pytest.raises(ValueError, match="explicit audit boundary"):
-        AuditorRoleRequest.from_authorities(
-            _task(),
-            SubtaskContract("Read answer", "Answer visible"),
-            MissionState.empty(),
-            world,
-            (),
-            "protocol_stall",
-            (),
-            AuditBundle.from_world(world),
-        )
-
-
-def test_new_roles_do_not_reference_adapter_last_diagnostics() -> None:
-    import inspect
-
-    import affordance_runtime.model.mission_roles as roles
-
-    source = inspect.getsource(roles)
-    assert "last_call" not in source
-    assert "last_transcript" not in inspect.getsource(roles.ModelBackedMissionManager)
-    assert "last_transcript" not in inspect.getsource(roles.ModelBackedMissionAuditor)
-    assert "last_transcript" in inspect.getsource(roles._bounded_invalid_role_output)
-    assert "last_adapter" not in source
-    assert "last_diagnostic" not in source
-
-
-def test_audit_boundary_accepts_public_evidence_and_rejects_bad_lineage_value_and_version() -> None:
+def test_evidence_boundary_rejection_does_not_change_mission_state() -> None:
+    world = _world()
+    bundle = EvidenceBundle.from_world(world)
     mission = MissionState.empty()
-    world = _world("42")
-    bundle = AuditBundle.from_world(world)
-    record = next(item for item in bundle.evidence_records if item.kind == "fact")
-    delta = AuditDelta(
-        AuditDeltaStatus.AUDITED_SATISFIED,
-        0,
-        (OutcomeProposal("audit:answer", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "answer visible"),),
-        (PromoteFactProposal("answer", record.evidence_ref, "42", "final answer"),),
-    )
-
-    accepted = AuditBoundary().accept(mission, delta, bundle)
-
-    assert accepted.accepted is True
-    assert accepted.mission_state.version == 1
-    assert accepted.mission_state.accepted_facts[0].record.value == "42"
-    conflict = AuditDelta(
-        AuditDeltaStatus.AUDITED_SATISFIED,
-        0,
-        (OutcomeProposal("audit:conflict", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "conflict"),),
-    )
-    assert AuditBoundary().accept(mission, conflict, bundle).reason_code == "audit_status_conflict"
-    assert AuditBoundary().accept(accepted.mission_state, delta, bundle).accepted is False
-    wrong_value = AuditDelta(
-        AuditDeltaStatus.AUDITED_SATISFIED,
-        0,
-        (OutcomeProposal("audit:wrong", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "wrong"),),
-        (PromoteFactProposal("wrong", record.evidence_ref, "43", "wrong"),),
-    )
-    rejected = AuditBoundary().accept(mission, wrong_value, bundle)
-    assert rejected.accepted is False
-    assert rejected.mission_state == mission
-    duplicate_delta = AuditDelta(
-        AuditDeltaStatus.AUDITED_SATISFIED,
-        1,
-        (OutcomeProposal("audit:answer", AuditDeltaStatus.AUDITED_SATISFIED, (record.evidence_ref,), "answer visible"),),
-    )
-    duplicate = AuditBoundary().accept(accepted.mission_state, duplicate_delta, bundle)
-    assert duplicate.accepted is False
-    assert duplicate.reason_code == "audit_id_conflict"
-
-
-def test_audit_boundary_rejects_missing_private_or_unknown_status_without_mutation() -> None:
-    mission = MissionState.empty()
-    bundle = AuditBundle.from_world(_world())
-    unknown = AuditDelta(AuditDeltaStatus.UNKNOWN, 0, missing_evidence=("answer",))
-    rejected = AuditBoundary().accept(mission, unknown, bundle)
-
-    assert rejected.accepted is False
-    assert rejected.mission_state == mission
-    empty_satisfied = AuditBoundary().accept(mission, AuditDelta(AuditDeltaStatus.AUDITED_SATISFIED, 0), bundle)
-    assert empty_satisfied.accepted is False
-    assert empty_satisfied.reason_code == "audit_outcome_required"
-
-
-def test_audit_boundary_rejects_noop_invalidations_and_duplicate_delta_outcomes() -> None:
-    mission = MissionState.empty()
-    world = _world("42")
-    bundle = AuditBundle.from_world(world)
-    record = next(item for item in bundle.evidence_records if item.kind == "fact")
-    duplicate = AuditDelta(
-        AuditDeltaStatus.AUDITED_UNSATISFIED,
-        0,
+    decision = ManagerDecision(
+        ManagerAssessment.SATISFIED,
+        ManagerRoute.REQUEST_FINALIZATION,
+        ("fact:missing",),
         (
-            OutcomeProposal("audit:dup", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "one"),
-            OutcomeProposal("audit:dup", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "two"),
-        ),
-    )
-    invalidation_noop = AuditDelta(
-        AuditDeltaStatus.AUDITED_UNSATISFIED,
-        0,
-        (OutcomeProposal("audit:missing", AuditDeltaStatus.AUDITED_UNSATISFIED, (record.evidence_ref,), "missing"),),
-        invalidate_fact_keys=("answer",),
-    )
-
-    duplicate_result = AuditBoundary().accept(mission, duplicate, bundle)
-    invalidation_result = AuditBoundary().accept(mission, invalidation_noop, bundle)
-
-    assert duplicate_result.accepted is False
-    assert duplicate_result.reason_code == "audit_id_conflict"
-    assert invalidation_result.accepted is False
-    assert invalidation_result.reason_code == "audit_delta_noop"
-
-
-def test_audit_bundle_from_large_world_is_bounded_not_a_bare_error() -> None:
-    target = SemanticTarget("target:large", "row", "Large row")
-    facts = tuple(
-        StateFact(f"fact:large:{index}", target.target_id, f"value_{index}", index, "obs:large")
-        for index in range(140)
-    )
-    bundle = AuditBundle.from_world(fused_world("obs:large", (target,), facts))
-
-    assert len(bundle.evidence_records) == 141
-    assert bundle.total_evidence_count == 141
-    assert bundle.truncated is False
-
-
-def test_auditor_delivery_keeps_model_visible_late_evidence_refs() -> None:
-    target = SemanticTarget("target:large", "row", "Large row")
-    facts = tuple(
-        StateFact(f"fact:large:{index}", target.target_id, f"value_{index}", index, "obs:large")
-        for index in range(140)
-    )
-    answer = "Quest Lumaflex Band"
-    late_fact = StateFact("fact:large:answer", target.target_id, "answer", answer, "obs:large")
-    world = fused_world("obs:large", (target,), (*facts, late_fact))
-    port = _Port({"status": "unknown", "base_mission_version": 0})
-    auditor = ModelBackedMissionAuditor(port)
-
-    result = asyncio.run(auditor.audit(AuditorRoleRequest.from_authorities(
-        _task(),
-        SubtaskContract("Read answer", "Answer visible"),
-        MissionState.empty(),
-        world,
-        (),
-        "ready_for_audit",
-        (),
-        AuditBundle.from_world(world),
-    )))
-
-    assert result.accepted
-    payload = json.loads(port.messages[1].content)
-    serialized = json.dumps(payload, ensure_ascii=False)
-    assert answer in serialized
-    assert "fact:large:answer" not in serialized
-    assert "audit_bundle" not in payload
-    assert payload["audit_evidence"]["visible_ref_count"] == len(payload["audit_evidence"]["visible_refs"])
-
-
-def test_episode_monitor_yields_only_on_third_repeated_unchanged_action() -> None:
-    from affordance_runtime.agent import SelectAction
-    from affordance_runtime.agent.context.contracts import AgentTurnView
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-
-    task = shared_task()
-    before = shared_world("dom:before", False, "dom")
-    after = shared_world("dom:after", False, "dom")
-    option = ActionSpaceBuilder().build(task, before).options[0]
-    selection = ActionSpaceBuilder().admit(option, {})
-    request = ActionBinder().bind(selection, before, "context:test")
-    execution = SimpleNamespace(
-        request=request,
-        result=ActionResult(request.request_id, DispatchStatus.SENT, "dom", True),
-    )
-    action = ActionOutcome(
-        request.request_id,
-        before.observation_id,
-        after.observation_id,
-        ObservedChange.UNCHANGED,
-        LocalPostconditionStatus.UNKNOWN,
-        EvidenceMethod.NONE,
-        "unchanged",
-        ("artifact:dom-after:monitor",),
-    )
-    evaluation = TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown")
-    result = StepResult(
-        SelectAction("context:test", option.action_id),
-        before,
-        after,
-        evaluation,
-        RunStatus.RUNNING,
-        execution,
-        action_outcome=action,
-        feedback="action_unchanged_change_strategy",
-    )
-
-    monitor = EpisodeMonitor()
-    first = monitor.evaluate(result, (), after.observation_id)
-    second = monitor.evaluate(
-        result,
-        (AgentTurnView("selectaction", "activate", public_parameters={}),),
-        after.observation_id,
-    )
-    transition = monitor.evaluate(
-        result,
-        (
-            AgentTurnView("selectaction", "activate", public_parameters={}),
-            AgentTurnView("selectaction", "activate", public_parameters={}),
-        ),
-        after.observation_id,
-    )
-
-    assert first.recommendation.value == "continue"
-    assert second.recommendation.value == "recover"
-    assert second.recovery_signal is not None
-    assert second.recovery_signal.kind is RecoveryKind.EFFECT_STALL
-    assert transition.recommendation.value == "yield"
-    assert transition.reason == "effect_stall"
-
-
-def test_episode_monitor_keeps_repeated_failure_streak_across_stable_incomplete_evaluation() -> None:
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-
-    task = shared_task()
-    before = shared_world("dom:before", False, "dom")
-    after = shared_world("dom:after", False, "dom")
-    monitor = EpisodeMonitor()
-
-    def failure() -> StepResult:
-        return StepResult(
-            PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
-            before,
-            after,
-            TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.INCOMPLETE, "not done"),
-            RunStatus.FAILED,
-            feedback="policy_failure:schema_error",
-        )
-
-    first = monitor.evaluate(failure(), (), after.observation_id)
-    second = monitor.evaluate(failure(), (), after.observation_id)
-    third = monitor.evaluate(failure(), (), after.observation_id)
-
-    assert first.recommendation.value == "continue"
-    assert second.recommendation.value == "recover"
-    assert second.recovery_signal is not None
-    assert second.recovery_signal.kind is RecoveryKind.STRATEGY_STALL
-    assert third.recommendation.value == "yield"
-    assert third.reason == "strategy_stall"
-
-
-def test_episode_monitor_keys_not_sent_failures_by_public_semantics_not_target_id() -> None:
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-
-    task = _task()
-    monitor = EpisodeMonitor()
-
-    def failure(observation_id: str, target_id: str) -> StepResult:
-        target = SemanticTarget(target_id, "link", "REPORTS", {})
-        binding = ActionBinding(
-            f"binding:{observation_id}",
-            observation_id,
-            observation_id,
-            f"revision:{observation_id}",
-            f"fingerprint:{observation_id}",
-            target.target_id,
-            target.target_id,
-            "browsergym",
-            "browsergym",
-            "activate",
-            "click",
-            "external_ui_interaction",
-            ("external_ui_interaction",),
-            {"type": "object", "properties": {}, "additionalProperties": False},
-            {},
-            risk=ActionRisk.LOW,
-        )
-        world = fused_world(observation_id, (target,), (), (binding,), surface="browsergym")
-        builder = ActionSpaceBuilder()
-        option = builder.build(task, world).options[0]
-        request = ActionBinder().bind(builder.admit(option, {}), world, "context:test")
-        execution = ExecutionOutcome(
-            request,
-            ActionResult(
-                request.request_id,
-                DispatchStatus.NOT_SENT,
-                "browsergym",
-                False,
-                ActionError.CURRENTNESS_UNAVAILABLE,
-            ),
-            None,
-        )
-        return StepResult(
-            SelectAction("context:test", option.action_id),
-            world,
-            world,
-            TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
-            RunStatus.BLOCKED,
-            execution=execution,
-            feedback="action_not_sent:currentness_unavailable",
-        )
-
-    first = monitor.evaluate(failure("obs:one", "target:a"), (), "obs:one")
-    second = monitor.evaluate(failure("obs:two", "target:b"), (), "obs:two")
-    third = monitor.evaluate(failure("obs:three", "target:c"), (), "obs:three")
-
-    assert first.recommendation.value == "continue"
-    assert second.recommendation.value == "recover"
-    assert second.recovery_signal is not None
-    assert second.recovery_signal.kind is RecoveryKind.GROUNDING_STALL
-    assert third.recommendation.value == "yield"
-    assert third.reason == "grounding_stall"
-
-
-def test_episode_monitor_detects_world_oscillation_with_semantic_fingerprints() -> None:
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-    from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
-
-    task = shared_task()
-    closed = shared_world("obs:closed", False, "dom")
-    open_world = shared_world("obs:open", True, "dom")
-    closed_fingerprint = public_world_semantic_digest(closed)
-    open_fingerprint = public_world_semantic_digest(open_world)
-    option = ActionSpaceBuilder().build(task, open_world).options[0]
-    result = StepResult(
-        SelectAction("context:test", option.action_id),
-        open_world,
-        closed,
-        TaskEvaluation(task.task_id, closed.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
-        RunStatus.RUNNING,
-        feedback="action_changed_unknown",
-    )
-    recent = (
-        AgentTurnView(
-            "selectaction",
-            "activate",
-            transition={
-                "before_world": "obs:older-closed",
-                "after_world": "obs:older-open",
-                "before_world_fingerprint": closed_fingerprint,
-                "after_world_fingerprint": open_fingerprint,
-            },
-        ),
-    )
-
-    monitor = EpisodeMonitor()
-    transition = monitor.evaluate(result, recent, closed_fingerprint)
-    repeated = monitor.evaluate(result, recent, closed_fingerprint)
-
-    assert transition.recommendation.value == "recover"
-    assert transition.recovery_signal is not None
-    assert transition.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
-    assert repeated.recommendation.value == "yield"
-    assert repeated.reason == "state_oscillation"
-
-
-def test_episode_monitor_resets_failure_streak_on_incomplete_public_evaluation_change() -> None:
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-
-    task = shared_task()
-    before = shared_world("dom:before", False, "dom")
-    after = shared_world("dom:after", False, "dom")
-    monitor = EpisodeMonitor()
-
-    def failure(status: CriterionEvaluationStatus) -> StepResult:
-        return StepResult(
-            PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
-            before,
-            after,
-            TaskEvaluation(
-                task.task_id,
-                after.observation_id,
-                TaskEvaluationStatus.INCOMPLETE,
-                "not done",
-                criteria=(CriterionEvaluation("criterion:visible", status, (), "public state"),),
-            ),
-            RunStatus.FAILED,
-            feedback="policy_failure:schema_error",
-        )
-
-    assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure(CriterionEvaluationStatus.UNKNOWN), (), after.observation_id).recommendation.value == "recover"
-    reset = monitor.evaluate(failure(CriterionEvaluationStatus.UNSATISFIED), (), after.observation_id)
-    assert reset.recommendation.value == "continue"
-    assert monitor.repeated_failure_count == 1
-
-
-def test_episode_monitor_does_not_count_repeated_successful_actions_as_stalled() -> None:
-    from affordance_runtime.agent import SelectAction
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-
-    task = shared_task()
-    before = shared_world("dom:before", False, "dom")
-    after = shared_world("dom:after", False, "dom")
-    option = ActionSpaceBuilder().build(task, before).options[0]
-    selection = ActionSpaceBuilder().admit(option, {})
-    request = ActionBinder().bind(selection, before, "context:test")
-    execution = SimpleNamespace(
-        request=request,
-        result=ActionResult(request.request_id, DispatchStatus.SENT, "dom", True),
-    )
-    action = ActionOutcome(
-        request.request_id,
-        before.observation_id,
-        after.observation_id,
-        ObservedChange.CHANGED,
-        LocalPostconditionStatus.SATISFIED,
-        EvidenceMethod.STRUCTURAL,
-        "changed",
-        ("artifact:dom-after:monitor",),
-    )
-    result = StepResult(
-        SelectAction("context:test", option.action_id),
-        before,
-        after,
-        TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
-        RunStatus.RUNNING,
-        execution,
-        action_outcome=action,
-        feedback="action_changed",
-    )
-    previous = AgentTurnView(
-        "selectaction",
-        request.intent.semantic_action,
-        AgentHistoricalTargetView("", request.intent.target_id),
-        public_parameters=request.intent.parameters,
-    )
-
-    transition = EpisodeMonitor().evaluate(result, (previous, previous), after.observation_id)
-
-    assert transition.recommendation.value == "continue"
-
-
-def test_episode_monitor_resets_repeated_failure_streak_on_world_change() -> None:
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-
-    task = shared_task()
-    before = shared_world("dom:before", False, "dom")
-    same = shared_world("dom:same", False, "dom")
-    changed = shared_world("dom:changed", True, "dom")
-    monitor = EpisodeMonitor()
-    failure = StepResult(
-        PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
-        before,
-        same,
-        TaskEvaluation(task.task_id, same.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
-        RunStatus.FAILED,
-        feedback="policy_failure:schema_error",
-    )
-    progress = StepResult(
-        PolicyFailure(ModelFailureKind.SCHEMA_ERROR, "invalid provider payload"),
-        same,
-        changed,
-        TaskEvaluation(task.task_id, changed.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
-        RunStatus.FAILED,
-        feedback="policy_failure:schema_error",
-    )
-
-    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "recover"
-    assert monitor.evaluate(progress, (), changed.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "continue"
-    assert monitor.evaluate(failure, (), same.observation_id).recommendation.value == "recover"
-
-
-def test_episode_monitor_detects_world_fingerprint_oscillation() -> None:
-    from affordance_runtime.agent import SelectAction
-    from affordance_runtime.agent.run_state import RunStatus, StepResult
-    from affordance_runtime.benchmarks.target_loop.support import shared_task, shared_world
-
-    task = shared_task()
-    before = shared_world("obs:b", False, "dom")
-    after = shared_world("obs:a", False, "dom")
-    option = ActionSpaceBuilder().build(task, before).options[0]
-    selection = ActionSpaceBuilder().admit(option, {})
-    request = ActionBinder().bind(selection, before, "context:test")
-    execution = SimpleNamespace(
-        request=request,
-        result=ActionResult(request.request_id, DispatchStatus.SENT, "dom", True),
-    )
-    action = ActionOutcome(
-        request.request_id,
-        before.observation_id,
-        after.observation_id,
-        ObservedChange.CHANGED,
-        LocalPostconditionStatus.UNKNOWN,
-        EvidenceMethod.STRUCTURAL,
-        "changed back",
-        ("artifact:obs-a:monitor",),
-    )
-    result = StepResult(
-        SelectAction("context:test", option.action_id),
-        before,
-        after,
-        TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"),
-        RunStatus.RUNNING,
-        execution,
-        action_outcome=action,
-        feedback="changed",
-    )
-
-    monitor = EpisodeMonitor()
-    transition = monitor.evaluate(
-        result,
-        (
-            AgentTurnView(
-                "selectaction",
-                "activate",
-                transition={"before_world": "obs:a", "after_world": "obs:b", "observed_change": "changed"},
+            WorkingOutcomeProposal(
+                "outcome:answer",
+                ManagerAssessment.SATISFIED,
+                ("fact:missing",),
+                "unsupported",
             ),
         ),
-        "obs:a",
-    )
-    repeated = monitor.evaluate(
-        result,
-        (
-            AgentTurnView(
-                "selectaction",
-                "activate",
-                transition={"before_world": "obs:a", "after_world": "obs:b", "observed_change": "changed"},
-            ),
-        ),
-        "obs:a",
     )
 
-    assert transition.recommendation.value == "recover"
-    assert transition.recovery_signal is not None
-    assert transition.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
-    assert repeated.recommendation.value == "yield"
-    assert repeated.reason == "state_oscillation"
+    rejected = AuditBoundary().accept(mission, decision.state_proposal(0), bundle)
+
+    assert not rejected.accepted
+    assert rejected.mission_state is mission

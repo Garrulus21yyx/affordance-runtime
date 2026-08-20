@@ -38,7 +38,7 @@ class AbortCategory(StrEnum):
 
 
 class YieldSubtaskKind(StrEnum):
-    READY_FOR_AUDIT = "ready_for_audit"
+    OUTCOME_PROPOSED = "outcome_proposed"
     STALLED = "stalled"
     BLOCKED = "blocked"
     CAPABILITY_GAP = "capability_gap"

@@ -23,16 +23,27 @@ _MAX_COLLECTION = 32
 _MAX_AUDIT_EVIDENCE_RECORDS = 4096
 
 
+class ExecutionMode(StrEnum):
+    STANDALONE = "standalone"
+    MISSION = "mission"
+
+
 class ManagerRoute(StrEnum):
     EXECUTE_SUBTASK = "execute_subtask"
     ASK_USER = "ask_user"
     BLOCKED = "blocked"
-    REQUEST_FINAL_AUDIT = "request_final_audit"
+    REQUEST_FINALIZATION = "request_finalization"
 
 
-class AuditDeltaStatus(StrEnum):
-    AUDITED_SATISFIED = "audited_satisfied"
-    AUDITED_UNSATISFIED = "audited_unsatisfied"
+class ManagerRequestMode(StrEnum):
+    INITIAL_PLAN = "initial_plan"
+    REVIEW_AND_ROUTE = "review_and_route"
+
+
+class ManagerAssessment(StrEnum):
+    NOT_APPLICABLE = "not_applicable"
+    SATISFIED = "satisfied"
+    UNSATISFIED = "unsatisfied"
     UNKNOWN = "unknown"
     BLOCKED = "blocked"
 
@@ -57,7 +68,7 @@ class MissionOutcome(StrEnum):
     AUDITOR_SCHEMA_FAILURE = "auditor_schema_failure"
     BOUNDARY_REJECTED = "boundary_rejected"
     EVIDENCE_GAP = "evidence_gap"
-    FINAL_AUDIT_NOT_READY = "final_audit_not_ready"
+    FINALIZATION_NOT_READY = "finalization_not_ready"
     FINALIZED = "finalized"
     CANCELLED = "cancelled"
     TASK_COMPLETE = "task_complete"
@@ -144,14 +155,33 @@ class SubtaskContract:
 
 @dataclass(frozen=True)
 class ManagerDecision:
+    assessment: ManagerAssessment
     route: ManagerRoute
+    evidence_refs: tuple[str, ...] = ()
+    working_outcomes: tuple[WorkingOutcomeProposal, ...] = ()
+    working_facts: tuple[WorkingFactProposal, ...] = ()
+    invalidate_fact_keys: tuple[str, ...] = ()
     subtask: SubtaskContract | None = None
     question: str = ""
     reason: str = ""
 
     def __post_init__(self) -> None:
+        if not isinstance(self.assessment, ManagerAssessment):
+            raise TypeError("manager assessment must be typed")
         if not isinstance(self.route, ManagerRoute):
             raise TypeError("manager route must be typed")
+        object.__setattr__(self, "evidence_refs", _bounded_unique(self.evidence_refs, "evidence_refs"))
+        object.__setattr__(self, "working_outcomes", tuple(self.working_outcomes))
+        object.__setattr__(self, "working_facts", tuple(self.working_facts))
+        object.__setattr__(
+            self,
+            "invalidate_fact_keys",
+            _keys(self.invalidate_fact_keys, "invalidate_fact_keys"),
+        )
+        if any(not isinstance(item, WorkingOutcomeProposal) for item in self.working_outcomes):
+            raise TypeError("manager working outcomes must be typed")
+        if any(not isinstance(item, WorkingFactProposal) for item in self.working_facts):
+            raise TypeError("manager working facts must be typed")
         has_subtask = self.subtask is not None
         if self.route is ManagerRoute.EXECUTE_SUBTASK:
             if not has_subtask or self.question:
@@ -165,20 +195,37 @@ class ManagerDecision:
         if self.reason:
             _bounded_text(self.reason, "manager reason")
 
+    def state_proposal(self, base_mission_version: int) -> WorkingStateProposal | None:
+        if not (self.working_outcomes or self.working_facts or self.invalidate_fact_keys):
+            return None
+        return WorkingStateProposal(
+            self.assessment,
+            base_mission_version,
+            self.working_outcomes,
+            self.working_facts,
+            self.invalidate_fact_keys,
+        )
+
 
 @dataclass(frozen=True)
-class AuditedOutcome:
-    audit_id: str
-    status: AuditDeltaStatus
+class AcceptedWorkingOutcome:
+    outcome_id: str
+    assessment: ManagerAssessment
     evidence_refs: tuple[str, ...]
     summary: str
+    evidence_records: tuple[EvidenceRecord, ...] = field(default=(), repr=False)
 
     def __post_init__(self) -> None:
-        _require_id(self.audit_id, "audit_id")
-        if self.status not in {AuditDeltaStatus.AUDITED_SATISFIED, AuditDeltaStatus.AUDITED_UNSATISFIED}:
-            raise ValueError("MissionState stores only audited resolved outcomes")
+        _require_id(self.outcome_id, "outcome_id")
+        if self.assessment not in {ManagerAssessment.SATISFIED, ManagerAssessment.UNSATISFIED}:
+            raise ValueError("MissionState stores only resolved working outcomes")
         object.__setattr__(self, "evidence_refs", _bounded_unique(self.evidence_refs, "evidence_refs"))
         _bounded_text(self.summary, "outcome summary")
+        object.__setattr__(self, "evidence_records", tuple(self.evidence_records))
+        if any(not isinstance(item, EvidenceRecord) for item in self.evidence_records):
+            raise TypeError("working outcome evidence records must be typed")
+        if self.evidence_records and tuple(item.evidence_ref for item in self.evidence_records) != self.evidence_refs:
+            raise ValueError("working outcome records must match cited evidence refs")
 
 
 @dataclass(frozen=True)
@@ -203,22 +250,22 @@ class AcceptedFact:
 @dataclass(frozen=True)
 class MissionState:
     version: int = 0
-    audited_outcomes: tuple[AuditedOutcome, ...] = ()
+    working_outcomes: tuple[AcceptedWorkingOutcome, ...] = ()
     accepted_facts: tuple[AcceptedFact, ...] = ()
-    audit_lineage: tuple[str, ...] = ()
+    evidence_lineage: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.version < 0:
             raise ValueError("mission version cannot be negative")
-        object.__setattr__(self, "audited_outcomes", tuple(self.audited_outcomes))
+        object.__setattr__(self, "working_outcomes", tuple(self.working_outcomes))
         object.__setattr__(self, "accepted_facts", tuple(self.accepted_facts))
-        object.__setattr__(self, "audit_lineage", _ids(self.audit_lineage, "audit_lineage"))
-        if any(not isinstance(item, AuditedOutcome) for item in self.audited_outcomes):
-            raise TypeError("mission audited outcomes must be typed")
+        object.__setattr__(self, "evidence_lineage", _ids(self.evidence_lineage, "evidence_lineage"))
+        if any(not isinstance(item, AcceptedWorkingOutcome) for item in self.working_outcomes):
+            raise TypeError("mission working outcomes must be typed")
         if any(not isinstance(item, AcceptedFact) for item in self.accepted_facts):
             raise TypeError("mission accepted facts must be typed")
-        if len({item.audit_id for item in self.audited_outcomes}) != len(self.audited_outcomes):
-            raise ValueError("audited outcome IDs cannot repeat")
+        if len({item.outcome_id for item in self.working_outcomes}) != len(self.working_outcomes):
+            raise ValueError("working outcome IDs cannot repeat")
         if len({item.key for item in self.accepted_facts}) != len(self.accepted_facts):
             raise ValueError("accepted fact keys cannot repeat")
 
@@ -233,6 +280,20 @@ class MissionState:
             for item in self.accepted_facts
             if item.key in selected
         )
+
+    def finalization_working_facts(self) -> tuple[WorkingFact, ...]:
+        facts = [item.as_working_fact() for item in self.accepted_facts]
+        for outcome_index, outcome in enumerate(self.working_outcomes, start=1):
+            for record_index, record in enumerate(outcome.evidence_records, start=1):
+                facts.append(
+                    WorkingFact(
+                        f"candidate_{outcome_index}_{record_index}",
+                        record,
+                        0,
+                        outcome.summary,
+                    )
+                )
+        return tuple(facts[:32])
 
 
 @dataclass(frozen=True)
@@ -288,7 +349,6 @@ class ManagerRecoveryView:
     recovery_signal: RecoverySignal | None = None
     attempted_modes: tuple[str, ...] = ()
     audit_guidance: AuditGuidance | None = None
-    strategy_revision_required: bool = False
 
     def __post_init__(self) -> None:
         _bounded_text(self.exit_kind, "recovery exit kind", limit=200)
@@ -305,8 +365,6 @@ class ManagerRecoveryView:
         )
         if self.audit_guidance is not None and not isinstance(self.audit_guidance, AuditGuidance):
             raise TypeError("manager audit guidance must be typed")
-        if type(self.strategy_revision_required) is not bool:
-            raise TypeError("strategy revision flag must be boolean")
 
 
 @dataclass(frozen=True)
@@ -353,6 +411,7 @@ class MissionEnvironmentView:
 
 @dataclass(frozen=True)
 class ManagerRoleRequest:
+    mode: ManagerRequestMode
     original_task: TaskGoal
     mission_state: MissionState
     last_typed_exit: str = ""
@@ -360,16 +419,36 @@ class ManagerRoleRequest:
     remaining_rounds: int = 0
     recovery: ManagerRecoveryView | None = None
     environment: MissionEnvironmentView = field(default_factory=MissionEnvironmentView)
+    active_subtask: SubtaskContract | None = None
+    review_world: WorldObservation | None = None
+    evidence_bundle: EvidenceBundle | None = None
+    candidate_output_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.mode, ManagerRequestMode):
+            raise TypeError("manager request mode must be typed")
         if self.recovery is not None and not isinstance(self.recovery, ManagerRecoveryView):
             raise TypeError("manager recovery view must be typed")
         if not isinstance(self.environment, MissionEnvironmentView):
             raise TypeError("manager environment view must be typed")
+        object.__setattr__(
+            self,
+            "candidate_output_keys",
+            _keys(self.candidate_output_keys, "candidate_output_keys"),
+        )
+        review_fields = (self.active_subtask, self.review_world, self.evidence_bundle)
+        if self.mode is ManagerRequestMode.INITIAL_PLAN:
+            if any(item is not None for item in review_fields) or self.recovery is not None:
+                raise ValueError("initial_plan cannot carry an episode review")
+        elif not all(item is not None for item in review_fields) or self.recovery is None:
+            raise ValueError("review_and_route requires one complete fresh review bundle")
+        if self.review_world is not None and self.evidence_bundle is not None:
+            if self.review_world.observation_id != self.evidence_bundle.observation_id:
+                raise ValueError("manager review evidence must describe its fresh World")
 
 
 @dataclass(frozen=True)
-class AuditBundle:
+class EvidenceBundle:
     observation_id: str
     source_observation_ids: tuple[str, ...]
     evidence_records: tuple[EvidenceRecord, ...]
@@ -377,7 +456,7 @@ class AuditBundle:
     total_evidence_count: int = 0
 
     @classmethod
-    def from_world(cls, world: WorldObservation) -> AuditBundle:
+    def from_world(cls, world: WorldObservation) -> EvidenceBundle:
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 
         index = WorldEvidenceIndex.from_observation(world)
@@ -470,7 +549,7 @@ class AuditorRoleRequest:
     working_facts: tuple[WorkingFact, ...]
     yield_reason: str
     episode_history: tuple[AgentTurnView, ...]
-    audit_bundle: AuditBundle
+    audit_bundle: EvidenceBundle
     related_audit_ids: tuple[str, ...] = ()
 
     @classmethod
@@ -483,7 +562,7 @@ class AuditorRoleRequest:
         working_facts: tuple[WorkingFact, ...],
         yield_reason: str,
         episode_history: tuple[AgentTurnView, ...],
-        audit_bundle: AuditBundle,
+        audit_bundle: EvidenceBundle,
         related_audit_ids: tuple[str, ...] = (),
     ) -> AuditorRoleRequest:
         return cls(
@@ -507,15 +586,15 @@ class AuditorRoleRequest:
             raise TypeError("auditor request requires typed pre-MissionState")
         if not isinstance(self.after_world, WorldObservation):
             raise TypeError("auditor request requires a fresh typed WorldObservation")
-        if self.yield_reason not in {"ready_for_audit", "request_final_audit"}:
-            raise ValueError("Auditor is available only at an explicit audit boundary")
+        if self.yield_reason not in {"outcome_proposed", "request_finalization"}:
+            raise ValueError("Auditor is available only for a semantic commit or final uncertainty")
         object.__setattr__(self, "working_facts", tuple(self.working_facts))
         if any(not isinstance(item, WorkingFact) for item in self.working_facts):
             raise TypeError("auditor working facts must be typed")
         object.__setattr__(self, "episode_history", tuple(self.episode_history))
         if any(not isinstance(item, AgentTurnView) for item in self.episode_history):
             raise TypeError("auditor history must be public and typed")
-        if not isinstance(self.audit_bundle, AuditBundle):
+        if not isinstance(self.audit_bundle, EvidenceBundle):
             raise TypeError("auditor request requires a typed audit bundle")
         if self.audit_bundle.observation_id != self.after_world.observation_id:
             raise ValueError("auditor bundle must describe the fresh audit world")
@@ -527,22 +606,40 @@ class AuditorRoleRequest:
 
 
 @dataclass(frozen=True)
-class OutcomeProposal:
-    audit_id: str
-    status: AuditDeltaStatus
+class AuditorDecision:
+    assessment: ManagerAssessment
+    evidence_refs: tuple[str, ...] = ()
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.assessment is ManagerAssessment.NOT_APPLICABLE:
+            raise ValueError("Auditor must return an opinion or unknown")
+        object.__setattr__(
+            self,
+            "evidence_refs",
+            _bounded_unique(self.evidence_refs, "auditor evidence_refs"),
+        )
+        if self.reason:
+            _bounded_text(self.reason, "auditor reason")
+
+
+@dataclass(frozen=True)
+class WorkingOutcomeProposal:
+    outcome_id: str
+    assessment: ManagerAssessment
     evidence_refs: tuple[str, ...]
     summary: str
 
     def __post_init__(self) -> None:
-        _require_id(self.audit_id, "audit_id")
-        if self.status not in {AuditDeltaStatus.AUDITED_SATISFIED, AuditDeltaStatus.AUDITED_UNSATISFIED}:
-            raise ValueError("outcome proposals must be resolved audited statuses")
+        _require_id(self.outcome_id, "outcome_id")
+        if self.assessment not in {ManagerAssessment.SATISFIED, ManagerAssessment.UNSATISFIED}:
+            raise ValueError("working outcomes must use resolved assessments")
         object.__setattr__(self, "evidence_refs", _bounded_unique(self.evidence_refs, "evidence_refs"))
         _bounded_text(self.summary, "outcome proposal summary")
 
 
 @dataclass(frozen=True)
-class PromoteFactProposal:
+class WorkingFactProposal:
     key: str
     evidence_ref: str
     value: object
@@ -556,34 +653,34 @@ class PromoteFactProposal:
 
 
 @dataclass(frozen=True)
-class AuditDelta:
-    status: AuditDeltaStatus
+class WorkingStateProposal:
+    assessment: ManagerAssessment
     base_mission_version: int
-    completed_outcomes: tuple[OutcomeProposal, ...] = ()
-    promote_facts: tuple[PromoteFactProposal, ...] = ()
+    completed_outcomes: tuple[WorkingOutcomeProposal, ...] = ()
+    promote_facts: tuple[WorkingFactProposal, ...] = ()
     invalidate_fact_keys: tuple[str, ...] = ()
     missing_evidence: tuple[str, ...] = ()
     recovery_hint: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, AuditDeltaStatus):
-            raise TypeError("audit delta status must be typed")
+        if not isinstance(self.assessment, ManagerAssessment):
+            raise TypeError("working-state assessment must be typed")
         if self.base_mission_version < 0:
-            raise ValueError("audit delta base version cannot be negative")
+            raise ValueError("working-state base version cannot be negative")
         object.__setattr__(self, "completed_outcomes", tuple(self.completed_outcomes))
         object.__setattr__(self, "promote_facts", tuple(self.promote_facts))
         object.__setattr__(self, "invalidate_fact_keys", _keys(self.invalidate_fact_keys, "invalidate_fact_keys"))
         object.__setattr__(self, "missing_evidence", _bounded_unique(self.missing_evidence, "missing_evidence"))
-        if any(not isinstance(item, OutcomeProposal) for item in self.completed_outcomes):
-            raise TypeError("audit outcomes must be typed")
-        if any(not isinstance(item, PromoteFactProposal) for item in self.promote_facts):
-            raise TypeError("audit fact promotions must be typed")
+        if any(not isinstance(item, WorkingOutcomeProposal) for item in self.completed_outcomes):
+            raise TypeError("working outcomes must be typed")
+        if any(not isinstance(item, WorkingFactProposal) for item in self.promote_facts):
+            raise TypeError("working fact proposals must be typed")
         if self.recovery_hint:
             _bounded_text(self.recovery_hint, "recovery hint")
 
 
 @dataclass(frozen=True)
-class AuditBoundaryResult:
+class EvidenceBoundaryResult:
     accepted: bool
     mission_state: MissionState
     reason_code: str = ""
@@ -615,7 +712,7 @@ class ManagerPort(Protocol):
 class AuditorPort(Protocol):
     async def audit(
         self, request: AuditorRoleRequest
-    ) -> ModelInvocationResult[AuditDelta]: ...
+    ) -> ModelInvocationResult[AuditorDecision]: ...
 
 
 def _bounded_text(value: str, field_name: str, *, limit: int = _MAX_TEXT) -> None:

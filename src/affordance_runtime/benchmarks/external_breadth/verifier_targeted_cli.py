@@ -50,7 +50,7 @@ def main() -> int:
     if errors:
         return 1
 
-    policy = model_policy_from_environment()
+    policy = model_policy_from_environment(provider_retry_budget=0)
     outcome = asyncio.run(run_verifier_targeted_diagnostic(
         manifest,
         policy,

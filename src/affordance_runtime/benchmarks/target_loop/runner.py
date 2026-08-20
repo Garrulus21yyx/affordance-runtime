@@ -34,6 +34,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
 from affordance_runtime.goals.compiler import UnavailableGoalCompiler
 from affordance_runtime.mission import EpisodeMonitor, MissionSupervisor
+from affordance_runtime.mission.contracts import ExecutionMode
 
 
 async def run_suite(
@@ -146,7 +147,7 @@ async def _run_case(case, *, trace_dir: Path | None = None) -> BenchmarkCaseResu
             raise _CaseStageError("CoreAgentLoop construction", exc) from exc
         run = (
             _run_mission(case, runtime, counted_environment, task, composition, instrumentation, state_holder)
-            if composition.long_horizon
+            if composition.execution_mode is ExecutionMode.MISSION
             else _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder)
         )
         result = await _run_with_watchdog(run, case.timeout_s)
@@ -201,9 +202,21 @@ def _build_runtime(composition, instrumentation):
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,
         trace_sink=instrumentation,
-        goal_compiler=UnavailableGoalCompiler() if composition.long_horizon else composition.goal_compiler,
-        runtime_controls=("yield_subtask",) if composition.long_horizon else (),
-        episode_monitor=EpisodeMonitor() if composition.long_horizon else None,
+        goal_compiler=(
+            UnavailableGoalCompiler()
+            if composition.execution_mode is ExecutionMode.MISSION
+            else composition.goal_compiler
+        ),
+        runtime_controls=(
+            ("yield_subtask",)
+            if composition.execution_mode is ExecutionMode.MISSION
+            else ()
+        ),
+        episode_monitor=(
+            EpisodeMonitor()
+            if composition.execution_mode is ExecutionMode.MISSION
+            else None
+        ),
     )
 
 
@@ -226,6 +239,20 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
             result,
             approved=True,
         )
+    instrumentation.set_custom_metric("mission_manager_calls", 0)
+    instrumentation.set_custom_metric("mission_auditor_calls", 0)
+    instrumentation.set_custom_metric("mission_state_version", 0)
+    instrumentation.set_custom_metric("mission_working_outcomes", 0)
+    instrumentation.set_custom_metric("mission_accepted_facts", 0)
+    instrumentation.set_custom_metric("mission_boundary_rejections", 0)
+    instrumentation.set_custom_metric("mission_final_response_delivered", 0)
+    instrumentation.set_custom_metric("mission_finalizer_calls", 0)
+    instrumentation.set_custom_metric("mission_stop_send_calls", 0)
+    instrumentation.set_custom_metric("mission_post_stop_capture_calls", 0)
+    instrumentation.set_custom_metric("mission_native_evaluator_calls", 0)
+    instrumentation.set_custom_metric("semantic_verifier_skipped_mechanical_count", 0)
+    instrumentation.set_custom_metric("finalization_reused_evidence_count", 0)
+    instrumentation.set_custom_metric("optional_auditor_calls", 0)
     return result
 
 
@@ -234,7 +261,8 @@ async def _run_mission(case, runtime, environment, task, composition, instrument
     supervisor = MissionSupervisor(
         composition.mission_manager,
         composition.mission_auditor,
-        trace_sink=instrumentation.trace_recorder,
+        strict_verification=composition.strict_verification,
+        trace_sink=instrumentation,
     )
     result = await supervisor.run(runtime, environment, task)
     state_holder["mission_result"] = result
@@ -242,11 +270,51 @@ async def _run_mission(case, runtime, environment, task, composition, instrument
         state_holder["state"] = result.state
     instrumentation.set_custom_metric("mission_manager_calls", result.manager_calls)
     instrumentation.set_custom_metric("mission_auditor_calls", result.auditor_calls)
+    instrumentation.set_custom_metric("mission_finalizer_calls", result.finalizer_calls)
+    instrumentation.set_custom_metric("mission_stop_send_calls", result.stop_send_calls)
+    instrumentation.set_custom_metric(
+        "mission_post_stop_capture_calls", result.post_stop_capture_calls
+    )
+    instrumentation.set_custom_metric(
+        "mission_native_evaluator_calls", result.native_evaluator_calls
+    )
+    instrumentation.set_custom_metric("optional_auditor_calls", result.auditor_calls)
     instrumentation.set_custom_metric("mission_state_version", result.mission_state.version)
-    instrumentation.set_custom_metric("mission_audited_outcomes", len(result.mission_state.audited_outcomes))
+    instrumentation.set_custom_metric("mission_working_outcomes", len(result.mission_state.working_outcomes))
     instrumentation.set_custom_metric("mission_accepted_facts", len(result.mission_state.accepted_facts))
     instrumentation.set_custom_metric("mission_boundary_rejections", result.boundary_rejections)
     instrumentation.set_custom_metric("mission_final_response_delivered", int(result.supervisor_state.final_response_delivered))
+    role_events = tuple(
+        event
+        for event in instrumentation.trace_recorder.events
+        if event.get("event") == "mission_role_invocation"
+    )
+    for role in ("manager", "auditor", "finalizer"):
+        triggers = {
+            str(event.get("trigger_kind", "unknown"))
+            for event in role_events
+            if event.get("role") == role
+        }
+        for trigger in triggers:
+            instrumentation.set_custom_metric(
+                f"{role}_call_count_by_trigger_{trigger}",
+                sum(
+                    event.get("role") == role and event.get("trigger_kind") == trigger
+                    for event in role_events
+                ),
+            )
+    instrumentation.set_custom_metric(
+        "semantic_verifier_skipped_mechanical_count",
+        max(0, len(result.mission_state.accepted_facts) - result.auditor_calls),
+    )
+    instrumentation.set_custom_metric(
+        "finalization_reused_evidence_count",
+        int(
+            result.finalization is not None
+            and result.auditor_calls == 0
+            and bool(result.mission_state.accepted_facts or result.mission_state.working_outcomes)
+        ),
+    )
     return result
 
 

@@ -338,13 +338,18 @@ def _render_page_map(
         for region in index.regions
         if _region_public_refs(region, grounding).intersection(search_action_refs)
     )
-    default_region_order = _default_active_regions(index.regions, observation, limits)
-    exact_region_keys.update(default_region_order)
     explicit_region_key = (
         lens.selected_region_key
         if lens is not None and lens.kind == "region" and lens.selected_region_key
         else ""
     )
+    default_region_order = _default_active_regions(
+        index.regions,
+        observation,
+        limits,
+        lens_scoped=bool(explicit_region_key),
+    )
+    exact_region_keys.update(default_region_order)
     preferred_action_refs = (
         ()
         if explicit_region_key
@@ -710,7 +715,13 @@ def _render_search_matches(matches, observation, grounding, verbs, manifest) -> 
     return lines
 
 
-def _default_active_regions(regions, observation, limits) -> tuple[str, ...]:
+def _default_active_regions(
+    regions,
+    observation,
+    limits,
+    *,
+    lens_scoped: bool = False,
+) -> tuple[str, ...]:
     states = {item.target_id: item.state for item in observation.targets}
     selected: list[str] = []
     for region in regions:
@@ -723,13 +734,14 @@ def _default_active_regions(regions, observation, limits) -> tuple[str, ...]:
             for key in ("focused", "changed")
         ):
             selected.append(region.key)
-    for region in regions:
-        if region.role in {"navigation", "menubar", "toolbar"} and _bounded_region(region, limits):
-            selected.append(region.key)
-    for region in regions:
-        if region.role in {"main", "form", "table", "grid"} and _bounded_region(region, limits):
-            selected.append(region.key)
-    if not any(
+    if not lens_scoped:
+        for region in regions:
+            if region.role in {"navigation", "menubar", "toolbar"} and _bounded_region(region, limits):
+                selected.append(region.key)
+        for region in regions:
+            if region.role in {"main", "form", "table", "grid"} and _bounded_region(region, limits):
+                selected.append(region.key)
+    if not lens_scoped and not any(
         region.key in selected and region.counts.get("actions", 0) > 0
         for region in regions
     ):
@@ -743,7 +755,7 @@ def _default_active_regions(regions, observation, limits) -> tuple[str, ...]:
         )
         if first_actionable:
             selected.append(first_actionable)
-    if not selected and regions:
+    if not lens_scoped and not selected and regions:
         selected.append(next((item.key for item in regions if _bounded_region(item, limits)), regions[0].key))
     return tuple(dict.fromkeys(selected))
 

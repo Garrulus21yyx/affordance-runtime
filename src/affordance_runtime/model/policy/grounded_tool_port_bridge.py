@@ -66,6 +66,7 @@ from affordance_runtime.model.providers.port import (
     ModelPort,
     ProviderFailureKind,
     ProviderModelError,
+    ProviderTransportErrorCategory,
     StructuredModelError,
     StructuredOutputError,
     StructuredOutputFailureKind,
@@ -115,6 +116,10 @@ class CompactJsonDecisionPort:
     context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
     truncated_retry_max_tokens: int = 512
     truncated_retry_thinking_mode: str | None = "disabled"
+    timeout_fast_retry_timeout_s: float | None = None
+    timeout_fast_retry_max_tokens: int = 512
+    timeout_fast_retry_thinking_mode: str | None = "disabled"
+    semantic_call_deadline_s: float | None = None
     last_model_call_count: int = field(default=0, init=False, compare=False)
     last_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
@@ -139,8 +144,17 @@ class CompactJsonDecisionPort:
         compare=False,
     )
     def __post_init__(self) -> None:
-        if self.config.rate_limit_retries or self.config.transient_retries:
-            raise ValueError("grounded-tools bridge requires a one-attempt transport")
+        configured_timeout_retries = (
+            self.config.transient_retries
+            if self.config.timeout_retries is None
+            else self.config.timeout_retries
+        )
+        if max(
+            self.config.rate_limit_retries,
+            self.config.transient_retries,
+            configured_timeout_retries,
+        ) > 1:
+            raise ValueError("grounded-tools bridge allows at most one transport retry")
         profile = DecisionPerceptionProfile(self.perception_profile)
         object.__setattr__(self, "perception_profile", profile)
         if not isinstance(self.context_binder, GroundedPolicyContextBinder):
@@ -161,6 +175,18 @@ class CompactJsonDecisionPort:
             raise ValueError("truncated-output retry budget must be within [64, 4096]")
         if self.truncated_retry_thinking_mode not in {None, "enabled", "disabled"}:
             raise ValueError("truncated-output retry thinking mode is unsupported")
+        if self.timeout_fast_retry_timeout_s is not None and self.timeout_fast_retry_timeout_s <= 0:
+            raise ValueError("timeout fast-retry timeout must be positive")
+        if not 64 <= self.timeout_fast_retry_max_tokens <= 4_096:
+            raise ValueError("timeout fast-retry output budget must be within [64, 4096]")
+        if self.timeout_fast_retry_thinking_mode not in {None, "enabled", "disabled"}:
+            raise ValueError("timeout fast-retry thinking mode is unsupported")
+        if self.semantic_call_deadline_s is not None:
+            if self.semantic_call_deadline_s <= 0:
+                raise ValueError("semantic call deadline must be positive")
+            retry_timeout = self.timeout_fast_retry_timeout_s or 0.0
+            if self.config.timeout_s + retry_timeout > self.semantic_call_deadline_s:
+                raise ValueError("model attempt timeouts exceed the semantic call deadline")
 
     @property
     def interaction_protocol(self) -> str:
@@ -181,6 +207,10 @@ class CompactJsonDecisionPort:
     @property
     def transport_timeout_s(self) -> float:
         return self.config.timeout_s
+
+    @property
+    def semantic_timeout_budget_s(self) -> float:
+        return self.config.timeout_s + (self.timeout_fast_retry_timeout_s or 0.0)
 
     def _reset_diagnostics(self) -> None:
         object.__setattr__(self, "last_model_call_count", 0)
@@ -262,7 +292,7 @@ class CompactJsonDecisionPort:
             self.perception_profile,
             attempts=self.last_generation_attempts,
             include_record=True,
-            prompt_version=self.context_binder.prompts.version,
+            prompt_version=self.context_binder.prompt_version(request.agent_context),
         )
 
     def _rejection_resolution(
@@ -283,7 +313,7 @@ class CompactJsonDecisionPort:
             self.perception_profile,
             attempts=self.last_generation_attempts,
             include_record=True,
-            prompt_version=self.context_binder.prompts.version,
+            prompt_version=self.context_binder.prompt_version(request.agent_context),
         )
 
     async def _generate_structured(
@@ -314,6 +344,17 @@ class CompactJsonDecisionPort:
                     violations=exc.violations,
                     exception_class=type(exc).__name__,
                     output_failure_kind=exc.kind,
+                )
+            )
+            raise
+        except ProviderModelError as exc:
+            self._append_generation_attempt(
+                _provider_failure_generation_attempt(
+                    self.port,
+                    attempt,
+                    phase,
+                    output_schema.__name__,
+                    exc,
                 )
             )
             raise
@@ -356,6 +397,18 @@ class CompactJsonDecisionPort:
                     ModelFailureKind.REFUSED,
                     "model provider quota is exhausted",
                     provider_code=ProviderFailureCode.QUOTA_EXHAUSTED,
+                )
+            if exc.error_category is ProviderTransportErrorCategory.TIMEOUT:
+                return _failure(
+                    ModelFailureKind.TIMEOUT,
+                    "model provider timed out",
+                    retryable=exc.resumable,
+                    provider_code=ProviderFailureCode.TIMEOUT,
+                    attempt_origin=(
+                        ProviderAttemptOrigin.LOCAL_CIRCUIT
+                        if exc.circuit_open
+                        else ProviderAttemptOrigin.NETWORK
+                    ),
                 )
             provider_code = (
                 ProviderFailureCode.RATE_LIMITED
@@ -405,6 +458,44 @@ class CompactJsonDecisionPort:
                 specs,
                 payload_type,
                 phase="initial",
+            )
+        except ProviderModelError as exc:
+            if (
+                exc.error_category is not ProviderTransportErrorCategory.TIMEOUT
+                or self.timeout_fast_retry_timeout_s is None
+                or exc.physical_attempt_count != 1
+            ):
+                raise
+            retry_thinking = (
+                self.timeout_fast_retry_thinking_mode
+                if bool(getattr(self.port, "supports_thinking_control", False))
+                else None
+            )
+            retry_config = self.config.model_copy(update={
+                "max_tokens": self.timeout_fast_retry_max_tokens,
+                "timeout_s": self.timeout_fast_retry_timeout_s,
+                "provider_total_timeout_s": self.timeout_fast_retry_timeout_s,
+                "rate_limit_retries": 0,
+                "transient_retries": 0,
+                "timeout_retries": 0,
+                "thinking_mode": retry_thinking,
+            })
+            recovery_messages = (
+                *messages,
+                ModelMessage(
+                    role="user",
+                    content=(
+                        "The prior request timed out before returning a command. "
+                        "Using the same current World and tool catalog, return exactly one compact JSON command now."
+                    ),
+                ),
+            )
+            payload = await self._generate_structured(
+                recovery_messages,
+                specs,
+                payload_type,
+                phase="timeout_fast_retry",
+                config=retry_config,
             )
         except StructuredOutputError as exc:
             self._record_structured_output(exc)
@@ -538,7 +629,7 @@ class CompactJsonDecisionPort:
             self.perception_profile,
             attempts=self.last_generation_attempts,
             include_record=True,
-            prompt_version=self.context_binder.prompts.version,
+            prompt_version=self.context_binder.prompt_version(request.agent_context),
         )
         decision = ProtocolFeedback(
             request.context_id,
@@ -564,6 +655,13 @@ class CompactJsonDecisionPort:
     ) -> ModelInvocationResult[ResolvedModelDecision]:
         invocation = ModelInvocationResult(
             failure=failure,
+            metadata=_metadata(
+                self.port,
+                self.perception_profile,
+                attempts=self.last_generation_attempts,
+                include_record=False,
+                prompt_version=self.context_binder.prompt_version(request.agent_context),
+            ),
             attempts=self.last_generation_attempts,
             diagnostics=self._diagnostics(),
             lineage=self._lineage(request, delivery),
@@ -609,6 +707,19 @@ class CompactJsonDecisionPort:
             "truncated_output_retry_count": sum(
                 item.phase == "truncated_output_retry"
                 for item in self.last_generation_attempts
+            ),
+            "timeout_fast_retry_count": sum(
+                item.phase == "timeout_fast_retry"
+                for item in self.last_generation_attempts
+            ),
+            "provider_retry_count": sum(
+                _attempt_retry_count(item) for item in self.last_generation_attempts
+            ) + sum(
+                item.phase == "timeout_fast_retry"
+                for item in self.last_generation_attempts
+            ),
+            "provider_physical_attempt_count": sum(
+                _attempt_physical_count(item) for item in self.last_generation_attempts
             ),
             "structured_output_validation_stage": "provider_response_to_grounded_command",
             "structured_output_violations": self.last_structured_output_violations,
@@ -663,6 +774,42 @@ def _generation_attempt(
     )
 
 
+def _provider_failure_generation_attempt(
+    port,
+    attempt: int,
+    phase: str,
+    schema_name: str,
+    error: ProviderModelError,
+) -> ModelGenerationAttempt:
+    return ModelGenerationAttempt(
+        attempt,
+        phase,
+        schema_name,
+        "failed",
+        latency_ms=error.latency_ms,
+        exception_class=error.exception_class or type(error).__name__,
+        transcript=getattr(port, "last_transcript", None),
+    )
+
+
+def _attempt_transcript_int(attempt: ModelGenerationAttempt, key: str) -> int:
+    transcript = attempt.transcript
+    if not isinstance(transcript, Mapping):
+        return 0
+    value = transcript.get(key, 0)
+    return value if type(value) is int and value >= 0 else 0
+
+
+def _attempt_retry_count(attempt: ModelGenerationAttempt) -> int:
+    return _attempt_transcript_int(
+        attempt, "network.rate_limit_retry_count"
+    ) + _attempt_transcript_int(attempt, "network.transient_retry_count")
+
+
+def _attempt_physical_count(attempt: ModelGenerationAttempt) -> int:
+    return _attempt_transcript_int(attempt, "network.physical_attempt_count")
+
+
 def _resolution_code_for_reconciliation(
     code: ToolCallIssueCode | None,
 ) -> GroundedToolResolutionCode:
@@ -711,6 +858,14 @@ def _metadata(
             sum(item.total_tokens for item in attempts)
             if attempts
             else record.total_tokens if record is not None else 0
+        ),
+        rate_limit_retry_count=sum(
+            _attempt_transcript_int(item, "network.rate_limit_retry_count")
+            for item in attempts
+        ),
+        transient_retry_count=sum(
+            _attempt_transcript_int(item, "network.transient_retry_count")
+            for item in attempts
         ),
         perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",

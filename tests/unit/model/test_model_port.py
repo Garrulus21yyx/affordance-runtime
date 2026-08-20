@@ -1,7 +1,9 @@
 import asyncio
+import io
 import json
 import stat
 import threading
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, TypeVar
 
@@ -9,6 +11,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from affordance_runtime.model.policy.grounded_tool_port_bridge import GroundedToolCommandPayload
+from affordance_runtime.model.providers import port as provider_port
 from affordance_runtime.model.providers.capture import PrivateModelCapture
 from affordance_runtime.model.providers.port import (
     ModelConfig,
@@ -19,6 +22,7 @@ from affordance_runtime.model.providers.port import (
     OpenAICompatibleModelPort,
     ProviderFailureKind,
     ProviderModelError,
+    ProviderTransportErrorCategory,
     StructuredModelError,
     StructuredOutputError,
     StructuredOutputFailureKind,
@@ -713,6 +717,189 @@ def test_openai_compatible_adapter_retries_a_bounded_transient_response() -> Non
     assert port.last_call is not None
     assert port.last_call.rate_limit_retry_count == 0
     assert port.last_call.transient_retry_count == 1
+
+
+def test_provider_retry_budget_is_shared_across_rate_limit_and_capacity() -> None:
+    requests = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            nonlocal requests
+            requests += 1
+            self.rfile.read(int(self.headers["Content-Length"]))
+            if requests == 1:
+                self.send_response(429)
+                self.send_header("Retry-After", "0")
+            else:
+                self.send_response(503)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="remote-test",
+        )
+        with pytest.raises(ProviderModelError) as failure:
+            asyncio.run(
+                port.generate_structured(
+                    [],
+                    Answer,
+                    ModelConfig(
+                        rate_limit_retries=1,
+                        rate_limit_backoff_s=0,
+                        transient_retries=1,
+                        transient_backoff_s=0,
+                    ),
+                )
+            )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    error = failure.value
+    assert requests == 2
+    assert error.kind is ProviderFailureKind.PROVIDER_CAPACITY
+    assert error.http_status == 503
+    assert error.error_category.value == "http_5xx"
+    assert error.exception_class == "HTTPError"
+    assert error.physical_attempt_count == 2
+    assert error.rate_limit_retry_count == 1
+    assert error.transient_retry_count == 0
+    assert error.latency_ms > 0
+    assert port.last_transcript is not None
+    assert port.last_transcript["network.second_request_sent"] is True
+    assert port.last_transcript["network.physical_attempt_count"] == 2
+    assert port.last_transcript["error.http_status"] == 503
+    assert port.last_transcript["error.category"] == "http_5xx"
+    assert port.last_transcript["error.latency_ms"] == error.latency_ms
+
+
+def test_provider_retry_uses_remaining_transport_deadline(monkeypatch) -> None:
+    clock = [100.0]
+    timeouts: list[float] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ok":true}'
+
+    def urlopen(_request, *, timeout: float):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            raise urllib.error.HTTPError(
+                "https://provider.invalid",
+                503,
+                "unavailable",
+                {},
+                io.BytesIO(b"{}"),
+            )
+        return Response()
+
+    monkeypatch.setattr(provider_port, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(provider_port.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(
+        provider_port.time,
+        "sleep",
+        lambda delay: clock.__setitem__(0, clock[0] + delay),
+    )
+
+    payload, rate_retries, transient_retries = provider_port._post_json(
+        "https://provider.invalid",
+        {"request": "fixture"},
+        timeout_s=10,
+        total_timeout_s=10,
+        rate_limit_retries=1,
+        transient_retries=1,
+        transient_backoff_s=2,
+    )
+
+    assert payload == {"ok": True}
+    assert (rate_retries, transient_retries) == (0, 1)
+    assert timeouts == [10, 8]
+
+
+def test_provider_timeout_after_full_attempt_still_sends_second_request(monkeypatch) -> None:
+    clock = [100.0]
+    timeouts: list[float] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"ok":true}'
+
+    def urlopen(_request, *, timeout: float):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            clock[0] += timeout
+            raise TimeoutError("first physical request timed out")
+        return Response()
+
+    monkeypatch.setattr(provider_port, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(provider_port.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(
+        provider_port.time,
+        "sleep",
+        lambda delay: clock.__setitem__(0, clock[0] + delay),
+    )
+
+    payload, rate_retries, transient_retries = provider_port._post_json(
+        "https://provider.invalid",
+        {"request": "fixture"},
+        timeout_s=30,
+        total_timeout_s=89,
+        rate_limit_retries=1,
+        transient_retries=1,
+        transient_backoff_s=0.5,
+    )
+
+    assert payload == {"ok": True}
+    assert (rate_retries, transient_retries) == (0, 1)
+    assert timeouts == [30, 30]
+
+
+def test_provider_timeout_can_be_reserved_for_semantic_fast_retry(monkeypatch) -> None:
+    requests = [0]
+
+    def urlopen(_request, *, timeout: float):
+        requests[0] += 1
+        assert 54 < timeout <= 55
+        raise TimeoutError("semantic owner must select the retry representation")
+
+    monkeypatch.setattr(provider_port.urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(ProviderModelError) as failure:
+        provider_port._post_json(
+            "https://provider.invalid",
+            {"request": "fixture"},
+            timeout_s=55,
+            total_timeout_s=55,
+            rate_limit_retries=1,
+            transient_retries=1,
+            timeout_retries=0,
+        )
+
+    assert requests == [1]
+    assert failure.value.error_category is ProviderTransportErrorCategory.TIMEOUT
+    assert failure.value.physical_attempt_count == 1
+    assert failure.value.transient_retry_count == 0
 
 
 def test_structured_schema_failure_has_no_response_value() -> None:

@@ -27,7 +27,6 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
 )
 from affordance_runtime.agent.decisions import (
-    FinalResponse,
     ProtocolFeedback,
     ProtocolFeedbackKind,
 )
@@ -144,10 +143,6 @@ class PydanticAIGroundedDecisionPort:
         return GROUNDED_ACTION_DECISION_CAPABILITIES
 
     @property
-    def supports_final_response(self) -> bool:
-        return True
-
-    @property
     def compatibility_key(self) -> str:
         return ":".join(
             (
@@ -222,11 +217,6 @@ class PydanticAIGroundedDecisionPort:
             self._append_request_breakdown(admitted.breakdown)
             messages = admitted.messages
             instructions, user_prompt = _pydantic_prompt(messages, request.image_inputs, BinaryContent)
-            final_ready = _final_response_ready(request.agent_context)
-            if final_ready:
-                object.__setattr__(self, "last_catalog_count", 0)
-                object.__setattr__(self, "last_catalog_bytes", 0)
-                object.__setattr__(self, "last_catalog_specs", ())
             toolset = ExternalToolset(
                 [
                     ToolDefinition(
@@ -242,7 +232,7 @@ class PydanticAIGroundedDecisionPort:
             agent = Agent(
                 self.model,
                 instructions=instructions,
-                output_type=str if final_ready else [str, DeferredToolRequests],
+                output_type=[str, DeferredToolRequests],
                 retries=0,
             )
             usage = RunUsage()
@@ -253,7 +243,7 @@ class PydanticAIGroundedDecisionPort:
             result = await self._run_provider_call(
                 lambda: agent.run(
                     user_prompt,
-                    toolsets=[] if final_ready else [toolset],
+                    toolsets=[toolset],
                     usage=usage,
                     usage_limits=limits,
                     model_settings=_ACTION_MODEL_SETTINGS,
@@ -264,34 +254,32 @@ class PydanticAIGroundedDecisionPort:
                 provider_error_type=ModelAPIError,
             )
             resolution_error = None
-            if final_ready:
-                decision = _resolve_final_response(result.output, request.context_id)
-            else:
-                decision, resolution_error, initial_call = _resolve_deferred(result.output, catalog, request.context_id)
-                self._set_tool_resolution(resolution_error, accepted=decision is not None)
-                if (
-                    resolution_error is not None
-                    and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
-                ):
-                    decision = _protocol_feedback_decision(
-                        request.context_id,
-                        result.output,
-                        resolution_error,
-                    )
-                elif decision is None and (resolution_error is None or initial_call is None):
-                    decision = ProtocolFeedback(
-                        request.context_id,
-                        ProtocolFeedbackKind.JSON_INVALID,
-                        0,
-                        (
-                            resolution_error.code.value
-                            if resolution_error is not None
-                            else "provider_envelope_invalid"
-                        ),
-                    )
+            decision, resolution_error, initial_call = _resolve_deferred(
+                result.output, catalog, request.context_id
+            )
+            self._set_tool_resolution(resolution_error, accepted=decision is not None)
+            if (
+                resolution_error is not None
+                and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
+            ):
+                decision = _protocol_feedback_decision(
+                    request.context_id,
+                    result.output,
+                    resolution_error,
+                )
+            elif decision is None and (resolution_error is None or initial_call is None):
+                decision = ProtocolFeedback(
+                    request.context_id,
+                    ProtocolFeedbackKind.JSON_INVALID,
+                    0,
+                    (
+                        resolution_error.code.value
+                        if resolution_error is not None
+                        else "provider_envelope_invalid"
+                    ),
+                )
             if (
                 decision is None
-                and not final_ready
                 and resolution_error is not None
                 and initial_call is not None
             ):
@@ -389,7 +377,7 @@ class PydanticAIGroundedDecisionPort:
             provider_id=self.provider_id,
             model_id=self.model_id,
             endpoint_class="openai-compatible",
-            prompt_version=self.context_binder.prompts.version,
+            prompt_version=self.context_binder.prompt_version(request.agent_context),
             schema_version=GROUNDED_TOOLS_PROTOCOL,
             latency_ms=(time.perf_counter() - semantic_started) * 1000,
             prompt_tokens=invocation_prompt_tokens,
@@ -424,7 +412,7 @@ class PydanticAIGroundedDecisionPort:
             provider_id=self.provider_id,
             model_id=self.model_id,
             endpoint_class="openai-compatible",
-            prompt_version=self.context_binder.prompts.version,
+            prompt_version=self.context_binder.prompt_version(request.agent_context),
             schema_version=GROUNDED_TOOLS_PROTOCOL,
             latency_ms=(time.perf_counter() - semantic_started) * 1000,
             prompt_tokens=prompt_tokens,
@@ -897,30 +885,6 @@ def _protocol_feedback_decision(
         min(len(calls), 32),
         error.code.value,
     )
-
-
-def _final_response_ready(context) -> bool:
-    if "final_response" in context.runtime_controls:
-        return context.task.requested_output_ids.total_count > 0
-    if "yield_subtask" in context.runtime_controls:
-        return False
-    requested = context.task.requested_output_ids
-    confirmed = {item.output_id for item in context.task.evaluation.outputs}
-    return (
-        context.task.evaluation.status == "complete"
-        and requested.total_count > 0
-        and not requested.truncated
-        and all(item in confirmed for item in requested.items)
-    )
-
-
-def _resolve_final_response(output, context_id: str) -> FinalResponse | None:
-    if not isinstance(output, str):
-        return None
-    try:
-        return FinalResponse(context_id, output)
-    except ValueError:
-        return None
 
 
 def _pydantic_prompt(messages, image_inputs: Sequence[AgentImageInput], binary_content_type):

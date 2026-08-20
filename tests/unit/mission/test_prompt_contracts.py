@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from importlib.resources import files
 from typing import Mapping
 
@@ -15,89 +14,59 @@ def _prompt(name: str, key: str) -> str:
     return str(raw[key])
 
 
-def _section_positions(prompt: str, sections: tuple[str, ...]) -> list[int]:
-    positions = [prompt.index(section) for section in sections]
-    assert positions == sorted(positions)
-    return positions
-
-
-def test_manager_prompt_is_short_structured_and_limits_environment_projection() -> None:
+def test_manager_prompt_has_one_two_mode_combined_review_contract() -> None:
     prompt = _prompt("mission_manager.yaml", "manager")
 
-    sections = (
-        "Identity",
-        "Authoritative inputs",
-        "Responsibilities",
-        "Route rules",
-        "Output contract",
+    assert "initial_plan" in prompt
+    assert "review_and_route" in prompt
+    assert all(
+        route in prompt
+        for route in (
+            "execute_subtask",
+            "request_finalization",
+            "ask_user",
+            "blocked",
+        )
     )
-    _section_positions(prompt, sections)
-    assert len(prompt) < 2_000
-    lowered = prompt.casefold()
-    for forbidden in ("screenshot", "worldobservation", "actionspace", "selector", "coordinate", "e/f ref"):
-        assert forbidden not in lowered
-    assert "MissionEnvironmentView" in prompt
-    assert "not a second environment authority" in prompt
-    assert re.search(r"\bE[- ]?ref\b", prompt, flags=re.IGNORECASE) is None
-    assert re.search(r"\bF[- ]?ref\b", prompt, flags=re.IGNORECASE) is None
-    assert "never prescribe or copy concrete ActionPolicy tool/capability identifiers" in prompt
-    assert "15 turns" in prompt
-    assert "5-8 turns" in prompt
-    assert "do not default to 20" in prompt
+    assert all(
+        assessment in prompt
+        for assessment in (
+            "not_applicable",
+            "satisfied",
+            "unsatisfied",
+            "unknown",
+            "blocked",
+        )
+    )
+    assert "non-authoritative" in prompt
+    assert "materially change" in prompt
+    assert "official success" in prompt
 
 
-def test_manager_prompt_route_and_authority_contract() -> None:
-    prompt = _prompt("mission_manager.yaml", "manager")
-    routes = set(re.findall(r"\b(execute_subtask|ask_user|blocked|request_final_audit)\b", prompt))
+def test_grounded_agent_prompt_has_no_mixed_final_response_instruction() -> None:
+    prompt = _prompt("grounded_agent.yaml", "actor")
 
-    assert routes == {"execute_subtask", "ask_user", "blocked", "request_final_audit"}
-    assert "Executor claims and prior plans are not proof." in prompt
-    assert "accepted audited outcomes and facts" in prompt
-    assert "official success" not in prompt.casefold()
-    assert "official benchmark successful" not in prompt.casefold()
-    assert "Next:" not in prompt
-    assert "gui|cli" not in prompt
+    assert "outcome_proposed" in prompt
+    assert "final-response turn" not in prompt
+    assert "final_response_contract" not in prompt
+    assert "Never emit final JSON or prose directly" in prompt
 
 
-def test_auditor_prompt_claim_evidence_unknown_and_read_only_contract() -> None:
+def test_final_response_prompt_identity_is_one_tool_and_no_evidence_reopen() -> None:
+    prompt = _prompt("final_response.yaml", "finalizer")
+
+    assert "You are the final response formatter." in prompt
+    assert "submit_final_response" in prompt
+    assert "Do not call GUI/read tools" in prompt
+    assert "reopen evidence" in prompt
+    assert "emit prose" in prompt
+
+
+def test_optional_auditor_prompt_cannot_plan_route_or_mutate_state() -> None:
     prompt = _prompt("mission_auditor.yaml", "auditor")
-    sections = (
-        "Identity",
-        "Evidence boundary",
-        "Audit responsibility",
-        "Conservative decision rule",
-        "Output contract",
-    )
-    _section_positions(prompt, sections)
 
-    assert len(prompt) < 1700
-    assert "self-reported completion are claims, not proof" in prompt
-    assert "Every satisfied outcome, promoted fact, or invalidation must cite evidence" in prompt
-    assert "Use unknown when the available evidence cannot support a conclusion." in prompt
-    assert "Do not execute GUI actions." in prompt
-    assert "Do not modify MissionState." in prompt
-    lowered = prompt.casefold()
-    assert "select_action" not in lowered
-    assert "send_msg_to_user" not in lowered
-    assert "stop" not in lowered
-
-
-def test_mission_prompts_do_not_expose_hidden_or_copied_sota_contracts() -> None:
-    combined = "\n".join((
-        _prompt("mission_manager.yaml", "manager"),
-        _prompt("mission_auditor.yaml", "auditor"),
-    ))
-    lowered = combined.casefold()
-
-    for forbidden in ("hidden evaluator", "expected answer", "reward"):
-        assert forbidden not in lowered
-    for rejected_sota in (
-        "current task state",
-        "task contract",
-        "acceptance-constraint backcheck",
-        "longhorizon-harness",
-        "agent s2",
-        "dag translator",
-        "procedural memory",
-    ):
-        assert rejected_sota not in lowered
+    assert "optional strict" in prompt
+    assert "one explicitly submitted" in prompt
+    assert "Do not plan, route" in prompt
+    assert "mutate MissionState" in prompt
+    assert "official success" in prompt

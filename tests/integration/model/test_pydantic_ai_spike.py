@@ -20,6 +20,7 @@ import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decisions import FinalResponse, ProtocolFeedback, ProtocolFeedbackKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
@@ -212,7 +213,7 @@ def test_multiple_provider_tool_calls_return_protocol_feedback_with_zero_dispatc
     asyncio.run(scenario())
 
 
-def test_pydantic_ai_emits_native_final_response_only_after_verified_outputs() -> None:
+def test_standalone_native_path_does_not_invent_a_context_only_final_response_turn() -> None:
     class OutputTaskEvaluator(SharedTaskEvaluator):
         async def evaluate(self, task, observation):
             evaluation = await super().evaluate(task, observation)
@@ -230,7 +231,7 @@ def test_pydantic_ai_emits_native_final_response_only_after_verified_outputs() -
             )
 
     async def scenario() -> None:
-        scripted = ScriptedModel(["final_response"])
+        scripted = ScriptedModel([])
         policy = _policy(scripted.build())
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
@@ -245,11 +246,44 @@ def test_pydantic_ai_emits_native_final_response_only_after_verified_outputs() -
 
         assert state.status is RunStatus.DONE
         assert state.execution_count == 0
-        assert state.step_count == 1
-        assert state.last_step is not None
-        assert isinstance(state.last_step.decision, FinalResponse)
-        assert state.last_step.decision.content == "Shared state is enabled."
-        assert scripted.offered_tools == [()]
+        assert state.step_count == 0
+        assert state.last_step is None
+        assert scripted.offered_tools == []
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_native_finalizing_turn_uses_the_single_catalog_tool() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [("submit_final_response", {"response": "Shared state is enabled."})]
+        )
+        policy = _policy(scripted.build())
+        task = replace(
+            shared_task(),
+            requested_outputs=("answer",),
+            inputs={
+                PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: {
+                    "json_schema": {"type": "string", "minLength": 1}
+                }
+            },
+        )
+        world = shared_world("finalizing", True)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+            runtime_controls=("submit_final_response",),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:final", context))
+
+        assert result.failure is None
+        assert isinstance(result.output.decision, FinalResponse)
+        assert result.output.decision.content == "Shared state is enabled."
+        assert scripted.offered_tools == [("submit_final_response",)]
 
     asyncio.run(scenario())
 
@@ -559,5 +593,46 @@ def test_factory_selects_deepseek_json_single_command_profile() -> None:
     assert selected.port.port.endpoint_class == "remote"
     assert selected.port.port.supports_multimodal is False
     assert selected.port.config.max_tokens == 4_096
+    assert selected.port.config.timeout_s == 1.52
+    assert selected.port.config.provider_total_timeout_s == 1.52
+    assert selected.port.timeout_fast_retry_timeout_s == 1.48
+    assert selected.port.semantic_timeout_budget_s == 3.0
+    assert selected.port.config.rate_limit_retries == 1
+    assert selected.port.config.transient_retries == 1
     assert selected.port.truncated_retry_max_tokens == 512
     assert selected.port.truncated_retry_thinking_mode == "disabled"
+
+    live_deadline = model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "fixture-secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
+        call_timeout_s=90.0,
+    )
+    assert live_deadline.port.config.timeout_s == 55.0
+    assert live_deadline.port.config.provider_total_timeout_s == 55.0
+    assert live_deadline.port.timeout_fast_retry_timeout_s == 33.0
+    assert live_deadline.port.semantic_call_deadline_s == 89.0
+    assert live_deadline.port.semantic_timeout_budget_s == 88.0
+
+    frozen_campaign = model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "fixture-secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
+        call_timeout_s=5.0,
+        provider_retry_budget=0,
+    )
+    assert frozen_campaign.port.config.timeout_s == 4.0
+    assert frozen_campaign.port.config.provider_total_timeout_s == 4.0
+    assert frozen_campaign.port.timeout_fast_retry_timeout_s is None
+    assert frozen_campaign.port.config.rate_limit_retries == 0
+    assert frozen_campaign.port.config.transient_retries == 0

@@ -120,7 +120,7 @@ def main() -> int:
     if errors:
         print(json.dumps({"status": "NOT_RUN_UNAVAILABLE_CONFIG", "errors": errors}, sort_keys=True))
         return 1
-    model_roles = model_roles_from_environment()
+    model_roles = model_roles_from_environment(provider_retry_budget=0)
     outcome = asyncio.run(run_breadth_campaign(
         manifest,
         model_roles.action_policy,
@@ -200,7 +200,7 @@ def _configuration_errors(manifest, *, provider_recovery: bool = False) -> list[
     if not url.startswith("file://"):
         errors.append("MINIWOB_URL must use the reviewed local source fixture")
     try:
-        policy = model_policy_from_environment()
+        policy = model_policy_from_environment(provider_retry_budget=0)
         composed = policy.port
         config = getattr(composed, "config", None)
         if config is None:

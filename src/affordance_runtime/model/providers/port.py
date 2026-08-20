@@ -70,12 +70,14 @@ class ModelConfig(BaseModel):
     seed: int | None = None
     max_tokens: int = Field(default=2_048, ge=1)
     timeout_s: float = Field(default=90.0, gt=0.0)
+    provider_total_timeout_s: float | None = Field(default=None, gt=0.0)
     rate_limit_retries: int = Field(default=1, ge=0, le=3)
     rate_limit_backoff_s: float = Field(default=1.0, ge=0.0, le=30.0)
     max_provider_retry_delay_s: float = Field(default=30.0, ge=0.0, le=60.0)
     provider_circuit_break_s: float = Field(default=60.0, ge=0.0, le=3_600.0)
     quota_circuit_break_s: float = Field(default=300.0, ge=0.0, le=86_400.0)
     transient_retries: int = Field(default=1, ge=0, le=3)
+    timeout_retries: int | None = Field(default=None, ge=0, le=3)
     transient_backoff_s: float = Field(default=0.5, ge=0.0, le=5.0)
     prompt_version: str = "1.0"
     structured_output_mode: Literal[
@@ -186,6 +188,16 @@ class ProviderFailureKind(StrEnum):
     PROVIDER_CAPACITY = "provider_capacity"
 
 
+class ProviderTransportErrorCategory(StrEnum):
+    """Bounded, secret-free transport detail for provider observability."""
+
+    HTTP_429 = "http_429"
+    HTTP_5XX = "http_5xx"
+    TIMEOUT = "timeout"
+    TRANSPORT = "transport"
+    LOCAL_CIRCUIT = "local_circuit"
+
+
 class ProviderModelError(StructuredModelError):
     """Typed, redacted provider failure which a runner may safely defer."""
 
@@ -195,10 +207,37 @@ class ProviderModelError(StructuredModelError):
         *,
         retry_after_s: float | None = None,
         circuit_open: bool = False,
+        http_status: int | None = None,
+        error_category: ProviderTransportErrorCategory | None = None,
+        exception_class: str = "",
+        latency_ms: float = 0.0,
+        physical_attempt_count: int = 0,
+        rate_limit_retry_count: int = 0,
+        transient_retry_count: int = 0,
     ) -> None:
+        if http_status is not None and not 100 <= http_status <= 599:
+            raise ValueError("provider HTTP status must be bounded")
+        if latency_ms < 0:
+            raise ValueError("provider failure latency must be nonnegative")
+        counters = (
+            physical_attempt_count,
+            rate_limit_retry_count,
+            transient_retry_count,
+        )
+        if any(isinstance(value, bool) or value < 0 for value in counters):
+            raise ValueError("provider failure attempt counters must be nonnegative")
+        if exception_class and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,119}", exception_class) is None:
+            raise ValueError("provider failure exception class is unsafe")
         self.kind = kind
         self.retry_after_s = retry_after_s
         self.circuit_open = circuit_open
+        self.http_status = http_status
+        self.error_category = error_category
+        self.exception_class = exception_class
+        self.latency_ms = latency_ms
+        self.physical_attempt_count = physical_attempt_count
+        self.rate_limit_retry_count = rate_limit_retry_count
+        self.transient_retry_count = transient_retry_count
         self.resumable = True
         super().__init__(f"provider failure: {kind.value}")
 
@@ -303,11 +342,13 @@ class OpenAICompatibleModelPort:
                 f"{self.base_url.rstrip('/')}/chat/completions",
                 body,
                 timeout_s=config.timeout_s,
+                total_timeout_s=config.provider_total_timeout_s,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 rate_limit_retries=config.rate_limit_retries,
                 rate_limit_backoff_s=config.rate_limit_backoff_s,
                 max_provider_retry_delay_s=config.max_provider_retry_delay_s,
                 transient_retries=config.transient_retries,
+                timeout_retries=config.timeout_retries,
                 transient_backoff_s=config.transient_backoff_s,
             )
         except ProviderModelError as exc:
@@ -317,6 +358,10 @@ class OpenAICompatibleModelPort:
                 "provider_failure",
                 error=exc.kind.value,
             )
+            self.last_transcript = {
+                **(self.last_transcript or {}),
+                **_provider_failure_transcript_fields(exc),
+            }
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
@@ -485,14 +530,20 @@ class OllamaModelPort:
                     "options": options,
                 },
                 timeout_s=config.timeout_s,
+                total_timeout_s=config.provider_total_timeout_s,
                 rate_limit_retries=config.rate_limit_retries,
                 rate_limit_backoff_s=config.rate_limit_backoff_s,
                 max_provider_retry_delay_s=config.max_provider_retry_delay_s,
                 transient_retries=config.transient_retries,
+                timeout_retries=config.timeout_retries,
                 transient_backoff_s=config.transient_backoff_s,
             )
         except ProviderModelError as exc:
             self._capture(messages, output_schema, "provider_failure", error=exc.kind.value)
+            self.last_transcript = {
+                **(self.last_transcript or {}),
+                **_provider_failure_transcript_fields(exc),
+            }
             _trip_model_circuit(self, exc, config)
             raise
         latency_ms = round((perf_counter() - started) * 1_000, 3)
@@ -707,6 +758,38 @@ def _openinference_llm_transcript(
         "status": status,
         "error": error,
         "error.code": error,
+        "network_dispatched": True,
+        "network.physical_attempt_count": 1
+        + int(getattr(record, "rate_limit_retry_count", 0))
+        + int(getattr(record, "transient_retry_count", 0)),
+        "network.second_request_sent": (
+            int(getattr(record, "rate_limit_retry_count", 0))
+            + int(getattr(record, "transient_retry_count", 0))
+            > 0
+        ),
+        "network.rate_limit_retry_count": int(
+            getattr(record, "rate_limit_retry_count", 0)
+        ),
+        "network.transient_retry_count": int(
+            getattr(record, "transient_retry_count", 0)
+        ),
+    }
+
+
+def _provider_failure_transcript_fields(error: ProviderModelError) -> dict[str, object]:
+    return {
+        "network_dispatched": error.physical_attempt_count > 0,
+        "network.physical_attempt_count": error.physical_attempt_count,
+        "network.second_request_sent": error.physical_attempt_count > 1,
+        "network.rate_limit_retry_count": error.rate_limit_retry_count,
+        "network.transient_retry_count": error.transient_retry_count,
+        "error.http_status": error.http_status,
+        "error.category": (
+            error.error_category.value if error.error_category is not None else ""
+        ),
+        "error.exception_class": error.exception_class,
+        "error.retry_after_s": error.retry_after_s,
+        "error.latency_ms": error.latency_ms,
     }
 
 def _messages_with_structured_output_contract(
@@ -1019,11 +1102,13 @@ def _post_json(
     body: dict[str, Any],
     *,
     timeout_s: float,
+    total_timeout_s: float | None = None,
     headers: dict[str, str] | None = None,
     rate_limit_retries: int = 1,
     rate_limit_backoff_s: float = 1.0,
     max_provider_retry_delay_s: float = 30.0,
     transient_retries: int = 1,
+    timeout_retries: int | None = None,
     transient_backoff_s: float = 0.5,
 ) -> tuple[dict[str, Any], int, int]:
     request = urllib.request.Request(
@@ -1032,11 +1117,69 @@ def _post_json(
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
+    selected_timeout_retries = (
+        transient_retries if timeout_retries is None else timeout_retries
+    )
+    total_retry_budget = max(
+        rate_limit_retries,
+        transient_retries,
+        selected_timeout_retries,
+    )
+    started = perf_counter()
+    deadline = started + (
+        total_timeout_s
+        if total_timeout_s is not None
+        else timeout_s * (total_retry_budget + 1) + max_provider_retry_delay_s
+    )
     rate_retries = 0
     transient_retries_used = 0
+    physical_attempt_count = 0
+
+    def remaining_s() -> float:
+        return max(0.0, deadline - perf_counter())
+
+    def provider_error(
+        kind: ProviderFailureKind,
+        cause: BaseException,
+        *,
+        retry_after_s: float | None = None,
+        http_status: int | None = None,
+        category: ProviderTransportErrorCategory,
+    ) -> ProviderModelError:
+        return ProviderModelError(
+            kind,
+            retry_after_s=retry_after_s,
+            http_status=http_status,
+            error_category=category,
+            exception_class=type(cause).__name__,
+            latency_ms=round((perf_counter() - started) * 1_000, 3),
+            physical_attempt_count=physical_attempt_count,
+            rate_limit_retry_count=rate_retries,
+            transient_retry_count=transient_retries_used,
+        )
+
+    def retry_delay(delay_s: float) -> bool:
+        if rate_retries + transient_retries_used >= total_retry_budget:
+            return False
+        delay_s = max(0.0, delay_s)
+        if delay_s >= remaining_s():
+            return False
+        if delay_s:
+            time.sleep(delay_s)
+        return remaining_s() > 0
+
     while True:
+        remaining = remaining_s()
+        if remaining <= 0:
+            timeout = TimeoutError("provider transport deadline exhausted")
+            raise provider_error(
+                ProviderFailureKind.PROVIDER_CAPACITY,
+                timeout,
+                category=ProviderTransportErrorCategory.TIMEOUT,
+            ) from timeout
+        physical_attempt_count += 1
         try:
-            with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - configured model endpoint
+            with urllib.request.urlopen(request, timeout=min(timeout_s, remaining)) as response:  # noqa: S310 - configured model endpoint
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
             payload = _http_error_payload(exc)
@@ -1047,24 +1190,63 @@ def _post_json(
                     max_delay_s=max_provider_retry_delay_s,
                 )
                 kind = _rate_limit_failure_kind(payload, retry_hint_s)
-                if kind == ProviderFailureKind.RATE_LIMIT_TRANSIENT and rate_retries < rate_limit_retries:
+                if (
+                    kind == ProviderFailureKind.RATE_LIMIT_TRANSIENT
+                    and rate_retries < rate_limit_retries
+                    and retry_delay(
+                        retry_hint_s if retry_hint_s is not None else rate_limit_backoff_s
+                    )
+                ):
                     rate_retries += 1
-                    time.sleep(retry_hint_s if retry_hint_s is not None else rate_limit_backoff_s)
                     continue
-                raise ProviderModelError(kind, retry_after_s=retry_hint_s) from exc
-            if exc.code in {500, 502, 503, 504} and transient_retries_used < transient_retries:
-                transient_retries_used += 1
-                time.sleep(transient_backoff_s)
-                continue
+                raise provider_error(
+                    kind,
+                    exc,
+                    retry_after_s=retry_hint_s,
+                    http_status=exc.code,
+                    category=ProviderTransportErrorCategory.HTTP_429,
+                ) from exc
             if exc.code in {500, 502, 503, 504}:
-                raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY) from exc
+                retry_hint_s = _provider_retry_hint_s(
+                    exc,
+                    payload,
+                    max_delay_s=max_provider_retry_delay_s,
+                )
+                if (
+                    transient_retries_used < transient_retries
+                    and retry_delay(
+                        retry_hint_s if retry_hint_s is not None else transient_backoff_s
+                    )
+                ):
+                    transient_retries_used += 1
+                    continue
+                raise provider_error(
+                    ProviderFailureKind.PROVIDER_CAPACITY,
+                    exc,
+                    retry_after_s=retry_hint_s,
+                    http_status=exc.code,
+                    category=ProviderTransportErrorCategory.HTTP_5XX,
+                ) from exc
             raise StructuredModelError(f"model endpoint returned HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
-            if transient_retries_used < transient_retries:
+            category = (
+                ProviderTransportErrorCategory.TIMEOUT
+                if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+                else ProviderTransportErrorCategory.TRANSPORT
+            )
+            retry_limit = (
+                selected_timeout_retries
+                if category is ProviderTransportErrorCategory.TIMEOUT
+                else transient_retries
+            )
+            if transient_retries_used < retry_limit and retry_delay(transient_backoff_s):
                 transient_retries_used += 1
-                time.sleep(transient_backoff_s)
                 continue
-            raise ProviderModelError(ProviderFailureKind.PROVIDER_CAPACITY) from exc
+            raise provider_error(
+                ProviderFailureKind.PROVIDER_CAPACITY,
+                exc,
+                category=category,
+            ) from exc
         except json.JSONDecodeError as exc:
             raise StructuredModelError("model endpoint returned invalid JSON") from exc
         if not isinstance(payload, dict):
@@ -1144,7 +1326,12 @@ def _raise_if_model_circuit_open(port: Any) -> None:
     if remaining <= 0:
         return
     kind = port.circuit_failure_kind or ProviderFailureKind.PROVIDER_CAPACITY
-    raise ProviderModelError(kind, retry_after_s=round(remaining, 3), circuit_open=True)
+    raise ProviderModelError(
+        kind,
+        retry_after_s=round(remaining, 3),
+        circuit_open=True,
+        error_category=ProviderTransportErrorCategory.LOCAL_CIRCUIT,
+    )
 
 
 def _trip_model_circuit(port: Any, error: ProviderModelError, config: ModelConfig) -> None:

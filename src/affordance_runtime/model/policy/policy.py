@@ -51,6 +51,9 @@ class ModelBackedAgentPolicy:
         transport_timeout = getattr(self.port, "transport_timeout_s", None)
         if transport_timeout is not None and transport_timeout >= self.call_timeout_s:
             raise ValueError("model transport timeout must be strictly below the policy deadline")
+        semantic_timeout_budget = getattr(self.port, "semantic_timeout_budget_s", None)
+        if semantic_timeout_budget is not None and semantic_timeout_budget >= self.call_timeout_s:
+            raise ValueError("model semantic timeout budget must be below the policy deadline")
 
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
@@ -58,10 +61,6 @@ class ModelBackedAgentPolicy:
             getattr(self.port, "supported_decisions", frozenset()),
             field_name="decision model port supported_decisions",
         )
-
-    @property
-    def supports_final_response(self) -> bool:
-        return bool(getattr(self.port, "supports_final_response", False))
 
     @property
     def last_metadata(self) -> ModelMetadata | None:

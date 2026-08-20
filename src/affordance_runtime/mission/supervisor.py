@@ -1,31 +1,34 @@
-"""Thin mission supervisor around the existing CoreAgentLoop episode."""
+"""Mechanical outer mission supervisor around the single CoreAgentLoop."""
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 
-from affordance_runtime.actions.schema_validation import validate_value
-from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus
+from affordance_runtime.agent.working_facts import (
+    MAX_WORKING_FACTS,
+    WorkingFact,
+    is_public_scalar,
+)
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
+from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.boundary import AuditBoundary
 from affordance_runtime.mission.contracts import (
-    AuditBundle,
-    AuditDelta,
-    AuditDeltaStatus,
-    AuditGuidance,
     AuditorPort,
     AuditorRoleRequest,
+    EvidenceBundle,
+    ManagerAssessment,
+    ManagerDecision,
     ManagerPort,
     ManagerRecoveryView,
+    ManagerRequestMode,
     ManagerRoleRequest,
     ManagerRoute,
     MissionOutcome,
@@ -57,6 +60,10 @@ class MissionRunResult:
     outcome: MissionOutcome = MissionOutcome.RUNNING
     manager_calls: int = 0
     auditor_calls: int = 0
+    finalizer_calls: int = 0
+    stop_send_calls: int = 0
+    post_stop_capture_calls: int = 0
+    native_evaluator_calls: int = 0
     boundary_rejections: int = 0
     user_question: str = ""
     finalization: EnvironmentFinalization | None = None
@@ -102,21 +109,13 @@ class MissionRunResult:
         return self.state.sent_unknown_count if self.state is not None else 0
 
 
-@dataclass(frozen=True)
-class _EpisodeAuditResult:
-    result: MissionRunResult
-    manager_recovery: ManagerRecoveryView | None = None
-
-
 class _EpisodeRoute(StrEnum):
-    """Total post-episode ownership decision; no route defaults to Auditor."""
-
     TASK_COMPLETE = "task_complete"
     TASK_BLOCKED = "task_blocked"
     RUNTIME_BLOCKED = "runtime_blocked"
     WAITING_USER = "waiting_user"
     CANCELLED = "cancelled"
-    READY_FOR_AUDIT = "ready_for_audit"
+    OUTCOME_PROPOSED = "outcome_proposed"
     MANAGER_RECOVERY = "manager_recovery"
     OPERATIONAL_FAILURE = "operational_failure"
     UNHANDLED = "unhandled"
@@ -125,9 +124,10 @@ class _EpisodeRoute(StrEnum):
 @dataclass(frozen=True)
 class MissionSupervisor:
     manager: ManagerPort
-    auditor: AuditorPort
+    auditor: AuditorPort | None = None
     boundary: AuditBoundary = AuditBoundary()
     max_rounds: int = 8
+    strict_verification: bool = False
     trace_sink: RunTraceSink = NullRunTraceSink()
 
     async def run(
@@ -138,603 +138,639 @@ class MissionSupervisor:
     ) -> MissionRunResult:
         runtime = _with_episode_monitor(runtime)
         mission = MissionState.empty()
-        supervisor = SupervisorState(
-            SupervisorPhase.MANAGER,
-            mission_round_budget=self.max_rounds,
-            opened_environment_ref=_environment_ref(environment),
-        )
         state: RunState | None = None
-        manager_calls = 0
-        auditor_calls = 0
-        boundary_rejections = 0
+        manager_calls = auditor_calls = boundary_rejections = 0
         acquisition = await environment.reset(task)
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            return MissionRunResult(
-                None,
+            return _result(
+                state,
                 mission,
-                supervisor,
                 MissionOutcome.TASK_BLOCKED,
-                manager_calls=manager_calls,
-                auditor_calls=auditor_calls,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
             )
         current_world = acquisition.observation
-        last_exit = "task_start"
-        last_ref = ""
-        manager_recovery: ManagerRecoveryView | None = None
-        for round_index in range(self.max_rounds):
-            remaining_budget = self.max_rounds - round_index
-            manager_request = ManagerRoleRequest(
-                task,
+        initial_request = ManagerRoleRequest(
+            mode=ManagerRequestMode.INITIAL_PLAN,
+            original_task=task,
+            mission_state=mission,
+            last_typed_exit="task_start",
+            remaining_rounds=self.max_rounds,
+            environment=project_mission_environment(current_world, ()),
+        )
+        initial = await self.manager.decide(initial_request)
+        manager_calls += 1
+        _record_role_invocation(
+            self.trace_sink,
+            "manager",
+            manager_calls,
+            initial_request,
+            initial,
+            trigger_kind="task_start",
+            subtask_id="",
+            mission_version=mission.version,
+        )
+        if initial.failure is not None or initial.output is None:
+            return _result(
+                state,
                 mission,
-                last_exit,
-                last_ref,
-                remaining_budget,
-                manager_recovery,
-                project_mission_environment(
-                    current_world,
-                    state.recent_steps if state is not None else (),
-                ),
+                MissionOutcome.MANAGER_FAILURE,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
             )
-            decision_result = await self.manager.decide(
-                manager_request
+        decision = initial.output
+        if decision.assessment is not ManagerAssessment.NOT_APPLICABLE:
+            return _result(
+                state,
+                mission,
+                MissionOutcome.MANAGER_FAILURE,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
             )
-            _record_role_invocation(self.trace_sink, "manager", manager_calls + 1, manager_request, decision_result)
-            manager_calls += 1
-            if decision_result.failure is not None:
-                supervisor = SupervisorState(
-                    SupervisorPhase.TERMINAL,
-                    last_typed_episode_exit="manager_failure",
-                    last_ref="manager_failure",
-                    mission_round_budget=self.max_rounds - round_index,
-                    opened_environment_ref=_environment_ref(environment),
-                )
-                return MissionRunResult(
-                    state,
-                    mission,
-                    supervisor,
-                    MissionOutcome.MANAGER_FAILURE,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                )
-            decision = decision_result.output
-            assert decision is not None
-            if _repeats_failed_strategy(decision, manager_recovery):
-                assert manager_recovery is not None
-                revision_request = replace(
-                    manager_request,
-                    recovery=replace(manager_recovery, strategy_revision_required=True),
-                )
-                decision_result = await self.manager.decide(revision_request)
-                _record_role_invocation(
-                    self.trace_sink,
-                    "manager",
-                    manager_calls + 1,
-                    revision_request,
-                    decision_result,
-                )
-                manager_calls += 1
-                if decision_result.failure is not None:
-                    supervisor = SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="manager_failure",
-                        last_ref="manager_failure",
-                        mission_round_budget=remaining_budget,
-                        opened_environment_ref=_environment_ref(environment),
-                    )
-                    return MissionRunResult(
-                        state,
-                        mission,
-                        supervisor,
-                        MissionOutcome.MANAGER_FAILURE,
-                        manager_calls=manager_calls,
-                        auditor_calls=auditor_calls,
-                        boundary_rejections=boundary_rejections,
-                    )
-                decision = decision_result.output
-                assert decision is not None
-                if _repeats_failed_strategy(decision, manager_recovery):
-                    if state is not None:
-                        state.status = RunStatus.BLOCKED
-                    supervisor = SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="blocked:strategy_not_changed",
-                        last_ref="strategy_not_changed",
-                        mission_round_budget=remaining_budget,
-                        opened_environment_ref=_environment_ref(environment),
-                    )
-                    return MissionRunResult(
-                        state,
-                        mission,
-                        supervisor,
-                        MissionOutcome.STRATEGY_NOT_CHANGED,
-                        manager_calls=manager_calls,
-                        auditor_calls=auditor_calls,
-                        boundary_rejections=boundary_rejections,
-                    )
-            manager_recovery = None
-            if decision.route is ManagerRoute.ASK_USER:
-                supervisor = SupervisorState(
-                    SupervisorPhase.WAITING_USER,
-                    last_typed_episode_exit="manager_ask_user",
-                    last_ref="manager_ask_user",
-                    mission_round_budget=self.max_rounds - round_index,
-                    opened_environment_ref=_environment_ref(environment),
-                )
-                return MissionRunResult(
-                    state,
-                    mission,
-                    supervisor,
-                    MissionOutcome.NEEDS_USER_INPUT,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                    user_question=decision.question,
-                )
-            if decision.route is ManagerRoute.BLOCKED:
-                supervisor = SupervisorState(
-                    SupervisorPhase.TERMINAL,
-                    last_typed_episode_exit="manager_blocked",
-                    last_ref="manager_blocked",
-                    mission_round_budget=self.max_rounds - round_index,
-                    opened_environment_ref=_environment_ref(environment),
-                )
-                return MissionRunResult(
-                    state,
-                    mission,
-                    supervisor,
-                    MissionOutcome.BLOCKED,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                )
-            if decision.route is ManagerRoute.REQUEST_FINAL_AUDIT:
-                final = await self._finalize_if_ready(runtime, environment, task, state, mission)
-                auditor_calls += final.auditor_calls
-                boundary_rejections += final.boundary_rejections
-                if final.outcome is MissionOutcome.FINAL_AUDIT_NOT_READY and remaining_budget > 1:
-                    mission = final.mission_state
-                    if final.state is not None:
-                        state = final.state
-                        current_world = final.state.current_world
-                    last_exit = "final_audit:not_ready"
-                    last_ref = final.supervisor_state.last_ref
-                    continue
-                final_outcome = (
-                    MissionOutcome.ROUND_BUDGET_EXHAUSTED
-                    if final.outcome is MissionOutcome.FINAL_AUDIT_NOT_READY
-                    else final.outcome
-                )
-                supervisor = SupervisorState(
-                    SupervisorPhase.TERMINAL,
-                    last_typed_episode_exit=final_outcome.value,
-                    last_ref=final.supervisor_state.last_ref or "final_response",
-                    mission_round_budget=self.max_rounds - round_index,
-                    final_response_delivered=(
-                        final.finalization is not None
-                        and final.finalization.result.dispatch_status is not DispatchStatus.NOT_SENT
-                    ),
-                    opened_environment_ref=_environment_ref(environment),
-                )
-                return MissionRunResult(
-                    final.state,
-                    final.mission_state,
-                    supervisor,
-                    final_outcome,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                    finalization=final.finalization,
-                )
-            assert decision.subtask is not None
+        terminal = _non_execution_manager_result(
+            decision,
+            state,
+            mission,
+            manager_calls,
+            auditor_calls,
+            boundary_rejections,
+        )
+        if terminal is not None:
+            return terminal
+        assert decision.subtask is not None
+        active_subtask = decision.subtask
+
+        for round_index in range(self.max_rounds):
             episode_start_world = current_world
             state = await runtime.initialize_from_world(
                 task,
                 current_world,
-                subtask_goal_resolution(task, decision.subtask),
-                max_turns=decision.subtask.episode_turn_budget,
+                subtask_goal_resolution(task, active_subtask),
+                max_turns=active_subtask.episode_turn_budget,
                 yield_on_budget_exhaustion=True,
-                working_facts=mission.carry_working_facts(decision.subtask.relevant_fact_keys),
+                working_facts=mission.carry_working_facts(active_subtask.relevant_fact_keys),
             )
             state = await runtime.continue_task(environment, task, state)
-            episode_route = _episode_route(state)
-            if episode_route is _EpisodeRoute.TASK_COMPLETE:
+            route = _episode_route(state)
+            if route is _EpisodeRoute.TASK_COMPLETE:
                 state.status = RunStatus.DONE
-                return MissionRunResult(
+                return _result(
                     state,
                     mission,
-                    SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="task_evaluator:complete",
-                        last_ref="task_evaluator:complete",
-                    ),
                     MissionOutcome.TASK_COMPLETE,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-            if episode_route is _EpisodeRoute.TASK_BLOCKED:
+            if route in {_EpisodeRoute.TASK_BLOCKED, _EpisodeRoute.RUNTIME_BLOCKED}:
                 state.status = RunStatus.BLOCKED
-                return MissionRunResult(
+                return _result(
                     state,
                     mission,
-                    SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="task_evaluator:blocked",
-                        last_ref="task_evaluator:blocked",
-                    ),
                     MissionOutcome.TASK_BLOCKED,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-            if episode_route is _EpisodeRoute.RUNTIME_BLOCKED:
-                return MissionRunResult(
+            if route is _EpisodeRoute.CANCELLED:
+                return _result(
                     state,
                     mission,
-                    SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="runtime_blocked",
-                        last_ref="runtime_blocked",
-                    ),
-                    MissionOutcome.BLOCKED,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                )
-            if episode_route is _EpisodeRoute.CANCELLED:
-                return MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.TERMINAL),
                     MissionOutcome.CANCELLED,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-            if episode_route is _EpisodeRoute.WAITING_USER:
-                return MissionRunResult(
+            if route is _EpisodeRoute.WAITING_USER:
+                return _result(
                     state,
                     mission,
-                    SupervisorState(SupervisorPhase.EXECUTING, decision.subtask),
                     MissionOutcome.NEEDS_USER_INPUT,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-            if (
-                state.yield_reason is EpisodeYieldReason.REPEATED_FAILURE_LIMIT
-                and last_exit == f"episode:yielded:{EpisodeYieldReason.REPEATED_FAILURE_LIMIT.value}"
-            ):
-                state.status = RunStatus.BLOCKED
-                supervisor = SupervisorState(
-                    SupervisorPhase.TERMINAL,
-                    last_typed_episode_exit=EpisodeYieldReason.REPEATED_FAILURE_LIMIT.value,
-                    last_ref=EpisodeYieldReason.REPEATED_FAILURE_LIMIT.value,
-                    mission_round_budget=self.max_rounds - round_index,
-                    opened_environment_ref=_environment_ref(environment),
-                )
-                return MissionRunResult(
-                    state,
-                    mission,
-                    supervisor,
-                    MissionOutcome.BLOCKED,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                )
-            current_world = state.current_world
-            if episode_route is _EpisodeRoute.OPERATIONAL_FAILURE:
-                return MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="operational_failure",
-                        last_ref=_operational_failure_ref(state),
-                        mission_round_budget=remaining_budget,
-                        opened_environment_ref=_environment_ref(environment),
-                    ),
-                    MissionOutcome.OPERATIONAL_FAILURE,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                )
-            if episode_route is _EpisodeRoute.UNHANDLED:
+            if route is _EpisodeRoute.UNHANDLED:
                 state.status = RunStatus.FAILED
-                return MissionRunResult(
+                return _result(
                     state,
                     mission,
-                    SupervisorState(
-                        SupervisorPhase.TERMINAL,
-                        last_typed_episode_exit="unhandled_episode_state",
-                        last_ref=f"{state.status.value}:{state.yield_reason or 'none'}",
-                        mission_round_budget=remaining_budget,
-                        opened_environment_ref=_environment_ref(environment),
-                    ),
                     MissionOutcome.UNHANDLED_EPISODE_STATE,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-            if episode_route is _EpisodeRoute.MANAGER_RECOVERY:
-                manager_recovery = _episode_recovery_view(
+
+            review_capture = await environment.capture(
+                WorldObservationRequest(
+                    ObservationRequestKind.POLICY_REQUEST,
+                    "fresh ManagerReview evidence",
+                )
+            )
+            if (
+                review_capture.status is not AcquisitionStatus.ACQUIRED
+                or review_capture.observation is None
+            ):
+                state.status = RunStatus.FAILED
+                return _result(
                     state,
-                    decision.subtask,
-                    episode_start_world,
+                    mission,
+                    MissionOutcome.OPERATIONAL_FAILURE,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-                assert state.yield_reason is not None
-                last_exit = f"episode:{state.status.value}:{state.yield_reason.value}"
-                last_ref = state.yield_reason.value
-                continue
-            if episode_route is not _EpisodeRoute.READY_FOR_AUDIT:
-                raise AssertionError("post-episode routing must be total")
-            episode_audit = await self._audit_episode(
-                environment,
-                task,
-                decision.subtask,
-                mission,
+            current_world = review_capture.observation
+            state.current_world = current_world
+            evidence = EvidenceBundle.from_world(current_world)
+            recovery = _review_recovery_view(
+                route,
                 state,
+                active_subtask,
                 episode_start_world,
             )
-            audit_result = episode_audit.result
-            auditor_calls += audit_result.auditor_calls
-            boundary_rejections += audit_result.boundary_rejections
-            if audit_result.outcome in {
-                MissionOutcome.TASK_COMPLETE,
-                MissionOutcome.TASK_BLOCKED,
-                MissionOutcome.AUDITOR_FAILURE,
-                MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
-                MissionOutcome.AUDITOR_PROVIDER_FAILURE,
-                MissionOutcome.AUDITOR_SCHEMA_FAILURE,
-            }:
-                return MissionRunResult(
-                    audit_result.state,
-                    audit_result.mission_state,
-                    audit_result.supervisor_state,
-                    audit_result.outcome,
-                    manager_calls=manager_calls,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
+            review_request = ManagerRoleRequest(
+                mode=ManagerRequestMode.REVIEW_AND_ROUTE,
+                original_task=task,
+                mission_state=mission,
+                last_typed_exit=recovery.exit_kind,
+                last_audit_or_failure_ref=_review_failure_ref(route, state),
+                remaining_rounds=self.max_rounds - round_index,
+                recovery=recovery,
+                environment=project_mission_environment(current_world, state.recent_steps),
+                active_subtask=active_subtask,
+                review_world=current_world,
+                evidence_bundle=evidence,
+                candidate_output_keys=active_subtask.candidate_output_keys,
+            )
+            review = await self.manager.decide(review_request)
+            manager_calls += 1
+            _record_role_invocation(
+                self.trace_sink,
+                "manager",
+                manager_calls,
+                review_request,
+                review,
+                trigger_kind=_review_trigger(route, state),
+                subtask_id=_subtask_id(active_subtask),
+                mission_version=mission.version,
+            )
+            if review.failure is not None or review.output is None:
+                return _result(
+                    state,
+                    mission,
+                    MissionOutcome.MANAGER_FAILURE,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
                 )
-            mission = audit_result.mission_state
-            current_world = audit_result.state.current_world if audit_result.state is not None else current_world
-            last_exit = _audit_manager_signal(audit_result, state)
-            last_ref = audit_result.supervisor_state.last_ref
-            manager_recovery = episode_audit.manager_recovery
-        return MissionRunResult(
+            decision = review.output
+            if any(evidence.resolve(ref) is None for ref in decision.evidence_refs):
+                boundary_rejections += 1
+                return _result(
+                    state,
+                    mission,
+                    MissionOutcome.BOUNDARY_REJECTED,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
+                )
+            if (
+                decision.route is ManagerRoute.EXECUTE_SUBTASK
+                and _failed_or_stalled(route)
+                and _repeats_failed_strategy(decision, recovery)
+            ):
+                state.status = RunStatus.BLOCKED
+                return _result(
+                    state,
+                    mission,
+                    MissionOutcome.STRATEGY_NOT_CHANGED,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
+                )
+
+            if self.strict_verification and active_subtask.related_audit_ids:
+                if self.auditor is None:
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.AUDITOR_FAILURE,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
+                audit_request = AuditorRoleRequest.from_authorities(
+                    task,
+                    active_subtask,
+                    mission,
+                    current_world,
+                    state.working_facts,
+                    "outcome_proposed",
+                    (),
+                    evidence,
+                    active_subtask.related_audit_ids,
+                )
+                audit = await self.auditor.audit(audit_request)
+                auditor_calls += 1
+                _record_role_invocation(
+                    self.trace_sink,
+                    "auditor",
+                    auditor_calls,
+                    audit_request,
+                    audit,
+                    trigger_kind="strict_exceptional_claim",
+                    subtask_id=_subtask_id(active_subtask),
+                    mission_version=mission.version,
+                )
+                if (
+                    audit.failure is not None
+                    or audit.output is None
+                    or audit.output.assessment is not ManagerAssessment.SATISFIED
+                ):
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.AUDITOR_FAILURE,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
+
+            proposal = decision.state_proposal(mission.version)
+            if proposal is not None:
+                admitted = self.boundary.accept(mission, proposal, evidence)
+                if not admitted.accepted:
+                    boundary_rejections += 1
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.BOUNDARY_REJECTED,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
+                mission = admitted.mission_state
+
+            if decision.route is ManagerRoute.REQUEST_FINALIZATION:
+                if (
+                    decision.assessment is not ManagerAssessment.SATISFIED
+                    or not decision.evidence_refs
+                ):
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.FINALIZATION_NOT_READY,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
+                return await self._finalize(
+                    runtime,
+                    environment,
+                    task,
+                    state,
+                    mission,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
+                    tuple(
+                        record
+                        for evidence_ref in decision.evidence_refs
+                        if (record := evidence.resolve(evidence_ref)) is not None
+                    ),
+                )
+            terminal = _non_execution_manager_result(
+                decision,
+                state,
+                mission,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
+            )
+            if terminal is not None:
+                return terminal
+            assert decision.subtask is not None
+            active_subtask = decision.subtask
+
+        state.status = RunStatus.BLOCKED
+        return _result(
             state,
             mission,
-            SupervisorState(SupervisorPhase.TERMINAL),
             MissionOutcome.ROUND_BUDGET_EXHAUSTED,
-            manager_calls=manager_calls,
-            auditor_calls=auditor_calls,
-            boundary_rejections=boundary_rejections,
+            manager_calls,
+            auditor_calls,
+            boundary_rejections,
         )
 
-    async def _audit_episode(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        subtask: SubtaskContract,
-        mission: MissionState,
-        state: RunState,
-        episode_start_world: WorldObservation,
-    ) -> _EpisodeAuditResult:
-        if (
-            state.status is not RunStatus.YIELDED
-            or state.yield_reason is not EpisodeYieldReason.READY_FOR_AUDIT
-        ):
-            raise ValueError("episode Auditor requires explicit ready_for_audit")
-        acquisition = await environment.capture(WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh audit capture"))
-        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            return _EpisodeAuditResult(
-                MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.MANAGER, last_ref=f"audit_capture:{acquisition.status.value}"),
-                    _audit_capture_failure_outcome(acquisition.status),
-                )
-            )
-        state.current_world = acquisition.observation
-        bundle = AuditBundle.from_world(state.current_world)
-        request = AuditorRoleRequest.from_authorities(
-            task,
-            subtask,
-            mission,
-            state.current_world,
-            state.working_facts,
-            state.yield_reason.value if state.yield_reason else "unknown",
-            state.recent_steps,
-            bundle,
-            subtask.related_audit_ids,
-        )
-        result = await self.auditor.audit(request)
-        _record_role_invocation(self.trace_sink, "auditor", 1, request, result)
-        if result.failure is not None:
-            outcome = _auditor_failure_outcome(result.failure)
-            return _EpisodeAuditResult(
-                MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.TERMINAL, last_ref=outcome.value),
-                    outcome,
-                    auditor_calls=1,
-                )
-            )
-        delta = result.output
-        assert delta is not None
-        calls = 1
-        if delta.status is AuditDeltaStatus.UNKNOWN and delta.missing_evidence:
-            guidance = _audit_guidance(delta)
-            return _EpisodeAuditResult(
-                MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.MANAGER, last_ref="evidence_gap"),
-                    MissionOutcome.EVIDENCE_GAP,
-                    auditor_calls=1,
-                ),
-                ManagerRecoveryView(
-                    "audit:evidence_gap",
-                    _world_changed(episode_start_world, state.current_world),
-                    subtask,
-                    recovery_signal=state.recovery_signal,
-                    attempted_modes=_episode_attempted_modes(state),
-                    audit_guidance=guidance,
-                ),
-            )
-        accepted = self.boundary.accept(mission, delta, bundle)
-        return _EpisodeAuditResult(
-            MissionRunResult(
-                state,
-                accepted.mission_state,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "audit_accepted"),
-                MissionOutcome.BOUNDARY_REJECTED if not accepted.accepted else MissionOutcome.RUNNING,
-                auditor_calls=calls,
-                boundary_rejections=int(not accepted.accepted),
-            )
-        )
-
-    async def _finalize_if_ready(
+    async def _finalize(
         self,
         runtime,
         environment: WorldEnvironment,
         task: TaskGoal,
-        state: RunState | None,
+        state: RunState,
         mission: MissionState,
+        manager_calls: int,
+        auditor_calls: int,
+        boundary_rejections: int,
+        manager_candidate_records: tuple[EvidenceRecord, ...],
     ) -> MissionRunResult:
-        if state is None or not getattr(environment, "supports_finalization", False):
-            return MissionRunResult(
+        if not getattr(environment, "supports_finalization", False):
+            return _result(
                 state,
                 mission,
-                SupervisorState(SupervisorPhase.TERMINAL),
-                MissionOutcome.FINAL_AUDIT_NOT_READY,
+                MissionOutcome.FINALIZATION_NOT_READY,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
             )
         acquisition = await environment.capture(
-            WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, "fresh final audit capture")
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "fresh final-response evidence",
+            )
         )
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            return MissionRunResult(
+            state.status = RunStatus.FAILED
+            return _result(
                 state,
                 mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref=f"final_audit_capture:{acquisition.status.value}"),
-                MissionOutcome.FINAL_AUDIT_NOT_READY,
+                MissionOutcome.FINALIZATION_NOT_READY,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
             )
         state.current_world = acquisition.observation
-        bundle = AuditBundle.from_world(state.current_world)
+        final_evidence = EvidenceBundle.from_world(state.current_world)
+        final_working_facts = _current_finalization_facts(
+            manager_candidate_records,
+            mission.finalization_working_facts(),
+            final_evidence,
+        )
+        if not final_working_facts:
+            return _result(
+                state,
+                mission,
+                MissionOutcome.FINALIZATION_NOT_READY,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
+            )
         final_contract = SubtaskContract(
-            "Audit whether the mission is ready for the single final response.",
-            "Accepted mission state and current public evidence support sending the final response.",
+            "Format the single final response from admitted current candidate evidence.",
+            "Exactly one submit_final_response call matches the public response schema.",
             relevant_fact_keys=tuple(item.key for item in mission.accepted_facts),
             candidate_output_keys=("final_response",),
+            episode_turn_budget=1,
         )
-        auditor_calls = 0
-        boundary_rejections = 0
-        if not _accepted_facts_resolve_in_bundle(mission, bundle):
-            audit_request = AuditorRoleRequest.from_authorities(
-                task,
-                final_contract,
-                mission,
-                state.current_world,
-                state.working_facts,
-                "request_final_audit",
-                (),
-                bundle,
-            )
-            audit = await self.auditor.audit(audit_request)
-            auditor_calls = 1
-            _record_role_invocation(self.trace_sink, "auditor", 1, audit_request, audit)
-            if audit.failure is not None or audit.output is None:
-                outcome = _auditor_failure_outcome(audit.failure)
-                return MissionRunResult(
-                    state,
-                    mission,
-                    SupervisorState(SupervisorPhase.MANAGER, last_ref=outcome.value),
-                    outcome,
-                    auditor_calls=auditor_calls,
-                )
-            accepted = self.boundary.accept(mission, audit.output, bundle)
-            if (
-                not accepted.accepted
-                or audit.output.status is not AuditDeltaStatus.AUDITED_SATISFIED
-            ):
-                boundary_rejections = int(not accepted.accepted)
-                return MissionRunResult(
-                    state,
-                    accepted.mission_state,
-                    SupervisorState(SupervisorPhase.MANAGER, last_ref=accepted.reason_code or "final_audit_not_ready"),
-                    MissionOutcome.FINAL_AUDIT_NOT_READY,
-                    auditor_calls=auditor_calls,
-                    boundary_rejections=boundary_rejections,
-                )
-            mission = accepted.mission_state
-        finalizing_runtime = runtime.with_runtime_controls(("final_response",), episode_monitor=None)
+        finalizing_runtime = runtime.with_runtime_controls(
+            ("submit_final_response",),
+            episode_monitor=None,
+        )
         final_state = await finalizing_runtime.initialize_from_world(
             task,
             state.current_world,
             subtask_goal_resolution(task, final_contract),
             max_turns=1,
             yield_on_budget_exhaustion=False,
-            working_facts=mission.carry_working_facts(final_contract.relevant_fact_keys),
+            working_facts=final_working_facts,
         )
         final_state = await finalizing_runtime.continue_task(environment, task, final_state)
-        if not isinstance(final_state.last_step.decision if final_state.last_step is not None else None, FinalResponse):
-            return MissionRunResult(
+        _record_role_invocation(
+            self.trace_sink,
+            "finalizer",
+            1,
+            {"runtime_control": "submit_final_response"},
+            {"decision": final_state.last_step.decision if final_state.last_step else None},
+            trigger_kind="request_finalization",
+            subtask_id="final_response",
+            mission_version=mission.version,
+        )
+        decision = final_state.last_step.decision if final_state.last_step is not None else None
+        if not isinstance(decision, FinalResponse):
+            final_state.status = RunStatus.FAILED
+            _record_finalization_protocol(self.trace_sink, 0, 0, 0, "not_sent")
+            return _result(
                 final_state,
                 mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref="final_response_not_produced"),
-                MissionOutcome.FINAL_AUDIT_NOT_READY,
-                auditor_calls=auditor_calls,
-                boundary_rejections=boundary_rejections,
+                MissionOutcome.FINALIZATION_NOT_READY,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
+                finalizer_calls=1,
+                stop_send_calls=0,
             )
-        response = final_state.last_step.decision
-        content, valid = _public_final_response_content(response.content, task)
-        if not valid:
-            return MissionRunResult(
-                final_state,
-                mission,
-                SupervisorState(SupervisorPhase.MANAGER, last_ref="final_response_contract_invalid"),
-                MissionOutcome.FINAL_AUDIT_NOT_READY,
-                auditor_calls=auditor_calls,
-                boundary_rejections=boundary_rejections,
+        finalization = await environment.finalize(decision.content)
+        delivered = finalization.result.dispatch_status is not DispatchStatus.NOT_SENT
+        if not delivered or finalization.post_acquisition is None:
+            final_state.status = RunStatus.FAILED
+            _record_finalization_protocol(
+                self.trace_sink,
+                1,
+                int(finalization.post_acquisition is not None),
+                0,
+                finalization.result.dispatch_status.value,
             )
-        finalization = await environment.finalize(content)
-        if (
-            finalization.result.dispatch_status is DispatchStatus.NOT_SENT
-            or finalization.post_acquisition is None
-        ):
-            return MissionRunResult(
+            return _result(
                 final_state,
                 mission,
-                SupervisorState(SupervisorPhase.TERMINAL),
                 MissionOutcome.FINALIZED,
-                auditor_calls=auditor_calls,
-                boundary_rejections=boundary_rejections,
+                manager_calls,
+                auditor_calls,
+                boundary_rejections,
+                finalizer_calls=1,
+                stop_send_calls=1,
+                post_stop_capture_calls=int(finalization.post_acquisition is not None),
+                delivered=delivered,
                 finalization=finalization,
             )
         post = finalization.post_acquisition
-        if post.status is AcquisitionStatus.ACQUIRED and post.observation is not None:
+        if post.status is not AcquisitionStatus.ACQUIRED or post.observation is None:
+            final_state.status = RunStatus.FAILED
+        else:
             final_state.current_world = post.observation
-            final_state.current_task_evaluation = await runtime.task_evaluator.evaluate(task, post.observation)
-            final_state.status = _status_for_terminal_evaluation(final_state.current_task_evaluation.status)
-        return MissionRunResult(
+            final_state.current_task_evaluation = await runtime.task_evaluator.evaluate(
+                task, post.observation
+            )
+            final_state.status = _status_for_terminal_evaluation(
+                final_state.current_task_evaluation.status
+            )
+        _record_finalization_protocol(
+            self.trace_sink,
+            1,
+            1,
+            int(post.status is AcquisitionStatus.ACQUIRED and post.observation is not None),
+            finalization.result.dispatch_status.value,
+        )
+        return _result(
             final_state,
             mission,
-            SupervisorState(SupervisorPhase.TERMINAL),
             MissionOutcome.FINALIZED,
-            auditor_calls=auditor_calls,
-            boundary_rejections=boundary_rejections,
+            manager_calls,
+            auditor_calls,
+            boundary_rejections,
+            finalizer_calls=1,
+            stop_send_calls=1,
+            post_stop_capture_calls=1,
+            native_evaluator_calls=int(
+                post.status is AcquisitionStatus.ACQUIRED
+                and post.observation is not None
+            ),
+            delivered=delivered,
             finalization=finalization,
         )
 
 
-def _status_for_terminal_evaluation(status: TaskEvaluationStatus) -> RunStatus:
-    if status is TaskEvaluationStatus.COMPLETE:
-        return RunStatus.DONE
-    if status is TaskEvaluationStatus.BLOCKED:
-        return RunStatus.BLOCKED
-    return RunStatus.RUNNING
+def _result(
+    state: RunState | None,
+    mission: MissionState,
+    outcome: MissionOutcome,
+    manager_calls: int,
+    auditor_calls: int,
+    boundary_rejections: int,
+    *,
+    finalizer_calls: int = 0,
+    stop_send_calls: int = 0,
+    post_stop_capture_calls: int = 0,
+    native_evaluator_calls: int = 0,
+    delivered: bool = False,
+    finalization: EnvironmentFinalization | None = None,
+    user_question: str = "",
+) -> MissionRunResult:
+    phase = SupervisorPhase.TERMINAL
+    if outcome is MissionOutcome.NEEDS_USER_INPUT:
+        phase = SupervisorPhase.WAITING_USER
+    return MissionRunResult(
+        state,
+        mission,
+        SupervisorState(
+            phase,
+            last_typed_episode_exit=outcome.value,
+            last_ref=outcome.value,
+            final_response_delivered=delivered,
+        ),
+        outcome,
+        manager_calls,
+        auditor_calls,
+        finalizer_calls,
+        stop_send_calls,
+        post_stop_capture_calls,
+        native_evaluator_calls,
+        boundary_rejections,
+        user_question,
+        finalization,
+    )
+
+
+def _non_execution_manager_result(
+    decision: ManagerDecision,
+    state: RunState | None,
+    mission: MissionState,
+    manager_calls: int,
+    auditor_calls: int,
+    boundary_rejections: int,
+) -> MissionRunResult | None:
+    if decision.route is ManagerRoute.ASK_USER:
+        return _result(
+            state,
+            mission,
+            MissionOutcome.NEEDS_USER_INPUT,
+            manager_calls,
+            auditor_calls,
+            boundary_rejections,
+            user_question=decision.question,
+        )
+    if decision.route is ManagerRoute.BLOCKED:
+        if state is not None:
+            state.status = RunStatus.BLOCKED
+        return _result(
+            state,
+            mission,
+            MissionOutcome.BLOCKED,
+            manager_calls,
+            auditor_calls,
+            boundary_rejections,
+        )
+    if decision.route is ManagerRoute.REQUEST_FINALIZATION:
+        return _result(
+            state,
+            mission,
+            MissionOutcome.FINALIZATION_NOT_READY,
+            manager_calls,
+            auditor_calls,
+            boundary_rejections,
+        )
+    return None
+
+
+def _episode_route(state: RunState) -> _EpisodeRoute:
+    evaluation = state.current_task_evaluation.status
+    if evaluation is TaskEvaluationStatus.COMPLETE:
+        return _EpisodeRoute.TASK_COMPLETE
+    if evaluation is TaskEvaluationStatus.BLOCKED:
+        return _EpisodeRoute.TASK_BLOCKED
+    if state.status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
+        return _EpisodeRoute.WAITING_USER
+    if state.status is RunStatus.CANCELLED:
+        return _EpisodeRoute.CANCELLED
+    if state.status is RunStatus.BLOCKED:
+        return _EpisodeRoute.RUNTIME_BLOCKED
+    if state.status is RunStatus.FAILED:
+        return _EpisodeRoute.OPERATIONAL_FAILURE
+    if state.status is RunStatus.YIELDED:
+        if state.yield_reason is EpisodeYieldReason.OUTCOME_PROPOSED:
+            return _EpisodeRoute.OUTCOME_PROPOSED
+        if state.yield_reason is not None:
+            return _EpisodeRoute.MANAGER_RECOVERY
+    return _EpisodeRoute.UNHANDLED
+
+
+def _review_recovery_view(
+    route: _EpisodeRoute,
+    state: RunState,
+    subtask: SubtaskContract,
+    episode_start_world: WorldObservation,
+) -> ManagerRecoveryView:
+    exit_kind = (
+        state.yield_reason.value
+        if state.yield_reason is not None
+        else route.value
+    )
+    return ManagerRecoveryView(
+        exit_kind,
+        _world_changed(episode_start_world, state.current_world),
+        subtask,
+        recovery_signal=state.recovery_signal,
+        attempted_modes=_episode_attempted_modes(state),
+    )
+
+
+def _review_trigger(route: _EpisodeRoute, state: RunState) -> str:
+    if route is _EpisodeRoute.OUTCOME_PROPOSED:
+        return "outcome_proposed"
+    if route is _EpisodeRoute.OPERATIONAL_FAILURE:
+        return "failed_subtask"
+    if state.yield_reason is EpisodeYieldReason.BUDGET:
+        return "subtask_budget_exhausted"
+    return "typed_stall_or_gap"
+
+
+def _review_failure_ref(route: _EpisodeRoute, state: RunState) -> str:
+    if route is _EpisodeRoute.OPERATIONAL_FAILURE:
+        if state.runtime_failure is not None:
+            return state.runtime_failure.code
+        if state.policy_failure is not None:
+            return state.policy_failure.kind.value
+        if state.failure_code is not None:
+            return state.failure_code.value
+    return state.yield_reason.value if state.yield_reason is not None else route.value
+
+
+def _failed_or_stalled(route: _EpisodeRoute) -> bool:
+    return route in {_EpisodeRoute.MANAGER_RECOVERY, _EpisodeRoute.OPERATIONAL_FAILURE}
 
 
 _MONITOR_EVENT_NAMES = frozenset(
@@ -751,43 +787,6 @@ _MONITOR_EVENT_NAMES = frozenset(
 )
 
 
-def _episode_route(state: RunState) -> _EpisodeRoute:
-    evaluation = state.current_task_evaluation.status
-    if evaluation is TaskEvaluationStatus.COMPLETE:
-        return _EpisodeRoute.TASK_COMPLETE
-    if evaluation is TaskEvaluationStatus.BLOCKED:
-        return _EpisodeRoute.TASK_BLOCKED
-    if state.status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
-        return _EpisodeRoute.WAITING_USER
-    if state.status is RunStatus.CANCELLED:
-        return _EpisodeRoute.CANCELLED
-    if state.status is RunStatus.FAILED:
-        return _EpisodeRoute.OPERATIONAL_FAILURE
-    if state.status is RunStatus.BLOCKED:
-        return _EpisodeRoute.RUNTIME_BLOCKED
-    if state.status is RunStatus.YIELDED:
-        if state.yield_reason is EpisodeYieldReason.READY_FOR_AUDIT:
-            return _EpisodeRoute.READY_FOR_AUDIT
-        if state.yield_reason is not None:
-            return _EpisodeRoute.MANAGER_RECOVERY
-    return _EpisodeRoute.UNHANDLED
-
-
-def _episode_recovery_view(
-    state: RunState,
-    prior_subtask: SubtaskContract,
-    episode_start_world: WorldObservation,
-) -> ManagerRecoveryView:
-    assert state.yield_reason is not None
-    return ManagerRecoveryView(
-        state.yield_reason.value,
-        _world_changed(episode_start_world, state.current_world),
-        prior_subtask,
-        recovery_signal=state.recovery_signal,
-        attempted_modes=_episode_attempted_modes(state),
-    )
-
-
 def _episode_attempted_modes(state: RunState) -> tuple[str, ...]:
     modes = [
         item.semantic_action
@@ -795,7 +794,11 @@ def _episode_attempted_modes(state: RunState) -> tuple[str, ...]:
         if item.semantic_action and item.semantic_action not in _MONITOR_EVENT_NAMES
     ]
     if state.recovery_signal is not None:
-        modes.extend(item for item in state.recovery_signal.attempted_modes if item not in _MONITOR_EVENT_NAMES)
+        modes.extend(
+            item
+            for item in state.recovery_signal.attempted_modes
+            if item not in _MONITOR_EVENT_NAMES
+        )
     return tuple(dict.fromkeys(modes))[:32]
 
 
@@ -803,32 +806,19 @@ def _world_changed(before: WorldObservation, after: WorldObservation) -> bool:
     return public_world_semantic_digest(before) != public_world_semantic_digest(after)
 
 
-def _audit_guidance(delta: AuditDelta) -> AuditGuidance:
-    return AuditGuidance(delta.missing_evidence, delta.recovery_hint)
-
-
-def _operational_failure_ref(state: RunState) -> str:
-    if state.runtime_failure is not None:
-        return state.runtime_failure.code
-    if state.policy_failure is not None:
-        return state.policy_failure.kind.value
-    if state.failure_code is not None:
-        return state.failure_code.value
-    return "operational_failure"
-
-
 def _repeats_failed_strategy(
-    decision,
+    decision: ManagerDecision,
     recovery: ManagerRecoveryView | None,
 ) -> bool:
     if (
         recovery is None
-        or recovery.world_changed
         or decision.route is not ManagerRoute.EXECUTE_SUBTASK
         or decision.subtask is None
     ):
         return False
-    return _subtask_strategy(decision.subtask) == _subtask_strategy(recovery.prior_subtask)
+    return _subtask_strategy(decision.subtask) == _subtask_strategy(
+        recovery.prior_subtask
+    )
 
 
 def _subtask_strategy(subtask: SubtaskContract) -> tuple[object, ...]:
@@ -841,147 +831,101 @@ def _subtask_strategy(subtask: SubtaskContract) -> tuple[object, ...]:
     )
 
 
-def _run_status_for_mission_outcome(outcome: MissionOutcome, state: RunState | None) -> RunStatus:
+def _current_finalization_facts(
+    manager_records: tuple[EvidenceRecord, ...],
+    admitted_facts: tuple[WorkingFact, ...],
+    current_bundle: EvidenceBundle,
+) -> tuple[WorkingFact, ...]:
+    """Re-resolve final candidates against the post-review fresh observation."""
+
+    facts: list[WorkingFact] = []
+    seen: set[tuple[object, ...]] = set()
+    candidates = (
+        *(
+            (f"manager_candidate_{index}", record, "ManagerReview cited candidate evidence")
+            for index, record in enumerate(manager_records, start=1)
+        ),
+        *((item.key, item.record, item.purpose) for item in admitted_facts),
+    )
+    for key, prior, purpose in candidates:
+        identity = _evidence_value_identity(prior)
+        if identity in seen:
+            continue
+        current = next(
+            (
+                record
+                for record in current_bundle.evidence_records
+                if _current_public_fact(record, current_bundle)
+                and _evidence_value_identity(record) == identity
+            ),
+            None,
+        )
+        if current is None:
+            continue
+        seen.add(identity)
+        facts.append(WorkingFact(key, current, 0, purpose))
+        if len(facts) == MAX_WORKING_FACTS:
+            break
+    return tuple(facts)
+
+
+def _evidence_value_identity(record: EvidenceRecord) -> tuple[object, ...]:
+    stable_source = (
+        "" if record.source_id == record.source_observation_id else record.source_id
+    )
+    return (
+        record.kind,
+        stable_source,
+        record.source_modality,
+        record.source_assurance,
+        record.subject_id,
+        record.predicate,
+        to_json_compatible(record.value),
+        record.artifact_kind,
+        record.output_id,
+        record.public_summary,
+    )
+
+
+def _current_public_fact(record: EvidenceRecord, bundle: EvidenceBundle) -> bool:
+    return bool(
+        record.kind == "fact"
+        and is_public_scalar(record.value)
+        and record.observation_id == bundle.observation_id
+        and record.source_observation_id in set(bundle.source_observation_ids)
+        and record.has_typed_source
+        and bundle.source_coverages.get(record.source_observation_id, "") != "stale"
+    )
+
+
+def _status_for_terminal_evaluation(status: TaskEvaluationStatus) -> RunStatus:
+    if status is TaskEvaluationStatus.COMPLETE:
+        return RunStatus.DONE
+    if status is TaskEvaluationStatus.BLOCKED:
+        return RunStatus.BLOCKED
+    return RunStatus.FAILED
+
+
+def _run_status_for_mission_outcome(
+    outcome: MissionOutcome,
+    state: RunState | None,
+) -> RunStatus:
     if outcome is MissionOutcome.FINALIZED:
-        evaluation = state.current_task_evaluation if state is not None else None
-        if evaluation is None:
-            return RunStatus.FAILED
-        if evaluation.status is TaskEvaluationStatus.COMPLETE:
-            return RunStatus.DONE
-        if evaluation.status is TaskEvaluationStatus.BLOCKED:
-            return RunStatus.BLOCKED
-        return RunStatus.FAILED
+        return state.status if state is not None else RunStatus.FAILED
     mapping = {
         MissionOutcome.RUNNING: RunStatus.RUNNING,
         MissionOutcome.NEEDS_USER_INPUT: RunStatus.WAITING_USER,
         MissionOutcome.BLOCKED: RunStatus.BLOCKED,
-        MissionOutcome.MANAGER_FAILURE: RunStatus.FAILED,
-        MissionOutcome.AUDITOR_FAILURE: RunStatus.FAILED,
-        MissionOutcome.AUDITOR_CONTEXT_CAPACITY: RunStatus.FAILED,
-        MissionOutcome.AUDITOR_PROVIDER_FAILURE: RunStatus.FAILED,
-        MissionOutcome.AUDITOR_SCHEMA_FAILURE: RunStatus.FAILED,
-        MissionOutcome.BOUNDARY_REJECTED: RunStatus.RUNNING,
+        MissionOutcome.BOUNDARY_REJECTED: RunStatus.FAILED,
         MissionOutcome.EVIDENCE_GAP: RunStatus.BLOCKED,
-        MissionOutcome.FINAL_AUDIT_NOT_READY: RunStatus.RUNNING,
+        MissionOutcome.FINALIZATION_NOT_READY: RunStatus.FAILED,
         MissionOutcome.CANCELLED: RunStatus.CANCELLED,
         MissionOutcome.TASK_COMPLETE: RunStatus.DONE,
         MissionOutcome.TASK_BLOCKED: RunStatus.BLOCKED,
         MissionOutcome.STRATEGY_NOT_CHANGED: RunStatus.BLOCKED,
-        MissionOutcome.OPERATIONAL_FAILURE: RunStatus.FAILED,
-        MissionOutcome.UNHANDLED_EPISODE_STATE: RunStatus.FAILED,
         MissionOutcome.ROUND_BUDGET_EXHAUSTED: RunStatus.BLOCKED,
     }
-    return mapping[outcome]
-
-
-def _audit_manager_signal(result: MissionRunResult, state: RunState) -> str:
-    if result.outcome is MissionOutcome.BOUNDARY_REJECTED:
-        return "audit:rejected"
-    if result.outcome is MissionOutcome.EVIDENCE_GAP:
-        return "audit:evidence_gap"
-    if result.outcome in {
-        MissionOutcome.AUDITOR_FAILURE,
-        MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
-        MissionOutcome.AUDITOR_PROVIDER_FAILURE,
-        MissionOutcome.AUDITOR_SCHEMA_FAILURE,
-    }:
-        return f"audit:{result.outcome.value}"
-    return f"episode:{state.status.value}:{state.yield_reason.value if state.yield_reason else ''}"
-
-
-def _audit_capture_failure_outcome(status: AcquisitionStatus) -> MissionOutcome:
-    if status is AcquisitionStatus.CANCELLED:
-        return MissionOutcome.CANCELLED
-    return MissionOutcome.EVIDENCE_GAP
-
-
-def _accepted_facts_resolve_in_bundle(mission: MissionState, bundle: AuditBundle) -> bool:
-    return bool(mission.accepted_facts) and all(
-        _accepted_fact_resolves_in_bundle(item, bundle)
-        for item in mission.accepted_facts
-    )
-
-
-def _accepted_fact_resolves_in_bundle(fact, bundle: AuditBundle) -> bool:
-    if bundle.resolve(fact.record.evidence_ref) is not None:
-        return True
-    expected_value = to_json_compatible(fact.record.value)
-    return any(
-        record.kind == "fact"
-        and record.predicate == fact.record.predicate
-        and to_json_compatible(record.value) == expected_value
-        for record in bundle.evidence_records
-    )
-
-
-def _public_final_response_content(content: str, task: TaskGoal) -> tuple[str, bool]:
-    schema = _public_final_response_schema(task)
-    if schema is None:
-        return content, True
-    try:
-        value = json.loads(content)
-    except json.JSONDecodeError:
-        value = _repair_public_final_response(content, schema)
-    try:
-        validate_value(value, schema, path="final_response")
-    except ValueError:
-        return content, False
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False), True
-
-
-def _public_final_response_schema(task: TaskGoal) -> Mapping[str, object] | None:
-    contract = task.inputs.get(PUBLIC_FINAL_RESPONSE_CONTRACT_KEY)
-    if not isinstance(contract, Mapping):
-        return None
-    schema = contract.get("json_schema")
-    return schema if isinstance(schema, Mapping) else None
-
-
-def _repair_public_final_response(content: str, schema: Mapping[str, object]) -> object:
-    if not content.strip():
-        return content
-    properties = schema.get("properties")
-    if not isinstance(properties, Mapping) or "retrieved_data" not in properties:
-        return content
-    value: dict[str, object] = {"retrieved_data": [content]}
-    if "task_type" in properties:
-        value["task_type"] = _schema_default(properties["task_type"])
-    if "status" in properties:
-        value["status"] = _schema_default(properties["status"], preferred="SUCCESS")
-    if "error_details" in properties:
-        value["error_details"] = None
-    return value
-
-
-def _schema_default(schema: object, *, preferred: str = "") -> object:
-    if not isinstance(schema, Mapping):
-        return preferred
-    if "const" in schema:
-        return schema["const"]
-    enum = schema.get("enum")
-    if isinstance(enum, tuple | list) and enum:
-        if preferred and preferred in enum:
-            return preferred
-        return enum[0]
-    variants = schema.get("oneOf") or schema.get("anyOf")
-    if isinstance(variants, tuple | list):
-        for variant in variants:
-            value = _schema_default(variant, preferred=preferred)
-            if value not in ("", None):
-                return value
-    return preferred
-
-
-def _auditor_failure_outcome(failure: ModelFailure | None) -> MissionOutcome:
-    if failure is None:
-        return MissionOutcome.AUDITOR_FAILURE
-    if failure.kind is ModelFailureKind.CONTEXT_CAPACITY:
-        return MissionOutcome.AUDITOR_CONTEXT_CAPACITY
-    if failure.kind is ModelFailureKind.SCHEMA_ERROR:
-        return MissionOutcome.AUDITOR_SCHEMA_FAILURE
-    if failure.kind in {ModelFailureKind.PROVIDER_UNAVAILABLE, ModelFailureKind.PROVIDER_EXHAUSTED, ModelFailureKind.TIMEOUT}:
-        return MissionOutcome.AUDITOR_PROVIDER_FAILURE
-    return MissionOutcome.AUDITOR_FAILURE
+    return mapping.get(outcome, RunStatus.FAILED)
 
 
 def _with_episode_monitor(runtime):
@@ -1002,11 +946,54 @@ def _record_role_invocation(
     call_index: int,
     request: object,
     result: object,
+    *,
+    trigger_kind: str,
+    subtask_id: str,
+    mission_version: int,
 ) -> None:
     recorder = getattr(trace_sink, "mission_role_invocation", None)
     if callable(recorder):
-        recorder(role, call_index, request, result)
+        recorder(
+            role,
+            call_index,
+            request,
+            result,
+            trigger_kind=trigger_kind,
+            execution_mode="mission",
+            subtask_id=subtask_id,
+            mission_version=mission_version,
+        )
 
 
-def _environment_ref(environment: object) -> str:
-    return str(getattr(environment, "physical_environment_id", "") or id(environment))
+def _record_finalization_protocol(
+    trace_sink: RunTraceSink,
+    stop_send_count: int,
+    post_stop_capture_count: int,
+    native_evaluator_count: int,
+    dispatch_status: str,
+) -> None:
+    recorder = getattr(trace_sink, "finalization_protocol", None)
+    if callable(recorder):
+        recorder(
+            stop_send_count=stop_send_count,
+            post_stop_capture_count=post_stop_capture_count,
+            native_evaluator_count=native_evaluator_count,
+            dispatch_status=dispatch_status,
+        )
+
+
+def _subtask_id(subtask: SubtaskContract) -> str:
+    payload = json.dumps(
+        to_json_compatible(
+            (
+                subtask.objective,
+                subtask.done_when,
+                subtask.constraints,
+                subtask.relevant_fact_keys,
+                subtask.candidate_output_keys,
+            )
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"subtask:{hashlib.sha256(payload.encode()).hexdigest()[:16]}"

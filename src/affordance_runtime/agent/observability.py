@@ -36,7 +36,27 @@ class RunTraceSink(Protocol):
         exception: str = "",
     ) -> None: ...
 
-    def mission_role_invocation(self, role: str, call_index: int, request: object, result: object) -> None: ...
+    def mission_role_invocation(
+        self,
+        role: str,
+        call_index: int,
+        request: object,
+        result: object,
+        *,
+        trigger_kind: str,
+        execution_mode: str,
+        subtask_id: str,
+        mission_version: int,
+    ) -> None: ...
+
+    def finalization_protocol(
+        self,
+        *,
+        stop_send_count: int,
+        post_stop_capture_count: int,
+        native_evaluator_count: int,
+        dispatch_status: str,
+    ) -> None: ...
 
     def step_completed(self, step_number: int, result: object) -> None: ...
     def run_paused(self, state: object) -> None: ...
@@ -69,8 +89,30 @@ class NullRunTraceSink:
     ) -> None:
         return None
 
-    def mission_role_invocation(self, role: str, call_index: int, request: object, result: object) -> None:
-        del role, call_index, request, result
+    def mission_role_invocation(
+        self,
+        role: str,
+        call_index: int,
+        request: object,
+        result: object,
+        *,
+        trigger_kind: str,
+        execution_mode: str,
+        subtask_id: str,
+        mission_version: int,
+    ) -> None:
+        del role, call_index, request, result, trigger_kind, execution_mode, subtask_id, mission_version
+        return None
+
+    def finalization_protocol(
+        self,
+        *,
+        stop_send_count: int,
+        post_stop_capture_count: int,
+        native_evaluator_count: int,
+        dispatch_status: str,
+    ) -> None:
+        del stop_send_count, post_stop_capture_count, native_evaluator_count, dispatch_status
         return None
 
     def step_completed(self, step_number: int, result: object) -> None:
@@ -150,13 +192,61 @@ class RunTraceRecorder:
         payload["agent_context"] = _json_value(context, self.directory)
         self._emit("model_turn", **payload)
 
-    def mission_role_invocation(self, role: str, call_index: int, request: object, result: object) -> None:
+    def mission_role_invocation(
+        self,
+        role: str,
+        call_index: int,
+        request: object,
+        result: object,
+        *,
+        trigger_kind: str,
+        execution_mode: str,
+        subtask_id: str,
+        mission_version: int,
+    ) -> None:
+        metadata = getattr(result, "metadata", None)
+        failure = getattr(result, "failure", None)
+        attempts = tuple(getattr(result, "attempts", ()))
+        output = getattr(result, "output", None)
+        if output is None and isinstance(result, Mapping):
+            output = result.get("decision")
         self._emit(
             "mission_role_invocation",
             role=role,
             call_index=call_index,
+            trigger_kind=trigger_kind,
+            execution_mode=execution_mode,
+            subtask_id=subtask_id,
+            mission_version=mission_version,
+            manager_request_mode=_enum_value(getattr(request, "mode", "")),
+            assessment=_enum_value(getattr(output, "assessment", "")),
+            route=_enum_value(getattr(output, "route", "")),
+            optional_auditor_trigger=(trigger_kind if role == "auditor" else ""),
+            finalizer_call=int(role == "finalizer"),
+            input_tokens=int(getattr(metadata, "prompt_tokens", 0)),
+            output_tokens=int(getattr(metadata, "completion_tokens", 0)),
+            latency_ms=float(getattr(metadata, "latency_ms", 0.0)),
+            provider_attempts=len(attempts),
+            result="failure" if failure is not None else "accepted",
+            failure=_json_value(failure, self.directory),
             role_request=_json_value(request, self.directory),
             model_invocation=_json_value(result, self.directory),
+        )
+
+    def finalization_protocol(
+        self,
+        *,
+        stop_send_count: int,
+        post_stop_capture_count: int,
+        native_evaluator_count: int,
+        dispatch_status: str,
+    ) -> None:
+        self._emit(
+            "finalization_protocol",
+            stop_send_count=stop_send_count,
+            post_stop_capture_count=post_stop_capture_count,
+            native_evaluator_count=native_evaluator_count,
+            dispatch_status=dispatch_status,
         )
 
     def step_completed(self, step_number: int, result: object) -> None:

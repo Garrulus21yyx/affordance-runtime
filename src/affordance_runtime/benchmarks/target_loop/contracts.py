@@ -35,7 +35,7 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from affordance_runtime.goals.compiler import GoalCompiler, NotRequiredGoalCompiler
-from affordance_runtime.mission.contracts import MissionOutcome
+from affordance_runtime.mission.contracts import ExecutionMode, MissionOutcome
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.contracts import CoverageState
@@ -303,7 +303,8 @@ class BenchmarkComposition:
     goal_compiler: GoalCompiler | None = None
     mission_manager: object | None = None
     mission_auditor: object | None = None
-    long_horizon: bool = False
+    execution_mode: ExecutionMode = ExecutionMode.STANDALONE
+    strict_verification: bool = False
 
     @classmethod
     def atomic(
@@ -326,10 +327,16 @@ class BenchmarkComposition:
         )
 
     def __post_init__(self) -> None:
-        if type(self.long_horizon) is not bool:
-            raise TypeError("long_horizon flag must be boolean")
-        if self.long_horizon != bool(self.mission_manager and self.mission_auditor):
-            raise ValueError("long-horizon composition requires Manager and Auditor ports")
+        if not isinstance(self.execution_mode, ExecutionMode):
+            raise TypeError("benchmark execution mode must be typed")
+        if self.execution_mode is ExecutionMode.MISSION and self.mission_manager is None:
+            raise ValueError("mission composition requires a Manager port")
+        if self.execution_mode is ExecutionMode.STANDALONE and (
+            self.mission_manager is not None or self.mission_auditor is not None
+        ):
+            raise ValueError("standalone composition cannot install mission roles")
+        if self.strict_verification and self.mission_auditor is None:
+            raise ValueError("strict verification requires an Auditor port")
         object.__setattr__(
             self,
             "required_decisions",
@@ -824,8 +831,13 @@ _KNOWN_METRICS = (
             "model_latency_ms",
             "mission_manager_calls",
             "mission_auditor_calls",
+            "mission_finalizer_calls",
+            "mission_stop_send_calls",
+            "mission_post_stop_capture_calls",
+            "mission_native_evaluator_calls",
+            "optional_auditor_calls",
             "mission_state_version",
-            "mission_audited_outcomes",
+            "mission_working_outcomes",
             "mission_accepted_facts",
             "mission_boundary_rejections",
             "mission_final_response_delivered",

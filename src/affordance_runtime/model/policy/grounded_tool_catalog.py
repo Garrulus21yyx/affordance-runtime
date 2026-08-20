@@ -25,6 +25,7 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
+    FinalResponse,
     LocalToolResult,
     RequestActionPage,
     RequestObservation,
@@ -66,6 +67,7 @@ class GroundedLocalToolName(StrEnum):
     READ_NEXT_PAGE = "read_next_page"
     ACTION_RESULTS_NEXT_PAGE = "action_results_next_page"
     YIELD_SUBTASK = "yield_subtask"
+    SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
     WAIT = "wait"
     ABORT = "abort"
@@ -185,6 +187,23 @@ class _ControlBinding:
                 tool_call_id,
             )
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+
+
+@dataclass(frozen=True)
+class _FinalResponseBinding:
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+        response = arguments["response"]
+        content = (
+            response
+            if isinstance(response, str)
+            else json.dumps(
+                to_json_compatible(response),
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+        )
+        del tool_call_id
+        return FinalResponse(context_id, content)
 
 
 @dataclass(frozen=True)
@@ -425,6 +444,19 @@ def compile_grounded_tool_catalog(
             GroundedToolResolutionCode.STALE_CATALOG,
             "ModelTurnDelivery belongs to another World",
         )
+    if context.runtime_controls == (GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,):
+        response_schema = context.task.final_response_contract.get("json_schema")
+        if not isinstance(response_schema, Mapping):
+            response_schema = {"type": "string", "minLength": 1}
+        tool = RegisteredGroundedTool(
+            ToolSpec(
+                GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
+                "Submit the single final user-facing response in the public task schema.",
+                _object_schema({"response": response_schema}, ("response",)),
+            ),
+            _FinalResponseBinding(),
+        )
+        return _catalog_from_registrations(context, delivery, (tool,))
     registered: list[RegisteredGroundedTool] = []
 
     purposes: set[str] = set()
@@ -633,7 +665,7 @@ def compile_grounded_tool_catalog(
                         "kind": {
                             "type": "string",
                             "description": "review outcome",
-                            "enum": ["ready_for_audit", "stalled", "blocked", "capability_gap"],
+                            "enum": ["outcome_proposed", "stalled", "blocked", "capability_gap"],
                         },
                         "reason": {
                             "type": "string",
@@ -715,6 +747,14 @@ def compile_grounded_tool_catalog(
             _ControlBinding(GroundedLocalToolName.ABORT),
         ),
     ))
+    return _catalog_from_registrations(context, delivery, tuple(registered))
+
+
+def _catalog_from_registrations(
+    context: AgentContext,
+    delivery: ModelTurnDelivery,
+    registered: tuple[RegisteredGroundedTool, ...],
+) -> GroundedToolCatalog:
     names = tuple(tool.spec.name for tool in registered)
     if len(names) != len(set(names)):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -743,7 +783,7 @@ def compile_grounded_tool_catalog(
         context.context_id,
         delivery.delivery_id,
         delivery.manifest,
-        tuple(registered),
+        registered,
         encoded_bytes,
     )
 

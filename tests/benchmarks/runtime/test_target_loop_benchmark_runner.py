@@ -36,8 +36,8 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.mission import (
-    AuditDelta,
-    AuditDeltaStatus,
+    ExecutionMode,
+    ManagerAssessment,
     ManagerDecision,
     ManagerRoute,
     SubtaskContract,
@@ -140,34 +140,34 @@ def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
     assert (tmp_path / "traces" / "b" / "trace.jsonl").is_file()
 
 
-def test_long_horizon_runner_projects_outer_mission_outcome_and_metrics() -> None:
+def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
     class YieldPolicy:
         @property
         def supported_decisions(self):
             return frozenset({DecisionCapability.YIELD_SUBTASK})
 
         async def decide(self, context):
-            return YieldSubtask(context.context_id, "ready_for_audit", "ready")
+            return YieldSubtask(context.context_id, "outcome_proposed", "ready")
 
     class Manager:
         def __init__(self):
             self.requests = []
             self.decisions = [
                 ManagerDecision(
+                    ManagerAssessment.NOT_APPLICABLE,
                     ManagerRoute.EXECUTE_SUBTASK,
-                    SubtaskContract("Read current value", "Current value is known", episode_turn_budget=1),
+                    subtask=SubtaskContract("Read current value", "Current value is known", episode_turn_budget=1),
                 ),
-                ManagerDecision(ManagerRoute.ASK_USER, question="Which account should be used?"),
+                ManagerDecision(
+                    ManagerAssessment.UNKNOWN,
+                    ManagerRoute.ASK_USER,
+                    question="Which account should be used?",
+                ),
             ]
 
         async def decide(self, request):
             self.requests.append(request)
             return ModelInvocationResult(output=self.decisions.pop(0))
-
-    class Auditor:
-        async def audit(self, request):
-            del request
-            return ModelInvocationResult(output=AuditDelta(AuditDeltaStatus.UNKNOWN, 0))
 
     manager = Manager()
 
@@ -186,8 +186,8 @@ def test_long_horizon_runner_projects_outer_mission_outcome_and_metrics() -> Non
             UnknownEvaluator(),
             required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
             mission_manager=manager,
-            mission_auditor=Auditor(),
-            long_horizon=True,
+            mission_auditor=None,
+            execution_mode=ExecutionMode.MISSION,
         ),
         (RunStatus.WAITING_USER,),
         2.0,
@@ -211,11 +211,11 @@ def test_long_horizon_runner_projects_outer_mission_outcome_and_metrics() -> Non
     assert result.status == "waiting_user"
     assert result.pending_kind == "user_question"
     assert result.mission_outcome == "needs_user_input"
-    assert result.mission_last_ref == "manager_ask_user"
+    assert result.mission_last_ref == "needs_user_input"
     assert result.measurements["mission_manager_calls"].value == 2
-    assert result.measurements["mission_auditor_calls"].value == 1
+    assert result.measurements["mission_auditor_calls"].value == 0
     assert result.measurements["mission_state_version"].value == 0
-    assert result.measurements["mission_boundary_rejections"].value == 1
+    assert result.measurements["mission_boundary_rejections"].value == 0
     assert len(manager.requests) == 2
 
 
@@ -237,38 +237,41 @@ def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_p
         def __init__(self):
             self.decisions = [
                 ManagerDecision(
+                    ManagerAssessment.NOT_APPLICABLE,
                     ManagerRoute.EXECUTE_SUBTASK,
-                    SubtaskContract(
+                    subtask=SubtaskContract(
                         "Enter the remaining values one at a time",
                         "Both values are visible",
                         episode_turn_budget=6,
                     ),
                 ),
-                ManagerDecision(ManagerRoute.BLOCKED, reason="protocol recovery exhausted"),
+                ManagerDecision(
+                    ManagerAssessment.BLOCKED,
+                    ManagerRoute.BLOCKED,
+                    reason="protocol recovery exhausted",
+                ),
             ]
 
         async def decide(self, request):
             del request
             return ModelInvocationResult(output=self.decisions.pop(0))
 
-    class NoAuditor:
-        async def audit(self, request):
-            del request
-            raise AssertionError("protocol stall must bypass Auditor")
-
     case = BenchmarkCase(
         "mission-protocol-stall",
         "suite",
         "protocol feedback projection",
         lambda: TaskGoal("mission-protocol", "Complete the current UI task."),
-        lambda _metrics: ScriptedEnvironment(initial_observation=fused_world("protocol-stall")),
+        lambda _metrics: ScriptedEnvironment(
+            initial_observation=fused_world("protocol-stall"),
+            independent_observations=(fused_world("protocol-review"),),
+        ),
         lambda _metrics: BenchmarkComposition(
             ProtocolPolicy(),
             ActionOutcomeProjector(),
             UnknownEvaluator(),
             mission_manager=Manager(),
-            mission_auditor=NoAuditor(),
-            long_horizon=True,
+            mission_auditor=None,
+            execution_mode=ExecutionMode.MISSION,
         ),
         (RunStatus.BLOCKED,),
         2.0,
@@ -287,7 +290,7 @@ def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_p
     result = suite.cases[0]
     write_run_report(suite, str(tmp_path))
 
-    assert result.status == "blocked"
+    assert result.status == "blocked", result
     assert result.last_decision_type == "ProtocolFeedback"
     assert result.measurements["executions"].value == 0
     assert result.measurements["mission_manager_calls"].value == 2

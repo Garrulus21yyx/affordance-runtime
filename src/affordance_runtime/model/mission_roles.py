@@ -26,15 +26,16 @@ from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPON
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
-    AuditDelta,
-    AuditDeltaStatus,
+    AuditorDecision,
     AuditorRoleRequest,
+    ManagerAssessment,
     ManagerDecision,
+    ManagerRequestMode,
     ManagerRoleRequest,
     ManagerRoute,
-    OutcomeProposal,
-    PromoteFactProposal,
     SubtaskContract,
+    WorkingFactProposal,
+    WorkingOutcomeProposal,
 )
 from affordance_runtime.model.policy.contracts import (
     ModelGenerationAttempt,
@@ -136,7 +137,12 @@ class SubtaskContractModel(BaseModel):
 
 class ManagerDecisionModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    route: Literal["execute_subtask", "ask_user", "blocked", "request_final_audit"]
+    assessment: Literal["not_applicable", "satisfied", "unsatisfied", "unknown", "blocked"]
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+    working_outcomes: tuple["WorkingOutcomeProposalModel", ...] = Field(default=(), max_length=32)
+    working_facts: tuple["WorkingFactProposalModel", ...] = Field(default=(), max_length=32)
+    invalidate_fact_keys: tuple[str, ...] = Field(default=(), max_length=32)
+    route: Literal["execute_subtask", "ask_user", "blocked", "request_finalization"]
     subtask: SubtaskContractModel | None = None
     question: str = Field(default="", max_length=1000)
     reason: str = Field(default="", max_length=500)
@@ -156,15 +162,15 @@ class ManagerDecisionModel(BaseModel):
         return self
 
 
-class OutcomeProposalModel(BaseModel):
+class WorkingOutcomeProposalModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    audit_id: str = Field(min_length=1, max_length=96)
-    status: Literal["audited_satisfied", "audited_unsatisfied"]
+    outcome_id: str = Field(min_length=1, max_length=96)
+    assessment: Literal["satisfied", "unsatisfied"]
     evidence_refs: tuple[str, ...] = Field(min_length=1, max_length=32)
     summary: str = Field(min_length=1, max_length=500)
 
 
-class PromoteFactProposalModel(BaseModel):
+class WorkingFactProposalModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     evidence_ref: str = Field(min_length=1, max_length=512)
@@ -172,15 +178,11 @@ class PromoteFactProposalModel(BaseModel):
     purpose: str = Field(min_length=1, max_length=500)
 
 
-class AuditDeltaModel(BaseModel):
+class AuditorDecisionModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    status: Literal["audited_satisfied", "audited_unsatisfied", "unknown", "blocked"]
-    base_mission_version: int = Field(ge=0)
-    completed_outcomes: tuple[OutcomeProposalModel, ...] = Field(default=(), max_length=32)
-    promote_facts: tuple[PromoteFactProposalModel, ...] = Field(default=(), max_length=32)
-    invalidate_fact_keys: tuple[str, ...] = Field(default=(), max_length=32)
-    missing_evidence: tuple[str, ...] = Field(default=(), max_length=32)
-    recovery_hint: str = Field(default="", max_length=500)
+    assessment: Literal["satisfied", "unsatisfied", "unknown", "blocked"]
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+    reason: str = Field(default="", max_length=500)
 
 
 class RoleInputCapacityError(ValueError):
@@ -429,7 +431,28 @@ class ModelBackedMissionManager:
                 else None
             )
             output = ManagerDecision(
+                ManagerAssessment(response.assessment),
                 ManagerRoute(response.route),
+                _canonical_evidence_refs(response.evidence_refs, invocation.public_evidence_refs),
+                tuple(
+                    WorkingOutcomeProposal(
+                        item.outcome_id,
+                        ManagerAssessment(item.assessment),
+                        _canonical_evidence_refs(item.evidence_refs, invocation.public_evidence_refs),
+                        item.summary,
+                    )
+                    for item in response.working_outcomes
+                ),
+                tuple(
+                    WorkingFactProposal(
+                        item.key,
+                        _canonical_evidence_ref(item.evidence_ref, invocation.public_evidence_refs),
+                        item.value,
+                        item.purpose,
+                    )
+                    for item in response.working_facts
+                ),
+                response.invalidate_fact_keys,
                 subtask,
                 response.question,
                 response.reason,
@@ -472,7 +495,7 @@ class ModelBackedMissionAuditor:
         prompt_version=MISSION_AUDITOR_PROMPT_VERSION,
     ))
     request_budget: ModelRequestBudget | None = None
-    last_invocation_result: ModelInvocationResult[AuditDelta] | None = field(
+    last_invocation_result: ModelInvocationResult[AuditorDecision] | None = field(
         default=None, init=False, compare=False
     )
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
@@ -480,13 +503,13 @@ class ModelBackedMissionAuditor:
     )
     last_role_diagnostics: Mapping[str, object] = field(default_factory=dict, init=False, compare=False)
 
-    async def audit(self, request: AuditorRoleRequest) -> ModelInvocationResult[AuditDelta]:
+    async def audit(self, request: AuditorRoleRequest) -> ModelInvocationResult[AuditorDecision]:
         object.__setattr__(self, "last_generation_attempts", ())
         invocation = await _invoke_structured_role(
             self.port,
             self.config,
             lambda: _auditor_messages(request),
-            AuditDeltaModel,
+            AuditorDecisionModel,
             "auditor_initial",
             "auditor_schema_repair",
             self.request_budget,
@@ -496,41 +519,21 @@ class ModelBackedMissionAuditor:
         if invocation.failure is not None:
             return self._finish_failure(invocation.failure)
         response = invocation.output
-        assert isinstance(response, AuditDeltaModel)
+        assert isinstance(response, AuditorDecisionModel)
         try:
-            output = AuditDelta(
-                AuditDeltaStatus(response.status),
-                response.base_mission_version,
-                tuple(
-                    OutcomeProposal(
-                        item.audit_id,
-                        AuditDeltaStatus(item.status),
-                        _canonical_evidence_refs(item.evidence_refs, invocation.public_evidence_refs),
-                        item.summary,
-                    )
-                    for item in response.completed_outcomes
-                ),
-                tuple(
-                    PromoteFactProposal(
-                        item.key,
-                        _canonical_evidence_ref(item.evidence_ref, invocation.public_evidence_refs),
-                        item.value,
-                        item.purpose,
-                    )
-                    for item in response.promote_facts
-                ),
-                response.invalidate_fact_keys,
-                response.missing_evidence,
-                response.recovery_hint,
+            output = AuditorDecision(
+                ManagerAssessment(response.assessment),
+                _canonical_evidence_refs(response.evidence_refs, invocation.public_evidence_refs),
+                response.reason,
             )
         except (TypeError, ValueError):
             return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "auditor contract invalid", False))
         return self._finish_output(output, "Auditor")
 
-    def _finish_output(self, output: AuditDelta, role: str) -> ModelInvocationResult[AuditDelta]:
+    def _finish_output(self, output: AuditorDecision, role: str) -> ModelInvocationResult[AuditorDecision]:
         invocation = ModelInvocationResult(
             output=output,
-            metadata=_metadata(self.port, self.config, self.last_generation_attempts, AuditDeltaModel.__name__),
+            metadata=_metadata(self.port, self.config, self.last_generation_attempts, AuditorDecisionModel.__name__),
             attempts=self.last_generation_attempts,
             repair_diagnostics=_repair_diagnostics(self.last_generation_attempts),
             diagnostics=self.last_role_diagnostics,
@@ -539,7 +542,7 @@ class ModelBackedMissionAuditor:
         object.__setattr__(self, "last_invocation_result", invocation)
         return invocation
 
-    def _finish_failure(self, failure: ModelFailure) -> ModelInvocationResult[AuditDelta]:
+    def _finish_failure(self, failure: ModelFailure) -> ModelInvocationResult[AuditorDecision]:
         invocation = ModelInvocationResult(
             failure=failure,
             attempts=self.last_generation_attempts,
@@ -556,8 +559,35 @@ def mission_roles_from_environment(environment: Mapping[str, str] | None = None)
     return ModelBackedMissionManager(port), ModelBackedMissionAuditor(port)
 
 
+def mission_manager_from_environment(environment: Mapping[str, str] | None = None):
+    return ModelBackedMissionManager(model_port_from_environment(environment))
+
+
 def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
+    review_projection = None
+    public_evidence_refs: Mapping[str, str] = {}
+    if request.mode is ManagerRequestMode.REVIEW_AND_ROUTE:
+        assert request.active_subtask is not None
+        assert request.review_world is not None
+        assert request.evidence_bundle is not None
+        review_request = AuditorRoleRequest.from_authorities(
+            request.original_task,
+            request.active_subtask,
+            request.mission_state,
+            request.review_world,
+            request.mission_state.carry_working_facts(
+                request.active_subtask.relevant_fact_keys
+            ),
+            "outcome_proposed",
+            (),
+            request.evidence_bundle,
+            request.active_subtask.related_audit_ids,
+        )
+        projection = _audit_world_payload(review_request)
+        review_projection = projection.payload
+        public_evidence_refs = projection.public_evidence_refs
     payload = {
+        "mode": request.mode.value,
         "task": _manager_task_payload(request.original_task),
         "mission_state": _mission_payload(request.mission_state),
         "last_typed_exit": request.last_typed_exit,
@@ -565,10 +595,21 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
         "remaining_rounds": request.remaining_rounds,
         "environment": to_json_compatible(request.environment),
         "recovery": _manager_recovery_payload(request),
+        "active_subtask": to_json_compatible(request.active_subtask),
+        "fresh_public_review_view": review_projection,
+        "candidate_output_keys": request.candidate_output_keys,
+        "allowed_evidence_refs": tuple(
+            sorted(public_evidence_refs, key=_public_fact_sort_key)
+        ),
     }
     return _RolePrompt(
         _messages(MISSION_MANAGER_INSTRUCTIONS, payload),
         {"task_plan": payload},
+        public_evidence_refs,
+        {
+            "mode": request.mode.value,
+            "allowed_public_evidence_refs": tuple(public_evidence_refs),
+        },
     )
 
 
@@ -596,7 +637,6 @@ def _manager_recovery_payload(request: ManagerRoleRequest) -> Mapping[str, objec
             signal.prohibited_immediate_repeat if signal is not None else ""
         ),
         "prior_subtask": to_json_compatible(recovery.prior_subtask),
-        "strategy_revision_required": recovery.strategy_revision_required,
     }
     if recovery.audit_guidance is not None:
         payload["audit_guidance"] = {
@@ -724,18 +764,19 @@ def _bounded_invalid_role_output(port: ModelPort) -> str:
 
 
 def _compact_role_shape(schema: type[BaseModel]) -> Mapping[str, object]:
-    if schema is AuditDeltaModel:
+    if schema is AuditorDecisionModel:
         return {
-            "status": "audited_satisfied|audited_unsatisfied|unknown|blocked",
-            "base_mission_version": "integer",
-            "completed_outcomes": "[{audit_id,status,evidence_refs,summary}]",
-            "promote_facts": "[{key,evidence_ref,value,purpose}]",
-            "invalidate_fact_keys": "[snake_case_key]",
-            "missing_evidence": "[string]",
-            "recovery_hint": "string",
+            "assessment": "satisfied|unsatisfied|unknown|blocked",
+            "evidence_refs": "[offered_F_ref]",
+            "reason": "string",
         }
     return {
-        "route": "execute_subtask|ask_user|blocked|request_final_audit",
+        "assessment": "not_applicable|satisfied|unsatisfied|unknown|blocked",
+        "evidence_refs": "[offered_F_ref]",
+        "working_outcomes": "[{outcome_id,assessment,evidence_refs,summary}]",
+        "working_facts": "[{key,evidence_ref,value,purpose}]",
+        "invalidate_fact_keys": "[snake_case_key]",
+        "route": "execute_subtask|ask_user|blocked|request_finalization",
         "subtask": "object|null",
         "question": "string",
         "reason": "string",
@@ -787,10 +828,10 @@ def _auditor_mission_payload(request: AuditorRoleRequest) -> Mapping[str, object
     relevant_facts = set(request.subtask.relevant_fact_keys)
     return {
         "version": mission.version,
-        "audited_outcomes": tuple(
+        "working_outcomes": tuple(
             to_json_compatible(item)
-            for item in mission.audited_outcomes
-            if item.audit_id in related_audits
+            for item in mission.working_outcomes
+            if item.outcome_id in related_audits
         ),
         "accepted_facts": tuple(
             {
@@ -802,8 +843,8 @@ def _auditor_mission_payload(request: AuditorRoleRequest) -> Mapping[str, object
             for item in mission.accepted_facts
             if item.key in relevant_facts
         ),
-        "audit_lineage": tuple(
-            item for item in mission.audit_lineage if item in related_audits
+        "evidence_lineage": tuple(
+            item for item in mission.evidence_lineage if item in related_audits
         ),
     }
 
@@ -908,7 +949,7 @@ def _canonical_evidence_ref(ref: str, public_refs: Mapping[str, str]) -> str:
 def _mission_payload(mission) -> Mapping[str, object]:
     return {
         "version": mission.version,
-        "audited_outcomes": to_json_compatible(mission.audited_outcomes),
+        "working_outcomes": to_json_compatible(mission.working_outcomes),
         "accepted_facts": tuple(
             {
                 "key": item.key,
@@ -918,7 +959,7 @@ def _mission_payload(mission) -> Mapping[str, object]:
             }
             for item in mission.accepted_facts
         ),
-        "audit_lineage": mission.audit_lineage,
+        "evidence_lineage": mission.evidence_lineage,
     }
 
 

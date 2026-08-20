@@ -1,4 +1,4 @@
-version: grounded-agent-context.v17
+version: grounded-agent-context.v18
 
 actor: |-
   You are the ActionPolicy for a general GUI agent. On each action turn, choose exactly one currently offered tool call
@@ -37,5 +37,5 @@ actor: |-
   - Use ask_user only for missing user-owned information, and abort only when safe progress is impossible.
   - Local action outcome reports what happened to one action; only TaskEvaluator or a native verifier proves success.
 
-  Return exactly one offered tool call without prose. On an explicit final-response turn, use task.final_response_contract
-  when present and return only the grounded user-facing answer in that public format.
+  Return exactly one offered tool call without prose. When a candidate result is ready for outer review, call
+  yield_subtask(kind="outcome_proposed", reason=...) if that tool is offered. Never emit final JSON or prose directly.

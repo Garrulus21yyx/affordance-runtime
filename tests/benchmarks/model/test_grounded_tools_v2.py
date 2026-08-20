@@ -18,6 +18,7 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    FinalResponse,
     LocalToolResult,
     ProtocolFeedback,
     ProtocolFeedbackKind,
@@ -82,6 +83,9 @@ from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelImageURLPart,
     ModelTextPart,
+    ProviderFailureKind,
+    ProviderModelError,
+    ProviderTransportErrorCategory,
     StructuredOutputError,
     StructuredOutputFailureKind,
     StructuredOutputViolation,
@@ -585,6 +589,49 @@ def test_invalid_compact_arguments_make_only_one_provider_call() -> None:
     assert isinstance(outcome.output.decision, LocalToolResult)
     assert outcome.output.decision.tool_name == "tool_rejected"
     assert port.calls == 1
+
+
+def test_compact_json_finalizing_turn_uses_same_single_catalog_resolver() -> None:
+    @dataclass
+    class FinalResponsePort:
+        provider: str = "fixture"
+        model: str = "compact-json"
+        endpoint_class: str = "fixture"
+        supports_multimodal: bool = False
+        last_call: ModelCallRecord | None = None
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del messages, output_schema, config, kwargs
+            return GroundedToolCommandPayload(
+                name="submit_final_response",
+                arguments={"response": "Done"},
+            )
+
+    base = _context()
+    context = replace(
+        base,
+        runtime_controls=("submit_final_response",),
+        task=replace(
+            base.task,
+            final_response_contract={
+                "json_schema": {"type": "string", "minLength": 1}
+            },
+        ),
+    )
+    adapter = CompactJsonDecisionPort(
+        FinalResponsePort(),
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert outcome.failure is None
+    assert isinstance(outcome.output.decision, FinalResponse)
+    assert outcome.output.decision.content == "Done"
+    assert [spec.name for spec in adapter.last_catalog_specs] == [
+        "submit_final_response"
+    ]
 
 
 def test_grounding_rejection_preserves_the_single_initial_attempt_in_trace() -> None:
@@ -1970,6 +2017,242 @@ def test_truncated_action_output_retries_once_in_same_turn_with_narrow_budget() 
     assert outcome.metadata.prompt_tokens == 200
     assert outcome.metadata.completion_tokens == 4_108
     assert outcome.diagnostics["truncated_output_retry_count"] == 1
+
+
+def test_exhausted_provider_retry_keeps_failure_attempt_observable() -> None:
+    class FailedProviderPort:
+        provider = "deepseek"
+        model = "deepseek-v4-flash"
+        endpoint_class = "remote"
+        supports_multimodal = False
+        supports_thinking_control = True
+        last_call = None
+        last_transcript = None
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del messages, output_schema, config, kwargs
+            self.last_transcript = {
+                "status": "provider_failure",
+                "error.code": "provider_capacity",
+                "error.http_status": 503,
+                "error.category": "http_5xx",
+                "error.exception_class": "HTTPError",
+                "error.latency_ms": 321.5,
+                "network_dispatched": True,
+                "network.physical_attempt_count": 2,
+                "network.second_request_sent": True,
+                "network.rate_limit_retry_count": 0,
+                "network.transient_retry_count": 1,
+            }
+            raise ProviderModelError(
+                ProviderFailureKind.PROVIDER_CAPACITY,
+                http_status=503,
+                error_category=ProviderTransportErrorCategory.HTTP_5XX,
+                exception_class="HTTPError",
+                latency_ms=321.5,
+                physical_attempt_count=2,
+                transient_retry_count=1,
+            )
+
+    context = _context()
+    adapter = CompactJsonDecisionPort(
+        FailedProviderPort(),
+        ModelConfig(
+            timeout_s=1,
+            rate_limit_retries=1,
+            transient_retries=1,
+        ),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(context)))
+
+    assert outcome.output is None
+    assert outcome.failure is not None
+    assert outcome.failure.kind is ModelFailureKind.PROVIDER_UNAVAILABLE
+    assert outcome.failure.retryable is True
+    assert len(outcome.attempts) == 1
+    attempt = outcome.attempts[0]
+    assert attempt.status == "failed"
+    assert attempt.latency_ms == 321.5
+    assert attempt.exception_class == "HTTPError"
+    assert attempt.transcript["error.http_status"] == 503
+    assert attempt.transcript["network.second_request_sent"] is True
+    assert outcome.metadata.latency_ms == 321.5
+    assert outcome.metadata.transient_retry_count == 1
+    assert outcome.diagnostics["provider_retry_count"] == 1
+    assert outcome.diagnostics["provider_physical_attempt_count"] == 2
+
+
+def test_timeout_fast_retry_uses_same_world_with_compact_disabled_thinking() -> None:
+    class TimeoutThenActionPort:
+        provider = "deepseek"
+        model = "deepseek-v4-flash"
+        endpoint_class = "remote"
+        supports_multimodal = False
+        supports_thinking_control = True
+        last_call = None
+        last_transcript = None
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.configs: list[ModelConfig] = []
+            self.messages = []
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del kwargs
+            self.calls += 1
+            self.configs.append(config)
+            self.messages.append(messages)
+            if self.calls == 1:
+                self.last_transcript = {
+                    "status": "provider_failure",
+                    "error.code": "provider_capacity",
+                    "error.category": "timeout",
+                    "error.exception_class": "TimeoutError",
+                    "network.physical_attempt_count": 1,
+                    "network.second_request_sent": False,
+                    "network.rate_limit_retry_count": 0,
+                    "network.transient_retry_count": 0,
+                }
+                raise ProviderModelError(
+                    ProviderFailureKind.PROVIDER_CAPACITY,
+                    error_category=ProviderTransportErrorCategory.TIMEOUT,
+                    exception_class="TimeoutError",
+                    latency_ms=55_000,
+                    physical_attempt_count=1,
+                )
+            self.last_call = ModelCallRecord(
+                provider=self.provider,
+                model=self.model,
+                endpoint_class=self.endpoint_class,
+                prompt_version=config.prompt_version,
+                schema_name=output_schema.__name__,
+                schema_version="grounded_tools.v2",
+                latency_ms=1_000,
+                max_output_tokens=config.max_tokens,
+                final_content_present=True,
+            )
+            self.last_transcript = {
+                "status": "accepted",
+                "network.physical_attempt_count": 1,
+                "network.second_request_sent": False,
+                "network.rate_limit_retry_count": 0,
+                "network.transient_retry_count": 0,
+            }
+            return output_schema.model_validate({
+                "name": "activate",
+                "arguments": {"target": "E3"},
+            })
+
+    context = _context()
+    port = TimeoutThenActionPort()
+    adapter = CompactJsonDecisionPort(
+        port,
+        ModelConfig(
+            max_tokens=4_096,
+            timeout_s=55,
+            provider_total_timeout_s=55,
+            rate_limit_retries=1,
+            transient_retries=1,
+            timeout_retries=0,
+        ),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+        timeout_fast_retry_timeout_s=33,
+        timeout_fast_retry_max_tokens=512,
+        timeout_fast_retry_thinking_mode="disabled",
+        semantic_call_deadline_s=89,
+    )
+
+    instrumentation = BenchmarkInstrumentation()
+    policy = CountingPolicy(
+        ModelBackedAgentPolicy(
+            CountingDecisionPort(adapter, instrumentation),
+            call_timeout_s=90,
+        ),
+        instrumentation,
+    )
+
+    decision = asyncio.run(policy.decide(context))
+    outcome = policy.wrapped.last_invocation_result
+
+    assert isinstance(decision, SelectAction)
+    assert outcome is not None and outcome.failure is None
+    assert port.calls == 2
+    assert instrumentation.policy_calls == 1
+    assert instrumentation.provider_attempts == 2
+    assert instrumentation.provider_retry_count == 1
+    assert port.messages[1][:-1] == port.messages[0]
+    assert "same current World" in port.messages[1][-1].content
+    assert tuple(item.max_tokens for item in port.configs) == (4_096, 512)
+    assert tuple(item.timeout_s for item in port.configs) == (55, 33)
+    assert tuple(item.thinking_mode for item in port.configs) == (None, "disabled")
+    assert tuple(item.timeout_retries for item in port.configs) == (0, 0)
+    assert tuple(item.phase for item in outcome.attempts) == (
+        "initial",
+        "timeout_fast_retry",
+    )
+    assert outcome.diagnostics["timeout_fast_retry_count"] == 1
+    assert outcome.diagnostics["provider_retry_count"] == 1
+    assert outcome.diagnostics["provider_physical_attempt_count"] == 2
+
+
+def test_exhausted_timeout_fast_retry_projects_provider_timeout() -> None:
+    class AlwaysTimeoutPort:
+        provider = "deepseek"
+        model = "deepseek-v4-flash"
+        endpoint_class = "remote"
+        supports_multimodal = False
+        supports_thinking_control = True
+        last_call = None
+        last_transcript = None
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del messages, output_schema, config, kwargs
+            self.last_transcript = {
+                "status": "provider_failure",
+                "error.code": "provider_capacity",
+                "error.category": "timeout",
+                "error.exception_class": "TimeoutError",
+                "network.physical_attempt_count": 1,
+                "network.second_request_sent": False,
+                "network.rate_limit_retry_count": 0,
+                "network.transient_retry_count": 0,
+            }
+            raise ProviderModelError(
+                ProviderFailureKind.PROVIDER_CAPACITY,
+                error_category=ProviderTransportErrorCategory.TIMEOUT,
+                exception_class="TimeoutError",
+                latency_ms=33_000,
+                physical_attempt_count=1,
+            )
+
+    adapter = CompactJsonDecisionPort(
+        AlwaysTimeoutPort(),
+        ModelConfig(
+            timeout_s=55,
+            provider_total_timeout_s=55,
+            rate_limit_retries=1,
+            transient_retries=1,
+            timeout_retries=0,
+        ),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+        timeout_fast_retry_timeout_s=33,
+        semantic_call_deadline_s=89,
+    )
+
+    outcome = asyncio.run(adapter.generate(_action_request(_context())))
+
+    assert outcome.output is None
+    assert outcome.failure is not None
+    assert outcome.failure.kind is ModelFailureKind.TIMEOUT
+    assert outcome.failure.provider_code.value == "timeout"
+    assert tuple(item.phase for item in outcome.attempts) == (
+        "initial",
+        "timeout_fast_retry",
+    )
+    assert outcome.diagnostics["provider_retry_count"] == 1
+    assert outcome.diagnostics["provider_physical_attempt_count"] == 2
 
 
 @pytest.mark.parametrize(

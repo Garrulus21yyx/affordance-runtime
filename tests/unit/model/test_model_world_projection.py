@@ -10,6 +10,7 @@ from affordance_runtime.agent.context.budgets import BoundedSection, ContextProj
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.evaluation import (
@@ -683,6 +684,115 @@ def test_expanded_region_projects_source_structure_sibling_and_current_refs() ->
     assert context.actor_world.documents[0].source_ref == "S1"
     assert 'StaticText "Price $9"' in rendered
     assert f'[{current_ref}] button "Buy" pressed=false verbs=["activate"]' in rendered
+
+
+def test_explicit_region_lens_keeps_navigation_folded_out_of_executable_manifest() -> None:
+    source = SurfaceObservation(
+        "world:scoped-lens",
+        "dom",
+        "revision:scoped-lens",
+        ObservationSourceProfile.dom(),
+        (
+            SemanticTarget("target:home", "link", "Home"),
+            SemanticTarget("target:filter", "button", "Filter"),
+        ),
+        structure=(
+            ObservationStructureNode(
+                "root",
+                "document",
+                "Report",
+                child_structure_ids=("nav", "main"),
+            ),
+            ObservationStructureNode(
+                "nav",
+                "navigation",
+                "Primary",
+                parent_structure_id="root",
+                child_structure_ids=("home",),
+            ),
+            ObservationStructureNode(
+                "home",
+                "link",
+                "Home",
+                parent_structure_id="nav",
+                semantic_target_id="target:home",
+            ),
+            ObservationStructureNode(
+                "main",
+                "main",
+                "Filtered report",
+                parent_structure_id="root",
+                child_structure_ids=("filter",),
+            ),
+            ObservationStructureNode(
+                "filter",
+                "button",
+                "Filter",
+                parent_structure_id="main",
+                semantic_target_id="target:filter",
+            ),
+        ),
+        structure_total_count=5,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    observation = fused.observation
+    options = tuple(
+        ActionOption(
+            f"action:{name}",
+            observation.observation_id,
+            "activate",
+            f"target:{name}",
+            "external_ui_interaction",
+            _EMPTY_SCHEMA,
+            schema_digest(_EMPTY_SCHEMA),
+            (f"binding:{name}",),
+            f"activate {name}",
+            ("external_ui_interaction",),
+            ActionRisk.LOW,
+            **verification_kwargs(
+                "activate",
+                schema_digest(_EMPTY_SCHEMA),
+                ("external_ui_interaction",),
+            ),
+        )
+        for name in ("home", "filter")
+    )
+    task = TaskGoal("scoped-lens", "Inspect the filtered report")
+    context = ContextBuilder().build(
+        task,
+        observation,
+        ActionSpace(observation.observation_id, options),
+        _evaluation(task, observation.observation_id),
+    )
+    navigation_region = next(
+        item for item in context.region_index.regions if item.role == "navigation"
+    )
+    main_region = next(item for item in context.region_index.regions if item.role == "main")
+    lens = WorldDeliveryLens(
+        observation.observation_id,
+        "region",
+        main_region.key,
+    )
+
+    rendered = render_compact_actor_world(
+        context.actor_world,
+        context.grounding,
+        include_images=False,
+        region_index=context.region_index,
+        observation=context.current_observation,
+        delivery_lens=lens,
+        selected_region_keys=frozenset({main_region.key}),
+        action_options=context.complete_actions,
+    )
+
+    home_ref = context.grounding.target_refs["target:home"]
+    filter_ref = context.grounding.target_refs["target:filter"]
+    assert home_ref not in rendered.manifest.executable_refs
+    assert filter_ref in rendered.manifest.executable_refs
+    assert navigation_region.public_ref in rendered.manifest.region_refs
+    assert rendered.coverage["folded_regions"] >= 1
+    assert f'[{home_ref}] link "Home"' not in rendered.text
 
 
 def test_recent_steps_keep_the_complete_episode_history() -> None:

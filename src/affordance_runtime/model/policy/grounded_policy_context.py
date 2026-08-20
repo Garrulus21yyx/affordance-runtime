@@ -25,6 +25,8 @@ from affordance_runtime.model.policy.perception import (
     perception_uses_images,
 )
 from affordance_runtime.model.policy.prompt import (
+    FINAL_RESPONSE_INSTRUCTIONS,
+    FINAL_RESPONSE_PROMPT_VERSION,
     MODEL_POLICY_INSTRUCTIONS,
     MODEL_POLICY_PROMPT_VERSION,
 )
@@ -45,9 +47,16 @@ _MODEL_HISTORY_MAX_BYTES = 6 * 1024
 class GroundedAgentPrompts:
     version: str
     actor: str
+    finalizer_version: str = FINAL_RESPONSE_PROMPT_VERSION
+    finalizer: str = FINAL_RESPONSE_INSTRUCTIONS
 
     def __post_init__(self) -> None:
-        if not self.version or not self.actor.strip():
+        if (
+            not self.version
+            or not self.actor.strip()
+            or not self.finalizer_version
+            or not self.finalizer.strip()
+        ):
             raise ValueError("grounded-agent prompt bundle is incomplete")
 
 
@@ -61,6 +70,13 @@ class GroundedPolicyContextBinder:
 
     prompts: GroundedAgentPrompts = field(default_factory=load_grounded_agent_prompts)
     request_budget: ModelRequestBudget = field(default_factory=ModelRequestBudget)
+
+    def prompt_version(self, context: AgentContext) -> str:
+        return (
+            self.prompts.finalizer_version
+            if context.runtime_controls == ("submit_final_response",)
+            else self.prompts.version
+        )
 
     def action_messages(
         self,
@@ -166,7 +182,15 @@ class GroundedPolicyContextBinder:
         public = dict(sections["public"])
         if include_tool_menu:
             public["tools"] = _tool_menu(direct_tools)
-        messages = self._messages(self.prompts.actor, public, request, include_images)
+        finalizing = request.agent_context.runtime_controls == ("submit_final_response",)
+        if finalizing:
+            public = _final_response_public_context(request.agent_context)
+        messages = self._messages(
+            self.prompts.finalizer if finalizing else self.prompts.actor,
+            public,
+            request,
+            False if finalizing else include_images,
+        )
         component_payloads = {
             "task_plan": sections["task_plan"],
             "actor_world": sections["actor_world"],
@@ -274,6 +298,8 @@ class GroundedPolicyContextBinder:
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
     ) -> bool:
+        if request.agent_context.runtime_controls == ("submit_final_response",):
+            return False
         include_images = perception_uses_images(request, perception_profile)
         if include_images and (not supports_multimodal or not request.image_inputs):
             raise ValueError("selected grounded perception requires a current image input")
@@ -302,6 +328,22 @@ class GroundedPolicyContextBinder:
             ModelMessage(role="system", content=system_prompt),
             ModelMessage(role="user", content=tuple(parts)),
         )
+
+
+def _final_response_public_context(context: AgentContext) -> dict[str, object]:
+    task = _task(context)
+    return {
+        "task_instruction": task["instruction"],
+        "public_final_response_schema": task.get("final_response_contract", {}),
+        "candidate_evidence": {
+            "formal_evaluation": task.get("formal_evaluation", {}),
+            "working_facts": (
+                public_working_facts(context.working_facts)
+                if context.working_facts
+                else ()
+            ),
+        },
+    }
 
 
 def _task(context: AgentContext) -> dict[str, object]:

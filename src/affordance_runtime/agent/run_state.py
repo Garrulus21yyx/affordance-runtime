@@ -50,7 +50,7 @@ class RunStatus(StrEnum):
 class EpisodeYieldReason(StrEnum):
     BUDGET = "budget"
     CONTEXT_CAPACITY = "context_capacity"
-    READY_FOR_AUDIT = "ready_for_audit"
+    OUTCOME_PROPOSED = "outcome_proposed"
     STALLED = "stalled"
     BLOCKED = "blocked"
     CAPABILITY_GAP = "capability_gap"

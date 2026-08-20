@@ -893,12 +893,6 @@ class CoreAgentLoop:
         return RunStatus.WAITING_USER if isinstance(resolution, NeedsInput) else task_status
 
     def _status_for_task(self, task: TaskGoal, evaluation: TaskEvaluation) -> RunStatus:
-        if (
-            evaluation.status is TaskEvaluationStatus.COMPLETE
-            and task.requested_outputs
-            and bool(getattr(self.decision_ports.action_policy, "supports_final_response", False))
-        ):
-            return RunStatus.RUNNING
         return _status_for_evaluation(evaluation)
 
 
@@ -986,7 +980,7 @@ def _final_response_available(
     state: RunState,
     runtime_controls: tuple[str, ...],
 ) -> bool:
-    if "final_response" in runtime_controls:
+    if "submit_final_response" in runtime_controls:
         return bool(task.requested_outputs)
     if "yield_subtask" in runtime_controls:
         return False

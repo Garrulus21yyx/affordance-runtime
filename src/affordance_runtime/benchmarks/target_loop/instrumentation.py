@@ -134,6 +134,32 @@ class BenchmarkInstrumentation:
             )
         )
 
+    def mission_role_invocation(
+        self,
+        role,
+        call_index,
+        request,
+        result,
+        *,
+        trigger_kind,
+        execution_mode,
+        subtask_id,
+        mission_version,
+    ) -> None:
+        self.trace_recorder.mission_role_invocation(
+            role,
+            call_index,
+            request,
+            result,
+            trigger_kind=trigger_kind,
+            execution_mode=execution_mode,
+            subtask_id=subtask_id,
+            mission_version=mission_version,
+        )
+
+    def finalization_protocol(self, **counts) -> None:
+        self.trace_recorder.finalization_protocol(**counts)
+
     def step_completed(self, step_number: int, result) -> None:
         self.trace_recorder.step_completed(step_number, result)
 
@@ -433,7 +459,14 @@ class CountingDecisionPort:
         attempts = tuple(outcome.attempts)
         diagnostics = outcome.diagnostics
         model_calls = int(diagnostics.get("policy_model_call_count", len(attempts)))
-        self.instrumentation.provider_attempts += max(model_calls, len(attempts))
+        physical_attempts = int(
+            diagnostics.get("provider_physical_attempt_count", 0)
+        )
+        self.instrumentation.provider_attempts += max(
+            physical_attempts,
+            model_calls,
+            len(attempts),
+        )
         _record_dynamic_tool_metrics(self.instrumentation, diagnostics)
         self.instrumentation.provider_retry_count += int(diagnostics.get("provider_retry_count", 0))
         self.instrumentation.fallback_count += int(diagnostics.get("fallback_count", 0))

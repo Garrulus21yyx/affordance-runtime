@@ -1,4 +1,4 @@
-"""Environment composition for the existing one-attempt model transport."""
+"""Environment composition for the bounded model transport."""
 
 from __future__ import annotations
 
@@ -42,12 +42,17 @@ def model_policy_from_environment(
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
     model_port: ModelPort | None = None,
+    provider_retry_budget: int = 1,
 ) -> ModelBackedAgentPolicy:
+    if provider_retry_budget not in {0, 1}:
+        raise ValueError("ActionPolicy provider retry budget must be zero or one")
     env = os.environ if environment is None else environment
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("model policy profile forbids provider fallback")
     wire_capability = action_policy_wire_capability(env)
     if wire_capability is ActionPolicyWireCapability.NATIVE_SINGLE_TOOL:
+        if provider_retry_budget != 1:
+            raise ValueError("native single-tool policy owns its one-retry transport")
         if model_port is not None:
             raise ValueError("native single-tool policy owns its provider transport")
         from affordance_runtime.model.policy.pydantic_ai_bridge import (
@@ -72,7 +77,27 @@ def model_policy_from_environment(
         selected_perception = DecisionPerceptionProfile(configured_perception)
     except ValueError as exc:
         raise ValueError("unsupported model decision perception profile") from exc
-    transport_timeout = min(30.0, max(0.001, call_timeout_s - 1.0))
+    semantic_call_deadline = max(0.001, call_timeout_s - 1.0)
+    timeout_fast_retry_timeout = (
+        (
+            33.0
+            if semantic_call_deadline >= 34.0
+            else max(0.001, semantic_call_deadline * 0.37)
+        )
+        if provider_retry_budget
+        else None
+    )
+    transport_timeout = (
+        min(
+            55.0,
+            max(
+                0.001,
+                semantic_call_deadline - (timeout_fast_retry_timeout or 0.0) - 1.0,
+            ),
+        )
+        if provider_retry_budget
+        else semantic_call_deadline
+    )
     action_max_tokens = _bounded_int(
         env,
         "LLM_ACTION_POLICY_MAX_TOKENS",
@@ -96,8 +121,10 @@ def model_policy_from_environment(
     config = ModelConfig(
         max_tokens=action_max_tokens,
         timeout_s=transport_timeout,
-        rate_limit_retries=0,
-        transient_retries=0,
+        provider_total_timeout_s=transport_timeout,
+        rate_limit_retries=provider_retry_budget,
+        transient_retries=provider_retry_budget,
+        timeout_retries=0,
         provider_circuit_break_s=0.0,
         prompt_version="p5-m1.1",
     )
@@ -113,6 +140,12 @@ def model_policy_from_environment(
         truncated_retry_thinking_mode=(
             None if retry_thinking == "inherit" else retry_thinking
         ),
+        timeout_fast_retry_timeout_s=timeout_fast_retry_timeout,
+        timeout_fast_retry_max_tokens=truncated_retry_max_tokens,
+        timeout_fast_retry_thinking_mode=(
+            None if retry_thinking == "inherit" else retry_thinking
+        ),
+        semantic_call_deadline_s=semantic_call_deadline,
     )
     return ModelBackedAgentPolicy(
         adapter,
@@ -125,6 +158,7 @@ def model_roles_from_environment(
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    provider_retry_budget: int = 1,
 ) -> ConfiguredModelRoles:
     """Compose ActionPolicy and GoalCompiler from one selected model profile."""
 
@@ -140,6 +174,7 @@ def model_roles_from_environment(
             call_timeout_s=call_timeout_s,
             perception_profile=perception_profile,
             model_port=shared_port,
+            provider_retry_budget=provider_retry_budget,
         )
         compiler_model = env.get("LLM_GOAL_COMPILER_MODEL", "").strip()
         if goal_compiler_mode == "disabled":
@@ -160,6 +195,7 @@ def model_roles_from_environment(
             env,
             call_timeout_s=call_timeout_s,
             perception_profile=perception_profile,
+            provider_retry_budget=provider_retry_budget,
         )
         compiler = (
             UnavailableGoalCompiler()
