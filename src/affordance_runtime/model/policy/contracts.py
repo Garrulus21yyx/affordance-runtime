@@ -36,6 +36,15 @@ class ModelGenerationAttempt:
     final_content_present: bool = False
     reasoning_content_present: bool = False
     response_fields: tuple[str, ...] = ()
+    role: str = ""
+    mode: str = ""
+    schema_version: str = ""
+    thinking_requested: str = "provider_default"
+    thinking_effective: str = "provider_default"
+    trigger: str = "ordinary"
+    reasoning_tokens: int = 0
+    final_content_tokens: int = 0
+    final_tool_call_present: bool = False
     transcript: object | None = field(default=None, repr=False, compare=False)
 
 

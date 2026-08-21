@@ -35,6 +35,7 @@ class MiniWobTaskOutcome(StrEnum):
     NO_PROGRESS_CONTROL_REPETITION = "no_progress_control_repetition"
     TURN_BUDGET_EXHAUSTED = "turn_budget_exhausted"
     CASE_TIMEOUT = "case_timeout"
+    EXTERNAL_INTERRUPTION = "external_interruption"
     RESET_FAILURE = "reset_failure"
     INITIAL_OBSERVATION_FAILURE = "initial_observation_failure"
     PROJECTION_FAILURE = "projection_failure"

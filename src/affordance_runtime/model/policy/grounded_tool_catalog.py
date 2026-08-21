@@ -328,6 +328,8 @@ class _WorldReadBinding:
             region_ref=region_ref,
             query=query,
             cursor=page_cursor,
+            public_fact_bindings=self.context.private_fact_bindings,
+            evidence_index=self.context.evidence_index,
         )
         lens = _next_world_delivery_lens(
             observation.observation_id,
@@ -345,11 +347,18 @@ class _WorldReadBinding:
             public_arguments = {"query": query}
         else:
             public_arguments = {}
+        public_result = dict(inspect_outcome_public(result))
+        public_result.update({
+            "searched_domain": "readable_content",
+            "read_only": True,
+            "zero_browser_dispatch": True,
+            "does_not_search": "executable_controls",
+        })
         return LocalToolResult(
             context_id,
             tool_name,
             public_arguments,
-            inspect_outcome_public(result),
+            public_result,
             tool_call_id,
             delivery_lens=lens,
         )
@@ -627,17 +636,23 @@ def compile_grounded_tool_catalog(
         registered.append(RegisteredGroundedTool(
             ToolSpec(
                 GroundedLocalToolName.YIELD_SUBTASK.value,
-                "Return this executor episode for review without claiming success.",
+                "Return this executor episode and a brief result proposal for review without claiming success.",
                 _object_schema(
                     {
                         "kind": {
                             "type": "string",
                             "description": "review outcome",
-                            "enum": ["outcome_proposed", "stalled", "blocked", "capability_gap"],
+                            "enum": [
+                                "outcome_proposed",
+                                "stalled",
+                                "blocked",
+                                "capability_gap",
+                                "needs_replan",
+                            ],
                         },
                         "reason": {
                             "type": "string",
-                            "description": "brief explanation",
+                            "description": "brief natural-language result proposal or explanation",
                             "minLength": 1,
                             "maxLength": 500,
                         },

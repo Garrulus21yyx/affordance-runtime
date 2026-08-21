@@ -31,7 +31,11 @@ from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNode
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import inspect_actor_world
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
-from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
+from affordance_runtime.agent.context.contracts import (
+    AgentHistoricalTargetView,
+    AgentSubtaskContractView,
+    AgentTurnView,
+)
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
@@ -97,7 +101,7 @@ from affordance_runtime.task import (
     RiskProfile,
     TaskGoal,
 )
-from affordance_runtime.world import SemanticTarget
+from affordance_runtime.world import CoverageState, ObservationSourceProfile, SemanticTarget, StateFact
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from tests.support.surfaces.browsergym.projection_support import project_browsergym_observation
 from tests.support.world import fused_world
@@ -230,6 +234,33 @@ def _bound_public_context(context) -> dict[str, object]:
     content = messages[1].content
     assert isinstance(content, str)
     return json.loads(content)
+
+
+def _evidence_handoff_context(*, visual: bool = False):
+    world = fused_world(
+        "source:evidence-handoff",
+        (
+            SemanticTarget("target:alpha", "StaticText", "Metric: 33 units"),
+            SemanticTarget("target:beta", "StaticText", "Metric: 48 units"),
+        ),
+        profile=(
+            ObservationSourceProfile.visual()
+            if visual
+            else ObservationSourceProfile.dom()
+        ),
+    )
+    task = TaskGoal("task:evidence-handoff", "Compare the two visible metrics.")
+    return ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        TaskEvaluation(
+            task.task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
 
 
 def _selector_context(*, operation: str, schema: dict[str, object]):
@@ -622,7 +653,7 @@ def test_grounding_rejection_preserves_the_single_initial_attempt_in_trace() -> 
     assert outcome.failure is None
     assert isinstance(outcome.output.decision, LocalToolResult)
     assert outcome.output.decision.tool_name == "tool_rejected"
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("ordinary",)
     assert tuple(item.status for item in adapter.last_generation_attempts) == ("accepted",)
     assert len(trace["generation_attempts"]) == 1
     assert trace["generation_attempts"][0]["status"] == "accepted"
@@ -857,6 +888,158 @@ def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
     assert canonical not in json.dumps(public)
 
 
+@pytest.mark.parametrize("visual", (False, True))
+def test_find_content_offers_one_runtime_evidence_ref_for_exact_public_scalar(
+    visual: bool,
+) -> None:
+    context = _evidence_handoff_context(visual=visual)
+    found = _resolve_catalog_call(
+        _compile_catalog(context),
+        ToolCall("find_content", {"query": "33 units"}, "provider-call:find-alpha"),
+        expected_context_id=context.context_id,
+    ).decision
+
+    assert isinstance(found, LocalToolResult)
+    item = found.result["items"][0]
+    assert item["node_ref"].startswith("N")
+    assert item["evidence_ref"].startswith("F")
+    assert item["value"] == item["label"] == "Metric: 33 units"
+    assert item["region_ref"].startswith("R")
+    assert item["coverage"] == "complete"
+    assert item["evidence_method"] == ("visual" if visual else "structural")
+    assert item["observation_lineage"] == {
+        "scope": "current_observation",
+        "status": "current",
+    }
+    encoded_item = json.dumps(to_json_compatible(item))
+    assert context.current_observation.observation_id not in encoded_item
+    assert "source_observation_id" not in encoded_item
+    canonical = context.private_fact_bindings[item["evidence_ref"]]
+    record = context.evidence_index.resolve_record(canonical)
+    assert record is not None and record.value == item["value"]
+
+
+def test_complete_execution_relevant_subtask_view_reaches_existing_task_section() -> None:
+    base = _evidence_handoff_context()
+    contract = AgentSubtaskContractView(
+        "Capture one measured result",
+        "One exact measurement is retained",
+        "Advances the requested exact measurement",
+        "evidence_packet",
+        ("Use only current public result evidence",),
+        (("measured_value", "Metric 33 units"),),
+    )
+    task = TaskGoal("task:subtask-view", "Capture one measured result")
+    context = ContextBuilder().build(
+        task,
+        base.current_observation,
+        ActionSpaceBuilder().build(task, base.current_observation),
+        TaskEvaluation(
+            "task:subtask-view",
+            base.current_observation.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+        active_subtask=contract,
+    )
+    public = _bound_public_context(context)
+    active = public["task"]["active_subtask"]
+    assert active == {
+        "objective": contract.objective,
+        "done_when": contract.done_when,
+        "task_link": contract.task_link,
+        "outcome_kind": "evidence_packet",
+        "constraints": list(contract.constraints),
+        "required_evidence": [{
+            "key": "measured_value",
+            "description": "Metric 33 units",
+            "status": "currently_visible",
+        }],
+    }
+    assert "relevant_fact_keys" not in active
+    assert "episode_turn_budget" not in active
+    assert "related_audit_ids" not in active
+    assert "EvidenceCandidates exact=true" in _delivery(context).view.text
+    assert context.evidence_candidates is not None
+    assert len(context.evidence_candidates.candidates) <= 5
+
+
+def test_open_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> None:
+    context = _evidence_handoff_context()
+    found = _resolve_catalog_call(
+        _compile_catalog(context),
+        ToolCall("find_content", {"query": "33 units"}, "provider-call:find-region"),
+        expected_context_id=context.context_id,
+    ).decision
+    region_ref = found.result["items"][0]["region_ref"]
+    opened = _resolve_catalog_call(
+        _compile_catalog(context),
+        ToolCall("open_region", {"region_ref": region_ref}, "provider-call:open-region"),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(opened, LocalToolResult)
+    evidence = tuple(
+        record
+        for item in opened.result["items"]
+        for record in item.get("evidence", ())
+    )
+    assert any(item["evidence_ref"].startswith("F") for item in evidence)
+    assert opened.result["searched_domain"] == "readable_content"
+    assert opened.result["zero_browser_dispatch"] is True
+    opened_view = replace(context, delivery_lens=opened.delivery_lens)
+    offered_refs = set(_delivery(opened_view).manifest.fact_refs)
+    assert any(item["evidence_ref"] in offered_refs for item in evidence)
+    assert "pin_fact" in {item.name for item in _compile_catalog(opened_view).specs}
+
+
+def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> None:
+    context = _evidence_handoff_context()
+    first_search = _resolve_catalog_call(
+        _compile_catalog(context),
+        ToolCall("find_content", {"query": "33 units"}, "provider-call:find-alpha"),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(first_search, LocalToolResult)
+    alpha_ref = first_search.result["items"][0]["evidence_ref"]
+    alpha_view = replace(context, delivery_lens=first_search.delivery_lens)
+    assert alpha_ref in _delivery(alpha_view).manifest.fact_refs
+
+    pinned = _resolve_catalog_call(
+        _compile_catalog(alpha_view),
+        ToolCall(
+            "pin_fact",
+            {
+                "key": "alpha_metric",
+                "evidence_ref": alpha_ref,
+                "purpose": "compare after another search",
+            },
+            "provider-call:pin-alpha",
+        ),
+        expected_context_id=alpha_view.context_id,
+    ).decision
+    assert isinstance(pinned, LocalToolResult) and pinned.working_fact is not None
+    assert pinned.working_fact.value == "Metric: 33 units"
+    assert pinned.working_fact.record.observation_id == (
+        context.current_observation.observation_id
+    )
+
+    with_fact = replace(alpha_view, working_facts=(pinned.working_fact,))
+    second_search = _resolve_catalog_call(
+        _compile_catalog(with_fact),
+        ToolCall("find_content", {"query": "48 units"}, "provider-call:find-beta"),
+        expected_context_id=with_fact.context_id,
+    ).decision
+    beta_view = replace(with_fact, delivery_lens=second_search.delivery_lens)
+
+    assert beta_view.working_facts == (pinned.working_fact,)
+    assert _bound_public_context(beta_view)["working_set"] == [{
+        "key": "alpha_metric",
+        "value": "Metric: 33 units",
+        "purpose": "compare after another search",
+        "acquired_at_step": context.current_step_index,
+    }]
+
+
 def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
     context = _context()
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
@@ -963,6 +1146,99 @@ def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema()
             GroundedToolResolutionCode.INVALID_ARGUMENTS,
             GroundedToolResolutionCode.GROUNDING_GAP,
         }
+
+
+def test_stale_source_scalar_is_not_offered_as_pinnable_evidence() -> None:
+    target = SemanticTarget("target:stale", "text", "Metric: 33 units")
+    world = fused_world(
+        "source:stale",
+        (target,),
+        (
+            StateFact(
+                "fact:stale:value",
+                target.target_id,
+                "value",
+                "Metric: 33 units",
+                "source:stale",
+            ),
+        ),
+        coverage=CoverageState.STALE,
+    )
+    task = TaskGoal("task:stale", "Read the current metric.")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        TaskEvaluation(
+            task.task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+    found = _resolve_catalog_call(
+        _compile_catalog(context),
+        ToolCall("find_content", {"query": "33 units"}, "provider-call:stale-find"),
+        expected_context_id=context.context_id,
+    ).decision
+
+    assert isinstance(found, LocalToolResult)
+    assert found.result["items"]
+    assert all("evidence_ref" not in item for item in found.result["items"])
+    assert "pin_fact" not in {item.name for item in _compile_catalog(context).specs}
+    stale_view = replace(context, delivery_lens=found.delivery_lens)
+    assert _delivery(stale_view).manifest.fact_refs == ()
+
+
+def test_pin_fact_rejects_a_current_non_scalar_evidence_record() -> None:
+    target = SemanticTarget("target:complex", "text", "Complex value")
+    world = fused_world(
+        "source:complex",
+        (target,),
+        (
+            StateFact(
+                "fact:complex:value",
+                target.target_id,
+                "value",
+                {"nested": "not scalar"},
+                "source:complex",
+            ),
+        ),
+    )
+    task = TaskGoal("task:complex", "Read the complex value.")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        TaskEvaluation(
+            task.task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+    complex_ref = next(
+        public
+        for public, canonical in context.private_fact_bindings.items()
+        if canonical == "fact:complex:value"
+    )
+
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        _resolve_catalog_call(
+            _compile_catalog(context),
+            ToolCall(
+                "pin_fact",
+                {
+                    "key": "complex_value",
+                    "evidence_ref": complex_ref,
+                    "purpose": "later use",
+                },
+                "provider-call:non-scalar",
+            ),
+            expected_context_id=context.context_id,
+        )
+
+    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
 
 def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> None:
@@ -1833,7 +2109,7 @@ def test_action_schema_error_returns_same_episode_feedback_after_one_provider_ca
     assert outcome.output.decision.kind is ProtocolFeedbackKind.JSON_INVALID
     assert port.calls == 1
     assert adapter.last_structured_output_violations == (StructuredOutputViolation("target", "string_type"),)
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("ordinary",)
     assert tuple(item.status for item in adapter.last_generation_attempts) == ("json_invalid",)
 
 
@@ -1866,7 +2142,7 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provide
     assert isinstance(outcome.output.decision, ProtocolFeedback)
     assert outcome.output.decision.kind is ProtocolFeedbackKind.JSON_INVALID
     assert adapter.last_model_call_count == 1
-    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("initial",)
+    assert tuple(item.phase for item in adapter.last_generation_attempts) == ("ordinary",)
     assert all(item.status == "json_invalid" for item in adapter.last_generation_attempts)
     trace = _policy_trace_event(1, context, outcome, adapter)
     assert trace["structured_output_validation_stage"] == "provider_response_to_grounded_command"
@@ -1878,7 +2154,7 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provide
     )
 
 
-def test_truncated_action_output_retries_once_in_same_turn_with_narrow_budget() -> None:
+def test_truncated_action_output_without_semantic_anchor_does_not_rechoose_operation() -> None:
     class TruncatedThenActionPort:
         provider = "deepseek"
         model = "deepseek-v4-flash"
@@ -1955,24 +2231,108 @@ def test_truncated_action_output_retries_once_in_same_turn_with_narrow_budget() 
     decision = asyncio.run(policy.decide(context))
     outcome = policy.wrapped.last_invocation_result
 
-    assert isinstance(decision, SelectAction)
+    assert isinstance(decision, ProtocolFeedback)
     assert outcome is not None and outcome.failure is None
-    assert port.calls == 2
+    assert port.calls == 1
     assert instrumentation.policy_calls == 1
-    assert instrumentation.provider_attempts == 2
-    assert tuple(item.max_tokens for item in port.configs) == (4_096, 512)
-    assert tuple(item.thinking_mode for item in port.configs) == (None, "disabled")
+    assert instrumentation.provider_attempts == 1
+    assert tuple(item.max_tokens for item in port.configs) == (1_024,)
+    assert tuple(item.thinking_mode for item in port.configs) == ("disabled",)
+    assert tuple(item.phase for item in outcome.attempts) == ("ordinary",)
+    assert tuple(item.status for item in outcome.attempts) == ("output_truncated",)
+
+
+def test_representation_repair_preserves_operation_and_semantic_target() -> None:
+    class RepairablePort(_ActionPort):
+        supports_thinking_control = True
+
+        def __init__(self):
+            super().__init__()
+            self.configs = []
+            self.last_transcript = None
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            del kwargs
+            self.calls += 1
+            self.configs.append(config)
+            if self.calls == 1:
+                self.last_transcript = {
+                    "llm.output_messages": [{
+                        "role": "assistant",
+                        "content": json.dumps({
+                            "name": "activate",
+                            "arguments": {"target": "E3"},
+                            "unexpected": True,
+                        }),
+                    }],
+                }
+                raise StructuredOutputError(
+                    "extra field",
+                    kind=StructuredOutputFailureKind.JSON_INVALID,
+                    violations=(StructuredOutputViolation("unexpected", "extra_forbidden"),),
+                )
+            return output_schema.model_validate({
+                "name": "activate",
+                "arguments": {"target": "E3"},
+            })
+
+    adapter = CompactJsonDecisionPort(
+        RepairablePort(),
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+    outcome = asyncio.run(adapter.generate(_action_request(_context())))
+    assert isinstance(outcome.output.decision, SelectAction)
     assert tuple(item.phase for item in outcome.attempts) == (
-        "initial",
-        "truncated_output_retry",
+        "ordinary",
+        "representation_repair",
     )
-    assert tuple(item.status for item in outcome.attempts) == (
-        "output_truncated",
-        "accepted",
+    assert tuple(item.trigger for item in outcome.attempts) == (
+        "ordinary",
+        "representation_error",
     )
-    assert outcome.metadata.prompt_tokens == 200
-    assert outcome.metadata.completion_tokens == 4_108
-    assert outcome.diagnostics["truncated_output_retry_count"] == 1
+    assert tuple(config.max_tokens for config in adapter.port.configs) == (1024, 512)
+    assert tuple(config.thinking_mode for config in adapter.port.configs) == (
+        "disabled",
+        "disabled",
+    )
+    assert outcome.diagnostics["representation_repair_count"] == 1
+
+
+def test_one_typed_recovery_event_uses_one_deliberate_provider_configuration() -> None:
+    class ConfigPort(_ActionPort):
+        supports_thinking_control = True
+
+        def __init__(self):
+            super().__init__()
+            self.configs = []
+
+        async def generate_structured(self, messages, output_schema, config, **kwargs):
+            self.configs.append(config)
+            return await super().generate_structured(messages, output_schema, config, **kwargs)
+
+    context = replace(
+        _context(),
+        control_feedback={
+            "kind": "control_stall",
+            "stable_signature": "recovery:synthetic-one",
+            "recovery_attempt": 1,
+        },
+    )
+    port = ConfigPort()
+    adapter = CompactJsonDecisionPort(
+        port,
+        ModelConfig(timeout_s=1, rate_limit_retries=0, transient_retries=0),
+        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
+    )
+    first = asyncio.run(adapter.generate(_action_request(context)))
+    second = asyncio.run(adapter.generate(_action_request(context)))
+    assert tuple(config.max_tokens for config in port.configs) == (2048, 1024)
+    assert tuple(config.thinking_mode for config in port.configs) == ("enabled", "disabled")
+    assert first.attempts[0].phase == "deliberate"
+    assert first.attempts[0].trigger == "control_stall"
+    assert second.attempts[0].phase == "ordinary"
+    assert second.attempts[0].trigger == "ordinary"
 
 
 def test_exhausted_provider_retry_keeps_failure_attempt_observable() -> None:
@@ -2030,10 +2390,17 @@ def test_exhausted_provider_retry_keeps_failure_attempt_observable() -> None:
     assert len(outcome.attempts) == 1
     attempt = outcome.attempts[0]
     assert attempt.status == "failed"
+    assert attempt.role == "action_policy"
+    assert attempt.phase == "ordinary"
+    assert attempt.trigger == "ordinary"
+    assert attempt.thinking_requested == "disabled"
+    assert attempt.thinking_effective == "disabled"
+    assert attempt.max_output_tokens == 1024
     assert attempt.latency_ms == 321.5
     assert attempt.exception_class == "HTTPError"
     assert attempt.transcript["error.http_status"] == 503
     assert attempt.transcript["network.second_request_sent"] is True
+    assert attempt.transcript["llm.output.max_tokens"] == 1024
     assert outcome.metadata.latency_ms == 321.5
     assert outcome.metadata.transient_retry_count == 1
     assert outcome.diagnostics["provider_retry_count"] == 1
@@ -2140,13 +2507,14 @@ def test_timeout_fast_retry_uses_same_world_with_compact_disabled_thinking() -> 
     assert instrumentation.provider_retry_count == 1
     assert port.messages[1][:-1] == port.messages[0]
     assert "same current World" in port.messages[1][-1].content
-    assert tuple(item.max_tokens for item in port.configs) == (4_096, 512)
+    assert tuple(item.max_tokens for item in port.configs) == (1_024, 512)
     assert tuple(item.timeout_s for item in port.configs) == (55, 33)
-    assert tuple(item.thinking_mode for item in port.configs) == (None, "disabled")
+    assert tuple(item.thinking_mode for item in port.configs) == ("disabled", "disabled")
     assert tuple(item.timeout_retries for item in port.configs) == (0, 0)
-    assert tuple(item.phase for item in outcome.attempts) == (
-        "initial",
-        "timeout_fast_retry",
+    assert tuple(item.phase for item in outcome.attempts) == ("ordinary", "ordinary")
+    assert tuple(item.trigger for item in outcome.attempts) == (
+        "ordinary",
+        "transport_timeout_retry",
     )
     assert outcome.diagnostics["timeout_fast_retry_count"] == 1
     assert outcome.diagnostics["provider_retry_count"] == 1
@@ -2203,10 +2571,7 @@ def test_exhausted_timeout_fast_retry_projects_provider_timeout() -> None:
     assert outcome.failure is not None
     assert outcome.failure.kind is ModelFailureKind.TIMEOUT
     assert outcome.failure.provider_code.value == "timeout"
-    assert tuple(item.phase for item in outcome.attempts) == (
-        "initial",
-        "timeout_fast_retry",
-    )
+    assert tuple(item.phase for item in outcome.attempts) == ("ordinary", "ordinary")
     assert outcome.diagnostics["provider_retry_count"] == 1
     assert outcome.diagnostics["provider_physical_attempt_count"] == 2
 
@@ -2214,7 +2579,7 @@ def test_exhausted_timeout_fast_retry_projects_provider_timeout() -> None:
 @pytest.mark.parametrize(
     ("failure_kind", "expected_calls"),
     (
-        (StructuredOutputFailureKind.OUTPUT_TRUNCATED, 2),
+        (StructuredOutputFailureKind.OUTPUT_TRUNCATED, 1),
         (StructuredOutputFailureKind.EMPTY_FINAL_CONTENT, 1),
         (StructuredOutputFailureKind.JSON_INVALID, 1),
     ),

@@ -59,6 +59,10 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallReconciliationStatus,
 )
+from affordance_runtime.model.policy.reasoning_policy import (
+    ActionPolicyCallProfile,
+    ActionPolicyReasoningPolicy,
+)
 from affordance_runtime.model.policy.request_admission import (
     ModelRequestBreakdown,
     ModelRequestCapacityError,
@@ -69,14 +73,15 @@ from affordance_runtime.model.policy.tool_contracts import ToolCall
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
-_ACTION_MODEL_SETTINGS = {
-    "thinking": False,
-    "max_tokens": 1024,
-    "temperature": 0.0,
-    "parallel_tool_calls": False,
-}
 
 
+@dataclass(frozen=True)
+class ConfiguredPydanticAIModel:
+    model: object
+    provider_id: str
+    model_id: str
+    endpoint_host: str
+    supports_multimodal: bool
 @dataclass(frozen=True)
 class _ProviderFailureDetail:
     code: ProviderFailureCode
@@ -93,6 +98,15 @@ class _ProviderCallExhausted(RuntimeError):
         self.detail = detail
 
 
+def _action_model_settings(profile: ActionPolicyCallProfile) -> dict[str, object]:
+    return {
+        "thinking": profile.thinking_mode == "enabled",
+        "max_tokens": profile.max_output_tokens,
+        "temperature": 0.0,
+        "parallel_tool_calls": False,
+    }
+
+
 @dataclass(frozen=True)
 class PydanticAIGroundedDecisionPort:
     """Resolve exactly one current external tool call into a Runtime decision."""
@@ -107,6 +121,15 @@ class PydanticAIGroundedDecisionPort:
     provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
     max_provider_retry_delay_s: float = _MAX_PROVIDER_BACKOFF_S
     context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
+    reasoning_policy: ActionPolicyReasoningPolicy = field(
+        default_factory=ActionPolicyReasoningPolicy
+    )
+    consumed_recovery_events: frozenset[str] = field(
+        default_factory=frozenset, init=False, compare=False
+    )
+    last_call_profile: ActionPolicyCallProfile | None = field(
+        default=None, init=False, compare=False
+    )
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
     last_catalog_specs: tuple[object, ...] = field(default=(), init=False, compare=False)
@@ -169,6 +192,18 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_generation_attempts", ())
         object.__setattr__(self, "last_request_breakdowns", ())
         object.__setattr__(self, "last_invocation_result", None)
+        call_profile = self.reasoning_policy.select(
+            request.agent_context,
+            self.consumed_recovery_events,
+        )
+        object.__setattr__(self, "last_call_profile", call_profile)
+        if call_profile.recovery_event_signature:
+            object.__setattr__(
+                self,
+                "consumed_recovery_events",
+                self.consumed_recovery_events
+                | frozenset((call_profile.recovery_event_signature,)),
+            )
         try:
             from pydantic_ai import (
                 Agent,
@@ -231,6 +266,7 @@ class PydanticAIGroundedDecisionPort:
             )
             agent = Agent(
                 self.model,
+                name="action-policy",
                 instructions=instructions,
                 output_type=[str, DeferredToolRequests],
                 retries=0,
@@ -246,9 +282,9 @@ class PydanticAIGroundedDecisionPort:
                     toolsets=[toolset],
                     usage=usage,
                     usage_limits=limits,
-                    model_settings=_ACTION_MODEL_SETTINGS,
+                    model_settings=_action_model_settings(call_profile),
                 ),
-                phase="initial",
+                phase=call_profile.phase.value,
                 specs=catalog.specs,
                 input_messages=_initial_input_transcript(instructions, user_prompt),
                 provider_error_type=ModelAPIError,
@@ -484,6 +520,12 @@ class PydanticAIGroundedDecisionPort:
                 self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
             ),
             "tool_resolution_detail": self.last_tool_resolution_detail,
+            "reasoning_phase": (
+                self.last_call_profile.phase.value if self.last_call_profile else ""
+            ),
+            "reasoning_trigger": (
+                self.last_call_profile.trigger.value if self.last_call_profile else ""
+            ),
             **request_breakdown_diagnostics(
                 self.last_request_breakdowns,
                 provider_reported_prompt_tokens=sum(item.prompt_tokens for item in self.last_generation_attempts),
@@ -624,6 +666,31 @@ class PydanticAIGroundedDecisionPort:
             prompt_tokens=attempt_prompt_tokens,
             completion_tokens=attempt_completion_tokens,
             total_tokens=attempt_prompt_tokens + attempt_completion_tokens,
+            finish_reason=str(response.get("finish_reason") or "")[:80],
+            max_output_tokens=(
+                self.last_call_profile.max_output_tokens if self.last_call_profile else 0
+            ),
+            final_content_present=bool(getattr(result.output, "calls", ())),
+            reasoning_content_present=False,
+            role="action_policy",
+            mode="single_action",
+            schema_version=GROUNDED_TOOLS_PROTOCOL,
+            thinking_requested=(
+                self.last_call_profile.thinking_mode
+                if self.last_call_profile
+                else "provider_default"
+            ),
+            thinking_effective=(
+                self.last_call_profile.thinking_mode
+                if self.last_call_profile
+                else "provider_default"
+            ),
+            trigger=(
+                self.last_call_profile.trigger.value if self.last_call_profile else "ordinary"
+            ),
+            reasoning_tokens=0,
+            final_content_tokens=attempt_completion_tokens,
+            final_tool_call_present=bool(getattr(result.output, "calls", ())),
             transcript=transcript,
         )
         object.__setattr__(
@@ -660,6 +727,7 @@ class PydanticAIGroundedDecisionPort:
             status="cancelled",
             latency_ms=latency_ms,
             exception_class="CancelledError",
+            **self._attempt_role_fields(),
             transcript=transcript,
         )
         object.__setattr__(
@@ -700,6 +768,7 @@ class PydanticAIGroundedDecisionPort:
             status="failed",
             latency_ms=latency_ms,
             exception_class=detail.exception_class,
+            **self._attempt_role_fields(),
             transcript=transcript,
         )
         object.__setattr__(
@@ -707,6 +776,18 @@ class PydanticAIGroundedDecisionPort:
             "last_generation_attempts",
             (*self.last_generation_attempts, attempt),
         )
+
+    def _attempt_role_fields(self) -> dict[str, object]:
+        profile = self.last_call_profile
+        return {
+            "max_output_tokens": profile.max_output_tokens if profile else 0,
+            "role": "action_policy",
+            "mode": "single_action",
+            "schema_version": GROUNDED_TOOLS_PROTOCOL,
+            "thinking_requested": profile.thinking_mode if profile else "provider_default",
+            "thinking_effective": profile.thinking_mode if profile else "provider_default",
+            "trigger": profile.trigger.value if profile else "ordinary",
+        }
 
     def _record_local_failure(
         self,
@@ -735,6 +816,60 @@ def openai_compatible_pydantic_ai_policy_from_environment(
 
     if not 1 < call_timeout_s <= 300:
         raise ValueError("PydanticAI policy timeout must be in (1, 300]")
+    env = os.environ if environment is None else environment
+    configured = pydantic_ai_model_from_environment(env, call_timeout_s=call_timeout_s)
+    selected_perception = DecisionPerceptionProfile(
+        perception_profile
+        or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
+    )
+    retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
+    transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
+    if transport_timeout_s <= 0:
+        raise ValueError("PydanticAI policy timeout cannot fit bounded provider recovery")
+    port = PydanticAIGroundedDecisionPort(
+        model=configured.model,
+        provider_id=configured.provider_id,
+        model_id=configured.model_id,
+        endpoint_host=configured.endpoint_host,
+        supports_multimodal=configured.supports_multimodal,
+        perception_profile=selected_perception,
+        transport_timeout_s=transport_timeout_s,
+        provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
+        max_provider_retry_delay_s=retry_delay_budget_s,
+        reasoning_policy=ActionPolicyReasoningPolicy(
+            ordinary_max_tokens=_bounded_reasoning_tokens(
+                env,
+                "LLM_ACTION_POLICY_ORDINARY_MAX_TOKENS",
+                1024,
+                512,
+                1024,
+            ),
+            deliberate_max_tokens=_bounded_reasoning_tokens(
+                env,
+                "LLM_ACTION_POLICY_DELIBERATE_MAX_TOKENS",
+                2048,
+                1024,
+                2048,
+            ),
+            repair_max_tokens=_bounded_reasoning_tokens(
+                env,
+                "LLM_ACTION_POLICY_REPRESENTATION_REPAIR_MAX_TOKENS",
+                512,
+                256,
+                512,
+            ),
+        ),
+    )
+    return ModelBackedAgentPolicy(port, call_timeout_s=call_timeout_s)
+
+
+def pydantic_ai_model_from_environment(
+    environment: Mapping[str, str] | None = None,
+    *,
+    call_timeout_s: float = 90.0,
+) -> ConfiguredPydanticAIModel:
+    """Build the one supported PydanticAI provider model configuration."""
+
     try:
         from openai import AsyncOpenAI
         from pydantic_ai.models.openai import OpenAIChatModel
@@ -743,7 +878,6 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         from pydantic_ai.providers.zai import ZaiProvider
     except ImportError as exc:
         raise RuntimeError("install the pydantic-ai project extra") from exc
-
     env = os.environ if environment is None else environment
     profile = env.get("LLM_ACTIVE_PROFILE", "").strip().casefold()
     if profile not in {"zhipu", "aliyun", "deepseek"}:
@@ -756,18 +890,13 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         "deepseek": "LLM_DEEPSEEK",
     }[profile]
     base_url = _required(env, f"{prefix}_BASE_URL")
-    api_key = _required(env, f"{prefix}_API_KEY")
     model_id = _required(env, f"{prefix}_MODEL")
-    selected_perception = DecisionPerceptionProfile(
-        perception_profile
-        or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
-    )
     retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
     transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
     if transport_timeout_s <= 0:
         raise ValueError("PydanticAI policy timeout cannot fit bounded provider recovery")
     client = AsyncOpenAI(
-        api_key=api_key,
+        api_key=_required(env, f"{prefix}_API_KEY"),
         base_url=base_url,
         timeout=transport_timeout_s,
         max_retries=0,
@@ -777,18 +906,27 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         if profile == "deepseek"
         else ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
     )
-    port = PydanticAIGroundedDecisionPort(
-        model=model,
-        provider_id=profile,
-        model_id=model_id,
-        endpoint_host=_endpoint_host(base_url),
-        supports_multimodal=profile == "zhipu" and _zhipu_supports_multimodal(model_id),
-        perception_profile=selected_perception,
-        transport_timeout_s=transport_timeout_s,
-        provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
-        max_provider_retry_delay_s=retry_delay_budget_s,
+    return ConfiguredPydanticAIModel(
+        model,
+        profile,
+        model_id,
+        _endpoint_host(base_url),
+        profile == "zhipu" and _zhipu_supports_multimodal(model_id),
     )
-    return ModelBackedAgentPolicy(port, call_timeout_s=call_timeout_s)
+
+
+def _bounded_reasoning_tokens(
+    environment: Mapping[str, str],
+    key: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw = environment.get(key, "").strip()
+    value = default if not raw else int(raw)
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{key} must be within [{minimum}, {maximum}]")
+    return value
 
 
 def zhipu_pydantic_ai_policy_from_environment(

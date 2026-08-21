@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import InternalActionPage
 from affordance_runtime.agent.context.budgets import DEFAULT_MAX_HISTORY_SERIALIZED_BYTES
-from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.contracts import AgentSubtaskContractView, AgentTurnView
 from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
@@ -51,6 +51,7 @@ class EpisodeYieldReason(StrEnum):
     BUDGET = "budget"
     CONTEXT_CAPACITY = "context_capacity"
     OUTCOME_PROPOSED = "outcome_proposed"
+    NEEDS_REPLAN = "needs_replan"
     STALLED = "stalled"
     BLOCKED = "blocked"
     CAPABILITY_GAP = "capability_gap"
@@ -169,6 +170,7 @@ class RunState:
     delivery_lens: WorldDeliveryLens | None = None
     yield_reason: EpisodeYieldReason | None = None
     recovery_signal: RecoverySignal | None = None
+    active_subtask_contract: AgentSubtaskContractView | None = None
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -205,6 +207,10 @@ class RunState:
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("run recovery signal must be typed")
+        if self.active_subtask_contract is not None and not isinstance(
+            self.active_subtask_contract, AgentSubtaskContractView
+        ):
+            raise TypeError("run active subtask contract must be typed")
 
     @property
     def terminal(self) -> bool:

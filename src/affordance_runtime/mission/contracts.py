@@ -49,6 +49,13 @@ class ManagerAssessment(StrEnum):
     BLOCKED = "blocked"
 
 
+class EvidenceBoundaryRejectionClass(StrEnum):
+    """Whether a rejected write is unsafe or can be replanned without a write."""
+
+    FATAL = "fatal"
+    RECOVERABLE_SHAPE = "recoverable_shape"
+
+
 class SupervisorPhase(StrEnum):
     MANAGER = "manager"
     EXECUTING = "executing"
@@ -106,6 +113,22 @@ class RecoveryKind(StrEnum):
     STRATEGY_STALL = "strategy_stall"
     CAPABILITY_GAP = "capability_gap"
     PROTOCOL_STALL = "protocol_stall"
+    SUBTASK_MISALIGNED = "subtask_misaligned"
+
+
+class SubtaskOutcomeKind(StrEnum):
+    STATE_CHANGE = "state_change"
+    EVIDENCE_PACKET = "evidence_packet"
+
+
+@dataclass(frozen=True)
+class EvidenceRequirement:
+    key: str
+    description: str
+
+    def __post_init__(self) -> None:
+        _require_key(self.key, "evidence requirement key")
+        _bounded_text(self.description, "evidence requirement description")
 
 
 @dataclass(frozen=True)
@@ -133,22 +156,32 @@ class RecoverySignal:
 class SubtaskContract:
     objective: str
     done_when: str
+    task_link: str
+    outcome_kind: SubtaskOutcomeKind = SubtaskOutcomeKind.STATE_CHANGE
     constraints: tuple[str, ...] = ()
     relevant_fact_keys: tuple[str, ...] = ()
-    candidate_output_keys: tuple[str, ...] = ()
+    required_evidence: tuple[EvidenceRequirement, ...] = ()
     episode_turn_budget: int = 15
     related_audit_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _bounded_text(self.objective, "subtask objective")
         _bounded_text(self.done_when, "subtask done_when")
+        _bounded_text(self.task_link, "subtask task_link")
+        if not isinstance(self.outcome_kind, SubtaskOutcomeKind):
+            object.__setattr__(self, "outcome_kind", SubtaskOutcomeKind(self.outcome_kind))
         object.__setattr__(self, "constraints", _bounded_unique(self.constraints, "constraints"))
         object.__setattr__(self, "relevant_fact_keys", _keys(self.relevant_fact_keys, "relevant_fact_keys"))
-        object.__setattr__(
-            self,
-            "candidate_output_keys",
-            _keys(self.candidate_output_keys, "candidate_output_keys"),
-        )
+        requirements = tuple(self.required_evidence)
+        if any(not isinstance(item, EvidenceRequirement) for item in requirements):
+            raise TypeError("subtask required evidence must be typed")
+        if len(requirements) > _MAX_COLLECTION:
+            raise ValueError("required_evidence exceeds bounded collection size")
+        if len({item.key for item in requirements}) != len(requirements):
+            raise ValueError("required evidence keys must be unique")
+        if self.outcome_kind is SubtaskOutcomeKind.EVIDENCE_PACKET and not requirements:
+            raise ValueError("evidence_packet requires at least one evidence requirement")
+        object.__setattr__(self, "required_evidence", requirements)
         object.__setattr__(self, "related_audit_ids", _ids(self.related_audit_ids, "related_audit_ids"))
         if type(self.episode_turn_budget) is not int or not 1 <= self.episode_turn_budget <= 15:
             raise ValueError("subtask episode budget must be within [1, 15]")
@@ -370,6 +403,8 @@ class ManagerRecoveryView:
     recovery_signal: RecoverySignal | None = None
     attempted_modes: tuple[str, ...] = ()
     audit_guidance: AuditGuidance | None = None
+    outcome_proposal: str = ""
+    working_proposal_feedback: str = ""
 
     def __post_init__(self) -> None:
         _bounded_text(self.exit_kind, "recovery exit kind", limit=200)
@@ -386,6 +421,14 @@ class ManagerRecoveryView:
         )
         if self.audit_guidance is not None and not isinstance(self.audit_guidance, AuditGuidance):
             raise TypeError("manager audit guidance must be typed")
+        if self.outcome_proposal:
+            _bounded_text(self.outcome_proposal, "outcome proposal")
+        if self.working_proposal_feedback:
+            _bounded_text(
+                self.working_proposal_feedback,
+                "working proposal feedback",
+                limit=200,
+            )
 
 
 @dataclass(frozen=True)
@@ -396,6 +439,10 @@ class MissionEnvironmentView:
     application: str = ""
     page_title: str = ""
     route_family: str = ""
+    document_title: str = ""
+    current_route: str = ""
+    visible_primary_heading: str = ""
+    identity_conflict: bool = False
     available_capabilities: tuple[str, ...] = ()
     unavailable_capabilities: tuple[str, ...] = ()
     last_successful_transitions: tuple[str, ...] = ()
@@ -408,11 +455,16 @@ class MissionEnvironmentView:
             ("environment application", self.application),
             ("environment page title", self.page_title),
             ("environment route family", self.route_family),
+            ("environment document title", self.document_title),
+            ("environment current route", self.current_route),
+            ("environment visible primary heading", self.visible_primary_heading),
         ):
             clean = _ref_free_text(value)
             object.__setattr__(self, name.removeprefix("environment ").replace(" ", "_"), clean)
             if clean:
                 _bounded_text(clean, name, limit=240)
+        if type(self.identity_conflict) is not bool:
+            raise TypeError("environment identity conflict must be boolean")
         object.__setattr__(
             self,
             "available_capabilities",
@@ -443,9 +495,10 @@ class ManagerRoleRequest:
     active_subtask: SubtaskContract | None = None
     review_world: WorldObservation | None = None
     evidence_bundle: EvidenceBundle | None = None
-    candidate_output_keys: tuple[str, ...] = ()
     final_response_schema: Mapping[str, object] = field(default_factory=dict)
     allowed_evidence_refs: tuple[str, ...] = ()
+    episode_working_facts: tuple[WorkingFact, ...] = ()
+    changed_evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, ManagerRequestMode):
@@ -454,16 +507,19 @@ class ManagerRoleRequest:
             raise TypeError("manager recovery view must be typed")
         if not isinstance(self.environment, MissionEnvironmentView):
             raise TypeError("manager environment view must be typed")
-        object.__setattr__(
-            self,
-            "candidate_output_keys",
-            _keys(self.candidate_output_keys, "candidate_output_keys"),
-        )
         object.__setattr__(self, "final_response_schema", freeze_json(self.final_response_schema))
         object.__setattr__(
             self,
             "allowed_evidence_refs",
             _bounded_evidence_refs(self.allowed_evidence_refs),
+        )
+        object.__setattr__(self, "episode_working_facts", tuple(self.episode_working_facts))
+        if any(not isinstance(item, WorkingFact) for item in self.episode_working_facts):
+            raise TypeError("manager episode working facts must be typed")
+        object.__setattr__(
+            self,
+            "changed_evidence_refs",
+            _bounded_evidence_refs(self.changed_evidence_refs),
         )
         review_fields = (self.active_subtask, self.review_world, self.evidence_bundle)
         if self.mode is ManagerRequestMode.INITIAL_PLAN:
@@ -472,6 +528,8 @@ class ManagerRoleRequest:
                 or self.recovery is not None
                 or self.final_response_schema
                 or self.allowed_evidence_refs
+                or self.episode_working_facts
+                or self.changed_evidence_refs
             ):
                 raise ValueError("initial_plan cannot carry an episode review")
         elif (
@@ -484,6 +542,14 @@ class ManagerRoleRequest:
                 raise ValueError("manager review evidence must describe its fresh World")
             if any(self.evidence_bundle.resolve(ref) is None for ref in self.allowed_evidence_refs):
                 raise ValueError("allowed ManagerReview evidence must belong to its bundle")
+            if any(
+                self.evidence_bundle.resolve(item.record.evidence_ref) != item.record
+                or item.record.evidence_ref not in self.evidence_bundle.pinned_evidence_refs
+                for item in self.episode_working_facts
+            ):
+                raise ValueError("ManagerReview working facts must retain pinned bundle lineage")
+            if any(self.evidence_bundle.resolve(ref) is None for ref in self.changed_evidence_refs):
+                raise ValueError("ManagerReview changed evidence must belong to its fresh bundle")
 
 
 @dataclass(frozen=True)
@@ -493,23 +559,39 @@ class EvidenceBundle:
     evidence_records: tuple[EvidenceRecord, ...]
     source_coverages: Mapping[str, str] | None = None
     total_evidence_count: int = 0
+    pinned_evidence_refs: tuple[str, ...] = ()
 
     @classmethod
-    def from_world(cls, world: WorldObservation) -> EvidenceBundle:
+    def from_world(
+        cls,
+        world: WorldObservation,
+        working_facts: tuple[WorkingFact, ...] = (),
+    ) -> EvidenceBundle:
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 
         index = WorldEvidenceIndex.from_observation(world)
-        all_records = tuple(sorted(
-            (*index.records, *public_text_evidence_records(world)),
-            key=lambda item: item.evidence_ref,
-        ))
-        records = all_records[:_MAX_AUDIT_EVIDENCE_RECORDS]
+        pinned = tuple(item.record for item in working_facts)
+        by_ref = {
+            item.evidence_ref: item
+            for item in (*index.records, *public_text_evidence_records(world), *pinned)
+        }
+        pinned_refs = {item.evidence_ref for item in pinned}
+        all_records = tuple(sorted(by_ref.values(), key=lambda item: item.evidence_ref))
+        records = (
+            *sorted(pinned, key=lambda item: item.evidence_ref),
+            *(
+                item
+                for item in all_records
+                if item.evidence_ref not in pinned_refs
+            ),
+        )[:_MAX_AUDIT_EVIDENCE_RECORDS]
         return cls(
             world.observation_id,
             tuple(source.observation_id for source in world.sources),
             records,
             {source.observation_id: source.coverage.value for source in world.sources},
             len(all_records),
+            tuple(item.evidence_ref for item in pinned),
         )
 
     def __post_init__(self) -> None:
@@ -518,12 +600,19 @@ class EvidenceBundle:
         object.__setattr__(self, "source_observation_ids", _bounded_unique(self.source_observation_ids, "sources"))
         object.__setattr__(self, "evidence_records", tuple(self.evidence_records))
         object.__setattr__(self, "source_coverages", dict(self.source_coverages or {}))
+        object.__setattr__(
+            self,
+            "pinned_evidence_refs",
+            _bounded_evidence_refs(self.pinned_evidence_refs),
+        )
         if len(self.evidence_records) > _MAX_AUDIT_EVIDENCE_RECORDS:
             raise ValueError("audit bundle evidence records exceed bound")
         if self.total_evidence_count and self.total_evidence_count < len(self.evidence_records):
             raise ValueError("audit bundle total cannot be smaller than retained evidence")
         if any(not isinstance(item, EvidenceRecord) for item in self.evidence_records):
             raise TypeError("audit bundle evidence must be typed")
+        if any(self.resolve(ref) is None for ref in self.pinned_evidence_refs):
+            raise ValueError("pinned audit evidence must belong to the bundle")
 
     def resolve(self, evidence_ref: str) -> EvidenceRecord | None:
         return next((item for item in self.evidence_records if item.evidence_ref == evidence_ref), None)
@@ -551,7 +640,7 @@ class AuditorTaskProjection:
         subtask: SubtaskContract,
     ) -> AuditorTaskProjection:
         related = set(subtask.related_audit_ids)
-        outputs = set(subtask.candidate_output_keys)
+        outputs = {item.key for item in subtask.required_evidence}
         return cls(
             task.task_id,
             task.revision,
@@ -637,6 +726,12 @@ class AuditorRoleRequest:
             raise TypeError("auditor request requires a typed audit bundle")
         if self.audit_bundle.observation_id != self.after_world.observation_id:
             raise ValueError("auditor bundle must describe the fresh audit world")
+        if any(
+            self.audit_bundle.resolve(item.record.evidence_ref) != item.record
+            or item.record.evidence_ref not in self.audit_bundle.pinned_evidence_refs
+            for item in self.working_facts
+        ):
+            raise ValueError("Auditor working facts must retain pinned bundle lineage")
         object.__setattr__(
             self,
             "related_audit_ids",
@@ -681,13 +776,11 @@ class WorkingOutcomeProposal:
 class WorkingFactProposal:
     key: str
     evidence_ref: str
-    value: object
     purpose: str
 
     def __post_init__(self) -> None:
         _require_key(self.key, "fact key")
         _bounded_text(self.evidence_ref, "evidence_ref")
-        object.__setattr__(self, "value", freeze_json(self.value))
         _bounded_text(self.purpose, "fact purpose")
 
 
@@ -695,7 +788,7 @@ class WorkingFactProposal:
 class WorkingStateProposal:
     assessment: ManagerAssessment
     base_mission_version: int
-    completed_outcomes: tuple[WorkingOutcomeProposal, ...] = ()
+    working_outcomes: tuple[WorkingOutcomeProposal, ...] = ()
     promote_facts: tuple[WorkingFactProposal, ...] = ()
     invalidate_fact_keys: tuple[str, ...] = ()
     missing_evidence: tuple[str, ...] = ()
@@ -706,11 +799,11 @@ class WorkingStateProposal:
             raise TypeError("working-state assessment must be typed")
         if self.base_mission_version < 0:
             raise ValueError("working-state base version cannot be negative")
-        object.__setattr__(self, "completed_outcomes", tuple(self.completed_outcomes))
+        object.__setattr__(self, "working_outcomes", tuple(self.working_outcomes))
         object.__setattr__(self, "promote_facts", tuple(self.promote_facts))
         object.__setattr__(self, "invalidate_fact_keys", _keys(self.invalidate_fact_keys, "invalidate_fact_keys"))
         object.__setattr__(self, "missing_evidence", _bounded_unique(self.missing_evidence, "missing_evidence"))
-        if any(not isinstance(item, WorkingOutcomeProposal) for item in self.completed_outcomes):
+        if any(not isinstance(item, WorkingOutcomeProposal) for item in self.working_outcomes):
             raise TypeError("working outcomes must be typed")
         if any(not isinstance(item, WorkingFactProposal) for item in self.promote_facts):
             raise TypeError("working fact proposals must be typed")
@@ -723,6 +816,17 @@ class EvidenceBoundaryResult:
     accepted: bool
     mission_state: MissionState
     reason_code: str = ""
+    rejection_class: EvidenceBoundaryRejectionClass | None = None
+
+    def __post_init__(self) -> None:
+        if self.accepted:
+            if self.reason_code or self.rejection_class is not None:
+                raise ValueError("accepted boundary result cannot carry rejection data")
+            return
+        if not self.reason_code or self.rejection_class is None:
+            raise ValueError("rejected boundary result requires typed rejection data")
+        if not isinstance(self.rejection_class, EvidenceBoundaryRejectionClass):
+            raise TypeError("boundary rejection class must be typed")
 
 
 @dataclass(frozen=True)

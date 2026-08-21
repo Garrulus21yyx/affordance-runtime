@@ -48,10 +48,12 @@ def accept_case(result, expected_statuses, required_measurements, expectations=(
     return BenchmarkAcceptance(not errors, tuple(errors))
 
 
-def accept_suite(results, case_acceptance) -> BenchmarkAcceptance:
+def accept_suite(results, case_acceptance, *, expected_case_count: int | None = None) -> BenchmarkAcceptance:
     errors = tuple(error for item in case_acceptance for error in item.acceptance_errors)
     if len(results) != len(case_acceptance):
         errors = (*errors, "result schema is incomplete")
+    if expected_case_count is not None and len(results) != expected_case_count:
+        errors = (*errors, f"suite interrupted after {len(results)} of {expected_case_count} cases")
     return BenchmarkAcceptance(not errors, errors)
 
 

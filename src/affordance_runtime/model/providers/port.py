@@ -109,6 +109,9 @@ class ModelCallRecord(BaseModel):
     max_output_tokens: int = Field(default=0, ge=0)
     final_content_present: bool = False
     reasoning_content_present: bool = False
+    reasoning_tokens: int = Field(default=0, ge=0)
+    final_content_tokens: int = Field(default=0, ge=0)
+    final_tool_call_present: bool = False
     response_fields: tuple[str, ...] = Field(default=(), max_length=32)
 
 
@@ -368,6 +371,10 @@ class OpenAICompatibleModelPort:
         usage = response.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
+        completion_details = usage.get("completion_tokens_details") or {}
+        reasoning_tokens = int(
+            completion_details.get("reasoning_tokens") or usage.get("reasoning_tokens") or 0
+        )
         choice = _first_choice(response)
         message = choice.get("message") if isinstance(choice.get("message"), Mapping) else {}
         finish_reason = str(choice.get("finish_reason") or "")[:80]
@@ -393,6 +400,9 @@ class OpenAICompatibleModelPort:
             max_output_tokens=config.max_tokens,
             final_content_present=final_content_present,
             reasoning_content_present=reasoning_content_present,
+            reasoning_tokens=reasoning_tokens,
+            final_content_tokens=max(0, completion_tokens - reasoning_tokens),
+            final_tool_call_present=final_content_present,
             response_fields=response_fields,
         )
         if not final_content_present:
@@ -708,6 +718,9 @@ def _response_metadata(record: ModelCallRecord | None) -> dict[str, object]:
         "total_tokens": record.total_tokens,
         "final_content_present": record.final_content_present,
         "reasoning_content_present": record.reasoning_content_present,
+        "reasoning_tokens": record.reasoning_tokens,
+        "final_content_tokens": record.final_content_tokens,
+        "final_tool_call_present": record.final_tool_call_present,
         "response_fields": list(record.response_fields),
     }
 
@@ -752,6 +765,11 @@ def _openinference_llm_transcript(
         ),
         "llm.output.reasoning_content_present": bool(
             getattr(record, "reasoning_content_present", False)
+        ),
+        "llm.token_count.reasoning": int(getattr(record, "reasoning_tokens", 0)),
+        "llm.token_count.final_content": int(getattr(record, "final_content_tokens", 0)),
+        "llm.output.final_tool_call_present": bool(
+            getattr(record, "final_tool_call_present", False)
         ),
         "llm.response_fields": list(getattr(record, "response_fields", ())),
         "response.id": response_id,

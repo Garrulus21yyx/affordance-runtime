@@ -59,6 +59,7 @@ def test_mission_environment_is_bounded_semantic_scope_without_world_identity() 
     assert view.application == "Magento Admin"
     assert view.page_title == "Ordered Products Report"
     assert view.route_family == "/admin/reports/"
+    assert view.current_route == "/admin/reports/report_product/sold/"
     assert view.available_capabilities == (
         "read content visible in the current application",
         "find content within the current application",
@@ -74,6 +75,24 @@ def test_mission_environment_is_bounded_semantic_scope_without_world_identity() 
     assert "localhost" not in serialized
     assert "secret" not in serialized
     assert "E19" not in serialized
+
+
+def test_conflicting_document_title_is_typed_and_does_not_replace_current_route() -> None:
+    world = fused_world(
+        "obs:identity-conflict",
+        (
+            SemanticTarget("document", "document", "Not Found"),
+            SemanticTarget("heading", "heading", "Current result"),
+            SemanticTarget("viewport", "viewport", "Viewport", {"page.route": "https://example.test/results"}),
+        ),
+        surface="browsergym",
+    )
+    view = project_mission_environment(world)
+    assert view.document_title == "Not Found"
+    assert view.current_route == "/results"
+    assert view.visible_primary_heading == "Current result"
+    assert view.page_title == "Current result"
+    assert view.identity_conflict is True
 
 
 def test_mission_environment_strips_refs_from_public_labels_and_history() -> None:

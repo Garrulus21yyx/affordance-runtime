@@ -94,7 +94,9 @@ class GroundedPolicyContextBinder:
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
         include_tool_menu: bool,
+        request_budget: ModelRequestBudget | None = None,
     ) -> AdmittedModelRequest:
+        budget = request_budget or self.request_budget
         include_images = self._include_images(request, supports_multimodal, perception_profile)
         if delivery.context_id != request.context_id:
             raise ValueError("model turn delivery belongs to another Context")
@@ -106,13 +108,14 @@ class GroundedPolicyContextBinder:
             delivery,
             include_images=include_images,
             include_tool_menu=include_tool_menu,
+            request_budget=budget,
         )
         selected_projection = delivery.view.projection
         try:
             admitted = admit_model_request(
                 messages=selected.messages,
                 tools=selected.tools,
-                budget=self.request_budget,
+                budget=budget,
                 phase="initial",
                 component_payloads=selected.component_payloads,
                 image_inputs=request.image_inputs if include_images else (),
@@ -156,6 +159,7 @@ class GroundedPolicyContextBinder:
         include_images: bool,
         include_tool_menu: bool,
         max_actor_bytes: int | None = None,
+        request_budget: ModelRequestBudget | None = None,
     ) -> "_PolicyRequestCandidate":
         sections = self._public_context_sections(
             request.agent_context,
@@ -185,7 +189,7 @@ class GroundedPolicyContextBinder:
         breakdown = estimate_model_request(
             messages=messages,
             tools=direct_tools,
-            budget=self.request_budget,
+            budget=request_budget or self.request_budget,
             phase="initial",
             component_payloads=component_payloads,
             image_inputs=request.image_inputs if include_images else (),
@@ -343,6 +347,22 @@ def _task(context: AgentContext) -> dict[str, object]:
     }
     if task.final_response_contract:
         result["final_response_contract"] = to_json_compatible(task.final_response_contract)
+    if task.active_subtask is not None:
+        result["active_subtask"] = {
+            "objective": task.active_subtask.objective,
+            "done_when": task.active_subtask.done_when,
+            "task_link": task.active_subtask.task_link,
+            "outcome_kind": task.active_subtask.outcome_kind,
+            "constraints": task.active_subtask.constraints,
+            "required_evidence": tuple(
+                {
+                    "key": item.key,
+                    "description": item.description,
+                    "status": item.status.value,
+                }
+                for item in task.active_subtask.required_evidence
+            ),
+        }
     evaluation = {
             "status": str(task.evaluation.status),
             "criteria": tuple(

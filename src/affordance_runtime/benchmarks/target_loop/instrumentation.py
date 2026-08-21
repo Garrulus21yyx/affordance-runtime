@@ -21,6 +21,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigi
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution import (
     ActionError,
     ActionResult,
@@ -94,6 +95,7 @@ class BenchmarkInstrumentation:
     cleanup_failure_code: str = ""
     cleanup_exception_class: str = ""
     cleanup_failures: int = 0
+    cleanup_status: str = "not_run"
     cleanup_diagnostic: ExecutionDiagnostic | None = None
     primary_execution_failure_code: str = ""
     primary_execution_failure_phase: str = ""
@@ -119,6 +121,12 @@ class BenchmarkInstrumentation:
 
     def run_started(self, task, state) -> None:
         self.trace_recorder.run_started(task, state)
+
+    def benchmark_case_started(self, **event) -> None:
+        self.trace_recorder.benchmark_case_started(**event)
+
+    def benchmark_case_finished(self, **event) -> None:
+        self.trace_recorder.benchmark_case_finished(**event)
 
     def run_start_failed(self, task, acquisition) -> None:
         self.trace_recorder.run_start_failed(task, acquisition)
@@ -177,6 +185,15 @@ class BenchmarkInstrumentation:
 
     def final_response_boundary_evaluated(self, **event) -> None:
         self.trace_recorder.final_response_boundary_evaluated(**event)
+
+    def benchmark_lifecycle_phase(self, phase: str, **event) -> None:
+        self.trace_recorder.benchmark_lifecycle_phase(phase, **event)
+
+    def case_lifecycle_phase(self, phase: str) -> None:
+        self.trace_recorder.case_lifecycle_phase(phase)
+
+    def primary_result_available(self, **event) -> None:
+        self.trace_recorder.primary_result_available(**event)
 
     def step_completed(self, step_number: int, result) -> None:
         self.trace_recorder.step_completed(step_number, result)
@@ -273,6 +290,12 @@ class BenchmarkInstrumentation:
         if not self.watchdog_code:
             self.watchdog_code = code
             self.watchdog_exception_class = type(exception).__name__
+            self.trace_recorder.benchmark_watchdog(
+                code,
+                cancel_grace_exceeded=bool(
+                    getattr(exception, "task_detached", False)
+                ),
+            )
 
     def record_cleanup_failure(
         self,
@@ -284,6 +307,7 @@ class BenchmarkInstrumentation:
         if self.cleanup_failures:
             return
         self.cleanup_failures = 1
+        self.cleanup_status = "failed"
         self.cleanup_failure_code = code
         self.cleanup_exception_class = type(exception).__name__
         self.cleanup_diagnostic = execution_diagnostic_from_exception(
@@ -303,6 +327,7 @@ class BenchmarkInstrumentation:
         if diagnostic.phase is not ExecutionDiagnosticPhase.CLEANUP:
             raise ValueError("attached cleanup diagnostic must have cleanup phase")
         self.cleanup_failures = 1
+        self.cleanup_status = "failed"
         self.cleanup_failure_code = code
         self.cleanup_exception_class = diagnostic.exception_type
         self.cleanup_diagnostic = diagnostic
@@ -487,6 +512,15 @@ def _attempt_trace(item: object) -> dict[str, object]:
             "reasoning_content_present": bool(
                 getattr(item, "reasoning_content_present", False)
             ),
+            "role": str(getattr(item, "role", "")),
+            "trigger": str(getattr(item, "trigger", "")),
+            "thinking_requested": str(getattr(item, "thinking_requested", "")),
+            "thinking_effective": str(getattr(item, "thinking_effective", "")),
+            "reasoning_tokens": int(getattr(item, "reasoning_tokens", 0)),
+            "final_content_tokens": int(getattr(item, "final_content_tokens", 0)),
+            "final_tool_call_present": bool(
+                getattr(item, "final_tool_call_present", False)
+            ),
             "response_fields": tuple(getattr(item, "response_fields", ())),
         }
     status = getattr(item, "status", "")
@@ -526,11 +560,12 @@ class CountingActionOutcomeProjector:
 class CountingTaskEvaluator:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
+    official_outcome_sink: object | None = None
 
     async def evaluate(self, task, observation):
         self.instrumentation.task_evaluator_calls += 1
         try:
-            return await self.wrapped.evaluate(task, observation)
+            evaluation = await self.wrapped.evaluate(task, observation)
         except Exception as exc:
             self.instrumentation.record_failure(
                 CaseFailureOrigin.TASK_EVALUATION,
@@ -538,6 +573,13 @@ class CountingTaskEvaluator:
                 exc,
             )
             raise
+        if (
+            self.official_outcome_sink is not None
+            and evaluation.status
+            in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
+        ):
+            self.official_outcome_sink.native_evaluator_returned(evaluation)
+        return evaluation
 
 
 @dataclass
@@ -753,13 +795,18 @@ def _configured_retry_count(port: object) -> int | None:
     return None
 
 
-def instrument_task_evaluator(evaluator, instrumentation: BenchmarkInstrumentation):
+def instrument_task_evaluator(
+    evaluator,
+    instrumentation: BenchmarkInstrumentation,
+    *,
+    official_outcome_sink: object | None = None,
+):
     if isinstance(evaluator, ProductionTaskEvaluator) and evaluator.semantic_judge is not None:
         judge = evaluator.semantic_judge
         if isinstance(judge, ModelPortSemanticCriterionJudge):
             judge = replace(judge, port=CountingModelPort(judge.port, instrumentation))
         evaluator = replace(evaluator, semantic_judge=CountingSemanticJudge(judge, instrumentation))
-    return CountingTaskEvaluator(evaluator, instrumentation)
+    return CountingTaskEvaluator(evaluator, instrumentation, official_outcome_sink)
 
 
 def _executed_count(environment) -> int | None:

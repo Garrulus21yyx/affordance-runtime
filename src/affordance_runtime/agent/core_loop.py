@@ -10,6 +10,7 @@ from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.contracts import AgentSubtaskContractView
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -176,6 +177,7 @@ class CoreAgentLoop:
         max_turns: int,
         yield_on_budget_exhaustion: bool,
         working_facts=(),
+        active_subtask: AgentSubtaskContractView | None = None,
     ) -> RunState:
         """Create a fresh executor episode from an already acquired world."""
 
@@ -194,6 +196,7 @@ class CoreAgentLoop:
             ),
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
             working_facts=working_facts,
+            active_subtask_contract=active_subtask,
         )
         if isinstance(goal_resolution, NeedsInput) and state.status is RunStatus.WAITING_USER:
             state.last_step = StepResult(
@@ -484,6 +487,7 @@ class CoreAgentLoop:
             delivery_lens=lens,
             region_index=region_index,
             control_feedback=_recovery_feedback(state.recovery_signal),
+            active_subtask=state.active_subtask_contract,
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)
@@ -597,10 +601,7 @@ class CoreAgentLoop:
                 RunStatus.YIELDED,
                 f"yield_subtask:{decision.kind}",
             )
-            result = replace(
-                result,
-                runtime_failure=None,
-            )
+            result = replace(result, runtime_failure=None)
         elif isinstance(decision, Wait):
             result = await self._wait(environment, task, state, decision)
         elif isinstance(decision, FinalResponse):
@@ -1167,6 +1168,11 @@ def _action_page_result_payload(page, decision: RequestActionPage) -> dict[str, 
         relaxations.append("shorten_query")
     return {
         "kind": "Empty" if page.total_count == 0 else "Page",
+        "matches": () if page.total_count == 0 else page.visible_action_ids,
+        "searched_domain": "executable_controls",
+        "base_action_page_preserved": page.total_count == 0,
+        "does_not_search": "readable_content",
+        "suggested_next": "find_content" if page.total_count == 0 else "",
         "applied_filters": applied,
         "coverage": "complete_current_action_space",
         "total_count": page.total_count,

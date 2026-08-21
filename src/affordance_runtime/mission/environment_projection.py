@@ -29,8 +29,16 @@ def project_mission_environment(
 ) -> MissionEnvironmentView:
     """Describe execution scope without forwarding World, refs, screenshots, or trajectory."""
 
-    title = _page_title(observation)
-    page_title, application = _page_and_application(title)
+    document_title = _page_title(observation)
+    heading = _primary_heading(observation)
+    current_route = _current_route(observation)
+    identity_conflict = bool(
+        document_title
+        and (heading or current_route)
+        and document_title.casefold() not in f"{heading} {current_route}".casefold()
+    )
+    preferred_title = heading or document_title
+    page_title, application = _page_and_application(preferred_title)
     operations = tuple(sorted({item.semantic_action for item in observation.bindings if item.semantic_action}))
     capabilities = [
         "read content visible in the current application",
@@ -50,6 +58,10 @@ def project_mission_environment(
         application=application,
         page_title=page_title,
         route_family=_route_family(observation),
+        document_title=document_title,
+        current_route=current_route,
+        visible_primary_heading=heading,
+        identity_conflict=identity_conflict,
         available_capabilities=tuple(dict.fromkeys(capabilities)),
         unavailable_capabilities=("search the public web outside the current application",),
         last_successful_transitions=_successful_transitions(recent_steps),
@@ -61,11 +73,47 @@ def _page_title(observation: WorldObservation) -> str:
         for item in source.structure:
             if item.role.casefold() in {"document", "webarea", "rootwebarea"} and item.label.strip():
                 return item.label.strip()[:240]
+    target_title = next(
+        (
+            item.label.strip()
+            for item in observation.targets
+            if item.role.casefold() in {"document", "webarea", "rootwebarea"} and item.label.strip()
+        ),
+        "",
+    )
+    if target_title:
+        return target_title[:240]
     heading = next(
         (item.label.strip() for item in observation.targets if item.role.casefold() == "heading" and item.label.strip()),
         "",
     )
     return heading[:240]
+
+
+def _primary_heading(observation: WorldObservation) -> str:
+    return next(
+        (
+            item.label.strip()[:240]
+            for item in observation.targets
+            if item.role.casefold() in {"heading", "status", "alert"} and item.label.strip()
+        ),
+        "",
+    )
+
+
+def _current_route(observation: WorldObservation) -> str:
+    raw = next(
+        (
+            str(item.state["page.route"])
+            for item in observation.targets
+            if item.role.casefold() == "viewport" and item.state.get("page.route")
+        ),
+        "",
+    )
+    if not raw:
+        return ""
+    parsed = urlsplit(raw)
+    return (parsed.path or "/")[:240]
 
 
 def _page_and_application(title: str) -> tuple[str, str]:

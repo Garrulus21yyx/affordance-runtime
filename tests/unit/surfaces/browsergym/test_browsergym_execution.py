@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import sys
+import time
 from dataclasses import replace
 from types import ModuleType
 
@@ -552,6 +553,25 @@ def test_open_preserves_reset_failure_when_cleanup_also_fails() -> None:
     assert diagnostic.phase is ExecutionDiagnosticPhase.CLEANUP
     assert diagnostic.exception_type == "TimeoutError"
     assert diagnostic.safe_message == "cleanup secondary"
+
+
+def test_browsergym_synchronous_close_runs_off_the_asyncio_event_loop() -> None:
+    fake, environment, _task, _world = _fixture()
+    original_close = fake.close
+
+    def slow_close() -> None:
+        time.sleep(0.1)
+        original_close()
+
+    fake.close = slow_close
+
+    async def scenario() -> None:
+        closing = asyncio.create_task(environment.close())
+        await asyncio.sleep(0.01)
+        assert not closing.done()
+        await closing
+
+    asyncio.run(scenario())
 
 
 def test_independent_uncertain_dispatch_recapture_drains_its_own_diagnostic() -> None:

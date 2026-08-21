@@ -14,6 +14,7 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
     actor_world_for_delivery,
 )
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
+from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import (
     DELIVERY_LIMITS_V1,
@@ -21,8 +22,11 @@ from affordance_runtime.agent.context.world_region_index import (
     WorldDeliveryIndex,
     WorldRegion,
 )
+from affordance_runtime.agent.working_facts import is_public_scalar
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.evidence_refs import canonical_fact_ref, canonical_public_text_ref
 
 _REF = re.compile(r"^[ENF][1-9][0-9]{0,3}$")
 _DROPPED_STATE_PREFIXES = ("appearance.",)
@@ -203,6 +207,9 @@ def render_compact_actor_world(
     selected_region_keys: frozenset[str] | None = None,
     selected_cursor: str = "",
     action_candidates: ActionCandidateProjection | None = None,
+    evidence_candidates: EvidenceCandidateProjection | None = None,
+    public_fact_bindings: Mapping[str, str] | None = None,
+    evidence_index: WorldEvidenceIndex | None = None,
     max_rendered_bytes: int | None = None,
     force_region_delivery: bool = False,
     limits: DeliveryLimits = DELIVERY_LIMITS_V1,
@@ -235,6 +242,9 @@ def render_compact_actor_world(
         selected_region_keys=selected_region_keys or frozenset(),
         expanded_refs=expanded_refs or frozenset(),
         action_candidates=action_candidates,
+        evidence_candidates=evidence_candidates,
+        public_fact_bindings=public_fact_bindings or {},
+        evidence_index=evidence_index,
         selected_cursor=selected_cursor,
         max_rendered_bytes=max_rendered_bytes,
         limits=limits,
@@ -278,6 +288,9 @@ def _render_page_map(
     selected_region_keys: frozenset[str],
     expanded_refs: frozenset[str],
     action_candidates: ActionCandidateProjection | None,
+    evidence_candidates: EvidenceCandidateProjection | None,
+    public_fact_bindings: Mapping[str, str],
+    evidence_index: WorldEvidenceIndex | None,
     selected_cursor: str,
     max_rendered_bytes: int | None,
     limits: DeliveryLimits,
@@ -318,7 +331,14 @@ def _render_page_map(
         if lens.kind == "region" and lens.selected_region_key:
             exact_region_keys.add(lens.selected_region_key)
         elif lens.kind == "find":
-            matches = _find_matches(index, lens.query, observation, grounding, delivered)
+            matches = _find_matches(
+                index,
+                lens.query,
+                observation,
+                grounding,
+                public_fact_bindings=public_fact_bindings,
+                evidence_index=evidence_index,
+            )
             search_lines = _render_search_matches(matches, observation, grounding, manifest)
         elif lens.kind == "view_all":
             offset = _decode_simple_cursor(lens.page_cursor, len(index.regions))
@@ -343,6 +363,17 @@ def _render_page_map(
     if search_lines:
         lines.append(f"ContentSearchResults exact=true count={len(search_lines)}")
         lines.extend(search_lines)
+
+    if evidence_candidates is not None and evidence_candidates.candidates:
+        lines.append(f"EvidenceCandidates exact=true count={len(evidence_candidates.candidates)}")
+        for rank, item in enumerate(evidence_candidates.candidates, 1):
+            manifest.fact(item.fact_ref)
+            lines.append(
+                f"  rank={rank} [{item.fact_ref}] predicate={_value(item.predicate)} "
+                f"value={_value(item.value)} region={_value(item.region_ref)} "
+                f"source={_value(item.source_context)} coverage={_value(item.coverage)} "
+                f"lineage={_value(item.lineage)}"
+            )
 
     if action_candidates is not None and action_candidates.candidates:
         lines.extend(_render_action_candidates(
@@ -440,19 +471,26 @@ def inspect_actor_world(
     cursor: str = "",
     page_size: int = 20,
     hard_limit: int = 64 * 1024,
+    public_fact_bindings: Mapping[str, str] | None = None,
+    evidence_index: WorldEvidenceIndex | None = None,
 ) -> InspectWorldOutcome:
     """Resolve the closed read-only recovery algebra with zero GUI dispatch."""
 
     if region_index.world_observation_id != observation.observation_id:
         return StaleContext(region_index.world_observation_id, observation.observation_id)
-    delivered = actor_world_for_delivery(snapshot, include_images=False)
     try:
         if action == "open_region":
             try:
                 region = region_index.resolve_public_ref(region_ref)
             except KeyError:
                 return InvalidRegion(region_ref)
-            items = _region_items(region, observation, grounding)
+            items = _region_items(
+                region,
+                observation,
+                grounding,
+                public_fact_bindings=public_fact_bindings or {},
+                evidence_index=evidence_index,
+            )
             page, next_cursor, result_page = _page_region_items(items, cursor, page_size)
             required = len(json.dumps(to_json_compatible(page), ensure_ascii=False).encode())
             if required > hard_limit:
@@ -467,7 +505,14 @@ def inspect_actor_world(
         if action == "find":
             if not query.strip():
                 return Empty("", _index_coverage(region_index), ("provide non-empty public text",))
-            matches = _find_matches(region_index, query, observation, grounding, delivered)
+            matches = _find_matches(
+                region_index,
+                query,
+                observation,
+                grounding,
+                public_fact_bindings=public_fact_bindings or {},
+                evidence_index=evidence_index,
+            )
             if not matches:
                 return Empty(
                     query[:120],
@@ -683,6 +728,14 @@ def _render_search_matches(matches, observation, grounding, manifest) -> list[st
             context = item.get("structural_context") or item.get("region_ref")
             if context:
                 line += f" context={_value(context)}"
+            evidence_ref = str(item.get("evidence_ref", ""))
+            if evidence_ref:
+                manifest.fact(evidence_ref)
+                line += (
+                    f" evidence=[{evidence_ref}] value={_value(item.get('value'))}"
+                    f" coverage={_value(item.get('coverage', 'unknown'))}"
+                    f" method={_value(item.get('evidence_method', 'unknown'))}"
+                )
             lines.append(line)
         elif item.get("role") != "fact":
             line = f"  {item.get('role', 'content')} {_value(item.get('label', ''))} read_only=true"
@@ -691,11 +744,16 @@ def _render_search_matches(matches, observation, grounding, manifest) -> list[st
                 line += f" context={_value(context)}"
             lines.append(line)
         elif item.get("role") == "fact":
-            fact_ref = str(item.get("fact_ref", ""))
-            manifest.fact(fact_ref)
-            lines.append(
-                f"  [{fact_ref}] fact {_value(item.get('label', ''))}={_value(item.get('value'))}"
-            )
+            fact_ref = str(item.get("evidence_ref", ""))
+            if fact_ref:
+                manifest.fact(fact_ref)
+                lines.append(
+                    f"  [{fact_ref}] fact {_value(item.get('label', ''))}={_value(item.get('value'))}"
+                )
+            else:
+                lines.append(
+                    f"  fact {_value(item.get('label', ''))}={_value(item.get('value'))} read_only=true"
+                )
     return lines
 
 
@@ -1040,8 +1098,21 @@ def _region_public_refs(region, grounding) -> frozenset[str]:
     )
 
 
-def _find_matches(index, query, observation, grounding, delivered=None) -> tuple[Mapping[str, object], ...]:
+def _find_matches(
+    index,
+    query,
+    observation,
+    grounding,
+    *,
+    public_fact_bindings: Mapping[str, str] | None = None,
+    evidence_index: WorldEvidenceIndex | None = None,
+) -> tuple[Mapping[str, object], ...]:
     needle = query.casefold()[:120]
+    public_by_canonical = {
+        canonical: public
+        for public, canonical in (public_fact_bindings or {}).items()
+    }
+    sources = {item.observation_id: item for item in observation.sources}
     locations = {
         target_id: (region.public_ref, grounding.target_refs.get(target_id, ""))
         for region in index.regions for target_id in region.member_target_ids
@@ -1052,21 +1123,51 @@ def _find_matches(index, query, observation, grounding, delivered=None) -> tuple
         if needle not in " ".join(values).casefold():
             continue
         region_ref, node_ref = locations.get(target.target_id, ("", ""))
-        matches.append({
+        match = {
             "region_ref": region_ref,
             "node_ref": node_ref if node_ref.startswith("N") else "",
             "role": target.role,
             "label": target.label,
             "structural_context": region_ref,
             "state": target.state,
-        })
-    fact_public_refs = _fact_public_refs(delivered, grounding)
+        }
+        record = _target_match_record(
+            target,
+            needle,
+            observation,
+            evidence_index,
+        )
+        if record is not None and record.evidence_ref in public_by_canonical:
+            source = sources.get(record.source_observation_id)
+            match.update({
+                "evidence_ref": public_by_canonical[record.evidence_ref],
+                "value": record.value,
+                "source_context": {
+                    "modality": record.source_modality,
+                    "assurance": record.source_assurance,
+                    "region_ref": region_ref,
+                },
+                "observation_lineage": {
+                    "scope": "current_observation",
+                    "status": "current",
+                },
+                "coverage": source.coverage.value if source is not None else "unknown",
+                "evidence_method": record.source_modality or "unknown",
+            })
+        matches.append(match)
     for fact in observation.facts:
         values = [fact.predicate, str(fact.value)]
         if needle not in " ".join(values).casefold():
             continue
         region = index.region_for_fact(fact.fact_id)
-        matches.append({
+        region_ref = region.public_ref if region else ""
+        canonical_record = (
+            evidence_index.resolve_record(canonical_fact_ref(fact.fact_id))
+            if evidence_index is not None
+            else None
+        )
+        public_ref = public_by_canonical.get(canonical_fact_ref(fact.fact_id), "")
+        match = {
             "region_ref": region.public_ref if region else "",
             "node_ref": (
                 ref if (ref := locations.get(fact.subject_id, ("", ""))[1]).startswith("N") else ""
@@ -1074,39 +1175,66 @@ def _find_matches(index, query, observation, grounding, delivered=None) -> tuple
             "role": "fact",
             "label": fact.predicate,
             "value": fact.value,
-            "fact_ref": fact_public_refs.get(
-                (fact.subject_id, fact.predicate, repr(fact.value)),
-                fact_public_refs.get(("", fact.predicate, repr(fact.value)), ""),
-            ),
-        })
+        }
+        if public_ref:
+            match["evidence_ref"] = public_ref
+        if (
+            canonical_record is not None
+            and public_ref
+            and is_public_scalar(canonical_record.value)
+        ):
+            source = sources.get(canonical_record.source_observation_id)
+            match.update({
+                "source_context": {
+                    "modality": canonical_record.source_modality,
+                    "assurance": canonical_record.source_assurance,
+                    "region_ref": region_ref,
+                },
+                "observation_lineage": {
+                    "scope": "current_observation",
+                    "status": "current",
+                },
+                "coverage": source.coverage.value if source is not None else "unknown",
+                "evidence_method": canonical_record.source_modality or "unknown",
+            })
+        matches.append(match)
     return tuple(matches)
 
 
-def _fact_public_refs(delivered, grounding) -> Mapping[tuple[str, str, str], str]:
-    if delivered is None:
-        return {}
-    target_by_ref = {ref: target_id for target_id, ref in grounding.target_refs.items()}
-    result: dict[tuple[str, str, str], str] = {}
+def _target_match_record(target, needle, observation, evidence_index):
+    if evidence_index is None:
+        return None
+    if needle in target.label.casefold():
+        return evidence_index.resolve_record(
+            canonical_public_text_ref(observation.observation_id, target.target_id)
+        )
+    for predicate, value in target.state.items():
+        if needle not in str(value).casefold():
+            continue
+        record = next(
+            (
+                item
+                for item in evidence_index.records
+                if item.kind == "fact"
+                and item.subject_id == target.target_id
+                and item.predicate == predicate
+                and item.value == value
+            ),
+            None,
+        )
+        if record is not None:
+            return record
+    return None
 
-    def visit(node) -> None:
-        target_id = target_by_ref.get(node.ref, "")
-        if target_id:
-            for field, evidence_ref in node.state_evidence.items():
-                result[(target_id, field, repr(node.state.get(field)))] = evidence_ref
-            for fact in node.facts:
-                result[(target_id, fact.field, repr(fact.value))] = fact.evidence_ref
-        for child in node.children:
-            visit(child)
 
-    for document in delivered.documents:
-        for root in document.roots:
-            visit(root)
-    for fact in delivered.global_facts:
-        result.setdefault(("", fact.field, repr(fact.value)), fact.evidence_ref)
-    return result
-
-
-def _region_items(region, observation, grounding) -> tuple[Mapping[str, object], ...]:
+def _region_items(
+    region,
+    observation,
+    grounding,
+    *,
+    public_fact_bindings: Mapping[str, str],
+    evidence_index: WorldEvidenceIndex | None,
+) -> tuple[Mapping[str, object], ...]:
     targets = {item.target_id: item for item in observation.targets}
     if region.repeated_item_roots:
         source = next(
@@ -1137,7 +1265,13 @@ def _region_items(region, observation, grounding) -> tuple[Mapping[str, object],
                     "role": nodes[root_id].role,
                     "label": nodes[root_id].label,
                     "targets": tuple(
-                        _target_item(region, targets[target_id], grounding)
+                        _target_item(
+                            region,
+                            targets[target_id],
+                            grounding,
+                            public_fact_bindings,
+                            evidence_index,
+                        )
                         for target_id in target_ids
                     ),
                 })
@@ -1145,7 +1279,13 @@ def _region_items(region, observation, grounding) -> tuple[Mapping[str, object],
                 schema = tuple(
                     {
                         "kind": "schema_member",
-                        **_target_item(region, targets[target_id], grounding),
+                        **_target_item(
+                            region,
+                            targets[target_id],
+                            grounding,
+                            public_fact_bindings,
+                            evidence_index,
+                        ),
                     }
                     for target_id in region.member_target_ids
                     if target_id in targets and target_id not in repeated_target_ids
@@ -1156,17 +1296,47 @@ def _region_items(region, observation, grounding) -> tuple[Mapping[str, object],
         target = targets.get(target_id)
         if target is None:
             continue
-        items.append(_target_item(region, target, grounding))
+        items.append(
+            _target_item(
+                region,
+                target,
+                grounding,
+                public_fact_bindings,
+                evidence_index,
+            )
+        )
     return tuple(items)
 
 
-def _target_item(region, target, grounding) -> Mapping[str, object]:
-    return {
+def _target_item(region, target, grounding, public_fact_bindings, evidence_index) -> Mapping[str, object]:
+    item: dict[str, object] = {
         "region_ref": region.public_ref,
         "role": target.role,
         "label": target.label,
         "state": target.state,
     }
+    if evidence_index is None:
+        return item
+    public_by_canonical = {
+        canonical: public for public, canonical in public_fact_bindings.items()
+    }
+    records = tuple(
+        record
+        for record in evidence_index.records
+        if record.subject_id == target.target_id
+        and record.evidence_ref in public_by_canonical
+        and is_public_scalar(record.value)
+    )
+    if records:
+        item["evidence"] = tuple(
+            {
+                "evidence_ref": public_by_canonical[record.evidence_ref],
+                "predicate": record.predicate,
+                "value": record.value,
+            }
+            for record in records[:8]
+        )
+    return item
 
 
 def _walk_structure_ids(root_id, nodes):

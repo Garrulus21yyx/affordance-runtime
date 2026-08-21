@@ -301,11 +301,18 @@ def project_actor_world_snapshot(
     facts_by_subject: dict[str, list[ActorWorldFactView]] = defaultdict(list)
     evidence_by_subject: dict[str, dict[str, str]] = defaultdict(dict)
     global_facts: list[ActorWorldGlobalFactView] = []
-    stable_fact_refs = dict(fact_refs or {
-        fact.fact_ref: f"F{index}" for index, fact in enumerate(world.facts.items, 1)
-    })
+    stable_fact_refs = (
+        dict(fact_refs)
+        if fact_refs is not None
+        else {
+            fact.fact_ref: f"F{index}"
+            for index, fact in enumerate(world.facts.items, 1)
+        }
+    )
     for fact in world.facts.items:
-        evidence = stable_fact_refs[fact.fact_ref]
+        evidence = stable_fact_refs.get(fact.fact_ref)
+        if evidence is None:
+            continue
         target = visible.get(fact.subject_id)
         if target is not None and target.state.get(fact.predicate) == fact.value:
             evidence_by_subject[fact.subject_id].setdefault(fact.predicate, evidence)

@@ -233,8 +233,9 @@ fresh WorldObservation
 The environment projection and one-shot Manager recovery projection carry no E/N/F/R refs, legacy expired-ref aliases,
 observation identity, screenshot, complete World, action trajectory, private route, query/fragment, provider transcript,
 or benchmark answer. They are current scope guidance, not environment
-authority or mission memory. `MissionState` remains audit-owned; an operational stall still does not create audited
-state. Model recent-step history likewise contains no expired-ref aliases: generation-local identity is removed, while
+authority or mission memory. `MissionState` remains owned by the mechanical evidence-admission boundary; an
+operational stall still does not create evidence-admitted working state. Model recent-step history likewise contains
+no expired-ref aliases: generation-local identity is removed, while
 typed rejection feedback keeps the attempted operation, semantic role/label, observed failure, and currently available
 operations. Full call/ref identity remains trace-only.
 
@@ -379,7 +380,7 @@ The same 2026-08-19 W1b task-0 trace separated the next failure from currentness
 answer table and yielded, and the compact Auditor observation already contained the answer as model-visible `F#`
 facts. The real pre-provider overflow came from reattaching the same visible evidence twice as full canonical
 `EvidenceRecord` lists under `audit_world.facts` and `audit_bundle.evidence`. The local repair keeps `AuditBundle` as
-the internal authority for `AuditBoundary` resolution, but the model-facing `AuditView` now contains only compact
+the internal authority for `EvidenceBoundary` resolution, but the model-facing review view now contains only compact
 World text, counts, and visible public F refs. Auditor output may cite those F refs; the adapter resolves them to
 canonical evidence refs before Boundary admission. Admission diagnostics now include role/phase/component token
 breakdown and preserve `auditor_context_capacity` separately from provider or schema failures.
@@ -418,8 +419,10 @@ its long cross-site cohort with only eight retained turns and a static GoalPlan 
 that configuration cannot honestly preserve episode history, exact values needed after navigation, or verified state
 across fresh executor episodes. The inner episode foundation, context retention, working-fact contracts, model
 invocation boundary convergence, existing mission foundation, `yield_subtask`, and official BrowserGym
-native-evaluator path are implemented and locally verified. Combined ManagerReview is implemented; its terminal
-response contract is reopened because the separate finalizer/tool-envelope path failed live and must be removed.
+native-evaluator path are implemented and locally verified. The direct
+`ManagerReview -> FinalResponseBoundary` replacement for the failed finalizer/tool-envelope path is implemented and
+provider-free verified. Run5 does not reopen that terminal boundary; it separately reopens the Manager's
+model-visible initial/review output schema, Manager-only reasoning composition, and teardown lifecycle.
 Existing model roles expose explicit `ModelInvocationResult`
 envelopes carrying metadata, physical attempts, repair diagnostics, and lineage, while compact-json remains a
 feature-frozen compatibility shim. No WebArena long-horizon benchmark capability claim follows from these local
@@ -563,7 +566,7 @@ above remain useful for readers; dependency pins record selected full commits an
 silently.
 
 The sources separate four concerns that the former eight-step baseline conflated: current observation, current-episode
-trajectory, exact values deliberately retained for later use, and audited cross-episode state. No single memory
+trajectory, exact values deliberately retained for later use, and evidence-admitted cross-episode working state. No single memory
 framework owns all four. The common per-turn inference remains `task + current observation + episode history + current
 actions -> next action`; long-horizon direction is added outside that loop as accepted mission state and one current
 subtask. These are research architecture signals, not production-assurance or benchmark-parity claims.
@@ -575,7 +578,7 @@ an episode-boundary call reads a compact fresh review bundle and returns both a 
 It rejects screenshot-based Manager planning, mutable DAG translation, RAG/cross-task experience, per-step
 reflection, mandatory per-subtask audit, and Manager-chosen GUI actions. Worker completion remains a
 non-authoritative proposal. BrowserGym contributes only official `send_msg_to_user`/STOP and native
-WebArena-Verified evaluation; neither ManagerReview nor an optional Auditor sees hidden evaluator state, expected
+WebArena-Verified evaluation; neither ManagerReview nor an optional SemanticAuditor sees hidden evaluator state, expected
 answers, reward, or terminal success authority.
 
 ## WebArena-Verified long-horizon boundary
@@ -619,7 +622,7 @@ Original TaskGoal
 |---|---|---|---|
 | Full Trace | complete append-only provider, action, observation, evaluation, and artifact evidence for audit/debug | never injected as history | observational only; never reconstructed into control state |
 | Episode Context | current executor episode: fresh World, compact renderings of older `AgentTurnView` records, latest four detailed turns, selected carry facts, and episode working set | ActionPolicy | disposable projection/cache; current World remains environment authority |
-| MissionState | cross-episode accepted working outcomes and carry facts, each with evidence lineage and one version | ManagerReview; selected subset to Executor and exceptional Auditor | EvidenceBoundary working authority; entries are not independent or formal completion truth |
+| MissionState | cross-episode accepted working outcomes and carry facts, each with evidence lineage and one version | ManagerReview; selected subset to Executor and exceptional SemanticAuditor | EvidenceBoundary working authority; entries are not independent or formal completion truth |
 
 MissionState remains in memory for one benchmark case, and each accepted version is recorded through the existing
 trace/evidence path. W2 adds neither a checkpoint file nor a parallel `compact_steps.jsonl` store, and it does not
@@ -667,10 +670,11 @@ facts and oversized strings are ineligible. `pin_fact` is an existing local-tool
 dispatch, and cannot read hidden benchmark state. Automatically captured outputs are admitted only when an existing
 typed evaluator or adapter already publishes that public scalar output; Runtime never infers an output from task prose.
 
-Pinned facts are episode working memory. Exact public scalar facts may be promoted through the existing
-`AuditBoundary` without an LLM because value, provenance, observation lineage, and conflicts are mechanically closed.
-In the converged design this class is the mechanical evidence-admission boundary; retaining its source name does not
-imply that an independent Auditor ran. ManagerReview may propose an open-world working outcome with cited evidence,
+Pinned facts are episode working memory. Exact public scalar facts may be promoted through the mechanical
+`EvidenceBoundary` without an LLM because value, provenance, observation lineage, and conflicts are mechanically
+closed. The historical `AuditBoundary` source name and export were deleted without an alias; the boundary does not
+imply that an independent SemanticAuditor ran.
+ManagerReview may propose an open-world working outcome with cited evidence,
 but the boundary validates only references, currentness/version, public provenance, value consistency, and conflicts;
 it does not turn that model judgment into formal task truth. An independent Auditor may be requested only by an
 explicit strict-verification policy for high-risk or durable ambiguous claims.
@@ -683,11 +687,11 @@ but Runtime does not pretend to detect implicit reliance on a stale value.
 
 | Role | Reads | Produces | Must not do |
 |---|---|---|---|
-| ManagerReview | `initial_plan`: original TaskGoal, accepted MissionState, budget, bounded ref-free environment view. `review_and_route`: those fields plus active SubtaskContract, typed episode exit/recovery, fresh bounded public review view, candidate outputs, and allowed evidence refs | one `ManagerReviewDecision`: working assessment, cited progress proposals, exactly one route, and an optional bounded replacement SubtaskContract | inspect an unbounded trajectory, execute GUI actions, silently keep the same failed strategy, directly mutate MissionState, or declare official success |
+| ManagerReview | `initial_plan`: original TaskGoal, accepted MissionState, budget, bounded ref-free environment view. `review_and_route`: those fields plus active SubtaskContract, typed episode exit/recovery, fresh bounded public review view, candidate outputs, and allowed evidence refs | initial mode: one route and optional bounded first SubtaskContract, with internal `not_applicable` derived by Runtime; review mode: working assessment, cited proposals, exactly one route, and optional bounded replacement SubtaskContract | inspect an unbounded trajectory, execute GUI actions, silently keep the same failed strategy, directly mutate MissionState, make the model echo mechanically known initial assessment, or declare official success |
 | ActionPolicy | original TaskGoal, one local GoalPlan, selected carry facts, episode working set, fresh World/current screenshot, current tools, compact older and detailed recent renderings of existing AgentTurnView records | one existing semantic/local control tool call | read previous episode trajectories, write MissionState, or decide formal completion |
 | EpisodeMonitor | existing StepResult/AgentTurnView and current World fingerprint | operational event and continue/yield recommendation | infer semantic task progress or choose a recovery plan |
 | Auditor / SemanticVerifier | only an explicitly admitted strict-verification request for a high-risk or durable ambiguous claim, with the original public instruction, relevant criterion, fresh public evidence, and allowed refs | one independent semantic opinion with citations, or `unknown`/missing evidence | run on W1b task 0, run after every subtask, repeat ManagerReview by default, mutate GUI, write MissionState, or declare official success |
-| AuditBoundary (mechanical EvidenceBoundary) | ManagerReview/Auditor proposal, existing EvidenceRecords, current MissionState version | one accepted/rejected evidence-backed MissionState update | infer semantic sufficiency, choose role transitions, create GUI actions, or declare official success |
+| EvidenceBoundary (mechanical) | ManagerReview/SemanticAuditor proposal, existing EvidenceRecords, current MissionState version | one accepted/rejected evidence-backed MissionState update | infer semantic sufficiency, choose role transitions, create GUI actions, or declare official success |
 | Supervisor | current phase, active SubtaskContract, last episode exit/failure/audit ref, role/case budgets, and the existing opened WorldEnvironment reference | next legal role transition and bounded role input | store audited facts/outcomes, own a second physical browser/session, reinterpret page semantics, create GUI actions, or declare official success |
 
 Role frequency is a frozen contract:
@@ -711,9 +715,9 @@ Supervisor's evidence classifier is deterministic and closed; it does not infer 
 | Proposal | Route |
 |---|---|
 | no value/outcome needs to survive the episode | no MissionState write; ManagerReview still chooses the next route from the typed exit |
-| exact scalar value already resolved from current public `EvidenceRecord` | AuditBoundary validates and commits without another model |
-| open-world working outcome | ManagerReview cites current public evidence; AuditBoundary checks lineage/version only and records it as working state, not official truth |
-| policy-declared high-risk or durable ambiguous claim | optional independent Auditor once, then the same AuditBoundary |
+| exact scalar value already resolved from current public `EvidenceRecord` | EvidenceBoundary validates and commits without another model |
+| open-world working outcome | ManagerReview cites current public evidence; EvidenceBoundary checks lineage/version only and records it as working state, not official truth |
+| policy-declared high-risk or durable ambiguous claim | optional independent SemanticAuditor once, then the same EvidenceBoundary |
 | missing, stale, private, conflicting, or unsupported evidence | typed rejection or evidence-refresh request; no commit |
 
 A “meaningful subtask exit” means the active SubtaskContract has completed or failed and the next objective may
@@ -746,7 +750,7 @@ to ephemeral `SupervisorState`. Manager sees a projection of both owners but wri
 
 `ready_for_audit` is retired. The replacement `outcome_proposed` exit is a non-authoritative Worker claim and always
 enters one bounded `review_and_route` call in manager-guided mode. ManagerReview judges the claim and chooses the next
-route in the same response. Exact public evidence still uses deterministic AuditBoundary admission. Only an explicit
+route in the same response. Exact public evidence still uses deterministic EvidenceBoundary admission. Only an explicit
 strict-verification policy may insert an independent read-only Auditor. Final completion remains the integrated native
 evaluator result.
 
@@ -770,14 +774,14 @@ Supervisor owns the legal outer transition, not model prose:
 | managing | ManagerReview transport/provider/schema/invalid output | apply only the frozen provider retry and one schema-repair budget; if still unresolved, terminal outer `failed` with no MissionState change |
 | executing | `control_stall`, `grounding_stall`, `capability_gap`, or `protocol_stall` | preserve bounded mechanical recovery evidence -> one `review_and_route` call |
 | executing | explicit `outcome_proposed` | fresh capture -> one `review_and_route` call; assessment and next route are returned together |
-| reviewing | exact public carry-fact proposal | deterministic AuditBoundary admission; continue with the route already selected by ManagerReview |
-| reviewing | ordinary evidence-backed semantic working outcome | AuditBoundary validates cited lineage/version and records non-formal working state; continue selected route |
+| reviewing | exact public carry-fact proposal | deterministic EvidenceBoundary admission; continue with the route already selected by ManagerReview |
+| reviewing | ordinary evidence-backed semantic working outcome | EvidenceBoundary validates cited lineage/version and records non-formal working state; continue selected route |
 | reviewing | strict-verification policy admits high-risk/durable ambiguous claim | fresh capture -> exceptional auditing at most once |
 | executing | waiting-user/confirmation | preserve this episode state and surface the existing wait; do not audit or replan |
 | executing | multiple calls or representation error | same-episode typed protocol feedback with zero dispatch; repeated feedback yields `protocol_stall` -> managing |
 | executing | no-dispatch provider/timeout/authentication/environment failure | typed operational outcome under its retry/terminal contract; never audit as a subtask |
 | executing | environment loss or mission cancellation | mission blocked/failed or cancelled; never infer preserved progress |
-| auditing | accepted independent opinion | AuditBoundary validates cited lineage/version; resume the route admitted around that exceptional check |
+| auditing | accepted independent opinion | EvidenceBoundary validates cited lineage/version; resume the route admitted around that exceptional check |
 | auditing | rejection/unknown/provider/schema failure | commit nothing; return bounded evidence to one ManagerReview or fail when the mission budget is exhausted; never retry Auditor in place |
 | reviewing | `request_finalization` + candidate response + evidence refs | mechanical FinalResponseBoundary admission against the same fresh review bundle/version; no second capture, Manager, Auditor, ActionPolicy, or tool call |
 | finalizing | boundary-admitted `FinalResponse` | deliver once, reacquire once, and run native evaluation once |
@@ -803,7 +807,7 @@ case.
 
 Role retries are transport-local and visible in trace; they never create another Supervisor transition.
 ManagerReview and the exceptional Auditor each receive at most the frozen provider retry policy plus one schema
-repair for a semantic call. A rejected evidence proposal is not repaired by AuditBoundary and is not silently
+repair for a semantic call. A rejected evidence proposal is not repaired by EvidenceBoundary and is not silently
 resubmitted: one later ManagerReview may decide whether another evidence-producing subtask is worthwhile. These routes
 close the outer algebra without adding a recovery agent or a second control owner.
 
@@ -816,7 +820,7 @@ another case's checkpoint/offload directory.
 
 Evidence admission is intentionally narrow. ManagerReview owns the ordinary semantic working proposal and must cite
 one or more public evidence records from its bounded MissionReviewBundle. An exceptional Auditor proposal follows the
-same citation contract. AuditBoundary checks only typed schema/status, referenced evidence existence and public
+same citation contract. EvidenceBoundary checks only typed schema/status, referenced evidence existence and public
 origin, observation/pin lineage, exact promoted value identity, current MissionState base version, key/version
 conflicts, and bounds. It cannot decide that cited evidence is semantically sufficient. A lineage-valid but
 semantically mistaken model judgment remains possible working-state risk and is measured by held-out benchmark
@@ -830,7 +834,8 @@ deterministically projected into one local GoalPlan item. The existing model-bac
 for these episodes, avoiding two planners that decompose the same subtask. It remains available for standalone
 short-task mode and a later declared ablation. It is never invoked after every step or automatically on layout change.
 
-The baseline `SubtaskContract` contains only bounded natural-language fields and references to accepted fact keys:
+The currently implemented `SubtaskContract` contains bounded natural-language fields and references to accepted fact
+keys:
 
 ```text
 objective | done_when | constraints | relevant_fact_keys
@@ -839,6 +844,9 @@ candidate_output_keys | episode_turn_budget | related_audit_ids
 
 It contains no selector, coordinate, E/F ref, BrowserGym ID, expected benchmark answer, current element, or action
 sequence. The direct GoalPlan has one advisory item; Runtime does not create item status, frontier, or a second plan.
+Run6 later proves that `candidate_output_keys` is both ambiguous and absent from the ActionPolicy projection. Phase
+13.1 therefore replaces it with the closed `outcome_kind + required_evidence` contract defined below; this paragraph
+describes the pre-migration implementation, not the target closure.
 
 ### Reuse boundary
 
@@ -856,7 +864,7 @@ BrowserGym-specific glue that upstream does not provide; it does not reproduce u
 generic Environment, CLI adapters, artifact store, or textual task-state machinery.
 
 ManagerReview and ActionPolicy are distinct typed roles, not necessarily distinct vendors or models. A deployment may
-configure the same provider/model behind both ports. The optional Auditor is a third role only when strict
+configure the same provider/model behind both ports. The optional SemanticAuditor is a third role only when strict
 verification is explicitly admitted. Each call receives only its role-specific bounded input and tool set; role
 identity, model settings, latency, tokens, and failures remain separate in evidence.
 
@@ -905,7 +913,7 @@ cohort begins before the W1b smokes and independent audit pass:
    value/lineage.
 5. **Thin outer supervisor.** Reuse LongHorizon-Harness' bounded evidence/route discipline and Agent S2's combined
    completion-or-failure-to-replan cadence without importing either orchestrator. Add one two-mode ManagerReview
-   contract, operational EpisodeMonitor, exceptional optional Auditor, mechanical evidence admission,
+   contract, operational EpisodeMonitor, exceptional optional SemanticAuditor, mechanical EvidenceBoundary admission,
    SupervisorState, and MissionState above the current CoreLoop. Reuse the current provider bridge. Prove previous
    episode trajectories do not enter the next Executor and only cited existing EvidenceRecords can enter MissionState.
 6. **Task intake projection.** Read the public instruction and official final-response schema emitted by the
@@ -1551,7 +1559,7 @@ ActionPolicy first applies contract-backed local normalization to one call. A ma
 representation then returns typed same-episode feedback; it never replays the full World, selects one of multiple
 calls, changes operation/target, or invokes a semantic repair model. Grounding and stale-reference failures likewise
 return typed feedback for the next ordinary policy turn. The only remaining one-shot role schema repair in this
-causal surface is role-local: optional Auditor repair contains the invalid JSON object, validation error, compact
+causal surface is role-local: optional SemanticAuditor repair contains the invalid JSON object, validation error, compact
 `AuditorDecisionModel` shape, allowed refs, and audit reason—never the original large review context or final-response
 schema.
 
@@ -1948,9 +1956,9 @@ Screenshot data URLs are replaced by content-addressed artifacts. Trace data nev
 The remaining compatibility debt is below this trace seam: `ModelBackedGoalCompiler` and compact-json still assemble
 attempts from provider `last_call`/`last_transcript` until the lower provider port returns an explicit provider-call
 record. That debt is not a trace or GUI Runtime authority.
-Langfuse renders the same agent root, model-turn chain, LLM generations, and Runtime tool spans; it is an exporter,
-not an authority, queue, transcript owner, or second loop. The separate private capture remains an optional isolated
-copy for deployments that do not enable a local Runtime trace.
+Langfuse renders a bounded OpenTelemetry view of the typed local events; it is not an authority, transcript owner,
+queue, or second loop. Local JSONL remains the complete diagnostic record. The separate private capture remains an
+optional isolated copy for deployments that do not enable a local Runtime trace.
 
 ### Token-accounting ownership
 
@@ -2013,7 +2021,7 @@ it does not add a parallel progress channel:
 ```text
 Task
   original instruction, constraints, permitted effects, formal task evaluation, requested outputs
-  optional current SubtaskContract and only its selected audited carry facts
+  optional current SubtaskContract and only its selected evidence-admitted carry facts
 Current Observation
   one semantic PageMap plus exact current ActiveView/SearchResults from the latest fused public world,
   inline verbs, truthful delivery/source coverage, and the current screenshot only when selected
@@ -2032,7 +2040,7 @@ Current Tools
 The latest `WorldObservation` is the only current environment authority; the fresh Actor-derived
 `WorldDeliveryView` is the only model-visible current-world view. ActionPolicy interprets the current task/subtask
 against that view; Runtime neither
-computes nor persists GoalPlan item status or a frontier. MissionState supplies audited
+computes nor persists GoalPlan item status or a frontier. MissionState supplies evidence-admitted
 cross-stage working evidence, not current UI state. Formal completion remains in TaskEvaluator/native evaluation. No
 model summary, Manager, Auditor, or separate progress-evaluator call is made per GUI step.
 
@@ -2413,7 +2421,7 @@ Rules:
 - Return only one value satisfying ManagerDecision; do not emit GUI tool calls or prose outside the schema.
 ```
 
-The optional Auditor keeps a separate narrow prompt only for an admitted strict-verification request. It returns one
+The optional SemanticAuditor keeps a separate narrow prompt only for an admitted strict-verification request. It returns one
 cited independent opinion and no route or subtask. W1b does not instantiate it.
 
 There is no finalizer prompt. `FinalResponseBoundary` is mechanical and checks only the admitted ManagerReview result:
@@ -2507,7 +2515,7 @@ reasoning until benchmark evidence demonstrates a different shared failure after
 | What is the active phase/subtask, last exit/failure, and remaining mission budget? | SupervisorState |
 | What happened earlier in this executor episode? | existing `project_step_result()` -> AgentTurnView records in RunState; existing context binder renders older/recent windows |
 | Which exact public value must survive navigation in this episode? | `pin_fact` closes a current Context F ref through the new private Context mapping and existing WorldEvidenceIndex into a WorkingFact on RunState |
-| Which prior outcome/fact may cross into another episode? | exact public facts go directly to AuditBoundary; ManagerReview proposes cited working semantics; an optional Auditor is limited to strict-verification cases; AuditBoundary validates lineage/version/value rules and commits MissionState |
+| Which prior outcome/fact may cross into another episode? | exact public facts go directly to EvidenceBoundary; ManagerReview proposes cited working semantics; an optional SemanticAuditor is limited to strict-verification cases; EvidenceBoundary validates lineage/version/value rules and commits MissionState |
 | Which plan item is satisfied or next now? | ActionPolicy interprets GoalPlan + fresh World; no Runtime progress state |
 | What semantic action should be attempted? | Model policy |
 | Which tools are callable now? | PerTurnToolCatalog |
@@ -2530,7 +2538,7 @@ Run status is `running`, `waiting_user`, `waiting_confirmation`, `yielded`, `don
 `yielded` is terminal only for the current executor episode and is not a task outcome; the other terminal states keep
 their existing meaning. The outer supervisor additionally has bounded
 `managing`, `executing`, optional `auditing`, `waiting_user`, `finalizing`, `done`, `blocked`, `cancelled`, and `failed` states;
-only `AuditBoundary` can commit a new MissionState version between legal transitions. Unsupported states fail with a
+only `EvidenceBoundary` can commit a new MissionState version between legal transitions. Unsupported states fail with a
 typed reason. Distributed recovery and multi-supervisor concurrency remain outside the supported scope.
 
 ## Migration status
@@ -2552,8 +2560,8 @@ validation:
 | 10. Replace symbolic goal guidance with Simple GoalPlan | implementation complete; Ready delivered / behavior failed / non-closed | five-field plan is directly projected and compiler attempts are traced; live evidence includes both reversal of satisfied Likes and a Ready-plan zero-action stall |
 | 11. Converge compact prompts and local action outcome | implementation complete; local contract verification passed / non-closed | GoalCompiler emits outcomes rather than internal activities; ActionPolicy treats dependencies as advisory; binding chooses one verification contract; Recent Steps exposes supported transition and optional local postcondition; TaskEvaluator is the only formal evaluator |
 | 12. Re-run the predeclared Like witness | witness passed / held-out cohort deferred as regression / non-closed | ref-free semantic history reached policy; GLM-5.2 activated seven distinct inactive Likes and then Submit; no old ref, unrelated action, reversal, or schema repair occurred |
-| Provider/model invocation boundary convergence | implemented / locally verified | ActionPolicy and GoalCompiler expose `ModelInvocationResult`; production policy ports return only that envelope; all physical attempts are retained; transport retry is provider-boundary owned; role repair remains role-boundary owned; trace/benchmark consume the explicit result; GUI authority is unchanged |
-| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | ManagerReview implemented; finalization contract reopened by run10 / non-closed | preserve the unchanged inner GUI chain; W1b uses one initial Manager plan and one episode review in the normal case; the same review call assesses progress, selects the next route, and carries the final response when ready; independent Auditor is exceptional; a mechanical FinalResponseBoundary performs schema/evidence admission and one terminal send; remove the separate Finalizer/tool path before live verification |
+| Provider/model invocation boundary convergence | run9 implementation active / non-closed | ActionPolicy, GoalCompiler, Manager, and Auditor expose `ModelInvocationResult`; Manager/Auditor use one strict PydanticAI ToolOutput adapter; all physical attempts are retained; provider retry stays transport-owned and output retry stays PydanticAI-owned; trace consumes only the explicit result; GUI authority is unchanged |
+| 13. Add the bounded long-horizon supervisor and demonstrate WebArena-Verified | Phase 13.1 owner correction implemented; focused provider-free verification passed; documentation audit findings corrected / non-closed | preserve the unchanged inner GUI chain; project the complete model-relevant execution subtask view to ActionPolicy while Supervisor retains budget, carry-fact selection, and audit lineage; make evidence pinning reachable; use mechanically triggered role reasoning budgets; keep independent Auditor exceptional and mechanical boundaries authoritative; pass a new independent audit before one W1b witness |
 | 14. Run paired structured-only/adaptive cohorts | pending after the WebArena baseline | the first 15-case pair completed 13/15 in both arms but acquired zero visual sources, so it is valid Runtime evidence but not evidence for the adaptive-observation claim |
 
 Phase 11 converged in this owner order without reopening GoalPlan or CoreAgentLoop:
@@ -2597,17 +2605,20 @@ wrong. The smallest coherent correction keeps one ManagerReview semantic call an
    environment view. Review mode additionally sees the active contract, typed episode exit/recovery, candidate output
    keys, fresh bounded public evidence, and allowed evidence refs. It never sees an unbounded trajectory or hidden
    evaluator data.
-3. Extend the existing `ManagerDecision` contract with a bounded working assessment
-   (`not_applicable|satisfied|unsatisfied|unknown|blocked`), cited evidence refs, optional working-state proposals, one
-   route (`execute_subtask|request_finalization|ask_user|blocked`), an optional replacement SubtaskContract, and
-   `final_response` plus `final_response_evidence_refs` only for `request_finalization`. One
-   review call must both assess the prior episode and choose the next route; Supervisor must not call Auditor and then
-   Manager for the ordinary case.
-4. Keep the existing `AuditBoundary` only as a mechanical evidence-admission boundary. It validates public lineage,
+3. Select a mode-specific model-visible output schema. `InitialManagerDecisionModel` contains one route and optional
+   first SubtaskContract but no assessment or review/state/final-response fields; Runtime lowers it to the unified
+   internal `ManagerDecision` with `assessment=not_applicable`. `ReviewManagerDecisionModel` contains the bounded
+   working assessment (`satisfied|unsatisfied|unknown|blocked`), cited evidence refs, optional working-state proposals,
+   one route (`execute_subtask|request_finalization|ask_user|blocked`), an optional replacement SubtaskContract, and
+   `final_response` plus `final_response_evidence_refs` only for `request_finalization`. Initial and repair use the
+   same selected schema. One review call must both assess the prior episode and choose the next route; Supervisor must
+   not call Auditor and then Manager for the ordinary case.
+4. The historical `AuditBoundary` source was renamed to `EvidenceBoundary` and its old export deleted without an
+   alias. This mechanical evidence-admission boundary validates public lineage,
    observation/version, exact values, bounds, idempotence, and conflicts. ManagerReview's semantic assessment remains
    working state and cannot terminate the task. Rename model-visible/report wording away from `audited` where no
    independent Auditor ran; source-type migration may be narrow and explicit rather than duplicating state.
-5. Retain one optional Auditor port behind an explicit strict-verification policy. It may run once for a high-risk or
+5. Retain one optional SemanticAuditor port behind an explicit strict-verification policy. It may run once for a high-risk or
    durable ambiguous cross-episode claim. It is disabled for W1b task 0 and is never triggered by ordinary completion,
    navigation, read/search, budget rollover, stall, exact facts, or final evidence already reviewed from the current
    World.
@@ -2632,8 +2643,8 @@ wrong. The smallest coherent correction keeps one ManagerReview semantic call an
 No live benchmark, model tuning, new role, second state store, or second GUI loop is part of this convergence
 increment. The former role-frequency implementation result remains historical local evidence and is superseded by
 run8/run10. T3.3 is now implemented and provider-free verified; no live run is claimed.
-Current status: **T3.3 implementation complete / provider-free candidate/read-action verification passed /
-W1b-Agent active next / live verification pending / non-closed**.
+Current status: **T3.3 implementation complete / provider-free candidate/read-action verification passed / Phase
+13.1 subtask/evidence/reasoning convergence blocks W1b-Agent / non-closed**.
 
 ### End-to-end chain audit and remaining convergence plan
 
@@ -2656,7 +2667,7 @@ NaturalLanguageTaskRequest
 
 The GUI authority and execution path are singular: both execution modes reuse the same `TargetRuntime`, ActionSpace,
 Manifest, resolver, Binder, browser session, action-outcome projection, and TaskEvaluator. Manager runs only at task
-start and meaningful episode exits. The ordinary W1b composition installs no Auditor; the optional Auditor remains
+start and meaningful episode exits. The ordinary W1b composition installs no SemanticAuditor; the optional SemanticAuditor remains
 available only for an explicitly configured strict high-risk/durable claim. The former finalizer ActionPolicy episode,
 finalizer prompt, and `submit_final_response` tool path have been removed.
 
@@ -2718,7 +2729,7 @@ and summaries that existed only to support the old ledger-shaped context are no 
   unknown elsewhere, and never turn arbitrary UI change into semantic progress or task completion.
 - Do not add per-step ManagerReview/Auditor/reflection/summarizer calls, a second GUI evaluator loop, a second Binder,
   or benchmark-specific product branches. ManagerReview runs once per meaningful episode boundary and must return
-  assessment plus next route together. The optional Auditor is read-only and runs only under an explicit strict
+  assessment plus next route together. The optional SemanticAuditor is read-only and runs only under an explicit strict
   high-risk/durable-claim policy.
 - Import and configure `browsergym.webarena_verified`; do not copy its task dataset, login logic, Playwright tracing,
   final-response schema, backend/UI-state evaluators, or score aggregation into project code.
@@ -2793,7 +2804,7 @@ a later T3.4 efficiency gate and cannot be implemented as part of candidate-reca
   older records render compactly, only the latest four render in detail, and no previous-episode trajectory enters a
   new Executor.
 - Working facts wrap existing Runtime-resolved public EvidenceRecords, never model-supplied values or durable
-  call-local refs; only the mechanical AuditBoundary/evidence-admission path can promote them into MissionState.
+  call-local refs; only the mechanical EvidenceBoundary path can promote them into MissionState.
 - MissionState has one accepted version lineage and contains only evidence-backed working outcomes/facts; it cannot bypass
   current World, permission/confirmation, or native final evaluation.
 - SupervisorState alone owns active phase/subtask, last exit/failure/audit ref, budgets, and final-response latch; the
@@ -2834,3 +2845,886 @@ a later T3.4 efficiency gate and cannot be implemented as part of candidate-reca
   task-0 diagnostic reached ActionPolicy and exposed source-semantics/projection issues, but neither that case nor the
   local repairs close the real-web World gate or the six site smokes.
 - Code, tests, maintained documents, and benchmark reports describe the same one-GUI-loop/two-time-scale architecture.
+
+## 2026-08-21 W1b task-7 operational-progress convergence
+
+T3.3 current-action discovery remains passed and unchanged. Task 7 exposed no autocomplete protocol: the directions
+fields geocode on `change`, and route creation requires both page-private coordinate results. A provider-free official
+BrowserGym timing witness proved that focus transfer emits `change/blur` and starts both geocode requests. In the
+current browser environment both requests target `localhost:8080`, terminate before an HTTP response, and never reach
+the map-service access log. The container publishes its HTTP service as host port `3000`, while its browser-visible
+configuration names container port `8080`; concurrent requests to the emitted port return 404 without CORS, whereas
+the identical requests to port 3000 return 200 with CORS. The W0 owner was a stale Brotli-compressed browser asset:
+the plain and gzip assets already contained relative service URLs, but Chromium preferred an old `.br` variant still
+containing port 8080. Regenerating the browser asset variants and installing the same startup repair in the active Map
+deployment made fresh Chromium use `/nominatim/` and `/osrm/`, resolving through host port 3000. A provider-free rerun
+received HTTP 200 for both geocodes and OSRM, and its fresh BrowserGym source exposed `Distance: 33km. Time: 0:32.`
+The corrected W0 source was then rebuilt as image `706822fbfb5a`, the Map container was recreated against the existing
+data volumes, and the same provider-free witness passed again from that clean image boundary. This closes the W0
+network boundary but does not by itself attest the Runtime World/Delivery projection.
+
+A second provider-free witness then used the production case facade and the sole formal execution chain:
+`WebArenaVerifiedCaseEnvironment -> UnifiedWorldEnvironment -> ActionSpace -> Admission -> Binder -> Executor`.
+The Go post-action observation itself contained public `StaticText "Distance: 33km. Time: 0:32."`, and the same fresh
+observation identity flowed through `ContextBuilder -> GroundedPolicyContextBinder -> ModelTurnDelivery`, whose Actor
+text retained the 33 km result. No extra capture, provider call, raw browser action, or RegionIndex change was needed.
+Thus the valid-route World/Delivery boundary passes provider-free conformance; this is not live-agent closure.
+
+`ActionOutcome.observed_change` remains the truthful local observation. `EpisodeMonitor` consumes only this existing
+typed outcome: a satisfied local postcondition, or `changed` backed by `structural` evidence, resets the failure
+streak; `visual_diff` with an unknown/not-applicable postcondition does not. Existing World fingerprints remain only
+for control-change and oscillation handling; Monitor owns no second interpretation of targets, facts, bindings, or
+state fields. The same semantic action, semantic target, and parameters continue once, emit the existing bounded ref-free
+`RecoverySignal` on the second no-progress attempt, and yield that same signal after the next repeat. The sole outer
+seam remains `EpisodeMonitor -> RunState.recovery_signal -> Supervisor -> ManagerRecoveryView.recovery_signal`.
+
+No autocomplete state, semantic evaluator, action path, Manager field, task budget, T3.3 owner, GoalPlan owner,
+RegionIndex behavior, or site-specific production branch was added. W1b-Agent remains non-closed with live-model
+verification pending; T3.3 and RegionIndex remain unchanged.
+
+## 2026-08-21 benchmark external-interruption boundary
+
+The three task-7 attempts separate benchmark-process validity from Agent outcome. Run1 and run3 end on ordinary trace
+events and contain neither a terminal Runtime/provider/BrowserGym failure nor case/run/summary reports. Run2 alone
+contains a complete case and suite report; its typed `blocked` result is therefore the only valid task-7 Agent result.
+The correlation between PTY reads and process lifetime, together with the absence of reboot, OOM, crash, or coredump
+evidence, makes host PTY reclamation the high-confidence cause of run1/run3. The application trace cannot directly
+identify the host's reclamation policy, so the exact silent-session timeout remains an external inference rather than
+a Runtime fact.
+
+Terminal liveness belongs to the benchmark CLI, external interruption projection belongs to the target-loop runner,
+and evidence durability belongs to benchmark reporting. The CLI now emits a flushed heartbeat every 30 seconds and
+relays `SIGHUP`, `SIGTERM`, and `SIGINT` through an `asyncio.Event`. The runner races that event against its existing
+case watchdog, cancels the in-flight case without classifying it as a watchdog or Agent failure, closes the environment,
+and projects `failure_origin=harness_external_interruption`, `failure_code=interrupted_external`, and
+`termination_origin=harness_external`. It then stops the suite; missing later cases make suite acceptance fail closed.
+Reporting atomically writes each case as soon as it completes or is interrupted, before the final suite report. An
+uncatchable `SIGKILL` still cannot produce a terminal typed record, but already completed case files remain durable and
+the heartbeat reduces exposure to silent-PTY reclamation. No model, prompt, World, ActionSpace, or BrowserGym behavior
+changed.
+
+### Run4 correction: PTY absolute lifetime and detached execution
+
+Run4 falsified the silent-session explanation above. Heartbeats continued every 30 seconds, but the foreground PTY
+was still terminated at approximately 420 seconds. Host wall-clock evidence spans about 419 seconds; the trace file
+itself spans 02:19:21–02:25:56 (about 395 seconds) because process initialization precedes its creation. The correct
+operational model is an absolute host PTY lifetime, not an inactivity timeout. Heartbeats remain useful foreground
+diagnostics but are not a liveness mechanism and cannot validate a long benchmark run.
+
+Long target-loop runs now use a separate CLI lifecycle owner. `--detach` launches the unchanged foreground benchmark
+with `start_new_session=True` (POSIX `setsid`), disconnected stdin, and stdout/stderr redirected to
+`<output-dir>/benchmark.log`. The launcher returns immediately after atomically storing the real PID in `run.pid` and
+a PID-reuse-resistant identity (`PID`, `SID`, `/proc` start ticks, command, paths, UTC start) in `launch.json`.
+`--status` compares that identity with the live process and reports only `running`, `completed_reported`,
+`stopped_with_partial_cases`, or `stopped_without_report`, together with durable trace/case/run/summary paths. It does
+not reconstruct Runtime state. New detached launches refuse a non-empty evidence directory. A real smoke run verified
+`PPID=1`, `SID=PID`, trace creation, immediate case persistence, and terminal `run.json`/`summary.json` after the
+invoking PTY command had returned.
+
+Run4 also adds a product counterexample, but not the one initially stated. The fresh World trace contains CMU,
+Pittsburgh International Airport (`15231`), and `Distance: 33km. Time: 0:32.` before the episode ends. ActionPolicy
+nevertheless spends the remaining turns on `search`, `find_content`, and `open_region`, then exhausts all 15 episode
+turns without promoting the visible route fact. The episode-boundary ManagerReview subsequently makes an initial
+structured attempt and one schema repair; both end `output_truncated`, yielding `schema_error: role output invalid`.
+This repeats the ManagerReview output-budget/representation failure family already witnessed after useful GUI work.
+Per the convergence policy it remains reopened and blocks W1b closure; a token-limit-only patch is not closure
+evidence. The detached-run change modifies benchmark process lifecycle only and does not change Manager, ActionPolicy,
+World, or BrowserGym behavior.
+
+## 2026-08-21 evidence handoff and subtask-granularity convergence
+
+### One control and evidence flow
+
+The implementation keeps one ordinary flow; it does not insert a SemanticAuditor between an episode and ManagerReview:
+
+```text
+TaskGoal
+-> ManagerReview(initial_plan)
+-> one SubtaskContract
+-> deterministic local GoalPlan
+-> existing CoreAgentLoop
+-> find_content / current Unified World
+-> pin_fact
+-> episode WorkingFact
+-> yield_subtask(outcome_proposed | stalled | blocked | capability_gap)
+-> fresh bounded MissionReviewBundle
+-> ManagerReview(review_and_route)
+-> EvidenceBoundary, only when a state proposal exists
+-> MissionState
+-> execute_subtask | request_finalization | ask_user | blocked
+```
+
+Before this correction, an exact scalar returned by `find_content` could be rendered only as an `N` node and text.
+Replacing the search lens then removed the value from the model-visible working view, so no real `F` evidence handle
+could be supplied to `pin_fact`. After the correction, World/Delivery resolves an exact current public scalar against
+the existing `WorldEvidenceIndex` and returns its node, offered evidence ref, Runtime-owned exact value, region/source
+context, observation lineage, coverage, and evidence method. The same search result therefore has one source record,
+for example:
+
+```json
+{
+  "node_ref": "N131",
+  "evidence_ref": "F42",
+  "value": "Distance: 33km. Time: 0:32.",
+  "region_ref": "R2",
+  "source_context": {"modality": "structural", "assurance": "direct", "region_ref": "R2"},
+  "observation_lineage": {"scope": "current_observation", "status": "current"},
+  "coverage": "complete",
+  "evidence_method": "structural"
+}
+```
+
+`pin_fact(key="route_distance", evidence_ref="F42", purpose="compare after navigation")` resolves that handle in
+the current manifest; the model cannot send or overwrite a value. Runtime internally creates an episode bookmark
+equivalent to the following non-model-visible record:
+
+```json
+{
+  "key": "route_distance",
+  "record": {
+    "evidence_ref": "<canonical World evidence ref>",
+    "value": "Distance: 33km. Time: 0:32.",
+    "observation_id": "<originating World observation>",
+    "source_observation_id": "<originating source observation>"
+  },
+  "purpose": "compare after navigation"
+}
+```
+
+The public `F42` handle is observation-local and cannot be called in a fresh World. The typed `WorkingFact` retains
+the canonical originating record after search or page replacement. At episode review it receives a fresh,
+review-local public evidence handle; if ManagerReview proposes `key + evidence_ref + purpose`, the mechanical boundary
+resolves the Runtime-owned value and validates public typed source lineage, current-or-pinned admission, MissionState
+version, idempotence, and key conflict before committing it. Runtime may retain `33km`; it does not infer that a
+candidate satisfies a task constraint. `TaskEvaluator` or the native verifier remains the sole formal completion
+authority.
+
+Owner boundaries are unchanged and explicit:
+
+| Owner | Responsibility |
+|---|---|
+| SurfaceAdapter/Fusion and Unified World Delivery | acquire DOM, visual, OCR, or VLM facts into one World; publish current exact scalar text and a resolvable evidence handle |
+| `pin_fact` | resolve one offered current scalar `F` ref and save the exact Runtime-owned evidence bookmark; never dispatch BrowserGym and never accept free text |
+| `WorkingFact` | bounded current-episode evidence working set that survives view replacement; not mutable task progress |
+| ManagerReview | ordinarily assess the previous episode, cite public evidence, optionally propose state updates, and choose exactly one next route |
+| mechanical `EvidenceBoundary` | validate evidence/source lineage, version, idempotence, and conflicts; it is not a SemanticAuditor and makes no model call |
+| optional SemanticAuditor | at most one independent semantic review only when a composition-level, predeclared strict-verification policy admits a high-risk or durable ambiguous claim |
+| MissionState | accepted cross-episode outcomes and evidence-backed facts |
+| ManagerReview on the next boundary | select the next dominant independently auditable outcome from accepted state and fresh World |
+| TaskEvaluator/native verifier | sole formal completion authority |
+
+Exact pinned public scalar facts need no SemanticAuditor. Ordinary retrieval, `pin_fact`, `outcome_proposed`, stall, budget
+exhaustion, ActionPolicy uncertainty, and finalization do not trigger one. The exceptional route is
+`ManagerReview -> predeclared strict policy -> optional SemanticAuditor at most once -> EvidenceBoundary`.
+This retains the audited/externalized-state direction represented by LongHorizon-Harness and the bounded Manager/
+Worker replanning of Agent S2, while the evidence-ref bookmark API is this project's narrow implementation rather
+than a new memory framework. Visual, DOM, OCR, and VLM facts use the same World evidence and `F-ref -> pin_fact` path;
+there is no `pin_visual_fact` or parallel visual memory.
+
+### Manager outcome granularity
+
+One `SubtaskContract` now means one dominant, independently auditable outcome. It is neither one GUI action nor the
+whole `TaskGoal`: several tightly coupled actions may fill related fields, submit them, and read the one result panel
+that constitutes the outcome. A missing prerequisite causes Manager to assign only the most important prerequisite.
+The preferred size is 4–8 ActionPolicy turns; the episode limit remains a safety cap. `done_when` names one fresh
+observable state or evidence packet, not an internal action sequence.
+
+Granularity examples:
+
+- Too small: "Type the first form field."
+- Appropriate: "Submit the related form fields and obtain one observable result panel containing the requested record."
+- Appropriate: "Verify one candidate against the stated constraint and capture one evidence packet containing the candidate identity and measured value."
+- Too large: "Discover every candidate, verify all candidates, compare them, produce the final answer, and submit it."
+
+These examples are prompt guidance only. Production code contains no keyword validator, new subtask type, phase state
+machine, site/task special case, or fixed GUI sequence.
+
+### Run4 truncation diagnosis and status
+
+The historical task-7 recovery trace (superseded invocation path) proves that both `manager_initial` and the retired
+`manager_schema_repair` ended with the typed
+`output_truncated` violation. Its stored request estimates are approximately 4,783 tokens initially and 426 for the
+compact repair, so repair already avoids replaying the full unrelated request. The historical attempt records contain
+empty/zero provider finish reason, output cap, reasoning presence, token counts, and transcript. Consequently that
+trace cannot establish whether provider reasoning consumed the output budget, and changing Manager reasoning or its
+existing explicit 2,048-token role cap would be speculation. No role/provider budget was changed.
+
+The narrow repair records the same provider call's real `finish_reason`, `max_output_tokens`, reasoning/final-content
+presence, token counts, response fields, and transcript in every initial and repair `ModelGenerationAttempt`, including
+typed failures. Repair remains the same provider route and carries only the compact response shape plus the concrete
+schema error. No adapter-private `last_*` value becomes decision authority; the role boundary snapshots it solely as
+trace metadata at the call boundary.
+
+Task 7's demonstrated causal chain is therefore: World and Delivery exposed the 33 km distance, but the public
+evidence handoff to `pin_fact` was open; the initial Manager subtask combined discovery, all verification,
+aggregation, and finalization; and the recovery Manager initial and repair representations were truncated. The
+provider-free work below implements the individual `find_content -> F-ref -> pin_fact` and Manager-shape contracts,
+but does not by itself prove that the full Manager-to-ActionPolicy delivery makes those components reachable in a
+real episode. Run6, documented below, later falsifies that composed-closure claim. Future truncation evidence is
+truthful, but Task 7 and W1b remain non-closed.
+
+### Run5 superseding evidence: mode-specific Manager output and bounded teardown
+
+Run5 at `evidence/live/w1b-task-7-deepseek-v4-flash-run5/` supplies the physical provider evidence missing from
+run4 and therefore supersedes only run4's `historical cause untraceable` clause. The initial Manager attempt ended
+with `finish_reason=length`, `max_output_tokens=2048`, `completion_tokens=2048`,
+`reasoning_content_present=true`, and `final_content_present=false`. DeepSeek reasoning consumed the complete shared
+Manager output allowance before a `ManagerDecision` body was available. The compact repair then ended normally with
+`finish_reason=stop`, 778 completion tokens, and final content, but returned `assessment=unknown` for an
+`initial_plan` request. The generic response schema accepted that representation; Supervisor later rejected the
+phase conflict because an initial request has no prior episode to assess. ActionPolicy was never invoked and the GUI
+dispatch count remained zero.
+
+The convergence target removes both avoidable model obligations rather than teaching the model to echo Runtime-known
+constants:
+
+```text
+ManagerRoleRequest(mode=initial_plan)
+  -> InitialManagerDecisionModel
+       route: execute_subtask | ask_user | blocked
+       subtask/question/reason under existing route invariants
+       no assessment, evidence/state proposal, invalidation, or final-response fields
+  -> Runtime lowering sets internal assessment=not_applicable
+
+ManagerRoleRequest(mode=review_and_route)
+  -> ReviewManagerDecisionModel
+       assessment: satisfied | unsatisfied | unknown | blocked
+       evidence-backed working proposals and exactly one route
+  -> ordinary ManagerReview transition
+```
+
+`not_applicable` is internal normalized state, not model output. Review output cannot use it. Initial output cannot
+carry review-only state or request finalization. Initial and repair calls use the same request-selected schema, so a
+repair cannot change mode or acquire another role's fields. Both lower into the existing internal
+`ManagerDecision`; this is one Manager port and one Supervisor transition family, not a second planner or control
+path. Manager-only provider configuration disables thinking where the selected provider declares that control,
+retains the bounded 2,048-token business-output allowance, and does not change ActionPolicy or SemanticAuditor
+reasoning. Providers without declared thinking control fail or use their explicit supported composition; Runtime
+does not silently invent a wire parameter.
+
+The ordinary evidence flow remains:
+
+```text
+yield_subtask
+-> fresh MissionReviewBundle
+-> ManagerReview(review_and_route)
+-> optional working-state proposal
+-> mechanical EvidenceBoundary
+-> MissionState
+-> next subtask | finalization | ask_user | blocked
+```
+
+An independent `SemanticAuditor` is absent from this ordinary path and remains an exceptional, at-most-once role
+behind a predeclared strict-verification policy. Exact pinned facts never require it. The historical source class
+named `AuditBoundary` was a misleading identifier. It is now `EvidenceBoundary` across the package export,
+Supervisor type, tests, trace/report vocabulary, and maintained documents; the old symbol was deleted without a
+compatibility alias. Its behavior remains purely mechanical evidence admission.
+
+Run5 also exposes a separate benchmark lifecycle defect. The 900-second case watchdog covers the mission awaitable
+but not the `finally` teardown. `_close(environment)` can enter synchronous BrowserGym/Playwright cleanup, and the
+BrowserGym owner may wait sequentially for command completion and thread join before case projection runs. The final
+run5 files eventually appeared, but the case records `mission_outcome=manager_failure` while the compatibility
+`case_failure_code=cleanup_exception`, allowing a secondary teardown failure to mask the already-established primary
+failure. This reopens the broader cleanup claim made by the earlier uncertain-dispatch repair: that repair preserved
+one dispatch-origin primary code, but did not establish bounded teardown or failure precedence for an already-terminal
+mission-role failure.
+
+The target teardown contract is bounded and order preserving:
+
+```text
+mission result/failure captured
+-> case snapshot made durable
+-> cleanup under a separate explicit deadline
+     success | cleanup_timeout | cleanup_exception
+-> final case/report projection
+```
+
+Async environment close must not call a blocking synchronous BrowserGym close on the event-loop thread. Cleanup
+timeout/exception is secondary diagnostic evidence with phase, safe exception class, elapsed time, and resource
+status; it cannot replace `manager_failure`, `task_failure`, provider failure, or another earlier primary cause.
+Cleanup expiry must still permit formal case/run/summary output. Heartbeats distinguish `running`, `cleanup`, and
+`reporting` so liveness output cannot imply continuing Agent progress after a terminal mission result.
+
+This historical run5 status is superseded by the run6 convergence review below. Run5 proves the mode-specific
+Manager and bounded-cleanup component gates; it does not prove ActionPolicy subtask delivery, evidence reachability,
+or role-budget effectiveness in a complete mission.
+
+## 2026-08-21 task-7 run6 convergence reopening: reasoning, subtask delivery, and evidence reachability
+
+> Historical/superseded implementation note (2026-08-21): references in this reopening analysis to
+> `candidate_output_keys`, thinking-enabled truncation retry, and incomplete ActionPolicy subtask delivery describe
+> the pre-Phase-13.1 code and run6 evidence. Phase 13.1 removed those production contracts without aliases; the
+> implemented replacement and provider-free gate are recorded at the end of this section.
+
+Run6 is a stopped diagnostic rather than a valid official case outcome, but its complete local trace is a decisive
+architecture counterexample. The fresh World contained `Distance: 33km`, Pittsburgh International Airport, Findlay
+Township, and postcode `15231`. ActionPolicy opened the result region, then called `find_actions("airport")` and
+`find_actions("search")`, never called `pin_fact`, exhausted the episode, and left MissionState at version zero. The
+next ManagerReview received a bounded view dominated by `page_title="Not Found"` and route/navigation summaries but
+not the useful route evidence, then sent execution back toward the home/search route.
+
+The failure is one composed contract gap with four owners, not four independent model mistakes:
+
+1. **Role reasoning budget.** `LLM_ACTION_POLICY_MAX_TOKENS=4096` is an application output cap, not a model context
+   limit or a universal GUI-agent constant. On the run6 DeepSeek path, reasoning and the final command share this
+   allowance. Five initial ActionPolicy attempts consumed the 4,096-token allowance without a final command, while
+   the thinking-disabled 512-token recovery attempts produced valid calls in 13--148 tokens. This proves that
+   always-on extended thinking is an inefficient default for this provider; it does not prove that ActionPolicy
+   requires no reasoning.
+2. **Subtask delivery.** `SubtaskContract` contains `constraints`, `relevant_fact_keys`, and
+   `candidate_output_keys`, but long-horizon lowering currently projects only `objective` and `done_when` into the
+   one-item GoalPlan. ActionPolicy therefore cannot see the Manager's expected evidence outputs and must guess
+   whether a result should be searched, pinned, or yielded.
+3. **Tool-domain recovery.** Automatic Top-5 ActionCandidates and complete-ActionSpace `find_actions` already exist.
+   The empty `find_actions("airport")` result is correct because airport text is not an executable control. The gap is
+   that a syntactically valid but wrong-domain query returns only an empty action page; prompt prose and JSON Schema
+   cannot enforce the semantic distinction between executable controls and readable evidence.
+4. **Evidence/review reachability.** The component `find_content -> F-ref -> pin_fact` path is implemented, but the
+   result was first exposed through `open_region` without a pin-capable evidence handle and ActionPolicy never chose
+   `find_content`. No WorkingFact reached review. The review projection then omitted the useful changed-result facts
+   and elevated a stale document title over the current `/directions` route and visible result content.
+
+### Role reasoning policy
+
+The architecture does not freeze one global `thinking=true|false` switch. It uses one mechanically triggered policy
+per existing model role; no new model role or GUI loop is introduced:
+
+| Invocation | Default | Escalation and bound |
+|---|---|---|
+| ordinary ActionPolicy step | normal model inference with provider extended-thinking disabled or low; compact final-command allowance, initial target 512--1,024 tokens | one deliberate invocation only after typed `grounding_gap`, `evidence_gap`, or first operational/control stall; target 1,024--2,048 total output tokens |
+| schema/JSON/tool-call repair | extended thinking disabled | 256--512 tokens; representation repair cannot change operation or semantic target |
+| Manager initial/review event | low-frequency deliberate planning at task start or a meaningful episode boundary | when the provider exposes a separately bounded reasoning budget, use it; when reasoning shares the structured-output allowance, disable extended thinking or select a planning-suitable provider rather than increasing the shared cap |
+| Binder, evidence admission, currentness, and task evaluation | no model reasoning | deterministic typed owners only |
+
+The trigger is Runtime state, never a model claim that a step is difficult. One recovery event can purchase at most
+one deliberate ActionPolicy invocation. Every attempt records requested/effective thinking mode, configured output
+cap, reasoning/final token split where available, finish reason, and whether a final tool call was present. The
+numeric targets above are falsifiable starting settings, not provider-independent constants.
+
+This is consistent with the public field rather than choosing one camp: [UI-TARS](https://github.com/bytedance/UI-TARS/blob/main/codes/ui_tars/prompt.py)
+asks for a short per-step `Thought + Action`; the public [Qwen3-VL OSWorld agent](https://github.com/xlang-ai/OSWorld/blob/main/mm_agents/qwen3vl_agent.py)
+defaults `enable_thinking=False`; [Agent S2](https://github.com/simular-ai/Agent-S/blob/main/gui_agents/s2/memory/procedural_memory.py)
+performs previous-action verification and one-step reasoning inside a Worker while keeping Manager planning at
+subtask boundaries. The common principle is bounded tactical inference plus lower-frequency strategic planning, not
+unbounded provider reasoning on every wire call.
+
+### Closed subtask outcome contract
+
+The current free-form `candidate_output_keys` field is ambiguous and is not delivered to ActionPolicy. The migration
+target is one bounded, explicit algebra:
+
+```text
+SubtaskOutcomeKind = state_change | evidence_packet
+
+SubtaskContract
+  objective
+  done_when
+  outcome_kind
+  constraints
+  relevant_fact_keys
+  required_evidence: tuple[EvidenceRequirement(key, description)]
+  episode_turn_budget
+  related_audit_ids
+```
+
+`candidate_output_keys` is replaced by `required_evidence` without a compatibility alias. Manager declares business
+outcomes and evidence descriptions; it never names `pin_fact`, `find_content`, GUI refs, or another ActionPolicy tool.
+The existing deterministic long-horizon lowering still creates one GoalPlan item, but the Task section additionally
+projects one bounded `ActionPolicySubtaskView`:
+
+```yaml
+active_subtask:
+  objective: Verify one candidate airport against the distance constraint
+  done_when: One route-and-identity evidence packet is available
+  outcome_kind: evidence_packet
+  constraints:
+    - driving distance must come from the requested routing service
+  required_evidence:
+    - key: airport_name
+      description: exact candidate airport name
+      status: missing
+    - key: state
+      description: state for the same candidate
+      status: missing
+    - key: postcode
+      description: postcode for the same candidate
+      status: missing
+    - key: driving_distance_km
+      description: current route driving distance in kilometres
+      status: missing
+```
+
+This is nested in the existing Task projection rather than added as a sixth top-level context channel. Checklist
+status is derived mechanically from current episode WorkingFacts and admitted carry facts; it is not task progress or
+formal completion.
+
+`SubtaskContract` is the complete internal Supervisor/mission contract. `ActionPolicySubtaskView` is its complete
+model-relevant execution projection: `objective`, `done_when`, `outcome_kind`, `constraints`, `required_evidence`
+with current status, plus already selected WorkingFacts through the existing working-set channel. Runtime-owned
+`episode_turn_budget`, carry-fact selector `relevant_fact_keys`, and audit lineage `related_audit_ids` intentionally do
+not enter model context. Supervisor applies the budget, filters carry facts before the episode, and uses audit lineage
+only for strict-verification admission and Auditor scope.
+
+The outcome rules are closed:
+
+- `state_change`: fresh World plus the existing transition/effect evidence is the ordinary review packet. No pin is
+  required unless the contract also declares an exact value needed later.
+- `evidence_packet`: required evidence is a bounded inspection checklist with mechanically derived
+  `missing|currently_visible|retained` hints. It does not authorize or reject yield. A concise natural-language
+  `outcome_proposed` always enters ManagerReview with a fresh World and current EvidenceBundle.
+- `pin_fact` remains an optional episode-local exact-evidence bookmark for evidence that is about to leave the current
+  page/search result or must be reused later. It is never a completion claim or mandatory subtask-exit step. At
+  review, Manager may cite multiple current F refs for one composite WorkingOutcome, and the mechanical
+  EvidenceBoundary may admit it into MissionState. SemanticAuditor remains exceptional.
+
+One subtask still means one dominant independently reviewable outcome, normally achievable in 4--8 ActionPolicy
+turns. A state-changing form submission may contain several tightly coupled GUI actions. An evidence subtask should
+usually verify one candidate or one small bounded batch, not combine candidate discovery, every candidate's route,
+aggregation, final-response construction, and finalization. This follows the explicit current-subtask Worker boundary
+in Agent S2 and the immediate goal, acceptance criteria, constraints, and relevant-evidence contract in
+[LongHorizon-Harness](https://arxiv.org/html/2608.01964); the typed `F-ref -> pin_fact` mechanism is this Runtime's
+narrow evidence implementation, not a claim that those projects use the same API.
+
+### Parallel action and evidence delivery
+
+The current public names remain `open_region`, `find_content`, and `find_actions`. Renaming them again after the T3.3
+breaking cutover would add migration churn without enforcing semantic selection. Their domains instead become
+machine-readable and non-overlapping:
+
+```text
+fresh World
+  |-> ActionCandidates: Top-5 executable E-ref controls
+  |-> EvidenceCandidates: Top-5 current public scalar/result facts relevant to required_evidence
+  |-> PageMap/ActiveView: structural overview and current exact state
+  |-> find_actions: complete current ActionSpace only
+  |-> find_content: complete current public content/evidence index only
+  `-> open_region: one known region's readable content only
+```
+
+`EvidenceCandidates` contains only existing public `EvidenceRecord`s with current `F` refs, exact values, source and
+region context, coverage, and lineage. It cannot synthesize a fact or infer that `33 < 50`; the model still chooses
+which evidence satisfies which requirement. Selection reuses the existing bounded lexical/structural delivery ranker
+over requirement descriptions, changed-result regions, and public fact descriptors; it is not another LLM selector or
+evidence authority, and every non-promoted public fact remains recoverable through `find_content`. `open_region`
+includes an `F` ref whenever an item already corresponds to an exact public scalar record; arbitrary concatenated
+labels do not become facts. Every exact `find_content` scalar match remains pin-capable.
+
+An empty `find_actions` result is a typed local outcome, not an empty action authority:
+
+```json
+{
+  "matches": [],
+  "searched_domain": "executable_controls",
+  "base_action_page_preserved": true,
+  "does_not_search": "readable_content",
+  "suggested_next": "find_content"
+}
+```
+
+This redirect is justified mechanically by the called tool's domain and empty result; it does not interpret the
+task. Equivalent typed domain metadata is returned by the other read/search tools. Prompt descriptions remain short
+orientation, not the only guardrail.
+
+MissionReview projection prioritizes, in order: admitted episode WorkingFacts; newly appeared/changed result and
+status evidence relevant to `required_evidence`; current route plus visible primary heading; and bounded failure or
+recovery signals. A conflicting document title is retained as `document_title` with a typed identity conflict but
+cannot replace current route/result identity. Raw trajectory, old refs, and old screenshots remain excluded.
+
+### Implementation order and falsifiable exit
+
+This is one convergence increment in existing owners:
+
+1. replace `candidate_output_keys` with `outcome_kind + required_evidence`; update Manager schemas/prompts and remove
+   the old field without an alias;
+2. project `ActionPolicySubtaskView` under Task and derive its checklist from WorkingFacts/carry facts;
+3. add typed `EvidenceCandidates`, pin-capable exact region items, and domain-aware empty-result recovery while
+   retaining the current three public read/search names;
+4. admit `yield_subtask(outcome_proposed)` against the closed state/evidence outcome rules;
+5. repair MissionReview evidence priority and page-identity conflict projection;
+6. compose role-specific reasoning policies and trace effective reasoning/output budgets;
+7. delete superseded generic `candidate_output_keys` projection, prompt-only pin guidance as the sole completion
+   mechanism, and identical thinking-enabled truncation retry paths.
+
+Provider-free properties must prove: the complete model-relevant execution subtask view reaches ActionPolicy while
+Runtime-only budget, fact-selection, and audit-lineage fields remain private and are consumed by their owners; a state-change subtask can
+yield without pins; an evidence packet can yield a bounded natural-language proposal with missing/visible/retained
+evidence hints and a fresh review bundle; an exact result is default-visible or
+`find_content`-recoverable, pin-capable, retained across lens replacement, and visible in ManagerReview; wrong-domain
+empty action search preserves the base page and redirects to content search; no evidence path creates a second
+ActionSpace, World, Binder, evaluator, or memory store. Role tests must prove ordinary/deliberate/repair triggers and
+caps are disjoint and bounded. Then run the full local gate and one independent fresh-context audit. Only after those
+pass may a single predeclared W1b task-7 witness run.
+
+### Phase 13.1 implementation and provider-free verification
+
+The owner-first implementation now follows one path: `TaskGoal -> ManagerReview -> complete SubtaskContract ->
+ActionPolicySubtaskView under Task -> existing one-item GoalPlan advisory projection -> fresh World ->
+ActionCandidates + EvidenceCandidates -> existing ActionPolicy -> existing Resolver/Admission/Binder/Executor ->
+fresh World/WorkingFacts -> yield admission -> MissionReviewBundle -> ManagerReview -> mechanical EvidenceBoundary ->
+MissionState`. It adds no GUI loop, World, ActionSpace, Binder, evaluator, progress owner, or general memory store.
+
+The production `SubtaskContract` now uses the closed `state_change | evidence_packet` algebra and bounded
+`EvidenceRequirement` records. `candidate_output_keys` and the identical thinking-enabled truncation retry were
+deleted without aliases or compatibility branches. The existing five-field GoalPlan remains unchanged; the complete
+model-relevant execution view is independently nested under the existing Task section, where requirement status is a disposable mechanical
+view over current public evidence and WorkingFacts rather than task progress.
+
+The existing WorldEvidenceIndex now supplies a disposable Top-5 EvidenceCandidates projection alongside the existing
+Top-5 executable ActionCandidates. `open_region` preserves an existing scalar F-ref, `find_content` exact scalar
+matches remain pin-capable, and empty `find_actions` preserves the base ActionPage while returning typed domain and
+content-search recovery metadata. Yield always enters ManagerReview; required-evidence hints never trigger repair,
+Auditor, or BrowserGym dispatch. MissionReview orders admitted WorkingFacts and changed
+relevant result evidence before route/heading, typed recovery, and generic summary; a conflicting document title is
+retained only with typed identity-conflict metadata.
+
+ActionPolicy ordinary calls use thinking disabled with a 1,024-token target cap; a typed first
+`grounding_gap|evidence_gap|operational_stall|control_stall` can buy one deliberate, thinking-enabled call per recovery
+event with a 2,048-token cap; representation repair is thinking-disabled at 512 tokens and must preserve the parsed
+operation and semantic target. Manager uses thinking disabled with a 2,048-token shared allowance and 512-token
+representation repair because the current provider interface shares reasoning and structured final output. Attempt
+trace records role, phase, trigger, requested/effective thinking, max output, reasoning/final token counts, finish
+reason, and final-tool-call presence without becoming control authority.
+
+Provider-free validation passed in the required order: 206 focused owner/property tests; full suite `1405 passed,
+19 skipped`; `ruff check src tests`; and `git diff --check`. Tests cover both Manager outcome kinds, complete Task
+delivery, both yield algebras, scalar discovery/pinning/lens replacement/review, F-ref retention, empty action-search
+recovery, route/title conflict, disjoint reasoning profiles, once-per-event deliberate admission, semantic-preserving
+repair, zero extra BrowserGym dispatch, and zero ordinary Auditor calls. Fixtures are generic synthetic cases. No real
+provider, WebArena live witness, task-7 witness, or W2 cohort was run in this increment.
+
+The first bounded fresh-context audit returned **FAIL**, but its first finding conflated the internal mission contract
+with the model-relevant execution projection. The three omitted fields are intentionally Runtime-owned and already
+consumed by Supervisor, carry-fact selection, and strict Auditor routing; exposing them would weaken the owner
+boundary. Its second finding was valid: compact-provider failure attempts lost the selected call's thinking/output
+configuration. Phase 13.1 now projects that actual config into both the failure attempt and its transcript. A new
+provider-free gate and independent audit are required before any live run.
+
+The new bounded fresh-context re-audit passed the owner boundary, non-projection, compact failure-trace, reasoning,
+authority, and focused provider-free checks, but returned **FAIL** on two remaining overview phrases. Those phrases
+are now corrected: this phase table names the model-relevant execution projection rather than the complete internal
+contract, and the benchmark overview no longer asks to repair a nonexistent complete-contract delivery gap. No new
+product or architecture gap was found. The independent audit has not been rerun, and no live run was started.
+
+Current status: **Phase 13.1 owner correction implemented / focused provider-free verification passed /
+documentation audit findings corrected / fresh-context re-audit not rerun / W1b-Agent blocked / non-closed**.
+
+## 2026-08-21 run7 contraction: natural-language outcome handoff and optional pinning
+
+Run7 falsified the remaining mandatory-pin exit rule without exposing a new perception or policy-understanding gap.
+ActionPolicy produced the correct composite natural-language result while fresh World and EvidenceCandidates already
+held its supporting scalar records. The failure came from requiring one synthetic evidence key to bind one pinned
+scalar before review, even though a composite business result legitimately depends on several F refs. Manager then
+produced the correct cited semantic result but exceeded the 500-character limit only in its non-authoritative reason.
+
+The contracted owner path is now:
+
+```text
+ActionPolicy natural-language outcome proposal
+  -> yield_subtask(outcome_proposed, reason=...)
+  -> Supervisor fresh capture + existing EvidenceBundle
+  -> ManagerReview aligns the proposal with current offered F refs
+  -> zero or more exact WorkingFacts and/or one composite WorkingOutcome with multiple F refs
+  -> mechanical EvidenceBoundary
+  -> MissionState
+```
+
+`required_evidence` remains in the model-relevant subtask view only as an inspection checklist. Runtime derives
+`missing`, `currently_visible`, or `retained`; none is a permission state. `pin_fact` remains available for evidence
+that must survive replacement or cross-episode reuse, with zero BrowserGym dispatch, but ordinary review no longer
+requires it. Supervisor still owns the boundary capture and current EvidenceBundle; no packet builder, second evidence
+store, evaluator, Manager loop, or Auditor path was added.
+
+Manager's structured provider envelope now accepts a bounded reason up to 4,000 characters and mechanically trims
+that non-authoritative explanation to the Runtime's existing 500-character contract during lowering. Assessment,
+route, evidence refs, WorkingFacts, WorkingOutcomes, subtask, and final response remain strict and are never repaired by
+this trim.
+
+Provider-free verification passed: `119 passed` focused owner/contract tests, full suite `1408 passed, 19 skipped`,
+Ruff, and `git diff --check`. Removal scans found no mandatory yield gate, `missing_required_evidence`, old required
+status enum, packet builder, multi-pin tool, second evaluator, or product specialization.
+
+The bounded fresh-context audit passed all owner and authority invariants. It independently verified direct yield
+admission without pins, non-authoritative proposal handling, Supervisor fresh capture, Manager multi-ref composite
+outcomes, the sole mechanical EvidenceBoundary writer, hint-only status semantics, reason-only mechanical narrowing,
+and absence of new loops/stores/evaluators/tools or product specialization. The audit reran `104 passed` focused tests
+and the full `1408 passed, 19 skipped` suite; Ruff and `git diff --check` passed. No live execution occurred.
+
+Current status: **run7 mandatory-pin overconstraint removed / natural-language proposal handoff implemented /
+Manager reason narrowing implemented / provider-free verification passed / fresh-context audit passed /
+W1b-Agent blocked / non-closed**.
+
+## 2026-08-21 run7 terminal checkpoint convergence
+
+The post-run hang is owned by the benchmark runner lifecycle, not by Agent policy, World acquisition, Manager,
+Auditor, or browser cleanup. The authoritative order is now:
+
+```text
+final response dispatch
+  -> post-STOP fresh World
+  -> native TaskEvaluator returns typed TaskEvaluation
+  -> SQLite transaction commits OfficialOutcomeCheckpoint
+  -> bounded primary-result-available event
+  -> bounded environment cleanup
+  -> complete case/suite reporting
+```
+
+`OfficialOutcomeCheckpoint` is a bounded runner-owned projection of evaluator truth: case/task/world lineage, typed
+evaluation status, derived RunStatus, optional canonical outcome kind/code, and the exact public evidence refs cited
+by criteria, outputs, completion proof, or outcome. A thin `RunResultStore` adapter commits it to SQLite with
+`synchronous=FULL`; SQLite owns transaction commit, atomicity, and crash recovery. The project does not implement a
+durable file fsync/rename protocol. The checkpoint is not a second evaluator or task authority. Trace records the
+same status, code, refs, checkpoint ID, and typed persistence disposition; database paths are implementation details.
+
+Heartbeat phases distinguish `running`, `finalizing`, `primary_persisted`, `cleanup`, and `reporting`. Cleanup has an
+orthogonal `not_run|succeeded|failed` status; a cleanup timeout/exception remains secondary and cannot erase a
+persisted official outcome. The case watchdog cancels once, waits a separately bounded two-second grace period, and
+then detaches from a cancellation-resistant task so checkpoint-backed reporting can proceed. The trace records
+whether this cancel grace was exceeded. No GUI action, provider call, Manager review, or evaluator retry is issued by
+any of these lifecycle transitions.
+
+If the SQLite checkpoint commit fails, `primary_persisted` is not emitted and the in-memory projection is not
+used as checkpoint-backed report truth. The runner records typed `harness_persistence /
+official_checkpoint_persistence_failed`, performs bounded
+best-effort cleanup for resource safety, and emits a failed report. This exceptional fail-closed path does not claim
+the normal durable ordering was achieved.
+
+Cleanup outcome and JSON-export outcome are separate SQLite lifecycle fields. The complete case report payload is
+committed before JSON export, so a failed export records `report_status=failed` while leaving both official outcome
+and report payload available for regeneration. The suite report is likewise committed before `run.json`/`summary.json`
+export. JSON remains a non-authoritative projection.
+
+Report-payload commit failure and JSON-export failure are distinct: the former records
+`report_payload_commit_failed` and does not claim a regenerable payload; the latter records `json_export_failed` and
+can be retried from SQLite. When a durable official checkpoint exists, case projection takes its evaluator
+status/outcome ahead of any stale in-memory terminal candidate.
+
+This increment deliberately does not attach a general durable-execution capability. PydanticAI's
+[Temporal integration](https://ai.pydantic.dev/durable_execution/temporal/) separates deterministic workflows from
+retryable I/O activities, while its [DBOS integration](https://ai.pydantic.dev/durable_execution/dbos/) checkpoints
+agent workflows and steps in SQLite/Postgres. The current Runtime also owns BrowserGym session currentness, Binder
+admission, native evaluation, and `sent_unknown`; automatically retrying a possibly-sent GUI effect would violate
+those owners. A future whole-workflow migration may use DBOS/Temporal only with Runtime-defined retry safety. It is
+not needed for this terminal-result store.
+
+This repair does not change Manager, Auditor, ActionPolicy, World, TaskEvaluator authority, or browser execution
+semantics. Provider-free lifecycle/property verification and a fresh-context audit are required before another live
+witness; current status remains non-closed.
+
+Final provider-free verification passed: 11 terminal lifecycle/fault-injection tests, the full `1415 passed,
+19 skipped` suite, Ruff, and `git diff --check`. A bounded fresh-context re-audit passed 96 focused tests plus Ruff
+and diff-check, with zero blockers. It confirmed the SQLite-first authority path, durable-checkpoint precedence,
+distinct payload-commit versus JSON-export failures, cleanup orthogonality, and absence of a second workflow or GUI
+loop. No provider, BrowserGym/WebArena live witness, task-7 witness, or W2 cohort ran. Current status:
+**terminal SQLite result-store implementation complete / provider-free verification passed / fresh-context audit
+passed / W1b-Agent blocked / non-closed**.
+
+## 2026-08-21 two-chain result and observability convergence
+
+The maintained architecture now has two non-competing, one-way chains:
+
+```text
+control/result: TaskEvaluator -> OfficialOutcomeCheckpoint -> SQLiteRunResultStore -> rebuildable JSON
+observability:  Runtime typed events -> local trace.jsonl -> bounded queue -> daemon Langfuse viewer worker
+```
+
+`OfficialOutcomeCheckpoint` has a deterministic `checkpoint_id`; its recorder exposes only
+`not_attempted|committed|failed` persistence status. Storage paths are absent from typed outcome events. The SQLite
+record remains authoritative when an in-memory result conflicts. `run.json`, `summary.json`, and per-case JSON are
+ordinary replace-on-complete projections rebuilt from committed SQLite payloads; the temporary replacement prevents
+readers from observing a partial JSON document but carries no crash-durability claim.
+
+The runner no longer calls the evaluator checkpoint recorder from `finally`. Mission finalization invokes the sink at
+its existing post-STOP native-evaluator boundary. The standalone benchmark evaluator wrapper invokes the same sink
+only when its real evaluator call returns terminal `COMPLETE|BLOCKED`. A missing checkpoint therefore remains missing;
+cleanup and reporting cannot infer official truth from stale `RunState`.
+
+The complete `benchmark_primary_snapshot` event is deleted. After a committed checkpoint the runner emits only
+`primary_result_available(case_id, checkpoint_id, status, step_count)`. Full World, screenshots, trajectory, and
+episode snapshots remain in local evidence. They are never copied into the remote viewer.
+
+`RunTraceRecorder` owns only append-only local JSONL. The former hand-written `LangfuseTraceExporter`, exporter field,
+per-event `emit`, and synchronous flush calls are deleted. The run7/run9 use of PydanticAI
+`Agent.instrument_all(InstrumentationSettings(...))` and synchronous post-JSONL `LangfuseOtelSink.record()` is
+historical and superseded by the run11 authority repair below. The maintained path projects typed ModelInvocationResult
+attempts and project-owned Runtime/lifecycle events only after their JSONL record succeeds. Remote failures are
+tracked separately and cannot alter Runtime, benchmark acceptance, SQLite outcomes, or local trace validity. One case
+is one trace; the benchmark run ID is propagated to the root and every child observation as the Langfuse v4
+`session_id` via the official `propagate_attributes` context. Remote projection contains public task/subtask facts,
+compact World counts/identity, typed tool/outcome summaries, model usage/latency, lifecycle phases, checkpoint IDs,
+and relative artifact references. Native PydanticAI spans may contain public prompt/response content and model request
+parameters; binary content is disabled. The project projection recursively excludes complete World payloads,
+screenshot data, private binding, selectors, implementation-private IDs, raw trajectory, and duplicate provider
+transcripts. Both root task input and child event projections are capped at 16 KiB.
+
+The project uses `langfuse>=4.14.4,<5` and `pydantic-ai-slim>=2.33,<2.34`. Langfuse documents that its Python SDK is
+OpenTelemetry-based and sends asynchronously; the project performs one fail-open viewer flush after the case root is
+closed, in a disposable daemon thread with a five-second deadline. This terminal observability deadline cannot delay
+SQLite result/report completion beyond its bound or alter case truth. Enabling the
+viewer requires `AFFORDANCE_LANGFUSE_ENABLED=true`, a local trace directory, and official SDK credentials. Without
+that complete configuration, tracing is local JSONL only. DBOS, Temporal, and Prefect remain out of scope.
+
+Historical run7 provider-free verification passed with 20 focused observability/conformance tests, the full `1424 passed, 16 skipped`
+suite, Ruff, `git diff --check`, dependency checks, and a no-network official SDK/OTel witness containing one native
+PydanticAI generation and one case root in a single trace. The fresh-context re-audit passed 33 gates with zero
+blockers after independently falsifying and then verifying v4 session propagation, held-out private-ID filtering, and
+the root-input size bound. After credentials were configured, a real provider-free trace was sent, fetched through the
+Langfuse v2 observations API, and audited against the current best-practices guide. Trace
+`4bf823812fac0727d4ed4085dcbf980c` contains one `run-gui-agent-case` root, one nested `action-policy` PydanticAI agent,
+one native generation, one checkpoint span, and one finish span, all in session
+`provider-free-suite-final-277a52a2d00a` and environment `development`; model identity, token usage,
+root/generation input-output, and hierarchy are present, while secret/private/binary probes are absent. No model
+provider, BrowserGym/WebArena live witness, task-7 witness, or W2 cohort ran. Current status: **two-chain
+implementation complete / provider-free verification passed / fresh-context audit passed / remote trace audit passed
+/ live case not run / W1b-Agent blocked / non-closed**.
+
+## 2026-08-21 run9 role invocation, case lifecycle, and observability convergence
+
+Run9 exposed one shared seam rather than three independent defects. Manager schema validation, early terminal return,
+and Langfuse visibility all depend on role invocation being nested inside a benchmark-owned case lifecycle:
+
+```text
+benchmark_case_started
+  -> Langfuse case root + local JSONL event
+  -> Manager/Auditor PydanticAI ToolOutput invocation
+  -> ModelInvocationResult (all physical requests and output retry)
+  -> MissionSupervisor -> optional existing CoreAgentLoop
+  -> typed terminal result -> preliminary SQLite case payload
+  -> bounded cleanup -> final SQLite payload + rebuildable JSON
+  -> benchmark_case_finished -> bounded fail-open Langfuse flush
+```
+
+`PydanticAIRoleInvoker` is the single Manager/Auditor structured-output adapter. It uses each existing strict Pydantic
+model as one named `ToolOutput`, exposes no GUI tools, permits one PydanticAI output-validation retry, and retains the
+bounded provider/network retry. PydanticAI owns tool-call decoding and validation feedback. The deleted path no longer
+calls `ModelPort.generate_structured`, parses free-text JSON, constructs a custom role repair prompt, or reads
+`port.last_call`/`port.last_transcript`. Input admission and Supervisor semantic lowering remain with their prior
+owners. Every physical request is projected into `ModelInvocationResult.attempts`. Official PydanticAI OpenTelemetry
+instrumentation owns native generation spans; the project mission-role event is a boundary span, not a duplicate.
+
+The runner persists `CASE_STARTED`, `ENVIRONMENT_READY`, `MANAGER_STARTED`, `MANAGER_RETURNED`,
+`CASE_BODY_RETURNED`, `RESULT_PERSISTED`, `CLEANUP_STARTED`, `CLEANUP_FINISHED`, and `CASE_FINISHED` at owner
+boundaries. Standalone cases omit Manager phases. Initial Manager failure returns `MANAGER_FAILURE` immediately with
+zero episode or Auditor calls. A preliminary case payload is committed before cleanup; cleanup has a ten-second
+deadline; final report commit/export and viewer flush each have five-second deadlines. Cleanup remains secondary.
+Payload-commit and JSON-export failures keep distinct typed codes and neither can manufacture an evaluator outcome.
+
+For benchmark traces only `benchmark_case_started` creates the root. CoreLoop `run_started` is an episode child;
+Manager failure before CoreLoop still closes a complete case trace. Langfuse remains read-only: JSONL is written
+first, SQLite owns result durability, and viewer failure cannot change Runtime or outcome. This section supersedes the
+earlier CoreLoop-root and no-flush wording. It adds no second role path, lifecycle engine, store, World, Binder,
+evaluator, or GUI loop.
+
+Provider-free verification passed: 83 focused role/lifecycle/observability gates, the full `1428 passed, 19 skipped`
+suite, Ruff, and `git diff --check`. A provider-free remote witness used PydanticAI `FunctionModel` only: Langfuse
+trace `beca6780f8588e0ff9ea2ebd3595b04e` contains one benchmark root, one Manager agent, two native generations
+(initial invalid output and accepted output retry), one Manager boundary span, and one case-finished span. The bounded
+fresh-context audit passed 85 gates with zero blockers after held-out checks for provider 503 recovery, JSONL
+fail-open behavior, and a 100 KB case description constrained below the 16 KiB root-input limit.
+
+Current status: **run9 convergence implementation complete / provider-free verification passed / fresh-context audit
+passed / live case not run / W1b-Agent blocked / non-closed**.
+
+## 2026-08-21 run10 partial-outcome and bounded-replan convergence
+
+Run10 exposed two different granularities that had been incorrectly coupled. `ManagerDecision.assessment` evaluates
+the previous subtask as a whole; each `WorkingOutcomeProposal.assessment` evaluates only that named partial result.
+An overall unsatisfied subtask may therefore contribute an evidence-backed satisfied partial outcome, and an overall
+satisfied review may retain a separately evidenced unsatisfied working result. Neither is official task completion.
+
+`EvidenceBoundary` remains the sole MissionState writer and now owns only the closed mechanical write algebra:
+base-version equality, resolved working assessment, unique outcome/key identity, non-empty offered public/current or
+legally pinned evidence lineage, bounds, and conflict-free mutation. The former cross-level assessment-equality check
+is deleted. `WorkingStateProposal.working_outcomes` replaces the misleading `completed_outcomes` name without an
+alias. Fatal authority/evidence/version/conflict rejection remains fail-closed. The typed recoverable-shape class is
+restricted to a no-op working proposal: it writes no state and is projected as one-shot feedback to the next
+ManagerReview; it cannot authorize finalization.
+
+Planning direction stays outside that boundary. The internal `SubtaskContract` adds required natural-language
+`task_link`, stating which unresolved TaskGoal requirement the subtask advances. The model-relevant ActionPolicy view
+is now `objective + done_when + task_link + outcome_kind + constraints + required_evidence/status + selected
+WorkingFacts`; Runtime-owned turn budget, carry selector, and audit lineage remain private to their existing owners.
+`task_link` is advisory text, not a predicate, progress record, or keyword-validated permission.
+
+The only ActionPolicy gains one local, zero-dispatch exit:
+
+```text
+TaskGoal + advisory SubtaskContract + fresh World
+  -> yield_subtask(kind=needs_replan, reason=...)
+  -> Supervisor typed subtask_misaligned recovery
+  -> ManagerReview with rejected subtask and reason
+  -> one materially different SubtaskContract
+```
+
+Mechanical strategy identity compares only objective, done_when, task_link, outcome kind, and required-evidence
+descriptors. One unchanged response receives at most one separately traced deliberate Manager replan invocation; a
+second unchanged response terminates as `STRATEGY_NOT_CHANGED`. The shared-output Manager profile remains bounded at
+2048 tokens with extended thinking disabled where the provider exposes that control. ActionPolicy performs no GUI
+dispatch and EvidenceBoundary performs no write on `needs_replan`; Auditor is never asked to judge plan direction.
+There is no second planner, loop, World, Binder, evaluator, memory, or task/site rule.
+
+There is no directly comparable production standard for this project-specific working-outcome algebra. The bounded
+contract is instead evaluated against explicit separation-of-authority criteria: semantic planning belongs to model
+roles, evidence admission is deterministic, projections remain non-authoritative, recovery is typed and bounded, and
+native TaskEvaluator alone owns formal completion. Provider-free verification and a fresh-context audit are required
+before any live witness.
+
+Provider-free verification passed: 151 focused owner/property tests before the final held-out addition, 121 focused
+tests for the final changed surface, the full `1435 passed, 19 skipped` suite, Ruff, and `git diff --check`. The bounded
+fresh-context audit passed 10 held-out owner invariants plus removal scans: opposite overall/local assessments remain
+independent, version/evidence authority rejects fatally, no-op writes are recoverable without mutation, task_link is
+required, and the old field/equality branch and product-specific strings are absent. The audit command's first import
+attempt lacked `PYTHONPATH` and exited before product evaluation; the corrected fixed-environment rerun passed. No
+provider, BrowserGym/WebArena live witness, task-specific witness, or W2 cohort ran. Current status: **run10
+implementation complete / provider-free verification passed / fresh-context audit passed / live not run / W1b-Agent
+blocked / non-closed**.
+
+## 2026-08-21 run11 observability authority convergence
+
+Run11 exposed a P0 authority violation: the read-only Langfuse projection was synchronous inside
+`RunTraceRecorder._emit`, so an SDK call that never returned could prevent MissionSupervisor and benchmark lifecycle
+owners from returning even though exceptions were nominally fail-open. SDK background batching does not close this
+project boundary: Langfuse [event queuing/batching](https://langfuse.com/docs/observability/features/queuing-batching)
+documents that explicit flush waits for pending delivery and retries network failures, so the Runtime cannot rely on
+every SDK method returning promptly.
+
+The sole maintained observability chain is now:
+
+```text
+Runtime/mission/runner typed owner event
+  -> synchronous local JSONL append
+  -> queue.Queue(maxsize=256).put_nowait
+  -> immediate owner return
+  -> per-case daemon LangfuseViewerWorker
+  -> worker-confined LangfuseOtelSink/client/batching/flush
+```
+
+The worker constructs and exclusively owns one Langfuse client. Runtime, Supervisor, runner, and provider call stacks
+never invoke client methods. Queue overflow drops only the remote projection, increments
+`viewer_dropped_event_count`, and opens the current-case viewer circuit. Client construction failure, record/export
+exception, or worker failure likewise disables only that viewer. A stuck SDK call can strand only the daemon thread;
+case shutdown signals the worker and joins for a bounded interval, then records local `viewer_flush_timeout` and
+continues. Each following case creates an independent worker and circuit.
+
+The PydanticAI `Agent.instrument_all()` path is deleted. `ModelInvocationResult.attempts`, already recorded at each
+provider boundary, is the sole generation source for both ActionPolicy and mission roles. The worker projects one
+generation per physical attempt with provider/model, prompt version, phase/trigger, thinking configuration, bounded
+input/output transcript, token usage, latency, finish reason, and tool-call presence. Runtime steps and terminal
+events remain siblings under the single case root. This removes duplicate native/manual generation spans without
+introducing another provider transcript or fact reconstruction path.
+
+SQLite result authority, JSON report projection, Runtime, World, Binder, TaskEvaluator, Manager semantics, and GUI
+currentness are unchanged. Viewer metrics are observational and cannot enter case failure, acceptance, or MissionState.
+Provider-free hang, queue-full, unreachable-client, flush-hang, and healthy hierarchy gates plus a bounded
+fresh-context audit are required before another live witness.
+
+Provider-free verification passed: 46 focused observability/lifecycle fault gates, the full `1440 passed, 19 skipped`
+suite, Ruff, and `git diff --check`. The fresh-context audit passed 12/12 held-out authority invariants, proving that
+client construction and flush execute on the daemon worker, recorder enqueue contains no SDK call, runner contains no
+client call, and acceptance has no viewer consumer. A provider-free remote witness was then sent and read back through
+the official observations API. Trace `144820f19bfc3d2e1d4d4aa90ff41601`, session
+`provider-free-run11-a88dea840cc9`, contains one case root, one Manager agent/generation, one ActionPolicy
+agent/generation, one Runtime tool step, native evaluator, and terminal event; both generations report model and
+`9/3/12` usage, and there are no duplicate PydanticAI generations. No model provider, BrowserGym/WebArena live case,
+task-specific witness, or W2 cohort ran. Current status: **run11 implementation complete / provider-free verification
+passed / fresh-context audit passed / remote provider-free witness passed / live stopped / W1b-Agent blocked /
+non-closed**.

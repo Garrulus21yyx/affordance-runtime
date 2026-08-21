@@ -204,6 +204,39 @@ class ActionCandidateRanker:
         return tuple(result)
 
 
+def rank_delivery_descriptors(
+    descriptors: tuple[tuple[str, str, tuple[str, ...]], ...],
+    *,
+    intent: str,
+) -> tuple[str, ...]:
+    """Rank public descriptors with the same lexical primitives as ActionCandidates."""
+
+    intent_text = _normalize_text(intent)
+    intent_tokens = _tokens(intent_text)
+    scored: list[tuple[float, str]] = []
+    for identity, label, structural_context in descriptors:
+        normalized_label = _normalize_text(label)
+        label_tokens = _tokens(normalized_label)
+        structural = " ".join(_normalize_text(item) for item in structural_context)
+        score = _lexical_score(intent_tokens, (*label_tokens, *_tokens(structural))) * 5.0
+        if normalized_label and normalized_label in intent_text:
+            score += 8.0
+        scored.append((-score, identity))
+    return tuple(identity for _, identity in sorted(scored))
+
+
+def delivery_descriptor_matches(intent: str, label: str, structural_context: tuple[str, ...] = ()) -> bool:
+    normalized_intent = _normalize_text(intent)
+    normalized_label = _normalize_text(label)
+    intent_tokens = _tokens(normalized_intent)
+    descriptor_tokens = (*_tokens(normalized_label), *(_tokens(" ".join(structural_context))))
+    return bool(
+        normalized_label
+        and normalized_label in normalized_intent
+        or _lexical_score(intent_tokens, descriptor_tokens) > 0
+    )
+
+
 def canonical_action_query(query: str) -> str:
     """Return the sole bounded query semantics used by action paging."""
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.agent.context.budgets import BoundedSection
@@ -112,6 +113,63 @@ class AgentTaskEvaluationView:
         object.__setattr__(self, "verified_public_facts", tuple(self.verified_public_facts))
 
 
+class EvidenceRequirementStatus(StrEnum):
+    MISSING = "missing"
+    CURRENTLY_VISIBLE = "currently_visible"
+    RETAINED = "retained"
+
+
+@dataclass(frozen=True)
+class AgentEvidenceRequirementView:
+    key: str
+    description: str
+    status: EvidenceRequirementStatus
+
+    def __post_init__(self) -> None:
+        if not self.key or not self.description:
+            raise ValueError("active subtask evidence requirement is incomplete")
+        if not isinstance(self.status, EvidenceRequirementStatus):
+            object.__setattr__(self, "status", EvidenceRequirementStatus(self.status))
+
+
+@dataclass(frozen=True)
+class AgentSubtaskContractView:
+    """Bounded semantic contract stored by the episode, without progress state."""
+
+    objective: str
+    done_when: str
+    task_link: str
+    outcome_kind: str
+    constraints: tuple[str, ...] = ()
+    required_evidence: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", tuple(self.constraints))
+        object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
+        if self.outcome_kind not in {"state_change", "evidence_packet"}:
+            raise ValueError("active subtask outcome kind is unsupported")
+        if len(self.required_evidence) > 32 or len({item[0] for item in self.required_evidence}) != len(
+            self.required_evidence
+        ):
+            raise ValueError("active subtask evidence requirements are invalid")
+
+
+@dataclass(frozen=True)
+class AgentSubtaskView:
+    objective: str
+    done_when: str
+    task_link: str
+    outcome_kind: str
+    constraints: tuple[str, ...] = ()
+    required_evidence: tuple[AgentEvidenceRequirementView, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", tuple(self.constraints))
+        object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
+        if self.outcome_kind not in {"state_change", "evidence_packet"}:
+            raise ValueError("active subtask outcome kind is unsupported")
+
+
 @dataclass(frozen=True)
 class AgentTaskView:
     task_id: str
@@ -132,10 +190,13 @@ class AgentTaskView:
         default_factory=lambda: AgentTaskEvaluationView("unknown")
     )
     final_response_contract: Mapping[str, object] = field(default_factory=dict)
+    active_subtask: AgentSubtaskView | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
         object.__setattr__(self, "final_response_contract", freeze_json(self.final_response_contract))
+        if self.active_subtask is not None and not isinstance(self.active_subtask, AgentSubtaskView):
+            raise TypeError("Task active_subtask must be typed")
         if self.public_inputs_total_count < len(self.public_inputs):
             raise ValueError("public input total cannot be smaller than its projection")
         if self.public_inputs_truncated != (self.public_inputs_total_count > len(self.public_inputs)):

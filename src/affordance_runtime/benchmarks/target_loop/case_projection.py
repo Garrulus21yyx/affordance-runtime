@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import replace
 
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
@@ -17,12 +16,16 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     CaseFailureOrigin,
     FailureFacts,
     MetricMeasurement,
+    mission_failure_code,
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.legacy_case_projection import (
     project_legacy_case_fields,
 )
 from affordance_runtime.benchmarks.target_loop.metric_registry import canonical_metric_collisions
+from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
+    OfficialOutcomeCheckpoint,
+)
 from affordance_runtime.evaluation import TaskOutcomeKind
 
 __all__ = (
@@ -44,6 +47,7 @@ def project_case_result(
     *,
     timeout_snapshot: PartialEpisodeSnapshot | None = None,
     final_snapshot: PartialEpisodeSnapshot | None = None,
+    official_checkpoint: OfficialOutcomeCheckpoint | None = None,
 ) -> BenchmarkCaseResult:
     """Apply one explicit typed precedence; human failure text is display-only."""
     metric_collisions = canonical_metric_collisions(instrumentation.custom_metrics)
@@ -100,20 +104,38 @@ def project_case_result(
         and not integrity_code
     ):
         public_runtime_failure = "runtime_failure"
-    status = str(result.status) if result else str(RunStatus.FAILED)
+    status = (
+        str(RunStatus.FAILED)
+        if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_PERSISTENCE
+        else str(official_checkpoint.run_status)
+        if official_checkpoint is not None
+        else
+        str(result.status)
+        if result
+        else str(RunStatus.FAILED)
+    )
     mission_outcome = str(getattr(result, "outcome", ""))
     supervisor_state = getattr(result, "supervisor_state", None)
     mission_last_ref = str(getattr(supervisor_state, "last_ref", "") or "")
     task_outcome = getattr(result, "task_outcome", None) if result is not None else None
     candidate_task_outcome_kind = (
-        str(task_outcome.kind)
+        str(official_checkpoint.outcome_kind)
+        if official_checkpoint is not None
+        and official_checkpoint.outcome_kind is not None
+        else str(task_outcome.kind)
         if task_outcome is not None
         else metadata.task_outcome_kind
         if metadata is not None
         else ""
     )
     candidate_task_outcome_code = (
-        task_outcome.code if task_outcome is not None else metadata.task_outcome_code if metadata is not None else ""
+        official_checkpoint.outcome_code
+        if official_checkpoint is not None
+        else task_outcome.code
+        if task_outcome is not None
+        else metadata.task_outcome_code
+        if metadata is not None
+        else ""
     )
     task_outcome_kind, task_outcome_code = (
         (candidate_task_outcome_kind, candidate_task_outcome_code)
@@ -137,10 +159,23 @@ def project_case_result(
         task_outcome_code,
     )
     legacy = project_legacy_case_fields(status, facts)
+    mission_primary_code = mission_failure_code(mission_outcome)
+    projected_case_failure_code = (
+        instrumentation.primary_execution_failure_code
+        or legacy.case_failure_code
+    )
+    if mission_primary_code and projected_case_failure_code in {"", cleanup_code}:
+        projected_case_failure_code = mission_primary_code
+    primary_failure_code = (
+        instrumentation.primary_execution_failure_code
+        or (mission_primary_code if projected_case_failure_code == mission_primary_code else "")
+    )
     return BenchmarkCaseResult(
         case_id=case_id,
         status=status,
-        execution_completed=result is not None and not failure,
+        execution_completed=(
+            result is not None and not failure
+        ) or official_checkpoint is not None,
         failure_reason=failure,
         latency_ms=latency_ms,
         measurements=measurements,
@@ -148,13 +183,16 @@ def project_case_result(
         termination_origin=(
             "component"
             if instrumentation.primary_execution_failure_code
+            else "runtime"
+            if mission_primary_code and projected_case_failure_code == mission_primary_code
             else legacy.termination_origin
         ),
-        case_failure_code=(
-            instrumentation.primary_execution_failure_code
-            or legacy.case_failure_code
+        case_failure_code=projected_case_failure_code,
+        partial_episode_available=(
+            result is None
+            and metadata is not None
+            and official_checkpoint is None
         ),
-        partial_episode_available=result is None and metadata is not None,
         latest_semantic_attempt_key_digest=(metadata.latest_semantic_attempt_key_digest if metadata else ""),
         same_attempt_streak=metadata.same_attempt_streak if metadata else 0,
         no_progress_count=metadata.no_progress_count if metadata else 0,
@@ -174,7 +212,13 @@ def project_case_result(
             if metadata
             else ""
         ),
-        latest_task_status=metadata.latest_task_status if metadata else "",
+        latest_task_status=(
+            metadata.latest_task_status
+            if metadata
+            else str(official_checkpoint.evaluation_status)
+            if official_checkpoint is not None
+            else ""
+        ),
         latest_action_observed_change=(metadata.latest_action_observed_change if metadata else ""),
         latest_action_local_postcondition=(metadata.latest_action_local_postcondition if metadata else ""),
         latest_action_evidence_method=(metadata.latest_action_evidence_method if metadata else ""),
@@ -183,17 +227,14 @@ def project_case_result(
         cleanup_failure_code=cleanup_code,
         cleanup_exception_class=_safe_exception_class(instrumentation.cleanup_exception_class),
         cleanup_failures=instrumentation.cleanup_failures,
-        primary_failure_code=instrumentation.primary_execution_failure_code,
+        cleanup_status=instrumentation.cleanup_status,
+        primary_failure_code=primary_failure_code,
         primary_failure_phase=instrumentation.primary_execution_failure_phase,
         primary_diagnostic_ref=instrumentation.primary_execution_diagnostic_ref,
         recovery_failure_codes=tuple(instrumentation.recovery_failure_codes),
         secondary_failure_codes=(cleanup_code,) if cleanup_code else (),
-        terminal_failure_code=public_runtime_failure,
-        cleanup_diagnostic=(
-            replace(instrumentation.cleanup_diagnostic, safe_message="")
-            if instrumentation.cleanup_diagnostic is not None
-            else None
-        ),
+        terminal_failure_code=public_runtime_failure or mission_primary_code,
+        cleanup_diagnostic=instrumentation.cleanup_diagnostic,
         watchdog_triggered=(bool(instrumentation.watchdog_code)),
         harness_integrity_code=integrity_code,
         harness_integrity_failures=int(bool(metric_collisions)),

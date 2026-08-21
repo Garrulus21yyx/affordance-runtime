@@ -138,7 +138,7 @@ def test_task_outcome_precedence_preserves_watchdog_runtime_and_cleanup_truth() 
         status="blocked",
         latest_task_status="blocked",
         terminal_reason_code=None,
-        termination_origin="cleanup",
+        termination_origin="",
         case_failure_code="verified_terminal_task_failure",
         cleanup_failure_code="cleanup_exception",
         cleanup_exception_class="RuntimeError",

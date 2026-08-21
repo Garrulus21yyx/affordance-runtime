@@ -14,6 +14,7 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.immutable import to_json_compatible
 
 _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
 
@@ -33,6 +34,7 @@ class ModelTurnDelivery:
     world_observation_id: str
     action_candidates: ActionCandidateProjection
     includes_images: bool = False
+    evidence_candidates: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.view, WorldDeliveryView):
@@ -58,6 +60,18 @@ class ModelTurnDelivery:
             for destination in item.destinations
         ):
             raise ValueError("every candidate destination must enter the same DeliveryManifest")
+        if self.evidence_candidates is not None:
+            from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
+
+            if not isinstance(self.evidence_candidates, EvidenceCandidateProjection):
+                raise TypeError("model turn evidence candidates must be typed")
+            if self.evidence_candidates.world_observation_id != self.world_observation_id:
+                raise ValueError("model turn evidence candidates belong to another World")
+            if any(
+                item.fact_ref not in self.view.manifest.fact_refs
+                for item in self.evidence_candidates.candidates
+            ):
+                raise ValueError("every evidence candidate must enter the same DeliveryManifest")
         if type(self.includes_images) is not bool:
             raise TypeError("model turn delivery image selection must be boolean")
 
@@ -86,6 +100,9 @@ def build_model_turn_delivery(
         selected_region_keys=_selected_region_keys(context),
         selected_cursor=context.delivery_lens.page_cursor if context.delivery_lens is not None else "",
         action_candidates=context.action_candidates,
+        evidence_candidates=context.evidence_candidates,
+        public_fact_bindings=context.private_fact_bindings,
+        evidence_index=context.evidence_index,
         max_rendered_bytes=max_rendered_bytes,
     )
     payload = {
@@ -101,6 +118,7 @@ def build_model_turn_delivery(
             "region_refs": view.manifest.region_refs,
         },
         "action_candidates": context.action_candidates.projection_id,
+        "evidence_candidates": to_json_compatible(context.evidence_candidates),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -112,6 +130,7 @@ def build_model_turn_delivery(
         view.manifest.world_observation_id,
         context.action_candidates,
         include_images,
+        context.evidence_candidates,
     )
 
 

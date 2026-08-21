@@ -208,6 +208,88 @@ def test_cleanup_is_secondary_to_runtime_reason() -> None:
     assert projected.measurements["cleanup_failures"].value == 1
 
 
+def test_cleanup_does_not_mask_earlier_manager_failure() -> None:
+    instrumentation = BenchmarkInstrumentation()
+    instrumentation.record_cleanup_failure(
+        "cleanup_exception", RuntimeError("private cleanup detail")
+    )
+    result = SimpleNamespace(
+        status=RunStatus.FAILED,
+        outcome="manager_failure",
+        sent_unknown_count=0,
+        observation_count=0,
+        execution_count=0,
+        currentness_probe_count=0,
+        step_count=0,
+        failure_code=None,
+        policy_failure=None,
+        runtime_failure=None,
+        task_outcome=None,
+        supervisor_state=SimpleNamespace(last_ref="mission:manager:1"),
+    )
+
+    projected = project_case_result(
+        "case", result, instrumentation, 1.0, "cleanup failed"
+    )
+
+    assert projected.case_failure_code == "manager_failure"
+    assert projected.primary_failure_code == "manager_failure"
+    assert projected.termination_origin == "runtime"
+    assert projected.secondary_failure_codes == ("cleanup_exception",)
+    assert projected.cleanup_diagnostic is not None
+    assert projected.cleanup_diagnostic.safe_message == "private cleanup detail"
+
+
+def test_cleanup_timeout_does_not_mask_provider_failure() -> None:
+    instrumentation = BenchmarkInstrumentation()
+    instrumentation.record_cleanup_failure(
+        "cleanup_timeout", TimeoutError("bounded cleanup expired")
+    )
+
+    projected = project_case_result(
+        "case",
+        _result("provider_failure"),
+        instrumentation,
+        1.0,
+        "provider failed; cleanup timed out",
+    )
+
+    assert projected.case_failure_code == "provider_failure"
+    assert projected.cleanup_failure_code == "cleanup_timeout"
+    assert projected.secondary_failure_codes == ("cleanup_timeout",)
+
+
+def test_cleanup_timeout_does_not_mask_terminal_task_failure() -> None:
+    instrumentation = BenchmarkInstrumentation()
+    instrumentation.record_cleanup_failure(
+        "cleanup_timeout", TimeoutError("bounded cleanup expired")
+    )
+    result = SimpleNamespace(
+        status=RunStatus.BLOCKED,
+        sent_unknown_count=0,
+        observation_count=1,
+        execution_count=0,
+        currentness_probe_count=0,
+        step_count=0,
+        failure_code=None,
+        policy_failure=None,
+        runtime_failure=None,
+        task_outcome=TaskOutcomeFact(
+            TaskOutcomeKind.TERMINAL_FAILURE,
+            "verified_terminal_task_failure",
+            ("fact:terminal-task-failure",),
+        ),
+    )
+
+    projected = project_case_result(
+        "case", result, instrumentation, 1.0, "cleanup timed out"
+    )
+
+    assert projected.case_failure_code == "verified_terminal_task_failure"
+    assert projected.termination_origin == ""
+    assert projected.cleanup_failure_code == "cleanup_timeout"
+
+
 def test_uncertain_dispatch_remains_primary_when_cleanup_also_fails() -> None:
     instrumentation = BenchmarkInstrumentation(
         failure_origin=CaseFailureOrigin.EXECUTION,

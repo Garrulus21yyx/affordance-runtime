@@ -9,6 +9,7 @@ from enum import StrEnum
 
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
     EvidenceBundle,
@@ -133,6 +134,12 @@ class FinalResponseBoundary:
 
 def _current_public_record(bundle: EvidenceBundle, evidence_ref: str) -> bool:
     record = bundle.resolve(evidence_ref)
+    if record is not None and record.evidence_ref in bundle.pinned_evidence_refs:
+        return bool(
+            record.kind == "fact"
+            and is_public_scalar(record.value)
+            and record.has_typed_source
+        )
     return bool(
         record is not None
         and record.observation_id == bundle.observation_id

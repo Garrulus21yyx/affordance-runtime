@@ -12,6 +12,7 @@ from affordance_runtime.agent.context.contracts import (
     AgentCriterionEvaluationView,
     AgentEvaluatedOutputView,
     AgentMaterialBindingView,
+    AgentSubtaskView,
     AgentSuccessCriterionView,
     AgentTaskEvaluationView,
     AgentTaskView,
@@ -42,6 +43,7 @@ def project_task(
     fact_refs: Mapping[str, str] | None = None,
     target_refs: Mapping[str, str] | None = None,
     include_final_response_contract: bool = False,
+    active_subtask: AgentSubtaskView | None = None,
 ) -> AgentTaskView:
     if evaluation is not None and evaluation.task_id != task.task_id:
         raise ValueError("task projection evaluation belongs to another task")
@@ -98,6 +100,7 @@ def project_task(
         public_input_count > len(public_inputs),
         _evaluation_view(evaluation, verified_facts),
         final_response_contract,
+        active_subtask,
     )
 
 

@@ -5,21 +5,24 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from affordance_runtime.agent.context.contracts import AgentSubtaskContractView
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
-from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.decisions import FinalResponse, YieldSubtask
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus
 from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.mission.boundary import AuditBoundary
+from affordance_runtime.mission.boundary import EvidenceBoundary
 from affordance_runtime.mission.contracts import (
     AuditorPort,
     AuditorRoleRequest,
+    EvidenceBoundaryRejectionClass,
     EvidenceBundle,
     ManagerAssessment,
     ManagerDecision,
@@ -30,6 +33,8 @@ from affordance_runtime.mission.contracts import (
     ManagerRoute,
     MissionOutcome,
     MissionState,
+    RecoveryKind,
+    RecoverySignal,
     SubtaskContract,
     SupervisorPhase,
     SupervisorState,
@@ -119,20 +124,32 @@ class _EpisodeRoute(StrEnum):
     WAITING_USER = "waiting_user"
     CANCELLED = "cancelled"
     OUTCOME_PROPOSED = "outcome_proposed"
+    NEEDS_REPLAN = "needs_replan"
     MANAGER_RECOVERY = "manager_recovery"
     OPERATIONAL_FAILURE = "operational_failure"
     UNHANDLED = "unhandled"
 
 
 @dataclass(frozen=True)
+class NullMissionLifecycleSink:
+    def manager_started(self) -> None:
+        return None
+
+    def manager_returned(self) -> None:
+        return None
+
+
+@dataclass(frozen=True)
 class MissionSupervisor:
     manager: ManagerPort
     auditor: AuditorPort | None = None
-    boundary: AuditBoundary = AuditBoundary()
+    boundary: EvidenceBoundary = EvidenceBoundary()
     final_response_boundary: FinalResponseBoundary = FinalResponseBoundary()
     max_rounds: int = 8
     strict_verification: bool = False
     trace_sink: RunTraceSink = NullRunTraceSink()
+    official_outcome_sink: object | None = None
+    lifecycle_sink: object = NullMissionLifecycleSink()
 
     async def run(
         self,
@@ -163,7 +180,11 @@ class MissionSupervisor:
             remaining_rounds=self.max_rounds,
             environment=project_mission_environment(current_world, ()),
         )
-        initial = await self.manager.decide(initial_request)
+        self.lifecycle_sink.manager_started()
+        try:
+            initial = await self.manager.decide(initial_request)
+        finally:
+            self.lifecycle_sink.manager_returned()
         manager_calls += 1
         _record_role_invocation(
             self.trace_sink,
@@ -185,15 +206,6 @@ class MissionSupervisor:
                 boundary_rejections,
             )
         decision = initial.output
-        if decision.assessment is not ManagerAssessment.NOT_APPLICABLE:
-            return _result(
-                state,
-                mission,
-                MissionOutcome.MANAGER_FAILURE,
-                manager_calls,
-                auditor_calls,
-                boundary_rejections,
-            )
         terminal = _non_execution_manager_result(
             decision,
             state,
@@ -206,6 +218,7 @@ class MissionSupervisor:
             return terminal
         assert decision.subtask is not None
         active_subtask = decision.subtask
+        pending_boundary_feedback = ""
 
         for round_index in range(self.max_rounds):
             episode_start_world = current_world
@@ -216,6 +229,7 @@ class MissionSupervisor:
                 max_turns=active_subtask.episode_turn_budget,
                 yield_on_budget_exhaustion=True,
                 working_facts=mission.carry_working_facts(active_subtask.relevant_fact_keys),
+                active_subtask=_action_policy_subtask_contract(active_subtask),
             )
             state = await runtime.continue_task(environment, task, state)
             route = _episode_route(state)
@@ -289,13 +303,15 @@ class MissionSupervisor:
                 )
             current_world = review_capture.observation
             state.current_world = current_world
-            evidence = EvidenceBundle.from_world(current_world)
+            evidence = EvidenceBundle.from_world(current_world, state.working_facts)
             recovery = _review_recovery_view(
                 route,
                 state,
                 active_subtask,
                 episode_start_world,
+                working_proposal_feedback=pending_boundary_feedback,
             )
+            pending_boundary_feedback = ""
             review_request = ManagerRoleRequest(
                 mode=ManagerRequestMode.REVIEW_AND_ROUTE,
                 original_task=task,
@@ -308,9 +324,14 @@ class MissionSupervisor:
                 active_subtask=active_subtask,
                 review_world=current_world,
                 evidence_bundle=evidence,
-                candidate_output_keys=active_subtask.candidate_output_keys,
                 final_response_schema=_public_final_response_schema(task),
                 allowed_evidence_refs=_allowed_current_evidence_refs(evidence),
+                episode_working_facts=state.working_facts,
+                changed_evidence_refs=_new_or_changed_evidence_refs(
+                    episode_start_world,
+                    current_world,
+                    evidence,
+                ),
             )
             review = await self.manager.decide(review_request)
             manager_calls += 1
@@ -334,21 +355,57 @@ class MissionSupervisor:
                     boundary_rejections,
                 )
             decision = review.output
-            if any(evidence.resolve(ref) is None for ref in decision.evidence_refs):
-                boundary_rejections += 1
-                return _result(
-                    state,
-                    mission,
-                    MissionOutcome.BOUNDARY_REJECTED,
-                    manager_calls,
-                    auditor_calls,
-                    boundary_rejections,
-                )
-            if (
+            repeated_strategy = bool(
                 decision.route is ManagerRoute.EXECUTE_SUBTASK
                 and _failed_or_stalled(route)
                 and _repeats_failed_strategy(decision, recovery)
-            ):
+            )
+            if repeated_strategy and route is _EpisodeRoute.NEEDS_REPLAN:
+                assert recovery.recovery_signal is not None
+                deliberate_recovery = replace(
+                    recovery,
+                    exit_kind="strategy_not_changed",
+                    recovery_signal=RecoverySignal(
+                        RecoveryKind.SUBTASK_MISALIGNED,
+                        recovery.recovery_signal.stable_signature,
+                        {
+                            "reason": "Manager repeated the rejected subtask strategy",
+                            "prior_reason": recovery.recovery_signal.observed_evidence,
+                        },
+                        prohibited_immediate_repeat=_subtask_id(active_subtask),
+                        recovery_attempt=2,
+                    ),
+                )
+                deliberate_request = replace(
+                    review_request,
+                    last_typed_exit="strategy_not_changed",
+                    last_audit_or_failure_ref="subtask_misaligned",
+                    recovery=deliberate_recovery,
+                )
+                deliberate = await self.manager.decide(deliberate_request)
+                manager_calls += 1
+                _record_role_invocation(
+                    self.trace_sink,
+                    "manager",
+                    manager_calls,
+                    deliberate_request,
+                    deliberate,
+                    trigger_kind="subtask_misaligned_deliberate_replan",
+                    subtask_id=_subtask_id(active_subtask),
+                    mission_version=mission.version,
+                )
+                if deliberate.failure is not None or deliberate.output is None:
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.MANAGER_FAILURE,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
+                decision = deliberate.output
+                repeated_strategy = _repeats_failed_strategy(decision, deliberate_recovery)
+            if repeated_strategy:
                 state.status = RunStatus.BLOCKED
                 return _result(
                     state,
@@ -359,6 +416,30 @@ class MissionSupervisor:
                     boundary_rejections,
                 )
 
+            allowed_review_evidence = set(review_request.allowed_evidence_refs)
+            cited_review_evidence = {
+                *decision.evidence_refs,
+                *decision.final_response_evidence_refs,
+                *(
+                    ref
+                    for outcome in decision.working_outcomes
+                    for ref in outcome.evidence_refs
+                ),
+                *(fact.evidence_ref for fact in decision.working_facts),
+            }
+            if not cited_review_evidence.issubset(allowed_review_evidence):
+                boundary_rejections += 1
+                return _result(
+                    state,
+                    mission,
+                    MissionOutcome.BOUNDARY_REJECTED,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
+                )
+
+            proposal = decision.state_proposal(mission.version)
+            final_response = None
             if decision.route is ManagerRoute.REQUEST_FINALIZATION:
                 if not getattr(environment, "supports_finalization", False):
                     return _result(
@@ -369,7 +450,7 @@ class MissionSupervisor:
                         auditor_calls,
                         boundary_rejections,
                     )
-                boundary_result = self.final_response_boundary.admit(
+                final_boundary = self.final_response_boundary.admit(
                     decision,
                     review_request,
                     mission,
@@ -379,9 +460,9 @@ class MissionSupervisor:
                     self.trace_sink,
                     review_request,
                     decision,
-                    boundary_result,
+                    final_boundary,
                 )
-                if not boundary_result.admitted or boundary_result.response is None:
+                if not final_boundary.admitted or final_boundary.response is None:
                     return _result(
                         state,
                         mission,
@@ -391,24 +472,30 @@ class MissionSupervisor:
                         boundary_rejections,
                         final_response_boundary_rejection_count=1,
                         final_response_rejection_code=(
-                            boundary_result.rejection_code.value
-                            if boundary_result.rejection_code is not None
+                            final_boundary.rejection_code.value
+                            if final_boundary.rejection_code is not None
                             else FinalResponseRejection.FINAL_RESPONSE_INVALID.value
                         ),
                     )
-                return await self._finalize(
-                    runtime,
-                    environment,
-                    task,
-                    state,
-                    mission,
-                    manager_calls,
-                    auditor_calls,
-                    boundary_rejections,
-                    boundary_result.response,
-                )
+                final_response = final_boundary.response
 
-            if self.strict_verification and active_subtask.related_audit_ids:
+            requires_strict_audit = bool(
+                self.strict_verification
+                and active_subtask.related_audit_ids
+                and proposal is not None
+                and proposal.working_outcomes
+                and decision.route is not ManagerRoute.REQUEST_FINALIZATION
+            )
+            if requires_strict_audit:
+                if auditor_calls:
+                    return _result(
+                        state,
+                        mission,
+                        MissionOutcome.AUDITOR_FAILURE,
+                        manager_calls,
+                        auditor_calls,
+                        boundary_rejections,
+                    )
                 if self.auditor is None:
                     return _result(
                         state,
@@ -445,6 +532,11 @@ class MissionSupervisor:
                     audit.failure is not None
                     or audit.output is None
                     or audit.output.assessment is not ManagerAssessment.SATISFIED
+                    or not audit.output.evidence_refs
+                    or any(
+                        ref not in _allowed_current_evidence_refs(evidence)
+                        for ref in audit.output.evidence_refs
+                    )
                 ):
                     return _result(
                         state,
@@ -455,20 +547,43 @@ class MissionSupervisor:
                         boundary_rejections,
                     )
 
-            proposal = decision.state_proposal(mission.version)
             if proposal is not None:
                 admitted = self.boundary.accept(mission, proposal, evidence)
                 if not admitted.accepted:
                     boundary_rejections += 1
-                    return _result(
-                        state,
-                        mission,
-                        MissionOutcome.BOUNDARY_REJECTED,
-                        manager_calls,
-                        auditor_calls,
-                        boundary_rejections,
-                    )
-                mission = admitted.mission_state
+                    if (
+                        admitted.rejection_class
+                        is EvidenceBoundaryRejectionClass.RECOVERABLE_SHAPE
+                        and decision.route is ManagerRoute.EXECUTE_SUBTASK
+                    ):
+                        pending_boundary_feedback = (
+                            f"working_proposal_rejected:{admitted.reason_code}"
+                        )
+                    else:
+                        return _result(
+                            state,
+                            mission,
+                            MissionOutcome.BOUNDARY_REJECTED,
+                            manager_calls,
+                            auditor_calls,
+                            boundary_rejections,
+                        )
+                else:
+                    mission = admitted.mission_state
+
+            if decision.route is ManagerRoute.REQUEST_FINALIZATION:
+                assert final_response is not None
+                return await self._finalize(
+                    runtime,
+                    environment,
+                    task,
+                    state,
+                    mission,
+                    manager_calls,
+                    auditor_calls,
+                    boundary_rejections,
+                    final_response,
+                )
 
             terminal = _non_execution_manager_result(
                 decision,
@@ -536,6 +651,11 @@ class MissionSupervisor:
             state.current_world = post.observation
             state.current_task_evaluation = await runtime.task_evaluator.evaluate(
                 task, post.observation
+            )
+            _record_native_evaluator_returned(
+                self.trace_sink,
+                self.official_outcome_sink,
+                state.current_task_evaluation,
             )
             state.status = _status_for_terminal_evaluation(
                 state.current_task_evaluation.status
@@ -669,6 +789,8 @@ def _episode_route(state: RunState) -> _EpisodeRoute:
     if state.status is RunStatus.YIELDED:
         if state.yield_reason is EpisodeYieldReason.OUTCOME_PROPOSED:
             return _EpisodeRoute.OUTCOME_PROPOSED
+        if state.yield_reason is EpisodeYieldReason.NEEDS_REPLAN:
+            return _EpisodeRoute.NEEDS_REPLAN
         if state.yield_reason is not None:
             return _EpisodeRoute.MANAGER_RECOVERY
     return _EpisodeRoute.UNHANDLED
@@ -679,24 +801,51 @@ def _review_recovery_view(
     state: RunState,
     subtask: SubtaskContract,
     episode_start_world: WorldObservation,
+    *,
+    working_proposal_feedback: str = "",
 ) -> ManagerRecoveryView:
     exit_kind = (
         state.yield_reason.value
         if state.yield_reason is not None
         else route.value
     )
+    replan_reason = (
+        state.last_step.decision.reason
+        if route is _EpisodeRoute.NEEDS_REPLAN
+        and state.last_step is not None
+        and isinstance(state.last_step.decision, YieldSubtask)
+        else ""
+    )
+    recovery_signal = state.recovery_signal
+    if route is _EpisodeRoute.NEEDS_REPLAN:
+        recovery_signal = RecoverySignal(
+            RecoveryKind.SUBTASK_MISALIGNED,
+            _subtask_id(subtask),
+            {"reason": replan_reason},
+            prohibited_immediate_repeat=_subtask_id(subtask),
+        )
     return ManagerRecoveryView(
         exit_kind,
         _world_changed(episode_start_world, state.current_world),
         subtask,
-        recovery_signal=state.recovery_signal,
+        recovery_signal=recovery_signal,
         attempted_modes=_episode_attempted_modes(state),
+        outcome_proposal=(
+            state.last_step.decision.reason
+            if state.last_step is not None
+            and isinstance(state.last_step.decision, YieldSubtask)
+            and state.last_step.decision.kind == "outcome_proposed"
+            else ""
+        ),
+        working_proposal_feedback=working_proposal_feedback,
     )
 
 
 def _review_trigger(route: _EpisodeRoute, state: RunState) -> str:
     if route is _EpisodeRoute.OUTCOME_PROPOSED:
         return "outcome_proposed"
+    if route is _EpisodeRoute.NEEDS_REPLAN:
+        return "subtask_misaligned"
     if route is _EpisodeRoute.OPERATIONAL_FAILURE:
         return "failed_subtask"
     if state.yield_reason is EpisodeYieldReason.BUDGET:
@@ -716,7 +865,11 @@ def _review_failure_ref(route: _EpisodeRoute, state: RunState) -> str:
 
 
 def _failed_or_stalled(route: _EpisodeRoute) -> bool:
-    return route in {_EpisodeRoute.MANAGER_RECOVERY, _EpisodeRoute.OPERATIONAL_FAILURE}
+    return route in {
+        _EpisodeRoute.MANAGER_RECOVERY,
+        _EpisodeRoute.NEEDS_REPLAN,
+        _EpisodeRoute.OPERATIONAL_FAILURE,
+    }
 
 
 _MONITOR_EVENT_NAMES = frozenset(
@@ -771,9 +924,9 @@ def _subtask_strategy(subtask: SubtaskContract) -> tuple[object, ...]:
     return (
         subtask.objective,
         subtask.done_when,
-        subtask.constraints,
-        subtask.relevant_fact_keys,
-        subtask.candidate_output_keys,
+        subtask.task_link,
+        subtask.outcome_kind.value,
+        tuple((item.key, item.description) for item in subtask.required_evidence),
     )
 
 
@@ -794,12 +947,44 @@ def _allowed_current_evidence_refs(bundle: EvidenceBundle) -> tuple[str, ...]:
         if (
             record.kind == "fact"
             and is_public_scalar(record.value)
-            and record.observation_id == bundle.observation_id
-            and record.source_observation_id in sources
             and record.has_typed_source
-            and bundle.source_coverages.get(record.source_observation_id, "") != "stale"
+            and (
+                record.evidence_ref in bundle.pinned_evidence_refs
+                or (
+                    record.observation_id == bundle.observation_id
+                    and record.source_observation_id in sources
+                    and bundle.source_coverages.get(record.source_observation_id, "") != "stale"
+                )
+            )
         )
     )
+
+
+def _new_or_changed_evidence_refs(
+    before: WorldObservation,
+    after: WorldObservation,
+    bundle: EvidenceBundle,
+) -> tuple[str, ...]:
+    before_records = (
+        *WorldEvidenceIndex.from_observation(before).records,
+        *public_text_evidence_records(before),
+    )
+    before_signatures = {
+        (item.kind, item.source_id, item.predicate, to_json_compatible(item.value))
+        for item in before_records
+        if item.kind == "fact" and is_public_scalar(item.value)
+    }
+    return tuple(
+        item.evidence_ref
+        for item in bundle.evidence_records
+        if (
+            item.observation_id == after.observation_id
+            and item.kind == "fact"
+            and is_public_scalar(item.value)
+            and (item.kind, item.source_id, item.predicate, to_json_compatible(item.value))
+            not in before_signatures
+        )
+    )[:32]
 
 
 def _status_for_terminal_evaluation(status: TaskEvaluationStatus) -> RunStatus:
@@ -886,6 +1071,18 @@ def _record_finalization_protocol(
         )
 
 
+def _record_native_evaluator_returned(
+    trace_sink: RunTraceSink,
+    official_outcome_sink: object | None,
+    evaluation: object,
+) -> None:
+    recorder = getattr(official_outcome_sink, "native_evaluator_returned", None)
+    if not callable(recorder):
+        recorder = getattr(trace_sink, "native_evaluator_returned", None)
+    if callable(recorder):
+        recorder(evaluation)
+
+
 def _record_final_response_boundary(
     trace_sink: RunTraceSink,
     review: ManagerRoleRequest,
@@ -919,12 +1116,25 @@ def _subtask_id(subtask: SubtaskContract) -> str:
             (
                 subtask.objective,
                 subtask.done_when,
+                subtask.task_link,
                 subtask.constraints,
                 subtask.relevant_fact_keys,
-                subtask.candidate_output_keys,
+                tuple((item.key, item.description) for item in subtask.required_evidence),
+                subtask.outcome_kind.value,
             )
         ),
         sort_keys=True,
         separators=(",", ":"),
     )
     return f"subtask:{hashlib.sha256(payload.encode()).hexdigest()[:16]}"
+
+
+def _action_policy_subtask_contract(subtask: SubtaskContract) -> AgentSubtaskContractView:
+    return AgentSubtaskContractView(
+        subtask.objective,
+        subtask.done_when,
+        subtask.task_link,
+        subtask.outcome_kind.value,
+        subtask.constraints,
+        tuple((item.key, item.description) for item in subtask.required_evidence),
+    )

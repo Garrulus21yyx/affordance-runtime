@@ -50,14 +50,16 @@ def project_legacy_case_fields(status: str, facts: CaseFacts) -> LegacyCaseProje
     termination_origin = (
         "harness_watchdog"
         if facts.watchdog_code
+        else "harness_external"
+        if facts.component_origin is CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION
         else "component"
         if facts.component_origin is not CaseFailureOrigin.NONE
         else "runtime"
         if has_runtime_truth
-        else "cleanup"
-        if facts.cleanup_code
         else ""
         if pure_task_terminal
+        else "cleanup"
+        if facts.cleanup_code
         else "runtime"
     )
     return LegacyCaseProjection(

@@ -1,4 +1,7 @@
 import asyncio
+import json
+import threading
+import time
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -12,7 +15,12 @@ from affordance_runtime.agent import (
     SelectAction,
     YieldSubtask,
 )
+from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decision_capability import DecisionCapability
+from affordance_runtime.agent.observability import (
+    LangfuseViewerWorker,
+    QueuedViewerRunTraceRecorder,
+)
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -24,7 +32,10 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingEnvironment,
 )
-from affordance_runtime.benchmarks.target_loop.reporting import write_run_report
+from affordance_runtime.benchmarks.target_loop.reporting import (
+    write_case_report,
+    write_run_report,
+)
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import (
     ActionOutcome,
@@ -156,7 +167,12 @@ def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
                 ManagerDecision(
                     ManagerAssessment.NOT_APPLICABLE,
                     ManagerRoute.EXECUTE_SUBTASK,
-                    subtask=SubtaskContract("Read current value", "Current value is known", episode_turn_budget=1),
+                    subtask=SubtaskContract(
+                        "Read current value",
+                        "Current value is known",
+                        "Provides the requested current value",
+                        episode_turn_budget=1,
+                    ),
                 ),
                 ManagerDecision(
                     ManagerAssessment.UNKNOWN,
@@ -219,6 +235,90 @@ def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
     assert len(manager.requests) == 2
 
 
+def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from affordance_runtime.benchmarks.target_loop import runner
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    monkeypatch.setattr(runner, "_VIEWER_FLUSH_TIMEOUT_S", 0.05)
+    viewer_entered = threading.Event()
+    never_release = threading.Event()
+
+    class HungClient:
+        def start_as_current_observation(self, **_kwargs):
+            viewer_entered.set()
+            never_release.wait()
+
+    def trace_factory(_environment, *, directory, run_id, session_id, benchmark_managed):
+        return QueuedViewerRunTraceRecorder(
+            directory,
+            run_id=run_id,
+            viewer_worker=LangfuseViewerWorker(
+                lambda: HungClient(),
+                session_id=session_id,
+                benchmark_managed=benchmark_managed,
+            ),
+        )
+
+    monkeypatch.setattr(runner, "trace_recorder_from_environment", trace_factory)
+
+    class ProviderUnavailableManager:
+        async def decide(self, _request):
+            return ModelInvocationResult(failure=ModelFailure(
+                ModelFailureKind.PROVIDER_UNAVAILABLE,
+                "synthetic provider unavailable",
+                True,
+            ))
+
+    case = BenchmarkCase(
+        "mission-provider-unavailable",
+        "suite",
+        "provider failure with a hung read-only viewer",
+        lambda: TaskGoal("mission-provider", "Complete a bounded task."),
+        lambda _metrics: ScriptedEnvironment(initial_observation=fused_world("provider-failure")),
+        lambda _metrics: BenchmarkComposition(
+            NeverPolicy(),
+            ActionOutcomeProjector(),
+            UnknownEvaluator(),
+            mission_manager=ProviderUnavailableManager(),
+            mission_auditor=None,
+            execution_mode=ExecutionMode.MISSION,
+        ),
+        (RunStatus.FAILED,),
+        2.0,
+        7,
+        ("observations",),
+    )
+
+    started = time.perf_counter()
+    result = asyncio.run(run_suite(BenchmarkManifest(
+        "target-loop-manifest.v1",
+        "suite",
+        "deterministic",
+        7,
+        (case,),
+    ), trace_dir=tmp_path)).cases[0]
+    elapsed = time.perf_counter() - started
+
+    assert viewer_entered.is_set()
+    assert elapsed < 0.5
+    assert result.status == "failed"
+    assert result.mission_outcome == "manager_failure"
+    assert "viewer" not in result.failure_code
+    trace_path = tmp_path / "traces" / case.case_id / "trace.jsonl"
+    events = [json.loads(line) for line in trace_path.read_text().splitlines()]
+    role = next(event for event in events if event["event"] == "mission_role_invocation")
+    assert role["failure"]["kind"] == "provider_unavailable"
+    assert any(
+        event["event"] == "case_lifecycle_phase" and event["phase"] == "CASE_BODY_RETURNED"
+        for event in events
+    )
+    assert any(event["event"] == "viewer_status" for event in events)
+    assert (tmp_path / "cases" / f"{case.case_id}.json").is_file()
+
+
 def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_path) -> None:
     class ProtocolPolicy:
         @property
@@ -242,6 +342,7 @@ def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_p
                     subtask=SubtaskContract(
                         "Enter the remaining values one at a time",
                         "Both values are visible",
+                        "Completes the requested form values",
                         episode_turn_budget=6,
                     ),
                 ),
@@ -437,6 +538,99 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
     assert result.latest_action_local_postcondition == "unknown"
     assert result.latest_action_evidence_method == "none"
     assert policy.calls == 2
+
+
+def test_external_interruption_stops_suite_and_persists_typed_partial_case(tmp_path) -> None:
+    interruption_requested = asyncio.Event()
+    cleanup_events = []
+    completed = []
+
+    class ExecuteThenInterruptPolicy:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, context):
+            self.calls += 1
+            if self.calls == 1:
+                return SelectAction(context.context_id, context.actions.options[0].action_id)
+            interruption_requested.set()
+            await asyncio.Future()
+
+    class IncompleteEvaluator:
+        async def evaluate(self, task, observation):
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "incomplete",
+            )
+
+    class Environment(ScriptedEnvironment):
+        async def close(self):
+            cleanup_events.append("closed")
+
+    policy = ExecuteThenInterruptPolicy()
+    case = BenchmarkCase(
+        "interrupted",
+        "suite",
+        "external interruption snapshot",
+        lambda: TaskGoal(
+            "interrupted",
+            "Exercise external interruption",
+            allowed_effects=("advanced",),
+            risk_profile=RiskProfile.LOW,
+            loop_budget=LoopBudget(4, 6),
+        ),
+        lambda _metrics: Environment(
+            initial_observation=_action_world("observation:one"),
+            post_observations=(_action_world("observation:two"),),
+            results=[ActionResult("*", DispatchStatus.SENT, "dom", True)],
+        ),
+        lambda _metrics: BenchmarkComposition.atomic(
+            policy,
+            ActionOutcomeProjector(),
+            IncompleteEvaluator(),
+        ),
+        (RunStatus.DONE,),
+        2.0,
+        7,
+        ("observations", "executions", "turns"),
+    )
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            ),
+            case_completed=lambda index, item: (
+                completed.append((index, item.case_id)),
+                write_case_report(item, tmp_path),
+            ),
+            trace_dir=tmp_path,
+            interruption_requested=interruption_requested,
+        )
+    )
+
+    interrupted = result.cases[0]
+    assert interrupted.status == "failed"
+    assert interrupted.execution_completed is False
+    assert interrupted.partial_episode_available is True
+    assert interrupted.failure_code == "interrupted_external"
+    assert interrupted.case_failure_code == "interrupted_external"
+    assert interrupted.failure_origin is CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION
+    assert interrupted.termination_origin == "harness_external"
+    assert interrupted.watchdog_triggered is False
+    assert interrupted.measurements["executions"].value == 1
+    assert result.acceptance.accepted is False
+    assert cleanup_events == ["closed"]
+    assert completed == [(1, "interrupted")]
+    assert (tmp_path / "cases" / "interrupted.json").is_file()
+    assert not (tmp_path / "cases" / "interrupted.json.tmp").exists()
 
 
 def test_component_timeout_error_is_not_classified_as_watchdog() -> None:

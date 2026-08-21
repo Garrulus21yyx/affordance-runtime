@@ -7,9 +7,10 @@ import binascii
 import hashlib
 import json
 import os
+import queue
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -22,6 +23,12 @@ class RunTraceSink(Protocol):
     """Observe Runtime facts without participating in Runtime control."""
 
     def run_started(self, task: object, state: object) -> None: ...
+
+    def benchmark_case_started(
+        self, *, case_id: str, description: str, timeout_s: float
+    ) -> None: ...
+
+    def benchmark_case_finished(self, *, case_id: str, status: str) -> None: ...
 
     def run_start_failed(self, task: object, acquisition: object) -> None: ...
 
@@ -58,6 +65,16 @@ class RunTraceSink(Protocol):
         dispatch_status: str,
     ) -> None: ...
 
+    def native_evaluator_returned(self, evaluation: object) -> None: ...
+
+    def official_outcome_persistence(
+        self,
+        *,
+        checkpoint_id: str,
+        persistence_status: str,
+        persistence_error: str,
+    ) -> None: ...
+
     def final_response_boundary_evaluated(
         self,
         *,
@@ -68,6 +85,32 @@ class RunTraceSink(Protocol):
         admitted: bool,
         rejection_code: str,
         response_digest: str,
+    ) -> None: ...
+
+    def benchmark_lifecycle_phase(
+        self,
+        phase: str,
+        *,
+        primary_result_available: bool,
+        primary_snapshot_available: bool,
+    ) -> None: ...
+
+    def case_lifecycle_phase(self, phase: str) -> None: ...
+
+    def primary_result_available(
+        self,
+        *,
+        case_id: str,
+        checkpoint_id: str,
+        status: str,
+        step_count: int,
+    ) -> None: ...
+
+    def benchmark_watchdog(
+        self,
+        code: str,
+        *,
+        cancel_grace_exceeded: bool,
     ) -> None: ...
 
     def step_completed(self, step_number: int, result: object) -> None: ...
@@ -82,6 +125,12 @@ class RunTraceSink(Protocol):
 
 @dataclass(frozen=True)
 class NullRunTraceSink:
+    def benchmark_case_started(self, **event: object) -> None:
+        del event
+
+    def benchmark_case_finished(self, **event: object) -> None:
+        del event
+
     def run_started(self, task: object, state: object) -> None:
         return None
 
@@ -127,8 +176,31 @@ class NullRunTraceSink:
         del stop_send_count, post_stop_capture_count, native_evaluator_count, dispatch_status
         return None
 
+    def native_evaluator_returned(self, evaluation: object) -> None:
+        del evaluation
+        return None
+
+    def official_outcome_persistence(self, **event: object) -> None:
+        del event
+        return None
+
     def final_response_boundary_evaluated(self, **event: object) -> None:
         del event
+        return None
+
+    def benchmark_lifecycle_phase(self, phase: str, **event: object) -> None:
+        del phase, event
+        return None
+
+    def case_lifecycle_phase(self, phase: str) -> None:
+        del phase
+
+    def primary_result_available(self, **event: object) -> None:
+        del event
+        return None
+
+    def benchmark_watchdog(self, code: str, **event: object) -> None:
+        del code, event
         return None
 
     def step_completed(self, step_number: int, result: object) -> None:
@@ -152,7 +224,6 @@ class RunTraceRecorder:
     """Append complete Runtime facts locally; tracing failures never alter the run."""
 
     directory: Path | None = None
-    exporter: Any | None = None
     run_id: str = field(default_factory=lambda: f"run:{uuid.uuid4().hex}")
     events: list[dict[str, object]] = field(default_factory=list, init=False)
     errors: list[str] = field(default_factory=list, init=False)
@@ -182,13 +253,25 @@ class RunTraceRecorder:
         )
         self._observation(getattr(state, "current_world", None))
 
+    def benchmark_case_started(
+        self, *, case_id: str, description: str, timeout_s: float
+    ) -> None:
+        self._emit(
+            "benchmark_case_started",
+            case_id=case_id,
+            description=description,
+            timeout_s=timeout_s,
+        )
+
+    def benchmark_case_finished(self, *, case_id: str, status: str) -> None:
+        self._emit("benchmark_case_finished", case_id=case_id, status=status)
+
     def run_start_failed(self, task: object, acquisition: object) -> None:
         self._emit(
             "run_start_failed",
             task=_json_value(task, self.directory),
             acquisition=_json_value(acquisition, self.directory),
         )
-        self._export_flush()
 
     def goal_compiler_completed(self, diagnostic: object) -> None:
         self._emit(
@@ -264,6 +347,100 @@ class RunTraceRecorder:
             dispatch_status=dispatch_status,
         )
 
+    def native_evaluator_returned(
+        self,
+        evaluation: object,
+        *,
+        checkpoint_id: str = "",
+    ) -> None:
+        outcome = getattr(evaluation, "outcome", None)
+        evidence_refs = tuple(
+            dict.fromkeys(
+                (
+                    *tuple(getattr(evaluation, "completion_evidence_refs", ())),
+                    *tuple(getattr(outcome, "evidence_refs", ())),
+                    *(
+                        ref
+                        for criterion in tuple(getattr(evaluation, "criteria", ()))
+                        for ref in tuple(getattr(criterion, "evidence_refs", ()))
+                    ),
+                    *(
+                        ref
+                        for output in tuple(getattr(evaluation, "outputs", ()))
+                        for ref in tuple(getattr(output, "evidence_refs", ()))
+                    ),
+                )
+            )
+        )
+        self._emit(
+            "native_evaluator_returned",
+            evaluation_status=_enum_value(getattr(evaluation, "status", "")),
+            outcome_kind=_enum_value(getattr(outcome, "kind", "")),
+            outcome_code=str(getattr(outcome, "code", "")),
+            evidence_refs=evidence_refs,
+            observation_id=str(getattr(evaluation, "observation_id", "")),
+            checkpoint_id=checkpoint_id,
+        )
+
+    def official_outcome_persistence(
+        self,
+        *,
+        checkpoint_id: str,
+        persistence_status: str,
+        persistence_error: str,
+    ) -> None:
+        self._emit(
+            "official_outcome_persistence",
+            checkpoint_id=checkpoint_id,
+            persistence_status=persistence_status,
+            persistence_error=persistence_error,
+        )
+
+    def benchmark_lifecycle_phase(
+        self,
+        phase: str,
+        *,
+        primary_result_available: bool,
+        primary_snapshot_available: bool,
+    ) -> None:
+        self._emit(
+            "benchmark_lifecycle_phase",
+            phase=phase,
+            primary_result_available=primary_result_available,
+            primary_snapshot_available=primary_snapshot_available,
+        )
+
+    def case_lifecycle_phase(self, phase: str) -> None:
+        self._emit("case_lifecycle_phase", phase=phase)
+
+    def primary_result_available(
+        self,
+        *,
+        case_id: str,
+        checkpoint_id: str,
+        status: str,
+        step_count: int,
+    ) -> None:
+        self._emit(
+            "primary_result_available",
+            case_id=case_id,
+            checkpoint_id=checkpoint_id,
+            status=status,
+            step_count=step_count,
+        )
+
+    def benchmark_watchdog(
+        self,
+        code: str,
+        *,
+        cancel_grace_exceeded: bool,
+    ) -> None:
+        self._emit(
+            "benchmark_watchdog",
+            code=code,
+            cancel_grace_exceeded=cancel_grace_exceeded,
+        )
+
     def final_response_boundary_evaluated(
         self,
         *,
@@ -303,7 +480,6 @@ class RunTraceRecorder:
             status=_enum_value(getattr(state, "status", "")),
             reason=_enum_value(getattr(state, "yield_reason", "")),
         )
-        self._export_flush()
 
     def run_resumed(self, kind: str, details: Mapping[str, object]) -> None:
         self._emit("run_resumed", kind=kind, details=_json_value(details, self.directory))
@@ -315,7 +491,6 @@ class RunTraceRecorder:
             error=str(error),
             status=_enum_value(getattr(state, "status", "")),
         )
-        self._export_flush()
 
     def run_finished(self, state: object) -> None:
         status = _enum_value(getattr(state, "status", ""))
@@ -329,7 +504,7 @@ class RunTraceRecorder:
                 getattr(state, "current_task_evaluation", None), self.directory
             ),
         )
-        self._export_flush()
+
     def _observation(self, observation: object) -> None:
         observation_id = getattr(observation, "observation_id", "")
         if not observation_id or observation_id in self._observations:
@@ -372,18 +547,8 @@ class RunTraceRecorder:
                         os.fsync(descriptor)
                     finally:
                         os.close(descriptor)
-            if self.exporter is not None:
-                self.exporter.emit(event)
         except Exception as exc:  # observability must never become control authority
             self.errors.append(f"{event_type}:{type(exc).__name__}")
-
-    def _export_flush(self) -> None:
-        if self.exporter is None:
-            return
-        try:
-            self.exporter.flush()
-        except Exception as exc:
-            self.errors.append(f"flush:{type(exc).__name__}")
 
 
 def _goal_guidance_payload(state: object) -> dict[str, object]:
@@ -509,168 +674,519 @@ def _diagnostic_count(
     return count
 
 
+class TraceEventSink(Protocol):
+    """Worker-owned consumer of an already-recorded typed trace event."""
+
+    def record(self, event: Mapping[str, object]) -> None: ...
+
+    def flush(self) -> None: ...
+
+
 @dataclass
-class LangfuseTraceExporter:
-    """Optional Langfuse viewer for the same local trace facts."""
+class LangfuseOtelSink:
+    """Worker-confined Langfuse SDK adapter; never called by Runtime owners."""
 
     client: Any
+    session_id: str = ""
+    benchmark_managed: bool = False
     root: Any | None = field(default=None, init=False)
+    _root_context: Any | None = field(default=None, init=False)
+    _attribute_context: Any | None = field(default=None, init=False)
+    _ended: bool = field(default=False, init=False)
 
-    def emit(self, event: Mapping[str, object]) -> None:
-        event_type = event["event"]
-        if event_type == "run_started":
-            self.root = self.client.start_observation(
-                name="gui-agent-run",
-                as_type="agent",
-                input=_external_projection(event.get("task")),
-                metadata={"run_id": event["run_id"]},
-            )
+    def record(self, event: Mapping[str, object]) -> None:
+        event_type = str(event.get("event", "unknown"))
+        if event_type == "benchmark_case_started":
+            self._start_root(event)
             return
-        if event_type == "run_start_failed":
-            self.root = self.client.start_observation(
-                name="gui-agent-run",
-                as_type="agent",
-                input=_external_projection(event.get("task")),
-                metadata={"run_id": event["run_id"]},
-            )
-            self.root.update(
-                output=_external_projection(event.get("acquisition")), level="ERROR"
-            )
-            self.root.end()
+        if event_type in {"run_started", "run_start_failed"}:
+            if self.root is None:
+                self._start_root(event)
+                if event_type == "run_start_failed":
+                    self._finish(event, error=True)
+                return
+            if event_type == "run_start_failed" and not self.benchmark_managed:
+                self._finish(event, error=True)
+                return
+        if self.root is None or self._ended:
             return
-        if self.root is None:
-            return
-        if event_type == "goal_compiler_completed":
-            diagnostic = event.get("diagnostic", {})
-            diagnostic = diagnostic if isinstance(diagnostic, Mapping) else {}
-            turn = self.root.start_observation(
-                name="goal-compiler",
-                as_type="chain",
-                input={
-                    "task_revision": diagnostic.get("task_revision"),
-                    "trigger": diagnostic.get("trigger"),
-                    "initial_evidence_observation_id": diagnostic.get("initial_evidence_observation_id"),
+        if event_type in {"model_turn", "mission_role_invocation"}:
+            self._record_model_event(event)
+        else:
+            projection = _langfuse_event_projection(event)
+            with self.client.start_as_current_observation(
+                name=_langfuse_event_name(event),
+                as_type=_langfuse_observation_type(event),
+                output=projection,
+                metadata={
+                    "event": event_type,
+                    "sequence": event.get("sequence"),
+                    "local_run_id": event.get("run_id"),
                 },
-                output={
-                    "final_disposition": diagnostic.get("final_disposition"),
-                    "accepted_plan_version": diagnostic.get("accepted_plan_version"),
-                    "reason": diagnostic.get("reason"),
-                },
-                metadata=_external_projection({
-                    key: diagnostic.get(key)
-                    for key in (
-                        "compiler_prompt_version", "provider_id", "model_id",
-                        "schema_repair_count", "contract_repair_count",
-                    )
-                }),
-            )
-            for attempt in diagnostic.get("generation_attempts", ()):
-                if not isinstance(attempt, Mapping):
-                    continue
-                transcript = attempt.get("transcript")
-                transcript = transcript if isinstance(transcript, Mapping) else {}
-                child = turn.start_observation(
-                    name=str(attempt.get("phase") or "goal-compiler-generation"),
-                    as_type="generation",
-                    input=_external_projection(transcript.get("llm.input_messages")),
-                    output=_external_projection(transcript.get("llm.output_messages")),
-                    model=transcript.get("llm.model_name"),
-                    usage_details={
-                        "input": transcript.get("llm.token_count.prompt", 0),
-                        "output": transcript.get("llm.token_count.completion", 0),
-                        "total": transcript.get("llm.token_count.total", 0),
-                    },
-                    metadata=_external_projection(attempt),
-                )
-                child.end()
-            turn.end()
-        elif event_type == "model_turn":
-            turn = self.root.start_observation(
-                name="model-turn",
-                as_type="chain",
-                input=event.get("agent_context"),
-                output=event.get("decision") or event.get("policy_failure"),
-                metadata=_external_projection({
-                    key: event.get(key)
-                    for key in (
-                        "run_id",
-                        "sequence",
-                        "context_id",
-                        "outcome",
-                        "provider_attempts",
-                        "model_metadata",
-                        "tool_catalog",
-                        "private_model_capture",
-                        "exception",
-                    )
-                }),
-            )
-            attempts = event.get("generation_attempts", ())
-            if not isinstance(attempts, (list, tuple)):
-                attempts = ()
-            for attempt in attempts:
-                if not isinstance(attempt, Mapping):
-                    continue
-                transcript = attempt.get("transcript")
-                transcript = transcript if isinstance(transcript, Mapping) else {}
-                child = turn.start_observation(
-                    name=str(attempt.get("phase") or "model-generation"),
-                    as_type="generation",
-                    input=_external_projection(transcript.get("llm.input_messages")),
-                    output=_external_projection(transcript.get("llm.output_messages")),
-                    model=transcript.get("llm.model_name"),
-                    usage_details={
-                        "input": transcript.get("llm.token_count.prompt", 0),
-                        "output": transcript.get("llm.token_count.completion", 0),
-                        "total": transcript.get("llm.token_count.total", 0),
-                    },
-                    metadata={
-                        "attempt": attempt.get("attempt"),
-                        "schema_name": attempt.get("schema_name"),
-                        "status": attempt.get("status"),
-                        "violations": attempt.get("violations"),
-                        "tools": transcript.get("llm.tools"),
-                    },
-                )
-                child.end()
-            turn.end()
-        elif event_type == "step_completed":
-            child = self.root.start_observation(
-                name="runtime-step",
-                as_type="tool",
-                input=event.get("lineage"),
-                output=_external_projection(event.get("result", {})),
-            )
-            child.end()
-        elif event_type == "run_error":
-            self.root.update(output=_external_projection(event), level="ERROR")
-            self.root.end()
-        elif event_type == "run_finished":
-            self.root.update(output=_external_projection(event))
-            self.root.end()
+            ):
+                pass
+        if event_type == "run_error":
+            self._finish(event, error=True)
+        elif event_type == "run_finished" and not self.benchmark_managed:
+            self._finish(event)
+        elif event_type == "benchmark_case_finished":
+            self._finish(event, error=str(event.get("status")) not in {"done", "blocked"})
 
     def flush(self) -> None:
         self.client.flush()
 
+    def _record_model_event(self, event: Mapping[str, object]) -> None:
+        event_type = str(event.get("event", ""))
+        with self.client.start_as_current_observation(
+            name=_langfuse_event_name(event),
+            as_type="agent",
+            output=_langfuse_event_projection(event),
+            metadata={
+                "event": event_type,
+                "sequence": event.get("sequence"),
+                "local_run_id": event.get("run_id"),
+            },
+        ):
+            for attempt in _langfuse_generation_attempts(event):
+                transcript = attempt.get("transcript")
+                transcript = transcript if isinstance(transcript, Mapping) else {}
+                metadata = _langfuse_model_metadata(event)
+                with self.client.start_as_current_observation(
+                    name=_langfuse_generation_name(event),
+                    as_type="generation",
+                    input=_bounded_remote_projection({
+                        "messages": transcript.get("llm.input_messages", ()),
+                    }),
+                    output=_bounded_remote_projection({
+                        "messages": transcript.get("llm.output_messages", ()),
+                    }),
+                    model=str(metadata.get("model_id", "")) or None,
+                    model_parameters={
+                        "max_output_tokens": int(attempt.get("max_output_tokens", 0)),
+                        "thinking": str(attempt.get("thinking_effective", "")),
+                    },
+                    usage_details={
+                        "input": int(attempt.get("prompt_tokens", 0)),
+                        "output": int(attempt.get("completion_tokens", 0)),
+                        "total": int(attempt.get("total_tokens", 0)),
+                    },
+                    level="ERROR" if attempt.get("status") == "failed" else None,
+                    metadata=_bounded_remote_projection({
+                        "attempt": attempt.get("attempt"),
+                        "phase": attempt.get("phase"),
+                        "trigger": attempt.get("trigger"),
+                        "status": attempt.get("status"),
+                        "finish_reason": attempt.get("finish_reason"),
+                        "thinking_requested": attempt.get("thinking_requested"),
+                        "thinking_effective": attempt.get("thinking_effective"),
+                        "reasoning_tokens": attempt.get("reasoning_tokens"),
+                        "final_content_tokens": attempt.get("final_content_tokens"),
+                        "final_tool_call_present": attempt.get("final_tool_call_present"),
+                        "provider_id": metadata.get("provider_id"),
+                        "prompt_version": metadata.get("prompt_version"),
+                        "schema_version": attempt.get("schema_version"),
+                        "latency_ms": attempt.get("latency_ms"),
+                    }),
+                ):
+                    pass
 
-def langfuse_exporter_from_environment(environment: Mapping[str, str]) -> LangfuseTraceExporter | None:
-    enabled = environment.get("AFFORDANCE_LANGFUSE_ENABLED", "").strip().casefold()
-    if enabled not in {"1", "true", "yes", "on"}:
-        return None
-    from langfuse import get_client  # type: ignore[import-not-found]
+    def _start_root(self, event: Mapping[str, object]) -> None:
+        if self.root is not None:
+            return
+        self._root_context = self.client.start_as_current_observation(
+            name="benchmark-gui-agent-case" if self.benchmark_managed else "run-gui-agent-case",
+            as_type="agent",
+            input=(
+                _bounded_remote_projection({
+                    "case_id": event.get("case_id"),
+                    "description": event.get("description"),
+                })
+                if event.get("event") == "benchmark_case_started"
+                else _public_task_projection(event.get("task"))
+            ),
+            metadata={"local_run_id": event.get("run_id")},
+            end_on_exit=False,
+        )
+        self.root = self._root_context.__enter__()
+        if self.session_id:
+            from langfuse import propagate_attributes  # type: ignore[import-not-found]
 
-    return LangfuseTraceExporter(get_client())
+            self._attribute_context = propagate_attributes(session_id=self.session_id)
+            self._attribute_context.__enter__()
+
+    def _finish(self, event: Mapping[str, object], *, error: bool = False) -> None:
+        if self.root is None or self._ended:
+            return
+        self.root.update(
+            output=_langfuse_event_projection(event),
+            **({"level": "ERROR"} if error else {}),
+        )
+        if self._attribute_context is not None:
+            self._attribute_context.__exit__(None, None, None)
+        self.root.end()
+        if self._root_context is not None:
+            self._root_context.__exit__(None, None, None)
+        self._ended = True
 
 
-def trace_recorder_from_environment(environment: Mapping[str, str]) -> RunTraceSink:
+@dataclass
+class LangfuseViewerWorker:
+    """Per-case daemon that exclusively owns Langfuse SDK calls."""
+
+    client_factory: Callable[[], Any]
+    session_id: str = ""
+    benchmark_managed: bool = False
+    queue_capacity: int = 256
+    errors: list[str] = field(default_factory=list, init=False)
+    dropped_event_count: int = field(default=0, init=False)
+    disabled: bool = field(default=False, init=False)
+    flush_timeout: bool = field(default=False, init=False)
+    _queue: queue.Queue[Mapping[str, object]] = field(init=False, repr=False)
+    _stop_requested: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _thread: threading.Thread = field(init=False, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.queue_capacity <= 4096:
+            raise ValueError("viewer queue capacity is outside bounds")
+        self._queue = queue.Queue(maxsize=self.queue_capacity)
+        self._thread = threading.Thread(
+            target=self._run,
+            name="langfuse-viewer-worker",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def enqueue(self, event: Mapping[str, object]) -> bool:
+        with self._lock:
+            if self.disabled or self._stop_requested.is_set():
+                self.dropped_event_count += 1
+                return False
+            try:
+                self._queue.put_nowait(dict(event))
+            except queue.Full:
+                self.dropped_event_count += 1
+                self.disabled = True
+                self.errors.append("viewer_queue_full")
+                return False
+        return True
+
+    def close(self, *, timeout_s: float = 5.0) -> bool:
+        if timeout_s < 0:
+            raise ValueError("viewer close timeout cannot be negative")
+        self._stop_requested.set()
+        self._thread.join(timeout_s)
+        if self._thread.is_alive():
+            with self._lock:
+                self.disabled = True
+                self.flush_timeout = True
+                if "viewer_flush_timeout" not in self.errors:
+                    self.errors.append("viewer_flush_timeout")
+            return False
+        return not self.disabled
+
+    def _run(self) -> None:
+        try:
+            client = self.client_factory()
+            sink = LangfuseOtelSink(
+                client,
+                session_id=self.session_id,
+                benchmark_managed=self.benchmark_managed,
+            )
+        except Exception as exc:
+            self._disable(f"viewer_init:{type(exc).__name__}")
+            return
+        while True:
+            if self.disabled:
+                return
+            if self._stop_requested.is_set() and self._queue.empty():
+                break
+            try:
+                event = self._queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            try:
+                sink.record(event)
+            except Exception as exc:
+                self._disable(f"viewer_record:{type(exc).__name__}")
+                return
+            finally:
+                self._queue.task_done()
+        try:
+            sink.flush()
+        except Exception as exc:
+            self._disable(f"viewer_flush:{type(exc).__name__}")
+
+    def _disable(self, reason: str) -> None:
+        with self._lock:
+            self.disabled = True
+            self.errors.append(reason)
+
+
+@dataclass
+class QueuedViewerRunTraceRecorder(RunTraceRecorder):
+    """Persist JSONL first, then enqueue without invoking a viewer SDK."""
+
+    viewer_worker: LangfuseViewerWorker | None = None
+
+    def _emit(self, event_type: str, **payload: object) -> None:
+        error_count = len(self.errors)
+        sequence = self._sequence
+        super()._emit(event_type, **payload)
+        if (
+            self.viewer_worker is None
+            or self._sequence == sequence
+            or len(self.errors) != error_count
+        ):
+            return
+        self.viewer_worker.enqueue(self.events[-1])
+
+    @property
+    def viewer_errors(self) -> list[str]:
+        return self.viewer_worker.errors if self.viewer_worker is not None else []
+
+    @property
+    def viewer_dropped_event_count(self) -> int:
+        return self.viewer_worker.dropped_event_count if self.viewer_worker is not None else 0
+
+    @property
+    def viewer_disabled(self) -> bool:
+        return bool(self.viewer_worker is not None and self.viewer_worker.disabled)
+
+    def flush_viewer(self, *, timeout_s: float = 5.0) -> None:
+        if self.viewer_worker is None:
+            return
+        completed = self.viewer_worker.close(timeout_s=timeout_s)
+        if not completed:
+            RunTraceRecorder._emit(
+                self,
+                "viewer_status",
+                viewer_disabled=True,
+                viewer_flush_timeout=self.viewer_worker.flush_timeout,
+                viewer_dropped_event_count=self.viewer_worker.dropped_event_count,
+                viewer_errors=tuple(self.viewer_worker.errors),
+            )
+
+
+def trace_recorder_from_environment(
+    environment: Mapping[str, str],
+    *,
+    directory: Path | None = None,
+    run_id: str | None = None,
+    session_id: str = "",
+    benchmark_managed: bool = False,
+) -> RunTraceSink:
     raw_directory = environment.get("AFFORDANCE_TRACE_DIR", "").strip()
-    langfuse_enabled = environment.get("AFFORDANCE_LANGFUSE_ENABLED", "").strip().casefold()
-    if langfuse_enabled in {"1", "true", "yes", "on"} and not raw_directory:
-        raise ValueError("Langfuse export requires AFFORDANCE_TRACE_DIR")
-    exporter = langfuse_exporter_from_environment(environment)
-    if not raw_directory and exporter is None:
+    local_directory = directory or (Path(raw_directory) if raw_directory else None)
+    enabled = environment.get("AFFORDANCE_LANGFUSE_ENABLED", "").strip().casefold()
+    langfuse_enabled = enabled in {"1", "true", "yes", "on"}
+    if langfuse_enabled and local_directory is None:
+        raise ValueError("Langfuse viewing requires a local JSONL trace")
+    if langfuse_enabled and not all(
+        environment.get(name, "").strip()
+        for name in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY")
+    ):
+        raise ValueError("Langfuse viewing requires configured SDK credentials")
+    if local_directory is None:
         return NullRunTraceSink()
-    return RunTraceRecorder(Path(raw_directory) if raw_directory else None, exporter)
+    recorder_arguments: dict[str, object] = {"directory": local_directory}
+    if run_id:
+        recorder_arguments["run_id"] = run_id
+    if not langfuse_enabled:
+        return RunTraceRecorder(**recorder_arguments)
+    return QueuedViewerRunTraceRecorder(
+        **recorder_arguments,
+        viewer_worker=LangfuseViewerWorker(
+            _langfuse_client_from_environment,
+            session_id=session_id,
+            benchmark_managed=benchmark_managed,
+        ),
+    )
+
+
+def _langfuse_client_from_environment() -> Any:
+    """Construct one client inside its owning daemon worker."""
+
+    from langfuse import Langfuse  # type: ignore[import-not-found]
+
+    return Langfuse()
+
+
+def _langfuse_event_name(event: Mapping[str, object]) -> str:
+    event_type = str(event.get("event", "runtime-event"))
+    if event_type == "mission_role_invocation":
+        return f"{event.get('role', 'mission-role')}-call"
+    return {
+        "model_turn": "action-policy-call",
+        "step_completed": "runtime-step",
+        "native_evaluator_returned": "native-evaluator",
+        "primary_result_available": "sqlite-checkpoint",
+        "benchmark_lifecycle_phase": str(event.get("phase") or "lifecycle"),
+    }.get(event_type, event_type.replace("_", "-"))
+
+
+def _langfuse_observation_type(event: Mapping[str, object]) -> str:
+    return {
+        "step_completed": "tool",
+    }.get(str(event.get("event", "")), "span")
+
+
+def _langfuse_generation_name(event: Mapping[str, object]) -> str:
+    if event.get("event") == "mission_role_invocation":
+        return f"{event.get('role', 'mission-role')}-generation"
+    return "action-policy-generation"
+
+
+def _langfuse_generation_attempts(
+    event: Mapping[str, object],
+) -> tuple[Mapping[str, object], ...]:
+    raw = event.get("generation_attempts")
+    if not isinstance(raw, tuple | list):
+        invocation = event.get("model_invocation")
+        raw = invocation.get("attempts", ()) if isinstance(invocation, Mapping) else ()
+    return tuple(item for item in raw if isinstance(item, Mapping))
+
+
+def _langfuse_model_metadata(event: Mapping[str, object]) -> Mapping[str, object]:
+    metadata = event.get("model_metadata")
+    if isinstance(metadata, Mapping):
+        return metadata
+    invocation = event.get("model_invocation")
+    if isinstance(invocation, Mapping):
+        metadata = invocation.get("metadata")
+        if isinstance(metadata, Mapping):
+            return metadata
+    return {}
+
+
+def _public_task_projection(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    return _bounded_remote_projection({
+        key: _external_projection(value[key])
+        for key in ("task_id", "request_id", "instruction", "objective", "goal")
+        if key in value
+    })
+
+
+def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]:
+    event_type = str(event.get("event", ""))
+    common = {
+        "event": event_type,
+        "sequence": event.get("sequence"),
+    }
+    allowed = {
+        "goal_compiler_completed": (
+            "diagnostic",
+        ),
+        "model_turn": (
+            "context_id", "outcome", "decision", "policy_failure", "model_metadata",
+            "visible_action_count", "exception",
+        ),
+        "mission_role_invocation": (
+            "role", "call_index", "trigger_kind", "execution_mode", "subtask_id",
+            "mission_version", "assessment", "route", "input_tokens", "output_tokens",
+            "latency_ms", "provider_attempts", "result", "failure",
+        ),
+        "step_completed": ("step", "lineage", "result"),
+        "observation": ("observation_id", "observation"),
+        "native_evaluator_returned": (
+            "evaluation_status", "outcome_kind", "outcome_code", "evidence_refs",
+            "observation_id", "checkpoint_id",
+        ),
+        "official_outcome_persistence": (
+            "checkpoint_id", "persistence_status", "persistence_error",
+        ),
+        "primary_result_available": (
+            "case_id", "checkpoint_id", "status", "step_count",
+        ),
+        "benchmark_lifecycle_phase": (
+            "phase", "primary_result_available", "primary_snapshot_available",
+        ),
+        "benchmark_case_started": ("case_id", "description", "timeout_s"),
+        "benchmark_case_finished": ("case_id", "status"),
+        "case_lifecycle_phase": ("phase",),
+        "finalization_protocol": (
+            "stop_send_count", "post_stop_capture_count", "native_evaluator_count",
+            "dispatch_status",
+        ),
+        "run_finished": ("status", "step_count", "observation_count", "execution_count"),
+        "run_error": ("exception_class", "status"),
+        "benchmark_watchdog": ("code", "cancel_grace_exceeded"),
+    }.get(event_type, ())
+    projected = {
+        key: _external_projection(event.get(key))
+        for key in allowed
+    }
+    if event_type == "goal_compiler_completed":
+        diagnostic = projected.get("diagnostic")
+        if isinstance(diagnostic, Mapping):
+            projected["diagnostic"] = {
+                key: diagnostic.get(key)
+                for key in (
+                    "task_revision", "trigger", "final_disposition",
+                    "accepted_plan_version", "reason", "provider_attempt_count",
+                )
+            }
+    elif event_type == "observation":
+        projected["observation"] = _compact_world_summary(event.get("observation"))
+    elif event_type == "step_completed":
+        result = projected.get("result")
+        if isinstance(result, Mapping):
+            projected["result"] = {
+                key: result.get(key)
+                for key in (
+                    "status_before", "status_after", "feedback", "yield_reason",
+                    "decision", "action_outcome", "task_evaluation", "runtime_failure",
+                )
+                if key in result
+            }
+    if event_type in {"model_turn", "mission_role_invocation"}:
+        active_subtask = _public_active_subtask(event)
+        if active_subtask:
+            projected["active_subtask"] = active_subtask
+    return _bounded_remote_projection({**common, **projected})
+
+
+def _public_active_subtask(event: Mapping[str, object]) -> dict[str, object]:
+    candidates: list[object] = []
+    context = event.get("agent_context")
+    if isinstance(context, Mapping):
+        task = context.get("task")
+        if isinstance(task, Mapping):
+            candidates.append(task.get("active_subtask"))
+    role_request = event.get("role_request")
+    if isinstance(role_request, Mapping):
+        candidates.append(role_request.get("active_subtask"))
+    subtask = next((item for item in candidates if isinstance(item, Mapping)), None)
+    if not isinstance(subtask, Mapping):
+        return {}
+    return {
+        key: _external_projection(subtask[key])
+        for key in (
+            "objective", "done_when", "outcome_kind", "constraints", "required_evidence",
+        )
+        if key in subtask
+    }
+
+
+def _compact_world_summary(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    facts = value.get("facts")
+    actions = value.get("actions") or value.get("affordances")
+    documents = value.get("documents")
+    summary = {
+        "observation_id": value.get("observation_id"),
+        "fact_count": len(facts) if isinstance(facts, (list, tuple)) else 0,
+        "action_count": len(actions) if isinstance(actions, (list, tuple)) else 0,
+        "document_count": len(documents) if isinstance(documents, (list, tuple)) else 0,
+    }
+    for key in ("route", "url", "primary_heading", "document_title"):
+        candidate = value.get(key)
+        if isinstance(candidate, str):
+            summary[key] = candidate[:512]
+    return summary
 
 
 def model_turn_payload(
@@ -839,16 +1355,79 @@ def _json_value(value: Any, directory: Path | None) -> Any:
     return repr(value)
 
 
-def _external_projection(value: object) -> object:
+_REMOTE_PRIVATE_KEYS = frozenset(
+    {
+        "backend_node_id",
+        "binding",
+        "private_binding",
+        "request_messages",
+        "response_content",
+        "screenshot",
+        "selector",
+    }
+)
+_REMOTE_PUBLIC_ID_KEYS = frozenset(
+    {
+        "case_id",
+        "checkpoint_id",
+        "context_id",
+        "observation_id",
+        "request_id",
+        "run_id",
+        "subtask_id",
+        "task_id",
+    }
+)
+_REMOTE_MAX_DEPTH = 6
+_REMOTE_MAX_ITEMS = 40
+_REMOTE_MAX_STRING = 512
+_REMOTE_MAX_BYTES = 16_384
+
+
+def _external_projection(value: object, *, _depth: int = 0) -> object:
+    if _depth >= _REMOTE_MAX_DEPTH:
+        return "[projection-depth-limit]"
     if isinstance(value, Mapping):
         return {
-            str(key): _external_projection(item)
-            for key, item in value.items()
-            if key not in {"binding", "private_binding", "request_messages", "response_content"}
+            str(key): _external_projection(item, _depth=_depth + 1)
+            for key, item in list(value.items())[:_REMOTE_MAX_ITEMS]
+            if not _is_remote_private_key(str(key))
         }
-    if isinstance(value, list):
-        return [_external_projection(item) for item in value]
+    if isinstance(value, (list, tuple)):
+        return [
+            _external_projection(item, _depth=_depth + 1)
+            for item in value[:_REMOTE_MAX_ITEMS]
+        ]
+    if isinstance(value, str):
+        if value.lstrip().casefold().startswith("data:"):
+            return "[binary-content-omitted]"
+        return value[:_REMOTE_MAX_STRING]
     return value
+
+
+def _is_remote_private_key(key: str) -> bool:
+    normalized = key.casefold()
+    compact = normalized.replace("_", "")
+    return normalized in _REMOTE_PRIVATE_KEYS or (
+        compact.endswith("id") and normalized not in _REMOTE_PUBLIC_ID_KEYS
+    )
+
+
+def _bounded_remote_projection(value: Mapping[str, object]) -> dict[str, object]:
+    projected = _external_projection(value)
+    if not isinstance(projected, dict):
+        return {"projection_truncated": True}
+    serialized = json.dumps(projected, sort_keys=True, default=str).encode()
+    if len(serialized) <= _REMOTE_MAX_BYTES:
+        return projected
+    bounded = {
+        "projection_truncated": True,
+        "serialized_bytes": len(serialized),
+    }
+    for key in ("event", "sequence"):
+        if key in projected:
+            bounded[key] = projected[key]
+    return bounded
 
 
 def _model_backed_policy(value: object) -> object:

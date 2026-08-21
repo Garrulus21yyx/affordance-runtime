@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+import threading
 import uuid
 from dataclasses import dataclass, field, replace
 from time import perf_counter
@@ -134,6 +136,45 @@ def _accepts_registration_modules(factory: Callable[..., BrowserGymPort]) -> boo
         any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
         or "registration_modules" in parameters
     )
+
+
+async def _run_blocking_close(gym_environment: BrowserGymPort) -> None:
+    """Keep the synchronous BrowserGym/Playwright owner close off the asyncio loop."""
+
+    loop = asyncio.get_running_loop()
+    completed = loop.create_future()
+
+    def invoke() -> None:
+        try:
+            gym_environment.close()
+            unwrapped = getattr(gym_environment, "unwrapped", gym_environment)
+            for name in ("browser", "context"):
+                if getattr(unwrapped, name, None) is not None:
+                    raise RuntimeError(
+                        "BrowserGym cleanup left an owned browser resource open"
+                    )
+        except BaseException as exc:
+            callback = completed.set_exception
+            value = exc
+        else:
+            callback = completed.set_result
+            value = None
+        try:
+            loop.call_soon_threadsafe(_settle_close_future, completed, callback, value)
+        except RuntimeError:
+            return
+
+    threading.Thread(
+        target=invoke,
+        name="affordance-browsergym-close",
+        daemon=True,
+    ).start()
+    await completed
+
+
+def _settle_close_future(future, callback, value) -> None:
+    if not future.done():
+        callback(value)
 
 
 @dataclass
@@ -686,11 +727,7 @@ class BrowserGymSurfaceAdapter:
         self._closed = True
         self.bindings.clear()
         self._prepared_initial_raw = None
-        self.gym_environment.close()
-        unwrapped = getattr(self.gym_environment, "unwrapped", self.gym_environment)
-        for name in ("browser", "context"):
-            if getattr(unwrapped, name, None) is not None:
-                raise RuntimeError("BrowserGym cleanup left an owned browser resource open")
+        await _run_blocking_close(self.gym_environment)
 
     def _prepare_frame(
         self,

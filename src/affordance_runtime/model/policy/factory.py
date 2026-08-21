@@ -21,6 +21,7 @@ from affordance_runtime.model.policy.perception import (
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.port import StructuredDecisionModelPort
+from affordance_runtime.model.policy.reasoning_policy import ActionPolicyReasoningPolicy
 from affordance_runtime.model.policy.wire_capability import (
     ActionPolicyWireCapability,
     action_policy_wire_capability,
@@ -98,28 +99,49 @@ def model_policy_from_environment(
         if provider_retry_budget
         else semantic_call_deadline
     )
-    action_max_tokens = _bounded_int(
+    action_output_ceiling = _bounded_int(
         env,
         "LLM_ACTION_POLICY_MAX_TOKENS",
         default=4_096,
         minimum=512,
         maximum=16_384,
     )
-    truncated_retry_max_tokens = _bounded_int(
-        env,
-        "LLM_ACTION_POLICY_TRUNCATED_RETRY_MAX_TOKENS",
-        default=512,
-        minimum=64,
-        maximum=4_096,
+    ordinary_max_tokens = min(
+        action_output_ceiling,
+        _bounded_int(
+            env,
+            "LLM_ACTION_POLICY_ORDINARY_MAX_TOKENS",
+            default=1024,
+            minimum=512,
+            maximum=1024,
+        ),
     )
-    retry_thinking = env.get(
-        "LLM_ACTION_POLICY_TRUNCATED_RETRY_THINKING",
-        "disabled",
-    ).strip().casefold()
-    if retry_thinking not in {"enabled", "disabled", "inherit"}:
-        raise ValueError("unsupported truncated-output retry thinking mode")
+    deliberate_max_tokens = min(
+        action_output_ceiling,
+        _bounded_int(
+            env,
+            "LLM_ACTION_POLICY_DELIBERATE_MAX_TOKENS",
+            default=2048,
+            minimum=1024,
+            maximum=2048,
+        ),
+    )
+    representation_repair_max_tokens = _bounded_int(
+        env,
+        "LLM_ACTION_POLICY_REPRESENTATION_REPAIR_MAX_TOKENS",
+        default=512,
+        minimum=256,
+        maximum=512,
+    )
+    timeout_retry_max_tokens = _bounded_int(
+        env,
+        "LLM_ACTION_POLICY_TIMEOUT_RETRY_MAX_TOKENS",
+        default=512,
+        minimum=256,
+        maximum=1024,
+    )
     config = ModelConfig(
-        max_tokens=action_max_tokens,
+        max_tokens=ordinary_max_tokens,
         timeout_s=transport_timeout,
         provider_total_timeout_s=transport_timeout,
         rate_limit_retries=provider_retry_budget,
@@ -136,16 +158,15 @@ def model_policy_from_environment(
         port,
         config,
         perception_profile=selected_perception,
-        truncated_retry_max_tokens=truncated_retry_max_tokens,
-        truncated_retry_thinking_mode=(
-            None if retry_thinking == "inherit" else retry_thinking
-        ),
         timeout_fast_retry_timeout_s=timeout_fast_retry_timeout,
-        timeout_fast_retry_max_tokens=truncated_retry_max_tokens,
-        timeout_fast_retry_thinking_mode=(
-            None if retry_thinking == "inherit" else retry_thinking
-        ),
+        timeout_fast_retry_max_tokens=timeout_retry_max_tokens,
+        timeout_fast_retry_thinking_mode="disabled",
         semantic_call_deadline_s=semantic_call_deadline,
+        reasoning_policy=ActionPolicyReasoningPolicy(
+            ordinary_max_tokens,
+            deliberate_max_tokens,
+            representation_repair_max_tokens,
+        ),
     )
     return ModelBackedAgentPolicy(
         adapter,

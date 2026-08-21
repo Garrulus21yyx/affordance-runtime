@@ -13,9 +13,10 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from affordance_runtime.actions import INTERACTION_CAPABILITY_REGISTRY, ActionSpaceBuilder
+from affordance_runtime.actions.paging import delivery_descriptor_matches
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
-from affordance_runtime.agent.context.contracts import sanitize_history_value
+from affordance_runtime.agent.context.contracts import AgentSubtaskContractView, sanitize_history_value
 from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
@@ -28,12 +29,15 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission.contracts import (
     AuditorDecision,
     AuditorRoleRequest,
+    EvidenceRequirement,
     ManagerAssessment,
     ManagerDecision,
     ManagerRequestMode,
     ManagerRoleRequest,
     ManagerRoute,
+    RecoveryKind,
     SubtaskContract,
+    SubtaskOutcomeKind,
     WorkingFactProposal,
     WorkingOutcomeProposal,
 )
@@ -43,6 +47,9 @@ from affordance_runtime.model.policy.contracts import (
     ModelMetadata,
 )
 from affordance_runtime.model.policy.grounded_tool_catalog import GroundedLocalToolName
+from affordance_runtime.model.policy.pydantic_ai_bridge import (
+    pydantic_ai_model_from_environment,
+)
 from affordance_runtime.model.policy.request_admission import (
     ModelRequestBreakdown,
     ModelRequestBudget,
@@ -53,17 +60,14 @@ from affordance_runtime.model.policy.request_admission import (
 from affordance_runtime.model.providers.port import (
     ModelConfig,
     ModelMessage,
-    ModelPort,
-    ProviderFailureKind,
-    ProviderModelError,
-    StructuredOutputError,
-    model_port_from_environment,
-    structured_output_repair_contract,
 )
+from affordance_runtime.model.pydantic_ai_role_invoker import PydanticAIRoleInvoker
 from affordance_runtime.task.contracts import TaskGoal
 
 _AUDIT_HISTORY_BYTES = 16 * 1024
 _AUDIT_RENDERED_WORLD_BYTES = 128 * 1024
+_MANAGER_MODEL_REASON_MAX = 4_000
+_MANAGER_RUNTIME_REASON_MAX = 500
 _ACTION_POLICY_IDENTIFIERS = frozenset({
     *(item.semantic_action for item in INTERACTION_CAPABILITY_REGISTRY.definitions),
     *(item.value for item in GroundedLocalToolName),
@@ -96,6 +100,20 @@ _TOOL_CALL_SYNTAX = re.compile(
     r"\b" + _ACTION_POLICY_IDENTIFIER_PATTERN + r"\s*\(",
     re.IGNORECASE,
 )
+_GUI_IMPLEMENTATION_REF = re.compile(
+    r"(?:\b[ENFR][1-9][0-9]{0,3}\b|(?:css|xpath)\s*(?:selector|=)|querySelector)",
+    re.IGNORECASE,
+)
+
+
+def _manager_semantic_text(value: str) -> str:
+    if (
+        _PRESCRIBED_IDENTIFIER.search(value)
+        or _TOOL_CALL_SYNTAX.search(value)
+        or _GUI_IMPLEMENTATION_REF.search(value)
+    ):
+        raise ValueError("subtask contract must describe business outcomes, not implementation steps")
+    return value
 
 
 def _load_prompt(name: str, key: str) -> tuple[str, str]:
@@ -115,29 +133,79 @@ MISSION_MANAGER_PROMPT_VERSION, MISSION_MANAGER_INSTRUCTIONS = _load_prompt(
 MISSION_AUDITOR_PROMPT_VERSION, MISSION_AUDITOR_INSTRUCTIONS = _load_prompt(
     "mission_auditor.yaml", "auditor"
 )
+INITIAL_MANAGER_SCHEMA_VERSION = "initial-manager-decision.v2"
+REVIEW_MANAGER_SCHEMA_VERSION = "review-manager-decision.v2"
+
+
+class EvidenceRequirementModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    description: str = Field(min_length=1, max_length=500)
+
+    @field_validator("description")
+    @classmethod
+    def _business_evidence_only(cls, value: str) -> str:
+        return _manager_semantic_text(value)
 
 
 class SubtaskContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     objective: str = Field(min_length=1, max_length=500)
     done_when: str = Field(min_length=1, max_length=500)
+    task_link: str = Field(min_length=1, max_length=500)
+    outcome_kind: Literal["state_change", "evidence_packet"] = "state_change"
     constraints: tuple[str, ...] = Field(default=(), max_length=32)
     relevant_fact_keys: tuple[str, ...] = Field(default=(), max_length=32)
-    candidate_output_keys: tuple[str, ...] = Field(default=(), max_length=32)
+    required_evidence: tuple[EvidenceRequirementModel, ...] = Field(default=(), max_length=32)
     episode_turn_budget: int = Field(default=15, ge=1, le=15)
     related_audit_ids: tuple[str, ...] = Field(default=(), max_length=32)
 
-    @field_validator("objective", "done_when")
+    @field_validator("objective", "done_when", "task_link")
     @classmethod
     def _semantic_text_not_tool_identifier(cls, value: str) -> str:
-        if _PRESCRIBED_IDENTIFIER.search(value) or _TOOL_CALL_SYNTAX.search(value):
-            raise ValueError("subtask semantic text cannot prescribe implementation identifiers")
-        return value
+        return _manager_semantic_text(value)
+
+    @field_validator("constraints")
+    @classmethod
+    def _semantic_constraints(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(_manager_semantic_text(value) for value in values)
+
+    @model_validator(mode="after")
+    def _outcome_shape(self) -> SubtaskContractModel:
+        if self.outcome_kind == "evidence_packet" and not self.required_evidence:
+            raise ValueError("evidence_packet requires at least one EvidenceRequirement")
+        return self
 
 
-class ManagerDecisionModel(BaseModel):
+class InitialManagerDecisionModel(BaseModel):
+    """Initial-only model output; Runtime owns mode and assessment lowering."""
+
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    assessment: Literal["not_applicable", "satisfied", "unsatisfied", "unknown", "blocked"]
+    route: Literal["execute_subtask", "ask_user", "blocked"]
+    subtask: SubtaskContractModel | None = None
+    question: str = Field(default="", max_length=1000)
+    reason: str = Field(default="", max_length=_MANAGER_MODEL_REASON_MAX)
+
+    @model_validator(mode="after")
+    def _shape(self) -> InitialManagerDecisionModel:
+        if self.route == "execute_subtask":
+            if self.subtask is None or self.question:
+                raise ValueError("execute_subtask requires exactly one subtask")
+        elif self.subtask is not None:
+            raise ValueError("only execute_subtask can carry subtask")
+        if self.route == "ask_user":
+            if not self.question.strip():
+                raise ValueError("ask_user requires a question")
+        elif self.question:
+            raise ValueError("only ask_user can carry a question")
+        return self
+
+
+class ReviewManagerDecisionModel(BaseModel):
+    """Episode-review output with cited working proposals and one next route."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    assessment: Literal["satisfied", "unsatisfied", "unknown", "blocked"]
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
     working_outcomes: tuple["WorkingOutcomeProposalModel", ...] = Field(default=(), max_length=32)
     working_facts: tuple["WorkingFactProposalModel", ...] = Field(default=(), max_length=32)
@@ -145,12 +213,12 @@ class ManagerDecisionModel(BaseModel):
     route: Literal["execute_subtask", "ask_user", "blocked", "request_finalization"]
     subtask: SubtaskContractModel | None = None
     question: str = Field(default="", max_length=1000)
-    reason: str = Field(default="", max_length=500)
+    reason: str = Field(default="", max_length=_MANAGER_MODEL_REASON_MAX)
     final_response: object | None = None
     final_response_evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
 
     @model_validator(mode="after")
-    def _shape(self) -> ManagerDecisionModel:
+    def _shape(self) -> ReviewManagerDecisionModel:
         if self.route == "execute_subtask":
             if self.subtask is None or self.question:
                 raise ValueError("execute_subtask requires exactly one subtask")
@@ -162,10 +230,18 @@ class ManagerDecisionModel(BaseModel):
         elif self.question:
             raise ValueError("only ask_user can carry a question")
         if self.route == "request_finalization":
-            if self.final_response is None:
-                raise ValueError("request_finalization requires a direct final_response")
+            if (
+                self.assessment != "satisfied"
+                or self.final_response is None
+                or not self.final_response_evidence_refs
+            ):
+                raise ValueError(
+                    "request_finalization requires satisfied assessment, direct final_response, and evidence"
+                )
         elif self.final_response is not None or self.final_response_evidence_refs:
             raise ValueError("only request_finalization can carry final response fields")
+        if self.assessment == "blocked" and self.route != "blocked":
+            raise ValueError("blocked assessment requires blocked route")
         return self
 
 
@@ -181,7 +257,6 @@ class WorkingFactProposalModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     evidence_ref: str = Field(min_length=1, max_length=512)
-    value: object
     purpose: str = Field(min_length=1, max_length=500)
 
 
@@ -210,7 +285,6 @@ class _RolePrompt:
     messages: tuple[ModelMessage, ...]
     component_payloads: Mapping[str, object]
     public_evidence_refs: Mapping[str, str] = field(default_factory=dict)
-    repair_context: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -220,13 +294,17 @@ class _AuditWorldProjection:
 
 
 async def _invoke_structured_role(
-    port: ModelPort,
+    invoker: PydanticAIRoleInvoker,
     config: ModelConfig,
     message_factory: Callable[[], _RolePrompt],
     schema: type[BaseModel],
     initial_phase: str,
-    repair_phase: str,
     request_budget: ModelRequestBudget | None = None,
+    *,
+    role: str = "",
+    mode: str = "",
+    schema_version: str = "",
+    trigger: str = "",
 ) -> _StructuredRoleInvocation:
     attempts: tuple[ModelGenerationAttempt, ...] = ()
     try:
@@ -254,122 +332,46 @@ async def _invoke_structured_role(
             public_evidence_refs=prompt.public_evidence_refs,
         )
     try:
-        response, attempts = await _generate_structured_role(port, config, messages, schema, initial_phase, attempts)
-    except StructuredOutputError as exc:
-        attempts = getattr(exc, "_mission_role_attempts", attempts)
-        repair_contract = _role_repair_contract(port, prompt, schema, exc)
-        repair_messages = _repair_messages(repair_contract)
-        try:
-            repair_admitted = admit_model_request(
-                messages=repair_messages,
-                tools=(),
-                budget=request_budget or ModelRequestBudget(max_output_tokens=config.max_tokens),
-                phase=repair_phase,
-                component_payloads={"repair": repair_contract},
-                repair_payload=repair_contract,
-            )
-            repair_messages = repair_admitted.messages
-            breakdowns = breakdowns + (repair_admitted.breakdown,)
-            diagnostics = _role_request_diagnostics(breakdowns, provider_attempts=len(attempts))
-        except ModelRequestCapacityError as capacity_exc:
-            return _StructuredRoleInvocation(
-                None,
-                ModelFailure(ModelFailureKind.CONTEXT_CAPACITY, "context_capacity", False),
-                attempts,
-                diagnostics=_role_request_diagnostics(
-                    breakdowns + (capacity_exc.breakdown,),
-                    provider_attempts=len(attempts),
-                ),
-                public_evidence_refs=prompt.public_evidence_refs,
-            )
-        try:
-            response, attempts = await _generate_structured_role(
-                port,
-                config,
-                repair_messages,
-                schema,
-                repair_phase,
-                attempts,
-            )
-        except StructuredOutputError as repair_exc:
-            attempts = getattr(repair_exc, "_mission_role_attempts", attempts)
-            return _StructuredRoleInvocation(
-                None,
-                ModelFailure(ModelFailureKind.SCHEMA_ERROR, "role output invalid", False),
-                attempts,
-                diagnostics=_role_request_diagnostics_from_attempts(diagnostics, attempts),
-                public_evidence_refs=prompt.public_evidence_refs,
-            )
-        except Exception as repair_exc:
-            attempts = getattr(repair_exc, "_mission_role_attempts", attempts)
-            return _StructuredRoleInvocation(
-                None,
-                _provider_failure(repair_exc),
-                attempts,
-                diagnostics=_role_request_diagnostics_from_attempts(diagnostics, attempts),
-                public_evidence_refs=prompt.public_evidence_refs,
-            )
-    except Exception as exc:
-        attempts = getattr(exc, "_mission_role_attempts", attempts)
+        result = await invoker.invoke(
+            messages=messages,
+            schema=schema,
+            output_tool_name=_role_output_tool_name(role, mode),
+            config=config,
+            role=role,
+            mode=mode,
+            schema_version=schema_version,
+            trigger=trigger,
+        )
+    except Exception:
         return _StructuredRoleInvocation(
             None,
-            _provider_failure(exc),
+            ModelFailure(ModelFailureKind.INTERNAL_ERROR, "role invocation failed", False),
             attempts,
-            diagnostics=_role_request_diagnostics_from_attempts(diagnostics, attempts),
+            diagnostics=diagnostics,
+            public_evidence_refs=prompt.public_evidence_refs,
+        )
+    attempts = result.attempts
+    diagnostics = _role_request_diagnostics(breakdowns, provider_attempts=len(attempts))
+    if result.failure is not None:
+        return _StructuredRoleInvocation(
+            None,
+            result.failure,
+            attempts,
+            diagnostics=diagnostics,
             public_evidence_refs=prompt.public_evidence_refs,
         )
     return _StructuredRoleInvocation(
-        response,
+        result.output,
         None,
         attempts,
-        diagnostics=_role_request_diagnostics_from_attempts(diagnostics, attempts),
+        diagnostics=diagnostics,
         public_evidence_refs=prompt.public_evidence_refs,
     )
 
 
-async def _generate_structured_role(
-    port: ModelPort,
-    config: ModelConfig,
-    messages: tuple[ModelMessage, ...],
-    schema: type[BaseModel],
-    phase: str,
-    attempts: tuple[ModelGenerationAttempt, ...],
-) -> tuple[BaseModel, tuple[ModelGenerationAttempt, ...]]:
-    number = len(attempts) + 1
-    try:
-        result = await port.generate_structured(messages, schema, config)
-    except Exception as exc:
-        status = "schema_error" if isinstance(exc, StructuredOutputError) else "failed"
-        return _raise_with_attempt(exc, (*attempts, _attempt(number, phase, schema.__name__, status, exc)))
-    return result, (*attempts, _attempt(number, phase, schema.__name__, "accepted"))
-
-
-def _raise_with_attempt(exc: Exception, attempts: tuple[ModelGenerationAttempt, ...]):
-    exc.__dict__["_mission_role_attempts"] = attempts
-    raise exc
-
-
-def _attempt(
-    number: int,
-    phase: str,
-    schema_name: str,
-    status: str,
-    exc: Exception | None = None,
-) -> ModelGenerationAttempt:
-    return ModelGenerationAttempt(
-        number,
-        phase,
-        schema_name,
-        status,
-        tuple(getattr(exc, "violations", ())),
-        exception_class=type(exc).__name__ if exc else "",
-    )
-
-
-def _provider_failure(exc: Exception) -> ModelFailure:
-    if isinstance(exc, ProviderModelError) and exc.kind is ProviderFailureKind.QUOTA_EXHAUSTED:
-        return ModelFailure(ModelFailureKind.PROVIDER_EXHAUSTED, "mission role provider exhausted", False)
-    return ModelFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "mission role provider failed", True)
+def _role_output_tool_name(role: str, mode: str) -> str:
+    suffix = mode or "decision"
+    return f"{role}_{suffix}_output"
 
 
 def _role_request_diagnostics(
@@ -383,22 +385,13 @@ def _role_request_diagnostics(
     return diagnostics
 
 
-def _role_request_diagnostics_from_attempts(
-    diagnostics: Mapping[str, object],
-    attempts: tuple[ModelGenerationAttempt, ...],
-) -> dict[str, object]:
-    result = dict(diagnostics)
-    result["provider_attempts"] = len(attempts)
-    return result
-
-
 def _role_from_phase(phase: str) -> str:
     return phase.split("_", 1)[0] if "_" in phase else phase
 
 
 @dataclass(frozen=True)
 class ModelBackedMissionManager:
-    port: ModelPort
+    invoker: PydanticAIRoleInvoker
     config: ModelConfig = field(default_factory=lambda: ModelConfig(
         temperature=0.0,
         max_tokens=2048,
@@ -416,67 +409,49 @@ class ModelBackedMissionManager:
 
     async def decide(self, request: ManagerRoleRequest) -> ModelInvocationResult[ManagerDecision]:
         object.__setattr__(self, "last_generation_attempts", ())
+        schema, schema_version = _manager_output_contract(request.mode)
+        config = _manager_config(self.invoker, self.config)
         invocation = await _invoke_structured_role(
-            self.port,
-            self.config,
+            self.invoker,
+            config,
             lambda: _manager_messages(request),
-            ManagerDecisionModel,
+            schema,
             "manager_initial",
-            "manager_schema_repair",
             self.request_budget,
+            role="manager",
+            mode=request.mode.value,
+            schema_version=schema_version,
+            trigger=_manager_trigger(request),
         )
         object.__setattr__(self, "last_generation_attempts", invocation.attempts)
         object.__setattr__(self, "last_role_diagnostics", invocation.diagnostics)
         if invocation.failure is not None:
-            return self._finish_failure(invocation.failure)
+            return self._finish_failure(invocation.failure, config, schema_version)
         response = invocation.output
-        assert isinstance(response, ManagerDecisionModel)
         try:
-            subtask = (
-                SubtaskContract(**response.subtask.model_dump())
-                if response.subtask is not None
-                else None
-            )
-            output = ManagerDecision(
-                ManagerAssessment(response.assessment),
-                ManagerRoute(response.route),
-                _canonical_evidence_refs(response.evidence_refs, invocation.public_evidence_refs),
-                tuple(
-                    WorkingOutcomeProposal(
-                        item.outcome_id,
-                        ManagerAssessment(item.assessment),
-                        _canonical_evidence_refs(item.evidence_refs, invocation.public_evidence_refs),
-                        item.summary,
-                    )
-                    for item in response.working_outcomes
-                ),
-                tuple(
-                    WorkingFactProposal(
-                        item.key,
-                        _canonical_evidence_ref(item.evidence_ref, invocation.public_evidence_refs),
-                        item.value,
-                        item.purpose,
-                    )
-                    for item in response.working_facts
-                ),
-                response.invalidate_fact_keys,
-                subtask,
-                response.question,
-                response.reason,
-                response.final_response,
-                _canonical_evidence_refs(
-                    response.final_response_evidence_refs,
-                    invocation.public_evidence_refs,
-                ),
+            output = _lower_manager_decision(
+                request.mode,
+                response,
+                invocation.public_evidence_refs,
             )
         except (TypeError, ValueError):
-            return self._finish_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "manager contract invalid", False))
-        return self._finish_output(output, "Manager")
+            return self._finish_failure(
+                ModelFailure(ModelFailureKind.SCHEMA_ERROR, "manager contract invalid", False),
+                config,
+                schema_version,
+            )
+        return self._finish_output(output, "Manager", config, schema_version)
 
-    def _finish_output(self, output: ManagerDecision, role: str) -> ModelInvocationResult[ManagerDecision]:
+    def _finish_output(
+        self,
+        output: ManagerDecision,
+        role: str,
+        config: ModelConfig,
+        schema_version: str,
+    ) -> ModelInvocationResult[ManagerDecision]:
         invocation = ModelInvocationResult(
             output=output,
-            metadata=_metadata(self.port, self.config, self.last_generation_attempts, ManagerDecisionModel.__name__),
+            metadata=_metadata(self.invoker, config, self.last_generation_attempts, schema_version),
             attempts=self.last_generation_attempts,
             repair_diagnostics=_repair_diagnostics(self.last_generation_attempts),
             diagnostics=self.last_role_diagnostics,
@@ -485,9 +460,20 @@ class ModelBackedMissionManager:
         object.__setattr__(self, "last_invocation_result", invocation)
         return invocation
 
-    def _finish_failure(self, failure: ModelFailure) -> ModelInvocationResult[ManagerDecision]:
+    def _finish_failure(
+        self,
+        failure: ModelFailure,
+        config: ModelConfig,
+        schema_version: str,
+    ) -> ModelInvocationResult[ManagerDecision]:
         invocation = ModelInvocationResult(
             failure=failure,
+            metadata=_metadata(
+                self.invoker,
+                config,
+                self.last_generation_attempts,
+                schema_version,
+            ),
             attempts=self.last_generation_attempts,
             repair_diagnostics=_repair_diagnostics(self.last_generation_attempts),
             diagnostics=self.last_role_diagnostics,
@@ -499,7 +485,7 @@ class ModelBackedMissionManager:
 
 @dataclass(frozen=True)
 class ModelBackedMissionAuditor:
-    port: ModelPort
+    invoker: PydanticAIRoleInvoker
     config: ModelConfig = field(default_factory=lambda: ModelConfig(
         temperature=0.0,
         max_tokens=2048,
@@ -518,13 +504,15 @@ class ModelBackedMissionAuditor:
     async def audit(self, request: AuditorRoleRequest) -> ModelInvocationResult[AuditorDecision]:
         object.__setattr__(self, "last_generation_attempts", ())
         invocation = await _invoke_structured_role(
-            self.port,
+            self.invoker,
             self.config,
             lambda: _auditor_messages(request),
             AuditorDecisionModel,
             "auditor_initial",
-            "auditor_schema_repair",
             self.request_budget,
+            role="auditor",
+            schema_version=AuditorDecisionModel.__name__,
+            trigger="strict_exceptional_claim",
         )
         object.__setattr__(self, "last_generation_attempts", invocation.attempts)
         object.__setattr__(self, "last_role_diagnostics", invocation.diagnostics)
@@ -545,7 +533,7 @@ class ModelBackedMissionAuditor:
     def _finish_output(self, output: AuditorDecision, role: str) -> ModelInvocationResult[AuditorDecision]:
         invocation = ModelInvocationResult(
             output=output,
-            metadata=_metadata(self.port, self.config, self.last_generation_attempts, AuditorDecisionModel.__name__),
+            metadata=_metadata(self.invoker, self.config, self.last_generation_attempts, AuditorDecisionModel.__name__),
             attempts=self.last_generation_attempts,
             repair_diagnostics=_repair_diagnostics(self.last_generation_attempts),
             diagnostics=self.last_role_diagnostics,
@@ -557,6 +545,12 @@ class ModelBackedMissionAuditor:
     def _finish_failure(self, failure: ModelFailure) -> ModelInvocationResult[AuditorDecision]:
         invocation = ModelInvocationResult(
             failure=failure,
+            metadata=_metadata(
+                self.invoker,
+                self.config,
+                self.last_generation_attempts,
+                AuditorDecisionModel.__name__,
+            ),
             attempts=self.last_generation_attempts,
             repair_diagnostics=_repair_diagnostics(self.last_generation_attempts),
             diagnostics=self.last_role_diagnostics,
@@ -567,12 +561,140 @@ class ModelBackedMissionAuditor:
 
 
 def mission_roles_from_environment(environment: Mapping[str, str] | None = None):
-    port = model_port_from_environment(environment)
-    return ModelBackedMissionManager(port), ModelBackedMissionAuditor(port)
+    configured = pydantic_ai_model_from_environment(environment)
+    invoker = PydanticAIRoleInvoker(
+        configured.model,
+        configured.provider_id,
+        configured.model_id,
+        configured.endpoint_host,
+        configured.provider_id == "zhipu",
+    )
+    return ModelBackedMissionManager(invoker), ModelBackedMissionAuditor(invoker)
 
 
 def mission_manager_from_environment(environment: Mapping[str, str] | None = None):
-    return ModelBackedMissionManager(model_port_from_environment(environment))
+    configured = pydantic_ai_model_from_environment(environment)
+    return ModelBackedMissionManager(PydanticAIRoleInvoker(
+        configured.model,
+        configured.provider_id,
+        configured.model_id,
+        configured.endpoint_host,
+        configured.provider_id == "zhipu",
+    ))
+
+
+def _manager_output_contract(
+    mode: ManagerRequestMode,
+) -> tuple[type[BaseModel], str]:
+    if mode is ManagerRequestMode.INITIAL_PLAN:
+        return InitialManagerDecisionModel, INITIAL_MANAGER_SCHEMA_VERSION
+    if mode is ManagerRequestMode.REVIEW_AND_ROUTE:
+        return ReviewManagerDecisionModel, REVIEW_MANAGER_SCHEMA_VERSION
+    raise ValueError("unsupported Manager request mode")
+
+
+def _manager_config(invoker: PydanticAIRoleInvoker, config: ModelConfig) -> ModelConfig:
+    """Request disabled thinking only through a provider-declared capability."""
+
+    thinking_mode = (
+        "disabled"
+        if invoker.supports_thinking_control
+        else None
+    )
+    return config.model_copy(update={
+        "temperature": 0.0,
+        "max_tokens": 2048,
+        "thinking_mode": thinking_mode,
+    })
+
+
+def _manager_trigger(request: ManagerRoleRequest) -> str:
+    if request.mode is ManagerRequestMode.INITIAL_PLAN:
+        return "task_start"
+    signal = request.recovery.recovery_signal if request.recovery is not None else None
+    if (
+        signal is not None
+        and signal.kind is RecoveryKind.SUBTASK_MISALIGNED
+        and signal.recovery_attempt == 2
+    ):
+        return "subtask_misaligned_deliberate_replan"
+    return "meaningful_episode_boundary"
+
+
+def _lower_manager_decision(
+    mode: ManagerRequestMode,
+    response: BaseModel | None,
+    public_evidence_refs: Mapping[str, str],
+) -> ManagerDecision:
+    if mode is ManagerRequestMode.INITIAL_PLAN:
+        if not isinstance(response, InitialManagerDecisionModel):
+            raise TypeError("initial Manager output uses the wrong contract")
+        subtask = _lower_subtask(response.subtask)
+        return ManagerDecision(
+            ManagerAssessment.NOT_APPLICABLE,
+            ManagerRoute(response.route),
+            subtask=subtask,
+            question=response.question,
+            reason=_manager_reason(response.reason),
+        )
+    if mode is not ManagerRequestMode.REVIEW_AND_ROUTE or not isinstance(
+        response, ReviewManagerDecisionModel
+    ):
+        raise TypeError("review Manager output uses the wrong contract")
+    subtask = _lower_subtask(response.subtask)
+    return ManagerDecision(
+        ManagerAssessment(response.assessment),
+        ManagerRoute(response.route),
+        _canonical_evidence_refs(response.evidence_refs, public_evidence_refs),
+        tuple(
+            WorkingOutcomeProposal(
+                item.outcome_id,
+                ManagerAssessment(item.assessment),
+                _canonical_evidence_refs(item.evidence_refs, public_evidence_refs),
+                item.summary,
+            )
+            for item in response.working_outcomes
+        ),
+        tuple(
+            WorkingFactProposal(
+                item.key,
+                _canonical_evidence_ref(item.evidence_ref, public_evidence_refs),
+                item.purpose,
+            )
+            for item in response.working_facts
+        ),
+        response.invalidate_fact_keys,
+        subtask,
+        response.question,
+        _manager_reason(response.reason),
+        response.final_response,
+        _canonical_evidence_refs(
+            response.final_response_evidence_refs,
+            public_evidence_refs,
+        ),
+    )
+
+
+def _lower_subtask(model: SubtaskContractModel | None) -> SubtaskContract | None:
+    if model is None:
+        return None
+    return SubtaskContract(
+        model.objective,
+        model.done_when,
+        model.task_link,
+        SubtaskOutcomeKind(model.outcome_kind),
+        model.constraints,
+        model.relevant_fact_keys,
+        tuple(EvidenceRequirement(item.key, item.description) for item in model.required_evidence),
+        model.episode_turn_budget,
+        model.related_audit_ids,
+    )
+
+
+def _manager_reason(value: str) -> str:
+    """Mechanically bound non-authoritative explanation text before Runtime lowering."""
+
+    return value.strip()[:_MANAGER_RUNTIME_REASON_MAX]
 
 
 def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
@@ -587,9 +709,7 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
             request.active_subtask,
             request.mission_state,
             request.review_world,
-            request.mission_state.carry_working_facts(
-                request.active_subtask.relevant_fact_keys
-            ),
+            request.episode_working_facts,
             "outcome_proposed",
             (),
             request.evidence_bundle,
@@ -603,6 +723,22 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
             for public, canonical in projection.public_evidence_refs.items()
             if canonical in allowed
         }
+        canonical_to_public = {
+            canonical: public for public, canonical in public_evidence_refs.items()
+        }
+        next_index = max(
+            (_public_fact_sort_key(item)[0] for item in public_evidence_refs),
+            default=0,
+        )
+        for fact in request.episode_working_facts:
+            canonical = fact.record.evidence_ref
+            if canonical not in allowed or canonical in canonical_to_public:
+                continue
+            next_index += 1
+            public = f"F{next_index}"
+            public_evidence_refs[public] = canonical
+            canonical_to_public[canonical] = public
+    required_status = _manager_required_evidence_status(request, review_projection)
     payload = {
         "mode": request.mode.value,
         "task": _manager_task_payload(request.original_task),
@@ -610,13 +746,56 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
         "last_typed_exit": request.last_typed_exit,
         "last_audit_or_failure_ref": request.last_audit_or_failure_ref,
         "remaining_rounds": request.remaining_rounds,
-        "environment": to_json_compatible(request.environment),
-        "recovery": _manager_recovery_payload(request),
+        "environment": (
+            to_json_compatible(request.environment)
+            if request.mode is ManagerRequestMode.INITIAL_PLAN
+            else None
+        ),
         "active_subtask": to_json_compatible(request.active_subtask),
-        "fresh_public_review_view": review_projection,
-        "candidate_output_keys": request.candidate_output_keys,
+        "mission_review_bundle": (
+            {
+                "priority_1_admitted_episode_working_facts": tuple(
+                    {
+                        "key": item.key,
+                        "value": item.record.value,
+                        "purpose": item.purpose,
+                    }
+                    for item in request.episode_working_facts
+                ),
+                "required_evidence_status": required_status,
+                "priority_2_fresh_relevant_result_evidence": _changed_review_candidates(
+                    review_projection,
+                    request,
+                    public_evidence_refs,
+                ),
+                "priority_3_current_page_identity": {
+                    "current_route": request.environment.current_route,
+                    "visible_primary_heading": request.environment.visible_primary_heading,
+                    "document_title": request.environment.document_title,
+                    "identity_conflict": request.environment.identity_conflict,
+                },
+                "priority_4_typed_recovery_or_failure": _manager_recovery_payload(request),
+                "priority_5_generic_environment": to_json_compatible(request.environment),
+                "bounded_fresh_world": review_projection,
+            }
+            if request.mode is ManagerRequestMode.REVIEW_AND_ROUTE
+            else None
+        ),
         "allowed_evidence_refs": tuple(
             sorted(public_evidence_refs, key=_public_fact_sort_key)
+        ),
+        "episode_working_facts": tuple(
+            {
+                "key": item.key,
+                "evidence_ref": canonical_to_public[item.record.evidence_ref],
+                "value": item.record.value,
+                "purpose": item.purpose,
+                "observation_lineage": {
+                    "origin": "pinned_episode_fact",
+                },
+            }
+            for item in request.episode_working_facts
+            if item.record.evidence_ref in canonical_to_public
         ),
     }
     if request.mode is ManagerRequestMode.REVIEW_AND_ROUTE:
@@ -627,11 +806,74 @@ def _manager_messages(request: ManagerRoleRequest) -> _RolePrompt:
         _messages(MISSION_MANAGER_INSTRUCTIONS, payload),
         {"task_plan": payload},
         public_evidence_refs,
-        {
-            "mode": request.mode.value,
-            "allowed_public_evidence_refs": tuple(public_evidence_refs),
-        },
     )
+
+
+def _manager_required_evidence_status(
+    request: ManagerRoleRequest,
+    review_projection: Mapping[str, object] | None,
+) -> tuple[Mapping[str, object], ...]:
+    subtask = request.active_subtask
+    if subtask is None:
+        return ()
+    retained = {item.key for item in request.episode_working_facts}
+    return tuple(
+        {
+            "key": item.key,
+            "description": item.description,
+            "status": (
+                "retained"
+                if item.key in retained
+                else "currently_visible"
+                if _manager_requirement_currently_visible(item, review_projection)
+                else "missing"
+            ),
+        }
+        for item in subtask.required_evidence
+    )
+
+
+def _manager_requirement_currently_visible(
+    requirement: EvidenceRequirement,
+    review_projection: Mapping[str, object] | None,
+) -> bool:
+    if review_projection is None:
+        return False
+    candidates = review_projection.get("evidence_candidates", ())
+    if not isinstance(candidates, tuple | list):
+        return False
+    intent = f"{requirement.key} {requirement.description}"
+    return any(
+        isinstance(item, Mapping)
+        and delivery_descriptor_matches(
+            intent,
+            f"{item.get('predicate', '')} {item.get('value', '')}",
+            (
+                str(item.get("source_context", "")),
+                str(item.get("region_ref", "")),
+            ),
+        )
+        for item in candidates
+    )
+
+
+def _changed_review_candidates(
+    review_projection: Mapping[str, object] | None,
+    request: ManagerRoleRequest,
+    public_evidence_refs: Mapping[str, str],
+) -> tuple[Mapping[str, object], ...]:
+    if review_projection is None:
+        return ()
+    changed = set(request.changed_evidence_refs)
+    candidates = review_projection.get("evidence_candidates", ())
+    if not isinstance(candidates, tuple | list):
+        return ()
+    return tuple(
+        item
+        for item in candidates
+        if isinstance(item, Mapping)
+        and public_evidence_refs.get(str(item.get("evidence_ref", "")), "") in changed
+    )[:5]
 
 
 def _manager_recovery_payload(request: ManagerRoleRequest) -> Mapping[str, object] | None:
@@ -654,6 +896,8 @@ def _manager_recovery_payload(request: ManagerRoleRequest) -> Mapping[str, objec
         "result": result,
         "repeat_count": repeat_count,
         "observed_evidence": evidence,
+        "outcome_proposal": recovery.outcome_proposal,
+        "working_proposal_feedback": recovery.working_proposal_feedback,
         "prohibited_repeat": (
             signal.prohibited_immediate_repeat if signal is not None else ""
         ),
@@ -673,9 +917,29 @@ def _manager_recovery_payload(request: ManagerRoleRequest) -> Mapping[str, objec
 def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:
     audit_projection = _audit_world_payload(request)
     audit_world = audit_projection.payload
-    public_refs = tuple(sorted(audit_projection.public_evidence_refs, key=_public_fact_sort_key))
+    public_evidence_refs = dict(audit_projection.public_evidence_refs)
+    canonical_to_public = {
+        canonical: public for public, canonical in public_evidence_refs.items()
+    }
+    next_index = max(
+        (_public_fact_sort_key(item)[0] for item in public_evidence_refs),
+        default=0,
+    )
+    for fact in request.working_facts:
+        canonical = fact.record.evidence_ref
+        if canonical in canonical_to_public:
+            continue
+        if (
+            request.audit_bundle.resolve(canonical) != fact.record
+            or canonical not in request.audit_bundle.pinned_evidence_refs
+        ):
+            continue
+        next_index += 1
+        public = f"F{next_index}"
+        public_evidence_refs[public] = canonical
+        canonical_to_public[canonical] = public
+    public_refs = tuple(sorted(public_evidence_refs, key=_public_fact_sort_key))
     audit_evidence = {
-        "observation_id": request.audit_bundle.observation_id,
         "total_evidence_count": request.audit_bundle.total_evidence_count or len(request.audit_bundle.evidence_records),
         "visible_ref_count": len(public_refs),
         "visible_refs": public_refs,
@@ -691,12 +955,7 @@ def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:
         "pre_mission_state": _auditor_mission_payload(request),
         "audit_world": audit_world,
         "working_facts": tuple(
-            {
-                "key": item.key,
-                "value": item.record.value,
-                "evidence_ref": item.record.evidence_ref,
-                "purpose": item.purpose,
-            }
+            _public_working_fact_payload(item, canonical_to_public)
             for item in request.working_facts
         ),
         "yield_reason": request.yield_reason,
@@ -720,12 +979,7 @@ def _auditor_messages(request: AuditorRoleRequest) -> _RolePrompt:
     return _RolePrompt(
         _messages(MISSION_AUDITOR_INSTRUCTIONS, payload),
         component_payloads,
-        audit_projection.public_evidence_refs,
-        {
-            "base_mission_version": request.pre_mission_state.version,
-            "allowed_public_evidence_refs": public_refs,
-            "yield_reason": request.yield_reason,
-        },
+        public_evidence_refs,
     )
 
 
@@ -735,75 +989,6 @@ def _messages(instructions: str, payload: Mapping[str, object]) -> tuple[ModelMe
         ModelMessage(role="system", content=instructions),
         ModelMessage(role="user", content=encoded),
     )
-
-
-def _repair_messages(repair: Mapping[str, object]) -> tuple[ModelMessage, ...]:
-    return (
-        ModelMessage(
-            role="system",
-            content=(
-                "Repair representation only. Preserve the semantic claims in the invalid output. "
-                "Return exactly one replacement JSON object matching the declared shape."
-            ),
-        ),
-        ModelMessage(
-            role="user",
-            content=json.dumps(to_json_compatible(repair), separators=(",", ":"), ensure_ascii=False),
-        ),
-    )
-
-
-def _role_repair_contract(
-    port: ModelPort,
-    prompt: _RolePrompt,
-    schema: type[BaseModel],
-    error: StructuredOutputError,
-) -> Mapping[str, object]:
-    return {
-        "repair": structured_output_repair_contract(error),
-        "invalid_output": _bounded_invalid_role_output(port),
-        "required_shape": _compact_role_shape(schema),
-        "preserve": prompt.repair_context,
-    }
-
-
-def _bounded_invalid_role_output(port: ModelPort) -> str:
-    transcript = getattr(port, "last_transcript", None)
-    if not isinstance(transcript, Mapping):
-        return "[unavailable]"
-    messages = transcript.get("llm.output_messages")
-    if not isinstance(messages, list | tuple) or not messages:
-        return "[unavailable]"
-    last = messages[-1]
-    value = last.get("content") if isinstance(last, Mapping) else ""
-    if not isinstance(value, str):
-        value = json.dumps(to_json_compatible(value), separators=(",", ":"), ensure_ascii=False)
-    value = value.strip()
-    if len(value) > 8_192:
-        return value[:8_189] + "..."
-    return value or "[unavailable]"
-
-
-def _compact_role_shape(schema: type[BaseModel]) -> Mapping[str, object]:
-    if schema is AuditorDecisionModel:
-        return {
-            "assessment": "satisfied|unsatisfied|unknown|blocked",
-            "evidence_refs": "[offered_F_ref]",
-            "reason": "string",
-        }
-    return {
-        "assessment": "not_applicable|satisfied|unsatisfied|unknown|blocked",
-        "evidence_refs": "[offered_F_ref]",
-        "working_outcomes": "[{outcome_id,assessment,evidence_refs,summary}]",
-        "working_facts": "[{key,evidence_ref,value,purpose}]",
-        "invalidate_fact_keys": "[snake_case_key]",
-        "route": "execute_subtask|ask_user|blocked|request_finalization",
-        "subtask": "object|null",
-        "question": "string",
-        "reason": "string",
-        "final_response": "direct public JSON value|null",
-        "final_response_evidence_refs": "[offered_F_ref]",
-    }
 
 
 def _manager_task_payload(task: TaskGoal) -> Mapping[str, object]:
@@ -841,7 +1026,13 @@ def _auditor_subtask_payload(subtask: SubtaskContract) -> Mapping[str, object]:
     return {
         "objective": subtask.objective,
         "done_when": subtask.done_when,
+        "task_link": subtask.task_link,
+        "outcome_kind": subtask.outcome_kind.value,
         "constraints": subtask.constraints,
+        "required_evidence": tuple(
+            {"key": item.key, "description": item.description}
+            for item in subtask.required_evidence
+        ),
     }
 
 
@@ -852,7 +1043,11 @@ def _auditor_mission_payload(request: AuditorRoleRequest) -> Mapping[str, object
     return {
         "version": mission.version,
         "working_outcomes": tuple(
-            to_json_compatible(item)
+            {
+                "outcome_id": item.outcome_id,
+                "assessment": item.assessment.value,
+                "summary": item.summary,
+            }
             for item in mission.working_outcomes
             if item.outcome_id in related_audits
         ),
@@ -860,7 +1055,7 @@ def _auditor_mission_payload(request: AuditorRoleRequest) -> Mapping[str, object
             {
                 "key": item.key,
                 "value": item.record.value,
-                "evidence_ref": item.record.evidence_ref,
+                "purpose": item.purpose,
                 "accepted_at_version": item.accepted_at_version,
             }
             for item in mission.accepted_facts
@@ -885,10 +1080,26 @@ def _audit_world_payload(request: AuditorRoleRequest) -> _AuditWorldProjection:
         raise RoleInputCapacityError("audit world exceeds bounded context") from exc
     public_evidence_refs = _visible_delivery_fact_refs(context, request, rendered)
     return _AuditWorldProjection({
-        "observation_id": request.after_world.observation_id,
         "format": "compact_ax.v2",
         "delivery_projection": rendered.projection,
         "observation": rendered.text,
+        "evidence_candidates": tuple(
+            {
+                "evidence_ref": item.fact_ref,
+                "value": item.value,
+                "predicate": item.predicate,
+                "source_context": item.source_context,
+                "region_ref": item.region_ref,
+                "coverage": item.coverage,
+                "lineage": item.lineage,
+            }
+            for item in (
+                context.evidence_candidates.candidates
+                if context.evidence_candidates is not None
+                else ()
+            )
+            if item.fact_ref in rendered.manifest.fact_refs
+        ),
         "sources": tuple(
             {
                 "source_ref": item.source_ref,
@@ -936,6 +1147,17 @@ def _auditor_delivery_context(request: AuditorRoleRequest):
         action_space,
         evaluation,
         working_facts=request.working_facts,
+        active_subtask=AgentSubtaskContractView(
+            request.subtask.objective,
+            request.subtask.done_when,
+            request.subtask.task_link,
+            request.subtask.outcome_kind.value,
+            request.subtask.constraints,
+            tuple(
+                (item.key, item.description)
+                for item in request.subtask.required_evidence
+            ),
+        ),
     )
 
 
@@ -966,18 +1188,28 @@ def _canonical_evidence_refs(refs: tuple[str, ...], public_refs: Mapping[str, st
 
 
 def _canonical_evidence_ref(ref: str, public_refs: Mapping[str, str]) -> str:
-    return public_refs.get(ref, ref)
+    try:
+        return public_refs[ref]
+    except KeyError as exc:
+        raise ValueError("model cited an evidence ref that was not offered") from exc
 
 
 def _mission_payload(mission) -> Mapping[str, object]:
     return {
         "version": mission.version,
-        "working_outcomes": to_json_compatible(mission.working_outcomes),
+        "working_outcomes": tuple(
+            {
+                "outcome_id": item.outcome_id,
+                "assessment": item.assessment.value,
+                "summary": item.summary,
+            }
+            for item in mission.working_outcomes
+        ),
         "accepted_facts": tuple(
             {
                 "key": item.key,
                 "value": item.record.value,
-                "evidence_ref": item.record.evidence_ref,
+                "purpose": item.purpose,
                 "accepted_at_version": item.accepted_at_version,
             }
             for item in mission.accepted_facts
@@ -986,29 +1218,30 @@ def _mission_payload(mission) -> Mapping[str, object]:
     }
 
 
-def _evidence_payload(record, *, public_ref: str = "") -> Mapping[str, object]:
+def _public_working_fact_payload(
+    item,
+    canonical_to_public: Mapping[str, str],
+) -> Mapping[str, object]:
     payload = {
-        "evidence_ref": record.evidence_ref,
-        "kind": record.kind,
-        "source_observation_id": record.source_observation_id,
-        "source_modality": record.source_modality,
-        "source_assurance": record.source_assurance,
-        "subject_id": record.subject_id,
-        "predicate": record.predicate,
-        "value": record.value,
-        "artifact_kind": record.artifact_kind,
-        "output_id": record.output_id,
-        "public_summary": record.public_summary,
+        "key": item.key,
+        "value": item.record.value,
+        "purpose": item.purpose,
     }
+    public_ref = canonical_to_public.get(item.record.evidence_ref)
     if public_ref:
-        payload["public_ref"] = public_ref
+        payload["evidence_ref"] = public_ref
     return payload
 
 
 def _metadata(port, config, attempts, schema_name: str) -> ModelMetadata:
+    retry_statuses = tuple(
+        _attempt_http_status(attempts[index - 1])
+        for index, item in enumerate(attempts)
+        if index > 0 and item.phase.endswith("provider_retry")
+    )
     return ModelMetadata(
         provider_id=port.provider,
-        model_id=port.model,
+        model_id=port.model_name,
         response_id=attempts[-1].response_id if attempts else "",
         endpoint_class=port.endpoint_class,
         prompt_version=config.prompt_version,
@@ -1017,12 +1250,33 @@ def _metadata(port, config, attempts, schema_name: str) -> ModelMetadata:
         prompt_tokens=sum(item.prompt_tokens for item in attempts),
         completion_tokens=sum(item.completion_tokens for item in attempts),
         total_tokens=sum(item.total_tokens for item in attempts),
+        rate_limit_retry_count=sum(status == 429 for status in retry_statuses),
+        transient_retry_count=sum(
+            status is not None and 500 <= status < 600
+            for status in retry_statuses
+        ),
     )
+
+
+def _attempt_http_status(attempt: ModelGenerationAttempt) -> int | None:
+    transcript = attempt.transcript
+    if not isinstance(transcript, Mapping):
+        return None
+    value = transcript.get("error.http_status")
+    return value if isinstance(value, int) else None
 
 
 def _repair_diagnostics(attempts) -> tuple[Mapping[str, object], ...]:
     return tuple(
-        {"kind": "structured_output_repair", "phase": item.phase}
+        {
+            "kind": "structured_output_repair",
+            "phase": item.phase,
+            "repair_of_attempt": item.attempt - 1,
+            "attempt": item.attempt,
+            "role": item.role,
+            "mode": item.mode,
+            "schema_version": item.schema_version,
+        }
         for item in attempts
-        if item.phase.endswith("schema_repair")
+        if item.phase.endswith("output_retry")
     )

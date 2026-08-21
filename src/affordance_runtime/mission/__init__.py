@@ -1,6 +1,6 @@
 """Thin mission layer around the existing CoreAgentLoop."""
 
-from affordance_runtime.mission.boundary import AuditBoundary
+from affordance_runtime.mission.boundary import EvidenceBoundary
 from affordance_runtime.mission.contracts import (
     AcceptedFact,
     AcceptedWorkingOutcome,
@@ -12,8 +12,10 @@ from affordance_runtime.mission.contracts import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
     EpisodeMonitorTransition,
+    EvidenceBoundaryRejectionClass,
     EvidenceBoundaryResult,
     EvidenceBundle,
+    EvidenceRequirement,
     ExecutionMode,
     ManagerAssessment,
     ManagerDecision,
@@ -28,6 +30,7 @@ from affordance_runtime.mission.contracts import (
     RecoveryKind,
     RecoverySignal,
     SubtaskContract,
+    SubtaskOutcomeKind,
     SupervisorPhase,
     SupervisorState,
     WorkingFactProposal,
@@ -46,9 +49,11 @@ from affordance_runtime.mission.supervisor import MissionRunResult, MissionSuper
 __all__ = [
     "AcceptedFact",
     "AuditGuidance",
-    "AuditBoundary",
+    "EvidenceBoundary",
     "EvidenceBoundaryResult",
+    "EvidenceBoundaryRejectionClass",
     "EvidenceBundle",
+    "EvidenceRequirement",
     "AuditorDecision",
     "ManagerAssessment",
     "ManagerRequestMode",
@@ -81,6 +86,7 @@ __all__ = [
     "WorkingOutcomeProposal",
     "WorkingFactProposal",
     "SubtaskContract",
+    "SubtaskOutcomeKind",
     "SupervisorPhase",
     "SupervisorState",
     "subtask_goal_resolution",

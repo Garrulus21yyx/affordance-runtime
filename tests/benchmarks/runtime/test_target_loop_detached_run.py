@@ -1,0 +1,70 @@
+import json
+import os
+import sys
+import time
+
+import pytest
+
+from affordance_runtime.benchmarks.target_loop.detached_run import (
+    DETACHED_RUN_SCHEMA_VERSION,
+    detached_status,
+    launch_detached,
+)
+
+
+def test_detached_run_is_session_leader_with_durable_real_pid(tmp_path) -> None:
+    output_dir = tmp_path / "run"
+    identity = launch_detached(
+        (sys.executable, "-c", "import time; time.sleep(0.2)"),
+        output_dir,
+        cwd=tmp_path,
+    )
+
+    assert identity.schema_version == DETACHED_RUN_SCHEMA_VERSION
+    assert identity.pid > 0
+    assert identity.session_id == identity.pid
+    assert os.getsid(identity.pid) == identity.pid
+    assert (output_dir / "run.pid").read_text(encoding="utf-8") == f"{identity.pid}\n"
+    launch = json.loads((output_dir / "launch.json").read_text(encoding="utf-8"))
+    assert launch["pid"] == identity.pid
+    assert launch["session_id"] == identity.pid
+    assert detached_status(output_dir)["state"] == "running"
+
+    deadline = time.monotonic() + 2
+    while detached_status(output_dir)["state"] == "running" and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert detached_status(output_dir)["state"] == "stopped_without_report"
+    _reap_if_child(identity.pid)
+
+
+def test_detached_status_uses_formal_reports_after_process_exit(tmp_path) -> None:
+    output_dir = tmp_path / "reported"
+    identity = launch_detached((sys.executable, "-c", "pass"), output_dir, cwd=tmp_path)
+    (output_dir / "run.json").write_text("{}\n", encoding="utf-8")
+    (output_dir / "summary.json").write_text("{}\n", encoding="utf-8")
+
+    deadline = time.monotonic() + 2
+    status = detached_status(output_dir)
+    while status["state"] == "running" and time.monotonic() < deadline:
+        time.sleep(0.02)
+        status = detached_status(output_dir)
+    assert status["state"] == "completed_reported"
+    assert status["run_report"] == str(output_dir / "run.json")
+    assert status["summary_report"] == str(output_dir / "summary.json")
+    _reap_if_child(identity.pid)
+
+
+def test_detached_launch_refuses_to_overwrite_existing_run_identity(tmp_path) -> None:
+    output_dir = tmp_path / "existing"
+    output_dir.mkdir()
+    (output_dir / "run.pid").write_text("123\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="already contains run evidence"):
+        launch_detached((sys.executable, "-c", "pass"), output_dir)
+
+
+def _reap_if_child(pid: int) -> None:
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        pass

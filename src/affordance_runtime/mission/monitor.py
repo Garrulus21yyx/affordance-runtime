@@ -18,6 +18,7 @@ from affordance_runtime.agent.decisions import (
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import (
+    EvidenceMethod,
     LocalPostconditionStatus,
     ObservedChange,
     TaskEvaluation,
@@ -72,17 +73,14 @@ class EpisodeMonitor:
         elif isinstance(result.decision, RequestObservation) and result.feedback.startswith("observation_unavailable"):
             events.append(EpisodeMonitorEvent.CAPABILITY_GAP)
         action = result.action_outcome
-        if action is not None and (
-            action.observed_change is ObservedChange.CHANGED
-            or action.local_postcondition
-            in {LocalPostconditionStatus.SATISFIED, LocalPostconditionStatus.UNSATISFIED}
-        ):
+        operational_progress = _has_operational_progress(result)
+        if action is not None and operational_progress:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)
-        elif action is not None and action.observed_change is ObservedChange.UNCHANGED:
+        elif action is not None:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
         if result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
             events.append(EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED)
-        failure_key = _repeated_failure_key(result, events, fresh_world_fingerprint)
+        failure_key = _repeated_failure_key(result, events)
         if failure_key:
             if failure_key == self.repeated_failure_key:
                 self.repeated_failure_count += 1
@@ -191,7 +189,10 @@ class EpisodeMonitor:
             and (
                 EpisodeMonitorEvent.STATE_CHANGED in events
                 or EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED in events
-                or _world_digest(result.before_world) != (_world_digest(result.after_world) or fresh_world_fingerprint)
+                or (
+                    result.action_outcome is None
+                    and _world_digest(result.before_world) != _world_digest(result.after_world)
+                )
             )
         ):
             self.recovery_in_progress_key = ""
@@ -228,16 +229,34 @@ def _action_failed_or_unchanged(result: StepResult, events: list[EpisodeMonitorE
     return EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events
 
 
+def _has_operational_progress(result: StepResult) -> bool:
+    """Classify mechanically supported execution progress without task semantics."""
+
+    action = result.action_outcome
+    if action is None:
+        return False
+    if action.local_postcondition is LocalPostconditionStatus.SATISFIED:
+        return True
+    return (
+        action.observed_change is ObservedChange.CHANGED
+        and action.evidence_method is EvidenceMethod.STRUCTURAL
+    )
+
+
 def _repeated_failure_key(
     result: StepResult,
     events: list[EpisodeMonitorEvent],
-    fresh_world_fingerprint: str,
 ) -> str:
     if result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
         return ""
     before_world = _world_digest(result.before_world)
-    after_world = _world_digest(result.after_world) or fresh_world_fingerprint
-    if before_world and after_world and before_world != after_world:
+    after_world = _world_digest(result.after_world)
+    if (
+        result.action_outcome is None
+        and before_world
+        and after_world
+        and before_world != after_world
+    ):
         return ""
     if isinstance(result.decision, PolicyFailure):
         return _stable_key(
@@ -323,7 +342,7 @@ def _repeated_failure_key(
     action = result.action_outcome
     if action is None:
         return ""
-    no_change = action.observed_change is ObservedChange.UNCHANGED
+    no_change = EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events
     unsatisfied = action.local_postcondition is LocalPostconditionStatus.UNSATISFIED
     if not no_change and not unsatisfied:
         return ""
@@ -387,6 +406,42 @@ def _public_attempt(result: StepResult) -> dict[str, object]:
         "target": _public_target(result, intent.target_id),
         "destination": _public_target(result, intent.destination_id),
         "parameters": to_json_compatible(intent.parameters),
+    }
+
+
+def _bounded_public_attempt(result: StepResult) -> dict[str, object]:
+    attempt = _public_attempt(result)
+
+    def bounded_target(value: object) -> Mapping[str, object]:
+        if not isinstance(value, Mapping):
+            return {}
+        if not value:
+            return {}
+        context = value.get("context", ())
+        return {
+            "role": str(value.get("role", ""))[:80],
+            "label": str(value.get("label", ""))[:160],
+            **(
+                {"context": tuple(context)[-4:]}
+                if (
+                    isinstance(context, Sequence)
+                    and not isinstance(context, str | bytes)
+                    and context
+                )
+                else {}
+            ),
+        }
+
+    parameters = attempt.get("parameters", {})
+    return {
+        "operation": str(attempt.get("operation", ""))[:80],
+        "target": bounded_target(attempt.get("target")),
+        "destination": bounded_target(attempt.get("destination")),
+        "parameters": (
+            _bounded_argument_summary(parameters)
+            if isinstance(parameters, Mapping)
+            else {}
+        ),
     }
 
 
@@ -493,11 +548,22 @@ def _recovery_evidence(
     same_result_count: int,
 ) -> Mapping[str, object]:
     base: dict[str, object] = {
+        "attempt": _bounded_public_attempt(result),
         "feedback": result.feedback[:160],
         "events": tuple(item.value for item in events),
         "dispatch": _dispatch_status(result),
+        "repeat_count": max(1, same_result_count),
         "task_evaluation": result.task_evaluation.status.value,
     }
+    action = result.action_outcome
+    if action is not None:
+        base.update({
+            "observed_change": action.observed_change.value,
+            "local_postcondition": action.local_postcondition.value,
+            "evidence_method": action.evidence_method.value,
+            "operational_progress": False,
+            "new_structural_evidence": False,
+        })
     if not isinstance(result.decision, LocalToolResult):
         return base
     public_result = to_json_compatible(result.decision.result)
@@ -552,7 +618,10 @@ def _recovery_kind(result: StepResult, events: list[EpisodeMonitorEvent]) -> Rec
         return RecoveryKind.CAPABILITY_GAP
     if result.feedback in {"binding_unavailable"} or result.feedback.startswith("action_not_sent:"):
         return RecoveryKind.GROUNDING_STALL
-    if result.action_outcome is not None and result.action_outcome.observed_change is ObservedChange.UNCHANGED:
+    if result.action_outcome is not None and (
+        result.action_outcome.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+        or not _has_operational_progress(result)
+    ):
         return RecoveryKind.EFFECT_STALL
     if result.execution is not None and result.execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
         return RecoveryKind.UNCERTAIN_EFFECT

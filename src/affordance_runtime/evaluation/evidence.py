@@ -64,7 +64,7 @@ def _artifact_record(observation, source, key: str) -> EvidenceRecord:
 
 
 def public_text_evidence_records(observation: WorldObservation) -> tuple[EvidenceRecord, ...]:
-    """Return public text evidence for Auditor reading, not evaluator fact authority."""
+    """Return public text evidence for Delivery/review, not evaluator fact authority."""
 
     sources = {item.observation_id: item for item in observation.sources}
     source_by_target = _source_by_target(observation, sources)

@@ -42,6 +42,7 @@ class YieldSubtaskKind(StrEnum):
     STALLED = "stalled"
     BLOCKED = "blocked"
     CAPABILITY_GAP = "capability_gap"
+    NEEDS_REPLAN = "needs_replan"
 
 
 class ProtocolFeedbackKind(StrEnum):

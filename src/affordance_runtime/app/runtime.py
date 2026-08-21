@@ -144,6 +144,7 @@ class TargetRuntime:
         max_turns: int,
         yield_on_budget_exhaustion: bool,
         working_facts=(),
+        active_subtask=None,
     ) -> RunState:
         return await self.build_loop().initialize_from_world(
             task,
@@ -152,6 +153,7 @@ class TargetRuntime:
             max_turns=max_turns,
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
             working_facts=working_facts,
+            active_subtask=active_subtask,
         )
 
     async def continue_task(

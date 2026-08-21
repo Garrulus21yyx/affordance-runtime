@@ -165,7 +165,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert scripted.model_settings == [
             {"max_tokens": 1024, "temperature": 0.0, "parallel_tool_calls": False}
         ]
-        assert pydantic_bridge._ACTION_MODEL_SETTINGS == {
+        assert pydantic_bridge._action_model_settings(policy.port.last_call_profile) == {
             "thinking": False,
             "max_tokens": 1024,
             "temperature": 0.0,
@@ -176,7 +176,14 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert "ask_user" in scripted.offered_tools[0]
         assert "propose_done" not in scripted.offered_tools[0]
         attempt = policy.port.last_generation_attempts[0]
-        assert attempt.phase == "initial"
+        assert attempt.phase == "ordinary"
+        assert attempt.role == "action_policy"
+        assert attempt.trigger == "ordinary"
+        assert attempt.thinking_requested == "disabled"
+        assert attempt.thinking_effective == "disabled"
+        assert attempt.max_output_tokens == 1024
+        assert attempt.final_tool_call_present is True
+        assert attempt.final_content_tokens == attempt.completion_tokens
         assert attempt.transcript["llm.input_messages"][0]["parts"][0]["content"]
         assert attempt.transcript["llm.output_messages"][0]["parts"][0]["tool_name"]
         assert policy.last_metadata is not None
@@ -208,6 +215,44 @@ def test_multiple_provider_tool_calls_return_protocol_feedback_with_zero_dispatc
         assert decision.kind is ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS
         assert decision.call_count == 2
         assert scripted.calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action", "first_gui_action"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("recovery", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "grounding_stall",
+                "stable_signature": "generic:recovery:1",
+                "recovery_attempt": 1,
+            },
+        )
+
+        first = await policy.port.generate(ModelDecisionRequest("request:deliberate-1", context))
+        second = await policy.port.generate(ModelDecisionRequest("request:deliberate-2", context))
+
+        assert first.attempts[0].phase == "deliberate"
+        assert first.attempts[0].trigger == "grounding_gap"
+        assert first.attempts[0].thinking_requested == "enabled"
+        assert first.attempts[0].max_output_tokens == 2048
+        assert second.attempts[0].phase == "ordinary"
+        assert second.attempts[0].trigger == "ordinary"
+        assert second.attempts[0].thinking_requested == "disabled"
+        assert second.attempts[0].max_output_tokens == 1024
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 1024]
 
     asyncio.run(scenario())
 
@@ -348,7 +393,11 @@ def test_pydantic_ai_records_rate_limit_then_retries_once(monkeypatch) -> None:
         assert policy.last_metadata.rate_limit_retry_count == 1
         assert policy.last_metadata.transient_retry_count == 0
         attempts = policy.port.last_generation_attempts
-        assert [item.phase for item in attempts] == ["initial", "initial_provider_retry"]
+        assert [item.phase for item in attempts] == ["ordinary", "ordinary_provider_retry"]
+        assert all(item.role == "action_policy" for item in attempts)
+        assert all(item.trigger == "ordinary" for item in attempts)
+        assert all(item.thinking_requested == "disabled" for item in attempts)
+        assert all(item.max_output_tokens == 1024 for item in attempts)
         assert [item.status for item in attempts] == ["failed", "accepted"]
         assert attempts[0].exception_class == "ModelHTTPError"
         assert attempts[0].transcript["error.code"] == "rate_limited"
@@ -493,11 +542,11 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
     assert policy.port.transport_timeout_s == 2.0
     assert policy.port.max_provider_retry_delay_s == 0.5
     prepared, _ = policy.port.model.prepare_request(
-        pydantic_bridge._ACTION_MODEL_SETTINGS,
+        pydantic_bridge._action_model_settings(policy.port.reasoning_policy.repair()),
         ModelRequestParameters(),
     )
     assert prepared["extra_body"]["thinking"]["type"] == "disabled"
-    assert prepared["max_tokens"] == 1024
+    assert prepared["max_tokens"] == 512
     assert prepared["temperature"] == 0.0
     assert prepared["parallel_tool_calls"] is False
 
@@ -556,15 +605,14 @@ def test_factory_selects_deepseek_json_single_command_profile() -> None:
     assert selected.port.model_id == "deepseek-v4-flash"
     assert selected.port.port.endpoint_class == "remote"
     assert selected.port.port.supports_multimodal is False
-    assert selected.port.config.max_tokens == 4_096
+    assert selected.port.config.max_tokens == 1_024
     assert selected.port.config.timeout_s == 1.52
     assert selected.port.config.provider_total_timeout_s == 1.52
     assert selected.port.timeout_fast_retry_timeout_s == 1.48
     assert selected.port.semantic_timeout_budget_s == 3.0
     assert selected.port.config.rate_limit_retries == 1
     assert selected.port.config.transient_retries == 1
-    assert selected.port.truncated_retry_max_tokens == 512
-    assert selected.port.truncated_retry_thinking_mode == "disabled"
+    assert selected.port.reasoning_policy.repair_max_tokens == 512
 
     live_deadline = model_policy_from_environment(
         {

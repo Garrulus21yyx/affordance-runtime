@@ -19,7 +19,18 @@ from affordance_runtime.agent.context.budgets import (
     ContextProjectionBudget,
 )
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
-from affordance_runtime.agent.context.contracts import AgentActionPageView, AgentTurnView
+from affordance_runtime.agent.context.contracts import (
+    AgentActionPageView,
+    AgentEvidenceRequirementView,
+    AgentSubtaskContractView,
+    AgentSubtaskView,
+    AgentTurnView,
+    EvidenceRequirementStatus,
+)
+from affordance_runtime.agent.context.evidence_candidate_projection import (
+    evidence_requirement_available_in_index,
+    project_evidence_candidates,
+)
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
@@ -32,7 +43,7 @@ from affordance_runtime.agent.context.world_projection import (
     project_model_world,
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
-from affordance_runtime.agent.working_facts import WorkingFact
+from affordance_runtime.agent.working_facts import WorkingFact, is_public_scalar
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.goals.plan import Failed, GoalPlanResolution, NeedsInput
@@ -48,7 +59,7 @@ class ContextBuilder:
     budget: ContextProjectionBudget = field(default_factory=ContextProjectionBudget)
     pager: ActionPager = field(default_factory=ActionPager)
     grounding_projection: GroundingProjection = field(default_factory=GroundingProjection)
-    include_public_text_evidence: bool = False
+    include_public_text_evidence: bool = True
 
     def build(
         self,
@@ -67,6 +78,7 @@ class ContextBuilder:
         delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldDeliveryIndex | None = None,
         control_feedback: dict[str, object] | None = None,
+        active_subtask: AgentSubtaskContractView | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -211,6 +223,7 @@ class ContextBuilder:
             complete_page.options,
             action_space.action_space_id,
             candidate_projection,
+            active_subtask,
         )
 
     def page(
@@ -377,12 +390,33 @@ def _fit_context(
     complete_actions,
     action_space_id: str,
     action_candidates,
+    active_subtask: AgentSubtaskContractView | None,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
         include_public_text=include_public_text_evidence,
     )
-    fact_refs = _public_fact_refs(world.facts.items, task_evaluation)
+    fact_refs = _public_fact_refs(
+        world.facts.items,
+        task_evaluation,
+        evidence_index,
+        observation,
+    )
+    evidence_candidates = project_evidence_candidates(
+        observation,
+        evidence_index,
+        fact_refs,
+        region_index,
+        required_evidence=(active_subtask.required_evidence if active_subtask is not None else ()),
+    )
+    active_subtask_view = _active_subtask_view(
+        active_subtask,
+        working_facts,
+        observation,
+        evidence_index,
+        fact_refs,
+        region_index,
+    )
     task_view = project_task(
         task,
         task_evaluation,
@@ -390,6 +424,7 @@ def _fit_context(
         fact_refs,
         grounding.index.target_refs,
         include_final_response_contract=False,
+        active_subtask=active_subtask_view,
     )
     private_fact_bindings = _current_public_fact_bindings(
         observation,
@@ -428,6 +463,50 @@ def _fit_context(
         complete_actions,
         action_space_id,
         action_candidates,
+        evidence_candidates,
+        active_subtask,
+    )
+
+
+def _active_subtask_view(
+    contract,
+    working_facts,
+    observation,
+    evidence_index,
+    fact_refs,
+    region_index,
+):
+    if contract is None:
+        return None
+    pinned = {item.key for item in working_facts}
+    requirements = tuple(
+        AgentEvidenceRequirementView(
+            key,
+            description,
+            (
+                EvidenceRequirementStatus.RETAINED
+                if key in pinned
+                else EvidenceRequirementStatus.CURRENTLY_VISIBLE
+                if evidence_requirement_available_in_index(
+                    key,
+                    description,
+                    observation,
+                    evidence_index,
+                    fact_refs,
+                    region_index,
+                )
+                else EvidenceRequirementStatus.MISSING
+            ),
+        )
+        for key, description in contract.required_evidence
+    )
+    return AgentSubtaskView(
+        contract.objective,
+        contract.done_when,
+        contract.task_link,
+        contract.outcome_kind,
+        contract.constraints,
+        requirements,
     )
 
 
@@ -467,8 +546,26 @@ def _current_public_fact_bindings(
     return result
 
 
-def _public_fact_refs(facts, task_evaluation: TaskEvaluation) -> dict[str, str]:
-    present = {item.fact_ref for item in facts}
+def _public_fact_refs(
+    facts,
+    task_evaluation: TaskEvaluation,
+    evidence_index: WorldEvidenceIndex,
+    observation: WorldObservation,
+) -> dict[str, str]:
+    sources = {item.observation_id: item for item in observation.sources}
+    current_refs = {
+        record.evidence_ref
+        for record in evidence_index.records
+        if (
+            record.kind == "fact"
+            and record.observation_id == observation.observation_id
+            and (
+                (source := sources.get(record.source_observation_id)) is None
+                or source.coverage is not CoverageState.STALE
+            )
+        )
+    }
+    present = {item.fact_ref for item in facts if item.fact_ref in current_refs}
     prioritized: list[str] = []
 
     def add(ref: str) -> None:
@@ -483,5 +580,22 @@ def _public_fact_refs(facts, task_evaluation: TaskEvaluation) -> dict[str, str]:
     for output in task_evaluation.outputs:
         for ref in output.evidence_refs:
             add(ref)
-    ordered = [*prioritized, *(item.fact_ref for item in facts if item.fact_ref not in prioritized)]
+    ordered = [
+        *prioritized,
+        *(
+            item.fact_ref
+            for item in facts
+            if item.fact_ref in current_refs and item.fact_ref not in prioritized
+        ),
+    ]
+    ordered.extend(
+        record.evidence_ref
+        for record in evidence_index.records
+        if (
+            record.kind == "fact"
+            and record.evidence_ref in current_refs
+            and is_public_scalar(record.value)
+            and record.evidence_ref not in ordered
+        )
+    )
     return {ref: f"F{index}" for index, ref in enumerate(ordered, 1)}

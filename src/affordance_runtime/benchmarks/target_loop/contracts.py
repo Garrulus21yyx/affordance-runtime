@@ -54,6 +54,32 @@ SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
         CASE_SCHEMA_VERSION,
     }
 )
+
+_MISSION_FAILURE_OUTCOMES = frozenset(
+    {
+        MissionOutcome.MANAGER_FAILURE,
+        MissionOutcome.AUDITOR_FAILURE,
+        MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
+        MissionOutcome.AUDITOR_PROVIDER_FAILURE,
+        MissionOutcome.AUDITOR_SCHEMA_FAILURE,
+        MissionOutcome.BOUNDARY_REJECTED,
+        MissionOutcome.EVIDENCE_GAP,
+        MissionOutcome.FINALIZATION_NOT_READY,
+        MissionOutcome.CANCELLED,
+        MissionOutcome.STRATEGY_NOT_CHANGED,
+        MissionOutcome.OPERATIONAL_FAILURE,
+        MissionOutcome.UNHANDLED_EPISODE_STATE,
+        MissionOutcome.ROUND_BUDGET_EXHAUSTED,
+    }
+)
+
+
+def mission_failure_code(outcome: str) -> str:
+    """Project typed mission terminal truth without letting cleanup replace it."""
+
+    return outcome if outcome in {str(item) for item in _MISSION_FAILURE_OUTCOMES} else ""
+
+
 _FACT_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
 _EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
@@ -157,6 +183,8 @@ class CaseFailureOrigin(StrEnum):
     ACTION_EVALUATION = "action_outcome"
     TASK_EVALUATION = "task_evaluation"
     HARNESS_WATCHDOG = "harness_watchdog"
+    HARNESS_EXTERNAL_INTERRUPTION = "harness_external_interruption"
+    HARNESS_PERSISTENCE = "harness_persistence"
     CLEANUP = "cleanup"
     UNKNOWN = "unknown"
 
@@ -453,6 +481,7 @@ class BenchmarkCaseResult:
     cleanup_failure_code: str = ""
     cleanup_exception_class: str = ""
     cleanup_failures: int = 0
+    cleanup_status: str = ""
     primary_failure_code: str = ""
     primary_failure_phase: str = ""
     primary_diagnostic_ref: str = ""
@@ -474,6 +503,12 @@ class BenchmarkCaseResult:
     harness_schema_version: str = "target-loop-harness.v6"
 
     def __post_init__(self) -> None:
+        if not self.cleanup_status:
+            object.__setattr__(
+                self,
+                "cleanup_status",
+                "failed" if self.cleanup_failures else "not_run",
+            )
         text_fields = (
             self.case_id,
             self.status,
@@ -496,6 +531,7 @@ class BenchmarkCaseResult:
             self.agent_failure_code,
             self.cleanup_failure_code,
             self.cleanup_exception_class,
+            self.cleanup_status,
             self.primary_failure_code,
             self.primary_failure_phase,
             self.primary_diagnostic_ref,
@@ -535,7 +571,14 @@ class BenchmarkCaseResult:
         if (
             not self.case_id
             or self.status not in {str(item) for item in RunStatus if item is not RunStatus.RUNNING}
-            or self.termination_origin not in {"", "runtime", "component", "cleanup", "harness_watchdog"}
+            or self.termination_origin not in {
+                "",
+                "runtime",
+                "component",
+                "cleanup",
+                "harness_watchdog",
+                "harness_external",
+            }
             or type(self.execution_completed) is not bool
             or isinstance(self.latency_ms, bool)
             or not isinstance(self.latency_ms, int | float)
@@ -646,6 +689,10 @@ class BenchmarkCaseResult:
             raise ValueError("cleanup exception metadata must be a bounded class name")
         if self.cleanup_failures not in {0, 1}:
             raise ValueError("cleanup failure count must be zero or one")
+        if self.cleanup_status not in {"not_run", "succeeded", "failed"}:
+            raise ValueError("cleanup status is outside the closed vocabulary")
+        if (self.cleanup_status == "failed") != bool(self.cleanup_failures):
+            raise ValueError("cleanup status and failure fact are inconsistent")
         if self.harness_integrity_failures not in {0, 1}:
             raise ValueError("harness integrity failure count must be zero or one")
         if self.case_schema_version not in SUPPORTED_CASE_SCHEMA_VERSIONS:
@@ -702,39 +749,49 @@ class BenchmarkCaseResult:
         )
 
         legacy = project_legacy_case_fields(self.status, facts)
-        if self.case_failure_code != legacy.case_failure_code:
+        mission_primary_code = mission_failure_code(self.mission_outcome)
+        expected_case_failure_code = legacy.case_failure_code
+        if mission_primary_code and expected_case_failure_code in {"", facts.cleanup_code}:
+            expected_case_failure_code = mission_primary_code
+        expected_termination_origin = (
+            "runtime"
+            if mission_primary_code and expected_case_failure_code == mission_primary_code
+            else legacy.termination_origin
+        )
+        if self.case_failure_code != expected_case_failure_code:
             raise ValueError("benchmark case failure code is inconsistent with failure facts")
         if self.terminal_reason_code is not legacy.terminal_reason_code:
             raise ValueError("benchmark terminal reason is inconsistent with failure facts")
         if self.watchdog_triggered != bool(facts.watchdog_code):
             raise ValueError("benchmark watchdog projection is inconsistent")
-        if self.termination_origin != legacy.termination_origin:
+        if self.termination_origin != expected_termination_origin:
             raise ValueError("benchmark termination origin is inconsistent with failure facts")
         if bool(self.cleanup_failures) != bool(facts.cleanup_code):
             raise ValueError("benchmark cleanup projection is inconsistent")
         if bool(self.harness_integrity_failures) != bool(facts.harness_integrity_code):
             raise ValueError("benchmark integrity projection is inconsistent")
         official = self.measurements.get("official_success_count")
-        has_failure_fact = any(
+        has_primary_failure_fact = any(
             (
                 facts.runtime_failure,
                 facts.runtime_reason_code,
                 facts.agent_failure_code,
                 facts.policy_failure_code,
                 facts.component_code,
-                facts.watchdog_code,
-                facts.cleanup_code,
                 facts.harness_integrity_code,
             )
         )
+        secondary_lifecycle_codes = {
+            code for code in (facts.watchdog_code, facts.cleanup_code) if code
+        }
         if (
             self.status == str(RunStatus.DONE)
             and official is not None
             and official.measured
             and official.value == 1
             and (
-                has_failure_fact
-                or self.case_failure_code
+                has_primary_failure_fact
+                or self.case_failure_code not in {"", *secondary_lifecycle_codes}
                 or self.failure_code
                 or self.exception_class
                 or self.terminal_reason_code is not None

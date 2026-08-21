@@ -131,9 +131,12 @@ facts nor creates a second benchmark path. It accepts only cases from the frozen
 profile identifiers, launches with an argv list rather than a shell, permits one active run, and never returns provider
 keys or environment values. Remote binding is disabled unless explicitly requested with `--allow-remote`.
 
-For durable local tracing set `AFFORDANCE_TRACE_DIR`; set `AFFORDANCE_LANGFUSE_ENABLED=true` only with that local
-directory configured and the `observability` extra installed. Each provider exchange is part of that trace's LLM
-transcript. The separate `LLM_ENABLE_PRIVATE_MODEL_CAPTURE` path is only an optional isolated raw-envelope copy.
+For complete local tracing set `AFFORDANCE_TRACE_DIR`. To add the read-only Langfuse/OTel viewer, install the
+`observability` extra and set `AFFORDANCE_LANGFUSE_ENABLED=true`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and
+optionally `LANGFUSE_BASE_URL`. Each provider exchange remains part of local JSONL; Langfuse receives only a bounded
+project-event projection plus PydanticAI's official native model/tool spans. Public prompt/response content is enabled;
+binary content, private bindings, selectors/BIDs, full World payloads, and screenshots are not sent. The separate
+`LLM_ENABLE_PRIVATE_MODEL_CAPTURE` path is only an optional isolated raw-envelope copy.
 
 ## Current convergence boundary
 

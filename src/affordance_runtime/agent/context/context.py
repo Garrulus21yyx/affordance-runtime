@@ -192,6 +192,8 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    evidence_candidates: object | None = field(default=None, repr=False, compare=False)
+    active_subtask_contract: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -233,6 +235,17 @@ class AgentContext:
             raise ValueError("AgentContext requires current ActionSpace identity")
         from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+        from affordance_runtime.agent.context.contracts import AgentSubtaskContractView
+        from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
+
+        if self.evidence_candidates is not None and not isinstance(
+            self.evidence_candidates, EvidenceCandidateProjection
+        ):
+            raise TypeError("AgentContext evidence candidates must be typed")
+        if self.active_subtask_contract is not None and not isinstance(
+            self.active_subtask_contract, AgentSubtaskContractView
+        ):
+            raise TypeError("AgentContext active subtask contract must be typed")
         from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
         from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex

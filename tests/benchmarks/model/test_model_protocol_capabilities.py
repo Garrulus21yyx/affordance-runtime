@@ -97,18 +97,17 @@ def test_json_action_policy_owns_bounded_output_and_truncation_retry_config() ->
             "LLM_ACTIVE_PROFILE": "deepseek",
             "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
             "LLM_ACTION_POLICY_MAX_TOKENS": "4096",
-            "LLM_ACTION_POLICY_TRUNCATED_RETRY_MAX_TOKENS": "512",
-            "LLM_ACTION_POLICY_TRUNCATED_RETRY_THINKING": "disabled",
+            "LLM_ACTION_POLICY_REPRESENTATION_REPAIR_MAX_TOKENS": "512",
         },
         model_port=_Transport(provider="deepseek", supports_multimodal=False),
         call_timeout_s=5,
     )
 
-    assert policy.port.config.max_tokens == 4_096
-    assert policy.port.context_binder.request_budget.max_output_tokens == 4_096
-    assert policy.port.context_binder.request_budget.admission_limit == 59_832
-    assert policy.port.truncated_retry_max_tokens == 512
-    assert policy.port.truncated_retry_thinking_mode == "disabled"
+    assert policy.port.config.max_tokens == 1_024
+    assert policy.port.reasoning_policy.deliberate_max_tokens == 2_048
+    assert policy.port.context_binder.request_budget.max_output_tokens == 1_024
+    assert policy.port.context_binder.request_budget.admission_limit == 62_904
+    assert policy.port.reasoning_policy.repair_max_tokens == 512
 
     with pytest.raises(ValueError, match="MAX_TOKENS"):
         model_policy_factory.model_policy_from_environment(

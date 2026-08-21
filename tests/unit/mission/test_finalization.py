@@ -10,6 +10,7 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.observability import RunTraceRecorder
+from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.mission import (
@@ -26,9 +27,11 @@ from affordance_runtime.mission import (
     MissionState,
     MissionSupervisor,
     SubtaskContract,
+    WorkingFactProposal,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
+from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 from tests.support.model_delivery import delivery_for
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
@@ -97,10 +100,11 @@ class YieldPolicy:
 
 
 class DirectResponseManager:
-    def __init__(self, *, response=FINAL_VALUE, use_allowed_ref: bool = True):
+    def __init__(self, *, response=FINAL_VALUE, use_allowed_ref: bool = True, promote: bool = False):
         self.requests = []
         self.response = response
         self.use_allowed_ref = use_allowed_ref
+        self.promote = promote
 
     async def decide(self, request):
         self.requests.append(request)
@@ -108,7 +112,9 @@ class DirectResponseManager:
             decision = ManagerDecision(
                 ManagerAssessment.NOT_APPLICABLE,
                 ManagerRoute.EXECUTE_SUBTASK,
-                subtask=SubtaskContract("Read answer", "Answer is visible"),
+                subtask=SubtaskContract(
+                    "Read answer", "Answer is visible", "Provides the requested answer"
+                ),
             )
         else:
             refs = request.allowed_evidence_refs[:1] if self.use_allowed_ref else ("fact:disallowed",)
@@ -117,6 +123,13 @@ class DirectResponseManager:
                 ManagerRoute.REQUEST_FINALIZATION,
                 evidence_refs=refs,
                 reason="Current evidence supports the response.",
+                working_facts=(
+                    WorkingFactProposal(
+                        "terminal_record",
+                        refs[0],
+                        "carry terminal evidence",
+                    ),
+                ) if self.promote and refs else (),
                 final_response=self.response,
                 final_response_evidence_refs=refs,
             )
@@ -158,7 +171,7 @@ def _boundary_input(*, allowed: bool = True, response=FINAL_VALUE):
     world = asyncio.run(env.reset(task)).observation
     bundle = EvidenceBundle.from_world(world)
     ref = bundle.evidence_records[0].evidence_ref
-    subtask = SubtaskContract("Read answer", "Answer is visible")
+    subtask = SubtaskContract("Read answer", "Answer is visible", "Provides the requested answer")
     request = ManagerRoleRequest(
         ManagerRequestMode.REVIEW_AND_ROUTE,
         task,
@@ -195,6 +208,51 @@ def test_run10_direct_business_object_is_admitted_without_tool_envelope() -> Non
 
     assert result.admitted
     assert json.loads(result.response.content) == FINAL_VALUE
+
+
+def test_pinned_scalar_from_originating_observation_can_support_final_response() -> None:
+    _, env, task = _env_task()
+    acquired = asyncio.run(env.reset(task)).observation
+    assert acquired is not None
+    origin_bundle = EvidenceBundle.from_world(acquired)
+    record = next(item for item in origin_bundle.evidence_records if item.kind == "fact")
+    pinned = WorkingFact("terminal_record", record, 2, "use after a fresh capture")
+    reviewed = asyncio.run(env.capture(WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "fresh final review",
+    ))).observation
+    assert reviewed is not None and reviewed.observation_id != acquired.observation_id
+    bundle = EvidenceBundle.from_world(reviewed, (pinned,))
+    subtask = SubtaskContract("Read answer", "Answer is visible", "Provides the requested answer")
+    request = ManagerRoleRequest(
+        ManagerRequestMode.REVIEW_AND_ROUTE,
+        task,
+        MissionState.empty(),
+        recovery=ManagerRecoveryView("outcome_proposed", True, subtask),
+        active_subtask=subtask,
+        review_world=reviewed,
+        evidence_bundle=bundle,
+        final_response_schema=FINAL_SCHEMA,
+        allowed_evidence_refs=(record.evidence_ref,),
+        episode_working_facts=(pinned,),
+    )
+    decision = ManagerDecision(
+        ManagerAssessment.SATISFIED,
+        ManagerRoute.REQUEST_FINALIZATION,
+        evidence_refs=(record.evidence_ref,),
+        final_response=FINAL_VALUE,
+        final_response_evidence_refs=(record.evidence_ref,),
+    )
+
+    result = FinalResponseBoundary().admit(
+        decision,
+        request,
+        MissionState.empty(),
+        already_finalized=False,
+    )
+
+    assert result.admitted
+    assert result.response is not None
 
 
 def test_schema_mismatch_and_disallowed_evidence_are_typed_zero_send_rejections() -> None:
@@ -256,6 +314,45 @@ def test_normal_mission_uses_two_manager_calls_no_finalizer_and_one_terminal_cha
     boundary_event = next(item for item in trace.events if item["event"] == "final_response_boundary_evaluated")
     assert boundary_event["admitted"] is True
     assert "Quest Lumaflex" not in json.dumps(boundary_event)
+    evaluator_event = next(
+        item for item in trace.events if item["event"] == "native_evaluator_returned"
+    )
+    assert evaluator_event["evaluation_status"] == "complete"
+    assert evaluator_event["evidence_refs"] == (result.state.current_world.facts[0].fact_id,)
+    assert next(
+        index
+        for index, item in enumerate(trace.events)
+        if item["event"] == "native_evaluator_returned"
+    ) < next(
+        index
+        for index, item in enumerate(trace.events)
+        if item["event"] == "finalization_protocol"
+    )
+
+
+def test_terminal_state_proposal_is_admitted_before_single_finalization_route() -> None:
+    fake, env, task = _env_task()
+    evaluator = PostStopEvaluator(fake)
+    runtime = compose_target_runtime(
+        YieldPolicy(),
+        ProductionActionOutcomeProjector(),
+        evaluator,
+        runtime_controls=("yield_subtask",),
+    )
+
+    result = asyncio.run(
+        MissionSupervisor(
+            DirectResponseManager(promote=True),
+            None,
+            max_rounds=2,
+        ).run(runtime, env, task)
+    )
+
+    assert result.outcome is MissionOutcome.FINALIZED
+    assert result.mission_state.version == 1
+    assert result.mission_state.accepted_facts[0].key == "terminal_record"
+    assert result.final_response_boundary_admission_count == 1
+    assert (result.stop_send_count, result.native_evaluator_count) == (1, 1)
 
 
 def test_invalid_response_causes_zero_send_and_no_second_policy_call() -> None:
