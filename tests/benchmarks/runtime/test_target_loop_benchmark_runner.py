@@ -1,6 +1,6 @@
 import asyncio
 import json
-import threading
+import multiprocessing
 import time
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -13,12 +13,12 @@ from affordance_runtime.agent import (
     ProtocolFeedbackKind,
     RunStatus,
     SelectAction,
-    YieldSubtask,
+    YieldMilestone,
 )
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.agent.decision_capability import DecisionCapability
 from affordance_runtime.agent.observability import (
-    LangfuseViewerWorker,
+    LangfuseViewerProcess,
     QueuedViewerRunTraceRecorder,
 )
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
@@ -37,6 +37,7 @@ from affordance_runtime.benchmarks.target_loop.reporting import (
     write_run_report,
 )
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
+from affordance_runtime.benchmarks.webarena_verified import WebArenaVerifiedCaseEnvironment
 from affordance_runtime.evaluation import (
     ActionOutcome,
     EvidenceMethod,
@@ -44,16 +45,21 @@ from affordance_runtime.evaluation import (
     ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
+    TaskOutcomeKind,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
 from affordance_runtime.mission import (
     ExecutionMode,
-    ManagerAssessment,
-    ManagerDecision,
-    ManagerRoute,
-    SubtaskContract,
+    Milestone,
+    MilestoneRoadmap,
+    PlannerDecision,
+    PlannerRoute,
 )
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
+from affordance_runtime.surfaces.browsergym.task_state import (
+    BrowserGymTaskStateSnapshot,
+    BrowserGymTaskStateSource,
+)
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationCapabilities,
@@ -74,6 +80,61 @@ class NeverPolicy:
     async def decide(self, context):
         self.calls += 1
         raise AssertionError("complete task must not call policy")
+
+
+def test_form_fields_capability_survives_formal_webarena_and_counting_facades() -> None:
+    marker = object()
+
+    class World:
+        observation_capabilities = ObservationCapabilities(True, True)
+
+        def __init__(self):
+            self.commands = []
+
+        async def execute_form_fields(self, command):
+            self.commands.append(command)
+            return marker
+
+    world = World()
+    task = TaskGoal("task:facade", "Fill the current form.")
+    case_environment = WebArenaVerifiedCaseEnvironment(
+        SimpleNamespace(),
+        SimpleNamespace(),
+        world,
+        task,
+    )
+    instrumentation = BenchmarkInstrumentation()
+    counted = CountingEnvironment(case_environment, instrumentation, frozenset())
+    command = SimpleNamespace(requests=())
+
+    outcome = asyncio.run(counted.execute_form_fields(command))
+
+    assert outcome is marker
+    assert world.commands == [command]
+    assert instrumentation.environment_execute_calls == 1
+
+
+def test_webarena_native_evaluator_uses_terminal_post_state_after_sent_unknown_stop() -> None:
+    snapshot = BrowserGymTaskStateSnapshot(
+        "run:1",
+        "world:post-stop",
+        "source:post-stop",
+        BrowserGymTaskStateSource.POST_ACTION,
+        {"terminated": True, "reward": 1.0},
+        frozenset({"terminated", "reward"}),
+    )
+    environment = WebArenaVerifiedCaseEnvironment(
+        SimpleNamespace(),
+        SimpleNamespace(current_task_state=lambda: snapshot),
+        SimpleNamespace(),
+        TaskGoal("task:sent-unknown-post", "Finish"),
+        final_delivery_attempted=True,
+        final_delivery_confirmed=False,
+    )
+    outcome, code, refs = environment.current_native_result()
+    assert outcome is TaskOutcomeKind.TERMINAL_SUCCESS
+    assert code == "verified_success"
+    assert refs
 
 
 class ActionOutcomeProjector:
@@ -98,9 +159,7 @@ class CompleteEvaluator:
 
 class UnknownEvaluator:
     async def evaluate(self, task, observation):
-        return TaskEvaluation(
-            task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown"
-        )
+        return TaskEvaluation(task.task_id, observation.observation_id, TaskEvaluationStatus.UNKNOWN, "unknown")
 
 
 def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
@@ -155,37 +214,26 @@ def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
     class YieldPolicy:
         @property
         def supported_decisions(self):
-            return frozenset({DecisionCapability.YIELD_SUBTASK})
+            return frozenset({DecisionCapability.YIELD_MILESTONE})
 
         async def decide(self, context):
-            return YieldSubtask(context.context_id, "outcome_proposed", "ready")
+            return YieldMilestone(context.context_id, "outcome_proposed", "ready")
 
-    class Manager:
+    class Planner:
         def __init__(self):
             self.requests = []
             self.decisions = [
-                ManagerDecision(
-                    ManagerAssessment.NOT_APPLICABLE,
-                    ManagerRoute.EXECUTE_SUBTASK,
-                    subtask=SubtaskContract(
-                        "Read current value",
-                        "Current value is known",
-                        "Provides the requested current value",
-                        episode_turn_budget=1,
-                    ),
-                ),
-                ManagerDecision(
-                    ManagerAssessment.UNKNOWN,
-                    ManagerRoute.ASK_USER,
+                PlannerDecision(
+                    PlannerRoute.ASK_USER,
                     question="Which account should be used?",
                 ),
             ]
 
-        async def decide(self, request):
+        async def plan(self, request):
             self.requests.append(request)
             return ModelInvocationResult(output=self.decisions.pop(0))
 
-    manager = Manager()
+    planner = Planner()
 
     case = BenchmarkCase(
         "mission-ask",
@@ -200,8 +248,8 @@ def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
             YieldPolicy(),
             ActionOutcomeProjector(),
             UnknownEvaluator(),
-            required_decisions=frozenset({DecisionCapability.YIELD_SUBTASK}),
-            mission_manager=manager,
+            required_decisions=frozenset({DecisionCapability.YIELD_MILESTONE}),
+            mission_planner=planner,
             mission_auditor=None,
             execution_mode=ExecutionMode.MISSION,
         ),
@@ -228,14 +276,14 @@ def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
     assert result.pending_kind == "user_question"
     assert result.mission_outcome == "needs_user_input"
     assert result.mission_last_ref == "needs_user_input"
-    assert result.measurements["mission_manager_calls"].value == 2
+    assert result.measurements["mission_planner_calls"].value == 1
     assert result.measurements["mission_auditor_calls"].value == 0
     assert result.measurements["mission_state_version"].value == 0
     assert result.measurements["mission_boundary_rejections"].value == 0
-    assert len(manager.requests) == 2
+    assert len(planner.requests) == 1
 
 
-def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
+def test_hung_langfuse_projection_cannot_delay_planner_provider_failure_report(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -243,8 +291,8 @@ def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
     from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
 
     monkeypatch.setattr(runner, "_VIEWER_FLUSH_TIMEOUT_S", 0.05)
-    viewer_entered = threading.Event()
-    never_release = threading.Event()
+    viewer_entered = multiprocessing.Event()
+    never_release = multiprocessing.Event()
 
     class HungClient:
         def start_as_current_observation(self, **_kwargs):
@@ -255,7 +303,7 @@ def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
         return QueuedViewerRunTraceRecorder(
             directory,
             run_id=run_id,
-            viewer_worker=LangfuseViewerWorker(
+            viewer_process=LangfuseViewerProcess(
                 lambda: HungClient(),
                 session_id=session_id,
                 benchmark_managed=benchmark_managed,
@@ -264,13 +312,15 @@ def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
 
     monkeypatch.setattr(runner, "trace_recorder_from_environment", trace_factory)
 
-    class ProviderUnavailableManager:
-        async def decide(self, _request):
-            return ModelInvocationResult(failure=ModelFailure(
-                ModelFailureKind.PROVIDER_UNAVAILABLE,
-                "synthetic provider unavailable",
-                True,
-            ))
+    class ProviderUnavailablePlanner:
+        async def plan(self, _request):
+            return ModelInvocationResult(
+                failure=ModelFailure(
+                    ModelFailureKind.PROVIDER_UNAVAILABLE,
+                    "synthetic provider unavailable",
+                    True,
+                )
+            )
 
     case = BenchmarkCase(
         "mission-provider-unavailable",
@@ -282,7 +332,7 @@ def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
             NeverPolicy(),
             ActionOutcomeProjector(),
             UnknownEvaluator(),
-            mission_manager=ProviderUnavailableManager(),
+            mission_planner=ProviderUnavailablePlanner(),
             mission_auditor=None,
             execution_mode=ExecutionMode.MISSION,
         ),
@@ -293,33 +343,35 @@ def test_hung_langfuse_projection_cannot_delay_manager_provider_failure_report(
     )
 
     started = time.perf_counter()
-    result = asyncio.run(run_suite(BenchmarkManifest(
-        "target-loop-manifest.v1",
-        "suite",
-        "deterministic",
-        7,
-        (case,),
-    ), trace_dir=tmp_path)).cases[0]
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    ).cases[0]
     elapsed = time.perf_counter() - started
 
     assert viewer_entered.is_set()
     assert elapsed < 0.5
     assert result.status == "failed"
-    assert result.mission_outcome == "manager_failure"
+    assert result.mission_outcome == "planner_failure"
     assert "viewer" not in result.failure_code
     trace_path = tmp_path / "traces" / case.case_id / "trace.jsonl"
     events = [json.loads(line) for line in trace_path.read_text().splitlines()]
     role = next(event for event in events if event["event"] == "mission_role_invocation")
     assert role["failure"]["kind"] == "provider_unavailable"
-    assert any(
-        event["event"] == "case_lifecycle_phase" and event["phase"] == "CASE_BODY_RETURNED"
-        for event in events
-    )
+    assert any(event["event"] == "case_lifecycle_phase" and event["phase"] == "CASE_BODY_RETURNED" for event in events)
     assert any(event["event"] == "viewer_status" for event in events)
     assert (tmp_path / "cases" / f"{case.case_id}.json").is_file()
 
 
-def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_path) -> None:
+def test_protocol_stall_planner_blocked_projects_and_writes_formal_reports(tmp_path) -> None:
     class ProtocolPolicy:
         @property
         def supported_decisions(self):
@@ -333,27 +385,29 @@ def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_p
                 "multiple_tool_calls",
             )
 
-    class Manager:
+    class Planner:
         def __init__(self):
             self.decisions = [
-                ManagerDecision(
-                    ManagerAssessment.NOT_APPLICABLE,
-                    ManagerRoute.EXECUTE_SUBTASK,
-                    subtask=SubtaskContract(
-                        "Enter the remaining values one at a time",
-                        "Both values are visible",
-                        "Completes the requested form values",
-                        episode_turn_budget=6,
+                PlannerDecision(
+                    PlannerRoute.ROADMAP,
+                    roadmap=MilestoneRoadmap(
+                        1,
+                        (
+                            Milestone(
+                                "complete_form",
+                                "The requested form result is available",
+                                "The submitted result is observable",
+                            ),
+                        ),
                     ),
                 ),
-                ManagerDecision(
-                    ManagerAssessment.BLOCKED,
-                    ManagerRoute.BLOCKED,
+                PlannerDecision(
+                    PlannerRoute.BLOCKED,
                     reason="protocol recovery exhausted",
                 ),
             ]
 
-        async def decide(self, request):
+        async def plan(self, request):
             del request
             return ModelInvocationResult(output=self.decisions.pop(0))
 
@@ -370,7 +424,7 @@ def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_p
             ProtocolPolicy(),
             ActionOutcomeProjector(),
             UnknownEvaluator(),
-            mission_manager=Manager(),
+            mission_planner=Planner(),
             mission_auditor=None,
             execution_mode=ExecutionMode.MISSION,
         ),
@@ -381,20 +435,24 @@ def test_protocol_stall_manager_blocked_projects_and_writes_formal_reports(tmp_p
     )
     from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
 
-    suite = asyncio.run(run_suite(BenchmarkManifest(
-        "target-loop-manifest.v1",
-        "suite",
-        "deterministic",
-        7,
-        (case,),
-    )))
+    suite = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                "target-loop-manifest.v1",
+                "suite",
+                "deterministic",
+                7,
+                (case,),
+            )
+        )
+    )
     result = suite.cases[0]
     write_run_report(suite, str(tmp_path))
 
     assert result.status == "blocked", result
-    assert result.last_decision_type == "ProtocolFeedback"
+    assert result.last_decision_kind == "protocol_feedback"
     assert result.measurements["executions"].value == 0
-    assert result.measurements["mission_manager_calls"].value == 2
+    assert result.measurements["mission_planner_calls"].value == 2
     assert result.measurements["mission_auditor_calls"].value == 0
     assert (tmp_path / "run.json").is_file()
     assert (tmp_path / "summary.json").is_file()
@@ -532,7 +590,8 @@ def test_watchdog_timeout_preserves_privacy_safe_partial_episode() -> None:
     assert result.terminal_reason_code is None
     assert result.measurements["observations"].value == 2
     assert result.measurements["executions"].value == 1
-    assert result.measurements["turns"].value == 1
+    # The enclosing cancellation is itself committed through StepResult/RunState.
+    assert result.measurements["turns"].value == 2
     assert result.latest_task_status == "incomplete"
     assert result.latest_action_observed_change == "unknown"
     assert result.latest_action_local_postcondition == "unknown"

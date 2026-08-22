@@ -70,15 +70,12 @@ class SemanticActionDefinition:
     parameter_contract: ParameterContractKind
     destination_mode: DestinationMode
     verification_families: tuple[VerificationFamily, ...]
-    replay_safe_after_uncertain_dispatch: bool = False
 
     def __post_init__(self) -> None:
         if not self.semantic_action or len(set(self.subject_kinds)) != len(self.subject_kinds):
             raise ValueError("semantic action definition is invalid")
         if not self.subject_kinds or not self.verification_families:
             raise ValueError("semantic action definition requires subjects and verification families")
-        if type(self.replay_safe_after_uncertain_dispatch) is not bool:
-            raise TypeError("semantic action replay safety must be boolean")
         object.__setattr__(self, "subject_kinds", tuple(self.subject_kinds))
         object.__setattr__(self, "verification_families", tuple(self.verification_families))
 
@@ -90,7 +87,6 @@ class SemanticActionDefinition:
             self.parameter_contract.value,
             self.destination_mode.value,
             tuple(item.value for item in self.verification_families),
-            self.replay_safe_after_uncertain_dispatch,
         )
         return "sha256:" + hashlib.sha256(
             json.dumps(payload, separators=(",", ":")).encode()
@@ -473,12 +469,12 @@ INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
         ),
         SemanticActionDefinition(
             "type_text", (InteractionSubjectKind.ENTITY,), ParameterContractKind.TEXT,
-            DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,), True,
+            DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,),
         ),
         SemanticActionDefinition(
             "select_option", (InteractionSubjectKind.ENTITY,), ParameterContractKind.OPTION_VALUE,
             DestinationMode.FORBIDDEN,
-            (VerificationFamily.VALUE_STATE, VerificationFamily.RELATION_CHANGE), True,
+            (VerificationFamily.VALUE_STATE, VerificationFamily.RELATION_CHANGE),
         ),
         SemanticActionDefinition(
             "read", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
@@ -508,7 +504,7 @@ INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
         ),
         SemanticActionDefinition(
             "set_value", (InteractionSubjectKind.ENTITY,), ParameterContractKind.NATIVE_VALUE,
-            DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,), True,
+            DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,),
         ),
         SemanticActionDefinition(
             "hover", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,

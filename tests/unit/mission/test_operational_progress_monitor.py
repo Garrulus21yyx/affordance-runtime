@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import fields
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpaceBuilder
-from affordance_runtime.agent import LocalToolResult, SelectAction
+from affordance_runtime.agent import ReadRegionResult, SearchPageContentResult, SelectAction
+from affordance_runtime.agent.attempt_signature import public_attempt_signature
 from affordance_runtime.agent.context import AgentTurnView
-from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus, StepResult
+from affordance_runtime.agent.core_loop import _repeats_recovery_signature
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation import (
     ActionOutcome,
     EvidenceMethod,
@@ -14,18 +16,24 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.execution import ActionResult, DispatchStatus, ExecutionOutcome
+from affordance_runtime.execution import (
+    ActionResult,
+    DispatchStatus,
+    ExecutionOutcome,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.mission import (
     EpisodeMonitor,
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
-    ManagerRecoveryView,
+    Milestone,
+    PlannerRecoveryView,
     RecoveryKind,
-    SubtaskContract,
+    RecoverySignal,
 )
-from affordance_runtime.mission.supervisor import _EpisodeRoute, _review_recovery_view
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import AcquisitionOrigin, SemanticTarget, StateFact
+from affordance_runtime.world.public_semantic_digest import public_page_semantic_digest
 from tests.support.observation_acquisition import acquired_acquisition
 from tests.support.world import fused_world
 
@@ -101,24 +109,26 @@ def _world(
     bindings = [binding]
     if extra_control:
         targets.append(SemanticTarget("route-details", "button", "Route details"))
-        bindings.append(ActionBinding(
-            f"binding:{observation_id}:route-details",
-            observation_id,
-            observation_id,
-            f"revision:{observation_id}",
-            "fingerprint:route-details",
-            "route-details",
-            "route-details",
-            "fixture",
-            "fixture",
-            "activate",
-            "click",
-            "local_reversible",
-            ("external_ui_interaction",),
-            {"type": "object", "properties": {}, "additionalProperties": False},
-            {"fixture": "route-details"},
-            risk=ActionRisk.LOW,
-        ))
+        bindings.append(
+            ActionBinding(
+                f"binding:{observation_id}:route-details",
+                observation_id,
+                observation_id,
+                f"revision:{observation_id}",
+                "fingerprint:route-details",
+                "route-details",
+                "route-details",
+                "fixture",
+                "fixture",
+                "activate",
+                "click",
+                "local_reversible",
+                ("external_ui_interaction",),
+                {"type": "object", "properties": {}, "additionalProperties": False},
+                {"fixture": "route-details"},
+                risk=ActionRisk.LOW,
+            )
+        )
     return fused_world(
         observation_id,
         tuple(targets),
@@ -137,10 +147,7 @@ def _step(
     target_id: str = "go",
 ) -> StepResult:
     task = _task()
-    option = next(
-        item for item in ActionSpaceBuilder().build(task, before).options
-        if item.target_id == target_id
-    )
+    option = next(item for item in ActionSpaceBuilder().build(task, before).options if item.target_id == target_id)
     selection = ActionSpaceBuilder().admit(option, {})
     request = ActionBinder().bind(selection, before, "context:test", tool_call_id="call:test")
     execution = ExecutionOutcome(
@@ -177,9 +184,175 @@ def _step(
             TaskEvaluationStatus.INCOMPLETE,
             "result not yet complete",
         ),
-        execution=execution,
+        execution_receipts=ExecutionReceiptBatch.from_atomic(
+            execution,
+            after.observation_id,
+        ),
         action_outcome=outcome,
         feedback="action_outcome_unknown",
+    )
+
+
+def _local_step(before, after, name: str = "search_page_content", *, result=None) -> StepResult:
+    task = _task()
+    return StepResult(
+        (SearchPageContentResult if name == "search_page_content" else ReadRegionResult)(
+            "context:test",
+            name,
+            {"query": "route"},
+            result or {"kind": "NoMatches", "items": (), "total_count": 0},
+        ),
+        before,
+        after,
+        TaskEvaluation(
+            task.task_id,
+            after.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "result not yet complete",
+        ),
+        feedback="local_tool_result",
+    )
+
+
+def test_page_fingerprint_ignores_textbox_value_focus_and_appearance() -> None:
+    empty = _world("observation:empty", focused=False, appearance="gray")
+    edited = _world("observation:edited", focused=True, appearance="blue")
+
+    assert public_page_semantic_digest(empty) == public_page_semantic_digest(edited)
+
+
+def test_route_regression_survives_interleaved_local_and_rejected_steps() -> None:
+    page_a = _world("observation:a", route="/map")
+    page_b = _world("observation:b", route="/map/search")
+    page_c = _world("observation:c", route="/map/place")
+    monitor = EpisodeMonitor()
+
+    monitor.evaluate(
+        _step(
+            page_a,
+            page_b,
+            observed_change=ObservedChange.CHANGED,
+            postcondition=LocalPostconditionStatus.SATISFIED,
+            method=EvidenceMethod.STRUCTURAL,
+        ),
+        (),
+        "full:b",
+    )
+    monitor.evaluate(_local_step(page_b, page_b, "read_region"), (), "full:b")
+    monitor.evaluate(
+        _step(
+            page_b,
+            page_c,
+            observed_change=ObservedChange.CHANGED,
+            postcondition=LocalPostconditionStatus.SATISFIED,
+            method=EvidenceMethod.STRUCTURAL,
+        ),
+        (),
+        "full:c",
+    )
+    monitor.evaluate(_local_step(page_c, page_c, "search_page_content"), (), "full:c")
+    monitor.evaluate(
+        _local_step(
+            page_c,
+            page_c,
+            "tool_rejected",
+            result={
+                "kind": "operation_mismatch",
+                "dispatch": "not_sent",
+                "supported_operations": ("type_text", "press_key"),
+            },
+        ),
+        (),
+        "full:c",
+    )
+    transition = monitor.evaluate(
+        _step(
+            page_c,
+            page_a,
+            observed_change=ObservedChange.CHANGED,
+            postcondition=LocalPostconditionStatus.SATISFIED,
+            method=EvidenceMethod.STRUCTURAL,
+        ),
+        (),
+        "full:a",
+    )
+
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert EpisodeMonitorEvent.ROUTE_REGRESSION in transition.events
+    assert len(monitor.route_history) == 7
+
+
+def test_return_to_page_with_new_retained_result_is_not_regression() -> None:
+    page_a = _world("observation:a", route="/map")
+    page_b = _world(
+        "observation:b",
+        route="/map/result",
+        result_text="Driving distance 33 km",
+    )
+    monitor = EpisodeMonitor()
+
+    monitor.evaluate(
+        _step(
+            page_a,
+            page_b,
+            observed_change=ObservedChange.CHANGED,
+            postcondition=LocalPostconditionStatus.SATISFIED,
+            method=EvidenceMethod.STRUCTURAL,
+        ),
+        (),
+        "full:b",
+    )
+    transition = monitor.evaluate(
+        _step(
+            page_b,
+            page_a,
+            observed_change=ObservedChange.CHANGED,
+            postcondition=LocalPostconditionStatus.SATISFIED,
+            method=EvidenceMethod.STRUCTURAL,
+        ),
+        (),
+        "full:a",
+    )
+
+    assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert EpisodeMonitorEvent.ROUTE_REGRESSION not in transition.events
+
+
+def test_typed_attempt_signature_blocks_exact_rejected_repeat() -> None:
+    world = _world("observation:attempt")
+    option = ActionSpaceBuilder().build(_task(), world).options[0]
+    selection = ActionSpaceBuilder().admit(option, {})
+    signature = public_attempt_signature(
+        selection.semantic_action,
+        selection.target_id,
+        selection.destination_id,
+        selection.parameters,
+        world,
+    )
+    signal = RecoverySignal(
+        RecoveryKind.GROUNDING_STALL,
+        "operation-mismatch",
+        {"kind": "operation_mismatch"},
+        prohibited_attempt_signature=signature,
+        human_instruction="Change the operation before the next dispatch.",
+    )
+
+    assert _repeats_recovery_signature(signal, selection, world)
+    assert not _repeats_recovery_signature(
+        RecoverySignal(
+            RecoveryKind.GROUNDING_STALL,
+            "different-operation",
+            {},
+            prohibited_attempt_signature=public_attempt_signature(
+                "press_key",
+                selection.target_id,
+                selection.destination_id,
+                {"key": "Enter"},
+                world,
+            ),
+        ),
+        selection,
+        world,
     )
 
 
@@ -291,11 +464,18 @@ def test_structural_result_and_navigation_reset_no_progress_streak() -> None:
     monitor = EpisodeMonitor()
 
     monitor.evaluate(no_progress, (), "fresh:one")
-    for progress in (result_progress, navigation_progress):
-        transition = monitor.evaluate(progress, (), "fresh:progress")
-        assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
-        assert EpisodeMonitorEvent.STATE_CHANGED in transition.events
-        assert monitor.evaluate(no_progress, (), "fresh:again").recommendation is EpisodeMonitorRecommendation.CONTINUE
+    transition = monitor.evaluate(result_progress, (), "fresh:result")
+    assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert EpisodeMonitorEvent.STATE_CHANGED in transition.events
+    assert (
+        monitor.evaluate(no_progress, (), "fresh:after-result").recommendation is EpisodeMonitorRecommendation.CONTINUE
+    )
+
+    transition = monitor.evaluate(navigation_progress, (), "fresh:navigation")
+    assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    regression = monitor.evaluate(no_progress, (), "fresh:after-navigation")
+    assert regression.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert EpisodeMonitorEvent.ROUTE_REGRESSION in regression.events
 
 
 def test_new_structured_executable_control_is_operational_progress() -> None:
@@ -374,7 +554,7 @@ def test_recovery_signature_is_ref_free_bounded_and_deterministic() -> None:
     assert "request:" not in encoded
 
 
-def test_manager_recovery_view_preserves_typed_signal_without_inventing_outcome_proposal() -> None:
+def test_planner_recovery_view_preserves_typed_signal_without_inventing_outcome_proposal() -> None:
     before = _world("observation:before")
     after = _world("observation:after", focused=True)
     step = _step(
@@ -388,31 +568,20 @@ def test_manager_recovery_view_preserves_typed_signal_without_inventing_outcome_
     monitor.evaluate(step, (), "fresh:one")
     recovered = monitor.evaluate(step, (), "fresh:two")
     assert recovered.recovery_signal is not None
-    evaluation = TaskEvaluation(
-        _task().task_id,
-        after.observation_id,
-        TaskEvaluationStatus.INCOMPLETE,
-        "route result absent",
-    )
-    state = RunState(
-        after,
-        evaluation,
-        0,
-        status=RunStatus.YIELDED,
-        yield_reason=EpisodeYieldReason.EFFECT_STALL,
-        recovery_signal=recovered.recovery_signal,
-    )
-    subtask = SubtaskContract(
-        "Request route", "Route result is visible", "Provides the requested route result"
-    )
+    milestone = Milestone("route_result", "Requested route result is available", "Route result is visible")
 
-    view = _review_recovery_view(_EpisodeRoute.MANAGER_RECOVERY, state, subtask, before)
+    view = PlannerRecoveryView(
+        "needs_replan",
+        True,
+        milestone,
+        recovered.recovery_signal,
+    )
 
     assert view.recovery_signal is recovered.recovery_signal
-    assert tuple(item.name for item in fields(ManagerRecoveryView)) == (
+    assert tuple(item.name for item in fields(PlannerRecoveryView)) == (
         "exit_kind",
         "world_changed",
-        "prior_subtask",
+        "prior_milestone",
         "recovery_signal",
         "attempted_modes",
         "audit_guidance",
@@ -426,7 +595,7 @@ def test_manager_recovery_view_preserves_typed_signal_without_inventing_outcome_
     assert "provider_reasoning" not in encoded
 
 
-def test_genuine_world_oscillation_still_recovers() -> None:
+def test_model_history_world_fingerprints_are_not_route_authority() -> None:
     before = _world("observation:before", route="/map/a")
     after = _world("observation:after", route="/map/b")
     step = _step(
@@ -451,9 +620,8 @@ def test_genuine_world_oscillation_still_recovers() -> None:
 
     transition = EpisodeMonitor().evaluate(step, recent, "world:b")
 
-    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert transition.recovery_signal is not None
-    assert transition.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+    assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert transition.recovery_signal is None
 
 
 def test_large_local_result_is_digest_only_in_recovery_signal() -> None:
@@ -466,9 +634,9 @@ def test_large_local_result_is_digest_only_in_recovery_signal() -> None:
     )
     marker = "large-private-body-" + "x" * 20_000
     step = StepResult(
-        LocalToolResult(
+        SearchPageContentResult(
             "context:test",
-            "find_content",
+            "search_page_content",
             {"query": "route"},
             {"kind": "Matches", "items": ({"content": marker},), "total_count": 1},
         ),

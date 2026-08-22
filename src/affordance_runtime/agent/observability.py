@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import json
+import multiprocessing
 import os
 import queue
 import threading
@@ -24,9 +25,7 @@ class RunTraceSink(Protocol):
 
     def run_started(self, task: object, state: object) -> None: ...
 
-    def benchmark_case_started(
-        self, *, case_id: str, description: str, timeout_s: float
-    ) -> None: ...
+    def benchmark_case_started(self, *, case_id: str, description: str, timeout_s: float) -> None: ...
 
     def benchmark_case_finished(self, *, case_id: str, status: str) -> None: ...
 
@@ -52,9 +51,11 @@ class RunTraceSink(Protocol):
         *,
         trigger_kind: str,
         execution_mode: str,
-        subtask_id: str,
+        milestone_id: str,
         mission_version: int,
     ) -> None: ...
+
+    def mission_role_provider_attempt(self, attempt: object) -> None: ...
 
     def finalization_protocol(
         self,
@@ -159,10 +160,14 @@ class NullRunTraceSink:
         *,
         trigger_kind: str,
         execution_mode: str,
-        subtask_id: str,
+        milestone_id: str,
         mission_version: int,
     ) -> None:
-        del role, call_index, request, result, trigger_kind, execution_mode, subtask_id, mission_version
+        del role, call_index, request, result, trigger_kind, execution_mode, milestone_id, mission_version
+        return None
+
+    def mission_role_provider_attempt(self, attempt: object) -> None:
+        del attempt
         return None
 
     def finalization_protocol(
@@ -253,9 +258,7 @@ class RunTraceRecorder:
         )
         self._observation(getattr(state, "current_world", None))
 
-    def benchmark_case_started(
-        self, *, case_id: str, description: str, timeout_s: float
-    ) -> None:
+    def benchmark_case_started(self, *, case_id: str, description: str, timeout_s: float) -> None:
         self._emit(
             "benchmark_case_started",
             case_id=case_id,
@@ -300,7 +303,7 @@ class RunTraceRecorder:
         *,
         trigger_kind: str,
         execution_mode: str,
-        subtask_id: str,
+        milestone_id: str,
         mission_version: int,
     ) -> None:
         metadata = getattr(result, "metadata", None)
@@ -315,9 +318,9 @@ class RunTraceRecorder:
             call_index=call_index,
             trigger_kind=trigger_kind,
             execution_mode=execution_mode,
-            subtask_id=subtask_id,
+            milestone_id=milestone_id,
             mission_version=mission_version,
-            manager_request_mode=_enum_value(getattr(request, "mode", "")),
+            planner_request_mode=_enum_value(getattr(request, "mode", "")),
             assessment=_enum_value(getattr(output, "assessment", "")),
             route=_enum_value(getattr(output, "route", "")),
             optional_auditor_trigger=(trigger_kind if role == "auditor" else ""),
@@ -330,6 +333,9 @@ class RunTraceRecorder:
             role_request=_json_value(request, self.directory),
             model_invocation=_json_value(result, self.directory),
         )
+
+    def mission_role_provider_attempt(self, attempt: object) -> None:
+        self._emit("mission_role_provider_attempt", attempt=_json_value(attempt, self.directory))
 
     def finalization_protocol(
         self,
@@ -500,9 +506,7 @@ class RunTraceRecorder:
             step_count=getattr(state, "step_count", None),
             observation_count=getattr(state, "observation_count", None),
             execution_count=getattr(state, "execution_count", None),
-            task_evaluation=_json_value(
-                getattr(state, "current_task_evaluation", None), self.directory
-            ),
+            task_evaluation=_json_value(getattr(state, "current_task_evaluation", None), self.directory),
         )
 
     def _observation(self, observation: object) -> None:
@@ -529,9 +533,7 @@ class RunTraceRecorder:
                 }
                 self.events.append(event)
                 if self.path is not None:
-                    encoded = (
-                        json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
-                    ).encode()
+                    encoded = (json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
                     descriptor = os.open(
                         self.path,
                         os.O_WRONLY | os.O_CREAT | os.O_APPEND,
@@ -610,23 +612,43 @@ def goal_compiler_trace_diagnostic(
         plan_version: int | None = resolution.accepted_plan.plan_version
     elif isinstance(resolution, NotRequired):
         disposition, reason, question, fields, plan_version = (
-            "not_required", resolution.reason, "", (), None,
+            "not_required",
+            resolution.reason,
+            "",
+            (),
+            None,
         )
     elif isinstance(resolution, NeedsInput):
         disposition, reason, question, fields, plan_version = (
-            "needs_input", "", resolution.question, resolution.fields, None,
+            "needs_input",
+            "",
+            resolution.question,
+            resolution.fields,
+            None,
         )
     elif isinstance(resolution, Unsupported):
         disposition, reason, question, fields, plan_version = (
-            "unsupported", resolution.reason, "", (), None,
+            "unsupported",
+            resolution.reason,
+            "",
+            (),
+            None,
         )
     elif isinstance(resolution, Failed):
         disposition, reason, question, fields, plan_version = (
-            "failed", resolution.reason, "", (), None,
+            "failed",
+            resolution.reason,
+            "",
+            (),
+            None,
         )
     else:
         disposition, reason, question, fields, plan_version = (
-            "failed", "invalid_goal_compiler_outcome", "", (), None,
+            "failed",
+            "invalid_goal_compiler_outcome",
+            "",
+            (),
+            None,
         )
     port = getattr(compiler, "port", None)
     config = getattr(compiler, "config", None)
@@ -642,18 +664,13 @@ def goal_compiler_trace_diagnostic(
             repair_diagnostics,
             kind="structured_output_repair",
         ),
-        "contract_repair_count": sum(
-            getattr(item, "phase", "") == "goal_compile_contract_repair"
-            for item in attempts
-        ),
+        "contract_repair_count": sum(getattr(item, "phase", "") == "goal_compile_contract_repair" for item in attempts),
         "provider_attempt_count": len(attempts),
         "generation_attempts": attempts,
         "compiler_prompt_version": str(getattr(config, "prompt_version", "")),
         "provider_id": str(getattr(port, "provider", "")),
         "model_id": str(getattr(port, "model", "")),
-        "initial_evidence_observation_id": str(
-            getattr(initial_evidence, "observation_id", "")
-        ),
+        "initial_evidence_observation_id": str(getattr(initial_evidence, "observation_id", "")),
     }
 
 
@@ -754,12 +771,16 @@ class LangfuseOtelSink:
                 with self.client.start_as_current_observation(
                     name=_langfuse_generation_name(event),
                     as_type="generation",
-                    input=_bounded_remote_projection({
-                        "messages": transcript.get("llm.input_messages", ()),
-                    }),
-                    output=_bounded_remote_projection({
-                        "messages": transcript.get("llm.output_messages", ()),
-                    }),
+                    input=_bounded_remote_projection(
+                        {
+                            "messages": transcript.get("llm.input_messages", ()),
+                        }
+                    ),
+                    output=_bounded_remote_projection(
+                        {
+                            "messages": transcript.get("llm.output_messages", ()),
+                        }
+                    ),
                     model=str(metadata.get("model_id", "")) or None,
                     model_parameters={
                         "max_output_tokens": int(attempt.get("max_output_tokens", 0)),
@@ -771,22 +792,24 @@ class LangfuseOtelSink:
                         "total": int(attempt.get("total_tokens", 0)),
                     },
                     level="ERROR" if attempt.get("status") == "failed" else None,
-                    metadata=_bounded_remote_projection({
-                        "attempt": attempt.get("attempt"),
-                        "phase": attempt.get("phase"),
-                        "trigger": attempt.get("trigger"),
-                        "status": attempt.get("status"),
-                        "finish_reason": attempt.get("finish_reason"),
-                        "thinking_requested": attempt.get("thinking_requested"),
-                        "thinking_effective": attempt.get("thinking_effective"),
-                        "reasoning_tokens": attempt.get("reasoning_tokens"),
-                        "final_content_tokens": attempt.get("final_content_tokens"),
-                        "final_tool_call_present": attempt.get("final_tool_call_present"),
-                        "provider_id": metadata.get("provider_id"),
-                        "prompt_version": metadata.get("prompt_version"),
-                        "schema_version": attempt.get("schema_version"),
-                        "latency_ms": attempt.get("latency_ms"),
-                    }),
+                    metadata=_bounded_remote_projection(
+                        {
+                            "attempt": attempt.get("attempt"),
+                            "phase": attempt.get("phase"),
+                            "trigger": attempt.get("trigger"),
+                            "status": attempt.get("status"),
+                            "finish_reason": attempt.get("finish_reason"),
+                            "thinking_requested": attempt.get("thinking_requested"),
+                            "thinking_effective": attempt.get("thinking_effective"),
+                            "reasoning_tokens": attempt.get("reasoning_tokens"),
+                            "final_content_tokens": attempt.get("final_content_tokens"),
+                            "final_tool_call_present": attempt.get("final_tool_call_present"),
+                            "provider_id": metadata.get("provider_id"),
+                            "prompt_version": metadata.get("prompt_version"),
+                            "schema_version": attempt.get("schema_version"),
+                            "latency_ms": attempt.get("latency_ms"),
+                        }
+                    ),
                 ):
                     pass
 
@@ -797,10 +820,12 @@ class LangfuseOtelSink:
             name="benchmark-gui-agent-case" if self.benchmark_managed else "run-gui-agent-case",
             as_type="agent",
             input=(
-                _bounded_remote_projection({
-                    "case_id": event.get("case_id"),
-                    "description": event.get("description"),
-                })
+                _bounded_remote_projection(
+                    {
+                        "case_id": event.get("case_id"),
+                        "description": event.get("description"),
+                    }
+                )
                 if event.get("event") == "benchmark_case_started"
                 else _public_task_projection(event.get("task"))
             ),
@@ -830,8 +855,8 @@ class LangfuseOtelSink:
 
 
 @dataclass
-class LangfuseViewerWorker:
-    """Per-case daemon that exclusively owns Langfuse SDK calls."""
+class LangfuseViewerProcess:
+    """Per-case child process that exclusively owns Langfuse SDK resources."""
 
     client_factory: Callable[[], Any]
     session_id: str = ""
@@ -841,131 +866,241 @@ class LangfuseViewerWorker:
     dropped_event_count: int = field(default=0, init=False)
     disabled: bool = field(default=False, init=False)
     flush_timeout: bool = field(default=False, init=False)
-    _queue: queue.Queue[Mapping[str, object]] = field(init=False, repr=False)
-    _stop_requested: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
-    _thread: threading.Thread = field(init=False, repr=False)
+    _queue: Any = field(init=False, repr=False)
+    _status_queue: Any = field(init=False, repr=False)
+    _process: multiprocessing.Process = field(init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not 1 <= self.queue_capacity <= 4096:
             raise ValueError("viewer queue capacity is outside bounds")
-        self._queue = queue.Queue(maxsize=self.queue_capacity)
-        self._thread = threading.Thread(
-            target=self._run,
-            name="langfuse-viewer-worker",
+        context = multiprocessing.get_context(_viewer_start_method(self.client_factory))
+        self._queue = context.Queue(maxsize=self.queue_capacity)
+        self._status_queue = context.Queue(maxsize=32)
+        self._process = context.Process(
+            target=_run_langfuse_viewer,
+            args=(
+                self._queue,
+                self._status_queue,
+                self.client_factory,
+                self.session_id,
+                self.benchmark_managed,
+            ),
+            name="langfuse-viewer-process",
             daemon=True,
         )
-        self._thread.start()
+        self._process.start()
+        # Parent shutdown must never wait for a multiprocessing feeder thread.
+        self._queue.cancel_join_thread()
+        self._status_queue.cancel_join_thread()
 
     def enqueue(self, event: Mapping[str, object]) -> bool:
         with self._lock:
-            if self.disabled or self._stop_requested.is_set():
-                self.dropped_event_count += 1
-                return False
             try:
+                self._drain_status()
+                if self.disabled or self._closed or not self._process.is_alive():
+                    self.dropped_event_count += 1
+                    if not self.disabled and not self._closed:
+                        self._disable("viewer_process_unavailable")
+                    return False
+                if len(json.dumps(event, sort_keys=True, default=str).encode()) > _REMOTE_MAX_BYTES:
+                    self.dropped_event_count += 1
+                    self._disable("viewer_projection_oversized")
+                    return False
                 self._queue.put_nowait(dict(event))
             except queue.Full:
                 self.dropped_event_count += 1
-                self.disabled = True
-                self.errors.append("viewer_queue_full")
+                self._disable("viewer_queue_full")
+                return False
+            except (BrokenPipeError, EOFError, OSError, ValueError) as exc:
+                self.dropped_event_count += 1
+                self._disable(f"viewer_ipc_unavailable:{type(exc).__name__}")
+                return False
+            except Exception as exc:
+                self.dropped_event_count += 1
+                self._disable(f"viewer_enqueue_failed:{type(exc).__name__}")
                 return False
         return True
+
+    def drop(self, reason: str) -> None:
+        """Record one parent-side projection/offer failure without raising."""
+
+        with self._lock:
+            self.dropped_event_count += 1
+            self._disable(reason)
 
     def close(self, *, timeout_s: float = 5.0) -> bool:
         if timeout_s < 0:
             raise ValueError("viewer close timeout cannot be negative")
-        self._stop_requested.set()
-        self._thread.join(timeout_s)
-        if self._thread.is_alive():
+        with self._lock:
+            if self._closed:
+                self._drain_status()
+                return not self.disabled
+            self._closed = True
+            try:
+                self._queue.put_nowait(None)
+            except Exception as exc:
+                self._disable(f"viewer_stop_unavailable:{type(exc).__name__}")
+        try:
+            self._process.join(timeout_s)
+            alive = self._process.is_alive()
+        except Exception as exc:
+            with self._lock:
+                self._disable(f"viewer_join_unavailable:{type(exc).__name__}")
+            alive = False
+        if alive:
+            try:
+                self._process.terminate()
+                self._process.join(min(0.2, timeout_s))
+            except Exception as exc:
+                with self._lock:
+                    self._disable(f"viewer_terminate_unavailable:{type(exc).__name__}")
             with self._lock:
                 self.disabled = True
                 self.flush_timeout = True
                 if "viewer_flush_timeout" not in self.errors:
                     self.errors.append("viewer_flush_timeout")
+            self._close_queues()
             return False
+        with self._lock:
+            self._drain_status()
+            try:
+                if self._process.exitcode not in {0, None} and not self.disabled:
+                    self._disable("viewer_process_failed")
+            except Exception as exc:
+                self._disable(f"viewer_exit_status_unavailable:{type(exc).__name__}")
+        self._close_queues()
         return not self.disabled
 
-    def _run(self) -> None:
-        try:
-            client = self.client_factory()
-            sink = LangfuseOtelSink(
-                client,
-                session_id=self.session_id,
-                benchmark_managed=self.benchmark_managed,
-            )
-        except Exception as exc:
-            self._disable(f"viewer_init:{type(exc).__name__}")
-            return
+    def _drain_status(self) -> None:
         while True:
-            if self.disabled:
-                return
-            if self._stop_requested.is_set() and self._queue.empty():
-                break
             try:
-                event = self._queue.get(timeout=0.05)
+                kind, detail = self._status_queue.get_nowait()
             except queue.Empty:
-                continue
-            try:
-                sink.record(event)
-            except Exception as exc:
-                self._disable(f"viewer_record:{type(exc).__name__}")
                 return
-            finally:
-                self._queue.task_done()
-        try:
-            sink.flush()
-        except Exception as exc:
-            self._disable(f"viewer_flush:{type(exc).__name__}")
+            except (EOFError, OSError, ValueError):
+                return
+            if kind == "error":
+                self._disable(str(detail))
 
     def _disable(self, reason: str) -> None:
-        with self._lock:
-            self.disabled = True
+        self.disabled = True
+        if reason not in self.errors:
             self.errors.append(reason)
+
+    def _close_queues(self) -> None:
+        for channel in (self._queue, self._status_queue):
+            try:
+                channel.close()
+            except (OSError, ValueError):
+                pass
+
+
+def _run_langfuse_viewer(
+    event_queue: Any,
+    status_queue: Any,
+    client_factory: Callable[[], Any],
+    session_id: str,
+    benchmark_managed: bool,
+) -> None:
+    """Child-only SDK lifecycle; the parent owns only bounded IPC."""
+
+    def report(reason: str) -> None:
+        try:
+            status_queue.put_nowait(("error", reason))
+        except (queue.Full, BrokenPipeError, EOFError, OSError, ValueError):
+            pass
+
+    try:
+        client = client_factory()
+        sink = LangfuseOtelSink(
+            client,
+            session_id=session_id,
+            benchmark_managed=benchmark_managed,
+        )
+    except Exception as exc:
+        report(f"viewer_init:{type(exc).__name__}")
+        return
+    while True:
+        try:
+            event = event_queue.get()
+        except (EOFError, OSError, ValueError):
+            return
+        if event is None:
+            break
+        try:
+            sink.record(event)
+        except Exception as exc:
+            report(f"viewer_record:{type(exc).__name__}")
+            return
+    try:
+        sink.flush()
+    except Exception as exc:
+        report(f"viewer_flush:{type(exc).__name__}")
+
+
+def _viewer_start_method(client_factory: Callable[[], Any]) -> str:
+    """Use clean-process isolation in product; local test doubles require fork."""
+
+    qualified_name = str(getattr(client_factory, "__qualname__", ""))
+    return "fork" if "<locals>" in qualified_name else "spawn"
 
 
 @dataclass
 class QueuedViewerRunTraceRecorder(RunTraceRecorder):
     """Persist JSONL first, then enqueue without invoking a viewer SDK."""
 
-    viewer_worker: LangfuseViewerWorker | None = None
+    viewer_process: LangfuseViewerProcess | None = None
 
     def _emit(self, event_type: str, **payload: object) -> None:
         error_count = len(self.errors)
         sequence = self._sequence
         super()._emit(event_type, **payload)
-        if (
-            self.viewer_worker is None
-            or self._sequence == sequence
-            or len(self.errors) != error_count
-        ):
+        if self.viewer_process is None or self._sequence == sequence or len(self.errors) != error_count:
             return
-        self.viewer_worker.enqueue(self.events[-1])
+        try:
+            self.viewer_process.enqueue(_langfuse_ipc_projection(self.events[-1]))
+        except Exception as exc:
+            self.errors.append(f"viewer_offer:{type(exc).__name__}")
+            drop = getattr(self.viewer_process, "drop", None)
+            if callable(drop):
+                drop(f"viewer_offer_failed:{type(exc).__name__}")
 
     @property
     def viewer_errors(self) -> list[str]:
-        return self.viewer_worker.errors if self.viewer_worker is not None else []
+        if self.viewer_process is None:
+            return []
+        self.viewer_process._drain_status()
+        return self.viewer_process.errors
 
     @property
     def viewer_dropped_event_count(self) -> int:
-        return self.viewer_worker.dropped_event_count if self.viewer_worker is not None else 0
+        return self.viewer_process.dropped_event_count if self.viewer_process is not None else 0
 
     @property
     def viewer_disabled(self) -> bool:
-        return bool(self.viewer_worker is not None and self.viewer_worker.disabled)
+        if self.viewer_process is None:
+            return False
+        self.viewer_process._drain_status()
+        return self.viewer_process.disabled
 
     def flush_viewer(self, *, timeout_s: float = 5.0) -> None:
-        if self.viewer_worker is None:
+        if self.viewer_process is None:
             return
-        completed = self.viewer_worker.close(timeout_s=timeout_s)
-        if not completed:
-            RunTraceRecorder._emit(
-                self,
-                "viewer_status",
-                viewer_disabled=True,
-                viewer_flush_timeout=self.viewer_worker.flush_timeout,
-                viewer_dropped_event_count=self.viewer_worker.dropped_event_count,
-                viewer_errors=tuple(self.viewer_worker.errors),
-            )
+        try:
+            completed = self.viewer_process.close(timeout_s=timeout_s)
+        except Exception as exc:
+            self.viewer_process.drop(f"viewer_close_failed:{type(exc).__name__}")
+            completed = False
+        RunTraceRecorder._emit(
+            self,
+            "viewer_status",
+            viewer_disabled=not completed,
+            viewer_flush_timeout=self.viewer_process.flush_timeout,
+            viewer_dropped_event_count=self.viewer_process.dropped_event_count,
+            viewer_errors=tuple(self.viewer_process.errors),
+        )
 
 
 def trace_recorder_from_environment(
@@ -983,8 +1118,7 @@ def trace_recorder_from_environment(
     if langfuse_enabled and local_directory is None:
         raise ValueError("Langfuse viewing requires a local JSONL trace")
     if langfuse_enabled and not all(
-        environment.get(name, "").strip()
-        for name in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY")
+        environment.get(name, "").strip() for name in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY")
     ):
         raise ValueError("Langfuse viewing requires configured SDK credentials")
     if local_directory is None:
@@ -996,7 +1130,7 @@ def trace_recorder_from_environment(
         return RunTraceRecorder(**recorder_arguments)
     return QueuedViewerRunTraceRecorder(
         **recorder_arguments,
-        viewer_worker=LangfuseViewerWorker(
+        viewer_process=LangfuseViewerProcess(
             _langfuse_client_from_environment,
             session_id=session_id,
             benchmark_managed=benchmark_managed,
@@ -1062,11 +1196,13 @@ def _langfuse_model_metadata(event: Mapping[str, object]) -> Mapping[str, object
 def _public_task_projection(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping):
         return {}
-    return _bounded_remote_projection({
-        key: _external_projection(value[key])
-        for key in ("task_id", "request_id", "instruction", "objective", "goal")
-        if key in value
-    })
+    return _bounded_remote_projection(
+        {
+            key: _external_projection(value[key])
+            for key in ("task_id", "request_id", "instruction", "objective", "goal")
+            if key in value
+        }
+    )
 
 
 def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]:
@@ -1076,56 +1212,84 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
         "sequence": event.get("sequence"),
     }
     allowed = {
-        "goal_compiler_completed": (
-            "diagnostic",
-        ),
+        "goal_compiler_completed": ("diagnostic",),
         "model_turn": (
-            "context_id", "outcome", "decision", "policy_failure", "model_metadata",
-            "visible_action_count", "exception",
+            "context_id",
+            "outcome",
+            "decision",
+            "policy_failure",
+            "model_metadata",
+            "visible_action_count",
+            "exception",
         ),
         "mission_role_invocation": (
-            "role", "call_index", "trigger_kind", "execution_mode", "subtask_id",
-            "mission_version", "assessment", "route", "input_tokens", "output_tokens",
-            "latency_ms", "provider_attempts", "result", "failure",
+            "role",
+            "call_index",
+            "trigger_kind",
+            "execution_mode",
+            "milestone_id",
+            "mission_version",
+            "assessment",
+            "route",
+            "input_tokens",
+            "output_tokens",
+            "latency_ms",
+            "provider_attempts",
+            "result",
+            "failure",
         ),
         "step_completed": ("step", "lineage", "result"),
         "observation": ("observation_id", "observation"),
         "native_evaluator_returned": (
-            "evaluation_status", "outcome_kind", "outcome_code", "evidence_refs",
-            "observation_id", "checkpoint_id",
+            "evaluation_status",
+            "outcome_kind",
+            "outcome_code",
+            "evidence_refs",
+            "observation_id",
+            "checkpoint_id",
         ),
         "official_outcome_persistence": (
-            "checkpoint_id", "persistence_status", "persistence_error",
+            "checkpoint_id",
+            "persistence_status",
+            "persistence_error",
         ),
         "primary_result_available": (
-            "case_id", "checkpoint_id", "status", "step_count",
+            "case_id",
+            "checkpoint_id",
+            "status",
+            "step_count",
         ),
         "benchmark_lifecycle_phase": (
-            "phase", "primary_result_available", "primary_snapshot_available",
+            "phase",
+            "primary_result_available",
+            "primary_snapshot_available",
         ),
         "benchmark_case_started": ("case_id", "description", "timeout_s"),
         "benchmark_case_finished": ("case_id", "status"),
         "case_lifecycle_phase": ("phase",),
         "finalization_protocol": (
-            "stop_send_count", "post_stop_capture_count", "native_evaluator_count",
+            "stop_send_count",
+            "post_stop_capture_count",
+            "native_evaluator_count",
             "dispatch_status",
         ),
         "run_finished": ("status", "step_count", "observation_count", "execution_count"),
         "run_error": ("exception_class", "status"),
         "benchmark_watchdog": ("code", "cancel_grace_exceeded"),
     }.get(event_type, ())
-    projected = {
-        key: _external_projection(event.get(key))
-        for key in allowed
-    }
+    projected = {key: _external_projection(event.get(key)) for key in allowed}
     if event_type == "goal_compiler_completed":
         diagnostic = projected.get("diagnostic")
         if isinstance(diagnostic, Mapping):
             projected["diagnostic"] = {
                 key: diagnostic.get(key)
                 for key in (
-                    "task_revision", "trigger", "final_disposition",
-                    "accepted_plan_version", "reason", "provider_attempt_count",
+                    "task_revision",
+                    "trigger",
+                    "final_disposition",
+                    "accepted_plan_version",
+                    "reason",
+                    "provider_attempt_count",
                 )
             }
     elif event_type == "observation":
@@ -1136,37 +1300,108 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
             projected["result"] = {
                 key: result.get(key)
                 for key in (
-                    "status_before", "status_after", "feedback", "yield_reason",
-                    "decision", "action_outcome", "task_evaluation", "runtime_failure",
+                    "status_before",
+                    "status_after",
+                    "feedback",
+                    "yield_reason",
+                    "decision",
+                    "action_outcome",
+                    "task_evaluation",
+                    "runtime_failure",
                 )
                 if key in result
             }
     if event_type in {"model_turn", "mission_role_invocation"}:
-        active_subtask = _public_active_subtask(event)
-        if active_subtask:
-            projected["active_subtask"] = active_subtask
+        active_milestone = _public_active_milestone(event)
+        if active_milestone:
+            projected["active_milestone"] = active_milestone
     return _bounded_remote_projection({**common, **projected})
 
 
-def _public_active_subtask(event: Mapping[str, object]) -> dict[str, object]:
+def _langfuse_ipc_projection(event: Mapping[str, object]) -> dict[str, object]:
+    """Build the complete bounded viewer payload before crossing process IPC."""
+
+    projected: dict[str, object] = {
+        **_langfuse_event_projection(event),
+        "run_id": str(event.get("run_id", ""))[:240],
+    }
+    if event.get("event") in {"run_started", "run_start_failed"}:
+        projected["task"] = _public_task_projection(event.get("task"))
+    metadata = _langfuse_model_metadata(event)
+    if metadata:
+        projected["model_metadata"] = _bounded_remote_projection(dict(metadata))
+    attempts = tuple(_langfuse_attempt_projection(item) for item in _langfuse_generation_attempts(event)[:4])
+    if attempts:
+        projected["generation_attempts"] = attempts
+    bounded = _bounded_remote_projection(projected)
+    if bounded.get("projection_truncated") is True and attempts:
+        projected["generation_attempts"] = tuple(
+            _langfuse_attempt_projection(item, include_transcript=False)
+            for item in _langfuse_generation_attempts(event)[:4]
+        )
+        bounded = _bounded_remote_projection(projected)
+    return bounded
+
+
+def _langfuse_attempt_projection(
+    attempt: Mapping[str, object],
+    *,
+    include_transcript: bool = True,
+) -> dict[str, object]:
+    projected = {
+        key: _external_projection(attempt.get(key))
+        for key in (
+            "attempt",
+            "phase",
+            "trigger",
+            "status",
+            "finish_reason",
+            "thinking_requested",
+            "thinking_effective",
+            "reasoning_tokens",
+            "final_content_tokens",
+            "final_tool_call_present",
+            "max_output_tokens",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "schema_version",
+            "latency_ms",
+        )
+    }
+    transcript = attempt.get("transcript")
+    if include_transcript and isinstance(transcript, Mapping):
+        projected["transcript"] = {
+            "llm.input_messages": _external_projection(transcript.get("llm.input_messages", ())),
+            "llm.output_messages": _external_projection(transcript.get("llm.output_messages", ())),
+        }
+    return projected
+
+
+def _public_active_milestone(event: Mapping[str, object]) -> dict[str, object]:
     candidates: list[object] = []
     context = event.get("agent_context")
     if isinstance(context, Mapping):
         task = context.get("task")
         if isinstance(task, Mapping):
-            candidates.append(task.get("active_subtask"))
+            candidates.append(task.get("active_milestone"))
     role_request = event.get("role_request")
     if isinstance(role_request, Mapping):
-        candidates.append(role_request.get("active_subtask"))
-    subtask = next((item for item in candidates if isinstance(item, Mapping)), None)
-    if not isinstance(subtask, Mapping):
+        candidates.append(role_request.get("active_milestone"))
+    milestone = next((item for item in candidates if isinstance(item, Mapping)), None)
+    if not isinstance(milestone, Mapping):
         return {}
     return {
-        key: _external_projection(subtask[key])
+        key: _external_projection(milestone[key])
         for key in (
-            "objective", "done_when", "outcome_kind", "constraints", "required_evidence",
+            "id",
+            "outcome",
+            "done_when",
+            "required_evidence",
+            "depends_on",
+            "final",
         )
-        if key in subtask
+        if key in milestone
     }
 
 
@@ -1213,15 +1448,15 @@ def model_turn_payload(
         "model_invocation": _json_value(invocation, None),
         "exception": exception,
         "decision": _json_value(outcome, None),
-        "outcome": type(outcome).__name__ if not exception else "exception",
+        "outcome": (getattr(getattr(outcome, "kind", None), "value", "") or type(outcome).__name__)
+        if not exception
+        else "exception",
     }
     context_id = str(payload["context_id"])
     payload["private_model_capture"] = {
         "context_id": context_id,
         "policy_request_id": (
-            "model-request:" + hashlib.sha256(context_id.encode()).hexdigest()[:24]
-            if context_id
-            else ""
+            "model-request:" + hashlib.sha256(context_id.encode()).hexdigest()[:24] if context_id else ""
         ),
     }
     selected_grounding = _selected_grounding(context, outcome)
@@ -1233,9 +1468,7 @@ def model_turn_payload(
             "bytes": int(diagnostics.get("tool_catalog_bytes", 0)),
             "specs": _json_value(diagnostics.get("tool_catalog_specs", ()), None),
             "resolution_code": str(diagnostics.get("tool_resolution_code", "")),
-            "structured_output_violations": _json_value(
-                diagnostics.get("structured_output_violations", ()), None
-            ),
+            "structured_output_violations": _json_value(diagnostics.get("structured_output_violations", ()), None),
             "image_input_count": int(diagnostics.get("model_image_input_count", 0)),
             "model_call_count": int(diagnostics.get("policy_model_call_count", 0)),
             "request_breakdowns": _json_value(diagnostics.get("request_breakdowns", ()), None),
@@ -1283,8 +1516,9 @@ def _selected_grounding(context: object, decision: object) -> dict[str, object] 
 
 def _step_lineage(result: object) -> dict[str, object]:
     decision = getattr(result, "decision", None)
-    execution = getattr(result, "execution", None)
-    request = getattr(execution, "request", None)
+    batch = getattr(result, "execution_receipts", None)
+    receipts = tuple(getattr(batch, "receipts", ()))
+    request = getattr(receipts[-1], "request", None) if receipts else None
     return {
         "context_id": getattr(decision, "context_id", ""),
         "tool_call_id": getattr(decision, "tool_call_id", ""),
@@ -1304,6 +1538,7 @@ def _step_payload(result: object, directory: Path | None) -> dict[str, object]:
         for item in fields(result)
         if item.name not in {"before_world", "after_world"}
     }
+
 
 def _json_value(value: Any, directory: Path | None) -> Any:
     if isinstance(value, str) and value.startswith("data:image/") and ";base64," in value:
@@ -1341,11 +1576,15 @@ def _json_value(value: Any, directory: Path | None) -> Any:
     if isinstance(value, Path):
         return str(value)
     if is_dataclass(value) and not isinstance(value, type):
-        return {
+        serialized = {
             item.name: _json_value(getattr(value, item.name), directory)
             for item in fields(value)
             if item.metadata.get("serialize", True)
         }
+        semantic_kind = getattr(value, "kind", None)
+        if isinstance(semantic_kind, Enum):
+            serialized["kind"] = semantic_kind.value
+        return serialized
     if isinstance(value, Mapping):
         return {str(key): _json_value(item, directory) for key, item in value.items()}
     if isinstance(value, (tuple, list, set, frozenset)):
@@ -1374,7 +1613,7 @@ _REMOTE_PUBLIC_ID_KEYS = frozenset(
         "observation_id",
         "request_id",
         "run_id",
-        "subtask_id",
+        "milestone_id",
         "task_id",
     }
 )
@@ -1394,10 +1633,7 @@ def _external_projection(value: object, *, _depth: int = 0) -> object:
             if not _is_remote_private_key(str(key))
         }
     if isinstance(value, (list, tuple)):
-        return [
-            _external_projection(item, _depth=_depth + 1)
-            for item in value[:_REMOTE_MAX_ITEMS]
-        ]
+        return [_external_projection(item, _depth=_depth + 1) for item in value[:_REMOTE_MAX_ITEMS]]
     if isinstance(value, str):
         if value.lstrip().casefold().startswith("data:"):
             return "[binary-content-omitted]"
@@ -1408,9 +1644,7 @@ def _external_projection(value: object, *, _depth: int = 0) -> object:
 def _is_remote_private_key(key: str) -> bool:
     normalized = key.casefold()
     compact = normalized.replace("_", "")
-    return normalized in _REMOTE_PRIVATE_KEYS or (
-        compact.endswith("id") and normalized not in _REMOTE_PUBLIC_ID_KEYS
-    )
+    return normalized in _REMOTE_PRIVATE_KEYS or (compact.endswith("id") and normalized not in _REMOTE_PUBLIC_ID_KEYS)
 
 
 def _bounded_remote_projection(value: Mapping[str, object]) -> dict[str, object]:

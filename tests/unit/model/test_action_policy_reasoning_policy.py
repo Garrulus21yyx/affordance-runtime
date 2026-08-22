@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from affordance_runtime.model.policy.grounded_tool_port_bridge import _semantic_choice
 from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyInvocationPhase,
     ActionPolicyInvocationTrigger,
     ActionPolicyReasoningPolicy,
 )
+from tests.support.legacy_compact_json_decision_port import _semantic_choice
 
 
 def _context(kind: str = "", signature: str = ""):

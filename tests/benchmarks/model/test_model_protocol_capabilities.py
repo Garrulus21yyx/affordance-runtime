@@ -26,13 +26,13 @@ from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkComposi
 from affordance_runtime.model.policy import (
     GROUNDED_TOOLS_PROTOCOL,
     ActionPolicyWireCapability,
-    CompactJsonDecisionPort,
     ModelBackedAgentPolicy,
 )
 from affordance_runtime.model.policy import factory as model_policy_factory
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.wire_capability import action_policy_wire_capability
 from affordance_runtime.model.providers.port import ModelConfig
+from tests.support.legacy_compact_json_decision_port import CompactJsonDecisionPort
 
 
 @dataclass
@@ -68,53 +68,47 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
     assert grounded.interaction_protocol == GROUNDED_TOOLS_PROTOCOL
     assert grounded.supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
     assert {item.value for item in grounded.supported_decisions} == {
-        "select_action", "request_evidence", "request_action_page", "ask_user",
-        "count_children", "wait", "abort", "yield_subtask",
+        "select_action",
+        "request_evidence",
+        "request_action_page",
+        "ask_user",
+        "count_children",
+        "wait",
+        "abort",
+        "yield_milestone",
     }
 
 
 def test_provider_profile_declares_wire_capability_without_model_id_branching() -> None:
     assert action_policy_wire_capability({"LLM_ACTIVE_PROFILE": "deepseek"}) is (
-        ActionPolicyWireCapability.JSON_SINGLE_COMMAND
+        ActionPolicyWireCapability.NATIVE_SINGLE_TOOL
     )
     assert action_policy_wire_capability({"LLM_ACTIVE_PROFILE": "zhipu"}) is (
         ActionPolicyWireCapability.NATIVE_SINGLE_TOOL
     )
-    assert action_policy_wire_capability({
-        "LLM_ACTIVE_PROFILE": "zhipu",
-        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
-    }) is ActionPolicyWireCapability.JSON_SINGLE_COMMAND
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
-        action_policy_wire_capability({
-            "LLM_ACTIVE_PROFILE": "deepseek",
-            "LLM_ACTION_POLICY_WIRE_CAPABILITY": "parallel_tools",
-        })
+        action_policy_wire_capability(
+            {
+                "LLM_ACTIVE_PROFILE": "zhipu",
+                "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+            }
+        )
+    with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
+        action_policy_wire_capability(
+            {
+                "LLM_ACTIVE_PROFILE": "deepseek",
+                "LLM_ACTION_POLICY_WIRE_CAPABILITY": "parallel_tools",
+            }
+        )
 
 
-def test_json_action_policy_owns_bounded_output_and_truncation_retry_config() -> None:
-    policy = model_policy_factory.model_policy_from_environment(
-        {
-            "LLM_ACTIVE_PROFILE": "deepseek",
-            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-            "LLM_ACTION_POLICY_MAX_TOKENS": "4096",
-            "LLM_ACTION_POLICY_REPRESENTATION_REPAIR_MAX_TOKENS": "512",
-        },
-        model_port=_Transport(provider="deepseek", supports_multimodal=False),
-        call_timeout_s=5,
-    )
-
-    assert policy.port.config.max_tokens == 1_024
-    assert policy.port.reasoning_policy.deliberate_max_tokens == 2_048
-    assert policy.port.context_binder.request_budget.max_output_tokens == 1_024
-    assert policy.port.context_binder.request_budget.admission_limit == 62_904
-    assert policy.port.reasoning_policy.repair_max_tokens == 512
-
-    with pytest.raises(ValueError, match="MAX_TOKENS"):
+def test_product_factory_rejects_deleted_json_action_policy() -> None:
+    with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
         model_policy_factory.model_policy_from_environment(
             {
                 "LLM_ACTIVE_PROFILE": "deepseek",
                 "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-                "LLM_ACTION_POLICY_MAX_TOKENS": "20000",
+                "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
             },
             model_port=_Transport(provider="deepseek", supports_multimodal=False),
             call_timeout_s=5,
@@ -125,14 +119,16 @@ def test_grounded_action_adapter_is_the_only_grounded_model_phase() -> None:
     assert "phase" not in {item.name for item in fields(CompactJsonDecisionPort)}
     factory_source = inspect.getsource(model_policy_factory)
     assert "cast(" not in factory_source
-    assert "CompactJsonDecisionPort(" in factory_source
+    assert "CompactJsonDecisionPort" not in factory_source
     assert "GroundedObjectiveAdapter" not in factory_source
 
 
 def test_model_policy_preserves_adapter_capabilities() -> None:
     adapter = CompactJsonDecisionPort(_Transport(), _config())
 
-    assert ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
+    assert (
+        ModelBackedAgentPolicy(adapter, call_timeout_s=2).supported_decisions == GROUNDED_ACTION_DECISION_CAPABILITIES
+    )
 
 
 def test_runtime_accepts_exactly_subsets_of_declared_capabilities() -> None:

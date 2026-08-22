@@ -8,13 +8,14 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
+from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
+from affordance_runtime.agent.budgets import ORDINARY_EPISODE_TURNS
 from affordance_runtime.agent.context.contracts import AgentTurnView, sanitize_history_value
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
-from affordance_runtime.model.policy.strict_json import validate_json_tree
-from affordance_runtime.task.contracts import TaskGoal, criterion_id
+from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
 
 _KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -29,19 +30,18 @@ class ExecutionMode(StrEnum):
     MISSION = "mission"
 
 
-class ManagerRoute(StrEnum):
-    EXECUTE_SUBTASK = "execute_subtask"
+class PlannerRoute(StrEnum):
+    ROADMAP = "roadmap"
     ASK_USER = "ask_user"
     BLOCKED = "blocked"
-    REQUEST_FINALIZATION = "request_finalization"
 
 
-class ManagerRequestMode(StrEnum):
-    INITIAL_PLAN = "initial_plan"
-    REVIEW_AND_ROUTE = "review_and_route"
+class PlannerRequestMode(StrEnum):
+    START = "start"
+    NEEDS_REPLAN = "needs_replan"
 
 
-class ManagerAssessment(StrEnum):
+class EvidenceAssessment(StrEnum):
     NOT_APPLICABLE = "not_applicable"
     SATISFIED = "satisfied"
     UNSATISFIED = "unsatisfied"
@@ -57,7 +57,7 @@ class EvidenceBoundaryRejectionClass(StrEnum):
 
 
 class SupervisorPhase(StrEnum):
-    MANAGER = "manager"
+    PLANNING = "planning"
     EXECUTING = "executing"
     AUDITING = "auditing"
     FINALIZING = "finalizing"
@@ -69,7 +69,7 @@ class MissionOutcome(StrEnum):
     RUNNING = "running"
     NEEDS_USER_INPUT = "needs_user_input"
     BLOCKED = "blocked"
-    MANAGER_FAILURE = "manager_failure"
+    PLANNER_FAILURE = "planner_failure"
     AUDITOR_FAILURE = "auditor_failure"
     AUDITOR_CONTEXT_CAPACITY = "auditor_context_capacity"
     AUDITOR_PROVIDER_FAILURE = "auditor_provider_failure"
@@ -81,7 +81,6 @@ class MissionOutcome(StrEnum):
     CANCELLED = "cancelled"
     TASK_COMPLETE = "task_complete"
     TASK_BLOCKED = "task_blocked"
-    STRATEGY_NOT_CHANGED = "strategy_not_changed"
     OPERATIONAL_FAILURE = "operational_failure"
     UNHANDLED_EPISODE_STATE = "unhandled_episode_state"
     ROUND_BUDGET_EXHAUSTED = "round_budget_exhausted"
@@ -92,6 +91,7 @@ class EpisodeMonitorEvent(StrEnum):
     NO_OBSERVED_CHANGE = "no_observed_change"
     REPEATED_ACTION = "repeated_action"
     OSCILLATION = "oscillation"
+    ROUTE_REGRESSION = "route_regression"
     FORMAL_CRITERION_CHANGED = "formal_criterion_changed"
     PROVIDER_FAILURE = "provider_failure"
     ENVIRONMENT_FAILURE = "environment_failure"
@@ -109,16 +109,15 @@ class RecoveryKind(StrEnum):
     EFFECT_STALL = "effect_stall"
     UNCERTAIN_EFFECT = "uncertain_effect"
     STATE_OSCILLATION = "state_oscillation"
+    ROUTE_REGRESSION = "route_regression"
     CONTROL_STALL = "control_stall"
     STRATEGY_STALL = "strategy_stall"
     CAPABILITY_GAP = "capability_gap"
     PROTOCOL_STALL = "protocol_stall"
-    SUBTASK_MISALIGNED = "subtask_misaligned"
+    MILESTONE_MISALIGNED = "milestone_misaligned"
 
 
-class SubtaskOutcomeKind(StrEnum):
-    STATE_CHANGE = "state_change"
-    EVIDENCE_PACKET = "evidence_packet"
+ORDINARY_EPISODE_TURN_BUDGET = ORDINARY_EPISODE_TURNS
 
 
 @dataclass(frozen=True)
@@ -137,7 +136,8 @@ class RecoverySignal:
     stable_signature: str
     observed_evidence: Mapping[str, object]
     attempted_modes: tuple[str, ...] = ()
-    prohibited_immediate_repeat: str = ""
+    prohibited_attempt_signature: PublicAttemptSignature | None = None
+    human_instruction: str = ""
     recovery_attempt: int = 1
 
     def __post_init__(self) -> None:
@@ -146,134 +146,135 @@ class RecoverySignal:
         _bounded_text(self.stable_signature, "recovery signature", limit=1_000)
         object.__setattr__(self, "observed_evidence", freeze_json(dict(self.observed_evidence)))
         object.__setattr__(self, "attempted_modes", _bounded_unique(self.attempted_modes, "attempted_modes"))
-        if self.prohibited_immediate_repeat:
-            _bounded_text(self.prohibited_immediate_repeat, "prohibited repeat", limit=1_000)
+        if self.prohibited_attempt_signature is not None and not isinstance(
+            self.prohibited_attempt_signature, PublicAttemptSignature
+        ):
+            raise TypeError("prohibited attempt signature must be typed")
+        if self.human_instruction:
+            _bounded_text(self.human_instruction, "recovery instruction", limit=1_000)
         if not 1 <= self.recovery_attempt <= 3:
             raise ValueError("recovery attempt is outside bounds")
 
 
 @dataclass(frozen=True)
-class SubtaskContract:
-    objective: str
+class Milestone:
+    id: str
+    outcome: str
     done_when: str
-    task_link: str
-    outcome_kind: SubtaskOutcomeKind = SubtaskOutcomeKind.STATE_CHANGE
-    constraints: tuple[str, ...] = ()
-    relevant_fact_keys: tuple[str, ...] = ()
     required_evidence: tuple[EvidenceRequirement, ...] = ()
-    episode_turn_budget: int = 15
-    related_audit_ids: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = ()
+    final: bool = False
 
     def __post_init__(self) -> None:
-        _bounded_text(self.objective, "subtask objective")
-        _bounded_text(self.done_when, "subtask done_when")
-        _bounded_text(self.task_link, "subtask task_link")
-        if not isinstance(self.outcome_kind, SubtaskOutcomeKind):
-            object.__setattr__(self, "outcome_kind", SubtaskOutcomeKind(self.outcome_kind))
-        object.__setattr__(self, "constraints", _bounded_unique(self.constraints, "constraints"))
-        object.__setattr__(self, "relevant_fact_keys", _keys(self.relevant_fact_keys, "relevant_fact_keys"))
+        _require_id(self.id, "milestone id")
+        _bounded_text(self.outcome, "milestone outcome")
+        _bounded_text(self.done_when, "milestone done_when")
         requirements = tuple(self.required_evidence)
         if any(not isinstance(item, EvidenceRequirement) for item in requirements):
-            raise TypeError("subtask required evidence must be typed")
-        if len(requirements) > _MAX_COLLECTION:
+            raise TypeError("milestone required evidence must be typed")
+        if len(requirements) > 16:
             raise ValueError("required_evidence exceeds bounded collection size")
         if len({item.key for item in requirements}) != len(requirements):
             raise ValueError("required evidence keys must be unique")
-        if self.outcome_kind is SubtaskOutcomeKind.EVIDENCE_PACKET and not requirements:
-            raise ValueError("evidence_packet requires at least one evidence requirement")
         object.__setattr__(self, "required_evidence", requirements)
-        object.__setattr__(self, "related_audit_ids", _ids(self.related_audit_ids, "related_audit_ids"))
-        if type(self.episode_turn_budget) is not int or not 1 <= self.episode_turn_budget <= 15:
-            raise ValueError("subtask episode budget must be within [1, 15]")
+        object.__setattr__(self, "depends_on", _ids(self.depends_on, "milestone dependencies"))
+        if self.id in self.depends_on:
+            raise ValueError("milestone cannot depend on itself")
+        if type(self.final) is not bool:
+            raise TypeError("milestone final flag must be boolean")
 
 
 @dataclass(frozen=True)
-class ManagerDecision:
-    assessment: ManagerAssessment
-    route: ManagerRoute
-    evidence_refs: tuple[str, ...] = ()
-    working_outcomes: tuple[WorkingOutcomeProposal, ...] = ()
-    working_facts: tuple[WorkingFactProposal, ...] = ()
-    invalidate_fact_keys: tuple[str, ...] = ()
-    subtask: SubtaskContract | None = None
-    question: str = ""
-    reason: str = ""
-    final_response: object | None = None
-    final_response_evidence_refs: tuple[str, ...] = ()
+class MilestoneRoadmap:
+    version: int
+    milestones: tuple[Milestone, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.assessment, ManagerAssessment):
-            raise TypeError("manager assessment must be typed")
-        if not isinstance(self.route, ManagerRoute):
-            raise TypeError("manager route must be typed")
-        object.__setattr__(self, "evidence_refs", _bounded_unique(self.evidence_refs, "evidence_refs"))
-        object.__setattr__(self, "working_outcomes", tuple(self.working_outcomes))
-        object.__setattr__(self, "working_facts", tuple(self.working_facts))
-        object.__setattr__(
-            self,
-            "invalidate_fact_keys",
-            _keys(self.invalidate_fact_keys, "invalidate_fact_keys"),
+        if type(self.version) is not int or self.version < 1:
+            raise ValueError("roadmap version must be positive")
+        milestones = tuple(self.milestones)
+        if not 1 <= len(milestones) <= 5 or any(not isinstance(item, Milestone) for item in milestones):
+            raise ValueError("roadmap requires one to five typed milestones")
+        ids = {item.id for item in milestones}
+        if len(ids) != len(milestones):
+            raise ValueError("roadmap milestone ids must be unique")
+        if any(dep not in ids for item in milestones for dep in item.depends_on):
+            raise ValueError("roadmap dependency is missing")
+        if sum(item.final for item in milestones) > 1:
+            raise ValueError("roadmap permits at most one final milestone")
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        by_id = {item.id: item for item in milestones}
+
+        def visit(milestone_id: str) -> None:
+            if milestone_id in visiting:
+                raise ValueError("roadmap dependencies must be acyclic")
+            if milestone_id in visited:
+                return
+            visiting.add(milestone_id)
+            for dependency in by_id[milestone_id].depends_on:
+                visit(dependency)
+            visiting.remove(milestone_id)
+            visited.add(milestone_id)
+
+        for milestone_id in by_id:
+            visit(milestone_id)
+        object.__setattr__(self, "milestones", milestones)
+
+    def select_ready(self, mission: MissionState) -> Milestone | None:
+        accepted = {
+            item.outcome_id
+            for item in mission.working_outcomes
+            if item.assessment is EvidenceAssessment.SATISFIED
+        }
+        return next(
+            (
+                item
+                for item in self.milestones
+                if item.id not in accepted and set(item.depends_on).issubset(accepted)
+            ),
+            None,
         )
-        if any(not isinstance(item, WorkingOutcomeProposal) for item in self.working_outcomes):
-            raise TypeError("manager working outcomes must be typed")
-        if any(not isinstance(item, WorkingFactProposal) for item in self.working_facts):
-            raise TypeError("manager working facts must be typed")
-        has_subtask = self.subtask is not None
-        if self.route is ManagerRoute.EXECUTE_SUBTASK:
-            if not has_subtask or self.question:
-                raise ValueError("execute_subtask requires exactly one SubtaskContract")
-        elif has_subtask:
-            raise ValueError("only execute_subtask can carry a SubtaskContract")
-        if self.route is ManagerRoute.ASK_USER:
-            _bounded_text(self.question, "manager question", limit=1_000)
+
+
+@dataclass(frozen=True)
+class PlannerDecision:
+    route: PlannerRoute
+    roadmap: MilestoneRoadmap | None = None
+    question: str = ""
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.route, PlannerRoute):
+            raise TypeError("planner route must be typed")
+        if self.route is PlannerRoute.ROADMAP:
+            if self.roadmap is None or self.question:
+                raise ValueError("roadmap route requires exactly one MilestoneRoadmap")
+        elif self.roadmap is not None:
+            raise ValueError("only roadmap route can carry a roadmap")
+        if self.route is PlannerRoute.ASK_USER:
+            _bounded_text(self.question, "planner question", limit=1_000)
         elif self.question:
             raise ValueError("only ask_user can carry a question")
         if self.reason:
-            _bounded_text(self.reason, "manager reason")
-        object.__setattr__(
-            self,
-            "final_response_evidence_refs",
-            _bounded_unique(
-                self.final_response_evidence_refs,
-                "final_response_evidence_refs",
-            ),
-        )
-        if self.route is ManagerRoute.REQUEST_FINALIZATION:
-            if self.final_response is None:
-                raise ValueError("request_finalization requires a complete final_response")
-            validate_json_tree(self.final_response)
-            frozen_response = freeze_json(self.final_response)
-            if len(str(frozen_response).encode("utf-8")) > 8_000:
-                raise ValueError("final_response exceeds its bounded JSON size")
-            object.__setattr__(self, "final_response", frozen_response)
-        elif self.final_response is not None or self.final_response_evidence_refs:
-            raise ValueError("only request_finalization can carry final response fields")
-
-    def state_proposal(self, base_mission_version: int) -> WorkingStateProposal | None:
-        if not (self.working_outcomes or self.working_facts or self.invalidate_fact_keys):
-            return None
-        return WorkingStateProposal(
-            self.assessment,
-            base_mission_version,
-            self.working_outcomes,
-            self.working_facts,
-            self.invalidate_fact_keys,
-        )
+            _bounded_text(self.reason, "planner reason")
 
 
 @dataclass(frozen=True)
 class AcceptedWorkingOutcome:
     outcome_id: str
-    assessment: ManagerAssessment
+    assessment: EvidenceAssessment
     evidence_refs: tuple[str, ...]
     summary: str
     evidence_records: tuple[EvidenceRecord, ...] = field(default=(), repr=False)
 
     def __post_init__(self) -> None:
         _require_id(self.outcome_id, "outcome_id")
-        if self.assessment not in {ManagerAssessment.SATISFIED, ManagerAssessment.UNSATISFIED}:
+        if self.assessment not in {EvidenceAssessment.SATISFIED, EvidenceAssessment.UNSATISFIED}:
             raise ValueError("MissionState stores only resolved working outcomes")
         object.__setattr__(self, "evidence_refs", _bounded_unique(self.evidence_refs, "evidence_refs"))
+        if self.assessment is EvidenceAssessment.SATISFIED and not self.evidence_refs:
+            raise ValueError("satisfied MissionState outcome requires evidence refs")
         _bounded_text(self.summary, "outcome summary")
         object.__setattr__(self, "evidence_records", tuple(self.evidence_records))
         if any(not isinstance(item, EvidenceRecord) for item in self.evidence_records):
@@ -329,11 +330,7 @@ class MissionState:
 
     def carry_working_facts(self, relevant_keys: tuple[str, ...] = ()) -> tuple[WorkingFact, ...]:
         selected = set(_keys(relevant_keys, "relevant_fact_keys"))
-        return tuple(
-            item.as_working_fact()
-            for item in self.accepted_facts
-            if item.key in selected
-        )
+        return tuple(item.as_working_fact() for item in self.accepted_facts if item.key in selected)
 
     def finalization_working_facts(self) -> tuple[WorkingFact, ...]:
         facts = [item.as_working_fact() for item in self.accepted_facts]
@@ -352,8 +349,9 @@ class MissionState:
 
 @dataclass(frozen=True)
 class SupervisorState:
-    phase: SupervisorPhase = SupervisorPhase.MANAGER
-    active_subtask: SubtaskContract | None = None
+    phase: SupervisorPhase = SupervisorPhase.PLANNING
+    active_milestone: Milestone | None = None
+    roadmap: MilestoneRoadmap | None = None
     last_typed_episode_exit: str = ""
     last_ref: str = ""
     mission_round_budget: int = 8
@@ -363,8 +361,10 @@ class SupervisorState:
     def __post_init__(self) -> None:
         if not isinstance(self.phase, SupervisorPhase):
             raise TypeError("supervisor phase must be typed")
-        if self.active_subtask is not None and not isinstance(self.active_subtask, SubtaskContract):
-            raise TypeError("active subtask must be typed")
+        if self.active_milestone is not None and not isinstance(self.active_milestone, Milestone):
+            raise TypeError("active milestone must be typed")
+        if self.roadmap is not None and not isinstance(self.roadmap, MilestoneRoadmap):
+            raise TypeError("supervisor roadmap must be typed")
         if not 0 <= self.mission_round_budget <= 100:
             raise ValueError("mission round budget is outside bounds")
         for value in (self.last_typed_episode_exit, self.last_ref, self.opened_environment_ref):
@@ -376,7 +376,7 @@ class SupervisorState:
 
 @dataclass(frozen=True)
 class AuditGuidance:
-    """Bounded Auditor advice for one immediately following Manager decision."""
+    """Bounded Auditor advice for one immediately following deterministic UNKNOWN result."""
 
     missing_evidence: tuple[str, ...] = ()
     recovery_hint: str = ""
@@ -394,12 +394,12 @@ class AuditGuidance:
 
 
 @dataclass(frozen=True)
-class ManagerRecoveryView:
+class PlannerRecoveryView:
     """Non-authoritative, one-shot recovery context owned by Supervisor routing."""
 
     exit_kind: str
     world_changed: bool
-    prior_subtask: SubtaskContract
+    prior_milestone: Milestone
     recovery_signal: RecoverySignal | None = None
     attempted_modes: tuple[str, ...] = ()
     audit_guidance: AuditGuidance | None = None
@@ -410,17 +410,17 @@ class ManagerRecoveryView:
         _bounded_text(self.exit_kind, "recovery exit kind", limit=200)
         if type(self.world_changed) is not bool:
             raise TypeError("recovery world_changed must be boolean")
-        if not isinstance(self.prior_subtask, SubtaskContract):
-            raise TypeError("recovery prior_subtask must be typed")
+        if not isinstance(self.prior_milestone, Milestone):
+            raise TypeError("recovery prior_milestone must be typed")
         if self.recovery_signal is not None and not isinstance(self.recovery_signal, RecoverySignal):
-            raise TypeError("manager recovery signal must be typed")
+            raise TypeError("planner recovery signal must be typed")
         object.__setattr__(
             self,
             "attempted_modes",
             _bounded_unique(self.attempted_modes, "attempted_modes"),
         )
         if self.audit_guidance is not None and not isinstance(self.audit_guidance, AuditGuidance):
-            raise TypeError("manager audit guidance must be typed")
+            raise TypeError("planner audit guidance must be typed")
         if self.outcome_proposal:
             _bounded_text(self.outcome_proposal, "outcome proposal")
         if self.working_proposal_feedback:
@@ -432,8 +432,33 @@ class ManagerRecoveryView:
 
 
 @dataclass(frozen=True)
+class FunctionalRegionSummary:
+    label: str
+    purpose: str
+    control_families: tuple[str, ...] = ()
+    coverage: str = "complete"
+
+    def __post_init__(self) -> None:
+        label = _ref_free_text(self.label)
+        if not label:
+            raise ValueError("functional region requires a label")
+        object.__setattr__(self, "label", label)
+        purpose = _ref_free_text(self.purpose)
+        if not purpose:
+            raise ValueError("functional region requires a purpose")
+        object.__setattr__(self, "purpose", purpose)
+        object.__setattr__(
+            self,
+            "control_families",
+            _ref_free_unique(self.control_families, "control_families"),
+        )
+        if self.coverage not in {"complete", "partial"}:
+            raise ValueError("functional region coverage is invalid")
+
+
+@dataclass(frozen=True)
 class MissionEnvironmentView:
-    """Bounded, ref-free projection of the fresh execution environment for Manager."""
+    """Bounded, ref-free projection of the fresh execution environment for Planner."""
 
     surface: str = "unknown"
     application: str = ""
@@ -446,6 +471,8 @@ class MissionEnvironmentView:
     available_capabilities: tuple[str, ...] = ()
     unavailable_capabilities: tuple[str, ...] = ()
     last_successful_transitions: tuple[str, ...] = ()
+    functional_regions: tuple[FunctionalRegionSummary, ...] = ()
+    world_observation_id: str = field(default="", repr=False, compare=False, metadata={"serialize": False})
 
     def __post_init__(self) -> None:
         surface = _ref_free_text(self.surface) or "unknown"
@@ -480,76 +507,48 @@ class MissionEnvironmentView:
             "last_successful_transitions",
             _ref_free_unique(self.last_successful_transitions, "last_successful_transitions")[-4:],
         )
+        regions = tuple(self.functional_regions)
+        if len(regions) > _MAX_COLLECTION or any(not isinstance(item, FunctionalRegionSummary) for item in regions):
+            raise ValueError("mission environment functional regions are invalid")
+        object.__setattr__(self, "functional_regions", regions)
+        if self.world_observation_id and len(self.world_observation_id) > 240:
+            raise ValueError("mission environment lineage is invalid")
 
 
 @dataclass(frozen=True)
-class ManagerRoleRequest:
-    mode: ManagerRequestMode
+class PlannerRoleRequest:
+    mode: PlannerRequestMode
     original_task: TaskGoal
     mission_state: MissionState
+    current_roadmap: MilestoneRoadmap | None = None
     last_typed_exit: str = ""
-    last_audit_or_failure_ref: str = ""
-    remaining_rounds: int = 0
-    recovery: ManagerRecoveryView | None = None
+    remaining_mission_budget: int = 0
+    recovery: PlannerRecoveryView | None = None
     environment: MissionEnvironmentView = field(default_factory=MissionEnvironmentView)
-    active_subtask: SubtaskContract | None = None
-    review_world: WorldObservation | None = None
-    evidence_bundle: EvidenceBundle | None = None
-    final_response_schema: Mapping[str, object] = field(default_factory=dict)
-    allowed_evidence_refs: tuple[str, ...] = ()
-    episode_working_facts: tuple[WorkingFact, ...] = ()
-    changed_evidence_refs: tuple[str, ...] = ()
+    last_milestone_id: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.mode, ManagerRequestMode):
-            raise TypeError("manager request mode must be typed")
-        if self.recovery is not None and not isinstance(self.recovery, ManagerRecoveryView):
-            raise TypeError("manager recovery view must be typed")
+        if not isinstance(self.mode, PlannerRequestMode):
+            raise TypeError("planner request mode must be typed")
+        if self.current_roadmap is not None and not isinstance(self.current_roadmap, MilestoneRoadmap):
+            raise TypeError("planner current roadmap must be typed")
+        if self.recovery is not None and not isinstance(self.recovery, PlannerRecoveryView):
+            raise TypeError("planner recovery view must be typed")
         if not isinstance(self.environment, MissionEnvironmentView):
-            raise TypeError("manager environment view must be typed")
-        object.__setattr__(self, "final_response_schema", freeze_json(self.final_response_schema))
-        object.__setattr__(
-            self,
-            "allowed_evidence_refs",
-            _bounded_evidence_refs(self.allowed_evidence_refs),
-        )
-        object.__setattr__(self, "episode_working_facts", tuple(self.episode_working_facts))
-        if any(not isinstance(item, WorkingFact) for item in self.episode_working_facts):
-            raise TypeError("manager episode working facts must be typed")
-        object.__setattr__(
-            self,
-            "changed_evidence_refs",
-            _bounded_evidence_refs(self.changed_evidence_refs),
-        )
-        review_fields = (self.active_subtask, self.review_world, self.evidence_bundle)
-        if self.mode is ManagerRequestMode.INITIAL_PLAN:
-            if (
-                any(item is not None for item in review_fields)
-                or self.recovery is not None
-                or self.final_response_schema
-                or self.allowed_evidence_refs
-                or self.episode_working_facts
-                or self.changed_evidence_refs
-            ):
-                raise ValueError("initial_plan cannot carry an episode review")
-        elif (
-            not all(item is not None for item in review_fields)
-            or self.recovery is None
-        ):
-            raise ValueError("review_and_route requires one complete fresh review bundle")
-        if self.review_world is not None and self.evidence_bundle is not None:
-            if self.review_world.observation_id != self.evidence_bundle.observation_id:
-                raise ValueError("manager review evidence must describe its fresh World")
-            if any(self.evidence_bundle.resolve(ref) is None for ref in self.allowed_evidence_refs):
-                raise ValueError("allowed ManagerReview evidence must belong to its bundle")
-            if any(
-                self.evidence_bundle.resolve(item.record.evidence_ref) != item.record
-                or item.record.evidence_ref not in self.evidence_bundle.pinned_evidence_refs
-                for item in self.episode_working_facts
-            ):
-                raise ValueError("ManagerReview working facts must retain pinned bundle lineage")
-            if any(self.evidence_bundle.resolve(ref) is None for ref in self.changed_evidence_refs):
-                raise ValueError("ManagerReview changed evidence must belong to its fresh bundle")
+            raise TypeError("planner environment view must be typed")
+        if not 0 <= self.remaining_mission_budget <= 100:
+            raise ValueError("remaining mission budget is outside bounds")
+        if self.mode is PlannerRequestMode.START:
+            if self.current_roadmap is not None or self.recovery is not None or self.last_milestone_id:
+                raise ValueError("start request cannot carry prior roadmap state")
+        elif self.current_roadmap is None:
+            raise ValueError("boundary planner requests require the current roadmap")
+        if self.mode is PlannerRequestMode.NEEDS_REPLAN and self.recovery is None:
+            raise ValueError("needs_replan requires typed recovery context")
+        if self.mode is not PlannerRequestMode.NEEDS_REPLAN and self.recovery is not None:
+            raise ValueError("only needs_replan can carry recovery context")
+        if self.last_milestone_id:
+            _require_id(self.last_milestone_id, "last milestone id")
 
 
 @dataclass(frozen=True)
@@ -571,19 +570,12 @@ class EvidenceBundle:
 
         index = WorldEvidenceIndex.from_observation(world)
         pinned = tuple(item.record for item in working_facts)
-        by_ref = {
-            item.evidence_ref: item
-            for item in (*index.records, *public_text_evidence_records(world), *pinned)
-        }
+        by_ref = {item.evidence_ref: item for item in (*index.records, *public_text_evidence_records(world), *pinned)}
         pinned_refs = {item.evidence_ref for item in pinned}
         all_records = tuple(sorted(by_ref.values(), key=lambda item: item.evidence_ref))
         records = (
             *sorted(pinned, key=lambda item: item.evidence_ref),
-            *(
-                item
-                for item in all_records
-                if item.evidence_ref not in pinned_refs
-            ),
+            *(item for item in all_records if item.evidence_ref not in pinned_refs),
         )[:_MAX_AUDIT_EVIDENCE_RECORDS]
         return cls(
             world.observation_id,
@@ -637,16 +629,15 @@ class AuditorTaskProjection:
     def from_authorities(
         cls,
         task: TaskGoal,
-        subtask: SubtaskContract,
+        milestone: Milestone,
     ) -> AuditorTaskProjection:
-        related = set(subtask.related_audit_ids)
-        outputs = {item.key for item in subtask.required_evidence}
+        outputs = {item.key for item in milestone.required_evidence}
         return cls(
             task.task_id,
             task.revision,
             task.instruction,
-            subtask.constraints,
-            tuple(item for item in task.success_criteria if criterion_id(item) in related),
+            task.constraints,
+            tuple(task.success_criteria),
             tuple(item for item in task.requested_outputs if item in outputs),
         )
 
@@ -671,45 +662,42 @@ class AuditorTaskProjection:
 @dataclass(frozen=True)
 class AuditorRoleRequest:
     task: AuditorTaskProjection
-    subtask: SubtaskContract
+    milestone: Milestone
     pre_mission_state: MissionState
     after_world: WorldObservation
     working_facts: tuple[WorkingFact, ...]
     yield_reason: str
     episode_history: tuple[AgentTurnView, ...]
     audit_bundle: EvidenceBundle
-    related_audit_ids: tuple[str, ...] = ()
 
     @classmethod
     def from_authorities(
         cls,
         original_task: TaskGoal,
-        subtask: SubtaskContract,
+        milestone: Milestone,
         pre_mission_state: MissionState,
         after_world: WorldObservation,
         working_facts: tuple[WorkingFact, ...],
         yield_reason: str,
         episode_history: tuple[AgentTurnView, ...],
         audit_bundle: EvidenceBundle,
-        related_audit_ids: tuple[str, ...] = (),
     ) -> AuditorRoleRequest:
         return cls(
-            AuditorTaskProjection.from_authorities(original_task, subtask),
-            subtask,
+            AuditorTaskProjection.from_authorities(original_task, milestone),
+            milestone,
             pre_mission_state,
             after_world,
             working_facts,
             yield_reason,
             episode_history,
             audit_bundle,
-            related_audit_ids,
         )
 
     def __post_init__(self) -> None:
         if not isinstance(self.task, AuditorTaskProjection):
             raise TypeError("auditor request requires a role-specific task projection")
-        if not isinstance(self.subtask, SubtaskContract):
-            raise TypeError("auditor request requires a typed subtask")
+        if not isinstance(self.milestone, Milestone):
+            raise TypeError("auditor request requires a typed milestone")
         if not isinstance(self.pre_mission_state, MissionState):
             raise TypeError("auditor request requires typed pre-MissionState")
         if not isinstance(self.after_world, WorldObservation):
@@ -732,27 +720,24 @@ class AuditorRoleRequest:
             for item in self.working_facts
         ):
             raise ValueError("Auditor working facts must retain pinned bundle lineage")
-        object.__setattr__(
-            self,
-            "related_audit_ids",
-            _ids(self.related_audit_ids, "related_audit_ids"),
-        )
 
 
 @dataclass(frozen=True)
 class AuditorDecision:
-    assessment: ManagerAssessment
+    assessment: EvidenceAssessment
     evidence_refs: tuple[str, ...] = ()
     reason: str = ""
 
     def __post_init__(self) -> None:
-        if self.assessment is ManagerAssessment.NOT_APPLICABLE:
+        if self.assessment is EvidenceAssessment.NOT_APPLICABLE:
             raise ValueError("Auditor must return an opinion or unknown")
         object.__setattr__(
             self,
             "evidence_refs",
             _bounded_unique(self.evidence_refs, "auditor evidence_refs"),
         )
+        if self.assessment is EvidenceAssessment.SATISFIED and not self.evidence_refs:
+            raise ValueError("satisfied Auditor decision requires evidence refs")
         if self.reason:
             _bounded_text(self.reason, "auditor reason")
 
@@ -760,13 +745,15 @@ class AuditorDecision:
 @dataclass(frozen=True)
 class WorkingOutcomeProposal:
     outcome_id: str
-    assessment: ManagerAssessment
+    assessment: EvidenceAssessment
     evidence_refs: tuple[str, ...]
     summary: str
 
     def __post_init__(self) -> None:
         _require_id(self.outcome_id, "outcome_id")
-        if self.assessment not in {ManagerAssessment.SATISFIED, ManagerAssessment.UNSATISFIED}:
+        if self.assessment is EvidenceAssessment.SATISFIED and not self.evidence_refs:
+            raise ValueError("satisfied working outcome requires evidence refs")
+        if self.assessment not in {EvidenceAssessment.SATISFIED, EvidenceAssessment.UNSATISFIED}:
             raise ValueError("working outcomes must use resolved assessments")
         object.__setattr__(self, "evidence_refs", _bounded_unique(self.evidence_refs, "evidence_refs"))
         _bounded_text(self.summary, "outcome proposal summary")
@@ -786,7 +773,7 @@ class WorkingFactProposal:
 
 @dataclass(frozen=True)
 class WorkingStateProposal:
-    assessment: ManagerAssessment
+    assessment: EvidenceAssessment
     base_mission_version: int
     working_outcomes: tuple[WorkingOutcomeProposal, ...] = ()
     promote_facts: tuple[WorkingFactProposal, ...] = ()
@@ -795,7 +782,7 @@ class WorkingStateProposal:
     recovery_hint: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.assessment, ManagerAssessment):
+        if not isinstance(self.assessment, EvidenceAssessment):
             raise TypeError("working-state assessment must be typed")
         if self.base_mission_version < 0:
             raise ValueError("working-state base version cannot be negative")
@@ -830,6 +817,23 @@ class EvidenceBoundaryResult:
 
 
 @dataclass(frozen=True)
+class MilestoneAdmission:
+    assessment: EvidenceAssessment
+    proposal: WorkingStateProposal | None = None
+    reason_code: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.assessment, EvidenceAssessment):
+            raise TypeError("milestone admission assessment must be typed")
+        if self.proposal is not None and not isinstance(self.proposal, WorkingStateProposal):
+            raise TypeError("milestone admission proposal must be typed")
+        if self.assessment is EvidenceAssessment.SATISFIED and self.proposal is None:
+            raise ValueError("satisfied milestone admission requires a proposal")
+        if self.reason_code:
+            _bounded_text(self.reason_code, "milestone admission reason", limit=200)
+
+
+@dataclass(frozen=True)
 class EpisodeMonitorTransition:
     events: tuple[EpisodeMonitorEvent, ...]
     recommendation: EpisodeMonitorRecommendation
@@ -846,16 +850,12 @@ class EpisodeMonitorTransition:
             raise TypeError("episode monitor recovery signal must be typed")
 
 
-class ManagerPort(Protocol):
-    async def decide(
-        self, request: ManagerRoleRequest
-    ) -> ModelInvocationResult[ManagerDecision]: ...
+class PlannerPort(Protocol):
+    async def plan(self, request: PlannerRoleRequest) -> ModelInvocationResult[PlannerDecision]: ...
 
 
 class AuditorPort(Protocol):
-    async def audit(
-        self, request: AuditorRoleRequest
-    ) -> ModelInvocationResult[AuditorDecision]: ...
+    async def audit(self, request: AuditorRoleRequest) -> ModelInvocationResult[AuditorDecision]: ...
 
 
 def _bounded_text(value: str, field_name: str, *, limit: int = _MAX_TEXT) -> None:
@@ -900,9 +900,7 @@ def _ref_free_text(value: str) -> str:
 
 def _ref_free_unique(values: tuple[str, ...], field_name: str) -> tuple[str, ...]:
     bounded = _bounded_unique(values, field_name)
-    sanitized = tuple(
-        dict.fromkeys(clean for item in bounded if (clean := _ref_free_text(item)))
-    )
+    sanitized = tuple(dict.fromkeys(clean for item in bounded if (clean := _ref_free_text(item))))
     return _bounded_unique(sanitized, field_name)
 
 

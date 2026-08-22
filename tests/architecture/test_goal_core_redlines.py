@@ -15,7 +15,8 @@ def test_phase_one_does_not_introduce_forbidden_goal_or_loop_owners() -> None:
 
     for forbidden in (
         "class TaskPlan",
-        "class Milestone",
+        "class MutableMilestone",
+        "class MilestoneStatus",
         "class GoalBinding",
         "class CandidateSet",
         "class ArgMin",
@@ -26,6 +27,7 @@ def test_phase_one_does_not_introduce_forbidden_goal_or_loop_owners() -> None:
         assert forbidden not in production
     assert production.count("class CoreAgentLoop") == 1
     assert production.count("class RunState") == 1
+    assert production.count("class Milestone:") == 1
 
 
 def test_goal_plan_owner_contains_no_benchmark_or_page_specialization() -> None:

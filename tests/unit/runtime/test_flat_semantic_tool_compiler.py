@@ -9,6 +9,7 @@ from hypothesis import strategies as st
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler, SelectorMode
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
@@ -101,6 +102,7 @@ def _catalog(tool) -> GroundedToolCatalog:
         _CONTEXT,
         "delivery:" + "d" * 64,
         DeliveryManifest("world:test", tuple(f"E{index}" for index in range(1, 65))),
+        WorldDeliveryIndex("world:test"),
         (RegisteredGroundedTool(tool.public_spec, tool),),
         1,
     )
@@ -128,9 +130,7 @@ def test_one_stable_tool_contains_all_current_targets() -> None:
 def test_unary_selector_schema_is_referentially_closed(count: int) -> None:
     tool = _compile(*(_candidate(index) for index in range(1, count + 1)))[0]
     catalog = _catalog(tool)
-    offered = tuple(
-        item.selector_values["target"] for item in tool.private_resolutions
-    )
+    offered = tuple(item.selector_values["target"] for item in tool.private_resolutions)
 
     assert tool.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
     assert len(set(offered)) == len(offered)

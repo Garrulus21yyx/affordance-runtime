@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import deque
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from affordance_runtime.agent.context.contracts import AgentTurnView, sanitize_history_value
 from affordance_runtime.agent.decisions import (
@@ -34,8 +35,6 @@ from affordance_runtime.mission.contracts import (
     RecoverySignal,
 )
 
-_WORLD_OSCILLATION_WINDOW = 4
-
 
 @dataclass(frozen=True)
 class EpisodeMonitorConfig:
@@ -44,12 +43,18 @@ class EpisodeMonitorConfig:
     repeated_failure_limit: int = 3
 
     def __post_init__(self) -> None:
-        if (
-            self.repeated_action_threshold < 1
-            or self.no_change_threshold < 1
-            or self.repeated_failure_limit < 1
-        ):
+        if self.repeated_action_threshold < 1 or self.no_change_threshold < 1 or self.repeated_failure_limit < 1:
             raise ValueError("episode monitor thresholds must be positive")
+
+
+@dataclass(frozen=True)
+class RouteSample:
+    page_fingerprint: str
+    full_world_fingerprint: str
+    task_progress_fingerprint: str
+    retained_evidence_fingerprint: str
+    working_fact_fingerprint: str
+    step_index: int
 
 
 @dataclass
@@ -58,6 +63,23 @@ class EpisodeMonitor:
     repeated_failure_key: str = ""
     repeated_failure_count: int = 0
     recovery_in_progress_key: str = ""
+    route_history: deque[RouteSample] = field(default_factory=lambda: deque(maxlen=64))
+    episode_entry_page_fingerprint: str = ""
+    route_recovery_page_fingerprint: str = ""
+    _result_evidence_tokens: set[str] = field(default_factory=set, repr=False)
+    _working_fact_tokens: set[str] = field(default_factory=set, repr=False)
+
+    def start_episode(self, world, task_evaluation, working_facts=()) -> None:
+        self.repeated_failure_key = ""
+        self.repeated_failure_count = 0
+        self.recovery_in_progress_key = ""
+        self.route_recovery_page_fingerprint = ""
+        self.route_history.clear()
+        self._result_evidence_tokens = set(_result_evidence_tokens(world))
+        self._working_fact_tokens = set(_working_fact_tokens(working_facts))
+        sample = self._route_sample(world, task_evaluation, 0)
+        self.episode_entry_page_fingerprint = sample.page_fingerprint
+        self.route_history.append(sample)
 
     def evaluate(
         self,
@@ -80,6 +102,31 @@ class EpisodeMonitor:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
         if result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
             events.append(EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED)
+        route_regression, route_progress = self._record_route_sample(result)
+        if route_progress:
+            self.route_recovery_page_fingerprint = ""
+        if route_regression:
+            events.append(EpisodeMonitorEvent.ROUTE_REGRESSION)
+            failure_key = _stable_key(
+                {
+                    "kind": "route_regression",
+                    "page": self.route_history[-1].page_fingerprint,
+                }
+            )
+            signal = _recovery_signal(
+                result,
+                events,
+                failure_key,
+                kind=RecoveryKind.ROUTE_REGRESSION,
+            )
+            repeated = self.route_recovery_page_fingerprint == self.route_history[-1].page_fingerprint
+            self.route_recovery_page_fingerprint = self.route_history[-1].page_fingerprint
+            return EpisodeMonitorTransition(
+                tuple(events),
+                EpisodeMonitorRecommendation.YIELD if repeated else EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.ROUTE_REGRESSION.value,
+                signal,
+            )
         failure_key = _repeated_failure_key(result, events)
         if failure_key:
             if failure_key == self.repeated_failure_key:
@@ -126,10 +173,7 @@ class EpisodeMonitor:
         action_failed_or_unchanged = _action_failed_or_unchanged(result, events)
         if isinstance(result.decision, SelectAction):
             current_key = _action_key(result)
-            previous = tuple(
-                _turn_key(item)
-                for item in recent_steps[-self.config.repeated_action_threshold :]
-            )
+            previous = tuple(_turn_key(item) for item in recent_steps[-self.config.repeated_action_threshold :])
             previous_semantic = tuple(
                 item.semantic_action for item in recent_steps[-self.config.repeated_action_threshold :]
             )
@@ -149,9 +193,10 @@ class EpisodeMonitor:
                 and EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events
             ):
                 events.append(EpisodeMonitorEvent.OSCILLATION)
-            if _returns_to_recent_world(recent_steps, fresh_world_fingerprint):
-                events.append(EpisodeMonitorEvent.OSCILLATION)
-        if _unchanged_streak(recent_steps) + int(EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events) >= self.config.no_change_threshold:
+        if (
+            _unchanged_streak(recent_steps) + int(EpisodeMonitorEvent.NO_OBSERVED_CHANGE in events)
+            >= self.config.no_change_threshold
+        ):
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
             events.append(EpisodeMonitorEvent.REPEATED_ACTION)
         if EpisodeMonitorEvent.OSCILLATION in events:
@@ -184,25 +229,83 @@ class EpisodeMonitor:
                 signal.kind.value,
                 signal,
             )
-        if (
-            not failure_key
-            and (
-                EpisodeMonitorEvent.STATE_CHANGED in events
-                or EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED in events
-                or (
-                    result.action_outcome is None
-                    and _world_digest(result.before_world) != _world_digest(result.after_world)
-                )
+        if not failure_key and (
+            EpisodeMonitorEvent.STATE_CHANGED in events
+            or EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED in events
+            or (
+                result.action_outcome is None
+                and _world_digest(result.before_world) != _world_digest(result.after_world)
             )
         ):
             self.recovery_in_progress_key = ""
         return EpisodeMonitorTransition(tuple(events), EpisodeMonitorRecommendation.CONTINUE)
 
+    def _record_route_sample(self, result: StepResult) -> tuple[bool, bool]:
+        if not self.route_history:
+            self.start_episode(result.before_world, result.task_evaluation)
+        self._result_evidence_tokens.update(_result_evidence_tokens(result.after_world))
+        fact = result.decision.working_fact if isinstance(result.decision, LocalToolResult) else None
+        if fact is not None:
+            self._working_fact_tokens.update(_working_fact_tokens((fact,)))
+        sample = self._route_sample(
+            result.after_world,
+            result.task_evaluation,
+            self.route_history[-1].step_index + 1,
+        )
+        prior_sample = self.route_history[-1]
+        progress_changed = any(
+            (
+                sample.task_progress_fingerprint != prior_sample.task_progress_fingerprint,
+                sample.retained_evidence_fingerprint != prior_sample.retained_evidence_fingerprint,
+                sample.working_fact_fingerprint != prior_sample.working_fact_fingerprint,
+            )
+        )
+        history = tuple(self.route_history)
+        prior_index = next(
+            (
+                index
+                for index in range(len(history) - 1, -1, -1)
+                if history[index].page_fingerprint == sample.page_fingerprint
+            ),
+            -1,
+        )
+        returned = prior_index >= 0 and any(
+            item.page_fingerprint != sample.page_fingerprint for item in history[prior_index + 1 :]
+        )
+        no_progress = bool(
+            returned
+            and all(
+                (
+                    sample.task_progress_fingerprint == history[prior_index].task_progress_fingerprint,
+                    sample.retained_evidence_fingerprint == history[prior_index].retained_evidence_fingerprint,
+                    sample.working_fact_fingerprint == history[prior_index].working_fact_fingerprint,
+                )
+            )
+        )
+        self.route_history.append(sample)
+        return no_progress, progress_changed
+
+    def _route_sample(self, world, evaluation, step_index: int) -> RouteSample:
+        from affordance_runtime.world.public_semantic_digest import (
+            public_page_semantic_digest,
+            public_world_semantic_digest,
+        )
+
+        return RouteSample(
+            public_page_semantic_digest(world),
+            public_world_semantic_digest(world),
+            _digest_value(_task_progress_digest(evaluation)),
+            _digest_value(tuple(sorted(self._result_evidence_tokens))),
+            _digest_value(tuple(sorted(self._working_fact_tokens))),
+            step_index,
+        )
+
 
 def _action_key(result: StepResult) -> str:
-    if result.execution is None:
-        return type(result.decision).__name__
-    intent = result.execution.request.intent
+    receipt = _last_receipt(result)
+    if receipt is None:
+        return getattr(getattr(result.decision, "kind", None), "value", "policy_failure")
+    intent = receipt.request.intent
     payload = {
         "action": intent.semantic_action,
         "target": intent.target_id,
@@ -213,9 +316,8 @@ def _action_key(result: StepResult) -> str:
 
 
 def _semantic_action(result: StepResult) -> str:
-    if result.execution is None:
-        return ""
-    return result.execution.request.intent.semantic_action
+    receipt = _last_receipt(result)
+    return receipt.request.intent.semantic_action if receipt is not None else ""
 
 
 def _action_failed_or_unchanged(result: StepResult, events: list[EpisodeMonitorEvent]) -> bool:
@@ -237,10 +339,7 @@ def _has_operational_progress(result: StepResult) -> bool:
         return False
     if action.local_postcondition is LocalPostconditionStatus.SATISFIED:
         return True
-    return (
-        action.observed_change is ObservedChange.CHANGED
-        and action.evidence_method is EvidenceMethod.STRUCTURAL
-    )
+    return action.observed_change is ObservedChange.CHANGED and action.evidence_method is EvidenceMethod.STRUCTURAL
 
 
 def _repeated_failure_key(
@@ -251,12 +350,7 @@ def _repeated_failure_key(
         return ""
     before_world = _world_digest(result.before_world)
     after_world = _world_digest(result.after_world)
-    if (
-        result.action_outcome is None
-        and before_world
-        and after_world
-        and before_world != after_world
-    ):
+    if result.action_outcome is None and before_world and after_world and before_world != after_world:
         return ""
     if isinstance(result.decision, PolicyFailure):
         return _stable_key(
@@ -280,15 +374,12 @@ def _repeated_failure_key(
                 "world": after_world,
             }
         )
-    if (
-        result.execution is not None
-        and result.execution.result.dispatch_status is DispatchStatus.NOT_SENT
-        and result.execution.result.error is not None
-    ):
+    terminal_failure = result.execution_receipts.terminal_failure if result.execution_receipts is not None else None
+    if terminal_failure is not None and terminal_failure.error is not None:
         return _stable_key(
             {
                 "kind": "action_not_sent",
-                "error": result.execution.result.error.value,
+                "error": terminal_failure.error.value,
                 "attempt": _public_attempt(result),
                 "task": result.task_evaluation.task_id,
                 "task_progress": _task_progress_digest(result.task_evaluation),
@@ -305,20 +396,22 @@ def _repeated_failure_key(
             }
         )
     if isinstance(result.decision, LocalToolResult):
-        return _stable_key({
-            "kind": "local_tool_result",
-            "world": after_world,
-            "tool": result.decision.tool_name,
-            "canonical_args": to_json_compatible(result.decision.arguments),
-            "result": to_json_compatible(result.decision.result),
-            "task_progress": _task_progress_digest(result.task_evaluation),
-        })
+        return _stable_key(
+            {
+                "kind": "local_tool_result",
+                "world": after_world,
+                "tool": result.decision.tool_name,
+                "canonical_args": to_json_compatible(result.decision.arguments),
+                "result": to_json_compatible(result.decision.result),
+                "task_progress": _task_progress_digest(result.task_evaluation),
+            }
+        )
     if isinstance(result.decision, ProtocolFeedback):
         return _stable_key(
             {
                 "kind": "protocol_feedback",
                 "world": after_world,
-                "failure": result.decision.kind.value,
+                "failure": result.decision.feedback_kind.value,
                 "call_count": result.decision.call_count,
                 "task_progress": _task_progress_digest(result.task_evaluation),
             }
@@ -392,15 +485,15 @@ def _task_progress_digest(evaluation: TaskEvaluation) -> object:
 
 
 def _public_attempt(result: StepResult) -> dict[str, object]:
-    execution = result.execution
-    if execution is None:
+    receipt = _last_receipt(result)
+    if receipt is None:
         return {
             "operation": _semantic_action(result),
             "target": {},
             "destination": {},
             "parameters": {},
         }
-    intent = execution.request.intent
+    intent = receipt.request.intent
     return {
         "operation": intent.semantic_action,
         "target": _public_target(result, intent.target_id),
@@ -423,11 +516,7 @@ def _bounded_public_attempt(result: StepResult) -> dict[str, object]:
             "label": str(value.get("label", ""))[:160],
             **(
                 {"context": tuple(context)[-4:]}
-                if (
-                    isinstance(context, Sequence)
-                    and not isinstance(context, str | bytes)
-                    and context
-                )
+                if (isinstance(context, Sequence) and not isinstance(context, str | bytes) and context)
                 else {}
             ),
         }
@@ -437,11 +526,7 @@ def _bounded_public_attempt(result: StepResult) -> dict[str, object]:
         "operation": str(attempt.get("operation", ""))[:80],
         "target": bounded_target(attempt.get("target")),
         "destination": bounded_target(attempt.get("destination")),
-        "parameters": (
-            _bounded_argument_summary(parameters)
-            if isinstance(parameters, Mapping)
-            else {}
-        ),
+        "parameters": (_bounded_argument_summary(parameters) if isinstance(parameters, Mapping) else {}),
     }
 
 
@@ -507,6 +592,29 @@ def _world_digest(world) -> str:
         return str(getattr(world, "observation_id", ""))
 
 
+def _result_evidence_tokens(world) -> tuple[str, ...]:
+    from affordance_runtime.world.public_semantic_digest import public_result_evidence_semantics
+
+    return tuple(_canonical_json(item) for item in public_result_evidence_semantics(world))
+
+
+def _working_fact_tokens(working_facts) -> tuple[str, ...]:
+    return tuple(
+        _canonical_json(
+            {
+                "key": getattr(item, "key", ""),
+                "evidence_ref": getattr(getattr(item, "record", None), "evidence_ref", ""),
+                "value": getattr(getattr(item, "record", None), "value", None),
+            }
+        )
+        for item in working_facts
+    )
+
+
+def _digest_value(value: object) -> str:
+    return hashlib.sha256(_canonical_json(value).encode()).hexdigest()
+
+
 def _stable_key(payload: dict[str, object]) -> str:
     canonical = _canonical_json(payload)
     kind = str(payload.get("kind", "attempt"))[:80]
@@ -533,12 +641,31 @@ def _recovery_signal(
     selected_kind = kind or _recovery_kind(result, events)
     attempted = _attempted_modes(result, events)
     return RecoverySignal(
-        selected_kind,
-        failure_key,
-        _recovery_evidence(result, events, same_result_count),
-        attempted,
-        _prohibited_repeat(result),
-        1,
+        kind=selected_kind,
+        stable_signature=failure_key,
+        observed_evidence=_recovery_evidence(result, events, same_result_count),
+        attempted_modes=attempted,
+        prohibited_attempt_signature=_prohibited_attempt_signature(result),
+        human_instruction=_prohibited_repeat(result),
+        recovery_attempt=1,
+    )
+
+
+def _prohibited_attempt_signature(result: StepResult):
+    if isinstance(result.decision, LocalToolResult):
+        return result.decision.rejected_attempt_signature
+    receipt = _last_receipt(result)
+    if receipt is None:
+        return None
+    from affordance_runtime.agent.attempt_signature import public_attempt_signature
+
+    intent = receipt.request.intent
+    return public_attempt_signature(
+        intent.semantic_action,
+        intent.target_id,
+        intent.destination_id,
+        intent.parameters,
+        result.before_world,
     )
 
 
@@ -557,13 +684,15 @@ def _recovery_evidence(
     }
     action = result.action_outcome
     if action is not None:
-        base.update({
-            "observed_change": action.observed_change.value,
-            "local_postcondition": action.local_postcondition.value,
-            "evidence_method": action.evidence_method.value,
-            "operational_progress": False,
-            "new_structural_evidence": False,
-        })
+        base.update(
+            {
+                "observed_change": action.observed_change.value,
+                "local_postcondition": action.local_postcondition.value,
+                "evidence_method": action.evidence_method.value,
+                "operational_progress": False,
+                "new_structural_evidence": False,
+            }
+        )
     if not isinstance(result.decision, LocalToolResult):
         return base
     public_result = to_json_compatible(result.decision.result)
@@ -581,8 +710,7 @@ def _recovery_evidence(
         "result_kind": str(result_mapping.get("kind", type(public_result).__name__))[:80],
         "item_count": item_count,
         "coverage": str(result_mapping.get("coverage", ""))[:80],
-        "result_digest": "sha256:"
-        + hashlib.sha256(_canonical_json(public_result).encode()).hexdigest(),
+        "result_digest": "sha256:" + hashlib.sha256(_canonical_json(public_result).encode()).hexdigest(),
         "same_result_count": max(1, same_result_count),
     }
 
@@ -623,7 +751,7 @@ def _recovery_kind(result: StepResult, events: list[EpisodeMonitorEvent]) -> Rec
         or not _has_operational_progress(result)
     ):
         return RecoveryKind.EFFECT_STALL
-    if result.execution is not None and result.execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
+    if result.execution_receipts is not None and result.execution_receipts.sent_unknown_count:
         return RecoveryKind.UNCERTAIN_EFFECT
     return RecoveryKind.STRATEGY_STALL
 
@@ -633,13 +761,13 @@ def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> t
     if isinstance(result.decision, LocalToolResult):
         modes.append(result.decision.tool_name)
     elif isinstance(result.decision, ProtocolFeedback):
-        modes.append(result.decision.kind.value)
+        modes.append(result.decision.feedback_kind.value)
     elif isinstance(result.decision, RequestActionPage):
-        modes.append("find_actions")
+        modes.append("find_controls")
     elif isinstance(result.decision, SelectAction):
         modes.append(_semantic_action(result) or "select_action")
     else:
-        modes.append(type(result.decision).__name__)
+        modes.append(getattr(getattr(result.decision, "kind", None), "value", "policy_failure"))
     modes.extend(item.value for item in events)
     return tuple(dict.fromkeys(item for item in modes if item))
 
@@ -649,27 +777,21 @@ def _prohibited_repeat(result: StepResult) -> str:
         arguments = result.decision.arguments
         query = sanitize_history_value(str(arguments.get("query", "")))
         subject = str(query)[:120] if query else "the same semantic arguments"
-        return (
-            f"Do not repeat {result.decision.tool_name} on {subject} "
-            "without new evidence."
-        )
+        return f"Do not repeat {result.decision.tool_name} on {subject} without new evidence."
     if isinstance(result.decision, ProtocolFeedback):
         guidance = {
-            "multiple_tool_calls": (
-                "Return exactly one offered tool call; do not repeat a multi-call response."
-            ),
-            "output_truncated": (
-                "Return one compact final command; the prior response exhausted its output budget."
-            ),
+            "multiple_tool_calls": ("Return exactly one offered tool call; do not repeat a multi-call response."),
+            "output_truncated": ("Return one compact final command; the prior response exhausted its output budget."),
             "empty_final_content": "Return one non-empty final JSON command.",
             "json_invalid": "Return one valid JSON command matching the current schema.",
         }
-        return guidance[result.decision.kind.value]
+        return guidance[result.decision.feedback_kind.value]
     if isinstance(result.decision, RequestActionPage):
-        return "Do not repeat find_actions with the same query without new evidence."
+        return "Do not repeat find_controls with the same query without new evidence."
     if isinstance(result.decision, SelectAction):
         operation = _semantic_action(result) or "the same action"
-        target_id = result.execution.request.intent.target_id if result.execution is not None else ""
+        receipt = _last_receipt(result)
+        target_id = receipt.request.intent.target_id if receipt is not None else ""
         target = _public_target(result, target_id)
         label = str(target.get("label", "")).strip()[:120]
         suffix = f" on {label}" if label else ""
@@ -678,9 +800,17 @@ def _prohibited_repeat(result: StepResult) -> str:
 
 
 def _dispatch_status(result: StepResult) -> str:
-    if result.execution is None:
+    if result.execution_receipts is None:
         return "not_sent"
-    return result.execution.result.dispatch_status.value
+    if result.execution_receipts.terminal_failure is not None:
+        return DispatchStatus.NOT_SENT.value
+    receipt = _last_receipt(result)
+    return receipt.result.dispatch_status.value if receipt is not None else "not_sent"
+
+
+def _last_receipt(result: StepResult):
+    batch = result.execution_receipts
+    return batch.receipts[-1] if batch is not None and batch.receipts else None
 
 
 def _turn_key(turn: AgentTurnView) -> str:
@@ -691,19 +821,6 @@ def _turn_key(turn: AgentTurnView) -> str:
         "parameters": to_json_compatible(turn.public_parameters),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-
-def _returns_to_recent_world(recent_steps: tuple[AgentTurnView, ...], fresh_world_fingerprint: str) -> bool:
-    if not fresh_world_fingerprint:
-        return False
-    seen = []
-    for step in recent_steps[-_WORLD_OSCILLATION_WINDOW:]:
-        before = step.transition.get("before_world_fingerprint") or step.transition.get("before_world")
-        after = step.transition.get("after_world_fingerprint") or step.transition.get("after_world")
-        for value in (before, after):
-            if isinstance(value, str) and value and value not in seen:
-                seen.append(value)
-    return len(seen) >= 2 and fresh_world_fingerprint in set(seen[:-1])
 
 
 def _unchanged_streak(recent_steps: tuple[AgentTurnView, ...]) -> int:

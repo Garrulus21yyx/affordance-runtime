@@ -18,11 +18,15 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    FinalResponse,
     LocalToolResult,
     ProtocolFeedback,
     ProtocolFeedbackKind,
+    ReadRegionResult,
     RequestActionPage,
+    SearchPageContentResult,
     SelectAction,
+    SetFormFields,
     Wait,
 )
 from affordance_runtime.agent.context import ContextBuilder
@@ -33,7 +37,7 @@ from affordance_runtime.agent.context.compact_world_renderer import inspect_acto
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
-    AgentSubtaskContractView,
+    AgentMilestoneContractView,
     AgentTurnView,
 )
 from affordance_runtime.agent.context.failures import ModelFailureKind
@@ -61,10 +65,6 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolPhase,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
-)
-from affordance_runtime.model.policy.grounded_tool_port_bridge import (
-    CompactJsonDecisionPort,
-    GroundedToolCommandPayload,
 )
 from affordance_runtime.model.policy.grounded_tool_rejection import (
     grounded_tool_rejection_decision,
@@ -102,6 +102,10 @@ from affordance_runtime.task import (
     TaskGoal,
 )
 from affordance_runtime.world import CoverageState, ObservationSourceProfile, SemanticTarget, StateFact
+from tests.support.legacy_compact_json_decision_port import (
+    CompactJsonDecisionPort,
+    GroundedToolCommandPayload,
+)
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from tests.support.surfaces.browsergym.projection_support import project_browsergym_observation
 from tests.support.world import fused_world
@@ -186,6 +190,71 @@ def _context():
     )
 
 
+def _form_context():
+    raw = raw_observation(
+        ax_node("directions", "form", "Directions", child_ids=("from", "to", "go")),
+        ax_node("from", "textbox", "From", parent_id="directions"),
+        ax_node("to", "textbox", "To", parent_id="directions"),
+        ax_node("go", "button", "Go", parent_id="directions"),
+        goal="Set the route endpoints.",
+    )
+    projection = project_browsergym_observation(
+        raw,
+        observation_id="observation:form-fields",
+        source_revision="revision:form-fields",
+        page_identity="page:form-fields",
+        episode_identity="episode:form-fields",
+        task_state=reset_task_state("observation:form-fields", task_run_id="run:form-fields"),
+        entity_identity=_IDENTITY,
+    )
+    task = TaskGoal(
+        "task:form-fields",
+        raw["goal"],
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    return ContextBuilder().build(
+        task,
+        projection.world,
+        ActionSpaceBuilder().build(task, projection.world),
+        TaskEvaluation(
+            task.task_id,
+            projection.world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+
+
+def test_set_form_fields_is_one_grounded_call_for_two_current_fields() -> None:
+    context = _form_context()
+    catalog = _compile_catalog(context)
+    spec = next(item.spec for item in catalog.tools if item.spec.name == "set_form_fields")
+    form_key = spec.input_schema["properties"]["form"]["enum"][0]
+    target_refs = spec.input_schema["properties"]["fields"]["items"]["properties"]["target"]["enum"]
+
+    resolution = _resolve_catalog_call(
+        catalog,
+        ToolCall(
+            "set_form_fields",
+            {
+                "form": form_key,
+                "fields": [
+                    {"target": target_refs[0], "operation": "type_text", "value": "CMU"},
+                    {"target": target_refs[1], "operation": "type_text", "value": "PIT"},
+                ],
+            },
+            "call:form-fields",
+        ),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(resolution.decision, SetFormFields)
+    assert len(resolution.decision.fields) == 2
+    assert tuple(item.operation for item in resolution.decision.fields) == ("type_text", "type_text")
+    assert all(item.parameters.keys() == {"text"} for item in resolution.decision.fields)
+
+
 def _nested_context():
     raw = raw_observation(
         ax_node("group", "generic", "Choices", child_ids=("one", "two")),
@@ -243,11 +312,7 @@ def _evidence_handoff_context(*, visual: bool = False):
             SemanticTarget("target:alpha", "StaticText", "Metric: 33 units"),
             SemanticTarget("target:beta", "StaticText", "Metric: 48 units"),
         ),
-        profile=(
-            ObservationSourceProfile.visual()
-            if visual
-            else ObservationSourceProfile.dom()
-        ),
+        profile=(ObservationSourceProfile.visual() if visual else ObservationSourceProfile.dom()),
     )
     task = TaskGoal("task:evidence-handoff", "Compare the two visible metrics.")
     return ContextBuilder().build(
@@ -322,10 +387,7 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
         ("focused_context", "Current keyboard focus"),
         ("viewport", "Current page viewport"),
     }
-    assert all(
-        item.marked for item in context.grounding.entities
-        if item.role in {"button", "textbox"}
-    )
+    assert all(item.marked for item in context.grounding.entities if item.role in {"button", "textbox"})
     subject_kinds = {
         (item.semantic_action, item.target_role, item.target_label): item.subject_kind
         for item in context.actions.options
@@ -340,14 +402,14 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert not {"actions.entities", "actions.groups"}.intersection(public)
     observation = payload["observation"]
     assert isinstance(observation, str)
-    assert "[E1] type_text textbox \"Username\"" in observation
-    assert "[E2] type_text textbox \"Password\"" in observation
-    assert "[E3] activate button \"Login\"" in observation
+    assert '[E1] type_text textbox "Username"' in observation
+    assert '[E2] type_text textbox "Password"' in observation
+    assert '[E3] activate button "Login"' in observation
     focused_ref = next(item.ref for item in context.grounding.entities if item.role == "focused_context")
     viewport_ref = next(item.ref for item in context.grounding.entities if item.role == "viewport")
     assert f'[{focused_ref}] press_key focused_context "Current keyboard focus"' in observation
     assert f'[{viewport_ref}] scroll viewport "Current page viewport"' in observation
-    assert "find_actions" in {item.name for item in catalog.specs}
+    assert "find_controls" in {item.name for item in catalog.specs}
 
 
 def test_actor_world_delivers_boolean_state_without_model_visible_facets() -> None:
@@ -404,7 +466,8 @@ def test_actor_world_delivers_boolean_state_without_model_visible_facets() -> No
 
     public = _bound_public_context(context)
     observation = public["observation"]
-    assert "projection=page_map" in observation and "coverage=complete" in observation
+    assert "coverage=complete" in observation
+    assert any(projection in observation for projection in ("projection=page_map", "projection=full"))
     assert "facets count=" not in observation
     assert "members=[" not in observation
     assert "selected" in observation and "=true" in observation
@@ -445,10 +508,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "press_key",
         "scroll",
         "pin_fact",
-        "open_region",
-        "find_content",
+        "read_region",
+        "search_page_content",
         "list_regions",
-        "find_actions",
+        "find_controls",
         "ask_user",
         "wait",
         "abort",
@@ -562,22 +625,31 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
 
-    assert validate_value_issue(
-        {
-            "purpose": "target_disambiguation",
-            "subject": "current_world",
-            "property": "visual_state",
-        },
-        spec.input_schema,
-    ) is not None
-    assert validate_value_issue(
-        {"purpose": "target_disambiguation", "subject": "current_world"},
-        spec.input_schema,
-    ) is None
-    assert validate_value_issue(
-        {"purpose": "visual_property", "subject": "current_world", "property": "visual_state"},
-        spec.input_schema,
-    ) is None
+    assert (
+        validate_value_issue(
+            {
+                "purpose": "target_disambiguation",
+                "subject": "current_world",
+                "property": "visual_state",
+            },
+            spec.input_schema,
+        )
+        is not None
+    )
+    assert (
+        validate_value_issue(
+            {"purpose": "target_disambiguation", "subject": "current_world"},
+            spec.input_schema,
+        )
+        is None
+    )
+    assert (
+        validate_value_issue(
+            {"purpose": "visual_property", "subject": "current_world", "property": "visual_state"},
+            spec.input_schema,
+        )
+        is None
+    )
 
 
 def test_invalid_compact_arguments_make_only_one_provider_call() -> None:
@@ -635,9 +707,7 @@ def test_grounding_rejection_preserves_the_single_initial_attempt_in_trace() -> 
         async def generate_structured(self, messages, output_schema, config, **kwargs):
             del messages, output_schema, config
             self.calls += 1
-            return GroundedToolCommandPayload(
-                name="activate", arguments={"target": "E99"}
-            )
+            return GroundedToolCommandPayload(name="activate", arguments={"target": "E99"})
 
     context = _context()
     port = GroundingGapPort()
@@ -730,7 +800,8 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "press",
         "scroll",
         "pin",
-        "open",
+        "read",
+        "search",
         "find",
         "list",
         "ask",
@@ -837,6 +908,7 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
         "context_id",
         "delivery_id",
         "manifest",
+        "delivery_index",
         "tools",
         "serialized_bytes",
     }
@@ -849,10 +921,7 @@ def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "pin_fact")
     assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
-    evidence_ref = next(
-        ref for ref in _delivery(context).manifest.fact_refs
-        if ref in context.private_fact_bindings
-    )
+    evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
 
     assert "value" not in spec.input_schema["properties"]
     resolution = _resolve_catalog_call(
@@ -879,23 +948,25 @@ def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
 
     next_context = replace(context, working_facts=(resolution.decision.working_fact,))
     public = _bound_public_context(next_context)
-    assert public["working_set"] == [{
-        "key": "login_field_value",
-        "value": record.value,
-        "purpose": "reuse after navigating away",
-        "acquired_at_step": context.current_step_index,
-    }]
+    assert public["working_set"] == [
+        {
+            "key": "login_field_value",
+            "value": record.value,
+            "purpose": "reuse after navigating away",
+            "acquired_at_step": context.current_step_index,
+        }
+    ]
     assert canonical not in json.dumps(public)
 
 
 @pytest.mark.parametrize("visual", (False, True))
-def test_find_content_offers_one_runtime_evidence_ref_for_exact_public_scalar(
+def test_search_page_content_offers_one_runtime_evidence_ref_for_exact_public_scalar(
     visual: bool,
 ) -> None:
     context = _evidence_handoff_context(visual=visual)
     found = _resolve_catalog_call(
         _compile_catalog(context),
-        ToolCall("find_content", {"query": "33 units"}, "provider-call:find-alpha"),
+        ToolCall("search_page_content", {"query": "33 units"}, "provider-call:find-alpha"),
         expected_context_id=context.context_id,
     ).decision
 
@@ -919,42 +990,44 @@ def test_find_content_offers_one_runtime_evidence_ref_for_exact_public_scalar(
     assert record is not None and record.value == item["value"]
 
 
-def test_complete_execution_relevant_subtask_view_reaches_existing_task_section() -> None:
+def test_complete_execution_relevant_milestone_view_reaches_existing_task_section() -> None:
     base = _evidence_handoff_context()
-    contract = AgentSubtaskContractView(
-        "Capture one measured result",
+    contract = AgentMilestoneContractView(
+        "capture_measurement",
+        "One measured result is available",
         "One exact measurement is retained",
-        "Advances the requested exact measurement",
-        "evidence_packet",
-        ("Use only current public result evidence",),
         (("measured_value", "Metric 33 units"),),
+        (),
+        False,
     )
-    task = TaskGoal("task:subtask-view", "Capture one measured result")
+    task = TaskGoal("task:milestone-view", "Capture one measured result")
     context = ContextBuilder().build(
         task,
         base.current_observation,
         ActionSpaceBuilder().build(task, base.current_observation),
         TaskEvaluation(
-            "task:subtask-view",
+            "task:milestone-view",
             base.current_observation.observation_id,
             TaskEvaluationStatus.INCOMPLETE,
             "ongoing",
         ),
-        active_subtask=contract,
+        active_milestone=contract,
     )
     public = _bound_public_context(context)
-    active = public["task"]["active_subtask"]
+    active = public["task"]["active_milestone"]
     assert active == {
-        "objective": contract.objective,
+        "id": contract.id,
+        "outcome": contract.outcome,
         "done_when": contract.done_when,
-        "task_link": contract.task_link,
-        "outcome_kind": "evidence_packet",
-        "constraints": list(contract.constraints),
-        "required_evidence": [{
-            "key": "measured_value",
-            "description": "Metric 33 units",
-            "status": "currently_visible",
-        }],
+        "depends_on": [],
+        "final": False,
+        "required_evidence": [
+            {
+                "key": "measured_value",
+                "description": "Metric 33 units",
+                "status": "currently_visible",
+            }
+        ],
     }
     assert "relevant_fact_keys" not in active
     assert "episode_turn_budget" not in active
@@ -962,27 +1035,87 @@ def test_complete_execution_relevant_subtask_view_reaches_existing_task_section(
     assert "EvidenceCandidates exact=true" in _delivery(context).view.text
     assert context.evidence_candidates is not None
     assert len(context.evidence_candidates.candidates) <= 5
+    assert "33" in str(context.evidence_candidates.candidates[0].value)
 
 
-def test_open_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> None:
+def test_final_response_requires_and_privately_resolves_current_evidence_refs() -> None:
+    base = _evidence_handoff_context()
+    contract = AgentMilestoneContractView(
+        "answer",
+        "Return the evidence-backed answer",
+        "The answer cites current evidence",
+        (),
+        (),
+        True,
+    )
+    task = TaskGoal("task:final-response-evidence", "Return the measured result")
+    context = ContextBuilder().build(
+        task,
+        base.current_observation,
+        ActionSpaceBuilder().build(task, base.current_observation),
+        TaskEvaluation(
+            task.task_id,
+            base.current_observation.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+        active_milestone=contract,
+    )
+    delivery = _delivery(context)
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
+    public_ref = next(ref for ref in delivery.manifest.fact_refs if ref in context.private_fact_bindings)
+
+    decision = _resolve_catalog_call(
+        catalog,
+        ToolCall("submit_final_response", {"content": "33 units", "evidence_refs": [public_ref]}),
+        expected_context_id=context.context_id,
+    ).decision
+
+    assert isinstance(decision, FinalResponse)
+    assert decision.evidence_refs == (context.private_fact_bindings[public_ref],)
+
+
+def test_final_response_is_not_offered_before_required_evidence_is_retained() -> None:
+    base = _evidence_handoff_context()
+    contract = AgentMilestoneContractView(
+        "answer",
+        "Return the evidence-backed answer",
+        "The exact measurement is retained",
+        (("measurement", "Metric 33 units"),),
+        (),
+        True,
+    )
+    task = TaskGoal("task:required-final-evidence", "Return the measured result")
+    context = ContextBuilder().build(
+        task,
+        base.current_observation,
+        ActionSpaceBuilder().build(task, base.current_observation),
+        TaskEvaluation(
+            task.task_id,
+            base.current_observation.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+        active_milestone=contract,
+    )
+    assert "submit_final_response" not in {item.name for item in _compile_catalog(context).specs}
+
+
+def test_read_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> None:
     context = _evidence_handoff_context()
     found = _resolve_catalog_call(
         _compile_catalog(context),
-        ToolCall("find_content", {"query": "33 units"}, "provider-call:find-region"),
+        ToolCall("search_page_content", {"query": "33 units"}, "provider-call:find-region"),
         expected_context_id=context.context_id,
     ).decision
     region_ref = found.result["items"][0]["region_ref"]
     opened = _resolve_catalog_call(
         _compile_catalog(context),
-        ToolCall("open_region", {"region_ref": region_ref}, "provider-call:open-region"),
+        ToolCall("read_region", {"region_ref": region_ref}, "provider-call:open-region"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(opened, LocalToolResult)
-    evidence = tuple(
-        record
-        for item in opened.result["items"]
-        for record in item.get("evidence", ())
-    )
+    evidence = tuple(record for item in opened.result["items"] for record in item.get("evidence", ()))
     assert any(item["evidence_ref"].startswith("F") for item in evidence)
     assert opened.result["searched_domain"] == "readable_content"
     assert opened.result["zero_browser_dispatch"] is True
@@ -996,7 +1129,7 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     context = _evidence_handoff_context()
     first_search = _resolve_catalog_call(
         _compile_catalog(context),
-        ToolCall("find_content", {"query": "33 units"}, "provider-call:find-alpha"),
+        ToolCall("search_page_content", {"query": "33 units"}, "provider-call:find-alpha"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(first_search, LocalToolResult)
@@ -1019,25 +1152,25 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     ).decision
     assert isinstance(pinned, LocalToolResult) and pinned.working_fact is not None
     assert pinned.working_fact.value == "Metric: 33 units"
-    assert pinned.working_fact.record.observation_id == (
-        context.current_observation.observation_id
-    )
+    assert pinned.working_fact.record.observation_id == (context.current_observation.observation_id)
 
     with_fact = replace(alpha_view, working_facts=(pinned.working_fact,))
     second_search = _resolve_catalog_call(
         _compile_catalog(with_fact),
-        ToolCall("find_content", {"query": "48 units"}, "provider-call:find-beta"),
+        ToolCall("search_page_content", {"query": "48 units"}, "provider-call:find-beta"),
         expected_context_id=with_fact.context_id,
     ).decision
     beta_view = replace(with_fact, delivery_lens=second_search.delivery_lens)
 
     assert beta_view.working_facts == (pinned.working_fact,)
-    assert _bound_public_context(beta_view)["working_set"] == [{
-        "key": "alpha_metric",
-        "value": "Metric: 33 units",
-        "purpose": "compare after another search",
-        "acquired_at_step": context.current_step_index,
-    }]
+    assert _bound_public_context(beta_view)["working_set"] == [
+        {
+            "key": "alpha_metric",
+            "value": "Metric: 33 units",
+            "purpose": "compare after another search",
+            "acquired_at_step": context.current_step_index,
+        }
+    ]
 
 
 def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
@@ -1045,10 +1178,7 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
     assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
-    refs = tuple(
-        ref for ref in _delivery(context).manifest.fact_refs
-        if ref in context.private_fact_bindings
-    )
+    refs = tuple(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
     assert len(refs) >= 2
     first = _resolve_catalog_call(
         first_catalog,
@@ -1092,10 +1222,7 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
 def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
     context = _context()
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    evidence_ref = next(
-        ref for ref in _delivery(context).manifest.fact_refs
-        if ref in context.private_fact_bindings
-    )
+    evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
     first = _resolve_catalog_call(
         first_catalog,
         ToolCall(
@@ -1108,10 +1235,7 @@ def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> 
     assert isinstance(first, LocalToolResult) and first.working_fact is not None
     full = replace(
         context,
-        working_facts=tuple(
-            replace(first.working_fact, key=f"value_{index}")
-            for index in range(16)
-        ),
+        working_facts=tuple(replace(first.working_fact, key=f"value_{index}") for index in range(16)),
     )
     catalog = _compile_catalog(full, GroundedToolPhase.ACTION_SELECTION)
 
@@ -1178,7 +1302,7 @@ def test_stale_source_scalar_is_not_offered_as_pinnable_evidence() -> None:
     )
     found = _resolve_catalog_call(
         _compile_catalog(context),
-        ToolCall("find_content", {"query": "33 units"}, "provider-call:stale-find"),
+        ToolCall("search_page_content", {"query": "33 units"}, "provider-call:stale-find"),
         expected_context_id=context.context_id,
     ).decision
 
@@ -1218,9 +1342,7 @@ def test_pin_fact_rejects_a_current_non_scalar_evidence_record() -> None:
         ),
     )
     complex_ref = next(
-        public
-        for public, canonical in context.private_fact_bindings.items()
-        if canonical == "fact:complex:value"
+        public for public, canonical in context.private_fact_bindings.items() if canonical == "fact:complex:value"
     )
 
     with pytest.raises(GroundedToolResolutionError) as captured:
@@ -1257,7 +1379,7 @@ def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> Non
     assert invalid_failure.reason.startswith("invalid_tool_arguments")
 
 
-def test_find_actions_has_one_natural_language_input_and_runtime_owned_continuation() -> None:
+def test_find_controls_has_one_natural_language_input_and_runtime_owned_continuation() -> None:
     context = _context()
     context = replace(
         context,
@@ -1272,16 +1394,14 @@ def test_find_actions_has_one_natural_language_input_and_runtime_owned_continuat
         ),
     )
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in catalog.specs if item.name == "find_actions")
-    continuation = next(
-        item for item in catalog.specs if item.name == "action_results_next_page"
-    )
+    spec = next(item for item in catalog.specs if item.name == "find_controls")
+    continuation = next(item for item in catalog.specs if item.name == "action_results_next_page")
 
     assert set(spec.input_schema["properties"]) == {"query"}
     assert continuation.input_schema["properties"] == {}
     resolution = _resolve_catalog_call(
         catalog,
-        ToolCall("find_actions", {"query": "like"}),
+        ToolCall("find_controls", {"query": "like"}),
         expected_context_id=context.context_id,
     )
     assert isinstance(resolution.decision, RequestActionPage)
@@ -1369,10 +1489,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     )
     matches = inspected.items
     assert any(match["node_ref"] == readonly_ref for match in matches)
-    assert all(
-        not {"actionable", "verbs", "action_refs"}.intersection(match)
-        for match in matches
-    )
+    assert all(not {"actionable", "verbs", "action_refs"}.intersection(match) for match in matches)
     assert not any(match.get("node_ref") in actionable_refs for match in matches)
 
     initial = ToolCall("activate", {"target": "E114"}, "call:initial")
@@ -1390,11 +1507,11 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert feedback.result["failure_kind"] == "tool_grounding_gap"
     assert feedback.result["dispatch"] == "not_sent"
     assert feedback.result["world_changed"] is False
-    assert feedback.result["available_operations"] == ()
+    assert feedback.result["supported_operations"] == ()
 
     request = _resolve_catalog_call(
         catalog,
-        ToolCall("find_actions", {"query": "definitely-not-present"}, "call:find"),
+        ToolCall("find_controls", {"query": "definitely-not-present"}, "call:find"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(request, RequestActionPage)
@@ -1410,14 +1527,16 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert "shorten_query" in empty_step.action_page_result["safe_relaxations"]
 
     monitor = EpisodeMonitor()
-    local = LocalToolResult(
+    local = SearchPageContentResult(
         context.context_id,
-        "find_content",
+        "search_page_content",
         {"query": "definitely-not-present"},
         {"action": "find", "matches": (), "total_count": 0},
     )
     local_step = replace(empty_step, decision=local, feedback="local_tool_result", action_page_result={})
-    assert monitor.evaluate(local_step, (), world.observation_id).recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert (
+        monitor.evaluate(local_step, (), world.observation_id).recommendation is EpisodeMonitorRecommendation.CONTINUE
+    )
     recovery = monitor.evaluate(local_step, (), world.observation_id)
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
@@ -1483,7 +1602,7 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     opened = _resolve_catalog_call(
         catalog,
-        ToolCall("open_region", {"region_ref": "R1"}, "provider-call:read"),
+        ToolCall("read_region", {"region_ref": "R1"}, "provider-call:read"),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(opened, LocalToolResult)
@@ -1493,8 +1612,7 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     spec = next(item for item in catalog.specs if item.name == "count_children")
     container_schema = spec.input_schema["properties"]["containers"]["items"]
     group_ref = next(
-        item.ref for item in context.grounding.entities
-        if item.role == "generic" and item.label == "Choices"
+        item.ref for item in context.grounding.entities if item.role == "generic" and item.label == "Choices"
     )
     assert container_schema["pattern"] == r"^[EN][1-9][0-9]{0,2}$"
     root = context.actor_world.documents[0].roots[0]
@@ -1506,7 +1624,7 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
         expected_context_id=context.context_id,
     )
 
-    assert outcome.decision == LocalToolResult(
+    assert outcome.decision == ReadRegionResult(
         context.context_id,
         "count_children",
         {"containers": (group_ref,)},
@@ -1548,7 +1666,7 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
     trace = _policy_trace_event(
         2,
         context,
-        LocalToolResult(
+        ReadRegionResult(
             context.context_id,
             "count_children",
             {"containers": ("E1",)},
@@ -1616,9 +1734,7 @@ def test_compact_action_payload_defers_tool_semantics_to_catalog_resolution() ->
 
     assert accepted.command_arguments() == {"semantic_grid_cell": semantic_key}
     assert invalid_for_tool.command_arguments() == {"semantic_grid_cell": "E38"}
-    assert validate_value_issue(
-        invalid_for_tool.command_arguments(), spec.input_schema, path="parameters"
-    ) is not None
+    assert validate_value_issue(invalid_for_tool.command_arguments(), spec.input_schema, path="parameters") is not None
 
 
 def test_provider_normalizer_unwraps_only_unambiguous_nested_parameters() -> None:
@@ -1682,9 +1798,9 @@ def test_shared_target_semantics_are_hoisted_and_inconsistent_actor_refs_fail_cl
             target_role="",
             target_state={},
             target_marked=False,
-                destination_mode="",
-                grounding_context_id="",
-                verification_contract_digest=verification_digest,
+            destination_mode="",
+            grounding_context_id="",
+            verification_contract_digest=verification_digest,
         )
         for option in source_options
     )
@@ -1792,7 +1908,7 @@ def test_invalid_compact_call_cannot_trigger_a_second_provider_call() -> None:
     assert isinstance(outcome.output.decision, LocalToolResult)
     assert outcome.output.decision.result["dispatch"] == "not_sent"
     assert outcome.output.decision.result["target"]["role"] == "textbox"
-    assert "type_text" in outcome.output.decision.result["available_operations"]
+    assert "type_text" in outcome.output.decision.result["supported_operations"]
     assert "E2" not in repr(outcome.output.decision.result)
     assert port.calls == 1
 
@@ -1869,9 +1985,7 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
         "observed_change": "changed",
         "evidence_method": "native",
     }
-    assert trajectory[-1]["action"]["details"] == {
-        "feedback_code": "action_outcome_unknown"
-    }
+    assert trajectory[-1]["action"]["details"] == {"feedback_code": "action_outcome_unknown"}
 
 
 def test_grounded_history_retains_observation_modality_and_tool_describes_current_source() -> None:
@@ -1957,9 +2071,7 @@ def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
     history = _bound_public_context(context)["recent_steps"]
 
     assert len(history["earlier_actions"]) == 1
-    assert {"observation", "target_ref", "destination_ref", "images"}.isdisjoint(
-        AgentTurnView.__dataclass_fields__
-    )
+    assert {"observation", "target_ref", "destination_ref", "images"}.isdisjoint(AgentTurnView.__dataclass_fields__)
     assert "observation" not in history["earlier_actions"][0]
     assert len(history["recent_trajectory"]) == 4
     assert all("observation" not in item for item in history["recent_trajectory"])
@@ -2106,7 +2218,7 @@ def test_action_schema_error_returns_same_episode_feedback_after_one_provider_ca
     assert outcome.failure is None
     assert outcome.output is not None
     assert isinstance(outcome.output.decision, ProtocolFeedback)
-    assert outcome.output.decision.kind is ProtocolFeedbackKind.JSON_INVALID
+    assert outcome.output.decision.feedback_kind is ProtocolFeedbackKind.JSON_INVALID
     assert port.calls == 1
     assert adapter.last_structured_output_violations == (StructuredOutputViolation("target", "string_type"),)
     assert tuple(item.phase for item in adapter.last_generation_attempts) == ("ordinary",)
@@ -2140,7 +2252,7 @@ def test_grounded_schema_failure_preserves_safe_violation_path_after_one_provide
     assert outcome.failure is None
     assert outcome.output is not None
     assert isinstance(outcome.output.decision, ProtocolFeedback)
-    assert outcome.output.decision.kind is ProtocolFeedbackKind.JSON_INVALID
+    assert outcome.output.decision.feedback_kind is ProtocolFeedbackKind.JSON_INVALID
     assert adapter.last_model_call_count == 1
     assert tuple(item.phase for item in adapter.last_generation_attempts) == ("ordinary",)
     assert all(item.status == "json_invalid" for item in adapter.last_generation_attempts)
@@ -2201,10 +2313,12 @@ def test_truncated_action_output_without_semantic_anchor_does_not_rechoose_opera
                     violations=(StructuredOutputViolation("$", "output_truncated"),),
                 )
             assert messages[-1].role == "user"
-            return output_schema.model_validate({
-                "name": "activate",
-                "arguments": {"target": "E3"},
-            })
+            return output_schema.model_validate(
+                {
+                    "name": "activate",
+                    "arguments": {"target": "E3"},
+                }
+            )
 
     context = _context()
     port = TruncatedThenActionPort()
@@ -2257,24 +2371,30 @@ def test_representation_repair_preserves_operation_and_semantic_target() -> None
             self.configs.append(config)
             if self.calls == 1:
                 self.last_transcript = {
-                    "llm.output_messages": [{
-                        "role": "assistant",
-                        "content": json.dumps({
-                            "name": "activate",
-                            "arguments": {"target": "E3"},
-                            "unexpected": True,
-                        }),
-                    }],
+                    "llm.output_messages": [
+                        {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "name": "activate",
+                                    "arguments": {"target": "E3"},
+                                    "unexpected": True,
+                                }
+                            ),
+                        }
+                    ],
                 }
                 raise StructuredOutputError(
                     "extra field",
                     kind=StructuredOutputFailureKind.JSON_INVALID,
                     violations=(StructuredOutputViolation("unexpected", "extra_forbidden"),),
                 )
-            return output_schema.model_validate({
-                "name": "activate",
-                "arguments": {"target": "E3"},
-            })
+            return output_schema.model_validate(
+                {
+                    "name": "activate",
+                    "arguments": {"target": "E3"},
+                }
+            )
 
     adapter = CompactJsonDecisionPort(
         RepairablePort(),
@@ -2463,10 +2583,12 @@ def test_timeout_fast_retry_uses_same_world_with_compact_disabled_thinking() -> 
                 "network.rate_limit_retry_count": 0,
                 "network.transient_retry_count": 0,
             }
-            return output_schema.model_validate({
-                "name": "activate",
-                "arguments": {"target": "E3"},
-            })
+            return output_schema.model_validate(
+                {
+                    "name": "activate",
+                    "arguments": {"target": "E3"},
+                }
+            )
 
     context = _context()
     port = TimeoutThenActionPort()
@@ -2604,15 +2726,9 @@ def test_action_output_failure_categories_preserve_feedback_and_retry_boundary(
                 latency_ms=1,
                 completion_tokens=config.max_tokens,
                 total_tokens=config.max_tokens,
-                finish_reason=(
-                    "length"
-                    if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
-                    else "stop"
-                ),
+                finish_reason=("length" if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED else "stop"),
                 max_output_tokens=config.max_tokens,
-                final_content_present=(
-                    failure_kind is StructuredOutputFailureKind.JSON_INVALID
-                ),
+                final_content_present=(failure_kind is StructuredOutputFailureKind.JSON_INVALID),
             )
             raise StructuredOutputError(
                 failure_kind.value,
@@ -2632,7 +2748,7 @@ def test_action_output_failure_categories_preserve_feedback_and_retry_boundary(
 
     assert outcome.failure is None
     assert isinstance(outcome.output.decision, ProtocolFeedback)
-    assert outcome.output.decision.kind.value == failure_kind.value
+    assert outcome.output.decision.feedback_kind.value == failure_kind.value
     assert outcome.output.decision.detail == failure_kind.value
     assert port.calls == expected_calls
     assert adapter.last_model_call_count == expected_calls

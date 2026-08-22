@@ -126,9 +126,7 @@ def _compact_transition(
     if not isinstance(public, Mapping):
         return {}
     result = {
-        key: public[key]
-        for key in _TRANSITION_SUMMARY_KEYS
-        if key in public and _small_history_value(public[key])
+        key: public[key] for key in _TRANSITION_SUMMARY_KEYS if key in public and _small_history_value(public[key])
     }
     for key in _STATE_DELTA_KEYS:
         value = public.get(key)
@@ -152,7 +150,6 @@ def _compact_state_delta(value: Mapping[str, object]) -> dict[str, object]:
     return result
 
 
-
 def _small_history_value(value: object) -> bool:
     if isinstance(value, str):
         return len(value) <= 240
@@ -162,8 +159,7 @@ def _small_history_value(value: object) -> bool:
         return len(value) <= _MAX_STATE_DELTA_FIELDS and all(_small_history_value(item) for item in value)
     if isinstance(value, Mapping):
         return len(value) <= _MAX_STATE_DELTA_FIELDS and all(
-            isinstance(key, str) and len(key) <= 120 and _small_history_value(item)
-            for key, item in value.items()
+            isinstance(key, str) and len(key) <= 120 and _small_history_value(item) for key, item in value.items()
         )
     return False
 
@@ -190,19 +186,25 @@ def _foldable(item: Mapping[str, object]) -> bool:
         "unchanged",
         "no_effect",
     }
-    return tool in {
-        "wait",
-        "find_actions",
-        "action_results_next_page",
-        "open_region",
-        "find_content",
-        "list_regions",
-        "read_next_page",
-    } or unchanged or outcome in {
-        "unchanged",
-        "no_effect",
-        "no effect",
-    }
+    return (
+        tool
+        in {
+            "wait",
+            "find_controls",
+            "action_results_next_page",
+            "read_region",
+            "search_page_content",
+            "list_regions",
+            "read_next_page",
+        }
+        or unchanged
+        or outcome
+        in {
+            "unchanged",
+            "no_effect",
+            "no effect",
+        }
+    )
 
 
 def _same_step(left: Mapping[str, object], right: Mapping[str, object]) -> bool:

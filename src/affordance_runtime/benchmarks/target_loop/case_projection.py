@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 
 from affordance_runtime.agent import RunStatus
-from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
-from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.episode_snapshot import EpisodeSnapshot
 from affordance_runtime.benchmarks.target_loop.case_evidence_codec import (
     decode_public_case_evidence,
     public_case_evidence,
@@ -45,21 +44,15 @@ def project_case_result(
     latency_ms: float,
     failure: str,
     *,
-    timeout_snapshot: PartialEpisodeSnapshot | None = None,
-    final_snapshot: PartialEpisodeSnapshot | None = None,
+    timeout_snapshot: EpisodeSnapshot | None = None,
+    final_snapshot: EpisodeSnapshot | None = None,
     official_checkpoint: OfficialOutcomeCheckpoint | None = None,
 ) -> BenchmarkCaseResult:
     """Apply one explicit typed precedence; human failure text is display-only."""
     metric_collisions = canonical_metric_collisions(instrumentation.custom_metrics)
     metadata = _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot)
-    sent_unknown = (
-        getattr(result, "sent_unknown_count", 0)
-        if result is not None
-        else metadata.sent_unknown_count
-        if metadata is not None
-        else 0
-    )
-    values = _metric_values(result, instrumentation, sent_unknown, metadata)
+    sent_unknown = metadata.sent_unknown_count if metadata is not None else 0
+    values = _metric_values(instrumentation, sent_unknown, metadata)
     measurements = {name: MetricMeasurement(value, value is not None) for name, value in values.items()}
     measurements["duplicate_unknown_attempts"] = MetricMeasurement(
         values["duplicate_unknown_attempts"],
@@ -73,7 +66,7 @@ def project_case_result(
         True,
         stale_opportunities,
     )
-    agent_failure = _agent_failure_code(result)
+    agent_failure = metadata.agent_failure_code if metadata is not None else ""
     component_origin, normalized_component_code = _component_failure(instrumentation)
     component_code = (
         _safe_code(normalized_component_code, "runtime_failure")
@@ -81,20 +74,21 @@ def project_case_result(
         else ""
     )
     exception_class = _safe_exception_class(instrumentation.exception_class)
-    policy_failure = getattr(result, "policy_failure", None) if result is not None else None
-    if policy_failure is None and result is not None:
-        last_step = getattr(result, "last_step", None)
-        candidate = getattr(last_step, "decision", None)
-        policy_failure = candidate if isinstance(candidate, PolicyFailure) else None
-    policy_code = str(policy_failure.kind) if policy_failure is not None else ""
+    policy_code = metadata.policy_failure_code if metadata is not None else ""
     cleanup_code = (
         _safe_code(instrumentation.cleanup_failure_code, "cleanup_exception")
         if instrumentation.cleanup_failures
         else ""
     )
     integrity_code = "metric_name_collision" if metric_collisions else ""
-    canonical_runtime_failure = getattr(result, "runtime_failure", None) if result is not None else None
+    canonical_runtime_failure = metadata.runtime_failure if metadata is not None else None
     public_runtime_failure = canonical_runtime_failure.code if canonical_runtime_failure is not None else ""
+    if (
+        metadata is not None
+        and metadata.last_decision_kind == "abort"
+        and not public_runtime_failure
+    ):
+        public_runtime_failure = metadata.latest_control_reason_code
     if (
         result is None
         and not public_runtime_failure
@@ -105,25 +99,25 @@ def project_case_result(
     ):
         public_runtime_failure = "runtime_failure"
     status = (
-        str(RunStatus.FAILED)
-        if instrumentation.failure_origin is CaseFailureOrigin.HARNESS_PERSISTENCE
-        else str(official_checkpoint.run_status)
+        str(official_checkpoint.run_status)
         if official_checkpoint is not None
-        else
-        str(result.status)
-        if result
+        else str(RunStatus.FAILED)
+        if instrumentation.watchdog_code
+        or instrumentation.failure_origin
+        in {
+            CaseFailureOrigin.HARNESS_PERSISTENCE,
+            CaseFailureOrigin.HARNESS_WATCHDOG,
+            CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION,
+        }
+        else metadata.latest_control_status
+        if metadata is not None and metadata.latest_control_status
         else str(RunStatus.FAILED)
     )
-    mission_outcome = str(getattr(result, "outcome", ""))
-    supervisor_state = getattr(result, "supervisor_state", None)
-    mission_last_ref = str(getattr(supervisor_state, "last_ref", "") or "")
-    task_outcome = getattr(result, "task_outcome", None) if result is not None else None
+    mission_outcome = metadata.mission_outcome if metadata is not None else ""
+    mission_last_ref = metadata.mission_last_ref if metadata is not None else ""
     candidate_task_outcome_kind = (
         str(official_checkpoint.outcome_kind)
-        if official_checkpoint is not None
-        and official_checkpoint.outcome_kind is not None
-        else str(task_outcome.kind)
-        if task_outcome is not None
+        if official_checkpoint is not None and official_checkpoint.outcome_kind is not None
         else metadata.task_outcome_kind
         if metadata is not None
         else ""
@@ -131,16 +125,13 @@ def project_case_result(
     candidate_task_outcome_code = (
         official_checkpoint.outcome_code
         if official_checkpoint is not None
-        else task_outcome.code
-        if task_outcome is not None
         else metadata.task_outcome_code
         if metadata is not None
         else ""
     )
     task_outcome_kind, task_outcome_code = (
         (candidate_task_outcome_kind, candidate_task_outcome_code)
-        if candidate_task_outcome_kind
-        and _task_outcome_matches_status(candidate_task_outcome_kind, status)
+        if candidate_task_outcome_kind and _task_outcome_matches_status(candidate_task_outcome_kind, status)
         else ("", "")
     )
     facts = FailureFacts(
@@ -160,39 +151,44 @@ def project_case_result(
     )
     legacy = project_legacy_case_fields(status, facts)
     mission_primary_code = mission_failure_code(mission_outcome)
+    harness_primary_code = (
+        _safe_code(instrumentation.watchdog_code, "case_timeout")
+        if instrumentation.watchdog_code
+        else component_code
+        if component_origin is CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION
+        else ""
+    )
     projected_case_failure_code = (
-        instrumentation.primary_execution_failure_code
+        harness_primary_code
+        or instrumentation.primary_execution_failure_code
         or legacy.case_failure_code
     )
     if mission_primary_code and projected_case_failure_code in {"", cleanup_code}:
         projected_case_failure_code = mission_primary_code
-    primary_failure_code = (
-        instrumentation.primary_execution_failure_code
-        or (mission_primary_code if projected_case_failure_code == mission_primary_code else "")
+    primary_failure_code = harness_primary_code or instrumentation.primary_execution_failure_code or (
+        mission_primary_code if projected_case_failure_code == mission_primary_code else ""
     )
     return BenchmarkCaseResult(
         case_id=case_id,
         status=status,
-        execution_completed=(
-            result is not None and not failure
-        ) or official_checkpoint is not None,
+        execution_completed=(metadata is not None and not failure) or official_checkpoint is not None,
         failure_reason=failure,
         latency_ms=latency_ms,
         measurements=measurements,
         terminal_reason_code=legacy.terminal_reason_code,
         termination_origin=(
-            "component"
+            "harness_watchdog"
+            if instrumentation.watchdog_code
+            else "harness_external"
+            if component_origin is CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION
+            else "component"
             if instrumentation.primary_execution_failure_code
             else "runtime"
             if mission_primary_code and projected_case_failure_code == mission_primary_code
             else legacy.termination_origin
         ),
         case_failure_code=projected_case_failure_code,
-        partial_episode_available=(
-            result is None
-            and metadata is not None
-            and official_checkpoint is None
-        ),
+        partial_episode_available=(result is None and metadata is not None and official_checkpoint is None),
         latest_semantic_attempt_key_digest=(metadata.latest_semantic_attempt_key_digest if metadata else ""),
         same_attempt_streak=metadata.same_attempt_streak if metadata else 0,
         no_progress_count=metadata.no_progress_count if metadata else 0,
@@ -200,14 +196,14 @@ def project_case_result(
         failure_origin=component_origin,
         failure_code=component_code,
         exception_class=exception_class,
-        last_decision_type=metadata.last_decision_type if metadata else "",
+        last_decision_kind=metadata.last_decision_kind if metadata else "",
         last_policy_failure_code=policy_code,
         last_action_space_option_count=(metadata.last_action_space_option_count if metadata else 0),
         last_world_target_count=metadata.last_world_target_count if metadata else 0,
         last_world_coverage=metadata.last_world_coverage if metadata else "",
         pending_kind=(
             "user_question"
-            if mission_outcome == "needs_user_input" and getattr(result, "user_question", "")
+            if mission_outcome == "needs_user_input" and metadata and metadata.user_question
             else metadata.pending_kind
             if metadata
             else ""
@@ -259,33 +255,18 @@ def _metric_snapshot(instrumentation, timeout_snapshot, final_snapshot):
     return final_snapshot or timeout_snapshot
 
 
-def _agent_failure_code(result) -> str:
-    failure_code = getattr(result, "failure_code", None) if result is not None else None
-    if failure_code is not None:
-        return str(failure_code)
-    return ""
-
-
 def _component_failure(instrumentation) -> tuple[CaseFailureOrigin, str]:
     """Copy component-owned truth; snapshots and latest operations are non-authoritative."""
 
     return instrumentation.failure_origin, instrumentation.failure_code
 
 
-def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | float | None]:
+def _metric_values(state, sent_unknown, snapshot) -> dict[str, int | float | None]:
     values = {
-        "observations": result.observation_count if result else snapshot.observation_count if snapshot else 0,
-        "executions": result.execution_count if result else snapshot.execution_count if snapshot else 0,
-        "currentness_probes": state.currentness_probe_count
-        if result
-        else snapshot.currentness_probe_count
-        if snapshot
-        else 0,
-        "turns": getattr(result, "step_count", 0)
-        if result
-        else snapshot.completed_turn_count
-        if snapshot
-        else 0,
+        "observations": snapshot.observation_count if snapshot else 0,
+        "executions": snapshot.execution_count if snapshot else 0,
+        "currentness_probes": snapshot.currentness_probe_count if snapshot else 0,
+        "turns": snapshot.completed_turn_count if snapshot else 0,
         "policy_calls": state.policy_calls,
         "goal_compiler_calls": state.goal_compiler_calls,
         "goal_compiler_provider_attempts": state.goal_compiler_provider_attempts,
@@ -346,27 +327,19 @@ def _metric_values(result, state, sent_unknown, snapshot) -> dict[str, int | flo
             and bool(state.exception_class)
         ),
     }
-    kind_counts = _decision_kind_counts(result, state, snapshot)
+    kind_counts = _decision_kind_counts(snapshot)
     values.update(
         {
-            "ask_user_count": kind_counts.get("AskUser", 0),
-            "wait_count": kind_counts.get("Wait", 0),
-            "page_request_count": kind_counts.get("RequestActionPage", 0),
+            "ask_user_count": kind_counts.get("ask_user", 0),
+            "wait_count": kind_counts.get("wait", 0),
+            "page_request_count": kind_counts.get("find_controls", 0),
         }
     )
     values.update({name: value for name, value in state.custom_metrics.items() if name not in values})
     return values
 
 
-def _decision_kind_counts(result, instrumentation, snapshot) -> dict[str, int]:
-    del result
-    if instrumentation.policy_trace:
-        counts: dict[str, int] = {}
-        for event in instrumentation.policy_trace:
-            name = str(event.get("outcome") or "")
-            if name and name not in {"exception", "policy_failure"}:
-                counts[name] = counts.get(name, 0) + 1
-        return counts
+def _decision_kind_counts(snapshot) -> dict[str, int]:
     return dict(snapshot.decision_kind_counts) if snapshot is not None else {}
 
 

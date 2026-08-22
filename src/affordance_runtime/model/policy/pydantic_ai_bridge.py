@@ -82,6 +82,8 @@ class ConfiguredPydanticAIModel:
     model_id: str
     endpoint_host: str
     supports_multimodal: bool
+
+
 @dataclass(frozen=True)
 class _ProviderFailureDetail:
     code: ProviderFailureCode
@@ -121,30 +123,18 @@ class PydanticAIGroundedDecisionPort:
     provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
     max_provider_retry_delay_s: float = _MAX_PROVIDER_BACKOFF_S
     context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
-    reasoning_policy: ActionPolicyReasoningPolicy = field(
-        default_factory=ActionPolicyReasoningPolicy
-    )
-    consumed_recovery_events: frozenset[str] = field(
-        default_factory=frozenset, init=False, compare=False
-    )
-    last_call_profile: ActionPolicyCallProfile | None = field(
-        default=None, init=False, compare=False
-    )
+    reasoning_policy: ActionPolicyReasoningPolicy = field(default_factory=ActionPolicyReasoningPolicy)
+    consumed_recovery_events: frozenset[str] = field(default_factory=frozenset, init=False, compare=False)
+    last_call_profile: ActionPolicyCallProfile | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
     last_catalog_specs: tuple[object, ...] = field(default=(), init=False, compare=False)
     last_image_input_count: int = field(default=0, init=False, compare=False)
     last_model_call_count: int = field(default=0, init=False, compare=False)
     last_provider_retry_count: int = field(default=0, init=False, compare=False)
-    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
-        default=(), init=False, compare=False
-    )
-    last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(
-        default=(), init=False, compare=False
-    )
-    last_tool_resolution_code: GroundedToolResolutionCode | None = field(
-        default=None, init=False, compare=False
-    )
+    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(default=(), init=False, compare=False)
+    last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(default=(), init=False, compare=False)
+    last_tool_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_tool_resolution_detail: str = field(default="", init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
@@ -201,8 +191,7 @@ class PydanticAIGroundedDecisionPort:
             object.__setattr__(
                 self,
                 "consumed_recovery_events",
-                self.consumed_recovery_events
-                | frozenset((call_profile.recovery_event_signature,)),
+                self.consumed_recovery_events | frozenset((call_profile.recovery_event_signature,)),
             )
         try:
             from pydantic_ai import (
@@ -290,14 +279,9 @@ class PydanticAIGroundedDecisionPort:
                 provider_error_type=ModelAPIError,
             )
             resolution_error = None
-            decision, resolution_error, initial_call = _resolve_deferred(
-                result.output, catalog, request.context_id
-            )
+            decision, resolution_error, initial_call = _resolve_deferred(result.output, catalog, request.context_id)
             self._set_tool_resolution(resolution_error, accepted=decision is not None)
-            if (
-                resolution_error is not None
-                and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
-            ):
+            if resolution_error is not None and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS:
                 decision = _protocol_feedback_decision(
                     request.context_id,
                     result.output,
@@ -308,17 +292,9 @@ class PydanticAIGroundedDecisionPort:
                     request.context_id,
                     ProtocolFeedbackKind.JSON_INVALID,
                     0,
-                    (
-                        resolution_error.code.value
-                        if resolution_error is not None
-                        else "provider_envelope_invalid"
-                    ),
+                    (resolution_error.code.value if resolution_error is not None else "provider_envelope_invalid"),
                 )
-            if (
-                decision is None
-                and resolution_error is not None
-                and initial_call is not None
-            ):
+            if decision is None and resolution_error is not None and initial_call is not None:
                 decision = grounded_tool_rejection_decision(
                     resolution_error,
                     initial_call,
@@ -520,12 +496,8 @@ class PydanticAIGroundedDecisionPort:
                 self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
             ),
             "tool_resolution_detail": self.last_tool_resolution_detail,
-            "reasoning_phase": (
-                self.last_call_profile.phase.value if self.last_call_profile else ""
-            ),
-            "reasoning_trigger": (
-                self.last_call_profile.trigger.value if self.last_call_profile else ""
-            ),
+            "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
+            "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
                 self.last_request_breakdowns,
                 provider_reported_prompt_tokens=sum(item.prompt_tokens for item in self.last_generation_attempts),
@@ -667,27 +639,15 @@ class PydanticAIGroundedDecisionPort:
             completion_tokens=attempt_completion_tokens,
             total_tokens=attempt_prompt_tokens + attempt_completion_tokens,
             finish_reason=str(response.get("finish_reason") or "")[:80],
-            max_output_tokens=(
-                self.last_call_profile.max_output_tokens if self.last_call_profile else 0
-            ),
+            max_output_tokens=(self.last_call_profile.max_output_tokens if self.last_call_profile else 0),
             final_content_present=bool(getattr(result.output, "calls", ())),
             reasoning_content_present=False,
             role="action_policy",
             mode="single_action",
             schema_version=GROUNDED_TOOLS_PROTOCOL,
-            thinking_requested=(
-                self.last_call_profile.thinking_mode
-                if self.last_call_profile
-                else "provider_default"
-            ),
-            thinking_effective=(
-                self.last_call_profile.thinking_mode
-                if self.last_call_profile
-                else "provider_default"
-            ),
-            trigger=(
-                self.last_call_profile.trigger.value if self.last_call_profile else "ordinary"
-            ),
+            thinking_requested=(self.last_call_profile.thinking_mode if self.last_call_profile else "provider_default"),
+            thinking_effective=(self.last_call_profile.thinking_mode if self.last_call_profile else "provider_default"),
+            trigger=(self.last_call_profile.trigger.value if self.last_call_profile else "ordinary"),
             reasoning_tokens=0,
             final_content_tokens=attempt_completion_tokens,
             final_tool_call_present=bool(getattr(result.output, "calls", ())),
@@ -819,8 +779,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     env = os.environ if environment is None else environment
     configured = pydantic_ai_model_from_environment(env, call_timeout_s=call_timeout_s)
     selected_perception = DecisionPerceptionProfile(
-        perception_profile
-        or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
+        perception_profile or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
     retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
     transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
@@ -875,12 +834,13 @@ def pydantic_ai_model_from_environment(
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.models.zai import ZaiModel
         from pydantic_ai.providers.deepseek import DeepSeekProvider
+        from pydantic_ai.providers.openai import OpenAIProvider
         from pydantic_ai.providers.zai import ZaiProvider
     except ImportError as exc:
         raise RuntimeError("install the pydantic-ai project extra") from exc
     env = os.environ if environment is None else environment
     profile = env.get("LLM_ACTIVE_PROFILE", "").strip().casefold()
-    if profile not in {"zhipu", "aliyun", "deepseek"}:
+    if profile not in {"zhipu", "aliyun", "deepseek", "mistral", "gemini", "local"}:
         raise ValueError("PydanticAI model adapter requires a supported OpenAI-compatible profile")
     if _enabled(env.get("LLM_PROFILE_FALLBACK_TO_LOCAL", "false")):
         raise ValueError("PydanticAI model adapter forbids provider fallback")
@@ -888,24 +848,43 @@ def pydantic_ai_model_from_environment(
         "zhipu": "LLM_ZHIPU",
         "aliyun": "LLM_ALIYUN",
         "deepseek": "LLM_DEEPSEEK",
+        "mistral": "LLM_MISTRAL",
+        "gemini": "LLM_GEMINI",
+        "local": "LLM_LOCAL",
     }[profile]
-    base_url = _required(env, f"{prefix}_BASE_URL")
-    model_id = _required(env, f"{prefix}_MODEL")
+    if (
+        profile == "local"
+        and env.get("LLM_LOCAL_PROVIDER", "openai_compatible").strip().casefold() != "openai_compatible"
+    ):
+        raise ValueError("local PydanticAI ActionPolicy requires LLM_LOCAL_PROVIDER=openai_compatible")
+    base_url = (
+        env.get("LLM_LOCAL_BASE_URL", "http://127.0.0.1:11434/v1").strip()
+        if profile == "local"
+        else _required(env, f"{prefix}_BASE_URL")
+    )
+    model_id = (
+        (env.get("LLM_LOCAL_MODEL_ID") or env.get("LLM_LOCAL_MODEL") or "qwen2.5:7b").strip()
+        if profile == "local"
+        else _required(env, f"{prefix}_MODEL")
+    )
     retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
     transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
     if transport_timeout_s <= 0:
         raise ValueError("PydanticAI policy timeout cannot fit bounded provider recovery")
     client = AsyncOpenAI(
-        api_key=_required(env, f"{prefix}_API_KEY"),
+        api_key=(env.get("LLM_LOCAL_API_KEY", "local") or "local")
+        if profile == "local"
+        else _required(env, f"{prefix}_API_KEY"),
         base_url=base_url,
         timeout=transport_timeout_s,
         max_retries=0,
     )
-    model = (
-        OpenAIChatModel(model_id, provider=DeepSeekProvider(openai_client=client))
-        if profile == "deepseek"
-        else ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
-    )
+    if profile == "deepseek":
+        model = OpenAIChatModel(model_id, provider=DeepSeekProvider(openai_client=client))
+    elif profile in {"zhipu", "aliyun"}:
+        model = ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
+    else:
+        model = OpenAIChatModel(model_id, provider=OpenAIProvider(openai_client=client))
     return ConfiguredPydanticAIModel(
         model,
         profile,
@@ -955,11 +934,7 @@ def _resolve_deferred(output, catalog, context_id: str):
     if not isinstance(output, DeferredToolRequests) or output.approvals:
         return None, None, None
     if len(output.calls) != 1:
-        code = (
-            GroundedToolResolutionCode.ZERO_CALLS
-            if not output.calls
-            else GroundedToolResolutionCode.MULTIPLE_CALLS
-        )
+        code = GroundedToolResolutionCode.ZERO_CALLS if not output.calls else GroundedToolResolutionCode.MULTIPLE_CALLS
         return None, GroundedToolResolutionError(code), None
     call = output.calls[0]
     parsed_call = None
@@ -973,13 +948,17 @@ def _resolve_deferred(output, catalog, context_id: str):
         if reconciliation.status is not ToolCallReconciliationStatus.EXACT:
             return None, _reconciliation_error(reconciliation), parsed_call
         assert reconciliation.exact_call is not None
-        return resolve_grounded_action_call(
-            catalog,
+        return (
+            resolve_grounded_action_call(
+                catalog,
+                reconciliation.exact_call,
+                expected_context_id=context_id,
+                expected_delivery_id=catalog.delivery_id,
+                expected_catalog_id=catalog.catalog_id,
+            ).decision,
+            None,
             reconciliation.exact_call,
-            expected_context_id=context_id,
-            expected_delivery_id=catalog.delivery_id,
-            expected_catalog_id=catalog.catalog_id,
-        ).decision, None, reconciliation.exact_call
+        )
     except GroundedToolResolutionError as exc:
         return None, exc, parsed_call
     except (ValueError, TypeError):
@@ -1038,10 +1017,7 @@ def _pydantic_prompt(messages, image_inputs: Sequence[AgentImageInput], binary_c
     if len(text_parts) != 1:
         raise ValueError("grounded PydanticAI prompt requires one public text projection")
     prompt: list[object] = [text_parts[0]]
-    prompt.extend(
-        binary_content_type(data=image.data, media_type=image.mime_type)
-        for image in image_inputs
-    )
+    prompt.extend(binary_content_type(data=image.data, media_type=image.mime_type) for image in image_inputs)
     return instructions, prompt
 
 
@@ -1087,12 +1063,7 @@ def _attempt_token_delta(
     if response_value >= 0:
         return response_value, raw_cumulative
     previous = sum(
-        (
-            item.prompt_tokens
-            if field_name == "input_tokens"
-            else item.completion_tokens
-        )
-        for item in previous_attempts
+        (item.prompt_tokens if field_name == "input_tokens" else item.completion_tokens) for item in previous_attempts
     )
     return max(0, raw_cumulative - previous), raw_cumulative
 

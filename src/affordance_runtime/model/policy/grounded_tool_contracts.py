@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 
@@ -68,6 +69,7 @@ class GroundedToolCatalog:
     context_id: str
     delivery_id: str
     manifest: DeliveryManifest
+    delivery_index: WorldDeliveryIndex
     tools: tuple[RegisteredGroundedTool, ...]
     serialized_bytes: int
 
@@ -80,6 +82,11 @@ class GroundedToolCatalog:
             raise ValueError("grounded catalog identity is invalid")
         if not isinstance(self.manifest, DeliveryManifest):
             raise TypeError("grounded catalog requires the current DeliveryManifest")
+        if (
+            not isinstance(self.delivery_index, WorldDeliveryIndex)
+            or self.delivery_index.world_observation_id != self.manifest.world_observation_id
+        ):
+            raise TypeError("grounded catalog requires the sibling current delivery index")
         if (
             not 1 <= len(self.tools) <= MAX_GROUNDED_TOOL_COUNT
             or len({item.spec.name for item in self.tools}) != len(self.tools)

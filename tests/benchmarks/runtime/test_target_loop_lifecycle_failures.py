@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from affordance_runtime.agent import RunStatus
-from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
+from affordance_runtime.agent.episode_snapshot import EpisodeSnapshot
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
@@ -37,11 +37,13 @@ def test_environment_factory_failure_is_contained_and_suite_continues() -> None:
     def fail(_instrumentation):
         raise RuntimeError("fixture construction failed")
 
-    failed = replace(manifest.cases[0], environment_factory=fail,
-                     expected_terminal_statuses=(RunStatus.FAILED,))
+    failed = replace(manifest.cases[0], environment_factory=fail, expected_terminal_statuses=(RunStatus.FAILED,))
     reduced = BenchmarkManifest(
-        manifest.schema_version, manifest.suite_id, manifest.profile_id,
-        manifest.seed, (failed, manifest.cases[1]),
+        manifest.schema_version,
+        manifest.suite_id,
+        manifest.profile_id,
+        manifest.seed,
+        (failed, manifest.cases[1]),
     )
     result = asyncio.run(run_suite(reduced))
 
@@ -67,20 +69,30 @@ def test_composition_failure_closes_created_environment_once() -> None:
     def composition(_instrumentation):
         raise RuntimeError("composition failed")
 
-    case = replace(original, environment_factory=environment, composition_factory=composition,
-                   expected_terminal_statuses=(RunStatus.FAILED,))
-    result = asyncio.run(run_suite(BenchmarkManifest(
-        manifest.schema_version, manifest.suite_id, manifest.profile_id, manifest.seed, (case,),
-    )))
+    case = replace(
+        original,
+        environment_factory=environment,
+        composition_factory=composition,
+        expected_terminal_statuses=(RunStatus.FAILED,),
+    )
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            )
+        )
+    )
 
     assert result.cases[0].execution_completed is False
     assert "composition factory" in result.cases[0].failure_reason
     assert closed == ["closed"]
 
 
-def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(
-    monkeypatch, tmp_path
-) -> None:
+def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(monkeypatch, tmp_path) -> None:
     from affordance_runtime.benchmarks.target_loop import runner
 
     monkeypatch.setattr(runner, "_CLEANUP_TIMEOUT_S", 0.02)
@@ -127,7 +139,7 @@ def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(
 
     assert time.perf_counter() - started < 0.15
     assert result.cleanup_failure_code == "cleanup_timeout"
-    assert result.cleanup_status == "failed"
+    assert result.cleanup_status == "timeout"
     assert result.cleanup_diagnostic is not None
     assert result.cleanup_diagnostic.elapsed_ms >= 20
     assert "20 ms deadline" in result.cleanup_diagnostic.safe_message
@@ -154,16 +166,11 @@ def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(
     assert json.loads(checkpoint[3])
     trace_path = tmp_path / "traces" / case.case_id / "trace.jsonl"
     events = [json.loads(line) for line in trace_path.read_text().splitlines()]
-    primary_index = next(
-        index
-        for index, event in enumerate(events)
-        if event["event"] == "primary_result_available"
-    )
+    primary_index = next(index for index, event in enumerate(events) if event["event"] == "primary_result_available")
     cleanup_index = next(
         index
         for index, event in enumerate(events)
-        if event["event"] == "benchmark_lifecycle_phase"
-        and event["phase"] == "cleanup"
+        if event["event"] == "benchmark_lifecycle_phase" and event["phase"] == "cleanup"
     )
     assert primary_index < cleanup_index
     assert events[primary_index] == {
@@ -176,9 +183,7 @@ def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(
         "status": "done",
         "step_count": result.measurements["turns"].value,
     }
-    lifecycle = [
-        event for event in events if event["event"] == "benchmark_lifecycle_phase"
-    ]
+    lifecycle = [event for event in events if event["event"] == "benchmark_lifecycle_phase"]
     assert [event["phase"] for event in lifecycle] == [
         "finalizing",
         "primary_persisted",
@@ -186,23 +191,19 @@ def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(
         "reporting",
     ]
     assert lifecycle[0]["primary_result_available"] is False
-    official = next(
-        event for event in events if event["event"] == "native_evaluator_returned"
-    )
+    official = next(event for event in events if event["event"] == "native_evaluator_returned")
     assert official["evaluation_status"] == "complete"
     assert official["checkpoint_id"] == checkpoint[0]
     assert official["evidence_refs"] == json.loads(checkpoint[3])
-    persistence = next(
-        event for event in events if event["event"] == "official_outcome_persistence"
-    )
+    persistence = next(event for event in events if event["event"] == "official_outcome_persistence")
     assert persistence["persistence_status"] == "committed"
     assert persistence["checkpoint_id"] == checkpoint[0]
-    assert store.load_lifecycle(case.case_id)["cleanup_status"] == "failed"
+    assert store.load_lifecycle(case.case_id)["cleanup_status"] == "timeout"
     for name in (
         "policy_calls",
         "provider_attempts",
         "executions",
-        "mission_manager_calls",
+        "mission_planner_calls",
         "stop_send_count",
     ):
         assert result.measurements[name].value == baseline.measurements[name].value
@@ -237,7 +238,7 @@ def test_async_hung_cleanup_hits_independent_deadline(monkeypatch) -> None:
     ).cases[0]
 
     assert result.cleanup_failure_code == "cleanup_timeout"
-    assert result.cleanup_status == "failed"
+    assert result.cleanup_status == "timeout"
     assert result.cleanup_exception_class == "CleanupTimeoutError"
 
 
@@ -256,9 +257,7 @@ def test_watchdog_cancel_wait_has_bounded_grace(monkeypatch) -> None:
     started = time.perf_counter()
     try:
         with pytest.raises(runner._HarnessWatchdogTimeout) as raised:
-            loop.run_until_complete(
-                runner._run_with_watchdog(cancellation_resistant(), 0.005)
-            )
+            loop.run_until_complete(runner._run_with_watchdog(cancellation_resistant(), 0.005))
         assert raised.value.task_detached is True
         assert time.perf_counter() - started < 0.05
         assert runner.abandon_detached_watchdog_tasks(loop) == 1
@@ -298,7 +297,7 @@ def test_watchdog_report_retains_persisted_official_outcome(tmp_path) -> None:
         instrumentation,
         20.0,
         "case timeout",
-        final_snapshot=PartialEpisodeSnapshot(
+        final_snapshot=EpisodeSnapshot(
             4,
             2,
             0,
@@ -312,7 +311,7 @@ def test_watchdog_report_retains_persisted_official_outcome(tmp_path) -> None:
             0,
             "",
             0,
-            "YieldSubtask",
+            "yield_milestone",
             0,
             1,
             "complete",
@@ -434,9 +433,7 @@ def test_failed_checkpoint_write_projects_typed_harness_failure(
     monkeypatch.setattr(
         SQLiteRunResultStore,
         "commit_official_outcome",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RunResultStoreError("synthetic persistence failure")
-        ),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RunResultStoreError("synthetic persistence failure")),
     )
     manifest = get_manifest("internal-core", "deterministic", 7)
     case = manifest.cases[0]
@@ -535,26 +532,31 @@ def test_report_payload_commit_failure_is_not_mislabeled_as_json_export(
     assert lifecycle["report_status"] == "failed"
     assert lifecycle["report_failure_code"] == "report_payload_commit_failed"
     with sqlite3.connect(store.location) as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM case_reports WHERE case_id = ?",
-            (case.case_id,),
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM case_reports WHERE case_id = ?",
+                (case.case_id,),
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_case_lifecycle_is_persisted_at_owner_boundaries(tmp_path) -> None:
     manifest = get_manifest("internal-core", "deterministic", 7)
     case = manifest.cases[0]
 
-    asyncio.run(run_suite(
-        BenchmarkManifest(
-            manifest.schema_version,
-            manifest.suite_id,
-            manifest.profile_id,
-            manifest.seed,
-            (case,),
-        ),
-        trace_dir=tmp_path,
-    ))
+    asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    )
 
     store = SQLiteRunResultStore(tmp_path / "run-results.sqlite3")
     assert store.load_case_phases(case.case_id) == (
@@ -593,23 +595,25 @@ def test_hung_report_commit_has_independent_deadline_and_typed_failure(
     case = manifest.cases[0]
     started = time.perf_counter()
 
-    result = asyncio.run(run_suite(
-        BenchmarkManifest(
-            manifest.schema_version,
-            manifest.suite_id,
-            manifest.profile_id,
-            manifest.seed,
-            (case,),
-        ),
-        trace_dir=tmp_path,
-    )).cases[0]
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    ).cases[0]
 
     assert time.perf_counter() - started < 0.15
     assert result.failure_origin.value == "harness_persistence"
     assert result.failure_code == "report_payload_commit_failed"
 
 
-def test_local_jsonl_failure_is_observability_only(monkeypatch, tmp_path) -> None:
+def test_local_jsonl_failure_preserves_runtime_truth_but_invalidates_benchmark_acceptance(monkeypatch, tmp_path) -> None:
     def fail_open_emit(self, event_type, **_payload):
         self.errors.append(f"{event_type}:SyntheticTraceFailure")
 
@@ -617,17 +621,97 @@ def test_local_jsonl_failure_is_observability_only(monkeypatch, tmp_path) -> Non
     manifest = get_manifest("internal-core", "deterministic", 7)
     case = manifest.cases[0]
 
-    result = asyncio.run(run_suite(
-        BenchmarkManifest(
-            manifest.schema_version,
-            manifest.suite_id,
-            manifest.profile_id,
-            manifest.seed,
-            (case,),
-        ),
-        trace_dir=tmp_path,
-    )).cases[0]
+    suite = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    )
+    result = suite.cases[0]
 
     assert result.status == "done"
     assert result.failure_origin.value == "none"
     assert result.measurements["trace_recording_failures"].value > 0
+    assert not suite.acceptance.accepted
+    assert any("trace_recording_failures" in error for error in suite.acceptance.acceptance_errors)
+
+
+def test_final_trace_write_failure_is_included_before_acceptance_projection(monkeypatch, tmp_path) -> None:
+    original_emit = RunTraceRecorder._emit
+
+    def fail_final_emit(self, event_type, **payload):
+        if event_type == "benchmark_case_finished":
+            self.errors.append("benchmark_case_finished:SyntheticTraceFailure")
+            return
+        original_emit(self, event_type, **payload)
+
+    monkeypatch.setattr(RunTraceRecorder, "_emit", fail_final_emit)
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    suite = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (manifest.cases[0],),
+            ),
+            trace_dir=tmp_path,
+        )
+    )
+    result = suite.cases[0]
+
+    assert result.measurements["trace_recording_failures"].value == 1
+    assert not suite.acceptance.accepted
+    assert any("trace_recording_failures" in error for error in suite.acceptance.acceptance_errors)
+
+
+def test_sync_and_async_target_closed_cleanup_are_idempotent_success() -> None:
+    TargetClosedError = type("TargetClosedError", (RuntimeError,), {})
+
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    original = manifest.cases[0]
+    results = []
+    for async_owner in (False, True):
+
+        def environment(instrumentation, *, async_owner=async_owner):
+            value = original.environment_factory(instrumentation)
+            if async_owner:
+
+                async def close():
+                    raise TargetClosedError("synthetic already closed")
+
+            else:
+
+                def close():
+                    raise TargetClosedError("synthetic already closed")
+
+            value.close = close
+            return value
+
+        results.append(
+            asyncio.run(
+                run_suite(
+                    BenchmarkManifest(
+                        manifest.schema_version,
+                        manifest.suite_id,
+                        manifest.profile_id,
+                        manifest.seed,
+                        (replace(original, environment_factory=environment),),
+                    )
+                )
+            ).cases[0]
+        )
+
+    assert [item.cleanup_status for item in results] == [
+        "already_closed",
+        "already_closed",
+    ]
+    assert all(item.cleanup_failure_code == "" for item in results)
+    assert all(item.execution_completed for item in results)

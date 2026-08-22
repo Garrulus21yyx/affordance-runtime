@@ -24,6 +24,7 @@ from affordance_runtime.actions.capabilities import (
 )
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.projection import project_action_space
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
@@ -210,7 +211,7 @@ def test_browsergym_select_option_is_one_closed_observation_barrier_composite() 
         surface="browsergym",
     )
 
-    option, = ActionSpaceBuilder().build(task, world).options
+    (option,) = ActionSpaceBuilder().build(task, world).options
     capability = BROWSERGYM_INTERACTION_CAPABILITIES.resolve_action("select_option")
 
     assert option.semantic_action == "select_option"
@@ -219,9 +220,7 @@ def test_browsergym_select_option_is_one_closed_observation_barrier_composite() 
     assert capability.semantic_definition.parameter_contract is ParameterContractKind.OPTION_VALUE
     assert capability.support.primitive_actions == ("select_option",)
     assert tuple(item.primitive_action for item in capability.translators) == ("select_option",)
-    assert "navigate_to" not in {
-        item.semantic_action for item in BROWSERGYM_INTERACTION_PROFILE.capabilities
-    }
+    assert "navigate_to" not in {item.semantic_action for item in BROWSERGYM_INTERACTION_PROFILE.capabilities}
 
 
 def test_composer_and_schema_contracts_fail_closed_with_typed_issues() -> None:
@@ -281,9 +280,7 @@ def test_profile_support_never_creates_an_action_space_member() -> None:
         profile=ObservationSourceProfile.visual(),
     )
 
-    assert "set_value" in {
-        item.semantic_action for item in WOT_INTERACTION_PROFILE.capabilities
-    }
+    assert "set_value" in {item.semantic_action for item in WOT_INTERACTION_PROFILE.capabilities}
     assert ActionSpaceBuilder().build(task, world).options == ()
 
 
@@ -314,6 +311,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
         "context:schema",
         "delivery:" + "d" * 64,
         DeliveryManifest("world:schema", ("E1",)),
+        WorldDeliveryIndex("world:schema"),
         (RegisteredGroundedTool(compiled.public_spec, compiled),),
         1,
     )
@@ -330,11 +328,15 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
         expected_context_id="context:schema",
     )
     assert isinstance(resolved, GroundedActionResolution)
-    admitted = ActionSpaceBuilder().try_admit_selection(
-        action_space,
-        resolved.decision.action_id,
-        dict(resolved.decision.parameters),
-    ).admitted
+    admitted = (
+        ActionSpaceBuilder()
+        .try_admit_selection(
+            action_space,
+            resolved.decision.action_id,
+            dict(resolved.decision.parameters),
+        )
+        .admitted
+    )
 
     assert binding.parameter_schema == option.parameter_schema == projected.parameter_schema
     assert compiled.public_spec.input_schema["properties"]["text"] == binding.parameter_schema["properties"]["text"]
@@ -376,16 +378,9 @@ def test_tool_compilation_cannot_delete_actor_world_nodes_or_facts() -> None:
 
 
 def test_normalizer_import_boundary_and_deleted_owners_are_unreachable() -> None:
-    normalizer_path = (
-        _ROOT
-        / "src/affordance_runtime/model/policy/provider_call_normalizer.py"
-    )
+    normalizer_path = _ROOT / "src/affordance_runtime/model/policy/provider_call_normalizer.py"
     tree = ast.parse(normalizer_path.read_text())
-    imports = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
+    imports = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module is not None}
     assert not any(
         name.endswith(
             (
@@ -398,10 +393,7 @@ def test_normalizer_import_boundary_and_deleted_owners_are_unreachable() -> None
         for name in imports
     )
     assert not (_ROOT / "src/affordance_runtime/world/action_vocabulary.py").exists()
-    production = "\n".join(
-        path.read_text()
-        for path in (_ROOT / "src/affordance_runtime").rglob("*.py")
-    )
+    production = "\n".join(path.read_text() for path in (_ROOT / "src/affordance_runtime").rglob("*.py"))
     assert "_CANONICAL_COMPATIBILITY" not in production
     assert "canonical_action_operation" not in production
     assert "_normalize_catalog_call" not in production
@@ -432,6 +424,7 @@ def test_unknown_tool_returns_bounded_current_names_without_guessing_arguments()
         "context:owner",
         "delivery:" + "e" * 64,
         DeliveryManifest("world:owner", ("E1",)),
+        WorldDeliveryIndex("world:owner"),
         (RegisteredGroundedTool(canonical.public_spec, canonical),),
         1,
     )

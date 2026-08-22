@@ -8,9 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.support import shared_environment
-from affordance_runtime.model.policy import CompactJsonDecisionPort, ModelBackedAgentPolicy
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
-from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
+from affordance_runtime.model.policy import ModelBackedAgentPolicy, model_policy_from_environment
 
 
 @dataclass
@@ -26,28 +24,49 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
             def do_POST(self):  # noqa: N802
                 owner.http_requests += 1
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                context = json.loads(body["messages"][1]["content"])
-                option = context["tools"][0]
-                properties = option["input_schema"]["properties"]
+                option = body["tools"][0]["function"]
+                schema = option["parameters"]
+                properties = schema["properties"]
                 arguments = {
                     name: properties[name]["enum"][0]
-                    for name in option["input_schema"]["required"]
+                    for name in schema.get("required", ())
                     if properties[name].get("enum")
                 }
-                if "target" in option["input_schema"]["required"] and "target" not in arguments:
+                if "target" in schema.get("required", ()) and "target" not in arguments:
                     operation = re.escape(option["name"])
+                    context_text = "\n".join(
+                        str(message.get("content", ""))
+                        for message in body["messages"]
+                    )
                     match = re.search(
                         rf"\[(E[1-9][0-9]{{0,2}})\][^\n]*verbs=[^\n]*\b{operation}\b",
-                        context["observation"],
+                        context_text,
                     )
                     if match is None:
                         raise ValueError("fixture model could not find a delivered executable target")
                     arguments["target"] = match.group(1)
-                decision = {"name": option["name"], "arguments": arguments}
                 payload = json.dumps(
                     {
                         "id": "response:m3-http-policy",
-                        "choices": [{"message": {"content": json.dumps(decision)}}],
+                        "object": "chat.completion",
+                        "created": 1,
+                        "model": "fixture-native-tool",
+                        "choices": [{
+                            "index": 0,
+                            "finish_reason": "tool_calls",
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [{
+                                    "id": "call:fixture-native",
+                                    "type": "function",
+                                    "function": {
+                                        "name": option["name"],
+                                        "arguments": json.dumps(arguments),
+                                    },
+                                }],
+                            },
+                        }],
                         "usage": {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
                     }
                 ).encode()
@@ -85,24 +104,15 @@ def local_http_policy_environment(surface: str) -> ModelPolicyHttpEnvironment:
 
 def local_http_policy(environment: ModelPolicyHttpEnvironment) -> ModelBackedAgentPolicy:
     assert environment.server is not None
-    transport = OpenAICompatibleModelPort(
-        base_url=f"http://127.0.0.1:{environment.server.server_port}",
-        api_key="fixture-key",
-        model="glm-4.1v-thinking-flashx",
-        provider="zhipu",
-        endpoint_class="local-http-fixture",
-    )
-    config = ModelConfig(
-        timeout_s=1.0,
-        rate_limit_retries=0,
-        transient_retries=0,
-        prompt_version="p5-m3-http-policy",
-    )
-    return ModelBackedAgentPolicy(
-        CompactJsonDecisionPort(
-            transport,
-            config,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-        ),
+    return model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "local",
+            "LLM_LOCAL_PROVIDER": "openai_compatible",
+            "LLM_LOCAL_BASE_URL": f"http://127.0.0.1:{environment.server.server_port}/v1",
+            "LLM_LOCAL_API_KEY": "fixture-key",
+            "LLM_LOCAL_MODEL": "fixture-native-tool",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
         call_timeout_s=2.0,
     )

@@ -142,6 +142,9 @@ class BrowserGymCaseEnvironment:
     async def execute(self, request):
         return await self.world.execute(request)
 
+    async def execute_form_fields(self, command):
+        return await self.world.execute_form_fields(command)
+
     def is_current(self, request):
         return self.world.is_current(request)
 

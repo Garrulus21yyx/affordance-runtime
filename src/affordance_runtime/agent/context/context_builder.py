@@ -22,8 +22,8 @@ from affordance_runtime.agent.context.context import AgentContext, ContextIdenti
 from affordance_runtime.agent.context.contracts import (
     AgentActionPageView,
     AgentEvidenceRequirementView,
-    AgentSubtaskContractView,
-    AgentSubtaskView,
+    AgentMilestoneContractView,
+    AgentMilestoneView,
     AgentTurnView,
     EvidenceRequirementStatus,
 )
@@ -78,14 +78,21 @@ class ContextBuilder:
         delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldDeliveryIndex | None = None,
         control_feedback: dict[str, object] | None = None,
-        active_subtask: AgentSubtaskContractView | None = None,
+        active_milestone: AgentMilestoneContractView | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
         if delivery_lens is not None and delivery_lens.world_observation_id != observation.observation_id:
             raise ValueError("delivery lens belongs to a previous observation")
-        default_page = self.page(action_space, observation)
-        page = action_page or default_page
+        current_region_index = region_index or WorldDeliveryIndex.from_observation(
+            observation,
+            action_space.options,
+        )
+        page = action_page or self.page(
+            action_space,
+            observation,
+            region_index=current_region_index,
+        )
         if page.action_space_id != action_space.action_space_id:
             raise ValueError("action page does not belong to the current Internal ActionSpace")
         projected_actions = project_action_page(
@@ -99,15 +106,8 @@ class ContextBuilder:
             {item.target_id: item.label for item in observation.targets},
         )
         complete_action_ids = {item.action_id for item in complete_projected_actions.options}
-        current_region_index = region_index
-        if (
-            current_region_index is None
-            or set(current_region_index.action_region_keys) != complete_action_ids
-        ):
-            current_region_index = WorldDeliveryIndex.from_observation(
-                observation,
-                complete_projected_actions.options,
-            )
+        if set(current_region_index.action_region_keys) != complete_action_ids:
+            raise ValueError("delivery index does not contain the complete current ActionSpace")
         if current_region_index.world_observation_id != observation.observation_id:
             raise ValueError("region index belongs to a previous observation")
         shown_actions = projected_actions.options
@@ -192,9 +192,7 @@ class ContextBuilder:
             done_when=tuple(item.done_when for item in goal_plan.items),
             recent_outcomes=history_items,
             allowed_action_ids=(
-                frozenset(item.action_id for item in actions.options)
-                if actions.active_query
-                else None
+                frozenset(item.action_id for item in actions.options) if actions.active_query else None
             ),
             top_k=None if actions.active_query else 5,
         )
@@ -223,7 +221,7 @@ class ContextBuilder:
             complete_page.options,
             action_space.action_space_id,
             candidate_projection,
-            active_subtask,
+            active_milestone,
         )
 
     def page(
@@ -235,10 +233,16 @@ class ContextBuilder:
         target_id: str = "",
         relevance_role: str = "",
         cursor: str = "",
+        region_index: WorldDeliveryIndex | None = None,
     ) -> InternalActionPage:
         targets = {item.target_id: item for item in observation.targets}
         labels = {target_id: item.label for target_id, item in targets.items()}
-        region_index = WorldDeliveryIndex.from_observation(observation, action_space.options)
+        region_index = region_index or WorldDeliveryIndex.from_observation(
+            observation,
+            action_space.options,
+        )
+        if region_index.world_observation_id != observation.observation_id:
+            raise ValueError("delivery index belongs to a previous observation")
         return self.pager.page(
             action_space,
             None,
@@ -248,10 +252,7 @@ class ContextBuilder:
             labels=labels,
             roles={target_id: item.role for target_id, item in targets.items()},
             states={target_id: item.state for target_id, item in targets.items()},
-            functional_paths={
-                target_id: region_index.functional_path_for_target(target_id)
-                for target_id in targets
-            },
+            functional_paths={target_id: region_index.functional_path_for_target(target_id) for target_id in targets},
             cursor=cursor,
             page_size=min(
                 self.budget.max_action_options,
@@ -266,22 +267,20 @@ class ContextBuilder:
         action_space: ActionSpace,
         observation: WorldObservation,
         lens: WorldDeliveryLens,
-        region_index: WorldDeliveryIndex | None = None,
+        region_index: WorldDeliveryIndex,
     ) -> InternalActionPage:
         if lens.world_observation_id != observation.observation_id:
             raise ValueError("delivery lens belongs to a previous observation")
-        current_region_index = region_index or WorldDeliveryIndex.from_observation(observation)
-        if current_region_index.world_observation_id != observation.observation_id:
+        if region_index.world_observation_id != observation.observation_id:
             raise ValueError("region index belongs to a previous observation")
-        selected_targets = set(current_region_index.member_target_ids(lens.selected_region_key))
+        selected_targets = set(region_index.member_target_ids(lens.selected_region_key))
         allowed = {
             option.action_id
             for option in action_space.options
-            if option.target_id in selected_targets
-            or bool(set(option.eligible_destination_ids) & selected_targets)
+            if option.target_id in selected_targets or bool(set(option.eligible_destination_ids) & selected_targets)
         }
         if not allowed:
-            return self.page(action_space, observation)
+            return self.page(action_space, observation, region_index=region_index)
         labels = {item.target_id: item.label for item in observation.targets}
         return self.pager.page(
             action_space,
@@ -340,14 +339,16 @@ def _tool_catalog_digest(
 ) -> str:
     """Bind identity to the exact current inputs that determine the public tool catalog."""
 
-    payload = to_json_compatible({
-        "actions": actions,
-        "observation_capabilities": world.observation_capabilities,
-        "world_targets": world.targets,
-        "grounding_entities": grounding.index.entities,
-        "runtime_controls": tuple(runtime_controls),
-        "delivery_lens": delivery_lens,
-    })
+    payload = to_json_compatible(
+        {
+            "actions": actions,
+            "observation_capabilities": world.observation_capabilities,
+            "world_targets": world.targets,
+            "grounding_entities": grounding.index.entities,
+            "runtime_controls": tuple(runtime_controls),
+            "delivery_lens": delivery_lens,
+        }
+    )
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode()).hexdigest()
 
@@ -390,7 +391,7 @@ def _fit_context(
     complete_actions,
     action_space_id: str,
     action_candidates,
-    active_subtask: AgentSubtaskContractView | None,
+    active_milestone: AgentMilestoneContractView | None,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
@@ -407,10 +408,10 @@ def _fit_context(
         evidence_index,
         fact_refs,
         region_index,
-        required_evidence=(active_subtask.required_evidence if active_subtask is not None else ()),
+        required_evidence=(active_milestone.required_evidence if active_milestone is not None else ()),
     )
-    active_subtask_view = _active_subtask_view(
-        active_subtask,
+    active_milestone_view = _active_milestone_view(
+        active_milestone,
         working_facts,
         observation,
         evidence_index,
@@ -423,8 +424,8 @@ def _fit_context(
         world.facts.items,
         fact_refs,
         grounding.index.target_refs,
-        include_final_response_contract=False,
-        active_subtask=active_subtask_view,
+        include_final_response_contract=bool(active_milestone is not None and active_milestone.final),
+        active_milestone=active_milestone_view,
     )
     private_fact_bindings = _current_public_fact_bindings(
         observation,
@@ -464,11 +465,11 @@ def _fit_context(
         action_space_id,
         action_candidates,
         evidence_candidates,
-        active_subtask,
+        active_milestone,
     )
 
 
-def _active_subtask_view(
+def _active_milestone_view(
     contract,
     working_facts,
     observation,
@@ -500,13 +501,13 @@ def _active_subtask_view(
         )
         for key, description in contract.required_evidence
     )
-    return AgentSubtaskView(
-        contract.objective,
+    return AgentMilestoneView(
+        contract.id,
+        contract.outcome,
         contract.done_when,
-        contract.task_link,
-        contract.outcome_kind,
-        contract.constraints,
         requirements,
+        contract.depends_on,
+        contract.final,
     )
 
 
@@ -514,10 +515,12 @@ def _evidence_index(observation: WorldObservation, *, include_public_text: bool)
     index = WorldEvidenceIndex.from_observation(observation)
     if not include_public_text:
         return index
-    records = tuple(sorted(
-        (*index.records, *public_text_evidence_records(observation)),
-        key=lambda item: item.evidence_ref,
-    ))
+    records = tuple(
+        sorted(
+            (*index.records, *public_text_evidence_records(observation)),
+            key=lambda item: item.evidence_ref,
+        )
+    )
     return WorldEvidenceIndex(
         observation.observation_id,
         tuple(sorted(item.evidence_ref for item in records)),
@@ -582,11 +585,7 @@ def _public_fact_refs(
             add(ref)
     ordered = [
         *prioritized,
-        *(
-            item.fact_ref
-            for item in facts
-            if item.fact_ref in current_refs and item.fact_ref not in prioritized
-        ),
+        *(item.fact_ref for item in facts if item.fact_ref in current_refs and item.fact_ref not in prioritized),
     ]
     ordered.extend(
         record.evidence_ref

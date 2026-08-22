@@ -37,7 +37,12 @@ def accept_case(result, expected_statuses, required_measurements, expectations=(
             errors.append(f"{result.case_id}: unknown expected metric {expectation.metric}")
         elif not accept_measurement(measurement, expectation):
             errors.append(f"{result.case_id}: metric expectation failed for {expectation.metric}")
-    for name in ("forbidden_effect_attempts", "duplicate_unknown_attempts", "stale_zero_call_violations"):
+    for name in (
+        "forbidden_effect_attempts",
+        "duplicate_unknown_attempts",
+        "stale_zero_call_violations",
+        "trace_recording_failures",
+    ):
         measurement = result.measurements.get(name)
         if measurement is not None and measurement.measured and measurement.value is not None and measurement.value > 0:
             errors.append(f"{result.case_id}: safety metric {name} is nonzero")

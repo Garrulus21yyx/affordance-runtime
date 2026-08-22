@@ -76,6 +76,9 @@ class ManagedRealEnvironment:
     async def execute(self, request: BoundActionRequest):
         return await self.inner.execute(request)
 
+    async def execute_form_fields(self, command):
+        return await self.inner.execute_form_fields(command)
+
     def is_current(self, request: BoundActionRequest) -> bool:
         return self.inner.is_current(request)
 
@@ -162,11 +165,22 @@ class ScreenshotOnlySharedStateProposer:
         xs, ys = [item[0] for item in matches], [item[1] for item in matches]
         checked = matches[len(matches) // 2][2] == (35, 180, 80)
         box = (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
-        return [VisualRegion(
-            (box[0] / image.width, box[1] / image.height,
-             (box[2] - box[0]) / image.width, (box[3] - box[1]) / image.height),
-            "Shared state", 1.0, True, "button", "point_activate", {"expanded": checked},
-        )]
+        return [
+            VisualRegion(
+                (
+                    box[0] / image.width,
+                    box[1] / image.height,
+                    (box[2] - box[0]) / image.width,
+                    (box[3] - box[1]) / image.height,
+                ),
+                "Shared state",
+                1.0,
+                True,
+                "button",
+                "point_activate",
+                {"expanded": checked},
+            )
+        ]
 
 
 class ScreenshotOnlySharedStateGrounder:
@@ -187,8 +201,7 @@ class ScreenshotOnlySharedStateGrounder:
             raise ValueError("visual fixture could not ground its rendered semantic region")
         xs, ys = [item[0] for item in matches], [item[1] for item in matches]
         return VisualGroundingPoint(
-            ((min(xs) + max(xs) + 1) / (2 * image.width),
-             (min(ys) + max(ys) + 1) / (2 * image.height)),
+            ((min(xs) + max(xs) + 1) / (2 * image.width), (min(ys) + max(ys) + 1) / (2 * image.height)),
             normalized=True,
         )
 
@@ -203,7 +216,9 @@ class WotFixtureState:
 
 def real_adapter_task() -> TaskGoal:
     return TaskGoal(
-        "enable-real-shared", "Enable shared state", allowed_effects=("shared_state_enabled",),
+        "enable-real-shared",
+        "Enable shared state",
+        allowed_effects=("shared_state_enabled",),
         success_criteria=({"id": "expanded", "predicate": "expanded", "value": True},),
         risk_profile=RiskProfile.LOW,
     )
@@ -211,12 +226,18 @@ def real_adapter_task() -> TaskGoal:
 
 def real_visual_task() -> TaskGoal:
     return TaskGoal(
-        "enable-real-visual", "Enable shared state", allowed_effects=("shared_state_enabled",),
-        success_criteria=({
-            "id": "expanded", "adjudicator": "semantic", "kind": "semantic_rubric",
-            "rubric": "The shared-state visual control is expanded.",
-            "evidence_scope_target_ids": ["region:0"],
-        },),
+        "enable-real-visual",
+        "Enable shared state",
+        allowed_effects=("shared_state_enabled",),
+        success_criteria=(
+            {
+                "id": "expanded",
+                "adjudicator": "semantic",
+                "kind": "semantic_rubric",
+                "rubric": "The shared-state visual control is expanded.",
+                "evidence_scope_target_ids": ["region:0"],
+            },
+        ),
         risk_profile=RiskProfile.LOW,
     )
 
@@ -224,7 +245,8 @@ def real_visual_task() -> TaskGoal:
 class VisualStateCriterionJudge:
     async def evaluate(self, request):
         evidence = next(
-            item for item in request.evidence_catalog.items
+            item
+            for item in request.evidence_catalog.items
             if item.subject_id == "region:0" and item.predicate == "expanded"
         )
         status = (
@@ -232,9 +254,14 @@ class VisualStateCriterionJudge:
             if evidence.public_value is True
             else CriterionEvaluationStatus.UNSATISFIED
         )
-        return (SemanticCriterionProposal(
-            "expanded", status, (evidence.evidence_ref,), "visual state compared deterministically",
-        ),)
+        return (
+            SemanticCriterionProposal(
+                "expanded",
+                status,
+                (evidence.evidence_ref,),
+                "visual state compared deterministically",
+            ),
+        )
 
 
 def real_dom_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvironment:
@@ -243,10 +270,14 @@ def real_dom_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvi
         lease_ttl_ms=30_000,
     )
     adapter = CountingAdapter(
-        DomSurfaceAdapter(cast(BrowserSession, session)), instrumentation, "dom_click_calls",
+        DomSurfaceAdapter(cast(BrowserSession, session)),
+        instrumentation,
+        "dom_click_calls",
     )
     return ManagedRealEnvironment(
-        UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)), session.close, instrumentation,
+        UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)),
+        session.close,
+        instrumentation,
     )
 
 
@@ -258,13 +289,17 @@ def real_visual_environment(instrumentation: BenchmarkInstrumentation) -> WorldE
     proposer = ScreenshotOnlySharedStateProposer(instrumentation)
     adapter = CountingAdapter(
         VisualSurfaceAdapter(
-            cast(BrowserSession, session), proposer, ScreenshotOnlySharedStateGrounder(),
+            cast(BrowserSession, session),
+            proposer,
+            ScreenshotOnlySharedStateGrounder(),
         ),
         instrumentation,
         "pointer_calls",
     )
     return ManagedRealEnvironment(
-        UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)), session.close, instrumentation,
+        UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)),
+        session.close,
+        instrumentation,
     )
 
 
@@ -273,7 +308,8 @@ def real_wot_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvi
     td_url = f"http://127.0.0.1:{server.server_address[1]}/td"
     adapter = CountingAdapter(
         WotSurfaceAdapter(
-            HttpWotTransport(td_url), deployment_scope=WotDeploymentScope.LOCAL_SIMULATION,
+            HttpWotTransport(td_url),
+            deployment_scope=WotDeploymentScope.LOCAL_SIMULATION,
         ),
         instrumentation,
         "wot_action_calls",
@@ -285,7 +321,10 @@ def real_wot_environment(instrumentation: BenchmarkInstrumentation) -> WorldEnvi
         require_thread_stopped(thread, timeout=2)
 
     return ManagedRealEnvironment(
-        UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)), close, instrumentation, state,
+        UnifiedWorldEnvironment((cast(SurfaceAdapter, adapter),)),
+        close,
+        instrumentation,
+        state,
     )
 
 
@@ -335,13 +374,21 @@ def require_thread_stopped(thread, *, timeout: float) -> None:
 
 def _thing_description(port: int) -> dict[str, object]:
     return {
-        "id": "shared-state", "title": "Shared State", "base": f"http://127.0.0.1:{port}",
-        "securityDefinitions": {"public": {"scheme": "nosec"}}, "security": "public",
-        "properties": {"expanded": {
-            "type": "boolean", "readOnly": True,
-            "forms": [{"href": "/properties/expanded", "op": "readproperty"}],
-        }},
-        "actions": {"enable": {
-            "forms": [{"href": "/actions/enable", "op": "invokeaction"}],
-        }},
+        "id": "shared-state",
+        "title": "Shared State",
+        "base": f"http://127.0.0.1:{port}",
+        "securityDefinitions": {"public": {"scheme": "nosec"}},
+        "security": "public",
+        "properties": {
+            "expanded": {
+                "type": "boolean",
+                "readOnly": True,
+                "forms": [{"href": "/properties/expanded", "op": "readproperty"}],
+            }
+        },
+        "actions": {
+            "enable": {
+                "forms": [{"href": "/actions/enable", "op": "invokeaction"}],
+            }
+        },
     }

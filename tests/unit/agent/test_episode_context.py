@@ -8,9 +8,12 @@ import pytest
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.step_projection import project_step_result
-from affordance_runtime.agent.decisions import LocalToolResult
+from affordance_runtime.agent.decisions import (
+    PinFactResult,
+    ReadRegionResult,
+    ToolRejectedResult,
+)
 from affordance_runtime.agent.run_state import (
-    EpisodeYieldReason,
     RunState,
     RunStatus,
     StepResult,
@@ -41,10 +44,10 @@ def test_episode_history_retains_all_steps_and_never_repeats_the_latest_four() -
 
 def test_fifty_step_history_keeps_semantic_trace_without_refs_ids_or_screenshots() -> None:
     steps = tuple(
-            AgentTurnView(
-                "selectaction",
-                "activate",
-                reason="unchanged",
+        AgentTurnView(
+            "selectaction",
+            "activate",
+            reason="unchanged",
             transition={
                 "observed_change": "unchanged",
                 "before_world_fingerprint": f"fingerprint-before-{index}",
@@ -70,7 +73,7 @@ def test_fifty_step_history_keeps_semantic_trace_without_refs_ids_or_screenshots
 
 def test_projected_history_removes_generation_local_entity_and_fact_refs() -> None:
     world = shared_world("observation:refs", False)
-    decision = LocalToolResult(
+    decision = ReadRegionResult(
         "context:test",
         "count_children",
         {"containers": ("E1",), "evidence_ref": "F2"},
@@ -86,10 +89,14 @@ def test_projected_history_removes_generation_local_entity_and_fact_refs() -> No
     )
 
     projected = project_step_result(result)
-    encoded = json.dumps(to_json_compatible({
-        "summary": projected.semantic_summary,
-        "reason": projected.reason,
-    }))
+    encoded = json.dumps(
+        to_json_compatible(
+            {
+                "summary": projected.semantic_summary,
+                "reason": projected.reason,
+            }
+        )
+    )
 
     assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
     assert "expired-ref" not in encoded
@@ -97,7 +104,7 @@ def test_projected_history_removes_generation_local_entity_and_fact_refs() -> No
 
 def test_rejected_action_history_keeps_semantics_and_capability_not_ref_identity() -> None:
     world = shared_world("observation:rejected", False)
-    decision = LocalToolResult(
+    decision = ToolRejectedResult(
         "context:test",
         "tool_rejected",
         {"operation": "activate", "arguments": {"target": "E59"}},
@@ -110,13 +117,15 @@ def test_rejected_action_history_keeps_semantics_and_capability_not_ref_identity
             "world_changed": False,
         },
     )
-    projected = project_step_result(StepResult(
-        decision,
-        world,
-        world,
-        _evaluation(world.observation_id),
-        feedback="tool_rejected",
-    ))
+    projected = project_step_result(
+        StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world.observation_id),
+            feedback="tool_rejected",
+        )
+    )
     encoded = json.dumps(to_json_compatible(render_episode_history((projected,))))
 
     assert projected.semantic_summary["result"]["target"] == {
@@ -129,7 +138,7 @@ def test_rejected_action_history_keeps_semantics_and_capability_not_ref_identity
 
 
 def test_history_sanitizer_removes_legacy_expired_ref_aliases() -> None:
-    decision = LocalToolResult(
+    decision = ToolRejectedResult(
         "context:test",
         "tool_rejected",
         {"summary": "activate <expired-ref-1>"},
@@ -140,13 +149,15 @@ def test_history_sanitizer_removes_legacy_expired_ref_aliases() -> None:
     )
     world = shared_world("observation:legacy-alias", False)
 
-    projected = project_step_result(StepResult(
-        decision,
-        world,
-        world,
-        _evaluation(world.observation_id),
-        feedback="tool_rejected",
-    ))
+    projected = project_step_result(
+        StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world.observation_id),
+            feedback="tool_rejected",
+        )
+    )
     encoded = json.dumps(to_json_compatible(render_episode_history((projected,))))
 
     assert "expired-ref" not in encoded
@@ -158,10 +169,14 @@ def test_irreducible_history_overflow_yields_with_typed_reason() -> None:
     world = shared_world("observation:capacity", False)
     state = RunState(world, _evaluation(world.observation_id), 10)
 
-    state.remember_step(AgentTurnView("abort", "abort", reason="x" * 240), max_bytes=32)
+    accepted = state.can_remember_step(
+        AgentTurnView("abort", "abort", reason="x" * 240),
+        max_bytes=32,
+    )
 
-    assert state.status is RunStatus.YIELDED
-    assert state.yield_reason is EpisodeYieldReason.CONTEXT_CAPACITY
+    assert accepted is False
+    assert state.status is RunStatus.RUNNING
+    assert state.yield_reason is None
     assert state.recent_steps == ()
 
 
@@ -169,7 +184,7 @@ def test_working_fact_is_runtime_value_and_local_tool_has_zero_gui_execution() -
     world = shared_world("observation:pin", False)
     record = WorldEvidenceIndex.from_observation(world).records[0]
     fact = WorkingFact("saved_enabled", record, 0, "reuse later")
-    decision = LocalToolResult(
+    decision = PinFactResult(
         "context:test",
         "pin_fact",
         {"key": "saved_enabled", "evidence_ref": "F1", "purpose": "reuse later"},
@@ -179,13 +194,15 @@ def test_working_fact_is_runtime_value_and_local_tool_has_zero_gui_execution() -
     )
     state = RunState(world, _evaluation(world.observation_id), 3)
 
-    state.apply(StepResult(
-        decision,
-        world,
-        world,
-        _evaluation(world.observation_id),
-        feedback="local_tool_result",
-    ))
+    state.apply(
+        StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world.observation_id),
+            feedback="local_tool_result",
+        )
+    )
 
     assert state.working_facts == (fact,)
     assert state.execution_count == 0

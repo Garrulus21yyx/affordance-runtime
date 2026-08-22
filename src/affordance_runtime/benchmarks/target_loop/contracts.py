@@ -57,7 +57,7 @@ SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
 
 _MISSION_FAILURE_OUTCOMES = frozenset(
     {
-        MissionOutcome.MANAGER_FAILURE,
+        MissionOutcome.PLANNER_FAILURE,
         MissionOutcome.AUDITOR_FAILURE,
         MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
         MissionOutcome.AUDITOR_PROVIDER_FAILURE,
@@ -66,7 +66,6 @@ _MISSION_FAILURE_OUTCOMES = frozenset(
         MissionOutcome.EVIDENCE_GAP,
         MissionOutcome.FINALIZATION_NOT_READY,
         MissionOutcome.CANCELLED,
-        MissionOutcome.STRATEGY_NOT_CHANGED,
         MissionOutcome.OPERATIONAL_FAILURE,
         MissionOutcome.UNHANDLED_EPISODE_STATE,
         MissionOutcome.ROUND_BUDGET_EXHAUSTED,
@@ -331,10 +330,9 @@ class BenchmarkComposition:
     risk_policy: RiskPolicy | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler | None = None
-    mission_manager: object | None = None
+    mission_planner: object | None = None
     mission_auditor: object | None = None
     execution_mode: ExecutionMode = ExecutionMode.STANDALONE
-    strict_verification: bool = False
 
     @classmethod
     def atomic(
@@ -359,14 +357,12 @@ class BenchmarkComposition:
     def __post_init__(self) -> None:
         if not isinstance(self.execution_mode, ExecutionMode):
             raise TypeError("benchmark execution mode must be typed")
-        if self.execution_mode is ExecutionMode.MISSION and self.mission_manager is None:
-            raise ValueError("mission composition requires a Manager port")
+        if self.execution_mode is ExecutionMode.MISSION and self.mission_planner is None:
+            raise ValueError("mission composition requires a MilestonePlanner port")
         if self.execution_mode is ExecutionMode.STANDALONE and (
-            self.mission_manager is not None or self.mission_auditor is not None
+            self.mission_planner is not None or self.mission_auditor is not None
         ):
             raise ValueError("standalone composition cannot install mission roles")
-        if self.strict_verification and self.mission_auditor is None:
-            raise ValueError("strict verification requires an Auditor port")
         object.__setattr__(
             self,
             "required_decisions",
@@ -470,7 +466,7 @@ class BenchmarkCaseResult:
     failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
     failure_code: str = ""
     exception_class: str = ""
-    last_decision_type: str = ""
+    last_decision_kind: str = ""
     last_policy_failure_code: str = ""
     last_action_space_option_count: int = 0
     last_world_target_count: int = 0
@@ -523,7 +519,7 @@ class BenchmarkCaseResult:
             self.last_progress_event_type,
             self.failure_code,
             self.exception_class,
-            self.last_decision_type,
+            self.last_decision_kind,
             self.last_policy_failure_code,
             self.last_world_coverage,
             self.pending_kind,
@@ -559,9 +555,14 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark chronological failure codes must be bounded identifiers")
         if self.primary_failure_phase not in {"", "pre_dispatch", "dispatch_wait", "post_capture", "cleanup"}:
             raise ValueError("benchmark primary failure phase is outside the closed vocabulary")
-        if self.primary_diagnostic_ref and re.fullmatch(
-            r"execution-diagnostic:[0-9a-f]{24}", self.primary_diagnostic_ref,
-        ) is None:
+        if (
+            self.primary_diagnostic_ref
+            and re.fullmatch(
+                r"execution-diagnostic:[0-9a-f]{24}",
+                self.primary_diagnostic_ref,
+            )
+            is None
+        ):
             raise ValueError("benchmark primary diagnostic reference is invalid")
         if self.cleanup_diagnostic is not None:
             if not isinstance(self.cleanup_diagnostic, ExecutionDiagnostic):
@@ -571,7 +572,8 @@ class BenchmarkCaseResult:
         if (
             not self.case_id
             or self.status not in {str(item) for item in RunStatus if item is not RunStatus.RUNNING}
-            or self.termination_origin not in {
+            or self.termination_origin
+            not in {
                 "",
                 "runtime",
                 "component",
@@ -630,20 +632,13 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark action verification method is outside the closed vocabulary")
         if self.mission_outcome and self.mission_outcome not in {str(item) for item in MissionOutcome}:
             raise ValueError("benchmark mission outcome is outside the closed vocabulary")
-        if self.last_decision_type not in {
-            "",
-            "Abort",
-            "AskUser",
-            "FinalResponse",
-            "LocalToolResult",
-            "ProtocolFeedback",
-            "RequestActionPage",
-            "RequestObservation",
-            "SelectAction",
-            "Wait",
-            "YieldSubtask",
-        }:
-            raise ValueError("benchmark decision type is outside the closed vocabulary")
+        if self.last_decision_kind:
+            from affordance_runtime.agent.decisions import DecisionKind
+
+            try:
+                DecisionKind(self.last_decision_kind)
+            except ValueError as exc:
+                raise ValueError("benchmark decision kind is outside the closed vocabulary") from exc
         if self.last_progress_event_type not in {
             "",
             "already_satisfied_selection",
@@ -689,9 +684,15 @@ class BenchmarkCaseResult:
             raise ValueError("cleanup exception metadata must be a bounded class name")
         if self.cleanup_failures not in {0, 1}:
             raise ValueError("cleanup failure count must be zero or one")
-        if self.cleanup_status not in {"not_run", "succeeded", "failed"}:
+        if self.cleanup_status not in {
+            "not_run",
+            "succeeded",
+            "already_closed",
+            "timeout",
+            "failed",
+        }:
             raise ValueError("cleanup status is outside the closed vocabulary")
-        if (self.cleanup_status == "failed") != bool(self.cleanup_failures):
+        if (self.cleanup_status in {"timeout", "failed"}) != bool(self.cleanup_failures):
             raise ValueError("cleanup status and failure fact are inconsistent")
         if self.harness_integrity_failures not in {0, 1}:
             raise ValueError("harness integrity failure count must be zero or one")
@@ -727,7 +728,7 @@ class BenchmarkCaseResult:
             if self.latest_task_status and self.latest_task_status != expected_task_status:
                 raise ValueError("canonical task outcome contradicts task evaluation status")
         abort_codes = {f"abort_{item.value}" for item in AbortCategory}
-        if self.last_decision_type == "Abort" and facts.runtime_reason_code not in abort_codes:
+        if self.last_decision_kind == "abort" and facts.runtime_reason_code not in abort_codes:
             raise ValueError("benchmark abort decision and Runtime fact are inconsistent")
         if (
             self.runtime_reason_code != facts.runtime_reason_code
@@ -744,28 +745,22 @@ class BenchmarkCaseResult:
             or self.exception_class != facts.component_exception_class
         ):
             raise ValueError("benchmark component failure projection is inconsistent")
-        from affordance_runtime.benchmarks.target_loop.legacy_case_projection import (
-            project_legacy_case_fields,
-        )
-
-        legacy = project_legacy_case_fields(self.status, facts)
-        mission_primary_code = mission_failure_code(self.mission_outcome)
-        expected_case_failure_code = legacy.case_failure_code
-        if mission_primary_code and expected_case_failure_code in {"", facts.cleanup_code}:
-            expected_case_failure_code = mission_primary_code
-        expected_termination_origin = (
-            "runtime"
-            if mission_primary_code and expected_case_failure_code == mission_primary_code
-            else legacy.termination_origin
-        )
-        if self.case_failure_code != expected_case_failure_code:
-            raise ValueError("benchmark case failure code is inconsistent with failure facts")
-        if self.terminal_reason_code is not legacy.terminal_reason_code:
-            raise ValueError("benchmark terminal reason is inconsistent with failure facts")
+        # Projection precedence belongs solely to case_projection.  This value
+        # object validates shape and direct duplicate facts; it must not run a
+        # second failure interpreter with its own compatibility table.
         if self.watchdog_triggered != bool(facts.watchdog_code):
             raise ValueError("benchmark watchdog projection is inconsistent")
-        if self.termination_origin != expected_termination_origin:
-            raise ValueError("benchmark termination origin is inconsistent with failure facts")
+        if (
+            facts.component_origin
+            not in {
+                CaseFailureOrigin.NONE,
+                CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION,
+                CaseFailureOrigin.CLEANUP,
+            }
+            and not facts.watchdog_code
+            and self.termination_origin != "component"
+        ):
+            raise ValueError("benchmark termination origin contradicts its direct component fact")
         if bool(self.cleanup_failures) != bool(facts.cleanup_code):
             raise ValueError("benchmark cleanup projection is inconsistent")
         if bool(self.harness_integrity_failures) != bool(facts.harness_integrity_code):
@@ -781,9 +776,7 @@ class BenchmarkCaseResult:
                 facts.harness_integrity_code,
             )
         )
-        secondary_lifecycle_codes = {
-            code for code in (facts.watchdog_code, facts.cleanup_code) if code
-        }
+        secondary_lifecycle_codes = {code for code in (facts.watchdog_code, facts.cleanup_code) if code}
         if (
             self.status == str(RunStatus.DONE)
             and official is not None
@@ -917,7 +910,7 @@ _KNOWN_METRICS = (
             "completion_tokens",
             "total_tokens",
             "model_latency_ms",
-            "mission_manager_calls",
+            "mission_planner_calls",
             "mission_auditor_calls",
             "final_response_boundary_admission_count",
             "final_response_boundary_rejection_count",

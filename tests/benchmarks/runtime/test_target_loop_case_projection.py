@@ -6,24 +6,58 @@ from types import SimpleNamespace
 import pytest
 
 from affordance_runtime.agent import AgentFailureCode, EpisodeYieldReason, RunStatus
-from affordance_runtime.agent.episode_snapshot import PartialEpisodeSnapshot
+from affordance_runtime.agent.episode_snapshot import EpisodeSnapshot
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.evaluation import TaskOutcomeFact, TaskOutcomeKind
-from affordance_runtime.execution import DispatchStatus, ExecutionDiagnostic, ExecutionDiagnosticPhase
 
 
 def _snapshot(
-    *, observations: int = 2, executions: int = 1, turns: int = 1,
-    reason: str = "runtime_exception", control_status: str = "failed",
-) -> PartialEpisodeSnapshot:
-    return PartialEpisodeSnapshot(
-        observations, executions, 3, turns, "unknown", "changed", "satisfied", "native",
-        "sha256:" + "0" * 64, 1, 0, "action_postcondition_satisfied", 0, "SelectAction", 2, 1,
-        "complete", "", (("SelectAction", turns),), control_status, reason,
+    *,
+    observations: int = 2,
+    executions: int = 1,
+    turns: int = 1,
+    reason: str = "runtime_exception",
+    control_status: str = "failed",
+    mission_outcome: str = "",
+    mission_last_ref: str = "",
+    task_outcome_kind: str = "",
+    task_outcome_code: str = "",
+    runtime_failure: RuntimeFailure | None = None,
+) -> EpisodeSnapshot:
+    snapshot = EpisodeSnapshot(
+        observations,
+        executions,
+        3,
+        turns,
+        "unknown",
+        "changed",
+        "satisfied",
+        "native",
+        "sha256:" + "0" * 64,
+        1,
+        0,
+        "action_postcondition_satisfied",
+        0,
+        "select_action",
+        2,
+        1,
+        "complete",
+        "",
+        (("select_action", turns),),
+        control_status,
+        reason,
+    )
+    return replace(
+        snapshot,
+        mission_outcome=mission_outcome,
+        mission_last_ref=mission_last_ref,
+        task_outcome_kind=task_outcome_kind,
+        task_outcome_code=task_outcome_code,
+        runtime_failure=runtime_failure,
     )
 
 
@@ -40,9 +74,21 @@ def _result(reason: str, *, message: str = "display only"):
         failure_code=None,
         policy_failure=None,
         runtime_failure=RuntimeFailure(
-            FailureStage.CONTROL, FailureKind.REJECTED, reason,
+            FailureStage.CONTROL,
+            FailureKind.REJECTED,
+            reason,
         ),
         task_outcome=None,
+    )
+
+
+def _runtime_failure_snapshot(reason: str) -> EpisodeSnapshot:
+    return _snapshot(
+        runtime_failure=RuntimeFailure(
+            FailureStage.CONTROL,
+            FailureKind.REJECTED,
+            reason,
+        )
     )
 
 
@@ -85,20 +131,38 @@ def test_blocked_run_does_not_publish_incompatible_verifier_unavailable_outcome(
     assert projected.failure_facts.task_outcome_code == ""
 
 
-@pytest.mark.parametrize("reason", (
-    "task_evaluation_invalid", "action_outcome_invalid",
-    "action_result_lineage_mismatch", "action_not_dispatched",
-    "observation_budget_exhausted", "abort_policy", "runtime_exception",
-    "confirmation_subject_unavailable", "new_bounded_runtime_reason",
-))
+@pytest.mark.parametrize(
+    "reason",
+    (
+        "task_evaluation_invalid",
+        "action_outcome_invalid",
+        "action_result_lineage_mismatch",
+        "action_not_dispatched",
+        "observation_budget_exhausted",
+        "abort_policy",
+        "runtime_exception",
+        "confirmation_subject_unavailable",
+        "new_bounded_runtime_reason",
+    ),
+)
 def test_runtime_reason_is_never_dropped_or_inferred_from_message(
     reason: str,
 ) -> None:
     first = project_case_result(
-        "case", _result(reason, message="first"), BenchmarkInstrumentation(), 1.0, "first"
+        "case",
+        _result(reason, message="first"),
+        BenchmarkInstrumentation(),
+        1.0,
+        "first",
+        final_snapshot=_runtime_failure_snapshot(reason),
     )
     second = project_case_result(
-        "case", _result(reason, message="different"), BenchmarkInstrumentation(), 1.0, "different"
+        "case",
+        _result(reason, message="different"),
+        BenchmarkInstrumentation(),
+        1.0,
+        "different",
+        final_snapshot=_runtime_failure_snapshot(reason),
     )
     assert first.case_failure_code == second.case_failure_code == reason
     assert first.runtime_reason_code == second.runtime_reason_code == reason
@@ -143,9 +207,7 @@ def test_success_reason_does_not_become_a_failure_code() -> None:
     result = _result("task_complete")
     result.status = RunStatus.DONE
     result.runtime_failure = None
-    projected = project_case_result(
-        "case", result, BenchmarkInstrumentation(), 1.0, ""
-    )
+    projected = project_case_result("case", result, BenchmarkInstrumentation(), 1.0, "")
     assert projected.case_failure_code == ""
     assert projected.failure_code == ""
     assert projected.failure_origin is CaseFailureOrigin.NONE
@@ -182,9 +244,7 @@ def test_result_none_does_not_inherit_stale_nonterminal_snapshot_reason() -> Non
         instrumentation,
         1.0,
         "display only",
-        final_snapshot=_snapshot(
-            reason="action_unknown", control_status="waiting_user"
-        ),
+        final_snapshot=_snapshot(reason="action_unknown", control_status="waiting_user"),
     )
     assert projected.case_failure_code == "policy_exception"
     assert projected.runtime_reason_code == ""
@@ -193,12 +253,14 @@ def test_result_none_does_not_inherit_stale_nonterminal_snapshot_reason() -> Non
 
 def test_cleanup_is_secondary_to_runtime_reason() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_cleanup_failure(
-        "cleanup_exception", RuntimeError("private cleanup detail")
-    )
+    instrumentation.record_cleanup_failure("cleanup_exception", RuntimeError("private cleanup detail"))
     projected = project_case_result(
-        "case", _result("task_evaluation_invalid"), instrumentation, 1.0,
+        "case",
+        _result("task_evaluation_invalid"),
+        instrumentation,
+        1.0,
         "runtime failed; cleanup failed",
+        final_snapshot=_runtime_failure_snapshot("task_evaluation_invalid"),
     )
     assert projected.case_failure_code == "task_evaluation_invalid"
     assert projected.failure_origin is CaseFailureOrigin.NONE
@@ -208,14 +270,12 @@ def test_cleanup_is_secondary_to_runtime_reason() -> None:
     assert projected.measurements["cleanup_failures"].value == 1
 
 
-def test_cleanup_does_not_mask_earlier_manager_failure() -> None:
+def test_cleanup_does_not_mask_earlier_planner_failure() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_cleanup_failure(
-        "cleanup_exception", RuntimeError("private cleanup detail")
-    )
+    instrumentation.record_cleanup_failure("cleanup_exception", RuntimeError("private cleanup detail"))
     result = SimpleNamespace(
         status=RunStatus.FAILED,
-        outcome="manager_failure",
+        outcome="planner_failure",
         sent_unknown_count=0,
         observation_count=0,
         execution_count=0,
@@ -225,15 +285,26 @@ def test_cleanup_does_not_mask_earlier_manager_failure() -> None:
         policy_failure=None,
         runtime_failure=None,
         task_outcome=None,
-        supervisor_state=SimpleNamespace(last_ref="mission:manager:1"),
+        supervisor_state=SimpleNamespace(last_ref="mission:planner:1"),
     )
 
     projected = project_case_result(
-        "case", result, instrumentation, 1.0, "cleanup failed"
+        "case",
+        result,
+        instrumentation,
+        1.0,
+        "cleanup failed",
+        final_snapshot=_snapshot(
+            observations=0,
+            executions=0,
+            turns=0,
+            mission_outcome="planner_failure",
+            mission_last_ref="mission:planner:1",
+        ),
     )
 
-    assert projected.case_failure_code == "manager_failure"
-    assert projected.primary_failure_code == "manager_failure"
+    assert projected.case_failure_code == "planner_failure"
+    assert projected.primary_failure_code == "planner_failure"
     assert projected.termination_origin == "runtime"
     assert projected.secondary_failure_codes == ("cleanup_exception",)
     assert projected.cleanup_diagnostic is not None
@@ -242,9 +313,7 @@ def test_cleanup_does_not_mask_earlier_manager_failure() -> None:
 
 def test_cleanup_timeout_does_not_mask_provider_failure() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_cleanup_failure(
-        "cleanup_timeout", TimeoutError("bounded cleanup expired")
-    )
+    instrumentation.record_cleanup_failure("cleanup_timeout", TimeoutError("bounded cleanup expired"))
 
     projected = project_case_result(
         "case",
@@ -252,6 +321,7 @@ def test_cleanup_timeout_does_not_mask_provider_failure() -> None:
         instrumentation,
         1.0,
         "provider failed; cleanup timed out",
+        final_snapshot=_runtime_failure_snapshot("provider_failure"),
     )
 
     assert projected.case_failure_code == "provider_failure"
@@ -261,9 +331,7 @@ def test_cleanup_timeout_does_not_mask_provider_failure() -> None:
 
 def test_cleanup_timeout_does_not_mask_terminal_task_failure() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_cleanup_failure(
-        "cleanup_timeout", TimeoutError("bounded cleanup expired")
-    )
+    instrumentation.record_cleanup_failure("cleanup_timeout", TimeoutError("bounded cleanup expired"))
     result = SimpleNamespace(
         status=RunStatus.BLOCKED,
         sent_unknown_count=0,
@@ -282,7 +350,23 @@ def test_cleanup_timeout_does_not_mask_terminal_task_failure() -> None:
     )
 
     projected = project_case_result(
-        "case", result, instrumentation, 1.0, "cleanup timed out"
+        "case",
+        result,
+        instrumentation,
+        1.0,
+        "cleanup timed out",
+        final_snapshot=replace(
+            _snapshot(
+                observations=1,
+                executions=0,
+                turns=0,
+                control_status="blocked",
+                reason="",
+                task_outcome_kind=TaskOutcomeKind.TERMINAL_FAILURE.value,
+                task_outcome_code="verified_terminal_task_failure",
+            ),
+            latest_task_status="blocked",
+        ),
     )
 
     assert projected.case_failure_code == "verified_terminal_task_failure"
@@ -325,33 +409,13 @@ def test_uncertain_dispatch_remains_primary_when_cleanup_also_fails() -> None:
     assert projected.cleanup_diagnostic.traceback_ref.startswith("traceback:sha256:")
 
 
-def test_instrumentation_only_promotes_unresolved_sent_unknown_to_case_failure() -> None:
-    diagnostic = ExecutionDiagnostic(
-        "execution-diagnostic:" + "b" * 24,
-        ExecutionDiagnosticPhase.DISPATCH_WAIT,
-        "TimeoutError",
-        "builtins",
-        "dispatch timed out",
-        30_000.0,
-        True,
-        traceback_ref="traceback:sha256:" + "c" * 64,
-    )
-    attempt = SimpleNamespace(
-        result=SimpleNamespace(
-            dispatch_status=DispatchStatus.SENT_UNKNOWN,
-            diagnostics=(diagnostic,),
-        ),
-        post_acquisition=None,
-        recovery_acquisitions=(),
-    )
-    execution = SimpleNamespace(attempts=(attempt,))
+def test_instrumentation_does_not_reconstruct_unresolved_runtime_state() -> None:
     recorder = SimpleNamespace(step_completed=lambda *_args: None)
 
     resolved = BenchmarkInstrumentation(trace_recorder=recorder)
     resolved.step_completed(
         1,
         SimpleNamespace(
-            execution=execution,
             yield_reason=None,
             status_after=RunStatus.RUNNING,
             runtime_failure=None,
@@ -364,15 +428,14 @@ def test_instrumentation_only_promotes_unresolved_sent_unknown_to_case_failure()
     unresolved.step_completed(
         1,
         SimpleNamespace(
-            execution=execution,
             yield_reason=EpisodeYieldReason.UNCERTAIN_EFFECT,
             status_after=RunStatus.YIELDED,
             runtime_failure=None,
         ),
     )
-    assert unresolved.failure_origin is CaseFailureOrigin.EXECUTION
-    assert unresolved.primary_execution_failure_code == "action_dispatch_uncertain"
-    assert unresolved.primary_execution_failure_phase == "dispatch_wait"
+    assert unresolved.failure_origin is CaseFailureOrigin.NONE
+    assert unresolved.primary_execution_failure_code == ""
+    assert unresolved.primary_execution_failure_phase == ""
 
 
 def test_custom_metric_cannot_override_canonical_metric() -> None:
@@ -413,9 +476,7 @@ def test_dynamic_tool_metrics_are_canonical_and_projected() -> None:
 def test_projection_defends_against_direct_custom_metric_collision() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.custom_metrics["observations"] = 99
-    projected = project_case_result(
-        "case", None, instrumentation, 1.0, "display only"
-    )
+    projected = project_case_result("case", None, instrumentation, 1.0, "display only")
     assert projected.case_failure_code == "metric_name_collision"
     assert projected.failure_origin is CaseFailureOrigin.NONE
     assert projected.measurements["observations"].value == 0
@@ -430,7 +491,18 @@ def test_metric_collision_preserves_runtime_and_component_facts_independently() 
     )
     instrumentation.custom_metrics["observations"] = 99
     projected = project_case_result(
-        "case", _result("runtime_exception"), instrumentation, 1.0, "display only"
+        "case",
+        _result("runtime_exception"),
+        instrumentation,
+        1.0,
+        "display only",
+        final_snapshot=_snapshot(
+            runtime_failure=RuntimeFailure(
+                FailureStage.CONTROL,
+                FailureKind.REJECTED,
+                "runtime_exception",
+            )
+        ),
     )
     assert projected.runtime_reason_code == "runtime_exception"
     assert projected.case_failure_code == "runtime_exception"
@@ -445,11 +517,13 @@ def test_metric_collision_preserves_runtime_and_component_facts_independently() 
 def test_watchdog_remains_primary_when_cleanup_also_fails() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.record_watchdog("case_timeout", TimeoutError())
-    instrumentation.record_cleanup_failure(
-        "cleanup_exception", RuntimeError("private cleanup detail")
-    )
+    instrumentation.record_cleanup_failure("cleanup_exception", RuntimeError("private cleanup detail"))
     projected = project_case_result(
-        "case", None, instrumentation, 1.0, "timeout; cleanup failed",
+        "case",
+        None,
+        instrumentation,
+        1.0,
+        "timeout; cleanup failed",
         timeout_snapshot=_snapshot(observations=3, executions=1, turns=1),
     )
     assert projected.case_failure_code == "case_timeout"
@@ -461,15 +535,11 @@ def test_watchdog_remains_primary_when_cleanup_also_fails() -> None:
 
 def test_done_with_cleanup_only_is_not_reported_as_success() -> None:
     instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_cleanup_failure(
-        "cleanup_exception", RuntimeError("private cleanup detail")
-    )
+    instrumentation.record_cleanup_failure("cleanup_exception", RuntimeError("private cleanup detail"))
     result = _result("task_complete")
     result.status = RunStatus.DONE
     result.runtime_failure = None
-    projected = project_case_result(
-        "case", result, instrumentation, 1.0, "cleanup failed"
-    )
+    projected = project_case_result("case", result, instrumentation, 1.0, "cleanup failed")
     assert projected.case_failure_code == "cleanup_exception"
     assert projected.failure_origin is CaseFailureOrigin.NONE
     assert projected.termination_origin == "cleanup"
@@ -485,9 +555,7 @@ def test_snapshot_request_kind_cannot_infer_component_origin(
     snapshot = replace(
         _snapshot(reason="observation_acquisition_failed"),
         latest_acquisition_request_kind=request_kind,
-        latest_attempt_operation=(
-            "execute" if request_kind == "post_action_fallback" else "capture"
-        ),
+        latest_attempt_operation=("execute" if request_kind == "post_action_fallback" else "capture"),
         latest_attempt_reason_code="capture_failed",
     )
     returned_result = _result("observation_acquisition_failed")
@@ -502,14 +570,23 @@ def test_snapshot_request_kind_cannot_infer_component_origin(
         str(returned_result.failure_code),
     )
     returned = project_case_result(
-        "returned", returned_result, BenchmarkInstrumentation(), 1.0, "failed",
+        "returned",
+        returned_result,
+        BenchmarkInstrumentation(),
+        1.0,
+        "failed",
         final_snapshot=snapshot,
     )
     thrown_metrics = BenchmarkInstrumentation()
     expected = observation_failure_origin(request_kind)
     thrown_metrics.record_failure(expected, "capture_exception", RuntimeError("private"))
     thrown = project_case_result(
-        "thrown", None, thrown_metrics, 1.0, "failed", final_snapshot=snapshot,
+        "thrown",
+        None,
+        thrown_metrics,
+        1.0,
+        "failed",
+        final_snapshot=snapshot,
     )
     assert returned.failure_origin is CaseFailureOrigin.NONE
     assert thrown.failure_origin is expected
@@ -522,9 +599,7 @@ def test_dynamic_exception_class_is_safely_normalized_without_losing_component()
     instrumentation.failure_origin = CaseFailureOrigin.ACTION_EVALUATION
     instrumentation.failure_code = "action_outcome_projector_exception"
     instrumentation.exception_class = "private.class/" + "x" * 200
-    projected = project_case_result(
-        "case", _result("runtime_exception"), instrumentation, 1.0, "display only"
-    )
+    projected = project_case_result("case", _result("runtime_exception"), instrumentation, 1.0, "display only")
     assert projected.failure_origin is CaseFailureOrigin.ACTION_EVALUATION
     assert projected.failure_code == "action_outcome_projector_exception"
     assert projected.exception_class == "Exception"
@@ -533,7 +608,11 @@ def test_dynamic_exception_class_is_safely_normalized_without_losing_component()
 def test_configured_zero_retry_is_measured_when_provider_returns_no_metadata() -> None:
     instrumentation = BenchmarkInstrumentation(configured_provider_retry_count=0)
     projected = project_case_result(
-        "provider-unavailable", None, instrumentation, 1.0, "provider unavailable",
+        "provider-unavailable",
+        None,
+        instrumentation,
+        1.0,
+        "provider unavailable",
     )
     measurement = projected.measurements["provider_retry_count"]
     assert measurement.measured

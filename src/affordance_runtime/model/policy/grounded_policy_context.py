@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 from affordance_runtime.agent.context.budgets import BoundedSection
+from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.model_turn_delivery import (
@@ -111,6 +113,27 @@ class GroundedPolicyContextBinder:
             request_budget=budget,
         )
         selected_projection = delivery.view.projection
+        full_view = render_compact_actor_world(
+            request.agent_context.actor_world,
+            request.agent_context.grounding,
+            include_images=include_images,
+            observation=request.agent_context.current_observation,
+            action_candidates=request.agent_context.action_candidates,
+            evidence_candidates=request.agent_context.evidence_candidates,
+        )
+        full_actor_payload = json.dumps(
+            {"observation": full_view.text},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        full_actor_tokens = max(1, math.ceil(len(full_actor_payload.encode()) / 3))
+        full_candidate_tokens = max(
+            1,
+            selected.breakdown.estimated_total_tokens
+            - selected.breakdown.actor_world_tokens
+            + full_actor_tokens,
+        )
         try:
             admitted = admit_model_request(
                 messages=selected.messages,
@@ -126,7 +149,7 @@ class GroundedPolicyContextBinder:
                     exc.breakdown,
                     prefit_estimated_total_tokens=selected.breakdown.estimated_total_tokens,
                     delivery_projection=selected_projection,
-                    full_candidate_tokens=0,
+                    full_candidate_tokens=full_candidate_tokens,
                     lens_candidate_tokens=selected.breakdown.estimated_total_tokens,
                     expanded_region_count=selected.expanded_region_count,
                     folded_region_count=selected.folded_region_count,
@@ -141,7 +164,7 @@ class GroundedPolicyContextBinder:
                 admitted.breakdown,
                 prefit_estimated_total_tokens=selected.breakdown.estimated_total_tokens,
                 delivery_projection=selected_projection,
-                full_candidate_tokens=0,
+                full_candidate_tokens=full_candidate_tokens,
                 lens_candidate_tokens=selected.breakdown.estimated_total_tokens,
                 expanded_region_count=selected.expanded_region_count,
                 folded_region_count=selected.folded_region_count,
@@ -196,12 +219,8 @@ class GroundedPolicyContextBinder:
         )
         expanded = int(view.coverage.get("expanded_regions", 0))
         folded = int(view.coverage.get("folded_regions", 0))
-        direct_refs = frozenset(view.manifest.executable_refs)
-        searchable = sum(
-            1
-            for option in request.agent_context.complete_actions
-            if option.target_ref not in direct_refs
-        )
+        direct_refs = frozenset(delivery.manifest.executable_refs)
+        searchable = sum(1 for option in request.agent_context.complete_actions if option.target_ref not in direct_refs)
         return _PolicyRequestCandidate(
             messages,
             direct_tools,
@@ -347,46 +366,46 @@ def _task(context: AgentContext) -> dict[str, object]:
     }
     if task.final_response_contract:
         result["final_response_contract"] = to_json_compatible(task.final_response_contract)
-    if task.active_subtask is not None:
-        result["active_subtask"] = {
-            "objective": task.active_subtask.objective,
-            "done_when": task.active_subtask.done_when,
-            "task_link": task.active_subtask.task_link,
-            "outcome_kind": task.active_subtask.outcome_kind,
-            "constraints": task.active_subtask.constraints,
+    if task.active_milestone is not None:
+        result["active_milestone"] = {
+            "id": task.active_milestone.id,
+            "outcome": task.active_milestone.outcome,
+            "done_when": task.active_milestone.done_when,
+            "depends_on": task.active_milestone.depends_on,
+            "final": task.active_milestone.final,
             "required_evidence": tuple(
                 {
                     "key": item.key,
                     "description": item.description,
                     "status": item.status.value,
                 }
-                for item in task.active_subtask.required_evidence
+                for item in task.active_milestone.required_evidence
             ),
         }
     evaluation = {
-            "status": str(task.evaluation.status),
-            "criteria": tuple(
-                {
-                    "criterion_id": item.criterion_id,
-                    "status": str(item.status),
-                }
-                for item in task.evaluation.criteria
-            ),
-            "outputs": tuple(
-                {
-                    "output_id": item.output_id,
-                    "value": project_public_value(item.value),
-                }
-                for item in task.evaluation.outputs
-            ),
-            "evidence": tuple(
-                {
-                    "evidence_ref": item.fact_ref,
-                    "field": item.predicate,
-                    "value": project_public_value(item.value),
-                }
-                for item in task.evaluation.verified_public_facts
-            ),
+        "status": str(task.evaluation.status),
+        "criteria": tuple(
+            {
+                "criterion_id": item.criterion_id,
+                "status": str(item.status),
+            }
+            for item in task.evaluation.criteria
+        ),
+        "outputs": tuple(
+            {
+                "output_id": item.output_id,
+                "value": project_public_value(item.value),
+            }
+            for item in task.evaluation.outputs
+        ),
+        "evidence": tuple(
+            {
+                "evidence_ref": item.fact_ref,
+                "field": item.predicate,
+                "value": project_public_value(item.value),
+            }
+            for item in task.evaluation.verified_public_facts
+        ),
     }
     if (
         evaluation["status"] not in {"", "unknown", "incomplete"}

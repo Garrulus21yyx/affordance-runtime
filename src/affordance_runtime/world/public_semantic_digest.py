@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from urllib.parse import urlsplit
 
 from affordance_runtime.actions.paging import (
     InternalActionPage,
@@ -24,7 +25,10 @@ from affordance_runtime.world.contracts import (
 
 def _digest(value: object) -> str:
     encoded = json.dumps(
-        to_json_compatible(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        to_json_compatible(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
@@ -49,26 +53,29 @@ def public_world_semantics(observation: WorldObservation) -> dict[str, object]:
         target.target_id: (target.role, target.label, to_json_compatible(target.state))
         for target in observation.targets
     }
-    targets = {
-        target.target_id: target_semantics(target, bases)
-        for target in observation.targets
-    }
-    facts = sorted((
+    targets = {target.target_id: target_semantics(target, bases) for target in observation.targets}
+    facts = sorted(
         (
-            targets.get(fact.subject_id, ("unresolved_subject",)),
-            fact.predicate,
-            to_json_compatible(fact.value),
-        )
-        for fact in observation.facts
-    ), key=_sort_key)
-    conflicts = sorted((
+            (
+                targets.get(fact.subject_id, ("unresolved_subject",)),
+                fact.predicate,
+                to_json_compatible(fact.value),
+            )
+            for fact in observation.facts
+        ),
+        key=_sort_key,
+    )
+    conflicts = sorted(
         (
-            targets.get(conflict.subject_id, ("unresolved_subject",)),
-            conflict.predicate,
-            conflict.summary,
-        )
-        for conflict in observation.conflicts
-    ), key=_sort_key)
+            (
+                targets.get(conflict.subject_id, ("unresolved_subject",)),
+                conflict.predicate,
+                conflict.summary,
+            )
+            for conflict in observation.conflicts
+        ),
+        key=_sort_key,
+    )
     inventories = sorted(
         (
             source.surface,
@@ -89,8 +96,7 @@ def public_world_semantics(observation: WorldObservation) -> dict[str, object]:
         "conflicts": conflicts,
         "inventory": inventories,
         "coverage": sorted(
-            (item.surface, item.modality, item.profile, str(item.coverage))
-            for item in observation.source_manifest
+            (item.surface, item.modality, item.profile, str(item.coverage)) for item in observation.source_manifest
         ),
     }
 
@@ -99,14 +105,118 @@ def public_world_semantic_digest(observation: WorldObservation) -> str:
     return _digest(public_world_semantics(observation))
 
 
+_PAGE_STRUCTURE_ROLES = frozenset(
+    {
+        "alert",
+        "document",
+        "form",
+        "group",
+        "heading",
+        "list",
+        "listbox",
+        "main",
+        "navigation",
+        "region",
+        "rootwebarea",
+        "status",
+        "webarea",
+    }
+)
+
+
+def public_page_semantics(observation: WorldObservation) -> dict[str, object]:
+    """Project stable page identity without transient control state or Runtime refs."""
+
+    operations: dict[str, set[str]] = {}
+    for binding in observation.bindings:
+        operations.setdefault(binding.target_id, set()).add(binding.semantic_action)
+    targets = {item.target_id: item for item in observation.targets}
+    actionable = sorted(
+        (
+            targets[target_id].role.casefold(),
+            targets[target_id].label.strip(),
+            tuple(sorted(verbs)),
+        )
+        for target_id, verbs in operations.items()
+        if target_id in targets
+    )
+    structure = sorted(
+        (
+            node.role.casefold(),
+            node.label.strip(),
+        )
+        for source in observation.sources
+        for node in source.structure
+        if node.role.casefold() in _PAGE_STRUCTURE_ROLES and node.label.strip()
+    )
+    routes = sorted(
+        {
+            _public_route_path(str(target.state.get("page.route", "")))
+            for target in observation.targets
+            if target.state.get("page.route")
+        }
+    )
+    return {
+        "routes": tuple(item for item in routes if item),
+        "structure": structure,
+        "actionable": actionable,
+    }
+
+
+def public_page_semantic_digest(observation: WorldObservation) -> str:
+    return _digest(public_page_semantics(observation))
+
+
+_RESULT_ROLES = frozenset({"alert", "log", "meter", "progressbar", "status"})
+_TRANSIENT_RESULT_PREDICATES = frozenset(
+    {
+        "appearance",
+        "cursor",
+        "focused",
+        "hovered",
+        "selected",
+        "value",
+    }
+)
+
+
+def public_result_evidence_semantics(observation: WorldObservation) -> tuple[object, ...]:
+    """Return exact result/status facts without treating ordinary page text as progress."""
+
+    targets = {item.target_id: item for item in observation.targets}
+    records = []
+    for fact in observation.facts:
+        target = targets.get(fact.subject_id)
+        if target is None or target.role.casefold() not in _RESULT_ROLES:
+            continue
+        predicate = fact.predicate.casefold().rsplit(".", 1)[-1]
+        if predicate in _TRANSIENT_RESULT_PREDICATES:
+            continue
+        records.append(
+            (
+                target.role.casefold(),
+                target.label.strip(),
+                fact.predicate,
+                to_json_compatible(fact.value),
+            )
+        )
+    return tuple(sorted(records, key=_sort_key))
+
+
+def public_result_evidence_digest(observation: WorldObservation) -> str:
+    return _digest(public_result_evidence_semantics(observation))
+
+
+def _public_route_path(value: str) -> str:
+    parsed = urlsplit(value)
+    return parsed.path or (value.split("?", 1)[0] if value else "")
+
+
 def public_subject_semantics(observation: WorldObservation, subject_id: str) -> object:
     target = next((item for item in observation.targets if item.target_id == subject_id), None)
     if target is None:
         return ("unknown_public_subject",)
-    bases = {
-        item.target_id: (item.role, item.label, to_json_compatible(item.state))
-        for item in observation.targets
-    }
+    bases = {item.target_id: (item.role, item.label, to_json_compatible(item.state)) for item in observation.targets}
     return target_semantics(target, bases)
 
 
@@ -145,10 +255,7 @@ def public_action_page_result_semantics(
         target.target_id: (target.role, target.label, to_json_compatible(target.state))
         for target in observation.targets
     }
-    target_map = {
-        target.target_id: target_semantics(target, bases)
-        for target in observation.targets
-    }
+    target_map = {target.target_id: target_semantics(target, bases) for target in observation.targets}
     destination_map = dict(page.visible_destinations)
     relevance_map = dict(page.relevance)
     options = []
@@ -156,12 +263,14 @@ def public_action_page_result_semantics(
         option = action_space.find(action_id)
         if option is None:
             continue
-        options.append(action_option_semantics(
-            option,
-            target_map,
-            visible_destinations=destination_map.get(action_id, ()),
-            relevance=relevance_map.get(action_id),
-        ))
+        options.append(
+            action_option_semantics(
+                option,
+                target_map,
+                visible_destinations=destination_map.get(action_id, ()),
+                relevance=relevance_map.get(action_id),
+            )
+        )
     return {
         "options": sorted(options, key=_sort_key),
         "total_count": page.total_count,
@@ -207,14 +316,13 @@ def public_action_contract_semantics(
         target.target_id: (target.role, target.label, to_json_compatible(target.state))
         for target in observation.targets
     }
-    target_map = {
-        target.target_id: target_semantics(target, bases)
-        for target in observation.targets
-    }
-    return tuple(sorted(
-        (action_option_semantics(option, target_map) for option in action_space.options),
-        key=_sort_key,
-    ))
+    target_map = {target.target_id: target_semantics(target, bases) for target in observation.targets}
+    return tuple(
+        sorted(
+            (action_option_semantics(option, target_map) for option in action_space.options),
+            key=_sort_key,
+        )
+    )
 
 
 def public_action_contract_digest(
@@ -227,15 +335,15 @@ def public_action_contract_digest(
 def task_progress_fingerprint(evaluation: TaskEvaluation | None) -> str:
     if evaluation is None:
         return _digest({"status": "unassessed"})
-    return _digest({
-        "status": evaluation.status.value,
-        "criteria": sorted(
-            (item.criterion_id, item.status.value) for item in evaluation.criteria
-        ),
-        "outputs": sorted(item.output_id for item in evaluation.outputs),
-        "outcome": evaluation.outcome.kind.value if evaluation.outcome else "",
-        "outcome_code": evaluation.outcome.code if evaluation.outcome else "",
-    })
+    return _digest(
+        {
+            "status": evaluation.status.value,
+            "criteria": sorted((item.criterion_id, item.status.value) for item in evaluation.criteria),
+            "outputs": sorted(item.output_id for item in evaluation.outputs),
+            "outcome": evaluation.outcome.kind.value if evaluation.outcome else "",
+            "outcome_code": evaluation.outcome.code if evaluation.outcome else "",
+        }
+    )
 
 
 def semantic_scope_digest(
@@ -258,16 +366,18 @@ def issue_digest(
     request_digest: str = "",
     result_digest: str = "",
 ) -> str:
-    return _digest((
-        scope_digest,
-        kind,
-        source,
-        code,
-        subject_semantics,
-        tuple(sorted(set(public_field_paths))),
-        request_digest,
-        result_digest,
-    ))
+    return _digest(
+        (
+            scope_digest,
+            kind,
+            source,
+            code,
+            subject_semantics,
+            tuple(sorted(set(public_field_paths))),
+            request_digest,
+            result_digest,
+        )
+    )
 
 
 def action_page_request_digest(
@@ -278,12 +388,14 @@ def action_page_request_digest(
     relevance_role: str,
     semantic_offset: int,
 ) -> str:
-    return _digest((
-        canonical_action_query(query),
-        public_subject_semantics(observation, target_id) if target_id else ("none",),
-        relevance_role,
-        semantic_offset,
-    ))
+    return _digest(
+        (
+            canonical_action_query(query),
+            public_subject_semantics(observation, target_id) if target_id else ("none",),
+            relevance_role,
+            semantic_offset,
+        )
+    )
 
 
 def observation_request_digest(
@@ -293,9 +405,13 @@ def observation_request_digest(
     purpose: str,
     evidence_property: str,
 ) -> str:
-    return _digest((
-        public_subject_semantics(observation, subject_id), purpose, evidence_property,
-    ))
+    return _digest(
+        (
+            public_subject_semantics(observation, subject_id),
+            purpose,
+            evidence_property,
+        )
+    )
 
 
 def policy_observation_result_digest(
@@ -303,11 +419,13 @@ def policy_observation_result_digest(
     action_space: ActionSpace,
     evaluation: TaskEvaluation | None,
 ) -> str:
-    return _digest((
-        public_world_semantics(observation),
-        public_action_contract_semantics(observation, action_space),
-        task_progress_fingerprint(evaluation),
-    ))
+    return _digest(
+        (
+            public_world_semantics(observation),
+            public_action_contract_semantics(observation, action_space),
+            task_progress_fingerprint(evaluation),
+        )
+    )
 
 
 def _sort_key(value: object) -> str:
@@ -318,10 +436,7 @@ def _replace_public_ids(value: object, targets: Mapping[str, tuple[object, ...]]
     if isinstance(value, str):
         return targets.get(value, value)
     if isinstance(value, Mapping):
-        return {
-            str(key): _replace_public_ids(item, targets)
-            for key, item in value.items()
-        }
+        return {str(key): _replace_public_ids(item, targets) for key, item in value.items()}
     if isinstance(value, tuple | list):
         return tuple(_replace_public_ids(item, targets) for item in value)
     return value

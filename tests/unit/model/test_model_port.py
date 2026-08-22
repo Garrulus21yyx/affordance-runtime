@@ -10,7 +10,6 @@ from typing import Any, TypeVar
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from affordance_runtime.model.policy.grounded_tool_port_bridge import GroundedToolCommandPayload
 from affordance_runtime.model.providers import port as provider_port
 from affordance_runtime.model.providers.capture import PrivateModelCapture
 from affordance_runtime.model.providers.port import (
@@ -29,6 +28,7 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputMode,
     model_port_from_environment,
 )
+from tests.support.legacy_compact_json_decision_port import GroundedToolCommandPayload
 
 
 class Answer(BaseModel):

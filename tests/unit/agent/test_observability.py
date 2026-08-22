@@ -1,22 +1,28 @@
 import asyncio
 import json
+import multiprocessing
+import queue
 import threading
 import time
 from dataclasses import dataclass
 
 import pytest
 
+from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.observability import (
-    LangfuseViewerWorker,
+    LangfuseOtelSink,
+    LangfuseViewerProcess,
     QueuedViewerRunTraceRecorder,
     RunTraceRecorder,
     _langfuse_event_projection,
+    _langfuse_ipc_projection,
     _public_task_projection,
     trace_recorder_from_environment,
 )
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
@@ -66,7 +72,7 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert step["lineage"]["after_observation_id"] == "after"
         assert "before_world" not in step["result"]
         assert "after_world" not in step["result"]
-        assert step["result"]["execution"] is not None
+        assert step["result"]["execution_receipts"] is not None
         assert step["result"]["action_outcome"] is not None
         assert step["result"]["task_evaluation"]["status"] == "complete"
 
@@ -105,19 +111,43 @@ def test_cancelled_policy_turn_projects_already_captured_provider_attempts(tmp_p
             trace_sink=recorder,
         )
 
-        with pytest.raises(asyncio.CancelledError):
-            await runtime.run_task(
-                ScriptedEnvironment(initial_observation=_world("before", False)),
-                _task(),
-            )
+        state = await runtime.run_task(
+            ScriptedEnvironment(initial_observation=_world("before", False)),
+            _task(),
+        )
 
         events = [json.loads(line) for line in recorder.path.read_text().splitlines()]
         turn = next(item for item in events if item["event"] == "model_turn")
         assert turn["exception"] == "CancelledError"
         assert turn["generation_attempts"][0]["transcript"]["error.code"] == "unavailable"
-        assert events[-1]["event"] == "run_error"
+        assert state.status is RunStatus.CANCELLED
+        assert state.last_step is not None
+        assert state.last_step.feedback == "policy_cancelled:enclosing_deadline"
+        assert events[-1]["event"] == "run_finished"
 
     asyncio.run(scenario())
+
+
+def test_benchmark_instrumentation_forwards_each_physical_mission_role_attempt_immediately(tmp_path) -> None:
+    recorder = RunTraceRecorder(tmp_path)
+    instrumentation = BenchmarkInstrumentation(trace_recorder=recorder)
+    attempt = ModelGenerationAttempt(
+        1,
+        "planner_initial",
+        "PlannerDecisionModel",
+        "provider_returned",
+        role="planner",
+        mode="start",
+        trigger="task_start",
+        transcript={"llm.output_messages": [{"content": "physical response"}]},
+    )
+
+    instrumentation.mission_role_provider_attempt(attempt)
+
+    event = json.loads(recorder.path.read_text())
+    assert event["event"] == "mission_role_provider_attempt"
+    assert event["attempt"]["role"] == "planner"
+    assert event["attempt"]["transcript"]["llm.output_messages"][0]["content"] == "physical response"
 
 
 def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirrors(tmp_path) -> None:
@@ -168,12 +198,18 @@ def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tm
             output=Failed(1, "invalid_goal_proposal"),
             attempts=(
                 ModelGenerationAttempt(
-                    1, "goal_compile_initial", "GoalCompilerModelResponse",
-                    "schema_error", transcript={"llm.output_messages": [{"content": "raw one"}]},
+                    1,
+                    "goal_compile_initial",
+                    "GoalCompilerModelResponse",
+                    "schema_error",
+                    transcript={"llm.output_messages": [{"content": "raw one"}]},
                 ),
                 ModelGenerationAttempt(
-                    2, "goal_compile_schema_repair", "GoalCompilerModelResponse",
-                    "accepted", transcript={"llm.output_messages": [{"content": "raw two"}]},
+                    2,
+                    "goal_compile_schema_repair",
+                    "GoalCompilerModelResponse",
+                    "accepted",
+                    transcript={"llm.output_messages": [{"content": "raw two"}]},
                 ),
             ),
             repair_diagnostics=({"kind": "structured_output_repair", "count": 1},),
@@ -182,19 +218,26 @@ def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tm
         config = type("Config", (), {"prompt_version": "prompt.v1"})()
 
     diagnostic = goal_compiler_trace_diagnostic(
-        Compiler(), Failed(1, "invalid_goal_proposal"), task_revision=1,
-        trigger="task_start", initial_evidence=None,
+        Compiler(),
+        Failed(1, "invalid_goal_proposal"),
+        task_revision=1,
+        trigger="task_start",
+        initial_evidence=None,
     )
     recorder = RunTraceRecorder(tmp_path)
     recorder.goal_compiler_completed(diagnostic)
     event = json.loads(recorder.path.read_text())
 
     assert event["event"] == "goal_compiler_completed"
-    assert [item["transcript"]["llm.output_messages"][0]["content"] for item in event["diagnostic"]["generation_attempts"]] == [
-        "raw one", "raw two",
+    assert [
+        item["transcript"]["llm.output_messages"][0]["content"] for item in event["diagnostic"]["generation_attempts"]
+    ] == [
+        "raw one",
+        "raw two",
     ]
     assert event["diagnostic"]["schema_repair_count"] == 1
     assert "run_state" not in event["diagnostic"]
+
 
 def test_binary_payloads_are_content_addressed_and_not_inlined(tmp_path) -> None:
     @dataclass(frozen=True)
@@ -254,10 +297,8 @@ def test_start_failure_preserves_acquisition_diagnostics(tmp_path) -> None:
 
 
 def test_remote_viewer_failure_never_changes_local_trace(tmp_path) -> None:
-    worker = LangfuseViewerWorker(
-        lambda: (_ for _ in ()).throw(RuntimeError("unreachable"))
-    )
-    recorder = QueuedViewerRunTraceRecorder(tmp_path, viewer_worker=worker)
+    worker = LangfuseViewerProcess(lambda: (_ for _ in ()).throw(RuntimeError("unreachable")))
+    recorder = QueuedViewerRunTraceRecorder(tmp_path, viewer_process=worker)
     recorder.case_lifecycle_phase("CASE_BODY_RETURNED")
     recorder.flush_viewer(timeout_s=0.2)
 
@@ -281,13 +322,13 @@ def test_langfuse_requires_official_sdk_credentials(tmp_path) -> None:
         )
 
 
-def test_environment_config_constructs_langfuse_client_only_in_daemon_worker(
+def test_environment_config_constructs_langfuse_client_only_in_viewer_process(
     monkeypatch,
     tmp_path,
 ) -> None:
     from affordance_runtime.agent import observability
 
-    owner_threads = []
+    owners = multiprocessing.Queue()
 
     @dataclass
     class Observation:
@@ -315,7 +356,7 @@ def test_environment_config_constructs_langfuse_client_only_in_daemon_worker(
             return None
 
     def factory():
-        owner_threads.append((threading.current_thread().name, threading.current_thread().daemon))
+        owners.put((multiprocessing.current_process().name, multiprocessing.current_process().daemon))
         return Client()
 
     monkeypatch.setattr(observability, "_langfuse_client_from_environment", factory)
@@ -333,11 +374,11 @@ def test_environment_config_constructs_langfuse_client_only_in_daemon_worker(
     recorder.benchmark_case_finished(case_id="case:worker-owner", status="done")
     recorder.flush_viewer(timeout_s=0.5)
 
-    assert owner_threads == [("langfuse-viewer-worker", True)]
+    assert owners.get(timeout=0.5) == ("langfuse-viewer-process", True)
 
 
-def test_viewer_worker_consumes_only_after_local_jsonl_record(tmp_path) -> None:
-    observed = []
+def test_viewer_process_consumes_only_after_local_jsonl_record(tmp_path) -> None:
+    observed = multiprocessing.Queue()
 
     @dataclass
     class Observation:
@@ -360,11 +401,8 @@ def test_viewer_worker_consumes_only_after_local_jsonl_record(tmp_path) -> None:
     class Client:
         def start_as_current_observation(self, *, name, **_kwargs):
             lines = (tmp_path / "trace.jsonl").read_text().splitlines()
-            assert any(
-                json.loads(line)["event"] == "benchmark_case_started"
-                for line in lines
-            )
-            observed.append(name)
+            assert any(json.loads(line)["event"] == "benchmark_case_started" for line in lines)
+            observed.put(name)
             return Context(Observation())
 
         def flush(self):
@@ -372,17 +410,17 @@ def test_viewer_worker_consumes_only_after_local_jsonl_record(tmp_path) -> None:
 
     recorder = QueuedViewerRunTraceRecorder(
         tmp_path,
-        viewer_worker=LangfuseViewerWorker(lambda: Client(), benchmark_managed=True),
+        viewer_process=LangfuseViewerProcess(lambda: Client(), benchmark_managed=True),
     )
     recorder.benchmark_case_started(case_id="case:local-first", description="public", timeout_s=1)
     recorder.benchmark_case_finished(case_id="case:local-first", status="failed")
     recorder.flush_viewer(timeout_s=0.5)
 
-    assert observed[0] == "benchmark-gui-agent-case"
+    assert observed.get(timeout=0.5) == "benchmark-gui-agent-case"
 
 
 def test_viewer_queue_full_drops_without_runtime_latency(tmp_path) -> None:
-    release_factory = threading.Event()
+    release_factory = multiprocessing.Event()
 
     class Client:
         pass
@@ -391,8 +429,8 @@ def test_viewer_queue_full_drops_without_runtime_latency(tmp_path) -> None:
         release_factory.wait()
         return Client()
 
-    worker = LangfuseViewerWorker(blocked_factory, queue_capacity=1)
-    recorder = QueuedViewerRunTraceRecorder(tmp_path, viewer_worker=worker)
+    worker = LangfuseViewerProcess(blocked_factory, queue_capacity=1)
+    recorder = QueuedViewerRunTraceRecorder(tmp_path, viewer_process=worker)
 
     started = time.perf_counter()
     recorder.case_lifecycle_phase("CASE_STARTED")
@@ -407,9 +445,95 @@ def test_viewer_queue_full_drops_without_runtime_latency(tmp_path) -> None:
     assert "viewer_queue_full" in recorder.viewer_errors
 
 
+@pytest.mark.parametrize(
+    "fault",
+    (BrokenPipeError("broken"), EOFError("eof"), OSError("os"), ValueError("closed")),
+)
+def test_viewer_ipc_fault_matrix_is_a_total_fail_open_drop(fault: Exception) -> None:
+    class AliveProcess:
+        @staticmethod
+        def is_alive():
+            return True
+
+    class BrokenQueue:
+        @staticmethod
+        def put_nowait(_event):
+            raise fault
+
+    class EmptyStatusQueue:
+        @staticmethod
+        def get_nowait():
+            raise queue.Empty
+
+    worker = object.__new__(LangfuseViewerProcess)
+    worker.errors = []
+    worker.dropped_event_count = 0
+    worker.disabled = False
+    worker.flush_timeout = False
+    worker._queue = BrokenQueue()
+    worker._status_queue = EmptyStatusQueue()
+    worker._process = AliveProcess()
+    worker._lock = threading.Lock()
+    worker._closed = False
+
+    admitted = worker.enqueue({"event": "step_completed", "sequence": 1})
+
+    assert admitted is False
+    assert worker.dropped_event_count == 1
+    assert worker.disabled is True
+    assert worker.errors == [f"viewer_ipc_unavailable:{type(fault).__name__}"]
+
+
+def test_viewer_closed_queue_and_repeated_close_are_total_fail_open() -> None:
+    class StoppedProcess:
+        exitcode = 0
+
+        @staticmethod
+        def join(_timeout):
+            return None
+
+        @staticmethod
+        def is_alive():
+            return False
+
+    class ClosedQueue:
+        @staticmethod
+        def put_nowait(_event):
+            raise ValueError("Queue is closed")
+
+        @staticmethod
+        def close():
+            return None
+
+    class EmptyStatusQueue:
+        @staticmethod
+        def get_nowait():
+            raise ValueError("Queue is closed")
+
+        @staticmethod
+        def close():
+            return None
+
+    worker = object.__new__(LangfuseViewerProcess)
+    worker.errors = []
+    worker.dropped_event_count = 0
+    worker.disabled = False
+    worker.flush_timeout = False
+    worker._queue = ClosedQueue()
+    worker._status_queue = EmptyStatusQueue()
+    worker._process = StoppedProcess()
+    worker._lock = threading.Lock()
+    worker._closed = False
+
+    assert worker.close(timeout_s=0.01) is False
+    assert worker.close(timeout_s=0.01) is False
+    assert worker.disabled is True
+    assert worker.errors == ["viewer_stop_unavailable:ValueError"]
+
+
 def test_viewer_record_hang_cannot_block_case_body_or_local_terminal_events(tmp_path) -> None:
-    entered = threading.Event()
-    never_release = threading.Event()
+    entered = multiprocessing.Event()
+    never_release = multiprocessing.Event()
 
     class Client:
         def start_as_current_observation(self, **_kwargs):
@@ -418,7 +542,7 @@ def test_viewer_record_hang_cannot_block_case_body_or_local_terminal_events(tmp_
 
     recorder = QueuedViewerRunTraceRecorder(
         tmp_path,
-        viewer_worker=LangfuseViewerWorker(lambda: Client(), benchmark_managed=True),
+        viewer_process=LangfuseViewerProcess(lambda: Client(), benchmark_managed=True),
     )
     recorder.benchmark_case_started(case_id="case:hung-viewer", description="public", timeout_s=1)
     assert entered.wait(0.5)
@@ -439,8 +563,8 @@ def test_viewer_record_hang_cannot_block_case_body_or_local_terminal_events(tmp_
 
 
 def test_viewer_flush_hang_is_bounded_and_keeps_case_status_local(tmp_path) -> None:
-    flush_entered = threading.Event()
-    never_release = threading.Event()
+    flush_entered = multiprocessing.Event()
+    never_release = multiprocessing.Event()
 
     @dataclass
     class Observation:
@@ -470,7 +594,7 @@ def test_viewer_flush_hang_is_bounded_and_keeps_case_status_local(tmp_path) -> N
 
     recorder = QueuedViewerRunTraceRecorder(
         tmp_path,
-        viewer_worker=LangfuseViewerWorker(lambda: Client(), benchmark_managed=True),
+        viewer_process=LangfuseViewerProcess(lambda: Client(), benchmark_managed=True),
     )
     recorder.benchmark_case_started(case_id="case:flush-hang", description="public", timeout_s=1)
     recorder.benchmark_case_finished(case_id="case:flush-hang", status="failed")
@@ -484,8 +608,7 @@ def test_viewer_flush_hang_is_bounded_and_keeps_case_status_local(tmp_path) -> N
     assert recorder.viewer_disabled
     assert "viewer_flush_timeout" in recorder.viewer_errors
     assert any(
-        event.get("event") == "benchmark_case_finished" and event.get("status") == "failed"
-        for event in recorder.events
+        event.get("event") == "benchmark_case_finished" and event.get("status") == "failed" for event in recorder.events
     )
 
 
@@ -537,14 +660,81 @@ def test_langfuse_projection_has_a_total_serialized_bound() -> None:
     assert projected["projection_truncated"] is True
 
 
+def test_one_megabyte_trace_event_is_projected_before_viewer_ipc(tmp_path) -> None:
+    captured = []
+
+    class CapturingViewer:
+        errors = []
+        dropped_event_count = 0
+        disabled = False
+        flush_timeout = False
+
+        def enqueue(self, event):
+            captured.append(event)
+            return True
+
+        def close(self, *, timeout_s):
+            del timeout_s
+            return True
+
+        def _drain_status(self):
+            return None
+
+    recorder = QueuedViewerRunTraceRecorder(
+        tmp_path,
+        viewer_process=CapturingViewer(),
+    )
+    recorder._emit(
+        "mission_role_invocation",
+        role="manager",
+        result="failure",
+        model_invocation={
+            "metadata": {"provider_id": "fixture", "model_id": "fixture-model"},
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "phase": "planner_initial",
+                    "status": "failed",
+                    "transcript": {
+                        "llm.input_messages": [{"role": "user", "content": "x" * 1_000_000}],
+                        "llm.output_messages": [],
+                    },
+                }
+            ],
+        },
+    )
+
+    assert recorder.path.stat().st_size > 1_000_000
+    assert len(captured) == 1
+    assert len(json.dumps(captured[0], sort_keys=True).encode()) <= 16_384
+    assert captured[0]["event"] == "mission_role_invocation"
+    assert captured[0]["generation_attempts"][0]["phase"] == "planner_initial"
+
+
+def test_ipc_projection_of_run13_sized_event_is_bounded_and_ref_free() -> None:
+    projected = _langfuse_ipc_projection(
+        {
+            "event": "step_completed",
+            "sequence": 20,
+            "result": {
+                "feedback": "manager failure persisted",
+                "decision": {"kind": "select_action", "selector": "#private"},
+                "before_world": {"bulk": "x" * 1_100_000},
+            },
+        }
+    )
+
+    encoded = json.dumps(projected, sort_keys=True)
+    assert len(encoded.encode()) <= 16_384
+    assert "#private" not in encoded
+    assert "x" * 1_000 not in encoded
+
+
 def test_langfuse_root_task_projection_has_the_same_total_bound() -> None:
     projected = _public_task_projection(
         {
             "task_id": "public-task",
-            "goal": {
-                f"branch-{index}": {f"leaf-{leaf}": "x" * 1_000 for leaf in range(40)}
-                for index in range(40)
-            },
+            "goal": {f"branch-{index}": {f"leaf-{leaf}": "x" * 1_000 for leaf in range(40)} for index in range(40)},
         }
     )
 
@@ -555,58 +745,59 @@ def test_langfuse_root_task_projection_has_the_same_total_bound() -> None:
 def test_langfuse_v4_session_attributes_cover_root_and_children(tmp_path) -> None:
     langfuse_module = pytest.importorskip("langfuse")
     trace_module = pytest.importorskip("opentelemetry.sdk.trace")
-    exporter_module = pytest.importorskip(
-        "opentelemetry.sdk.trace.export.in_memory_span_exporter"
-    )
+    exporter_module = pytest.importorskip("opentelemetry.sdk.trace.export.in_memory_span_exporter")
     exporter = exporter_module.InMemorySpanExporter()
     provider = trace_module.TracerProvider()
-    clients = []
-
-    def client_factory():
-        client = langfuse_module.Langfuse(
-            public_key="pk-lf-provider-free",
-            secret_key="sk-lf-provider-free",
-            tracer_provider=provider,
-            span_exporter=exporter,
-        )
-        clients.append(client)
-        return client
-
-    recorder = QueuedViewerRunTraceRecorder(
-        tmp_path,
-        viewer_worker=LangfuseViewerWorker(
-            client_factory,
-            session_id="suite:provider-free",
-            benchmark_managed=True,
-        ),
+    client = langfuse_module.Langfuse(
+        public_key="pk-lf-provider-free",
+        secret_key="sk-lf-provider-free",
+        tracer_provider=provider,
+        span_exporter=exporter,
     )
-    recorder.benchmark_case_started(
-        case_id="case:provider-free",
-        description="public instruction",
-        timeout_s=1,
+    sink = LangfuseOtelSink(
+        client,
+        session_id="suite:provider-free",
+        benchmark_managed=True,
     )
-    recorder.benchmark_case_finished(case_id="case:provider-free", status="done")
-    recorder.flush_viewer(timeout_s=1)
+    sink.record(
+        {
+            "event": "benchmark_case_started",
+            "run_id": "run:provider-free",
+            "sequence": 1,
+            "case_id": "case:provider-free",
+            "description": "public instruction",
+        }
+    )
+    sink.record(
+        {
+            "event": "benchmark_case_finished",
+            "run_id": "run:provider-free",
+            "sequence": 2,
+            "case_id": "case:provider-free",
+            "status": "done",
+        }
+    )
+    sink.flush()
 
     spans = exporter.get_finished_spans()
-    assert {span.attributes.get("session.id") for span in spans} == {
-        "suite:provider-free"
-    }
-    clients[0].shutdown()
+    assert {span.attributes.get("session.id") for span in spans} == {"suite:provider-free"}
+    client.shutdown()
 
 
-def test_benchmark_case_owns_one_queued_root_and_one_typed_manager_generation(tmp_path) -> None:
+def test_benchmark_case_owns_one_queued_root_and_one_typed_planner_generation(tmp_path) -> None:
+    observed = multiprocessing.Queue()
+    flushes = multiprocessing.Value("i", 0)
+
     @dataclass
     class Observation:
         name: str
         as_type: str
-        ended: bool = False
 
         def update(self, **_event) -> None:
             return None
 
         def end(self) -> None:
-            self.ended = True
+            observed.put(("ended", self.name, self.as_type, None))
 
     @dataclass
     class ObservationContext:
@@ -618,29 +809,19 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_manager_generation(tm
         def __exit__(self, *_args):
             return None
 
-    @dataclass
     class Client:
-        observations: list[Observation] = None
-        inputs: list[object] = None
-        flushes: int = 0
-
-        def __post_init__(self):
-            self.observations = []
-            self.inputs = []
-
         def start_as_current_observation(self, *, name, **kwargs):
             observation = Observation(name, kwargs.get("as_type", "span"))
-            self.observations.append(observation)
-            self.inputs.append(kwargs.get("input"))
+            observed.put(("started", name, observation.as_type, kwargs.get("input")))
             return ObservationContext(observation)
 
         def flush(self):
-            self.flushes += 1
+            with flushes.get_lock():
+                flushes.value += 1
 
-    client = Client()
     recorder = QueuedViewerRunTraceRecorder(
         tmp_path,
-        viewer_worker=LangfuseViewerWorker(lambda: client, benchmark_managed=True),
+        viewer_process=LangfuseViewerProcess(Client, benchmark_managed=True),
     )
     recorder.benchmark_case_started(
         case_id="case:manager-failure",
@@ -653,39 +834,43 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_manager_generation(tm
         result="failure",
         model_invocation={
             "metadata": {"provider_id": "fixture", "model_id": "fixture-model"},
-            "attempts": [{
-                "attempt": 1,
-                "phase": "manager_initial",
-                "trigger": "task_start",
-                "status": "failed",
-                "max_output_tokens": 2048,
-                "prompt_tokens": 7,
-                "completion_tokens": 0,
-                "total_tokens": 7,
-                "transcript": {
-                    "llm.input_messages": [{"role": "user", "content": "public task"}],
-                    "llm.output_messages": [],
-                },
-            }],
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "phase": "planner_initial",
+                    "trigger": "task_start",
+                    "status": "failed",
+                    "max_output_tokens": 2048,
+                    "prompt_tokens": 7,
+                    "completion_tokens": 0,
+                    "total_tokens": 7,
+                    "transcript": {
+                        "llm.input_messages": [{"role": "user", "content": "public task"}],
+                        "llm.output_messages": [],
+                    },
+                }
+            ],
         },
     )
     recorder._emit(
         "model_turn",
         model_metadata={"provider_id": "fixture", "model_id": "fixture-model"},
-        generation_attempts=[{
-            "attempt": 1,
-            "phase": "ordinary",
-            "trigger": "ordinary",
-            "status": "accepted",
-            "max_output_tokens": 768,
-            "prompt_tokens": 11,
-            "completion_tokens": 3,
-            "total_tokens": 14,
-            "transcript": {
-                "llm.input_messages": [{"role": "user", "content": "public world"}],
-                "llm.output_messages": [{"role": "assistant", "content": "tool call"}],
-            },
-        }],
+        generation_attempts=[
+            {
+                "attempt": 1,
+                "phase": "ordinary",
+                "trigger": "ordinary",
+                "status": "accepted",
+                "max_output_tokens": 768,
+                "prompt_tokens": 11,
+                "completion_tokens": 3,
+                "total_tokens": 14,
+                "transcript": {
+                    "llm.input_messages": [{"role": "user", "content": "public world"}],
+                    "llm.output_messages": [{"role": "assistant", "content": "tool call"}],
+                },
+            }
+        ],
     )
     recorder._emit(
         "step_completed",
@@ -696,34 +881,38 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_manager_generation(tm
     recorder.benchmark_case_finished(case_id="case:manager-failure", status="failed")
     recorder.flush_viewer(timeout_s=0.5)
 
-    names = {observation.name for observation in client.observations}
+    events = []
+    while not observed.empty():
+        events.append(observed.get())
+    started_events = [item for item in events if item[0] == "started"]
+    names = {item[1] for item in started_events}
     assert "benchmark-gui-agent-case" in names
     assert "manager-call" in names
-    assert sum(item.name == "manager-generation" for item in client.observations) == 1
-    assert next(
-        item for item in client.observations if item.name == "manager-generation"
-    ).as_type == "generation"
-    assert sum(item.name == "action-policy-generation" for item in client.observations) == 1
+    assert sum(item[1] == "manager-generation" for item in started_events) == 1
+    assert next(item for item in started_events if item[1] == "manager-generation")[2] == "generation"
+    assert sum(item[1] == "action-policy-generation" for item in started_events) == 1
     assert "runtime-step" in names
     assert "run-gui-agent-case" not in names
-    assert client.observations[0].ended is True
-    assert client.flushes == 1
-    assert len(json.dumps(client.inputs[0]).encode()) <= 16_384
-    assert len(client.inputs[0]["description"]) < 100_000
+    assert ("ended", "benchmark-gui-agent-case", "agent", None) in events
+    assert flushes.value == 1
+    root_input = started_events[0][3]
+    assert len(json.dumps(root_input).encode()) <= 16_384
+    assert len(root_input["description"]) < 100_000
 
 
-def test_langfuse_projection_keeps_only_execution_relevant_public_subtask() -> None:
+def test_langfuse_projection_keeps_only_execution_relevant_public_milestone() -> None:
     projected = _langfuse_event_projection(
         {
             "event": "model_turn",
             "sequence": 2,
             "agent_context": {
                 "task": {
-                    "active_subtask": {
-                        "objective": "Collect the current result",
-                        "done_when": "The result is visible",
-                        "outcome_kind": "evidence_packet",
-                        "constraints": ["read only"],
+                        "active_milestone": {
+                            "id": "collect_result",
+                            "outcome": "Current result is available",
+                            "done_when": "The result is visible",
+                            "depends_on": [],
+                            "final": False,
                         "required_evidence": [
                             {"key": "result", "description": "Current result", "status": "available"}
                         ],
@@ -733,11 +922,11 @@ def test_langfuse_projection_keeps_only_execution_relevant_public_subtask() -> N
                     }
                 }
             },
-            "decision": {"kind": "yield_subtask"},
+            "decision": {"kind": "yield_milestone"},
         }
     )
 
-    assert projected["active_subtask"]["objective"] == "Collect the current result"
-    assert "episode_turn_budget" not in projected["active_subtask"]
-    assert "relevant_fact_keys" not in projected["active_subtask"]
-    assert "related_audit_ids" not in projected["active_subtask"]
+    assert projected["active_milestone"]["outcome"] == "Current result is available"
+    assert "episode_turn_budget" not in projected["active_milestone"]
+    assert "relevant_fact_keys" not in projected["active_milestone"]
+    assert "related_audit_ids" not in projected["active_milestone"]

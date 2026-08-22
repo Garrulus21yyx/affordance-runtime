@@ -9,13 +9,20 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import InternalActionPage
 from affordance_runtime.agent.context.budgets import DEFAULT_MAX_HISTORY_SERIALIZED_BYTES
-from affordance_runtime.agent.context.contracts import AgentSubtaskContractView, AgentTurnView
+from affordance_runtime.agent.context.contracts import AgentMilestoneContractView, AgentTurnView
 from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
 )
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
-from affordance_runtime.agent.decisions import AgentDecision, LocalToolResult, SelectAction, YieldSubtask
+from affordance_runtime.agent.decisions import (
+    AgentDecision,
+    DecisionKind,
+    LocalToolResult,
+    SelectAction,
+    SetFormFields,
+    YieldMilestone,
+)
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
@@ -25,7 +32,7 @@ from affordance_runtime.agent.working_facts import (
     validate_working_fact_collection,
 )
 from affordance_runtime.evaluation.contracts import ActionOutcome, TaskEvaluation
-from affordance_runtime.execution.contracts import ExecutionOutcome
+from affordance_runtime.execution.contracts import ExecutionCompletion, ExecutionReceiptBatch
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.risk.contracts import RiskAssessment
@@ -51,6 +58,7 @@ class EpisodeYieldReason(StrEnum):
     BUDGET = "budget"
     CONTEXT_CAPACITY = "context_capacity"
     OUTCOME_PROPOSED = "outcome_proposed"
+    FINAL_RESPONSE = "final_response"
     NEEDS_REPLAN = "needs_replan"
     STALLED = "stalled"
     BLOCKED = "blocked"
@@ -62,6 +70,7 @@ class EpisodeYieldReason(StrEnum):
     EFFECT_STALL = "effect_stall"
     UNCERTAIN_EFFECT = "uncertain_effect"
     STATE_OSCILLATION = "state_oscillation"
+    ROUTE_REGRESSION = "route_regression"
     STRATEGY_STALL = "strategy_stall"
     FAILED_STRATEGY = "failed_strategy"
     PROTOCOL_STALL = "protocol_stall"
@@ -77,7 +86,7 @@ class StepResult:
     after_world: WorldObservation
     task_evaluation: TaskEvaluation
     status_after: RunStatus = RunStatus.RUNNING
-    execution: ExecutionOutcome | None = None
+    execution_receipts: ExecutionReceiptBatch | None = None
     action_outcome: ActionOutcome | None = None
     confirmation: RiskAssessment | None = None
     feedback: str = ""
@@ -92,6 +101,8 @@ class StepResult:
     yield_reason: EpisodeYieldReason | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.decision, AgentDecision | PolicyFailure):
+            raise TypeError("step decision must belong to the closed decision algebra")
         if not isinstance(self.status_after, RunStatus):
             raise TypeError("step status must be typed")
         if self.waited_ms < 0:
@@ -99,45 +110,74 @@ class StepResult:
         if self.task_evaluation.observation_id != self.after_world.observation_id:
             raise ValueError("step task evaluation must describe the after-world")
         if self.action_outcome is not None:
-            if self.execution is None:
+            if self.execution_receipts is None or not self.execution_receipts.receipts:
                 raise ValueError("action outcome requires an execution")
+            final_receipt = self.execution_receipts.receipts[-1]
             if (
-                self.action_outcome.request_id != self.execution.request.request_id
+                self.action_outcome.request_id != final_receipt.request.request_id
                 or self.action_outcome.before_observation_id
                 not in {
                     self.before_world.observation_id,
-                    self.execution.request.world_observation_id,
+                    final_receipt.request.world_observation_id,
                 }
                 or self.action_outcome.after_observation_id != self.after_world.observation_id
             ):
                 raise ValueError("step action outcome does not match its worlds and execution")
-        if self.confirmation is not None and self.execution is not None:
+        if self.confirmation is not None and self.execution_receipts is not None:
             raise ValueError("a pending confirmation cannot already contain execution")
+        if self.execution_receipts is not None:
+            if not isinstance(self.decision, SelectAction | SetFormFields):
+                raise ValueError("effectful receipts require an effectful decision")
+            if any(
+                self.decision.tool_call_id != item.request.tool_call_id for item in self.execution_receipts.receipts
+            ):
+                raise ValueError("step decision/execution tool call lineage mismatch")
+        if self.status_after is RunStatus.YIELDED:
+            if self.yield_reason is None:
+                raise ValueError("YIELDED step requires one typed yield reason")
+        elif self.yield_reason is not None:
+            raise ValueError("yield reason is only legal for YIELDED status")
+        if self.yield_reason is not None and not isinstance(self.yield_reason, EpisodeYieldReason):
+            raise TypeError("step yield reason must be typed")
+        if self.failure_code is not None and not isinstance(self.failure_code, AgentFailureCode):
+            raise TypeError("step failure code must be typed")
+        if self.failure_code is not None and self.status_after not in {
+            RunStatus.BLOCKED,
+            RunStatus.FAILED,
+        }:
+            raise ValueError("step failure code requires terminal failure status")
+        if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
+            raise TypeError("step runtime failure must be typed")
+        if self.status_after is RunStatus.RUNNING and self.runtime_failure is not None:
+            raise ValueError("RUNNING step cannot carry terminal failure fields")
+        if self.runtime_failure is not None and self.status_after is not RunStatus.FAILED:
+            raise ValueError("runtime failure requires FAILED status")
+        if isinstance(self.decision, LocalToolResult) and self.execution_receipts is not None:
+            raise ValueError("a local tool result cannot contain GUI receipts")
         if (
-            self.execution is not None
-            and isinstance(self.decision, SelectAction)
-            and self.decision.tool_call_id != self.execution.request.tool_call_id
+            self.execution_receipts is not None
+            and self.execution_receipts.completion is ExecutionCompletion.CANCELLED
+            and self.status_after is not RunStatus.CANCELLED
         ):
-            raise ValueError("step decision/execution tool call lineage mismatch")
-        if not self.feedback.strip():
-            raise ValueError("step feedback must be concise and nonblank")
-        object.__setattr__(self, "action_page_result", freeze_json(dict(self.action_page_result)))
+            raise ValueError("cancelled execution receipts require CANCELLED status")
+        if (
+            self.status_after is RunStatus.CANCELLED
+            and self.execution_receipts is not None
+            and (self.execution_receipts.completion is not ExecutionCompletion.CANCELLED)
+        ):
+            raise ValueError("cancelled effectful step requires cancelled receipt completion")
         if self.recovery_signal is not None:
             from affordance_runtime.mission.contracts import RecoverySignal
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("step recovery signal must be typed")
-        if self.yield_reason is not None:
-            if not isinstance(self.yield_reason, EpisodeYieldReason):
-                raise TypeError("step yield reason must be typed")
-            if self.status_after is not RunStatus.YIELDED:
-                raise ValueError("step yield reason requires YIELDED status")
-        if self.failure_code is not None and not isinstance(self.failure_code, AgentFailureCode):
-            raise TypeError("step failure code must be typed")
-        if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
-            raise TypeError("step runtime failure must be typed")
-        if isinstance(self.decision, LocalToolResult) and self.execution is not None:
-            raise ValueError("a local tool result cannot also contain action execution")
+        if not self.feedback.strip():
+            raise ValueError("step feedback must be concise and nonblank")
+        object.__setattr__(self, "action_page_result", freeze_json(dict(self.action_page_result)))
+
+    @property
+    def execution_attempt_count(self) -> int:
+        return self.execution_receipts.execution_count if self.execution_receipts is not None else 0
 
     @property
     def tool_result(self) -> Mapping[str, object] | None:
@@ -170,7 +210,11 @@ class RunState:
     delivery_lens: WorldDeliveryLens | None = None
     yield_reason: EpisodeYieldReason | None = None
     recovery_signal: RecoverySignal | None = None
-    active_subtask_contract: AgentSubtaskContractView | None = None
+    active_milestone_contract: AgentMilestoneContractView | None = None
+    committed_sent_unknown_count: int = 0
+    decision_counts: dict[DecisionKind, int] = field(default_factory=dict)
+    currentness_probe_count: int = 0
+    latest_action_outcome: ActionOutcome | None = None
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -185,6 +229,19 @@ class RunState:
             raise ValueError("run task revision must be positive")
         if self.goal_plan_version_counter < 0:
             raise ValueError("goal plan version counter cannot be negative")
+        if self.committed_sent_unknown_count < 0:
+            raise ValueError("run sent-unknown count cannot be negative")
+        if self.currentness_probe_count < 0:
+            raise ValueError("run currentness probe count cannot be negative")
+        if self.latest_action_outcome is not None and not isinstance(
+            self.latest_action_outcome, ActionOutcome
+        ):
+            raise TypeError("run latest action outcome must be typed")
+        if any(
+            not isinstance(kind, DecisionKind) or type(count) is not int or count < 0
+            for kind, count in self.decision_counts.items()
+        ):
+            raise ValueError("run decision counts must use the closed decision algebra")
         if isinstance(self.goal_resolution, Ready):
             plan = self.goal_resolution.accepted_plan
             if plan.task_revision != self.task_revision:
@@ -207,10 +264,10 @@ class RunState:
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("run recovery signal must be typed")
-        if self.active_subtask_contract is not None and not isinstance(
-            self.active_subtask_contract, AgentSubtaskContractView
+        if self.active_milestone_contract is not None and not isinstance(
+            self.active_milestone_contract, AgentMilestoneContractView
         ):
-            raise TypeError("run active subtask contract must be typed")
+            raise TypeError("run active milestone contract must be typed")
 
     @property
     def terminal(self) -> bool:
@@ -244,15 +301,20 @@ class RunState:
 
     @property
     def sent_unknown_count(self) -> int:
-        execution = self.last_step.execution if self.last_step else None
-        return sum(
-            attempt.result.dispatch_status.value == "sent_unknown"
-            for attempt in execution.attempts
-        ) if execution is not None else 0
+        return self.committed_sent_unknown_count
 
     def next_context_generation(self) -> int:
         self.context_generation += 1
         return self.context_generation
+
+    def resume(self, expected: RunStatus) -> None:
+        """Perform the sole non-StepResult transition back into the running loop."""
+
+        if expected not in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
+            raise ValueError("only a typed waiting status can be resumed")
+        if self.status is not expected:
+            raise ValueError("run resume status does not match the pending boundary")
+        self.status = RunStatus.RUNNING
 
     def remember_step(
         self,
@@ -263,14 +325,22 @@ class RunState:
         if not isinstance(step, AgentTurnView):
             raise TypeError("run step memory must be model-safe")
         candidate = (*self.recent_steps, step)
-        try:
-            render_episode_history(candidate, max_bytes)
-        except EpisodeHistoryCapacityError:
-            if self.status is RunStatus.RUNNING:
-                self.status = RunStatus.YIELDED
-                self.yield_reason = EpisodeYieldReason.CONTEXT_CAPACITY
-            return
+        render_episode_history(candidate, max_bytes)
         self.recent_steps = candidate
+
+    def can_remember_step(
+        self,
+        step: AgentTurnView,
+        *,
+        max_bytes: int = DEFAULT_MAX_HISTORY_SERIALIZED_BYTES,
+    ) -> bool:
+        if not isinstance(step, AgentTurnView):
+            raise TypeError("run step memory must be model-safe")
+        try:
+            render_episode_history((*self.recent_steps, step), max_bytes)
+        except EpisodeHistoryCapacityError:
+            return False
+        return True
 
     def remember_working_fact(self, fact: WorkingFact) -> None:
         previous = next((item for item in self.working_facts if item.key == fact.key), None)
@@ -294,15 +364,22 @@ class RunState:
         self.status = result.status_after
         if result.yield_reason is not None and self.status is RunStatus.YIELDED:
             self.yield_reason = result.yield_reason
-        elif isinstance(result.decision, YieldSubtask) and self.status is RunStatus.YIELDED:
-            self.yield_reason = EpisodeYieldReason(result.decision.kind)
+        elif isinstance(result.decision, YieldMilestone) and self.status is RunStatus.YIELDED:
+            self.yield_reason = EpisodeYieldReason(result.decision.yield_kind)
         elif self.status is RunStatus.YIELDED and result.feedback.startswith("episode_monitor:"):
             self.yield_reason = EpisodeYieldReason(result.feedback.removeprefix("episode_monitor:"))
         if consume_step:
             self.remaining_steps = max(0, self.remaining_steps - 1)
         self.observation_count += int(acquired_new_world)
-        self.execution_count += result.execution.attempt_count if result.execution is not None else 0
+        self.execution_count += result.execution_attempt_count
+        if result.action_outcome is not None:
+            self.latest_action_outcome = result.action_outcome
+        if result.execution_receipts is not None:
+            self.committed_sent_unknown_count += result.execution_receipts.sent_unknown_count
         self.step_count += int(consume_step)
+        if not isinstance(result.decision, PolicyFailure):
+            kind = result.decision.kind
+            self.decision_counts[kind] = self.decision_counts.get(kind, 0) + 1
         self.action_page = result.action_page
         if acquired_new_world:
             self.delivery_lens = None
@@ -317,10 +394,6 @@ class RunState:
                 self.action_page = None
         self.recovery_signal = result.recovery_signal
         if self.status is RunStatus.RUNNING and self.remaining_steps == 0:
-            self.status = (
-                RunStatus.YIELDED
-                if self.yield_on_budget_exhaustion
-                else RunStatus.BLOCKED
-            )
+            self.status = RunStatus.YIELDED if self.yield_on_budget_exhaustion else RunStatus.BLOCKED
             if self.status is RunStatus.YIELDED:
                 self.yield_reason = EpisodeYieldReason.BUDGET

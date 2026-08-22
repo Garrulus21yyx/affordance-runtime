@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import pytest
+
+from affordance_runtime.agent import (
+    Abort,
+    AskUser,
+    DecisionKind,
+    EpisodeBudget,
+    EpisodeYieldReason,
+    PinFactResult,
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
+    ReadRegionResult,
+    RequestActionPage,
+    RequestObservation,
+    RunState,
+    RunStatus,
+    SearchPageContentResult,
+    SelectAction,
+    SetFormFields,
+    StandaloneRunBudget,
+    StepResult,
+    ToolRejectedResult,
+    Wait,
+    YieldMilestone,
+)
+from affordance_runtime.agent.context.step_projection import project_step_result
+from affordance_runtime.agent.decisions import FinalResponse, FormFieldUpdate
+from affordance_runtime.agent.episode_snapshot import snapshot_episode
+from affordance_runtime.agent.observability import RunTraceRecorder
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from tests.support.world import fused_world
+
+
+def _evaluation(observation_id: str) -> TaskEvaluation:
+    return TaskEvaluation(
+        "task:algebra",
+        observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "not complete",
+    )
+
+
+def test_every_control_decision_uses_the_single_decision_kind_algebra() -> None:
+    decisions = (
+        AskUser("context:test", "Which value?"),
+        PinFactResult("context:test", "pin_fact", {}, {"pinned": True}),
+        ProtocolFeedback(
+            "context:test",
+            ProtocolFeedbackKind.JSON_INVALID,
+        ),
+        YieldMilestone("context:test", "outcome_proposed", "ready"),
+        Abort("context:test", "stop", "user_request"),
+    )
+    assert tuple(item.kind for item in decisions) == (
+        DecisionKind.ASK_USER,
+        DecisionKind.PIN_FACT,
+        DecisionKind.PROTOCOL_FEEDBACK,
+        DecisionKind.YIELD_MILESTONE,
+        DecisionKind.ABORT,
+    )
+
+
+def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(tmp_path) -> None:
+    decisions = (
+        SelectAction("context:test", "action:one"),
+        SetFormFields(
+            "context:test",
+            "form:test",
+            (
+                FormFieldUpdate("action:one", "type_text", "E1", {"text": "a"}),
+                FormFieldUpdate("action:two", "type_text", "E2", {"text": "b"}),
+            ),
+        ),
+        RequestObservation(
+            "context:test",
+            "entity_discovery",
+            "target:one",
+            "",
+            "inspect",
+        ),
+        RequestActionPage("context:test", query="controls"),
+        AskUser("context:test", "Which value?"),
+        ReadRegionResult("context:test", "read_region", {}, {"items": ()}),
+        SearchPageContentResult("context:test", "search_page_content", {}, {"items": ()}),
+        PinFactResult("context:test", "pin_fact", {}, {"pinned": True}),
+        ProtocolFeedback("context:test", ProtocolFeedbackKind.JSON_INVALID),
+        ToolRejectedResult("context:test", "tool_rejected", {}, {"rejected": True}),
+        YieldMilestone("context:test", "outcome_proposed", "ready"),
+        FinalResponse("context:test", "done", ("evidence:test",)),
+        Wait("context:test", "settle", 1),
+        Abort("context:test", "stop", "user_request"),
+    )
+    assert {item.kind for item in decisions} == set(DecisionKind)
+
+    for index, decision in enumerate(decisions):
+        world = fused_world(f"observation:decision:{index}")
+        status = (
+            RunStatus.YIELDED
+            if decision.kind is DecisionKind.YIELD_MILESTONE
+            else RunStatus.WAITING_USER
+            if decision.kind is DecisionKind.ASK_USER
+            else RunStatus.DONE
+            if decision.kind is DecisionKind.SUBMIT_FINAL_RESPONSE
+            else RunStatus.CANCELLED
+            if decision.kind is DecisionKind.ABORT
+            else RunStatus.RUNNING
+        )
+        step = StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world.observation_id),
+            status,
+            feedback=f"decision:{decision.kind.value}",
+            yield_reason=(EpisodeYieldReason.OUTCOME_PROPOSED if status is RunStatus.YIELDED else None),
+        )
+        state = RunState(world, _evaluation(world.observation_id), 2)
+        state.apply(step)
+        recorder = RunTraceRecorder(tmp_path / str(index))
+        recorder.step_completed(index + 1, step)
+
+        assert project_step_result(step).decision_kind == decision.kind.value
+        assert snapshot_episode(state).last_decision_kind == decision.kind.value
+        traced = recorder.events[-1]["result"]["decision"]
+        assert traced["kind"] == decision.kind.value
+
+
+def test_step_result_rejects_values_outside_the_closed_decision_algebra() -> None:
+    world = fused_world("observation:invalid-decision")
+    with pytest.raises(TypeError, match="closed decision algebra"):
+        StepResult(
+            object(),  # type: ignore[arg-type]
+            world,
+            world,
+            _evaluation(world.observation_id),
+            feedback="invalid decision",
+        )
+
+
+def test_step_result_rejects_yield_state_matrix_violations() -> None:
+    world = fused_world("observation:step-algebra")
+    decision = YieldMilestone("context:test", "outcome_proposed", "ready")
+
+    with pytest.raises(ValueError, match="YIELDED"):
+        StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world.observation_id),
+            RunStatus.YIELDED,
+            feedback="invalid missing reason",
+        )
+    with pytest.raises(ValueError, match="only legal"):
+        StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(world.observation_id),
+            RunStatus.RUNNING,
+            feedback="invalid running yield",
+            yield_reason=EpisodeYieldReason.OUTCOME_PROPOSED,
+        )
+
+
+def test_episode_and_standalone_budget_authorities_are_distinct() -> None:
+    assert EpisodeBudget.ordinary().turns == 15
+    assert EpisodeBudget.explicit(15).turns == 15
+    with pytest.raises(ValueError, match=r"\[1, 15\]"):
+        EpisodeBudget.explicit(16)
+    assert StandaloneRunBudget(16).turns == 16

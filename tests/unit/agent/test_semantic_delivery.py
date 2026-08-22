@@ -126,9 +126,13 @@ def _functional_world(*, rows: int = 3):
         ObservationStructureNode("root", "document", "Catalog", child_structure_ids=("empty", "nav", "main")),
         ObservationStructureNode("empty", "generic", "", parent_structure_id="root", child_structure_ids=("icon",)),
         ObservationStructureNode("icon", "img", "", parent_structure_id="empty"),
-        ObservationStructureNode("nav", "navigation", "Primary", parent_structure_id="root", child_structure_ids=("home",)),
+        ObservationStructureNode(
+            "nav", "navigation", "Primary", parent_structure_id="root", child_structure_ids=("home",)
+        ),
         ObservationStructureNode("home", "link", "Home", parent_structure_id="nav", semantic_target_id="home"),
-        ObservationStructureNode("main", "main", "Products", parent_structure_id="root", child_structure_ids=("heading", "list")),
+        ObservationStructureNode(
+            "main", "main", "Products", parent_structure_id="root", child_structure_ids=("heading", "list")
+        ),
         ObservationStructureNode("heading", "heading", "Featured", parent_structure_id="main"),
         ObservationStructureNode("list", "list", "Products", parent_structure_id="main", child_structure_ids=row_ids),
         *(
@@ -159,11 +163,7 @@ def _functional_world(*, rows: int = 3):
 def _table_world(*, rows: int = 5, coverage: CoverageState = CoverageState.COMPLETE):
     header_ids = ("header:product", "header:price", "header:quantity")
     row_ids = tuple(f"body:row:{index}" for index in range(rows))
-    cell_ids = tuple(
-        f"{row_id}:cell:{column}"
-        for row_id in row_ids
-        for column in ("product", "price", "quantity")
-    )
+    cell_ids = tuple(f"{row_id}:cell:{column}" for row_id in row_ids for column in ("product", "price", "quantity"))
     targets = (
         SemanticTarget(header_ids[0], "columnheader", "Product"),
         SemanticTarget(header_ids[1], "columnheader", "Price"),
@@ -172,13 +172,7 @@ def _table_world(*, rows: int = 5, coverage: CoverageState = CoverageState.COMPL
             SemanticTarget(
                 cell_id,
                 "StaticText",
-                (
-                    f"Product {index}"
-                    if column == "product"
-                    else "$19.00"
-                    if column == "price"
-                    else str(index + 1)
-                ),
+                (f"Product {index}" if column == "product" else "$19.00" if column == "price" else str(index + 1)),
             )
             for index, row_id in enumerate(row_ids)
             for column, cell_id in (
@@ -269,15 +263,10 @@ def _table_world(*, rows: int = 5, coverage: CoverageState = CoverageState.COMPL
 
 def _captured_dashboard_world():
     trace_path = Path(
-        "evidence/live/w1b-one-task-0-zhipu-glm46-readable-tools-run2/"
-        "traces/webarena-verified-w1b-task-0/trace.jsonl"
+        "evidence/live/w1b-one-task-0-zhipu-glm46-readable-tools-run2/traces/webarena-verified-w1b-task-0/trace.jsonl"
     )
     with trace_path.open(encoding="utf-8") as stream:
-        payload = next(
-            json.loads(line)["observation"]
-            for line in stream
-            if '"event":"observation"' in line
-        )
+        payload = next(json.loads(line)["observation"] for line in stream if '"event":"observation"' in line)
     captured = payload["sources"][0]
     targets = tuple(SemanticTarget(**item) for item in captured["targets"])
     structures = tuple(ObservationStructureNode(**item) for item in captured["structure"])
@@ -312,14 +301,22 @@ def test_actor_normalization_conserves_supported_public_state_relation_and_fact(
         {"value": "exact user text", "selected": True, "semantic.dom.attribute.placeholder": "Find"},
         {"owns": ("target:two",)},
     )
-    world = WorldFusion().fuse((SurfaceObservation(
-        "source:lossless",
-        "browser",
-        "revision:lossless",
-        ObservationSourceProfile.dom(),
-        (target, SemanticTarget("target:two", "region", "Results")),
-        (StateFact("fact:value", "target:one", "value", "exact user text", "source:lossless"),),
-    ),)).observation
+    world = (
+        WorldFusion()
+        .fuse(
+            (
+                SurfaceObservation(
+                    "source:lossless",
+                    "browser",
+                    "revision:lossless",
+                    ObservationSourceProfile.dom(),
+                    (target, SemanticTarget("target:two", "region", "Results")),
+                    (StateFact("fact:value", "target:one", "value", "exact user text", "source:lossless"),),
+                ),
+            )
+        )
+        .observation
+    )
     assert world is not None
     task = TaskGoal("lossless", "Inspect the search state")
     context = ContextBuilder().build(
@@ -359,7 +356,7 @@ def test_repeated_collection_inspect_pages_at_twenty_complete_items() -> None:
         context.grounding,
         region_index=context.region_index,
         observation=world,
-        action="open_region",
+        action="read_region",
         region_ref=region.public_ref,
     )
 
@@ -394,7 +391,7 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
         context.grounding,
         region_index=context.region_index,
         observation=world,
-        action="open_region",
+        action="read_region",
         region_ref=table.public_ref,
     )
 
@@ -402,9 +399,7 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
     assert outcome.source_coverage == "partial"
     assert outcome.region_membership == "complete"
     assert outcome.result_page == "1/1"
-    schema_labels = {
-        item["label"] for item in outcome.items if item.get("kind") == "schema_member"
-    }
+    schema_labels = {item["label"] for item in outcome.items if item.get("kind") == "schema_member"}
     rows = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
     assert schema_labels >= {"Product", "Price", "Quantity"}
     assert len(rows) == 5
@@ -448,7 +443,7 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
         context.grounding,
         region_index=context.region_index,
         observation=world,
-        action="open_region",
+        action="read_region",
         region_ref=table.public_ref,
     )
     view = render_compact_actor_world(
@@ -460,7 +455,8 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
         action_candidates=context.action_candidates,
     )
     reports = next(
-        item for item in context.complete_actions
+        item
+        for item in context.complete_actions
         if item.target_label.casefold().endswith("reports") and item.semantic_action == "activate"
     )
 
@@ -516,11 +512,11 @@ def test_inspect_world_closed_outcome_algebra_and_currentness() -> None:
     }
     region_ref = context.region_index.regions[0].public_ref
 
-    assert isinstance(inspect_actor_world(**kwargs, action="open_region", region_ref=region_ref), Opened)
+    assert isinstance(inspect_actor_world(**kwargs, action="read_region", region_ref=region_ref), Opened)
     assert isinstance(inspect_actor_world(**kwargs, action="find", query="Item 1"), Matches)
     assert isinstance(inspect_actor_world(**kwargs, action="find", query="absent"), Empty)
     assert isinstance(inspect_actor_world(**kwargs, action="view_all"), Page)
-    assert isinstance(inspect_actor_world(**kwargs, action="open_region", region_ref="R999"), InvalidRegion)
+    assert isinstance(inspect_actor_world(**kwargs, action="read_region", region_ref="R999"), InvalidRegion)
     assert isinstance(inspect_actor_world(**kwargs, action="view_all", cursor="bad"), InvalidCursor)
     assert isinstance(inspect_actor_world(**kwargs, action="view_all", hard_limit=1), CapacityExceeded)
     stale = replace(context.region_index, world_observation_id="world:stale")
@@ -548,7 +544,7 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
 
     opened = resolve_catalog_call(
         first_catalog,
-        ToolCall("open_region", {"region_ref": region_ref}),
+        ToolCall("read_region", {"region_ref": region_ref}),
         expected_context_id=first.context_id,
     ).decision
 
@@ -599,10 +595,7 @@ def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action
     assert '"enum": ["E' not in schemas
     assert '"enum": ["F' not in schemas
     assert '"enum": ["R' not in schemas
-    assert all(
-        ref in {item.target_ref for item in context.complete_actions}
-        for ref in view.manifest.executable_refs
-    )
+    assert all(ref in {item.target_ref for item in context.complete_actions} for ref in view.manifest.executable_refs)
     assert catalog.serialized_bytes < 8_000
 
 
@@ -612,14 +605,22 @@ def test_lossless_fact_reference_algebra_covers_more_than_one_thousand_scalars()
         StateFact(f"fact:metric:{index}", target.target_id, f"metric_{index}", index, "source:many")
         for index in range(1_005)
     )
-    world = WorldFusion().fuse((SurfaceObservation(
-        "source:many",
-        "browser",
-        "revision:many",
-        ObservationSourceProfile.dom(),
-        (target,),
-        facts,
-    ),)).observation
+    world = (
+        WorldFusion()
+        .fuse(
+            (
+                SurfaceObservation(
+                    "source:many",
+                    "browser",
+                    "revision:many",
+                    ObservationSourceProfile.dom(),
+                    (target,),
+                    facts,
+                ),
+            )
+        )
+        .observation
+    )
     assert world is not None
     task = TaskGoal("many-facts", "Inspect metrics")
     context = ContextBuilder().build(
@@ -700,14 +701,16 @@ def _candidate_navigation_world(observation_id: str, *, include_account_settings
             {"parent_id": account_scope.target_id},
         )
         targets.append(account_settings)
-        nodes.append(ObservationStructureNode(
-            "account-settings",
-            "menuitem",
-            "Settings",
-            {"selected": False},
-            parent_structure_id="tabs",
-            semantic_target_id=account_settings.target_id,
-        ))
+        nodes.append(
+            ObservationStructureNode(
+                "account-settings",
+                "menuitem",
+                "Settings",
+                {"selected": False},
+                parent_structure_id="tabs",
+                semantic_target_id=account_settings.target_id,
+            )
+        )
         bindings.append(_activate_binding(observation_id, account_settings))
     source = SurfaceObservation(
         observation_id,
@@ -758,15 +761,13 @@ def _candidate_context(world, instruction: str):
         _evaluation(task, world.observation_id),
     )
     delivery = build_model_turn_delivery(context, include_images=False)
-    return task, context, delivery.view
+    return task, context, delivery
 
 
 def test_task_related_current_action_is_promoted_with_structural_closure() -> None:
     world = _candidate_navigation_world("obs:with-settings", include_account_settings=True)
     _task_goal, context, view = _candidate_context(world, "Open Account Preferences Settings")
-    target = next(
-        item for item in context.complete_actions if item.target_id == "action:account-settings"
-    )
+    target = next(item for item in context.complete_actions if item.target_id == "action:account-settings")
     _, catalog = catalog_for(context)
     resolved = resolve_catalog_call(
         catalog,
@@ -775,10 +776,10 @@ def test_task_related_current_action_is_promoted_with_structural_closure() -> No
         expected_catalog_id=catalog.catalog_id,
     ).decision
 
-    assert "ActionCandidates exact=true" in view.text
-    assert f'[{target.target_ref}] activate menuitem "Settings"' in view.text
-    assert 'path=["Control Center","Account workspace","Account Preferences","Settings"]' in view.text
-    assert 'verbs=["activate"]' in view.text
+    assert "ActionCandidates exact=true" in view.view.text
+    assert f'[{target.target_ref}] activate menuitem "Settings"' in view.view.text
+    assert 'path=["Control Center","Account workspace","Account Preferences","Settings"]' in view.view.text
+    assert 'verbs=["activate"]' in view.view.text
     assert target.target_ref in view.manifest.executable_refs
     assert resolved.action_id == target.action_id
 
@@ -795,18 +796,12 @@ def test_future_action_is_not_invented_or_replaced_by_navigation_macro() -> None
 def test_fresh_world_promotes_newly_available_action() -> None:
     before = _candidate_navigation_world("obs:before-settings", include_account_settings=False)
     after = _candidate_navigation_world("obs:after-settings", include_account_settings=True)
-    _task_goal, before_context, _before_view = _candidate_context(
-        before, "Open Account Preferences Settings"
-    )
-    _task_goal, after_context, after_view = _candidate_context(
-        after, "Open Account Preferences Settings"
-    )
+    _task_goal, before_context, _before_view = _candidate_context(before, "Open Account Preferences Settings")
+    _task_goal, after_context, after_view = _candidate_context(after, "Open Account Preferences Settings")
 
     assert all(item.target_id != "action:account-settings" for item in before_context.complete_actions)
-    target = next(
-        item for item in after_context.complete_actions if item.target_id == "action:account-settings"
-    )
-    assert f'[{target.target_ref}] activate menuitem "Settings"' in after_view.text
+    target = next(item for item in after_context.complete_actions if item.target_id == "action:account-settings")
+    assert f'[{target.target_ref}] activate menuitem "Settings"' in after_view.view.text
     assert target.target_ref in after_view.manifest.executable_refs
 
 
@@ -826,8 +821,10 @@ def test_one_delivery_identity_owns_view_catalog_and_resolver_admission() -> Non
     _task_goal, context, _view = _candidate_context(world, "Open Account Preferences Settings")
     delivery, catalog = catalog_for(context)
 
-    assert delivery.view.manifest is delivery.manifest
+    assert not hasattr(delivery.view, "manifest")
     assert catalog.manifest is delivery.manifest
+    assert delivery.delivery_index is context.region_index
+    assert catalog.delivery_index is context.region_index
     assert catalog.delivery_id == delivery.delivery_id
 
     displayed = re.findall(

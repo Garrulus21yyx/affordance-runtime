@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpaceBuilder
+from affordance_runtime.agent import DecisionKind
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
@@ -193,11 +194,17 @@ def _context():
         TaskEvaluationStatus.INCOMPLETE,
         "ongoing",
     )
-    return task, world, actions, evaluation, ContextBuilder().build(
+    return (
         task,
         world,
         actions,
         evaluation,
+        ContextBuilder().build(
+            task,
+            world,
+            actions,
+            evaluation,
+        ),
     )
 
 
@@ -290,11 +297,16 @@ def _drag_context():
         TaskEvaluationStatus.INCOMPLETE,
         "ongoing",
     )
-    return task, fused.observation, actions, ContextBuilder().build(
+    return (
         task,
         fused.observation,
         actions,
-        evaluation,
+        ContextBuilder().build(
+            task,
+            fused.observation,
+            actions,
+            evaluation,
+        ),
     )
 
 
@@ -370,16 +382,22 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
 def test_duplicate_label_path_match_has_recall_at_5_and_rank_at_most_3() -> None:
     _task, _world_value, _actions, _evaluation, context = _context()
     candidates = context.action_candidates.candidates
-    desired = next(item for item in candidates if item.action_id == next(
-        option.action_id
-        for option in context.complete_actions
-        if option.target_id == "target:account-settings"
-    ))
-    unrelated = next(item for item in candidates if item.action_id == next(
-        option.action_id
-        for option in context.complete_actions
-        if option.target_id == "target:overview-settings"
-    ))
+    desired = next(
+        item
+        for item in candidates
+        if item.action_id
+        == next(
+            option.action_id for option in context.complete_actions if option.target_id == "target:account-settings"
+        )
+    )
+    unrelated = next(
+        item
+        for item in candidates
+        if item.action_id
+        == next(
+            option.action_id for option in context.complete_actions if option.target_id == "target:overview-settings"
+        )
+    )
 
     assert desired.rank <= 3
     assert desired.rank < unrelated.rank
@@ -387,19 +405,16 @@ def test_duplicate_label_path_match_has_recall_at_5_and_rank_at_most_3() -> None
     assert desired.functional_path != unrelated.functional_path
 
 
-def test_find_actions_reuses_ranker_and_recovers_an_action_omitted_from_top5() -> None:
+def test_find_controls_reuses_ranker_and_recovers_an_action_omitted_from_top5() -> None:
     task, world, actions, evaluation, context = _context()
     automatic_refs = {item.target_ref for item in context.action_candidates.candidates}
-    omitted = next(
-        item for item in context.complete_actions
-        if item.target_label == "Zulu control"
-    )
+    omitted = next(item for item in context.complete_actions if item.target_label == "Zulu control")
     assert omitted.target_ref not in automatic_refs
 
     delivery, catalog = _catalog(context)
     request = resolve_grounded_tool_call(
         catalog,
-        ToolCall("find_actions", {"query": "Zulu control"}, "call:find-zulu"),
+        ToolCall("find_controls", {"query": "Zulu control"}, "call:find-zulu"),
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
         expected_catalog_id=catalog.catalog_id,
@@ -438,59 +453,60 @@ def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_acti
     ).decision
     opened = resolve_grounded_tool_call(
         catalog,
-        ToolCall("open_region", {"region_ref": candidate.region_ref}, "call:open"),
+        ToolCall("read_region", {"region_ref": candidate.region_ref}, "call:open"),
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     ).decision
     found_content = resolve_grounded_tool_call(
         catalog,
-        ToolCall("find_content", {"query": "Settings"}, "call:content"),
+        ToolCall("search_page_content", {"query": "Settings"}, "call:content"),
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     ).decision
     found_actions = resolve_grounded_tool_call(
         catalog,
-        ToolCall("find_actions", {"query": "Settings"}, "call:actions"),
+        ToolCall("find_controls", {"query": "Settings"}, "call:actions"),
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     ).decision
 
     assert selected.action_id == candidate.action_id
-    assert type(opened).__name__ == "LocalToolResult"
-    assert type(found_content).__name__ == "LocalToolResult"
-    assert type(found_actions).__name__ == "RequestActionPage"
-    assert "open_region" not in tuple(item.semantic_action for item in context.complete_actions)
+    assert opened.kind is DecisionKind.READ_REGION
+    assert found_content.kind is DecisionKind.SEARCH_PAGE_CONTENT
+    assert found_actions.kind is DecisionKind.FIND_CONTROLS
+    assert "read_region" not in tuple(item.semantic_action for item in context.complete_actions)
 
 
-def test_open_region_and_find_content_results_never_publish_action_inventory() -> None:
+def test_read_region_and_search_page_content_results_never_publish_action_inventory() -> None:
     _task, world, _actions, _evaluation, context = _context()
     candidate = context.action_candidates.candidates[0]
-    opened = inspect_outcome_public(inspect_actor_world(
-        context.actor_world,
-        context.grounding,
-        region_index=context.region_index,
-        observation=world,
-        action="open_region",
-        region_ref=candidate.region_ref,
-    ))
-    content = inspect_outcome_public(inspect_actor_world(
-        context.actor_world,
-        context.grounding,
-        region_index=context.region_index,
-        observation=world,
-        action="find",
-        query="Settings",
-    ))
+    opened = inspect_outcome_public(
+        inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            observation=world,
+            action="read_region",
+            region_ref=candidate.region_ref,
+        )
+    )
+    content = inspect_outcome_public(
+        inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            observation=world,
+            action="find",
+            query="Settings",
+        )
+    )
     forbidden = {"actionable", "verbs", "action_refs"}
     opened_json = json.dumps(to_json_compatible(opened))
     content_json = json.dumps(to_json_compatible(content))
 
     assert all(value not in opened_json for value in forbidden)
     assert all(value not in content_json for value in forbidden)
-    assert not any(
-        str(item.get("node_ref", "")).startswith("E")
-        for item in content["items"]
-    )
+    assert not any(str(item.get("node_ref", "")).startswith("E") for item in content["items"])
 
 
 def test_opened_region_controls_enter_the_next_normal_manifest() -> None:
@@ -502,7 +518,7 @@ def test_opened_region_controls_enter_the_next_normal_manifest() -> None:
     assert zulu.target_ref not in initial.manifest.executable_refs
     opened = resolve_grounded_tool_call(
         catalog,
-        ToolCall("open_region", {"region_ref": region.public_ref}, "call:open-utilities"),
+        ToolCall("read_region", {"region_ref": region.public_ref}, "call:open-utilities"),
         expected_context_id=context.context_id,
         expected_delivery_id=initial.delivery_id,
     ).decision
@@ -533,7 +549,7 @@ def test_stale_context_and_unknown_legacy_operations_fail_typed() -> None:
     with pytest.raises(GroundedToolResolutionError) as stale:
         resolve_grounded_tool_call(
             catalog,
-            ToolCall("find_actions", {"query": "Settings"}),
+            ToolCall("find_controls", {"query": "Settings"}),
             expected_context_id="context:" + "0" * 64,
             expected_delivery_id=delivery.delivery_id,
         )
@@ -553,7 +569,6 @@ def test_current_source_and_tests_contain_no_removed_delivery_contracts() -> Non
     removed = (
         "Direct" + "Actions",
         "_preferred" + "_action_refs",
-        "read" + "_region",
         "search" + "_world",
         "search" + "_actions",
     )

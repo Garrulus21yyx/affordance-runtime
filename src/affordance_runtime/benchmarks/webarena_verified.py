@@ -16,8 +16,9 @@ from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent.context.budgets import serialized_size
 from affordance_runtime.agent.context.context_builder import ContextBuilder
-from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery, build_model_turn_delivery
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
+from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
 )
@@ -116,41 +117,58 @@ class DeliveryProbe:
 # supplied to ContextBuilder, ranking, the binder, or a model request.
 WA_W1B_DELIVERY_PROBES: Mapping[int, DeliveryProbe] = {
     0: DeliveryProbe(
-        "shopping_admin", ("admin", "dashboard"), ("document",),
-        (DeliveryRetrievalProbe(
-            "Bestsellers",
-            ("bestsellers",),
-            ("tab", "link"),
-            ("activate",),
-            ("dashboard",),
-        ),),
+        "shopping_admin",
+        ("admin", "dashboard"),
+        ("document",),
+        (
+            DeliveryRetrievalProbe(
+                "Bestsellers",
+                ("bestsellers",),
+                ("tab", "link"),
+                ("activate",),
+                ("dashboard",),
+            ),
+        ),
     ),
     7: DeliveryProbe(
-        "map", ("map", "openstreetmap"), ("document",),
-        (DeliveryRetrievalProbe(
-            "Find directions between two points",
-            ("find directions between two points",),
-            ("link",),
-            ("activate",),
-        ),),
+        "map",
+        ("map", "openstreetmap"),
+        ("document",),
+        (
+            DeliveryRetrievalProbe(
+                "Find directions between two points",
+                ("find directions between two points",),
+                ("link",),
+                ("activate",),
+            ),
+        ),
     ),
     21: DeliveryProbe(
-        "shopping", ("headphones",), ("document",),
+        "shopping",
+        ("headphones",),
+        ("document",),
         (DeliveryRetrievalProbe("Reviews", ("reviews",), ("link", "tab"), ("activate",)),),
     ),
     27: DeliveryProbe(
-        "reddit", ("reddit", "postmill"), ("document",),
+        "reddit",
+        ("reddit", "postmill"),
+        ("document",),
         (DeliveryRetrievalProbe("Comments", ("comments",), ("link",), ("activate",)),),
     ),
     44: DeliveryProbe(
-        "gitlab", ("gitlab",), ("document",),
+        "gitlab",
+        ("gitlab",),
+        ("document",),
         (DeliveryRetrievalProbe("Todos", ("to-do", "todo"), ("link",), ("activate",)),),
     ),
     266: DeliveryProbe(
-        "wikipedia-map", ("wikipedia", "map"), ("document",),
+        "wikipedia-map",
+        ("wikipedia", "map"),
+        ("document",),
         (DeliveryRetrievalProbe("Search", ("search",), ("searchbox", "textbox"), ("type_text",)),),
     ),
 }
+
 
 @dataclass(frozen=True)
 class WebArenaVerifiedCaseRef:
@@ -367,10 +385,13 @@ class WebArenaVerifiedCaseEnvironment:
     async def execute(self, request):
         return await self.world.execute(request)
 
+    async def execute_form_fields(self, command):
+        return await self.world.execute_form_fields(command)
+
     async def finalize(self, content: str):
         self.final_delivery_attempted = True
         result = await self.world.finalize(content)
-        if result.result.dispatch_status is DispatchStatus.SENT:
+        if result.result.dispatch_status in {DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN}:
             self.final_delivery_confirmed = True
         return result
 
@@ -382,7 +403,7 @@ class WebArenaVerifiedCaseEnvironment:
 
     def current_native_result(self) -> tuple[TaskOutcomeKind, str, tuple[str, ...]]:
         self.native_evaluator_queries += 1
-        if not self.final_delivery_confirmed:
+        if not self.final_delivery_attempted:
             return TaskOutcomeKind.RUNNING_INCOMPLETE, "stop_not_confirmed", ()
         return classify_webarena_terminal_snapshot(self.surface.current_task_state())
 
@@ -444,13 +465,9 @@ def open_webarena_verified_case(
                 TaskBoundary(
                     allowed_effects=("external_ui_interaction",),
                     forbidden_effects=("credential_use",),
-                    constraints=(
-                        "Provide exactly one final response matching the public task format when ready.",
-                    ),
+                    constraints=("Provide exactly one final response matching the public task format when ready.",),
                     inputs=(
-                        {PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: final_response_contract}
-                        if final_response_contract
-                        else {}
+                        {PUBLIC_FINAL_RESPONSE_CONTRACT_KEY: final_response_contract} if final_response_contract else {}
                     ),
                     requested_outputs=(WA_FINAL_OUTPUT_ID,),
                     risk_profile=RiskProfile.LOW,
@@ -627,11 +644,10 @@ async def inspect_webarena_verified_w1b_world(
     )
     median_tokens = (
         (delivered_tokens[(len(delivered_tokens) - 1) // 2] + delivered_tokens[len(delivered_tokens) // 2]) / 2
-        if delivered_tokens else 0
+        if delivered_tokens
+        else 0
     )
-    aggregate_errors = (
-        ("cost:six_page_median_over_9k",) if median_tokens > 9_000 else ()
-    )
+    aggregate_errors = ("cost:six_page_median_over_8k",) if median_tokens > 8_000 else ()
     summary = {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "stage": "w1b-world",
@@ -642,16 +658,15 @@ async def inspect_webarena_verified_w1b_world(
             and all(item.get("status") == "ok" and not item.get("acceptance_errors") for item in cases)
         ),
         "failure_origin": "none" if all(item.get("status") == "ok" for item in cases) else "environment_or_projection",
-        "acceptance_errors": (*aggregate_errors, *tuple(
-            error
-            for case in cases
-            for error in case.get("acceptance_errors", ())
-        )),
+        "acceptance_errors": (
+            *aggregate_errors,
+            *tuple(error for case in cases for error in case.get("acceptance_errors", ())),
+        ),
         "cost_gate": {
             "new_page_tokens": tuple(delivered_tokens),
             "median_tokens": median_tokens,
             "each_limit": 12_000,
-            "median_limit": 9_000,
+            "median_limit": 8_000,
         },
         "cases": cases,
     }
@@ -692,7 +707,7 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             action_space,
             evaluation,
             observation_capabilities=environment.observation_capabilities,
-            runtime_controls=("yield_subtask",),
+            runtime_controls=("yield_milestone",),
         )
         binder = GroundedPolicyContextBinder()
         request = ModelDecisionRequest(
@@ -718,7 +733,7 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             action_space,
             context,
             catalog,
-            delivery.view,
+            delivery,
             request_budget,
         )
     except Exception as exc:
@@ -747,18 +762,20 @@ def _w1b_world_success(
     action_space,
     context,
     catalog,
-    rendered,
+    delivery: ModelTurnDelivery,
     request_budget: Mapping[str, object],
 ) -> dict[str, Any]:
     source_counts = _source_counts(observation)
     actor_refs, actor_paths = _actor_ref_index(context.actor_world)
-    tool_refs = tuple(rendered.manifest.executable_refs)
+    rendered = delivery.view
+    manifest = delivery.manifest
+    tool_refs = tuple(manifest.executable_refs)
     option_refs = _action_option_refs(context, complete=True)
     missing_tool_refs = tuple(sorted(set(tool_refs) - set(option_refs)))
     state_metrics = _action_state_metrics(context, actor_refs)
     closure_violations = _structural_closure_violations(context.actor_world, actor_paths)
     leak_markers = _private_leak_markers(rendered.text, catalog)
-    find_actions_offered = "find_actions" in {item.name for item in catalog.specs}
+    find_controls_offered = "find_controls" in {item.name for item in catalog.specs}
     recoverability = _recoverability_diagnostic(
         environment,
         task,
@@ -774,15 +791,23 @@ def _w1b_world_success(
         action_space,
         context,
         catalog,
-        rendered,
+        delivery,
     )
     candidate_diagnostic = _candidate_diagnostic(
         WA_W1B_DELIVERY_PROBES[case_ref.task_id],
         context,
-        rendered,
+        delivery,
         delivery_probe,
         recoverability,
         request_budget,
+    )
+    evidence_diagnostic = _evidence_retention_diagnostic(
+        task,
+        observation,
+        action_space,
+        context,
+        catalog,
+        delivery,
     )
     acceptance_errors = []
     if missing_tool_refs:
@@ -793,11 +818,12 @@ def _w1b_world_success(
         acceptance_errors.append(f"structural_closure_violations:{len(closure_violations)}")
     if leak_markers:
         acceptance_errors.append(f"private_model_input_leaks:{len(leak_markers)}")
-    if context.actions.has_more and not find_actions_offered:
-        acceptance_errors.append("partial_action_inventory_without_find_actions")
+    if context.actions.has_more and not find_controls_offered:
+        acceptance_errors.append("partial_action_inventory_without_find_controls")
     acceptance_errors.extend(recoverability["acceptance_errors"])
     acceptance_errors.extend(delivery_probe["acceptance_errors"])
     acceptance_errors.extend(candidate_diagnostic["acceptance_errors"])
+    acceptance_errors.extend(evidence_diagnostic["acceptance_errors"])
     acceptance_errors.extend(_w1b_cost_errors(request_budget))
     return {
         "schema_version": WA_SCHEMA_W1B_WORLD,
@@ -826,10 +852,10 @@ def _w1b_world_success(
             "rendered_token_estimate": max(1, math.ceil(len(rendered.text) / 4)),
             "delivery_projection": rendered.projection,
             "manifest": {
-                "executable": len(rendered.manifest.executable_refs),
-                "readonly": len(rendered.manifest.readonly_refs),
-                "facts": len(rendered.manifest.fact_refs),
-                "regions": len(rendered.manifest.region_refs),
+                "executable": len(manifest.executable_refs),
+                "readonly": len(manifest.readonly_refs),
+                "facts": len(manifest.fact_refs),
+                "regions": len(manifest.region_refs),
             },
         },
         "tools": {
@@ -838,13 +864,13 @@ def _w1b_world_success(
             "actor_missing_offered_targets": missing_tool_refs,
             "catalog_tool_count": len(catalog.specs),
             "catalog_serialized_bytes": catalog.serialized_bytes,
-            "find_actions_offered": find_actions_offered,
+            "find_controls_offered": find_controls_offered,
         },
         "action_inventory": {
             "visible_count": context.actions.page_size,
             "total_count": context.actions.total_count,
             "partial": context.actions.has_more,
-            "recovery": "find_actions" if context.actions.has_more else "not_required",
+            "recovery": "find_controls" if context.actions.has_more else "not_required",
         },
         "capability_census": _capability_census(context, catalog),
         "decision_state": state_metrics,
@@ -860,6 +886,7 @@ def _w1b_world_success(
         "recoverability": recoverability,
         "delivery_probe": delivery_probe,
         "action_candidates": candidate_diagnostic,
+        "evidence_retention": evidence_diagnostic,
         "perception_route": {
             "profile": "TEXT_ONLY",
             "image_attached": False,
@@ -881,6 +908,8 @@ def _w1b_cost_errors(request_budget: Mapping[str, object]) -> tuple[str, ...]:
         errors.append("cost:history_over_1_5k")
     if tool_schemas > 2_000:
         errors.append("cost:tool_schema_over_2k")
+    if full <= 0:
+        errors.append("cost:full_delivery_baseline_missing")
     if full > 12_000 and delivered > math.floor(full * 0.70):
         errors.append("cost:large_full_reduction_under_30_percent")
     if 0 < full <= 12_000 and delivered > math.ceil(full * 1.05):
@@ -912,12 +941,12 @@ def _delivery_probe_diagnostic(
     action_space,
     context,
     catalog,
-    rendered,
+    delivery: ModelTurnDelivery,
 ) -> dict[str, Any]:
     """Evaluate frozen public UI witnesses outside the production request path."""
 
     errors: list[str] = []
-    page_text = rendered.text.casefold()
+    page_text = delivery.view.text.casefold()
     identity = any(token.casefold() in page_text for token in probe.title_route_tokens)
     if not identity:
         errors.append("delivery_probe:page_identity_missing")
@@ -929,7 +958,7 @@ def _delivery_probe_diagnostic(
     for retrieval in probe.retrievals:
         request = resolve_grounded_tool_call(
             catalog,
-            ToolCall("find_actions", {"query": retrieval.query}),
+            ToolCall("find_controls", {"query": retrieval.query}),
             expected_context_id=context.context_id,
             expected_delivery_id=catalog.delivery_id,
             expected_catalog_id=catalog.catalog_id,
@@ -964,7 +993,7 @@ def _delivery_probe_diagnostic(
             _delivery_probe_item_diagnostic(
                 item,
                 retrieval,
-                next_view.manifest.exact_refs,
+                next_delivery.manifest.exact_refs,
                 next_context.complete_actions,
             )
             for item in candidates
@@ -974,8 +1003,7 @@ def _delivery_probe_diagnostic(
         operation_found = any(item["label_kind_operation"] for item in item_diagnostics)
         manifest_ref_visible = any(item["matched"] for item in item_diagnostics)
         joint_matches = tuple(
-            item for item, diagnostic in zip(candidates, item_diagnostics, strict=True)
-            if diagnostic["matched"]
+            item for item, diagnostic in zip(candidates, item_diagnostics, strict=True) if diagnostic["matched"]
         )
         expected_order: list[str] = []
         seen_refs: set[str] = set()
@@ -986,25 +1014,25 @@ def _delivery_probe_diagnostic(
                 continue
             expected_order.append(action_id)
             seen_refs.add(option.target_ref)
-        ordering_identity = tuple(expected_order) == tuple(
-            item.action_id for item in candidates
-        )
+        ordering_identity = tuple(expected_order) == tuple(item.action_id for item in candidates)
         passed = bool(search_result_visible and joint_matches)
         if not passed:
             errors.append(f"delivery_probe:retrieval_failed:{retrieval.query}")
-        recoveries.append({
-            "query": retrieval.query,
-            "item_count": len(candidates),
-            "label_found": label_found,
-            "kind_found": kind_found,
-            "operation_found": operation_found,
-            "search_results_visible": search_result_visible,
-            "manifest_ref_visible": manifest_ref_visible,
-            "joint_match_count": len(joint_matches),
-            "matched_refs": tuple(item.target_ref for item in joint_matches),
-            "ordering_identity": ordering_identity,
-            "passed": passed,
-        })
+        recoveries.append(
+            {
+                "query": retrieval.query,
+                "item_count": len(candidates),
+                "label_found": label_found,
+                "kind_found": kind_found,
+                "operation_found": operation_found,
+                "search_results_visible": search_result_visible,
+                "manifest_ref_visible": manifest_ref_visible,
+                "joint_match_count": len(joint_matches),
+                "matched_refs": tuple(item.target_ref for item in joint_matches),
+                "ordering_identity": ordering_identity,
+                "passed": passed,
+            }
+        )
 
     target_related_route = bool(recoveries and all(item["passed"] for item in recoveries))
     if not target_related_route:
@@ -1025,7 +1053,7 @@ def _delivery_probe_diagnostic(
 def _candidate_diagnostic(
     probe: DeliveryProbe,
     context,
-    rendered,
+    delivery: ModelTurnDelivery,
     delivery_probe: Mapping[str, object],
     recoverability: Mapping[str, object],
     request_budget: Mapping[str, object],
@@ -1039,18 +1067,12 @@ def _candidate_diagnostic(
         item.action_id in complete_by_id
         and complete_by_id[item.action_id].target_ref == item.target_ref
         and tuple(destination.target_ref for destination in item.destinations)
-        == tuple(
-            destination.grounding_ref
-            for destination in complete_by_id[item.action_id].destinations.items
-        )
+        == tuple(destination.grounding_ref for destination in complete_by_id[item.action_id].destinations.items)
         for item in candidates
     )
     manifest_closure = all(
-        item.target_ref in rendered.manifest.executable_refs
-        and all(
-            destination.target_ref in rendered.manifest.executable_refs
-            for destination in item.destinations
-        )
+        item.target_ref in delivery.manifest.executable_refs
+        and all(destination.target_ref in delivery.manifest.executable_refs for destination in item.destinations)
         for item in candidates
     )
     automatic_matches: list[dict[str, object]] = []
@@ -1060,33 +1082,29 @@ def _candidate_diagnostic(
             _delivery_probe_item_diagnostic(
                 item,
                 retrieval,
-                rendered.manifest.exact_refs,
+                delivery.manifest.exact_refs,
                 complete,
             )
             for item in candidates
         )
-        matches = tuple(
-            item for item, diagnostic in zip(candidates, diagnostics, strict=True)
-            if diagnostic["matched"]
-        )
+        matches = tuple(item for item, diagnostic in zip(candidates, diagnostics, strict=True) if diagnostic["matched"])
         if matches:
             target_ranks.append(min(item.rank for item in matches))
-        automatic_matches.append({
-            "query": retrieval.query,
-            "expected_path_tokens": retrieval.expected_path_tokens,
-            "matched_refs": tuple(item.target_ref for item in matches),
-            "matched_paths": tuple(item.functional_path for item in matches),
-            "target_rank": min((item.rank for item in matches), default=None),
-            "recall_at_5": bool(matches),
-        })
-    target_recall = bool(automatic_matches) and all(
-        bool(item["recall_at_5"]) for item in automatic_matches
-    )
+        automatic_matches.append(
+            {
+                "query": retrieval.query,
+                "expected_path_tokens": retrieval.expected_path_tokens,
+                "matched_refs": tuple(item.target_ref for item in matches),
+                "matched_paths": tuple(item.functional_path for item in matches),
+                "target_rank": min((item.rank for item in matches), default=None),
+                "recall_at_5": bool(matches),
+            }
+        )
+    target_recall = bool(automatic_matches) and all(bool(item["recall_at_5"]) for item in automatic_matches)
     target_rank = max(target_ranks) if len(target_ranks) == len(automatic_matches) else None
     retrievals = tuple(delivery_probe.get("retrievals", ()))
     ordering_identity = bool(retrievals) and all(
-        isinstance(item, Mapping) and item.get("ordering_identity") is True
-        for item in retrievals
+        isinstance(item, Mapping) and item.get("ordering_identity") is True for item in retrievals
     )
     zero_dispatch = bool(
         isinstance(recoverability.get("checks"), Mapping)
@@ -1127,13 +1145,169 @@ def _candidate_diagnostic(
         "target_witnesses": tuple(automatic_matches),
         "candidate_manifest_closure": manifest_closure,
         "candidate_action_space_closure": action_space_closure,
-        "automatic_find_actions_ordering_identity": ordering_identity,
+        "automatic_find_controls_ordering_identity": ordering_identity,
         "observation_only_calls_before_candidate_execution": 0 if target_recall else None,
         "repeated_region_version_reads": 0,
         "tool_schema_tokens": int(request_budget.get("tool_schema_tokens", 0)),
         "full_request_tokens": int(request_budget.get("estimated_total_tokens", 0)),
         "discovery_gui_dispatch_count": 0 if zero_dispatch else None,
         "provider_attempts": 0,
+        "acceptance_errors": tuple(errors),
+    }
+
+
+def _evidence_retention_diagnostic(
+    task: TaskGoal,
+    observation,
+    action_space,
+    context,
+    catalog,
+    delivery: ModelTurnDelivery,
+) -> dict[str, object]:
+    """Exercise current F-ref resolution and exact WorkingFact retention without dispatch."""
+
+    eligible: list[tuple[str, str]] = []
+    if context.evidence_index is not None:
+        for public_ref, canonical_ref in context.private_fact_bindings.items():
+            record = context.evidence_index.resolve_record(canonical_ref)
+            if (
+                public_ref in delivery.manifest.fact_refs
+                and record is not None
+                and is_public_scalar(record.value)
+            ):
+                eligible.append((public_ref, canonical_ref))
+    if not eligible or "pin_fact" not in {item.name for item in catalog.specs}:
+        return {
+            "provider_attempts": 0,
+            "gui_dispatch_count": 0,
+            "eligible_scalar_count": len(eligible),
+            "pin_resolved": False,
+            "view_changed": False,
+            "exact_value_retained": False,
+            "working_set_visible": False,
+            "acceptance_errors": ("evidence:no_current_scalar_pin_route",),
+        }
+
+    default_candidates = tuple(
+        item.fact_ref
+        for item in getattr(context.evidence_candidates, "candidates", ())
+        if item.fact_ref in {public for public, _canonical in eligible}
+    )
+    if not default_candidates:
+        return {
+            "provider_attempts": 0,
+            "gui_dispatch_count": 0,
+            "eligible_scalar_count": len(eligible),
+            "default_candidate_count": 0,
+            "pin_resolved": False,
+            "view_changed": False,
+            "exact_value_retained": False,
+            "working_set_visible": False,
+            "acceptance_errors": ("evidence:no_default_exact_scalar_candidate",),
+        }
+    public_ref = default_candidates[0]
+    canonical_ref = dict(eligible)[public_ref]
+    resolution = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "pin_fact",
+            {
+                "key": "diagnostic_fact",
+                "evidence_ref": public_ref,
+                "purpose": "provider-free retention diagnostic",
+            },
+        ),
+        expected_context_id=context.context_id,
+        expected_delivery_id=catalog.delivery_id,
+        expected_catalog_id=catalog.catalog_id,
+    )
+    fact = getattr(resolution.decision, "working_fact", None)
+    if fact is None:
+        return {
+            "provider_attempts": 0,
+            "gui_dispatch_count": 0,
+            "eligible_scalar_count": len(eligible),
+            "pin_resolved": False,
+            "view_changed": False,
+            "exact_value_retained": False,
+            "working_set_visible": False,
+            "acceptance_errors": ("evidence:pin_fact_resolution_failed",),
+        }
+
+    builder = ContextBuilder()
+    changed_page = builder.page(
+        action_space,
+        observation,
+        query="provider free retention probe",
+        region_index=context.region_index,
+    )
+    evaluation = TaskEvaluation(
+        task.task_id,
+        observation.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "w1b-world evidence retention rerender",
+    )
+    next_context = builder.build(
+        task,
+        observation,
+        action_space,
+        evaluation,
+        action_page=changed_page,
+        context_generation=1,
+        working_facts=(fact,),
+        region_index=context.region_index,
+    )
+    binder = GroundedPolicyContextBinder()
+    next_request = ModelDecisionRequest(
+        request_id=f"diagnostic:retention:{next_context.context_id}",
+        agent_context=next_context,
+    )
+    next_delivery = binder.model_turn_delivery(
+        next_request,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+    next_catalog = compile_grounded_tool_catalog(
+        next_context,
+        GroundedToolPhase.ACTION_SELECTION,
+        next_delivery,
+    )
+    admitted = binder.action_request(
+        next_request,
+        next_catalog.specs,
+        next_delivery,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        include_tool_menu=False,
+    )
+    original_record = context.evidence_index.resolve_record(canonical_ref)
+    exact_value_retained = bool(
+        original_record is not None
+        and next_context.working_facts == (fact,)
+        and fact.record == original_record
+        and next_context.evidence_index is not None
+        and next_context.evidence_index.resolve_record(canonical_ref) == original_record
+    )
+    view_changed = next_context.context_id != context.context_id and changed_page.query == "provider free retention probe"
+    working_set_visible = admitted.breakdown.working_set_tokens > 0
+    errors = []
+    if not view_changed:
+        errors.append("evidence:view_change_not_observed")
+    if not exact_value_retained:
+        errors.append("evidence:exact_value_not_retained")
+    if not working_set_visible:
+        errors.append("evidence:working_set_not_visible")
+    return {
+        "provider_attempts": 0,
+        "gui_dispatch_count": 0,
+        "eligible_scalar_count": len(eligible),
+        "default_candidate_count": len(default_candidates),
+        "selected_default_candidate": public_ref,
+        "pin_resolved": True,
+        "view_changed": view_changed,
+        "exact_value_retained": exact_value_retained,
+        "working_set_visible": working_set_visible,
+        "working_set_tokens": admitted.breakdown.working_set_tokens,
         "acceptance_errors": tuple(errors),
     }
 
@@ -1150,26 +1324,20 @@ def _delivery_probe_item_diagnostic(
     role = str(getattr(item, "role", "")).casefold()
     node_ref = str(getattr(item, "target_ref", ""))
     operation = str(getattr(item, "operation", ""))
-    functional_path = tuple(
-        str(value).casefold() for value in getattr(item, "functional_path", ())
-    )
+    functional_path = tuple(str(value).casefold() for value in getattr(item, "functional_path", ()))
     label_match = any(expected.casefold() in label for expected in probe.expected_labels)
-    kind_match = not probe.expected_kinds or role in {
-        expected.casefold() for expected in probe.expected_kinds
-    }
+    kind_match = not probe.expected_kinds or role in {expected.casefold() for expected in probe.expected_kinds}
     operation_match = not probe.required_operations or any(
         expected_operation == operation
         and any(
-            getattr(action, "target_ref", "") == node_ref
-            and getattr(action, "operation", "") == expected_operation
+            getattr(action, "target_ref", "") == node_ref and getattr(action, "operation", "") == expected_operation
             for action in complete_actions
         )
         for expected_operation in probe.required_operations
     )
     manifest_match = bool(node_ref and node_ref in set(manifest_refs))
     path_match = not probe.expected_path_tokens or all(
-        any(token.casefold() in component for component in functional_path)
-        for token in probe.expected_path_tokens
+        any(token.casefold() in component for component in functional_path) for token in probe.expected_path_tokens
     )
     return {
         "label": label_match,
@@ -1222,7 +1390,7 @@ def _recoverability_diagnostic(
         opened = resolve_grounded_tool_call(
             catalog,
             ToolCall(
-                "open_region",
+                "read_region",
                 {"region_ref": sample_region.public_ref},
                 "recoverability:open",
             ),
@@ -1232,22 +1400,22 @@ def _recoverability_diagnostic(
         ).decision
         open_items = tuple(opened.result.get("items", ()))
         open_content = json.dumps(to_json_compatible(open_items), ensure_ascii=False)
-        checks["open_region"] = bool(open_items)
-        if not checks["open_region"]:
-            errors.append("recoverability:open_region_empty")
+        checks["read_region"] = bool(open_items)
+        if not checks["read_region"]:
+            errors.append("recoverability:read_region_empty")
         if sample_target is not None and sample_target.label and sample_target.label not in open_content:
-            errors.append("recoverability:open_region_missing_target_label")
+            errors.append("recoverability:read_region_missing_target_label")
         lens = getattr(opened, "delivery_lens", None)
         checks["lens_effect"] = bool(lens and lens.selected_region_key == sample_region.key)
         if not checks["lens_effect"]:
-            errors.append("recoverability:open_region_missing_lens_effect")
+            errors.append("recoverability:read_region_missing_lens_effect")
     except Exception as exc:
-        return _recoverability_failure("open_region", exc)
+        return _recoverability_failure("read_region", exc)
     if query:
         try:
             found = resolve_grounded_tool_call(
                 catalog,
-                ToolCall("find_content", {"query": query}, "recoverability:find"),
+                ToolCall("search_page_content", {"query": query}, "recoverability:find"),
                 expected_context_id=context.context_id,
                 expected_delivery_id=catalog.delivery_id,
                 expected_catalog_id=catalog.catalog_id,
@@ -1256,7 +1424,9 @@ def _recoverability_diagnostic(
             checks["find"] = bool(matches)
             if not matches:
                 errors.append("recoverability:find_no_match")
-            elif not any(item.get("region_ref") == sample_region.public_ref for item in matches if isinstance(item, Mapping)):
+            elif not any(
+                item.get("region_ref") == sample_region.public_ref for item in matches if isinstance(item, Mapping)
+            ):
                 errors.append("recoverability:find_wrong_region")
         except Exception as exc:
             return _recoverability_failure("find", exc)
@@ -1272,8 +1442,7 @@ def _recoverability_diagnostic(
         viewed_lens = getattr(viewed, "delivery_lens", None)
         next_cursor = getattr(viewed_lens, "next_cursor", "")
         checks["view_all"] = any(
-            isinstance(item, Mapping) and item.get("region_ref") == sample_region.public_ref
-            for item in regions
+            isinstance(item, Mapping) and item.get("region_ref") == sample_region.public_ref for item in regions
         ) or bool(next_cursor)
         if not checks["view_all"]:
             errors.append("recoverability:view_all_missing_regions")
@@ -1371,7 +1540,7 @@ def _recoverability_diagnostic(
         resolve_grounded_tool_call(
             catalog,
             ToolCall(
-                "open_region",
+                "read_region",
                 {"region_ref": sample_region.public_ref},
                 "recoverability:stale",
             ),
@@ -1425,11 +1594,11 @@ def _recoverability_query(region, target, observation) -> str:
 
 def _catalog_has_action_tool(catalog) -> bool:
     local_tools = {
-        "open_region",
-        "find_content",
+        "read_region",
+        "search_page_content",
         "list_regions",
         "read_next_page",
-        "find_actions",
+        "find_controls",
         "action_results_next_page",
         "request_evidence",
         "count_" + "children",
@@ -1437,7 +1606,7 @@ def _catalog_has_action_tool(catalog) -> bool:
         "ask_user",
         "wait",
         "abort",
-        "yield_subtask",
+        "yield_milestone",
     }
     return any(spec.name not in local_tools for spec in catalog.specs)
 
@@ -1522,15 +1691,17 @@ def _tool_schema_refs(catalog) -> tuple[str, ...]:
 
 
 def _action_option_refs(context, *, complete: bool = False) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(
-        ref
-        for option in (context.complete_actions if complete else context.actions.options)
-        for ref in (
-            option.target_ref,
-            *(item.grounding_ref for item in option.destinations.items),
+    return tuple(
+        dict.fromkeys(
+            ref
+            for option in (context.complete_actions if complete else context.actions.options)
+            for ref in (
+                option.target_ref,
+                *(item.grounding_ref for item in option.destinations.items),
+            )
+            if ref
         )
-        if ref
-    ))
+    )
 
 
 def _capability_census(context, catalog) -> tuple[dict[str, object], ...]:
@@ -1538,7 +1709,7 @@ def _capability_census(context, catalog) -> tuple[dict[str, object], ...]:
     complete_actions = getattr(context, "complete_actions", context.actions.options)
     eligible = Counter(option.semantic_action for option in complete_actions)
     exposed = {item.name for item in catalog.specs}
-    paged = "find_actions" in exposed
+    paged = "find_controls" in exposed
     result = []
     for definition in INTERACTION_CAPABILITY_REGISTRY.definitions:
         action = definition.semantic_action
@@ -1554,25 +1725,34 @@ def _capability_census(context, catalog) -> tuple[dict[str, object], ...]:
             absence_reason = "paged_searchable"
         elif not model_exposed:
             absence_reason = "not_model_exposed"
-        result.append({
-            "semantic_action": action,
-            "registry_defined": True,
-            "adapter_supported": adapter_supported,
-            "currently_eligible": currently_eligible,
-            "model_exposed": model_exposed,
-            "paged_searchable": bool(not model_exposed and paged and currently_eligible),
-            "absence_reason": absence_reason,
-            "subject_kinds": tuple(item.value for item in definition.subject_kinds),
-            "primitive_actions": supported[action].primitive_actions if adapter_supported else (),
-        })
+        result.append(
+            {
+                "semantic_action": action,
+                "registry_defined": True,
+                "adapter_supported": adapter_supported,
+                "currently_eligible": currently_eligible,
+                "model_exposed": model_exposed,
+                "paged_searchable": bool(not model_exposed and paged and currently_eligible),
+                "absence_reason": absence_reason,
+                "subject_kinds": tuple(item.value for item in definition.subject_kinds),
+                "primitive_actions": supported[action].primitive_actions if adapter_supported else (),
+            }
+        )
     return tuple(result)
 
 
 def _action_state_metrics(context, actor_refs: Mapping[str, object]) -> dict[str, Any]:
     grounding = {item.ref: item for item in context.grounding.entities}
     required_fields = {
-        "value", "selected_options", "checked", "selected", "active",
-        "expanded", "required", "option_domain", "grid_coordinate",
+        "value",
+        "selected_options",
+        "checked",
+        "selected",
+        "active",
+        "expanded",
+        "required",
+        "option_domain",
+        "grid_coordinate",
     }
     retained = 0
     total = 0
@@ -1583,9 +1763,7 @@ def _action_state_metrics(context, actor_refs: Mapping[str, object]) -> dict[str
         if node is None or entity is None or option.operation not in entity.verbs:
             mismatches.append({"ref": option.target_ref, "issue": "verb"})
             continue
-        option_state = {
-            key: value for key, value in option.target_state.items() if key in required_fields
-        }
+        option_state = {key: value for key, value in option.target_state.items() if key in required_fields}
         total += len(option_state)
         node_state = getattr(node, "state", {})
         retained += sum(1 for key, value in option_state.items() if node_state.get(key) == value)
@@ -1601,12 +1779,25 @@ def _action_state_metrics(context, actor_refs: Mapping[str, object]) -> dict[str
     }
 
 
-def _structural_closure_violations(snapshot, actor_paths: Mapping[str, tuple[object, ...]]) -> tuple[dict[str, str], ...]:
+def _structural_closure_violations(
+    snapshot, actor_paths: Mapping[str, tuple[object, ...]]
+) -> tuple[dict[str, str], ...]:
     violations: list[dict[str, str]] = []
     control_roles = {
-        "button", "checkbox", "clickable", "combobox", "draggable", "link",
-        "listbox", "menuitem", "radio", "searchbox", "slider", "spinbutton",
-        "tab", "textbox",
+        "button",
+        "checkbox",
+        "clickable",
+        "combobox",
+        "draggable",
+        "link",
+        "listbox",
+        "menuitem",
+        "radio",
+        "searchbox",
+        "slider",
+        "spinbutton",
+        "tab",
+        "textbox",
     }
     for ref, path in actor_paths.items():
         node = path[-1]
@@ -1648,9 +1839,7 @@ def _collapsed_presentation_counts(snapshot) -> dict[str, int]:
                     counts["empty_static_text"] += 1
                 if role.casefold() == "generic" and not node.ref.startswith("E") and not node.label.strip():
                     counts["empty_generic_wrappers"] += 1
-                counts["appearance_state_fields"] += sum(
-                    1 for key in node.state if str(key).startswith("appearance.")
-                )
+                counts["appearance_state_fields"] += sum(1 for key in node.state if str(key).startswith("appearance."))
     return dict(counts)
 
 
@@ -1690,12 +1879,14 @@ def _semantic_world_digest(observation) -> str:
 
 
 def _diagnostic_json_size(value: object) -> int:
-    return len(json.dumps(
-        to_json_compatible(value),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode())
+    return len(
+        json.dumps(
+            to_json_compatible(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+    )
 
 
 def _w0_report(payload: dict[str, Any], *, runtime_python: Path) -> dict[str, Any]:
@@ -1726,9 +1917,7 @@ def _w0_report(payload: dict[str, Any], *, runtime_python: Path) -> dict[str, An
     unhealthy = [
         str(item.get("env"))
         for item in sites
-        if isinstance(item, dict)
-        and isinstance(item.get("health"), dict)
-        and item["health"].get("status") != "ok"
+        if isinstance(item, dict) and isinstance(item.get("health"), dict) and item["health"].get("status") != "ok"
     ]
     if unhealthy:
         errors.append(f"environment:wa_site_health_failed:{','.join(sorted(unhealthy))}")
@@ -1795,9 +1984,7 @@ def _site_config_from_environment(environment: Mapping[str, str]) -> list[dict[s
 
 def _site_environment_frozen(environment: Mapping[str, str]) -> bool:
     records = _site_config_from_environment(environment)
-    site_urls = _configured_site_names([
-        item for item in records if "redacted_url" in item
-    ])
+    site_urls = _configured_site_names([item for item in records if "redacted_url" in item])
     has_digest = any("image_digest" in item for item in records)
     return {"shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia"}.issubset(site_urls) and has_digest
 
@@ -1880,9 +2067,7 @@ def select_stratified_webarena_subset(
     return selected
 
 
-def write_webarena_verified_subset(
-    dataset_path: Path, output_path: Path, *, count: int = 30
-) -> dict[str, Any]:
+def write_webarena_verified_subset(dataset_path: Path, output_path: Path, *, count: int = 30) -> dict[str, Any]:
     tasks = load_webarena_verified_tasks(dataset_path)
     selected = select_stratified_webarena_subset(tasks, count=count)
     source_digest = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
@@ -2014,11 +2199,7 @@ def _evaluation_report(
     invalid_results: dict[int, str],
     evaluator_error: str,
 ) -> dict[str, Any]:
-    missing = [
-        task_id
-        for task_id in task_ids
-        if task_id not in results and task_id not in invalid_results
-    ]
+    missing = [task_id for task_id in task_ids if task_id not in results and task_id not in invalid_results]
     scores = [float(result["score"]) for result in results.values()]
     report = {
         "schema_version": "webarena-verified-evaluation-v2",
@@ -2029,9 +2210,7 @@ def _evaluation_report(
         "evaluated_task_count": len(results),
         "missing_result_ids": missing,
         "invalid_results": {str(task_id): invalid_results[task_id] for task_id in sorted(invalid_results)},
-        "upstream_result_sha256": {
-            str(task_id): result_digests[task_id] for task_id in sorted(result_digests)
-        },
+        "upstream_result_sha256": {str(task_id): result_digests[task_id] for task_id in sorted(result_digests)},
         # Absence of an upstream result is not an official zero.  Keeping this
         # nullable makes fail-closed preflight reports impossible to misread as
         # a scored run.

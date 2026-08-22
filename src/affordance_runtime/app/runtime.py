@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
+from affordance_runtime.agent.budgets import EpisodeBudget, StandaloneRunBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.decision_capability import (
@@ -88,9 +89,7 @@ class TargetRuntime:
         supported = self.decision_ports.supported_decisions
         missing = required - supported
         if missing:
-            raise UnsupportedCompositionError(
-                UnsupportedComposition(required, supported, missing)
-            )
+            raise UnsupportedCompositionError(UnsupportedComposition(required, supported, missing))
 
     def build_loop(self) -> CoreAgentLoop:
         return CoreAgentLoop(
@@ -141,19 +140,19 @@ class TargetRuntime:
         initial: WorldObservation,
         goal_resolution: GoalPlanResolution,
         *,
-        max_turns: int,
+        budget: EpisodeBudget | StandaloneRunBudget,
         yield_on_budget_exhaustion: bool,
         working_facts=(),
-        active_subtask=None,
+        active_milestone=None,
     ) -> RunState:
         return await self.build_loop().initialize_from_world(
             task,
             initial,
             goal_resolution,
-            max_turns=max_turns,
+            budget=budget,
             yield_on_budget_exhaustion=yield_on_budget_exhaustion,
             working_facts=working_facts,
-            active_subtask=active_subtask,
+            active_milestone=active_milestone,
         )
 
     async def continue_task(

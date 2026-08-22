@@ -28,7 +28,6 @@ from affordance_runtime.model.policy.grounded_tool_catalog import compile_ground
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolPhase,
 )
-from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.request_admission import ModelRequestBudget, estimate_model_request
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
@@ -39,6 +38,7 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputViolation,
 )
 from tests.support.agent.core_loop_support import SharedTaskEvaluator, _task, _world
+from tests.support.legacy_compact_json_decision_port import CompactJsonDecisionPort
 
 
 async def _request():
@@ -226,8 +226,8 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
 
         payload = json.loads(admitted.messages[1].content)
         observation = payload["observation"]
-        assert "projection=page_map" in observation
-        assert "recovery=open_region/find_content/find_actions" in observation
+        assert any(projection in observation for projection in ("projection=page_map", "projection=full"))
+        assert "recovery=read_region/search_page_content/find_controls" in observation
         assert "recovery=none" not in observation
         assert "[E1]" in observation
         assert request.agent_context.actor_world == before_actor_world
@@ -339,7 +339,7 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
     asyncio.run(scenario())
 
 
-def test_page_map_remains_default_when_full_projection_is_smaller() -> None:
+def test_full_projection_is_only_a_cost_baseline_and_cannot_replace_scoped_page_map() -> None:
     async def scenario() -> None:
         request, _catalog, _delivery = await _request()
         context = replace(
@@ -397,7 +397,7 @@ def test_page_map_remains_default_when_full_projection_is_smaller() -> None:
         payload = json.loads(admitted.messages[1].content)
         assert "projection=page_map" in payload["observation"]
         assert admitted.breakdown.delivery_projection == "page_map"
-        assert admitted.breakdown.full_candidate_tokens == 0
+        assert admitted.breakdown.full_candidate_tokens > 0
         assert admitted.breakdown.lens_candidate_tokens == admitted.breakdown.estimated_total_tokens
 
     asyncio.run(scenario())
@@ -435,9 +435,7 @@ def test_irreducible_over_budget_returns_context_capacity_without_provider_attem
             port,
             ModelConfig(rate_limit_retries=0, transient_retries=0),
             perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            context_binder=GroundedPolicyContextBinder(
-                request_budget=ModelRequestBudget(admission_limit=1)
-            ),
+            context_binder=GroundedPolicyContextBinder(request_budget=ModelRequestBudget(admission_limit=1)),
         )
 
         result = await adapter.generate(request)

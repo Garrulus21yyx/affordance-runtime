@@ -228,15 +228,14 @@ def test_role_factory_uses_distinct_better_compiler_model(monkeypatch) -> None:
         port = ScriptedModelPort([])
         port.model = environment["LLM_ZHIPU_MODEL"]
         return port
-    monkeypatch.setattr(factory, "model_port_from_environment", build)
+    action_policy = object()
+    monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
     monkeypatch.setattr(module, "model_port_from_environment", build)
     roles = model_roles_from_environment({
         "LLM_ACTIVE_PROFILE": "zhipu", "LLM_ZHIPU_API_KEY": "secret",
         "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx", "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
-        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
-        "LLM_INTERACTION_PROTOCOL": "grounded_tools.v2",
     })
-    assert roles.action_policy.port.port.model == "glm-4.1v-thinking-flashx"
+    assert roles.action_policy is action_policy
     assert roles.goal_compiler.port.model == "glm-4.7-flash"
 
 

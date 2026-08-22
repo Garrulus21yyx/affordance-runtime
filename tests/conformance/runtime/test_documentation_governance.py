@@ -15,8 +15,10 @@ CORE_DOCS = {
 
 def test_project_has_four_maintained_markdown_documents() -> None:
     markdown = {README, *DOCS.rglob("*.md")}
+    historical = {path for path in markdown if DOCS / "history" in path.parents}
 
-    assert markdown == {README, *CORE_DOCS}
+    assert markdown - historical == {README, *CORE_DOCS}
+    assert all("history" in path.parts for path in historical)
 
 
 def test_readme_links_every_core_document() -> None:
@@ -35,5 +37,5 @@ def test_core_docs_state_the_simplified_contract() -> None:
     extending = (DOCS / "extending.md").read_text(encoding="utf-8")
 
     assert all(term in architecture for term in ("RunState", "StepResult", "WorldObservation"))
-    assert "task success" in benchmark.casefold()
+    assert "official success" in benchmark.casefold()
     assert all(term in extending for term in ("SurfaceAdapter", "ActionBinding", "PydanticAI"))

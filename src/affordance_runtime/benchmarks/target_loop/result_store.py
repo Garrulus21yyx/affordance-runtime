@@ -23,8 +23,8 @@ class RunResultStoreError(RuntimeError):
 class CaseLifecyclePhase(StrEnum):
     CASE_STARTED = "CASE_STARTED"
     ENVIRONMENT_READY = "ENVIRONMENT_READY"
-    MANAGER_STARTED = "MANAGER_STARTED"
-    MANAGER_RETURNED = "MANAGER_RETURNED"
+    PLANNER_STARTED = "PLANNER_STARTED"
+    PLANNER_RETURNED = "PLANNER_RETURNED"
     CASE_BODY_RETURNED = "CASE_BODY_RETURNED"
     RESULT_PERSISTED = "RESULT_PERSISTED"
     CLEANUP_STARTED = "CLEANUP_STARTED"
@@ -50,14 +50,9 @@ class SQLiteRunResultStore:
         try:
             with self._connect() as connection:
                 connection.executescript(_SCHEMA)
-                columns = {
-                    str(row[1])
-                    for row in connection.execute("PRAGMA table_info(case_lifecycle)")
-                }
+                columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(case_lifecycle)")}
                 if "current_phase" not in columns:
-                    connection.execute(
-                        "ALTER TABLE case_lifecycle ADD COLUMN current_phase TEXT NOT NULL DEFAULT ''"
-                    )
+                    connection.execute("ALTER TABLE case_lifecycle ADD COLUMN current_phase TEXT NOT NULL DEFAULT ''")
         except sqlite3.Error as exc:
             raise RunResultStoreError("result store initialization failed") from exc
 
@@ -111,9 +106,9 @@ class SQLiteRunResultStore:
         failure_code: str = "",
         exception_class: str = "",
     ) -> None:
-        if status not in {"not_run", "succeeded", "failed"}:
+        if status not in {"not_run", "succeeded", "already_closed", "timeout", "failed"}:
             raise ValueError("cleanup status is outside the closed vocabulary")
-        if (status == "failed") != bool(failure_code and exception_class):
+        if (status in {"timeout", "failed"}) != bool(failure_code and exception_class):
             raise ValueError("cleanup status and failure details are inconsistent")
         try:
             with self._connect() as connection:

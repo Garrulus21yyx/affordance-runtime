@@ -13,10 +13,10 @@ from affordance_runtime.agent.decisions import (
     ProtocolFeedback,
     RequestObservation,
     SelectAction,
+    SetFormFields,
 )
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.run_state import EpisodeYieldReason, RunStatus
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
@@ -29,6 +29,8 @@ from affordance_runtime.execution import (
     ExecutionDiagnostic,
     ExecutionDiagnosticPhase,
     ExecutionOutcome,
+    FormFieldsExecutionCancelled,
+    FormFieldsExecutionOutcome,
     execution_diagnostic_from_exception,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -134,28 +136,16 @@ class BenchmarkInstrumentation:
     def goal_compiler_completed(self, diagnostic) -> None:
         self.trace_recorder.goal_compiler_completed(diagnostic)
         self.goal_compiler_calls += 1
-        self.goal_compiler_provider_attempts += int(
-            diagnostic.get("provider_attempt_count", 0)
-        )
-        self.goal_compiler_schema_repair_count += int(
-            diagnostic.get("schema_repair_count", 0)
-        )
-        self.goal_compiler_contract_repair_count += int(
-            diagnostic.get("contract_repair_count", 0)
-        )
+        self.goal_compiler_provider_attempts += int(diagnostic.get("provider_attempt_count", 0))
+        self.goal_compiler_schema_repair_count += int(diagnostic.get("schema_repair_count", 0))
+        self.goal_compiler_contract_repair_count += int(diagnostic.get("contract_repair_count", 0))
         disposition = diagnostic.get("final_disposition")
         self.goal_compiler_ready_count += int(disposition == "ready")
-        self.goal_compiler_unavailable_count += int(
-            disposition in {"unsupported", "failed"}
-        )
+        self.goal_compiler_unavailable_count += int(disposition in {"unsupported", "failed"})
 
     def model_turn(self, context, outcome, policy, *, exception: str = "") -> None:
         self.trace_recorder.model_turn(context, outcome, policy, exception=exception)
-        self._policy_trace.append(
-            _policy_trace_event(
-                self.policy_calls, context, outcome, policy, exception=exception
-            )
-        )
+        self._policy_trace.append(_policy_trace_event(self.policy_calls, context, outcome, policy, exception=exception))
 
     def mission_role_invocation(
         self,
@@ -166,7 +156,7 @@ class BenchmarkInstrumentation:
         *,
         trigger_kind,
         execution_mode,
-        subtask_id,
+        milestone_id,
         mission_version,
     ) -> None:
         self.trace_recorder.mission_role_invocation(
@@ -176,9 +166,12 @@ class BenchmarkInstrumentation:
             result,
             trigger_kind=trigger_kind,
             execution_mode=execution_mode,
-            subtask_id=subtask_id,
+            milestone_id=milestone_id,
             mission_version=mission_version,
         )
+
+    def mission_role_provider_attempt(self, attempt) -> None:
+        self.trace_recorder.mission_role_provider_attempt(attempt)
 
     def finalization_protocol(self, **counts) -> None:
         self.trace_recorder.finalization_protocol(**counts)
@@ -196,61 +189,9 @@ class BenchmarkInstrumentation:
         self.trace_recorder.primary_result_available(**event)
 
     def step_completed(self, step_number: int, result) -> None:
+        """Observe the committed StepResult without reconstructing Runtime state."""
+
         self.trace_recorder.step_completed(step_number, result)
-        execution = getattr(result, "execution", None)
-        if execution is None:
-            return
-        attempts = tuple(getattr(execution, "attempts", ()))
-        uncertain = next(
-            (
-                attempt
-                for attempt in attempts
-                if str(attempt.result.dispatch_status) == "sent_unknown"
-            ),
-            None,
-        )
-        unresolved_uncertainty = (
-            getattr(result, "yield_reason", None)
-            in {
-                EpisodeYieldReason.UNCERTAIN_EFFECT,
-                EpisodeYieldReason.ENVIRONMENT_RECOVERY,
-            }
-            or (
-                getattr(result, "status_after", None) is RunStatus.FAILED
-                and getattr(getattr(result, "runtime_failure", None), "code", "")
-                == "environment_unresponsive"
-            )
-        )
-        if (
-            uncertain is not None
-            and unresolved_uncertainty
-            and not self.primary_execution_failure_code
-        ):
-            diagnostic = uncertain.result.diagnostics[0] if uncertain.result.diagnostics else None
-            self.primary_execution_failure_code = "action_dispatch_uncertain"
-            self.primary_execution_failure_phase = (
-                str(diagnostic.phase) if diagnostic is not None else "dispatch_wait"
-            )
-            self.primary_execution_diagnostic_ref = (
-                diagnostic.diagnostic_ref if diagnostic is not None else ""
-            )
-            if self.failure_origin is CaseFailureOrigin.NONE:
-                self.failure_origin = CaseFailureOrigin.EXECUTION
-                self.failure_code = self.primary_execution_failure_code
-                self.exception_class = (
-                    diagnostic.exception_type if diagnostic is not None else "ExecutionUncertain"
-                )
-        acquisitions = tuple(
-            acquisition
-            for attempt in attempts
-            for acquisition in (
-                *((attempt.post_acquisition,) if attempt.post_acquisition is not None else ()),
-                *attempt.recovery_acquisitions,
-            )
-        )
-        if any(str(item.status) != "acquired" for item in acquisitions):
-            if "post_action_acquisition_failed" not in self.recovery_failure_codes:
-                self.recovery_failure_codes.append("post_action_acquisition_failed")
 
     def run_paused(self, state) -> None:
         self.trace_recorder.run_paused(state)
@@ -292,9 +233,7 @@ class BenchmarkInstrumentation:
             self.watchdog_exception_class = type(exception).__name__
             self.trace_recorder.benchmark_watchdog(
                 code,
-                cancel_grace_exceeded=bool(
-                    getattr(exception, "task_detached", False)
-                ),
+                cancel_grace_exceeded=bool(getattr(exception, "task_detached", False)),
             )
 
     def record_cleanup_failure(
@@ -307,7 +246,7 @@ class BenchmarkInstrumentation:
         if self.cleanup_failures:
             return
         self.cleanup_failures = 1
-        self.cleanup_status = "failed"
+        self.cleanup_status = "timeout" if code == "cleanup_timeout" else "failed"
         self.cleanup_failure_code = code
         self.cleanup_exception_class = type(exception).__name__
         self.cleanup_diagnostic = execution_diagnostic_from_exception(
@@ -346,9 +285,7 @@ class CountingPolicy:
         try:
             outcome = await self.wrapped.decide(context)
         except Exception as exc:
-            self.instrumentation.record_failure(
-                CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc
-            )
+            self.instrumentation.record_failure(CaseFailureOrigin.POLICY_DECISION, "policy_exception", exc)
             raise
         invocation = getattr(self.wrapped, "last_invocation_result", None)
         metadata = getattr(invocation, "metadata", None)
@@ -394,16 +331,17 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["request_breakdowns"] = to_json_compatible(diagnostics.get("request_breakdowns", ()))
         event["admission_action"] = str(diagnostics.get("admission_action", ""))
         event["estimated_total_tokens"] = int(diagnostics.get("estimated_total_tokens", 0))
-        event["structured_output_validation_stage"] = str(
-            diagnostics.get("structured_output_validation_stage", "")
-        )
+        event["structured_output_validation_stage"] = str(diagnostics.get("structured_output_validation_stage", ""))
         event["structured_output_violations"] = tuple(
             {"field_path": item.field_path, "code": item.code}
             for item in diagnostics.get("structured_output_violations", ())
         )
     decision = outcome
-    if isinstance(decision, (SelectAction, RequestObservation, LocalToolResult, ProtocolFeedback)):
-        event["outcome"] = type(decision).__name__
+    if isinstance(
+        decision,
+        (SelectAction, SetFormFields, RequestObservation, LocalToolResult, ProtocolFeedback),
+    ):
+        event["outcome"] = decision.kind.value
         event["decision"] = _decision_trace(decision)
         if isinstance(decision, SelectAction):
             selected = _selected_grounding_trace(
@@ -420,7 +358,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
             "retryable": decision.retryable,
         }
     else:
-        event["outcome"] = "exception" if exception else type(decision).__name__
+        event["outcome"] = (
+            "exception" if exception else getattr(getattr(decision, "kind", None), "value", "unsupported")
+        )
     return event
 
 
@@ -462,7 +402,7 @@ def _selected_grounding_trace(context, decision, *, image_attached: bool):
 
 
 def _decision_trace(decision):
-    value: dict[str, object] = {"kind": type(decision).__name__, "context_id": decision.context_id}
+    value: dict[str, object] = {"kind": decision.kind.value, "context_id": decision.context_id}
     for name in (
         "action_id",
         "destination_id",
@@ -476,11 +416,16 @@ def _decision_trace(decision):
         "arguments",
         "call_count",
         "detail",
-        "kind",
+        "feedback_kind",
+        "yield_kind",
+        "form_key",
     ):
         item = getattr(decision, name, None)
         if item not in (None, ""):
             value[name] = item.value if hasattr(item, "value") else item
+    if isinstance(decision, SetFormFields):
+        value["field_count"] = len(decision.fields)
+        value["operations"] = tuple(item.operation for item in decision.fields)
     return value
 
 
@@ -494,9 +439,7 @@ def _attempt_trace(item: object) -> dict[str, object]:
             "attempt_number": int(getattr(item, "attempt", 0)),
             "phase": str(getattr(item, "phase", "")),
             "status": status.value if hasattr(status, "value") else str(status),
-            "failure_kind": (
-                output_failure.value if hasattr(output_failure, "value") else ""
-            ),
+            "failure_kind": (output_failure.value if hasattr(output_failure, "value") else ""),
             "failure_code": str(transcript.get("error.code", "")),
             "origin": "network" if transcript.get("network_dispatched", True) else "local_runtime",
             "network_dispatched": bool(transcript.get("network_dispatched", True)),
@@ -506,21 +449,15 @@ def _attempt_trace(item: object) -> dict[str, object]:
             "max_output_tokens": int(getattr(item, "max_output_tokens", 0)),
             "prompt_tokens": int(getattr(item, "prompt_tokens", 0)),
             "completion_tokens": int(getattr(item, "completion_tokens", 0)),
-            "final_content_present": bool(
-                getattr(item, "final_content_present", False)
-            ),
-            "reasoning_content_present": bool(
-                getattr(item, "reasoning_content_present", False)
-            ),
+            "final_content_present": bool(getattr(item, "final_content_present", False)),
+            "reasoning_content_present": bool(getattr(item, "reasoning_content_present", False)),
             "role": str(getattr(item, "role", "")),
             "trigger": str(getattr(item, "trigger", "")),
             "thinking_requested": str(getattr(item, "thinking_requested", "")),
             "thinking_effective": str(getattr(item, "thinking_effective", "")),
             "reasoning_tokens": int(getattr(item, "reasoning_tokens", 0)),
             "final_content_tokens": int(getattr(item, "final_content_tokens", 0)),
-            "final_tool_call_present": bool(
-                getattr(item, "final_tool_call_present", False)
-            ),
+            "final_tool_call_present": bool(getattr(item, "final_tool_call_present", False)),
             "response_fields": tuple(getattr(item, "response_fields", ())),
         }
     status = getattr(item, "status", "")
@@ -573,11 +510,10 @@ class CountingTaskEvaluator:
                 exc,
             )
             raise
-        if (
-            self.official_outcome_sink is not None
-            and evaluation.status
-            in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
-        ):
+        if self.official_outcome_sink is not None and evaluation.status in {
+            TaskEvaluationStatus.COMPLETE,
+            TaskEvaluationStatus.BLOCKED,
+        }:
             self.official_outcome_sink.native_evaluator_returned(evaluation)
         return evaluation
 
@@ -599,9 +535,7 @@ class CountingDecisionPort:
         attempts = tuple(outcome.attempts)
         diagnostics = outcome.diagnostics
         model_calls = int(diagnostics.get("policy_model_call_count", len(attempts)))
-        physical_attempts = int(
-            diagnostics.get("provider_physical_attempt_count", 0)
-        )
+        physical_attempts = int(diagnostics.get("provider_physical_attempt_count", 0))
         self.instrumentation.provider_attempts += max(
             physical_attempts,
             model_calls,
@@ -725,24 +659,51 @@ class CountingEnvironment:
             raise
         if not isinstance(outcome, ExecutionOutcome):
             return outcome
-        result = outcome.result
-        if not isinstance(result, ActionResult):
+        if not isinstance(outcome.result, ActionResult):
             return outcome
-        if isinstance(outcome.post_acquisition, ObservationAcquisition):
-            state.environment_post_acquisitions += int(
-                outcome.post_acquisition.status
-                in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
+        _record_execution_batch(
+            state,
+            self.wrapped,
+            before,
+            requests=(request,),
+            results=(outcome.result,),
+            post_acquisition=outcome.post_acquisition,
+            identities=(identity,),
+        )
+        return outcome
+
+    async def execute_form_fields(self, command):
+        state = self.instrumentation
+        state.environment_execute_calls += 1
+        before = _executed_count(self.wrapped)
+        state.forbidden_effect_attempts += sum(
+            bool(set(request.selection.semantic_effects) & self.forbidden_effects) for request in command.requests
+        )
+        try:
+            outcome = await self.wrapped.execute_form_fields(command)
+        except FormFieldsExecutionCancelled as exc:
+            _record_execution_batch(
+                state,
+                self.wrapped,
+                before,
+                requests=exc.outcome.requests,
+                results=exc.outcome.results,
+                post_acquisition=exc.outcome.post_acquisition,
             )
-        dispatches = _dispatch_count(self.wrapped, before, result)
-        if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
-            state.stale_opportunities += 1
-            state.stale_zero_call_violations += dispatches
-        if dispatches:
-            if identity in state._unknown_attempts:
-                state.duplicate_unknown_attempts += 1
-            state.effectful_dispatches += dispatches
-        if result.dispatch_status == DispatchStatus.SENT_UNKNOWN:
-            state._unknown_attempts.add(identity)
+            raise
+        except Exception as exc:
+            state.record_failure(CaseFailureOrigin.EXECUTION, "execution_exception", exc)
+            raise
+        if not isinstance(outcome, FormFieldsExecutionOutcome):
+            return outcome
+        _record_execution_batch(
+            state,
+            self.wrapped,
+            before,
+            requests=outcome.requests,
+            results=outcome.results,
+            post_acquisition=outcome.post_acquisition,
+        )
         return outcome
 
     @property
@@ -814,6 +775,36 @@ def _executed_count(environment) -> int | None:
     if requests is None:
         requests = getattr(environment, "executed_requests", None)
     return len(requests) if isinstance(requests, list) else None
+
+
+def _record_execution_batch(
+    state: BenchmarkInstrumentation,
+    environment: object,
+    before: int | None,
+    *,
+    requests: tuple[object, ...],
+    results: tuple[ActionResult, ...],
+    post_acquisition: object | None,
+    identities: tuple[str, ...] | None = None,
+) -> None:
+    if isinstance(post_acquisition, ObservationAcquisition):
+        state.environment_post_acquisitions += int(
+            post_acquisition.status in {AcquisitionStatus.ACQUIRED, AcquisitionStatus.FAILED}
+        )
+    after = _executed_count(environment)
+    physical_calls = max(0, after - before) if before is not None and after is not None else 0
+    dispatches = sum(result.dispatch_status is not DispatchStatus.NOT_SENT for result in results)
+    state.effectful_dispatches += dispatches
+    if identities is None:
+        identities = tuple(_attempt_identity(request) for request in requests[: len(results)])
+    for identity, result in zip(identities, results, strict=True):
+        if result.error in {ActionError.STALE_BINDING, ActionError.CURRENTNESS_UNAVAILABLE}:
+            state.stale_opportunities += 1
+            state.stale_zero_call_violations += physical_calls
+        if result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
+            if identity in state._unknown_attempts:
+                state.duplicate_unknown_attempts += 1
+            state._unknown_attempts.add(identity)
 
 
 def _dispatch_count(environment, before: int | None, result) -> int:

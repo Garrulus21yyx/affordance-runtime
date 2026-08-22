@@ -73,11 +73,11 @@ class _CaseLifecycle:
         except RunResultStoreError as exc:
             self.persistence_error = type(exc).__name__
 
-    def manager_started(self) -> None:
-        self.transition(CaseLifecyclePhase.MANAGER_STARTED)
+    def planner_started(self) -> None:
+        self.transition(CaseLifecyclePhase.PLANNER_STARTED)
 
-    def manager_returned(self) -> None:
-        self.transition(CaseLifecyclePhase.MANAGER_RETURNED)
+    def planner_returned(self) -> None:
+        self.transition(CaseLifecyclePhase.PLANNER_RETURNED)
 
 
 async def run_suite(
@@ -180,9 +180,7 @@ async def _run_case(
     )
     if not isinstance(trace_recorder, RunTraceRecorder):
         raise TypeError("benchmark trace directory must produce a local recorder")
-    instrumentation = BenchmarkInstrumentation(
-        trace_recorder=trace_recorder
-    )
+    instrumentation = BenchmarkInstrumentation(trace_recorder=trace_recorder)
     lifecycle = _CaseLifecycle(case.case_id, result_store, instrumentation)
     instrumentation.benchmark_case_started(
         case_id=case.case_id,
@@ -303,7 +301,10 @@ async def _run_case(
         result = state_holder.get("state")
     finally:
         state = state_holder.get("state")
-        if state is not None:
+        mission_snapshot = getattr(result, "episode_snapshot", None)
+        if mission_snapshot is not None:
+            snapshot = mission_snapshot
+        elif state is not None:
             snapshot = snapshot_episode(state)
         lifecycle.transition(CaseLifecyclePhase.CASE_BODY_RETURNED)
         if result_store is not None:
@@ -354,24 +355,25 @@ async def _run_case(
             try:
                 await asyncio.wait_for(_close(environment), timeout=_CLEANUP_TIMEOUT_S)
             except TimeoutError:
-                exc = CleanupTimeoutError(
-                    f"cleanup exceeded {_CLEANUP_TIMEOUT_S * 1000:.0f} ms deadline"
-                )
+                exc = CleanupTimeoutError(f"cleanup exceeded {_CLEANUP_TIMEOUT_S * 1000:.0f} ms deadline")
                 instrumentation.record_cleanup_failure(
                     "cleanup_timeout",
                     exc,
                     started_at=cleanup_started,
                 )
-                instrumentation.cleanup_status = "failed"
+                instrumentation.cleanup_status = "timeout"
                 failure = _append_failure(failure, "cleanup timed out")
             except Exception as exc:
-                instrumentation.record_cleanup_failure(
-                    "cleanup_exception",
-                    exc,
-                    started_at=cleanup_started,
-                )
-                instrumentation.cleanup_status = "failed"
-                failure = _append_failure(failure, "cleanup failed")
+                if _is_target_closed_error(exc):
+                    instrumentation.cleanup_status = "already_closed"
+                else:
+                    instrumentation.record_cleanup_failure(
+                        "cleanup_exception",
+                        exc,
+                        started_at=cleanup_started,
+                    )
+                    instrumentation.cleanup_status = "failed"
+                    failure = _append_failure(failure, "cleanup failed")
             else:
                 instrumentation.cleanup_status = "succeeded"
         lifecycle.transition(CaseLifecyclePhase.CLEANUP_FINISHED)
@@ -391,9 +393,31 @@ async def _run_case(
             primary_result_available=result is not None,
             primary_snapshot_available=snapshot is not None or partial is not None,
         )
-    instrumentation.set_custom_metric(
-        "trace_recording_failures", len(instrumentation.trace_recorder.errors)
+    lifecycle.transition(CaseLifecyclePhase.CASE_FINISHED)
+    instrumentation.benchmark_case_finished(
+        case_id=case.case_id,
+        status=str(getattr(result, "status", RunStatus.FAILED)),
     )
+    flush = getattr(trace_recorder, "flush_viewer", None)
+    if flush is not None:
+        try:
+            await asyncio.wait_for(
+                _call_sync_owner(
+                    # close() may spend its bound joining and then a second,
+                    # bounded terminate/join. Leave enough owner-call margin
+                    # for the local viewer_status event to be persisted.
+                    lambda: flush(timeout_s=max(0.005, _VIEWER_FLUSH_TIMEOUT_S * 0.3)),
+                    "viewer-flush",
+                ),
+                timeout=_VIEWER_FLUSH_TIMEOUT_S,
+            )
+        except Exception:
+            # Viewer failure is already fail-open and never changes case truth.
+            pass
+    # Viewer status is the final local trace write. Snapshot trace integrity
+    # only after every authoritative JSONL event so late failures invalidate
+    # acceptance.
+    instrumentation.set_custom_metric("trace_recording_failures", len(instrumentation.trace_recorder.errors))
     instrumentation.set_custom_metric(
         "viewer_dropped_event_count",
         int(getattr(instrumentation.trace_recorder, "viewer_dropped_event_count", 0)),
@@ -414,9 +438,7 @@ async def _run_case(
             CaseFailureOrigin.HARNESS_PERSISTENCE,
             persistence_failure_code,
             OfficialOutcomePersistenceError(
-                outcome_recorder.persistence_error
-                or lifecycle_persistence_error
-                or lifecycle.persistence_error
+                outcome_recorder.persistence_error or lifecycle_persistence_error or lifecycle.persistence_error
             ),
         )
         failure = _append_failure(failure, persistence_failure_code.replace("_", " "))
@@ -506,24 +528,6 @@ async def _run_case(
                     # The earlier committed payload remains regenerable; this
                     # projection-update failure cannot erase it.
                     pass
-    lifecycle.transition(CaseLifecyclePhase.CASE_FINISHED)
-    instrumentation.benchmark_case_finished(
-        case_id=case.case_id,
-        status=case_result.status,
-    )
-    flush = getattr(trace_recorder, "flush_viewer", None)
-    if flush is not None:
-        try:
-            await asyncio.wait_for(
-                _call_sync_owner(
-                    lambda: flush(timeout_s=max(0.01, _VIEWER_FLUSH_TIMEOUT_S * 0.9)),
-                    "viewer-flush",
-                ),
-                timeout=_VIEWER_FLUSH_TIMEOUT_S,
-            )
-        except Exception:
-            # Viewer failure is already fail-open and never changes case truth.
-            pass
     return case_result
 
 
@@ -535,9 +539,7 @@ def _build_runtime(composition, instrumentation, outcome_recorder):
             composition.task_evaluator,
             instrumentation,
             official_outcome_sink=(
-                outcome_recorder
-                if composition.execution_mode is not ExecutionMode.MISSION
-                else None
+                outcome_recorder if composition.execution_mode is not ExecutionMode.MISSION else None
             ),
         ),
         risk_policy=composition.risk_policy,
@@ -548,16 +550,8 @@ def _build_runtime(composition, instrumentation, outcome_recorder):
             if composition.execution_mode is ExecutionMode.MISSION
             else composition.goal_compiler
         ),
-        runtime_controls=(
-            ("yield_subtask",)
-            if composition.execution_mode is ExecutionMode.MISSION
-            else ()
-        ),
-        episode_monitor=(
-            EpisodeMonitor()
-            if composition.execution_mode is ExecutionMode.MISSION
-            else None
-        ),
+        runtime_controls=(("yield_milestone",) if composition.execution_mode is ExecutionMode.MISSION else ()),
+        episode_monitor=(EpisodeMonitor() if composition.execution_mode is ExecutionMode.MISSION else None),
     )
 
 
@@ -580,7 +574,7 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
             result,
             approved=True,
         )
-    instrumentation.set_custom_metric("mission_manager_calls", 0)
+    instrumentation.set_custom_metric("mission_planner_calls", 0)
     instrumentation.set_custom_metric("mission_auditor_calls", 0)
     instrumentation.set_custom_metric("mission_state_version", 0)
     instrumentation.set_custom_metric("mission_working_outcomes", 0)
@@ -611,9 +605,8 @@ async def _run_mission(
 ):
     del case
     supervisor = MissionSupervisor(
-        composition.mission_manager,
+        composition.mission_planner,
         composition.mission_auditor,
-        strict_verification=composition.strict_verification,
         trace_sink=instrumentation,
         official_outcome_sink=outcome_recorder,
         lifecycle_sink=lifecycle,
@@ -622,7 +615,7 @@ async def _run_mission(
     state_holder["mission_result"] = result
     if result.state is not None:
         state_holder["state"] = result.state
-    instrumentation.set_custom_metric("mission_manager_calls", result.manager_calls)
+    instrumentation.set_custom_metric("mission_planner_calls", result.planner_calls)
     instrumentation.set_custom_metric("mission_auditor_calls", result.auditor_calls)
     instrumentation.set_custom_metric(
         "final_response_boundary_admission_count",
@@ -633,36 +626,25 @@ async def _run_mission(
         result.final_response_boundary_rejection_count,
     )
     instrumentation.set_custom_metric("stop_send_count", result.stop_send_count)
-    instrumentation.set_custom_metric(
-        "post_stop_capture_count", result.post_stop_capture_count
-    )
-    instrumentation.set_custom_metric(
-        "native_evaluator_count", result.native_evaluator_count
-    )
+    instrumentation.set_custom_metric("post_stop_capture_count", result.post_stop_capture_count)
+    instrumentation.set_custom_metric("native_evaluator_count", result.native_evaluator_count)
     instrumentation.set_custom_metric("optional_auditor_calls", result.auditor_calls)
     instrumentation.set_custom_metric("mission_state_version", result.mission_state.version)
     instrumentation.set_custom_metric("mission_working_outcomes", len(result.mission_state.working_outcomes))
     instrumentation.set_custom_metric("mission_accepted_facts", len(result.mission_state.accepted_facts))
     instrumentation.set_custom_metric("mission_boundary_rejections", result.boundary_rejections)
-    instrumentation.set_custom_metric("mission_final_response_delivered", int(result.supervisor_state.final_response_delivered))
-    role_events = tuple(
-        event
-        for event in instrumentation.trace_recorder.events
-        if event.get("event") == "mission_role_invocation"
+    instrumentation.set_custom_metric(
+        "mission_final_response_delivered", int(result.supervisor_state.final_response_delivered)
     )
-    for role in ("manager", "auditor"):
-        triggers = {
-            str(event.get("trigger_kind", "unknown"))
-            for event in role_events
-            if event.get("role") == role
-        }
+    role_events = tuple(
+        event for event in instrumentation.trace_recorder.events if event.get("event") == "mission_role_invocation"
+    )
+    for role in ("planner", "auditor"):
+        triggers = {str(event.get("trigger_kind", "unknown")) for event in role_events if event.get("role") == role}
         for trigger in triggers:
             instrumentation.set_custom_metric(
                 f"{role}_call_count_by_trigger_{trigger}",
-                sum(
-                    event.get("role") == role and event.get("trigger_kind") == trigger
-                    for event in role_events
-                ),
+                sum(event.get("role") == role and event.get("trigger_kind") == trigger for event in role_events),
             )
     instrumentation.set_custom_metric(
         "semantic_verifier_skipped_mechanical_count",
@@ -684,14 +666,20 @@ async def _close(environment) -> None:
         method = getattr(environment, name, None)
         if method is None:
             continue
-        outcome = (
-            method()
-            if inspect.iscoroutinefunction(method)
-            else await _call_sync_owner(method, "cleanup")
-        )
+        outcome = method() if inspect.iscoroutinefunction(method) else await _call_sync_owner(method, "cleanup")
         if inspect.isawaitable(outcome):
             await outcome
         return
+
+
+def _is_target_closed_error(exception: BaseException) -> bool:
+    """Classify idempotent cleanup only; callers outside cleanup must not use this."""
+
+    try:
+        from playwright.async_api import TargetClosedError
+    except ImportError:
+        return type(exception).__name__ == "TargetClosedError"
+    return isinstance(exception, TargetClosedError)
 
 
 async def _call_sync_owner(method, owner: str):
@@ -735,11 +723,7 @@ async def _run_with_watchdog(
 ):
     """Own the deadline explicitly so component TimeoutError remains component truth."""
     task = asyncio.create_task(awaitable)
-    interruption = (
-        asyncio.create_task(interruption_requested.wait())
-        if interruption_requested is not None
-        else None
-    )
+    interruption = asyncio.create_task(interruption_requested.wait()) if interruption_requested is not None else None
     try:
         pending = {task} if interruption is None else {task, interruption}
         done, _ = await asyncio.wait(pending, timeout=timeout_s)
@@ -779,11 +763,7 @@ async def _await_cancel_grace(task: asyncio.Task) -> None:
 def abandon_detached_watchdog_tasks(loop: asyncio.AbstractEventLoop) -> int:
     """Let the foreground harness close after its bounded cancel grace expired."""
 
-    detached = tuple(
-        task
-        for task in _DETACHED_WATCHDOG_TASKS
-        if task.get_loop() is loop and not task.done()
-    )
+    detached = tuple(task for task in _DETACHED_WATCHDOG_TASKS if task.get_loop() is loop and not task.done())
     for task in detached:
         # The task already received cancellation and a bounded grace period. Suppress
         # only asyncio's destruction warning while the foreground process exits.

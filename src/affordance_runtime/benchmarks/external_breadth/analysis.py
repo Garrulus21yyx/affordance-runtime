@@ -26,14 +26,16 @@ def reclassify_archive(archive: Path) -> dict[str, object]:
     for path in sorted((archive / "cases").glob("*.json")):
         case = json.loads(path.read_text(encoding="utf-8"))
         revised, confidence, missing = _legacy_classification(case)
-        records.append({
-            "case_id": case["case_id"],
-            "task_family_label": case["task_family_label"],
-            "original_outcome": case["typed_outcome"],
-            "revised_category": revised,
-            "confidence": confidence,
-            "missing_evidence_fields": missing,
-        })
+        records.append(
+            {
+                "case_id": case["case_id"],
+                "task_family_label": case["task_family_label"],
+                "original_outcome": case["typed_outcome"],
+                "revised_category": revised,
+                "confidence": confidence,
+                "missing_evidence_fields": missing,
+            }
+        )
     counts = Counter(str(item["revised_category"]) for item in records)
     return {
         "schema_version": "miniwob-archive-reclassification.v1",
@@ -56,14 +58,16 @@ def capability_overlay(archive: Path, source_root: Path | None = None) -> dict[s
         historical = json.loads(path.read_text(encoding="utf-8"))
         task_id = f"browsergym/miniwob.{historical['task_family_label']}"
         requirements = by_task[task_id]
-        cases.append({
-            "case_id": historical["case_id"],
-            "task_family_label": historical["task_family_label"],
-            "historical_outcome": historical["typed_outcome"],
-            "v1_primitive_profile": historical["required_primitives"],
-            "v2_requirements": requirements.__dict__,
-            "v2_readiness": task_readiness(requirements, capabilities).value,
-        })
+        cases.append(
+            {
+                "case_id": historical["case_id"],
+                "task_family_label": historical["task_family_label"],
+                "historical_outcome": historical["typed_outcome"],
+                "v1_primitive_profile": historical["required_primitives"],
+                "v2_requirements": requirements.__dict__,
+                "v2_readiness": task_readiness(requirements, capabilities).value,
+            }
+        )
     counts = Counter(str(item["v2_readiness"]) for item in cases)
     return {
         "schema_version": "miniwob-60-capability-overlay.v1",
@@ -91,9 +95,7 @@ def rerun_readiness_report(
         failure_origins_complete=True,
         capability_inventory_v2_complete=overlay.get("registry_task_count") == 125,
         capability_inventory_digest=str(overlay.get("inventory_digest", "")),
-        representative_diagnostics_complete=(
-            diagnostics.get("selected_cases") == diagnostics.get("completed_cases")
-        ),
+        representative_diagnostics_complete=(diagnostics.get("selected_cases") == diagnostics.get("completed_cases")),
         unresolved_diagnostic_count=_bounded_int(diagnostics.get("unresolved_diagnostic_count")),
         provider_capacity_declared=provider.get("capacity_declared") is True,
         provider_capacity_sufficient=provider.get("capacity_sufficient") is True,
@@ -117,7 +119,7 @@ def _legacy_classification(case: dict[str, object]) -> tuple[str, str, list[str]
     ask_user = measured.get("ask_user_count")
     ask_value = ask_user.get("value") if isinstance(ask_user, dict) else 0
     if outcome == "other_typed_failure" and ask_value:
-        return "ask_user_unresolved", "high", ["last_decision_type"]
+        return "ask_user_unresolved", "high", ["last_decision_kind"]
     if outcome in {"other_typed_failure", "environment_failure"}:
         return (
             "unresolved_legacy_evidence",
@@ -126,7 +128,7 @@ def _legacy_classification(case: dict[str, object]) -> tuple[str, str, list[str]
                 "failure_origin",
                 "failure_code",
                 "exception_class",
-                "last_decision_type",
+                "last_decision_kind",
                 "last_action_observed_change",
                 "last_action_local_postcondition",
                 "last_action_evidence_method",

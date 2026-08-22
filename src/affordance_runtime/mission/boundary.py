@@ -10,18 +10,48 @@ from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.mission.contracts import (
     AcceptedFact,
     AcceptedWorkingOutcome,
+    EvidenceAssessment,
     EvidenceBoundaryRejectionClass,
     EvidenceBoundaryResult,
     EvidenceBundle,
-    ManagerAssessment,
+    Milestone,
+    MilestoneAdmission,
     MissionState,
     WorkingStateProposal,
 )
+from affordance_runtime.world.contracts import WorldObservation
 
 
 @dataclass(frozen=True)
 class EvidenceBoundary:
     """The only writer of accepted mission state."""
+
+    def evaluate_milestone(
+        self,
+        mission: MissionState,
+        milestone: Milestone,
+        before_world: WorldObservation,
+        after_world: WorldObservation,
+        working_facts,
+        outcome_summary: str,
+    ) -> MilestoneAdmission:
+        facts = {item.key: item for item in working_facts}
+        missing = tuple(item.key for item in milestone.required_evidence if item.key not in facts)
+        if missing:
+            return MilestoneAdmission(EvidenceAssessment.UNKNOWN, reason_code="required_evidence_missing")
+        if not milestone.required_evidence:
+            reason = "observable_outcome_unknown"
+            if before_world.observation_id == after_world.observation_id:
+                reason = "observable_outcome_unchanged"
+            return MilestoneAdmission(EvidenceAssessment.UNKNOWN, reason_code=reason)
+        # Keys establish availability and lineage only. Their descriptions and
+        # milestone done_when are natural-language semantics, so this mechanical
+        # boundary cannot infer that a scalar filed under a matching key proves
+        # the requested business outcome. The Auditor owns that assessment.
+        return MilestoneAdmission(
+            EvidenceAssessment.UNKNOWN,
+            reason_code="semantic_evidence_assessment_required",
+        )
 
     def accept(
         self,
@@ -32,8 +62,8 @@ class EvidenceBoundary:
         if proposal.base_mission_version != mission.version:
             return _rejected(mission, "version_conflict")
         if proposal.assessment not in {
-            ManagerAssessment.SATISFIED,
-            ManagerAssessment.UNSATISFIED,
+            EvidenceAssessment.SATISFIED,
+            EvidenceAssessment.UNSATISFIED,
         }:
             return _rejected(mission, "working_assessment_not_promotable")
         outcome_issue = _validate_outcomes(mission, proposal, bundle)
@@ -97,7 +127,10 @@ def _validate_outcomes(mission: MissionState, proposal: WorkingStateProposal, bu
             return "working_outcome_id_conflict"
         seen.add(item.outcome_id)
         try:
-            validate_evidence_refs(item.evidence_refs, allow_empty=False)
+            validate_evidence_refs(
+                item.evidence_refs,
+                allow_empty=item.assessment is not EvidenceAssessment.SATISFIED,
+            )
         except ValueError:
             return "invalid_evidence_ref"
         for evidence_ref in item.evidence_refs:

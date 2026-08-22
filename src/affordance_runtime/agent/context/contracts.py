@@ -1,4 +1,5 @@
 """Immutable surface-neutral values exposed across the model boundary."""
+
 from __future__ import annotations
 
 import re
@@ -30,11 +31,7 @@ def _sanitize_history_value(value: object) -> object:
         sanitized: dict[str, object] = {}
         for key, item in value.items():
             raw_key = str(key)
-            if (
-                raw_key in _PRIVATE_HISTORY_KEYS
-                or raw_key.endswith("_ref")
-                or _GENERATION_REF.fullmatch(raw_key)
-            ):
+            if raw_key in _PRIVATE_HISTORY_KEYS or raw_key.endswith("_ref") or _GENERATION_REF.fullmatch(raw_key):
                 continue
             clean_key = _strip_generation_refs(raw_key)
             if not clean_key:
@@ -45,9 +42,7 @@ def _sanitize_history_value(value: object) -> object:
         return sanitized
     if isinstance(value, tuple | list):
         return tuple(
-            _sanitize_history_value(item)
-            for item in value
-            if not isinstance(item, str) or not _ref_only(item)
+            _sanitize_history_value(item) for item in value if not isinstance(item, str) or not _ref_only(item)
         )
     return value
 
@@ -64,9 +59,9 @@ def _strip_generation_refs(value: str) -> str:
 
 
 def _ref_only(value: str) -> bool:
-    return bool(
-        _GENERATION_REF.search(value) or _LEGACY_EXPIRED_REF.search(value)
-    ) and not _strip_generation_refs(value)
+    return bool(_GENERATION_REF.search(value) or _LEGACY_EXPIRED_REF.search(value)) and not _strip_generation_refs(
+        value
+    )
 
 
 @dataclass(frozen=True)
@@ -127,47 +122,43 @@ class AgentEvidenceRequirementView:
 
     def __post_init__(self) -> None:
         if not self.key or not self.description:
-            raise ValueError("active subtask evidence requirement is incomplete")
+            raise ValueError("active milestone evidence requirement is incomplete")
         if not isinstance(self.status, EvidenceRequirementStatus):
             object.__setattr__(self, "status", EvidenceRequirementStatus(self.status))
 
 
 @dataclass(frozen=True)
-class AgentSubtaskContractView:
+class AgentMilestoneContractView:
     """Bounded semantic contract stored by the episode, without progress state."""
 
-    objective: str
+    id: str
+    outcome: str
     done_when: str
-    task_link: str
-    outcome_kind: str
-    constraints: tuple[str, ...] = ()
     required_evidence: tuple[tuple[str, str], ...] = ()
+    depends_on: tuple[str, ...] = ()
+    final: bool = False
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "constraints", tuple(self.constraints))
         object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
-        if self.outcome_kind not in {"state_change", "evidence_packet"}:
-            raise ValueError("active subtask outcome kind is unsupported")
+        object.__setattr__(self, "depends_on", tuple(self.depends_on))
         if len(self.required_evidence) > 32 or len({item[0] for item in self.required_evidence}) != len(
             self.required_evidence
         ):
-            raise ValueError("active subtask evidence requirements are invalid")
+            raise ValueError("active milestone evidence requirements are invalid")
 
 
 @dataclass(frozen=True)
-class AgentSubtaskView:
-    objective: str
+class AgentMilestoneView:
+    id: str
+    outcome: str
     done_when: str
-    task_link: str
-    outcome_kind: str
-    constraints: tuple[str, ...] = ()
     required_evidence: tuple[AgentEvidenceRequirementView, ...] = ()
+    depends_on: tuple[str, ...] = ()
+    final: bool = False
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "constraints", tuple(self.constraints))
         object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
-        if self.outcome_kind not in {"state_change", "evidence_packet"}:
-            raise ValueError("active subtask outcome kind is unsupported")
+        object.__setattr__(self, "depends_on", tuple(self.depends_on))
 
 
 @dataclass(frozen=True)
@@ -186,17 +177,15 @@ class AgentTaskView:
     )
     public_inputs_total_count: int = 0
     public_inputs_truncated: bool = False
-    evaluation: AgentTaskEvaluationView = field(
-        default_factory=lambda: AgentTaskEvaluationView("unknown")
-    )
+    evaluation: AgentTaskEvaluationView = field(default_factory=lambda: AgentTaskEvaluationView("unknown"))
     final_response_contract: Mapping[str, object] = field(default_factory=dict)
-    active_subtask: AgentSubtaskView | None = None
+    active_milestone: AgentMilestoneView | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
         object.__setattr__(self, "final_response_contract", freeze_json(self.final_response_contract))
-        if self.active_subtask is not None and not isinstance(self.active_subtask, AgentSubtaskView):
-            raise TypeError("Task active_subtask must be typed")
+        if self.active_milestone is not None and not isinstance(self.active_milestone, AgentMilestoneView):
+            raise TypeError("Task active_milestone must be typed")
         if self.public_inputs_total_count < len(self.public_inputs):
             raise ValueError("public input total cannot be smaller than its projection")
         if self.public_inputs_truncated != (self.public_inputs_total_count > len(self.public_inputs)):
@@ -267,17 +256,20 @@ class AgentActionOptionView:
             and self.destination_mode
             and self.grounding_context_id
         )
-        if any(
-            (
-                self.operation,
-                self.target_ref,
-                self.target_semantics,
-                self.target_role,
-                self.target_state,
-                self.destination_mode,
-                self.grounding_context_id,
+        if (
+            any(
+                (
+                    self.operation,
+                    self.target_ref,
+                    self.target_semantics,
+                    self.target_role,
+                    self.target_state,
+                    self.destination_mode,
+                    self.grounding_context_id,
+                )
             )
-        ) and not closed:
+            and not closed
+        ):
             raise ValueError("action candidate target projection is incomplete")
         if self.target_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.target_ref) is None:
             raise ValueError("action candidate target ref is invalid")

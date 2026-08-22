@@ -23,7 +23,8 @@ def _class_owners(name: str) -> tuple[str, ...]:
 def test_workflow_task_plan_owner_is_physically_absent() -> None:
     assert _class_owners("TaskPlan") == ()
     assert _class_owners("TaskProgram") == ()
-    assert _class_owners("Milestone") == ()
+    assert _class_owners("Milestone") == ("mission/contracts.py",)
+    assert _class_owners("MilestoneRoadmap") == ("mission/contracts.py",)
     assert not (RUNTIME / "task_plan_contracts.py").exists()
     assert not (RUNTIME / "task" / "task_program.py").exists()
 
@@ -116,7 +117,7 @@ def test_target_loop_has_no_pre_observation_target_or_frontier_authority() -> No
 def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -> None:
     production = "\n".join(path.read_text(encoding="utf-8") for path in _python_sources())
     policy = (RUNTIME / "model" / "policy" / "policy.py").read_text(encoding="utf-8")
-    adapters = (RUNTIME / "model" / "policy" / "grounded_tool_port_bridge.py").read_text(
+    adapters = (RUNTIME / "model" / "policy" / "pydantic_ai_bridge.py").read_text(
         encoding="utf-8"
     )
     assert "ResolvedModelDecision" in adapters
@@ -129,6 +130,9 @@ def test_model_decision_is_parsed_once_and_has_no_staged_objective_transport() -
     assert not (RUNTIME / "model" / "policy" / "serialization.py").exists()
     assert "LocalObjective" not in production
     assert "OBJECTIVE_PROPOSAL" not in production
+    assert not (RUNTIME / "model" / "policy" / "grounded_tool_port_bridge.py").exists()
+    assert "JSON_SINGLE_COMMAND" not in production
+    assert "CompactJsonDecisionPort" not in production
 
 
 def test_model_policy_has_no_task_semantic_producers() -> None:
@@ -192,6 +196,17 @@ def test_step_result_has_one_root_owned_projection_chain() -> None:
     assert "ModelPort" not in projection and "provider" not in projection
 
 
+def test_final_response_is_an_evidence_citing_boundary_yield_not_task_completion() -> None:
+    loop = (RUNTIME / "agent" / "core_loop.py").read_text(encoding="utf-8")
+    decisions = (RUNTIME / "agent" / "decisions.py").read_text(encoding="utf-8")
+    branch = loop.split("case DecisionKind.SUBMIT_FINAL_RESPONSE:", 1)[1].split(
+        "case DecisionKind.ASK_USER:", 1
+    )[0]
+    assert "RunStatus.YIELDED" in branch
+    assert "RunStatus.DONE" not in branch
+    assert "evidence_refs: tuple[str, ...]" in decisions
+
+
 def test_named_local_tool_semantics_remain_catalog_owned() -> None:
     owners = {
         path.relative_to(RUNTIME).as_posix()
@@ -209,7 +224,9 @@ def test_normative_architecture_contains_the_single_authority_map() -> None:
     architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
 
     assert "## Authority" in architecture
-    assert "What is the current unified world? | WorldFusion / WorldObservation" in architecture
-    assert "What semantic action should be attempted? | Model policy" in architecture
-    assert "Is the task complete? | TaskEvaluator" in architecture
+    assert "| current GUI truth | fresh `WorldObservation` |" in architecture
+    assert "| model-visible action contract | `PerTurnToolCatalog` |" in architecture
+    assert "| mission benchmark completion | native `TaskEvaluator` after one delivered STOP |" in architecture
+    assert "Standalone atomic" in architecture
+    assert "tasks may still terminate directly from their native evaluator" in architecture
     assert not (ROOT / "docs" / "task-execution-authority-map.md").exists()

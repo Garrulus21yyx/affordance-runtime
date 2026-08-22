@@ -1,763 +1,365 @@
-from __future__ import annotations
-
 import asyncio
-from dataclasses import dataclass, field
+import json
+from pathlib import Path
 
 import pytest
 
-from affordance_runtime.agent import YieldSubtask
-from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.agent.decision_capability import DecisionCapability
-from affordance_runtime.agent.run_state import RunStatus
-from affordance_runtime.app import compose_target_runtime
-from affordance_runtime.evaluation import ProductionActionOutcomeProjector, TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.actions import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ActionBinding,
+    ActionRisk,
+    AdmittedActionSelection,
+)
+from affordance_runtime.agent import (
+    EpisodeYieldReason,
+    PinFactResult,
+    ReadRegionResult,
+    RunState,
+    RunStatus,
+    SearchPageContentResult,
+    SelectAction,
+    StepResult,
+    WorkingFact,
+    YieldMilestone,
+)
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation.evidence_records import EvidenceRecord
+from affordance_runtime.execution import (
+    ActionIntent,
+    ActionResult,
+    BoundActionRequest,
+    DispatchStatus,
+    ExecutionCompletion,
+    ExecutionReceipt,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.mission import (
+    AcceptedWorkingOutcome,
     AuditorDecision,
-    EvidenceBoundaryRejectionClass,
-    EvidenceBoundaryResult,
-    EvidenceRequirement,
-    ManagerAssessment,
-    ManagerDecision,
-    ManagerRequestMode,
-    ManagerRoute,
+    EvidenceAssessment,
+    Milestone,
+    MilestoneRoadmap,
     MissionOutcome,
     MissionState,
     MissionSupervisor,
-    SubtaskContract,
-    WorkingFactProposal,
-    WorkingOutcomeProposal,
+    PlannerDecision,
+    PlannerRequestMode,
+    PlannerRoute,
 )
+from affordance_runtime.mission.supervisor import _roadmap_revision_preserves_accepted_semantics
 from affordance_runtime.model.policy.contracts import ModelInvocationResult
-from tests.support.surfaces.browsergym.browsergym_adapter_support import (
-    FakeBrowserGym,
-    ax_node,
-    open_fake,
-    raw_observation,
-)
+from affordance_runtime.schema_digest import schema_digest
+from affordance_runtime.task import TaskGoal
+from affordance_runtime.world import SemanticTarget
+from tests.support.world import fused_world
 
 
-class UnknownEvaluator:
-    async def evaluate(self, task, observation):
-        return TaskEvaluation(
-            task.task_id,
-            observation.observation_id,
-            TaskEvaluationStatus.UNKNOWN,
-            "native verifier not terminal",
-        )
-
-
-@dataclass
-class YieldPolicy:
-    kind: str = "outcome_proposed"
-    reason: str = "episode boundary"
-
-    @property
-    def supported_decisions(self):
-        return frozenset({DecisionCapability.YIELD_SUBTASK})
-
-    async def decide(self, context):
-        return YieldSubtask(context.context_id, self.kind, self.reason)
-
-
-@dataclass
-class ManagerScript:
-    decisions: list[ManagerDecision]
-
-    def __post_init__(self):
+class Planner:
+    def __init__(self, decisions):
+        self.decisions = list(decisions)
         self.requests = []
 
-    async def decide(self, request):
+    async def plan(self, request):
         self.requests.append(request)
         return ModelInvocationResult(output=self.decisions.pop(0))
 
 
-@dataclass
-class FailingManager:
-    async def decide(self, _request):
-        return ModelInvocationResult(failure=ModelFailure(
-            ModelFailureKind.SCHEMA_ERROR,
-            "invalid manager output",
-            False,
-        ))
+class Runtime:
+    def __init__(self, routes, *, replan=False):
+        self.routes = tuple(routes)
+        self.replan = replan
+        self.initializations = []
+        self.continue_calls = 0
+        self.episode_monitor = object()
+        self.applied_routes = []
+        self.planner_call_probe = lambda: -1
+        self.planner_calls_during_routes = []
+
+    async def initialize_from_world(
+        self,
+        task,
+        initial,
+        goal_resolution,
+        *,
+        budget,
+        yield_on_budget_exhaustion,
+        working_facts,
+        active_milestone,
+    ):
+        del goal_resolution, yield_on_budget_exhaustion, working_facts
+        self.initializations.append((budget.turns, active_milestone, self.routes))
+        return RunState(
+            initial,
+            TaskEvaluation(task.task_id, initial.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+            budget.turns,
+            active_milestone_contract=active_milestone,
+            yield_on_budget_exhaustion=True,
+        )
+
+    async def continue_task(self, environment, task, state):
+        del environment
+        self.continue_calls += 1
+        for index, route in enumerate(self.routes, 1):
+            after_route = fused_world(
+                f"episode-route-{self.continue_calls}-{index}",
+                (SemanticTarget(f"route-{index}", "status", route),),
+            )
+            decision, receipts = _replayed_step(route, index, state.current_world.observation_id, after_route.observation_id)
+            state.apply(
+                StepResult(
+                    decision,
+                    state.current_world,
+                    after_route,
+                    TaskEvaluation(task.task_id, after_route.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+                    RunStatus.RUNNING,
+                    execution_receipts=receipts,
+                    feedback=f"provider_free_replay:{route}",
+                )
+            )
+            self.applied_routes.append(route)
+            self.planner_calls_during_routes.append(self.planner_call_probe())
+        after = state.current_world
+        decision = YieldMilestone(
+            "context:episode",
+            "needs_replan" if self.replan else "outcome_proposed",
+            "route completed" if not self.replan else "route unavailable",
+            reason_code="delivery_not_observable" if self.replan else None,
+        )
+        result = StepResult(
+            decision,
+            state.current_world,
+            after,
+            TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+            RunStatus.YIELDED,
+            feedback=f"yield_milestone:{decision.yield_kind}",
+            yield_reason=EpisodeYieldReason(decision.yield_kind),
+        )
+        state.apply(result)
+        return state
 
 
-@dataclass
-class LifecycleLog:
-    phases: list[str] = field(default_factory=list)
-
-    def manager_started(self) -> None:
-        self.phases.append("MANAGER_STARTED")
-
-    def manager_returned(self) -> None:
-        self.phases.append("MANAGER_RETURNED")
-
-
-@dataclass
-class AuditorScript:
-    decision: AuditorDecision
-
-    def __post_init__(self):
+class Auditor:
+    def __init__(self) -> None:
         self.requests = []
 
     async def audit(self, request):
         self.requests.append(request)
-        return ModelInvocationResult(output=self.decision)
-
-
-@dataclass
-class StrictOutcomeManager:
-    contract: SubtaskContract
-
-    def __post_init__(self):
-        self.requests = []
-
-    async def decide(self, request):
-        self.requests.append(request)
-        if request.mode is ManagerRequestMode.INITIAL_PLAN:
-            return ModelInvocationResult(output=_initial(self.contract))
-        evidence_ref = request.allowed_evidence_refs[0]
-        return ModelInvocationResult(output=ManagerDecision(
-            ManagerAssessment.SATISFIED,
-            ManagerRoute.BLOCKED,
-            evidence_refs=(evidence_ref,),
-            working_outcomes=(WorkingOutcomeProposal(
-                "outcome:durable_claim",
-                ManagerAssessment.SATISFIED,
-                (evidence_ref,),
-                "The predeclared durable claim is supported.",
-            ),),
-            reason="Synthetic strict review completed.",
-        ))
-
-
-@dataclass
-class CitingAuditor:
-    def __post_init__(self):
-        self.requests = []
-
-    async def audit(self, request):
-        self.requests.append(request)
-        evidence_ref = next(
-            record.evidence_ref
-            for record in request.audit_bundle.evidence_records
-            if (
-                record.kind == "fact"
-                and isinstance(record.value, str | int | float | bool)
-                and record.source_observation_id in request.audit_bundle.source_observation_ids
-                and request.audit_bundle.source_coverages.get(
-                    record.source_observation_id, ""
-                ) != "stale"
+        refs = tuple(item.record.evidence_ref for item in request.working_facts[:1]) or tuple(
+            item.evidence_ref for item in request.audit_bundle.evidence_records[:1]
+        )
+        return ModelInvocationResult(
+            output=AuditorDecision(
+                EvidenceAssessment.SATISFIED,
+                refs,
+                reason="replay outcome visible",
             )
         )
-        return ModelInvocationResult(output=AuditorDecision(
-            ManagerAssessment.SATISFIED,
-            (evidence_ref,),
-            "Strict claim is independently supported.",
-        ))
 
 
-@dataclass(frozen=True)
-class RecoverableShapeBoundary:
-    def accept(self, mission, _proposal, _bundle):
-        return EvidenceBoundaryResult(
-            False,
-            mission,
-            "working_state_noop",
-            EvidenceBoundaryRejectionClass.RECOVERABLE_SHAPE,
-        )
-
-
-def _runtime(kind="outcome_proposed", reason="episode boundary"):
-    return compose_target_runtime(
-        YieldPolicy(kind, reason),
-        ProductionActionOutcomeProjector(),
-        UnknownEvaluator(),
-        runtime_controls=("yield_subtask",),
-    )
-
-
-def _env_task():
-    raw = raw_observation(
-        ax_node("input", "textbox", "Answer", value="Done"),
-        ax_node("button", "button", "Continue"),
-        goal="Complete the long task.",
-    )
-    fake = FakeBrowserGym(raw)
-    env, task = open_fake(fake)
-    return fake, env, task
-
-
-def test_initial_manager_schema_failure_returns_immediately_at_typed_boundary() -> None:
-    _, env, task = _env_task()
-    lifecycle = LifecycleLog()
-
-    result = asyncio.run(asyncio.wait_for(
-        MissionSupervisor(
-            FailingManager(),
-            lifecycle_sink=lifecycle,
-        ).run(_runtime(), env, task),
-        timeout=0.5,
-    ))
-
-    assert result.outcome is MissionOutcome.MANAGER_FAILURE
-    assert result.manager_calls == 1
-    assert result.auditor_calls == 0
-    assert result.state is None
-    assert lifecycle.phases == ["MANAGER_STARTED", "MANAGER_RETURNED"]
-
-
-def _initial(contract):
-    return ManagerDecision(
-        ManagerAssessment.NOT_APPLICABLE,
-        ManagerRoute.EXECUTE_SUBTASK,
-        subtask=contract,
-    )
-
-
-def test_normal_episode_calls_initial_manager_and_one_combined_review_without_auditor() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract("Read answer", "Answer is visible", "Provides the requested answer")
-    manager = ManagerScript(
-        [
-            _initial(contract),
-            ManagerDecision(
-                ManagerAssessment.SATISFIED,
-                ManagerRoute.BLOCKED,
-                reason="Review completed; stop this synthetic witness.",
-            ),
-        ]
-    )
-
-    result = asyncio.run(MissionSupervisor(manager, None, max_rounds=1).run(_runtime(), env, task))
-
-    assert result.manager_calls == 2
-    assert result.auditor_calls == 0
-    assert [request.mode for request in manager.requests] == [
-        ManagerRequestMode.INITIAL_PLAN,
-        ManagerRequestMode.REVIEW_AND_ROUTE,
-    ]
-    review = manager.requests[1]
-    assert review.active_subtask == contract
-    assert review.review_world is not None
-    assert review.evidence_bundle.observation_id == review.review_world.observation_id
-
-
-def test_evidence_packet_yields_natural_language_proposal_without_required_pins() -> None:
-    _, env, task = _env_task()
-    proposal = "Result: facility name, region code, and measured distance are visible."
-    contract = SubtaskContract(
-        "Review one composite result",
-        "One composite business result is reviewable",
-        "Verifies the requested composite result",
-        "evidence_packet",
-        required_evidence=(
-            EvidenceRequirement(
-                "result_details",
-                "facility name, region code, and measured distance",
-            ),
+def _replayed_step(route: str, index: int, before_id: str, after_id: str):
+    local_results = {
+        "search_page_content": lambda: SearchPageContentResult(
+            "context:episode", route, {"query": "result"}, {"items": ({"text": "Requested result"},)}
         ),
-    )
-    manager = ManagerScript([
-        _initial(contract),
-        ManagerDecision(
-            ManagerAssessment.SATISFIED,
-            ManagerRoute.BLOCKED,
-            reason="Synthetic review completed.",
+        "read_region": lambda: ReadRegionResult(
+            "context:episode", route, {"region_ref": "R1"}, {"items": ({"text": "Requested result"},)}
         ),
-    ])
-
-    result = asyncio.run(
-        MissionSupervisor(manager, None, max_rounds=1).run(
-            _runtime(reason=proposal),
-            env,
-            task,
-        )
-    )
-
-    assert result.manager_calls == 2
-    review = manager.requests[1]
-    assert review.episode_working_facts == ()
-    assert review.recovery is not None
-    assert review.recovery.outcome_proposal == proposal
-    assert review.evidence_bundle.observation_id == review.review_world.observation_id
-    assert review.allowed_evidence_refs
-
-
-def test_supervisor_consumes_runtime_only_subtask_fields_before_action_policy() -> None:
-    class CapturedInitialization(RuntimeError):
-        pass
-
-    @dataclass
-    class CapturingRuntime:
-        kwargs: dict | None = None
-
-        async def initialize_from_world(self, task, world, goal_resolution, **kwargs):
-            del task, world, goal_resolution
-            self.kwargs = kwargs
-            raise CapturedInitialization
-
-    _, env, task = _env_task()
-    contract = SubtaskContract(
-        "Inspect one result",
-        "One result is visible",
-        "Provides the requested result",
-        constraints=("Use the current result",),
-        relevant_fact_keys=("selected_fact",),
-        episode_turn_budget=3,
-        related_audit_ids=("claim:strict",),
-    )
-    runtime = CapturingRuntime()
-
-    with pytest.raises(CapturedInitialization):
-        asyncio.run(
-            MissionSupervisor(ManagerScript([_initial(contract)]), None).run(
-                runtime,
-                env,
-                task,
-            )
-        )
-
-    assert runtime.kwargs is not None
-    assert runtime.kwargs["max_turns"] == 3
-    assert runtime.kwargs["working_facts"] == ()
-    projected = runtime.kwargs["active_subtask"]
-    assert projected.objective == contract.objective
-    assert projected.task_link == contract.task_link
-    assert projected.constraints == contract.constraints
-    assert not hasattr(projected, "relevant_fact_keys")
-    assert not hasattr(projected, "episode_turn_budget")
-    assert not hasattr(projected, "related_audit_ids")
-
-
-def test_stall_review_accepts_materially_changed_subtask() -> None:
-    _, env, task = _env_task()
-    first = SubtaskContract(
-        "Try route A", "Answer appears", "Provides the requested answer", episode_turn_budget=1
-    )
-    changed = SubtaskContract(
-        "Try route B", "Report table appears", "Provides the requested report", episode_turn_budget=1
-    )
-    manager = ManagerScript(
-        [
-            _initial(first),
-            ManagerDecision(
-                ManagerAssessment.UNSATISFIED,
-                ManagerRoute.EXECUTE_SUBTASK,
-                subtask=changed,
-            ),
-        ]
-    )
-
-    result = asyncio.run(
-        MissionSupervisor(manager, None, max_rounds=1).run(_runtime("stalled"), env, task)
-    )
-
-    assert result.outcome is MissionOutcome.ROUND_BUDGET_EXHAUSTED
-    assert result.manager_calls == 2
-
-
-def test_repeated_failed_strategy_returns_typed_strategy_not_changed_without_third_episode() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract(
-        "Try route A", "Answer appears", "Provides the requested answer", episode_turn_budget=1
-    )
-    manager = ManagerScript(
-        [
-            _initial(contract),
-            ManagerDecision(
-                ManagerAssessment.UNSATISFIED,
-                ManagerRoute.EXECUTE_SUBTASK,
-                subtask=contract,
-            ),
-        ]
-    )
-
-    result = asyncio.run(
-        MissionSupervisor(manager, None, max_rounds=3).run(_runtime("stalled"), env, task)
-    )
-
-    assert result.outcome is MissionOutcome.STRATEGY_NOT_CHANGED
-    assert result.manager_calls == 2
-    assert result.state.status is RunStatus.BLOCKED
-
-
-def test_needs_replan_allows_one_deliberate_manager_retry_and_zero_gui_dispatch() -> None:
-    fake, env, task = _env_task()
-    rejected = SubtaskContract(
-        "Collect an unnecessary intermediate",
-        "Intermediate data is visible",
-        "Indirectly relates to the requested answer",
-        episode_turn_budget=1,
-    )
-    changed = SubtaskContract(
-        "Read the requested answer directly",
-        "The requested answer is visible",
-        "Provides the unresolved requested answer",
-        episode_turn_budget=1,
-    )
-    manager = ManagerScript([
-        _initial(rejected),
-        ManagerDecision(
-            ManagerAssessment.UNSATISFIED,
-            ManagerRoute.EXECUTE_SUBTASK,
-            subtask=rejected,
-        ),
-        ManagerDecision(
-            ManagerAssessment.UNSATISFIED,
-            ManagerRoute.EXECUTE_SUBTASK,
-            subtask=changed,
-        ),
-    ])
-
-    result = asyncio.run(
-        MissionSupervisor(manager, None, max_rounds=1).run(
-            _runtime("needs_replan", "The advisory subtask does not plausibly advance TaskGoal."),
-            env,
-            task,
-        )
-    )
-
-    assert result.outcome is MissionOutcome.ROUND_BUDGET_EXHAUSTED
-    assert result.manager_calls == 3
-    assert result.auditor_calls == 0
-    assert fake.actions == []
-    assert result.mission_state.version == 0
-    deliberate = manager.requests[2]
-    assert deliberate.recovery is not None
-    assert deliberate.recovery.recovery_signal is not None
-    assert deliberate.recovery.recovery_signal.kind.value == "subtask_misaligned"
-    assert deliberate.recovery.recovery_signal.recovery_attempt == 2
-
-
-def test_needs_replan_blocks_after_two_materially_unchanged_manager_strategies() -> None:
-    fake, env, task = _env_task()
-    contract = SubtaskContract(
-        "Collect an unnecessary intermediate",
-        "Intermediate data is visible",
-        "Indirectly relates to the requested answer",
-        episode_turn_budget=1,
-    )
-    repeated = ManagerDecision(
-        ManagerAssessment.UNSATISFIED,
-        ManagerRoute.EXECUTE_SUBTASK,
-        subtask=contract,
-    )
-    manager = ManagerScript([_initial(contract), repeated, repeated])
-
-    result = asyncio.run(
-        MissionSupervisor(manager, None, max_rounds=2).run(
-            _runtime("needs_replan", "The advisory subtask does not plausibly advance TaskGoal."),
-            env,
-            task,
-        )
-    )
-
-    assert result.outcome is MissionOutcome.STRATEGY_NOT_CHANGED
-    assert result.manager_calls == 3
-    assert result.state.status is RunStatus.BLOCKED
-    assert result.auditor_calls == 0
-    assert result.mission_state.version == 0
-    assert fake.actions == []
-
-
-def test_recoverable_working_proposal_shape_feedback_reaches_next_manager_review() -> None:
-    _, env, task = _env_task()
-    first = SubtaskContract(
-        "Read one partial result",
-        "One partial result is visible",
-        "Provides one requested partial result",
-        episode_turn_budget=1,
-    )
-    second = SubtaskContract(
-        "Read the next partial result",
-        "The next partial result is visible",
-        "Provides the next unresolved requested result",
-        episode_turn_budget=1,
-    )
-
-    @dataclass
-    class RecoverableProposalManager:
-        requests: list = field(default_factory=list)
-
-        async def decide(self, request):
-            self.requests.append(request)
-            if request.mode is ManagerRequestMode.INITIAL_PLAN:
-                return ModelInvocationResult(output=_initial(first))
-            if len(self.requests) == 2:
-                evidence_ref = request.allowed_evidence_refs[0]
-                return ModelInvocationResult(output=ManagerDecision(
-                    ManagerAssessment.UNSATISFIED,
-                    ManagerRoute.EXECUTE_SUBTASK,
-                    evidence_refs=(evidence_ref,),
-                    working_outcomes=(WorkingOutcomeProposal(
-                        "outcome:partial",
-                        ManagerAssessment.SATISFIED,
-                        (evidence_ref,),
-                        "One partial result is supported.",
-                    ),),
-                    subtask=second,
-                ))
-            return ModelInvocationResult(output=ManagerDecision(
-                ManagerAssessment.UNSATISFIED,
-                ManagerRoute.BLOCKED,
-                reason="Synthetic review stops after receiving boundary feedback.",
-            ))
-
-    manager = RecoverableProposalManager()
-    result = asyncio.run(
-        MissionSupervisor(
-            manager,
-            None,
-            boundary=RecoverableShapeBoundary(),
-            max_rounds=2,
-        ).run(_runtime(), env, task)
-    )
-
-    assert result.outcome is MissionOutcome.BLOCKED
-    assert result.boundary_rejections == 1
-    assert result.mission_state == MissionState.empty()
-    assert manager.requests[2].recovery is not None
-    assert manager.requests[2].recovery.working_proposal_feedback == (
-        "working_proposal_rejected:working_state_noop"
-    )
-
-
-def test_manager_satisfied_assessment_never_becomes_native_task_success() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract("Read answer", "Answer is visible", "Provides the requested answer")
-    manager = ManagerScript(
-        [
-            _initial(contract),
-            ManagerDecision(ManagerAssessment.SATISFIED, ManagerRoute.BLOCKED),
-        ]
-    )
-
-    result = asyncio.run(MissionSupervisor(manager, None, max_rounds=1).run(_runtime(), env, task))
-
-    assert result.status is RunStatus.BLOCKED
-    assert result.outcome is not MissionOutcome.TASK_COMPLETE
-
-
-def test_manager_unoffered_bundle_citation_is_typed_boundary_rejection() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract("Read answer", "Answer is visible", "Provides the requested answer")
-
-    @dataclass
-    class UnofferedCitationManager:
-        async def decide(self, request):
-            if request.mode is ManagerRequestMode.INITIAL_PLAN:
-                return ModelInvocationResult(output=_initial(contract))
-            unoffered = next(
-                record.evidence_ref
-                for record in request.evidence_bundle.evidence_records
-                if record.evidence_ref not in request.allowed_evidence_refs
-            )
-            return ModelInvocationResult(output=ManagerDecision(
-                ManagerAssessment.UNKNOWN,
-                ManagerRoute.BLOCKED,
-                evidence_refs=(unoffered,),
-                reason="Synthetic unoffered citation.",
-            ))
-
-    result = asyncio.run(
-        MissionSupervisor(UnofferedCitationManager(), None, max_rounds=1).run(
-            _runtime(), env, task
-        )
-    )
-
-    assert result.outcome is MissionOutcome.BOUNDARY_REJECTED
-    assert result.boundary_rejections == 1
-
-
-def test_manager_nested_unoffered_fact_citation_cannot_bypass_public_refs() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract("Read answer", "Answer is visible", "Provides the requested answer")
-
-    @dataclass
-    class NestedCitationManager:
-        async def decide(self, request):
-            if request.mode is ManagerRequestMode.INITIAL_PLAN:
-                return ModelInvocationResult(output=_initial(contract))
-            unoffered = next(
-                record.evidence_ref
-                for record in request.evidence_bundle.evidence_records
-                if record.evidence_ref not in request.allowed_evidence_refs
-            )
-            return ModelInvocationResult(output=ManagerDecision(
-                ManagerAssessment.SATISFIED,
-                ManagerRoute.BLOCKED,
-                working_facts=(WorkingFactProposal(
-                    "hidden_value",
-                    unoffered,
-                    "must not bypass offered review refs",
-                ),),
-                reason="Synthetic nested citation bypass.",
-            ))
-
-    result = asyncio.run(
-        MissionSupervisor(NestedCitationManager(), None, max_rounds=1).run(
-            _runtime(), env, task
-        )
-    )
-
-    assert result.outcome is MissionOutcome.BOUNDARY_REJECTED
-    assert result.boundary_rejections == 1
-
-
-def test_predeclared_strict_subtask_without_claim_proposal_does_not_call_auditor() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract(
-        "Inspect irreversible result",
-        "The durable claim is visible",
-        "Verifies the requested durable result",
-        related_audit_ids=("claim:durable",),
-    )
-    manager = ManagerScript(
-        [
-            _initial(contract),
-            ManagerDecision(ManagerAssessment.SATISFIED, ManagerRoute.BLOCKED),
-        ]
-    )
-    auditor = AuditorScript(
-        AuditorDecision(ManagerAssessment.SATISFIED, reason="Strict claim is supported.")
-    )
-
-    result = asyncio.run(
-        MissionSupervisor(
-            manager,
-            auditor,
-            max_rounds=1,
-            strict_verification=True,
-        ).run(_runtime(), env, task)
-    )
-
-    assert result.auditor_calls == 0
-    assert auditor.requests == []
-
-
-def test_explicit_strict_outcome_claim_calls_citing_optional_auditor_once() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract(
-        "Inspect irreversible result",
-        "The durable claim is visible",
-        "Verifies the requested durable result",
-        related_audit_ids=("claim:durable",),
-    )
-    manager = StrictOutcomeManager(contract)
-    auditor = CitingAuditor()
-
-    result = asyncio.run(
-        MissionSupervisor(
-            manager,
-            auditor,
-            max_rounds=1,
-            strict_verification=True,
-        ).run(_runtime(), env, task)
-    )
-
-    assert result.auditor_calls == 1
-    assert len(auditor.requests) == 1
-    assert auditor.requests[0].related_audit_ids == contract.related_audit_ids
-    assert result.mission_state.version == 1
-
-
-def test_exact_fact_only_proposal_needs_no_independent_auditor() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract(
-        "Read exact value",
-        "One scalar evidence packet is visible",
-        "Provides the requested exact value",
-        related_audit_ids=("claim:durable",),
-    )
-
-    @dataclass
-    class FactManager:
-        def __post_init__(self):
-            self.requests = []
-
-        async def decide(self, request):
-            self.requests.append(request)
-            if request.mode is ManagerRequestMode.INITIAL_PLAN:
-                return ModelInvocationResult(output=_initial(contract))
-            evidence_ref = request.allowed_evidence_refs[0]
-            return ModelInvocationResult(output=ManagerDecision(
-                ManagerAssessment.SATISFIED,
-                ManagerRoute.BLOCKED,
-                evidence_refs=(evidence_ref,),
-                working_facts=(WorkingFactProposal(
-                    "exact_value",
-                    evidence_ref,
-                    "carry exact scalar evidence",
-                ),),
-                reason="Exact evidence retained.",
-            ))
-
-    manager = FactManager()
-    auditor = CitingAuditor()
-    result = asyncio.run(
-        MissionSupervisor(
-            manager,
-            auditor,
-            max_rounds=1,
-            strict_verification=True,
-        ).run(_runtime(), env, task)
-    )
-
-    assert result.auditor_calls == 0
-    assert auditor.requests == []
-    assert result.mission_state.version == 1
-    assert result.mission_state.accepted_facts[0].key == "exact_value"
-
-
-def test_strict_verification_is_latched_to_at_most_one_auditor_call() -> None:
-    _, env, task = _env_task()
-    contract = SubtaskContract(
-        "Inspect durable result",
-        "One durable evidence packet is visible",
-        "Verifies the requested durable result",
-        related_audit_ids=("claim:durable",),
-    )
-
-    @dataclass
-    class TwoClaimManager:
-        reviews: int = 0
-
-        async def decide(self, request):
-            if request.mode is ManagerRequestMode.INITIAL_PLAN:
-                return ModelInvocationResult(output=_initial(contract))
-            self.reviews += 1
-            evidence_ref = request.allowed_evidence_refs[0]
-            proposal = WorkingOutcomeProposal(
-                f"outcome:durable_{self.reviews}",
-                ManagerAssessment.SATISFIED,
-                (evidence_ref,),
-                "One predeclared strict claim.",
-            )
-            return ModelInvocationResult(output=ManagerDecision(
-                ManagerAssessment.SATISFIED,
-                (
-                    ManagerRoute.EXECUTE_SUBTASK
-                    if self.reviews == 1
-                    else ManagerRoute.BLOCKED
+        "pin_fact": lambda: PinFactResult(
+            "context:episode",
+            route,
+            {"key": "route_result", "evidence_ref": "F1"},
+            {"key": "route_result", "value": "Requested result"},
+            working_fact=WorkingFact(
+                "route_result",
+                EvidenceRecord(
+                    "fact:route-result",
+                    after_id,
+                    "fact",
+                    "provider-free",
+                    source_observation_id=after_id,
+                    source_modality="structural",
+                    source_assurance="structural",
+                    value="Requested result",
                 ),
-                evidence_refs=(evidence_ref,),
-                working_outcomes=(proposal,),
-                subtask=contract if self.reviews == 1 else None,
-                reason="Bounded strict verification witness.",
-            ))
-
-    manager = TwoClaimManager()
-    auditor = CitingAuditor()
-    result = asyncio.run(
-        MissionSupervisor(
-            manager,
-            auditor,
-            max_rounds=2,
-            strict_verification=True,
-        ).run(_runtime(), env, task)
+                index,
+                "retain the exact route result",
+            ),
+        ),
+    }
+    if route in local_results:
+        return local_results[route](), None
+    semantic_action = route
+    assert INTERACTION_CAPABILITY_REGISTRY.resolve(semantic_action) is not None
+    schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(semantic_action)
+    parameters = {
+        "type_text": {"text": "provider-free replay"},
+        "select_option": {"value": "provider-free replay"},
+        "press_key": {"key": "Enter"},
+    }.get(semantic_action, {})
+    effects = ("external_ui_interaction",)
+    binding = ActionBinding(
+        f"binding:replay:{index}",
+        before_id,
+        before_id,
+        f"revision:replay:{index}",
+        f"fingerprint:replay:{index}",
+        f"target:replay:{index}",
+        f"target:replay:{index}",
+        "provider-free-replay",
+        "provider-free-replay",
+        semantic_action,
+        semantic_action,
+        "local_reversible",
+        effects,
+        schema,
+        {"route": route},
+    )
+    selection = AdmittedActionSelection(
+        f"action:{index}",
+        before_id,
+        semantic_action,
+        binding.target_id,
+        binding.effect_category,
+        effects,
+        schema_digest(schema),
+        (binding.binding_id,),
+        ActionRisk.LOW,
+        True,
+        parameters,
+        verification_contract_digest=binding.verification_contract_digest,
+        verification_family=binding.verification_family,
+    )
+    request = BoundActionRequest(
+        f"request:replay:{index}",
+        "context:episode",
+        before_id,
+        ActionIntent(semantic_action, binding.target_id, parameters),
+        selection,
+        binding,
+    )
+    result = ActionResult(request.request_id, DispatchStatus.SENT, "provider-free-replay", True)
+    receipt = ExecutionReceipt(request, result, before_id, after_id)
+    return (
+        SelectAction("context:episode", selection.action_id, parameters),
+        ExecutionReceiptBatch((receipt,), ExecutionCompletion.COMPLETE),
     )
 
-    assert result.outcome is MissionOutcome.AUDITOR_FAILURE
-    assert result.auditor_calls == 1
-    assert len(auditor.requests) == 1
+
+def _roadmap(outcome: str) -> MilestoneRoadmap:
+    return MilestoneRoadmap(1, (Milestone("result", outcome, "The fresh result is observable"),))
+
+
+def test_replan_cannot_reuse_an_accepted_id_for_different_semantics() -> None:
+    before = MilestoneRoadmap(1, (Milestone("m1", "Old outcome", "Old state visible"),))
+    mission = MissionState(
+        1,
+        (AcceptedWorkingOutcome("m1", EvidenceAssessment.SATISFIED, ("fact:proof",), "accepted"),),
+    )
+    changed = MilestoneRoadmap(
+        2,
+        (
+            Milestone("m1", "New outcome", "New state visible"),
+            Milestone("final", "Finish", "Finished", depends_on=("m1",), final=True),
+        ),
+    )
+    assert not _roadmap_revision_preserves_accepted_semantics(before, changed, mission)
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        ("activate", "select_option", "type_text", "type_text", "activate", "search_page_content", "read_region"),
+        ("type_text", "type_text", "activate", "search_page_content", "read_region", "pin_fact"),
+    ],
+)
+def test_coherent_gui_route_stays_in_one_milestone_and_intermediate_changes_do_not_call_planner(route) -> None:
+    planner = Planner((PlannerDecision(PlannerRoute.ROADMAP, _roadmap("Requested result is available")),))
+    runtime = Runtime(route)
+    runtime.planner_call_probe = lambda: len(planner.requests)
+    environment = ScriptedEnvironment(initial_observation=fused_world("episode-before"))
+    auditor = Auditor()
+    result = asyncio.run(MissionSupervisor(planner, auditor).run(runtime, environment, TaskGoal("task:route", "Get result")))
     assert result.mission_state.version == 1
+    assert result.planner_calls == 1
+    assert runtime.continue_calls == 1
+    assert runtime.initializations[0][0] == 15
+    assert runtime.initializations[0][2] == route
+    assert runtime.applied_routes == list(route)
+    assert runtime.planner_calls_during_routes == [1] * len(route)
+    assert result.step_count == len(route) + 1
+    assert result.execution_count == sum(INTERACTION_CAPABILITY_REGISTRY.resolve(item) is not None for item in route)
+    assert len(auditor.requests) == 1
+    assert planner.requests[0].mode is PlannerRequestMode.START
+
+
+def test_typed_needs_replan_invokes_planner_once_without_replaying_gui_episode() -> None:
+    planner = Planner(
+        (
+            PlannerDecision(PlannerRoute.ROADMAP, _roadmap("Requested result is available")),
+            PlannerDecision(PlannerRoute.BLOCKED, reason="supported route unavailable"),
+        )
+    )
+    runtime = Runtime(("activate",), replan=True)
+    environment = ScriptedEnvironment(initial_observation=fused_world("replan-before"))
+    result = asyncio.run(MissionSupervisor(planner).run(runtime, environment, TaskGoal("task:replan", "Get result")))
+    assert result.outcome is MissionOutcome.BLOCKED
+    assert result.planner_calls == 2
+    assert runtime.continue_calls == 1
+    assert planner.requests[-1].mode is PlannerRequestMode.NEEDS_REPLAN
+
+
+@pytest.mark.parametrize(
+    ("trace_path", "expected_route"),
+    [
+        (
+            "evidence/live/w1b-one-task-0-deepseek-v4-flash-provider-retry-run5/"
+            "traces/webarena-verified-w1b-task-0/trace.jsonl",
+            ("activate", "activate", "read_region", "select_option", "read_region", "type_text", "type_text", "activate"),
+        ),
+        (
+            "evidence/live/w1b-task-7-deepseek-v4-flash-run10/"
+            "traces/webarena-verified-w1b-task-7/trace.jsonl",
+            ("type_text", "press_key"),
+        ),
+    ],
+)
+def test_archived_public_step_sequence_replays_inside_one_fifteen_turn_milestone(
+    trace_path: str,
+    expected_route: tuple[str, ...],
+) -> None:
+    path = Path(__file__).resolve().parents[3] / trace_path
+    route = []
+    for line in path.read_text().splitlines():
+        event = json.loads(line)
+        if event.get("event") != "step_completed":
+            continue
+        result_payload = event.get("result", {})
+        execution = result_payload.get("execution") or {}
+        semantic_action = (execution.get("request") or {}).get("intent", {}).get("semantic_action")
+        if semantic_action:
+            route.append(semantic_action)
+            continue
+        tool_name = (result_payload.get("decision") or {}).get("tool_name")
+        if tool_name in {"read_region", "search_page_content", "pin_fact"}:
+            route.append(tool_name)
+    assert tuple(route) == expected_route
+    assert len(route) <= 15
+
+    planner = Planner((PlannerDecision(PlannerRoute.ROADMAP, _roadmap("Requested result is available")),))
+    runtime = Runtime(tuple(route))
+    runtime.planner_call_probe = lambda: len(planner.requests)
+    environment = ScriptedEnvironment(initial_observation=fused_world("archived-replay-before"))
+    auditor = Auditor()
+    result = asyncio.run(
+        MissionSupervisor(planner, auditor).run(runtime, environment, TaskGoal("task:archived-replay", "Get result"))
+    )
+
+    assert result.planner_calls == 1
+    assert runtime.continue_calls == 1
+    assert runtime.initializations == [(15, runtime.initializations[0][1], tuple(route))]
+    assert runtime.applied_routes == route
+    assert runtime.planner_calls_during_routes == [1] * len(route)
+    assert result.step_count == len(route) + 1
+    assert result.execution_count == sum(INTERACTION_CAPABILITY_REGISTRY.resolve(item) is not None for item in route)
+    assert len(auditor.requests) == 1

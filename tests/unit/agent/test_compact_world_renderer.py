@@ -27,9 +27,7 @@ from tests.support.world import fused_world
 
 
 def test_compact_world_conserves_complete_groups_states_and_inline_verbs() -> None:
-    roots = tuple(_post(index) for index in range(1, 8)) + (
-        ActorWorldNodeView("E22", "button", "Submit"),
-    )
+    roots = tuple(_post(index) for index in range(1, 8)) + (ActorWorldNodeView("E22", "button", "Submit"),)
     snapshot = _snapshot(roots)
     grounding = _grounding()
 
@@ -86,10 +84,12 @@ def test_compact_world_discloses_partial_node_state() -> None:
 
 
 def test_executable_and_readonly_refs_render_with_separate_contracts() -> None:
-    snapshot = _snapshot((
-        ActorWorldNodeView("N1", "link", "Bestsellers"),
-        ActorWorldNodeView("E1", "tab", "Bestsellers"),
-    ))
+    snapshot = _snapshot(
+        (
+            ActorWorldNodeView("N1", "link", "Bestsellers"),
+            ActorWorldNodeView("E1", "tab", "Bestsellers"),
+        )
+    )
     grounding = AgentGroundingIndexView(
         (
             AgentGroundingEntityView("N1", "link", "Bestsellers"),
@@ -124,10 +124,10 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
 
     assert "projection=page_map" in rendered
     assert "public_content=folded" in rendered
-    assert "recovery=open_region/find_content/find_actions" in rendered
+    assert "recovery=read_region/search_page_content/find_controls" in rendered
     assert "PageMap regions=15" in rendered
     assert "R1" in rendered.manifest.region_refs
-    assert 'Post 1' in rendered
+    assert "Post 1" in rendered
     assert "R15" in rendered.manifest.region_refs
 
 
@@ -142,7 +142,7 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
         grounding,
         region_index=region_index,
         observation=observation,
-        action="open_region",
+        action="read_region",
         region_ref="R5",
     )
     found = inspect_actor_world(
@@ -176,11 +176,13 @@ def _observation(post_count: int):
     targets = []
     for index in range(1, post_count + 1):
         base = (index - 1) * 3 + 1
-        targets.extend((
-            SemanticTarget(f"entity:{base}", "generic", "media"),
-            SemanticTarget(f"entity:{base + 1}", "StaticText", f"Post {index}"),
-            SemanticTarget(f"entity:{base + 2}", "clickable", "like", {"active": False}),
-        ))
+        targets.extend(
+            (
+                SemanticTarget(f"entity:{base}", "generic", "media"),
+                SemanticTarget(f"entity:{base + 1}", "StaticText", f"Post {index}"),
+                SemanticTarget(f"entity:{base + 2}", "clickable", "like", {"active": False}),
+            )
+        )
     return fused_world("S1", tuple(targets), surface="dom")
 
 

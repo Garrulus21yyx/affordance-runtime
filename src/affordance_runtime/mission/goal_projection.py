@@ -1,19 +1,19 @@
-"""Deterministic subtask projection into the existing GoalPlan view."""
+"""Deterministic milestone projection into the existing GoalPlan view."""
 
 from __future__ import annotations
 
 from affordance_runtime.goals.plan import GoalPlan, GoalPlanItem, Ready
-from affordance_runtime.mission.contracts import SubtaskContract
+from affordance_runtime.mission.contracts import Milestone
 from affordance_runtime.task.contracts import TaskGoal
 
 
-def subtask_goal_resolution(
+def milestone_goal_resolution(
     task: TaskGoal,
-    contract: SubtaskContract,
+    contract: Milestone,
     *,
     plan_version: int = 1,
 ) -> Ready:
-    """Project one bounded subtask into one non-authoritative GoalPlan item."""
+    """Project one bounded milestone into one non-authoritative GoalPlan item."""
 
     return Ready(
         task.revision,
@@ -22,11 +22,11 @@ def subtask_goal_resolution(
             plan_version,
             (
                 GoalPlanItem(
-                    "active_subtask",
-                    contract.objective,
+                    contract.id,
+                    contract.outcome,
                     contract.done_when,
                     (),
-                    False,
+                    contract.final,
                 ),
             ),
         ),

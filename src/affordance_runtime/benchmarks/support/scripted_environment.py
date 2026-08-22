@@ -103,21 +103,10 @@ class ScriptedSurfaceAdapter:
                         if previous is not value_type:
                             raise ValueError(f"scripted goal predicate type conflict: {name}")
         return GoalSemanticContract(
-            entity_kinds=frozenset(
-                target.role for world in worlds for target in world.targets
-            ),
+            entity_kinds=frozenset(target.role for world in worlds for target in world.targets),
             predicates=predicates,
-            relations=frozenset(
-                edge
-                for world in worlds
-                for target in world.targets
-                for edge in target.relations
-            ),
-            finalizer_capabilities=frozenset(
-                binding.semantic_action
-                for world in worlds
-                for binding in world.bindings
-            ),
+            relations=frozenset(edge for world in worlds for target in world.targets for edge in target.relations),
+            finalizer_capabilities=frozenset(binding.semantic_action for world in worlds for binding in world.bindings),
         )
 
     @property
@@ -322,6 +311,13 @@ class ScriptedEnvironment:
     async def execute(self, request):
         self.execute_calls += 1
         outcome = await self.world.execute(request)
+        self.executed_requests[:] = self.adapter.executed_requests
+        self.dispatched_requests[:] = self.adapter.dispatched_requests
+        return outcome
+
+    async def execute_form_fields(self, command):
+        self.execute_calls += 1
+        outcome = await self.world.execute_form_fields(command)
         self.executed_requests[:] = self.adapter.executed_requests
         self.dispatched_requests[:] = self.adapter.dispatched_requests
         return outcome

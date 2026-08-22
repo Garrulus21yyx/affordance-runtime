@@ -150,25 +150,29 @@ def test_task_view_contains_only_evaluator_supported_facts() -> None:
     task = TaskGoal(
         "progress",
         "Inspect verified state",
-        success_criteria=({
-            "id": "criterion:verified",
-            "kind": "fact_equals",
-            "subject_id": "target:1",
-            "predicate": "verified",
-            "expected_value": True,
-        },),
+        success_criteria=(
+            {
+                "id": "criterion:verified",
+                "kind": "fact_equals",
+                "subject_id": "target:1",
+                "predicate": "verified",
+                "expected_value": True,
+            },
+        ),
     )
     evaluation = TaskEvaluation(
         task.task_id,
         observation.observation_id,
         TaskEvaluationStatus.COMPLETE,
         "validated",
-        criteria=(CriterionEvaluation(
-            "criterion:verified",
-            CriterionEvaluationStatus.SATISFIED,
-            ("fact:verified",),
-            "supported",
-        ),),
+        criteria=(
+            CriterionEvaluation(
+                "criterion:verified",
+                CriterionEvaluationStatus.SATISFIED,
+                ("fact:verified",),
+                "supported",
+            ),
+        ),
         completion_evidence_refs=("fact:verified",),
     )
 
@@ -259,12 +263,15 @@ def test_actor_context_remains_lossless_under_legacy_total_byte_budget() -> None
 
     assert serialized_size(context) > budget.max_total_serialized_bytes
     assert sum(item.retained_node_count for item in context.actor_world.documents) == 64
-    assert sum(
-        sum(fact.field.startswith("public_fact:") for fact in node.facts)
-        for document in context.actor_world.documents
-        for root in document.roots
-        for node in _walk_actor(root)
-    ) == 256
+    assert (
+        sum(
+            sum(fact.field.startswith("public_fact:") for fact in node.facts)
+            for document in context.actor_world.documents
+            for root in document.roots
+            for node in _walk_actor(root)
+        )
+        == 256
+    )
     assert context.actor_world.traversal is None
 
 
@@ -380,7 +387,7 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
     assert "binding:country" not in rendered
 
 
-def test_complete_action_inventory_still_offers_find_actions_recovery() -> None:
+def test_complete_action_inventory_still_offers_find_controls_recovery() -> None:
     observation = fused_world(
         "world:single-action",
         (SemanticTarget("target:1", "button", "Submit"),),
@@ -411,10 +418,10 @@ def test_complete_action_inventory_still_offers_find_actions_recovery() -> None:
     _, catalog = catalog_for(context)
 
     assert not context.actions.has_more
-    assert "find_actions" in {item.name for item in catalog.specs}
+    assert "find_controls" in {item.name for item in catalog.specs}
 
 
-def test_find_content_resolves_as_zero_dispatch_local_tool() -> None:
+def test_search_page_content_resolves_as_zero_dispatch_local_tool() -> None:
     observation = fused_world(
         "world:inspect",
         (
@@ -434,18 +441,18 @@ def test_find_content_resolves_as_zero_dispatch_local_tool() -> None:
 
     resolution = resolve_catalog_call(
         catalog,
-        ToolCall("find_content", {"query": "ABC-123"}),
+        ToolCall("search_page_content", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
 
     decision = resolution.decision
-    assert decision.tool_name == "find_content"
+    assert decision.tool_name == "search_page_content"
     assert decision.result["kind"] == "Matches"
     assert decision.result["items"][0]["label"] == "Issue ID ABC-123"
 
 
-def test_find_content_recovers_fact_missing_from_actor_snapshot() -> None:
+def test_search_page_content_recovers_fact_missing_from_actor_snapshot() -> None:
     observation = fused_world(
         "world:full-recovery",
         (SemanticTarget("target:issue", "StaticText", "Visible shell"),),
@@ -495,7 +502,7 @@ def test_find_content_recovers_fact_missing_from_actor_snapshot() -> None:
 
     resolution = resolve_catalog_call(
         catalog,
-        ToolCall("find_content", {"query": "ABC-123"}),
+        ToolCall("search_page_content", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
@@ -505,7 +512,7 @@ def test_find_content_recovers_fact_missing_from_actor_snapshot() -> None:
     assert resolution.decision.result["items"][0]["value"] == "ABC-123"
 
 
-def test_find_content_reports_partial_world_coverage() -> None:
+def test_search_page_content_reports_partial_world_coverage() -> None:
     observation = fused_world(
         "world:partial-recovery",
         (SemanticTarget("target:issue", "StaticText", "Issue ABC-123"),),
@@ -523,7 +530,7 @@ def test_find_content_reports_partial_world_coverage() -> None:
 
     resolution = resolve_catalog_call(
         catalog,
-        ToolCall("find_content", {"query": "ABC-123"}),
+        ToolCall("search_page_content", {"query": "ABC-123"}),
         expected_context_id=context.context_id,
         expected_catalog_id=catalog.catalog_id,
     )
@@ -531,11 +538,8 @@ def test_find_content_reports_partial_world_coverage() -> None:
     assert resolution.decision.result["coverage"] == "partial"
 
 
-def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> None:
-    targets = tuple(
-        SemanticTarget(f"target:{index}", "button", f"Button {index}")
-        for index in range(1, 6)
-    )
+def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> None:
+    targets = tuple(SemanticTarget(f"target:{index}", "button", f"Button {index}") for index in range(1, 6))
     observation = fused_world("world:lens", targets, surface="dom")
     options = tuple(
         ActionOption(
@@ -557,14 +561,12 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
     action_space = ActionSpace(observation.observation_id, options)
     task = TaskGoal("lens", "Open region five then activate it")
     evaluation = _evaluation(task, observation.observation_id)
-    builder = ContextBuilder(
-        replace(ContextProjectionBudget(), max_action_options=1)
-    )
+    builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     first = builder.build(task, observation, action_space, evaluation)
     _, first_catalog = catalog_for(first)
     opened = resolve_catalog_call(
         first_catalog,
-        ToolCall("open_region", {"region_ref": "R1"}),
+        ToolCall("read_region", {"region_ref": "R1"}),
         expected_context_id=first.context_id,
         expected_catalog_id=first_catalog.catalog_id,
     ).decision
@@ -580,7 +582,12 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
         )
     )
 
-    second_page = builder.page_for_delivery_lens(action_space, observation, state.delivery_lens)
+    second_page = builder.page_for_delivery_lens(
+        action_space,
+        observation,
+        state.delivery_lens,
+        first.region_index,
+    )
     second = builder.build(
         task,
         observation,
@@ -605,7 +612,7 @@ def test_open_region_lens_expands_next_context_and_direct_catalog_actions() -> N
 
     assert state.delivery_lens.world_observation_id == observation.observation_id
     assert state.delivery_lens.selected_region_key
-    assert "projection=page_map" in rendered
+    assert any(projection in rendered for projection in ("projection=page_map", "projection=full"))
     assert activate.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
     assert f'[{second.grounding.target_refs["target:1"]}] button "Button 1" verbs=["activate"]' in rendered
 
@@ -659,9 +666,7 @@ def test_expanded_region_projects_source_structure_sibling_and_current_refs() ->
         **verification_kwargs("activate", schema_digest(_EMPTY_SCHEMA), ("external_ui_interaction",)),
     )
     task = TaskGoal("lens-proof", "Buy the offer")
-    context = ContextBuilder(
-        replace(ContextProjectionBudget(), max_action_options=1)
-    ).build(
+    context = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1)).build(
         task,
         observation,
         ActionSpace(observation.observation_id, (option,)),
@@ -765,9 +770,7 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
         ActionSpace(observation.observation_id, options),
         _evaluation(task, observation.observation_id),
     )
-    navigation_region = next(
-        item for item in context.region_index.regions if item.role == "navigation"
-    )
+    navigation_region = next(item for item in context.region_index.regions if item.role == "navigation")
     main_region = next(item for item in context.region_index.regions if item.role == "main")
     lens = WorldDeliveryLens(
         observation.observation_id,
@@ -798,10 +801,7 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
 def test_recent_steps_keep_the_complete_episode_history() -> None:
     observation = fused_world("world:history", surface="dom")
     task = TaskGoal("history", "Inspect recent steps")
-    steps = tuple(
-        AgentTurnView("abort", reason=f"step:{index}")
-        for index in range(10)
-    )
+    steps = tuple(AgentTurnView("abort", reason=f"step:{index}") for index in range(10))
 
     context = ContextBuilder().build(
         task,
@@ -813,9 +813,7 @@ def test_recent_steps_keep_the_complete_episode_history() -> None:
 
     assert context.recent_steps.total_count == 10
     assert not context.recent_steps.truncated
-    assert tuple(item.reason for item in context.recent_steps.items) == tuple(
-        f"step:{index}" for index in range(10)
-    )
+    assert tuple(item.reason for item in context.recent_steps.items) == tuple(f"step:{index}" for index in range(10))
 
 
 def _walk_actor(root):

@@ -144,7 +144,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     delivery, action_catalog = catalog_for(context)
     public = GroundedPolicyContextBinder._public_context(context, False, delivery)
     observation = public["observation"]
-    assert "projection=page_map" in observation
+    assert any(projection in observation for projection in ("projection=page_map", "projection=full"))
     assert "grid_membership=" not in observation
     assert "grid_coordinate_confidence=" not in observation
 

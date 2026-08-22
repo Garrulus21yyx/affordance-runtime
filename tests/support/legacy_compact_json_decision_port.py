@@ -1,4 +1,4 @@
-"""Bounded compact-JSON adapter for models without native tool calls."""
+"""Frozen test-only fixture for the deleted compact-JSON product adapter."""
 
 from __future__ import annotations
 

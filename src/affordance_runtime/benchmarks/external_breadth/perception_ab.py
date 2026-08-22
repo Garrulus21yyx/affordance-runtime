@@ -36,7 +36,6 @@ from affordance_runtime.benchmarks.target_loop.case_projection import public_cas
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 
 SCHEMA_VERSION = "miniwob-perception-ab.v2"
@@ -421,11 +420,9 @@ def _adapter(
 ) -> object:
     adapter = policy.port
     if require_frozen_mistral:
-        if not isinstance(adapter, CompactJsonDecisionPort):
-            raise TypeError("frozen perception A/B requires the compact decision adapter")
         if (
-            getattr(adapter.port, "provider", "") != "mistral"
-            or getattr(adapter.port, "model", "") != "mistral-medium-3-5"
+            getattr(adapter, "provider_id", "") != "mistral"
+            or getattr(adapter, "model_id", "") != "mistral-medium-3-5"
         ):
             raise ValueError("perception A/B requires the frozen Mistral model identity")
     elif not all(hasattr(adapter, name) for name in ("perception_profile", "last_catalog_count")):

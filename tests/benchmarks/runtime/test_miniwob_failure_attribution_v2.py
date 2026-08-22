@@ -32,7 +32,7 @@ def test_policy_abort_provider_and_no_action_are_typed() -> None:
     abort_facts = FailureFacts(runtime_reason_code="abort_policy")
     aborted = _result(
         status="failed",
-        last_decision_type="Abort",
+        last_decision_kind="abort",
         case_failure_code="abort_policy",
         runtime_reason_code="abort_policy",
         failure_facts=abort_facts,

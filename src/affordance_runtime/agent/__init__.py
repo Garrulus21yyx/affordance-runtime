@@ -1,5 +1,6 @@
 """Public contracts for the single thin GUI-agent Runtime."""
 
+from affordance_runtime.agent.budgets import EpisodeBudget, StandaloneRunBudget
 from affordance_runtime.agent.core_loop import CoreAgentLoop, CoreLoopStartError
 from affordance_runtime.agent.decision_capability import (
     ALL_DECISION_CAPABILITIES,
@@ -12,16 +13,23 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
+    DecisionKind,
     FinalResponse,
     LocalToolResult,
+    PinFactResult,
     ProtocolFeedback,
     ProtocolFeedbackKind,
+    ReadRegionResult,
+    ReplanReasonCode,
     RequestActionPage,
     RequestObservation,
+    SearchPageContentResult,
     SelectAction,
+    SetFormFields,
+    ToolRejectedResult,
     Wait,
-    YieldSubtask,
-    YieldSubtaskKind,
+    YieldMilestone,
+    YieldMilestoneKind,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus, StepResult
@@ -34,11 +42,14 @@ __all__ = [
     "AgentFailureCode",
     "AskUser",
     "LocalToolResult",
+    "PinFactResult",
     "ProtocolFeedback",
     "ProtocolFeedbackKind",
     "CoreAgentLoop",
     "CoreLoopStartError",
     "DecisionCapability",
+    "DecisionKind",
+    "EpisodeBudget",
     "EpisodeYieldReason",
     "FailureKind",
     "FailureStage",
@@ -46,16 +57,22 @@ __all__ = [
     "GROUNDED_ACTION_DECISION_CAPABILITIES",
     "RequestActionPage",
     "RequestObservation",
+    "ReadRegionResult",
+    "ReplanReasonCode",
     "RunState",
     "RunStatus",
     "RuntimeFailure",
     "SelectAction",
+    "SetFormFields",
+    "SearchPageContentResult",
     "StepResult",
+    "StandaloneRunBudget",
+    "ToolRejectedResult",
     "TOOL_ACTION_DECISION_CAPABILITIES",
     "UnsupportedComposition",
     "UnsupportedCompositionError",
     "Wait",
     "WorkingFact",
-    "YieldSubtask",
-    "YieldSubtaskKind",
+    "YieldMilestone",
+    "YieldMilestoneKind",
 ]

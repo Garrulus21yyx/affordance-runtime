@@ -7,7 +7,11 @@ from dataclasses import dataclass, replace
 
 from affordance_runtime.actions.route_selector import RouteSelectionCode, RouteSelector
 from affordance_runtime.actions.space_contracts import AdmittedActionSelection
-from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
+from affordance_runtime.execution.contracts import (
+    ActionIntent,
+    BoundActionRequest,
+    BoundFormFieldsRequest,
+)
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import (
     ActionBinding,
@@ -95,3 +99,22 @@ class ActionBinder:
             derive_action_verification_obligations(request),
         )
         return replace(request, verification_needs=needs)
+
+    def seal_form_fields(
+        self,
+        form_key: str,
+        requests: tuple[BoundActionRequest, ...],
+        *,
+        tool_call_id: str = "",
+    ) -> BoundFormFieldsRequest:
+        """Seal already admitted and bound members into one immutable command."""
+
+        try:
+            return BoundFormFieldsRequest(
+                f"form-command:{uuid.uuid4().hex}",
+                form_key,
+                tuple(requests),
+                tool_call_id,
+            )
+        except (TypeError, ValueError) as exc:
+            raise BindingError("form field command cannot be sealed") from exc

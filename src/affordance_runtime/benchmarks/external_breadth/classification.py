@@ -30,9 +30,7 @@ class ClassifiedOutcome:
 def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
     facts = result.failure_facts
     if facts.harness_integrity_code or result.harness_integrity_failures:
-        return ClassifiedOutcome(
-            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "harness_integrity"
-        )
+        return ClassifiedOutcome(MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "harness_integrity")
     if facts.watchdog_code:
         return ClassifiedOutcome(MiniWobTaskOutcome.CASE_TIMEOUT, "typed_case_code")
     if _metric(result, "sent_unknown_count"):
@@ -43,10 +41,7 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
                 MiniWobTaskOutcome.NO_PROGRESS_CONTROL_REPETITION,
                 "canonical_runtime_failure",
             )
-        if (
-            facts.runtime_failure.stage is FailureStage.POLICY
-            and facts.policy_failure_code
-        ):
+        if facts.runtime_failure.stage is FailureStage.POLICY and facts.policy_failure_code:
             return ClassifiedOutcome(
                 _POLICY_OUTCOMES[ModelFailureKind(facts.policy_failure_code)],
                 "canonical_runtime_failure",
@@ -56,14 +51,10 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
                 _AGENT_FAILURE_OUTCOMES[AgentFailureCode(facts.agent_failure_code)],
                 "canonical_runtime_failure",
             )
-        if (
-            facts.runtime_failure.stage is FailureStage.EVALUATION
-            and facts.component_origin
-            in {
-                CaseFailureOrigin.ACTION_EVALUATION,
-                CaseFailureOrigin.TASK_EVALUATION,
-            }
-        ):
+        if facts.runtime_failure.stage is FailureStage.EVALUATION and facts.component_origin in {
+            CaseFailureOrigin.ACTION_EVALUATION,
+            CaseFailureOrigin.TASK_EVALUATION,
+        }:
             return ClassifiedOutcome(
                 _ORIGIN_OUTCOMES[facts.component_origin],
                 "canonical_runtime_failure",
@@ -79,12 +70,10 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
             return ClassifiedOutcome(MiniWobTaskOutcome.SUCCESS, "canonical_task_outcome")
         if task_outcome is TaskOutcomeKind.TERMINAL_FAILURE:
             return ClassifiedOutcome(MiniWobTaskOutcome.TASK_FAILED, "canonical_task_outcome")
-        if (
-            task_outcome is TaskOutcomeKind.VERIFIER_UNAVAILABLE
-            and result.status == "waiting_user"
-        ):
+        if task_outcome is TaskOutcomeKind.VERIFIER_UNAVAILABLE and result.status == "waiting_user":
             return ClassifiedOutcome(
-                MiniWobTaskOutcome.VERIFIER_UNKNOWN, "canonical_task_outcome",
+                MiniWobTaskOutcome.VERIFIER_UNKNOWN,
+                "canonical_task_outcome",
             )
     if facts.runtime_reason_code == "turn_budget_exhausted":
         return ClassifiedOutcome(MiniWobTaskOutcome.TURN_BUDGET_EXHAUSTED, "typed_case_code")
@@ -108,21 +97,19 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.WRONG_DESTINATION, "typed_runtime_reason")
     if reason is TerminalReasonCode.OBSERVATION_CAPABILITY_NOT_OFFERED:
         return ClassifiedOutcome(MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE, "typed_runtime_reason")
-    if (
-        reason is TerminalReasonCode.ACTION_OUTSIDE_ACTION_SPACE
-        and result.last_action_space_option_count == 0
-    ):
+    if reason is TerminalReasonCode.ACTION_OUTSIDE_ACTION_SPACE and result.last_action_space_option_count == 0:
         return ClassifiedOutcome(MiniWobTaskOutcome.NO_ACTION_OFFERED, "typed_runtime_reason")
     if reason is not None:
         return ClassifiedOutcome(MiniWobTaskOutcome.RUNTIME_REJECTED, "typed_runtime_reason")
     if facts.runtime_reason_code in {f"abort_{item.value}" for item in AbortCategory}:
         return ClassifiedOutcome(MiniWobTaskOutcome.POLICY_ABORTED, "typed_last_decision")
     if result.status == "waiting_user":
-        if result.last_decision_type == "AskUser" or result.pending_kind == "user_question":
+        if result.last_decision_kind == "ask_user" or result.pending_kind == "user_question":
             return ClassifiedOutcome(MiniWobTaskOutcome.ASK_USER_UNRESOLVED, "typed_pending_kind")
         if result.pending_kind == "unknown_effect":
             return ClassifiedOutcome(
-                MiniWobTaskOutcome.WAITING_USER_EFFECT_UNKNOWN, "typed_pending_kind",
+                MiniWobTaskOutcome.WAITING_USER_EFFECT_UNKNOWN,
+                "typed_pending_kind",
             )
     origin = _ORIGIN_OUTCOMES.get(facts.component_origin)
     if origin is not None:
@@ -133,7 +120,8 @@ def classify_case(result: BenchmarkCaseResult) -> ClassifiedOutcome:
         return ClassifiedOutcome(MiniWobTaskOutcome.CLEANUP_FAILURE, "typed_metric")
     if result.failure_reason or result.failure_code or result.exception_class:
         return ClassifiedOutcome(
-            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "bounded_unclassified_failure",
+            MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE,
+            "bounded_unclassified_failure",
         )
     return ClassifiedOutcome(MiniWobTaskOutcome.UNCLASSIFIED_TYPED_FAILURE, "bounded_fallback")
 
@@ -176,72 +164,30 @@ _POLICY_OUTCOMES = {
 
 _AGENT_FAILURE_OUTCOMES = {
     AgentFailureCode.NO_PROGRESS_REPETITION: MiniWobTaskOutcome.NO_PROGRESS_REPETITION,
-    AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION: (
-        MiniWobTaskOutcome.NO_PROGRESS_CONTROL_REPETITION
-    ),
-    AgentFailureCode.REPEATED_FAILURE_LIMIT: (
-        MiniWobTaskOutcome.NO_PROGRESS_REPETITION
-    ),
-    AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE: (
-        MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
-    ),
-    AgentFailureCode.OBSERVATION_ACQUISITION_FAILED: (
-        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
-    ),
-    AgentFailureCode.OBSERVATION_FRESHNESS_INVALID: (
-        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
-    ),
-    AgentFailureCode.OBSERVATION_ORIGIN_INVALID: (
-        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
-    ),
-    AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE: (
-        MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
-    ),
-    AgentFailureCode.POST_ACTION_ACQUISITION_FAILED: (
-        MiniWobTaskOutcome.POST_OBSERVATION_FAILURE
-    ),
-    AgentFailureCode.POST_ACTION_FRESHNESS_INVALID: (
-        MiniWobTaskOutcome.POST_OBSERVATION_FAILURE
-    ),
-    AgentFailureCode.POST_ACTION_ORIGIN_INVALID: (
-        MiniWobTaskOutcome.POST_OBSERVATION_FAILURE
-    ),
+    AgentFailureCode.NO_PROGRESS_CONTROL_REPETITION: (MiniWobTaskOutcome.NO_PROGRESS_CONTROL_REPETITION),
+    AgentFailureCode.REPEATED_FAILURE_LIMIT: (MiniWobTaskOutcome.NO_PROGRESS_REPETITION),
+    AgentFailureCode.OBSERVATION_CAPABILITY_UNAVAILABLE: (MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE),
+    AgentFailureCode.OBSERVATION_ACQUISITION_FAILED: (MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED),
+    AgentFailureCode.OBSERVATION_FRESHNESS_INVALID: (MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED),
+    AgentFailureCode.OBSERVATION_ORIGIN_INVALID: (MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED),
+    AgentFailureCode.POST_ACTION_CAPABILITY_UNAVAILABLE: (MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE),
+    AgentFailureCode.POST_ACTION_ACQUISITION_FAILED: (MiniWobTaskOutcome.POST_OBSERVATION_FAILURE),
+    AgentFailureCode.POST_ACTION_FRESHNESS_INVALID: (MiniWobTaskOutcome.POST_OBSERVATION_FAILURE),
+    AgentFailureCode.POST_ACTION_ORIGIN_INVALID: (MiniWobTaskOutcome.POST_OBSERVATION_FAILURE),
 }
 
 _RUNTIME_FAILURE_OUTCOMES = {
-    (FailureStage.POLICY, FailureKind.INVALID_OUTPUT): (
-        MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE
-    ),
-    (FailureStage.POLICY, FailureKind.CALL_FAILED): (
-        MiniWobTaskOutcome.POLICY_DECISION_FAILURE
-    ),
-    (FailureStage.ACQUISITION, FailureKind.CAPABILITY_UNAVAILABLE): (
-        MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE
-    ),
-    (FailureStage.ACQUISITION, FailureKind.CALL_FAILED): (
-        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
-    ),
-    (FailureStage.ACQUISITION, FailureKind.INVALID_OUTPUT): (
-        MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED
-    ),
-    (FailureStage.EXECUTION, FailureKind.CALL_FAILED): (
-        MiniWobTaskOutcome.EXECUTION_FAILURE
-    ),
-    (FailureStage.EXECUTION, FailureKind.INVALID_OUTPUT): (
-        MiniWobTaskOutcome.EXECUTION_FAILURE
-    ),
-    (FailureStage.EVALUATION, FailureKind.CALL_FAILED): (
-        MiniWobTaskOutcome.TASK_FAILED
-    ),
-    (FailureStage.EVALUATION, FailureKind.INVALID_OUTPUT): (
-        MiniWobTaskOutcome.TASK_FAILED
-    ),
-    (FailureStage.CONTROL, FailureKind.NO_PROGRESS): (
-        MiniWobTaskOutcome.NO_PROGRESS_REPETITION
-    ),
-    (FailureStage.CONTROL, FailureKind.REJECTED): (
-        MiniWobTaskOutcome.RUNTIME_REJECTED
-    ),
+    (FailureStage.POLICY, FailureKind.INVALID_OUTPUT): (MiniWobTaskOutcome.STRUCTURED_OUTPUT_FAILURE),
+    (FailureStage.POLICY, FailureKind.CALL_FAILED): (MiniWobTaskOutcome.POLICY_DECISION_FAILURE),
+    (FailureStage.ACQUISITION, FailureKind.CAPABILITY_UNAVAILABLE): (MiniWobTaskOutcome.OBSERVATION_COVERAGE_FAILURE),
+    (FailureStage.ACQUISITION, FailureKind.CALL_FAILED): (MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED),
+    (FailureStage.ACQUISITION, FailureKind.INVALID_OUTPUT): (MiniWobTaskOutcome.OBSERVATION_REQUEST_FAILED),
+    (FailureStage.EXECUTION, FailureKind.CALL_FAILED): (MiniWobTaskOutcome.EXECUTION_FAILURE),
+    (FailureStage.EXECUTION, FailureKind.INVALID_OUTPUT): (MiniWobTaskOutcome.EXECUTION_FAILURE),
+    (FailureStage.EVALUATION, FailureKind.CALL_FAILED): (MiniWobTaskOutcome.TASK_FAILED),
+    (FailureStage.EVALUATION, FailureKind.INVALID_OUTPUT): (MiniWobTaskOutcome.TASK_FAILED),
+    (FailureStage.CONTROL, FailureKind.NO_PROGRESS): (MiniWobTaskOutcome.NO_PROGRESS_REPETITION),
+    (FailureStage.CONTROL, FailureKind.REJECTED): (MiniWobTaskOutcome.RUNTIME_REJECTED),
     (FailureStage.SESSION, FailureKind.CANCELLED): MiniWobTaskOutcome.TASK_FAILED,
     (FailureStage.SESSION, FailureKind.CALL_FAILED): MiniWobTaskOutcome.TASK_FAILED,
     (FailureStage.SESSION, FailureKind.INTERNAL): MiniWobTaskOutcome.TASK_FAILED,

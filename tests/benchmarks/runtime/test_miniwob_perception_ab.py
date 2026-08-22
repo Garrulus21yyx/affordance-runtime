@@ -92,7 +92,7 @@ def test_provider_cohort_adapter_does_not_weaken_frozen_mistral_ab() -> None:
         "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
         "LLM_ZHIPU_API_KEY": "fixture",
         "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
-        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+        "LLM_ACTION_POLICY_WIRE_CAPABILITY": "native_single_tool",
         "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
     }
     policy = model_policy_from_environment(environment)
@@ -117,7 +117,7 @@ def test_provider_cohort_accepts_native_tool_policy_without_weakening_frozen_ab(
     )
     policy = ModelBackedAgentPolicy(native, call_timeout_s=2)
 
-    with __import__("pytest").raises(TypeError, match="frozen perception A/B"):
+    with __import__("pytest").raises(ValueError, match="frozen Mistral"):
         _adapter(policy)
     assert _adapter(policy, require_frozen_mistral=False) is native
 

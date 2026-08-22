@@ -24,8 +24,9 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    SetFormFields,
     Wait,
-    YieldSubtask,
+    YieldMilestone,
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import ActionOutcome
@@ -41,34 +42,68 @@ def project_step_result(result: StepResult) -> AgentTurnView:
         decision,
         (
             SelectAction,
+            SetFormFields,
             RequestObservation,
             RequestActionPage,
             AskUser,
             LocalToolResult,
             ProtocolFeedback,
-            YieldSubtask,
+            YieldMilestone,
             FinalResponse,
             Wait,
             Abort,
         ),
     ):
         raise TypeError("policy failures do not enter model step history")
-    if isinstance(decision, SelectAction) and result.execution is not None:
-        intent = result.execution.request.intent
+    if (
+        isinstance(decision, SelectAction)
+        and result.execution_receipts is not None
+        and result.execution_receipts.receipts
+    ):
+        receipt = result.execution_receipts.receipts[-1]
+        intent = receipt.request.intent
         action = result.action_outcome
         return AgentTurnView(
-            "selectaction",
+            decision.kind.value,
             str(sanitize_history_value(intent.semantic_action)),
             _historical_target(result, intent.target_id),
             _historical_target(result, intent.destination_id),
             _historical_value(project_public_value(intent.parameters)),
             str(sanitize_history_value(intent.expected_outcome)),
-            str(sanitize_history_value(str(result.execution.result.dispatch_status))),
+            str(sanitize_history_value(str(receipt.result.dispatch_status))),
             str(sanitize_history_value(str(action.local_postcondition))) if action is not None else "",
             _transition(result, action),
             str(result.task_evaluation.status),
             str(sanitize_history_value(action.reason if action is not None else result.feedback)),
             {"feedback_code": result.feedback},
+        )
+    if isinstance(decision, SetFormFields):
+        batch = result.execution_receipts
+        receipts = (
+            ()
+            if batch is None
+            else tuple(
+                {
+                    "operation": receipt.request.intent.semantic_action,
+                    "target": _historical_target_summary(result, receipt.request.intent.target_id),
+                    "dispatch_status": str(receipt.result.dispatch_status),
+                    "error": str(receipt.result.error) if receipt.result.error is not None else "",
+                }
+                for receipt in batch.receipts
+            )
+        )
+        return AgentTurnView(
+            decision.kind.value,
+            "set_form_fields",
+            task_evaluation_status=str(result.task_evaluation.status),
+            reason=str(sanitize_history_value(result.feedback)),
+            semantic_summary=_historical_value(
+                {
+                    "form": decision.form_key,
+                    "receipts": receipts,
+                    "feedback_code": result.feedback,
+                }
+            ),
         )
     target_id = ""
     if isinstance(decision, RequestObservation | RequestActionPage):
@@ -80,7 +115,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
         summary["result"] = project_public_value(result.action_page_result)
     summary["feedback_code"] = result.feedback
     return AgentTurnView(
-        type(decision).__name__.lower(),
+        decision.kind.value,
         _control_tool_name(decision),
         _historical_target(result, target_id),
         task_evaluation_status=str(result.task_evaluation.status),
@@ -103,6 +138,13 @@ def _historical_target(result: StepResult, target_id: str) -> AgentHistoricalTar
         _bounded(label),
         _semantic_neighborhood(path),
     )
+
+
+def _historical_target_summary(result: StepResult, target_id: str) -> dict[str, object] | None:
+    target = _historical_target(result, target_id)
+    if target is None:
+        return None
+    return {"role": target.role, "label": target.label, "context": target.context}
 
 
 def _node_path(snapshot: ActorWorldSnapshot, ref: str) -> tuple[ActorWorldNodeView, ...]:
@@ -133,8 +175,18 @@ def _semantic_neighborhood(path: tuple[ActorWorldNodeView, ...]) -> tuple[str, .
     target = path[-1]
     values: list[str] = []
     excluded_roles = {
-        "button", "checkbox", "combobox", "link", "listbox", "menuitem",
-        "option", "radio", "slider", "spinbutton", "switch", "textbox",
+        "button",
+        "checkbox",
+        "combobox",
+        "link",
+        "listbox",
+        "menuitem",
+        "option",
+        "radio",
+        "slider",
+        "spinbutton",
+        "switch",
+        "textbox",
     }
 
     def add(value: str) -> None:
@@ -197,12 +249,16 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         return project_public_value(decision.arguments)
     if isinstance(decision, ProtocolFeedback):
         return {
-            "kind": decision.kind.value,
+            "kind": decision.feedback_kind.value,
             "call_count": decision.call_count,
             "detail": decision.detail,
         }
-    if isinstance(decision, YieldSubtask):
-        return {"kind": decision.kind, "reason": _bounded(decision.reason)}
+    if isinstance(decision, YieldMilestone):
+        return {
+            "kind": decision.yield_kind,
+            "reason": _bounded(decision.reason),
+            "reason_code": decision.reason_code.value if decision.reason_code is not None else "",
+        }
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
     if isinstance(decision, Wait):
@@ -213,7 +269,12 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
 
 
 def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str, object]:
-    transition = dict(_target_snapshot(result, result.execution.request.intent.target_id if result.execution else ""))
+    receipt = (
+        result.execution_receipts.receipts[-1]
+        if result.execution_receipts is not None and result.execution_receipts.receipts
+        else None
+    )
+    transition = dict(_target_snapshot(result, receipt.request.intent.target_id if receipt else ""))
     transition["before_world"] = result.before_world.observation_id
     transition["after_world"] = result.after_world.observation_id
     transition["before_world_fingerprint"] = _world_digest(result.before_world)
@@ -260,16 +321,7 @@ def _control_tool_name(decision: AgentDecision) -> str:
         return decision.tool_name
     if isinstance(decision, ProtocolFeedback):
         return "protocol_feedback"
-    return {
-        RequestObservation: "request_evidence",
-        RequestActionPage: "find_actions",
-        AskUser: "ask_user",
-        FinalResponse: "final_response",
-        Wait: "wait",
-        YieldSubtask: "yield_subtask",
-        Abort: "abort",
-        SelectAction: "select_action",
-    }[type(decision)]
+    return decision.kind.value
 
 
 def _bounded(value: str, limit: int = _MAX_STRING) -> str:

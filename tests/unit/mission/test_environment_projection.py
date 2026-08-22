@@ -1,118 +1,39 @@
 from affordance_runtime.actions import ActionBinding
-from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.mission.environment_projection import project_mission_environment
 from affordance_runtime.world import SemanticTarget
 from tests.support.world import fused_world
 
 
-def test_mission_environment_is_bounded_semantic_scope_without_world_identity() -> None:
-    observation_id = "observation:manager-environment"
-    revision = f"revision:{observation_id}"
-    heading = SemanticTarget(
-        "page-heading",
-        "heading",
-        "Ordered Products Report / Reports / Magento Admin",
-    )
-    viewport = SemanticTarget(
-        "viewport",
-        "viewport",
-        "Current page viewport",
-        {"page.route": "http://localhost:7780/admin/reports/report_product/sold/?secret=no"},
-    )
-    report = SemanticTarget("reports-link", "link", "REPORTS")
+def test_planner_environment_is_a_ref_free_functional_region_summary() -> None:
+    target = SemanticTarget("query", "textbox", "Route origin")
     binding = ActionBinding(
-        "binding:reports",
-        observation_id,
-        observation_id,
-        revision,
-        "fingerprint:reports",
-        report.target_id,
-        report.target_id,
-        "browsergym",
-        "browsergym",
-        "activate",
-        "click",
-        "external_ui_interaction",
-        ("external_ui_interaction",),
-        {"type": "object", "properties": {}, "additionalProperties": False},
-        {},
+        binding_id="binding:query",
+        world_observation_id="source:page",
+        source_observation_id="source:page",
+        source_revision="revision:source:page",
+        target_fingerprint="fingerprint:query",
+        target_id=target.target_id,
+        source_target_id=target.target_id,
+        surface="dom",
+        executor_id="dom",
+        semantic_action="type_text",
+        primitive_action="type",
+        effect_category="local_reversible",
+        semantic_effects=("value_changed",),
+        parameter_schema={"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+        payload={"selector": "#query"},
     )
-    world = fused_world(
-        observation_id,
-        (heading, viewport, report),
-        bindings=(binding,),
-        surface="browsergym",
-    )
-    recent = (
-        AgentTurnView(
-            "selectaction",
-            "activate",
-            AgentHistoricalTargetView("link", "REPORTS"),
-            dispatch_status="sent_confirmed",
-            local_postcondition="satisfied",
-        ),
-    )
-
-    view = project_mission_environment(world, recent)
-
-    assert view.surface == "browser"
-    assert view.application == "Magento Admin"
-    assert view.page_title == "Ordered Products Report"
-    assert view.route_family == "/admin/reports/"
-    assert view.current_route == "/admin/reports/report_product/sold/"
-    assert view.available_capabilities == (
-        "read content visible in the current application",
-        "find content within the current application",
-        "activate an offered control",
-        "navigate within the current application",
-    )
-    assert view.unavailable_capabilities == (
-        "search the public web outside the current application",
-    )
-    assert view.last_successful_transitions == ("activate REPORTS",)
-    serialized = repr(view)
-    assert "observation:manager-environment" not in serialized
-    assert "localhost" not in serialized
-    assert "secret" not in serialized
-    assert "E19" not in serialized
+    world = fused_world("source:page", (target,), bindings=(binding,))
+    projection = project_mission_environment(world)
+    assert projection.functional_regions
+    encoded = repr(projection)
+    assert "binding:query" not in encoded
+    assert "E1" not in encoded
+    assert "selector" not in encoded
+    assert all(region.label and region.purpose for region in projection.functional_regions)
 
 
-def test_conflicting_document_title_is_typed_and_does_not_replace_current_route() -> None:
-    world = fused_world(
-        "obs:identity-conflict",
-        (
-            SemanticTarget("document", "document", "Not Found"),
-            SemanticTarget("heading", "heading", "Current result"),
-            SemanticTarget("viewport", "viewport", "Viewport", {"page.route": "https://example.test/results"}),
-        ),
-        surface="browsergym",
-    )
-    view = project_mission_environment(world)
-    assert view.document_title == "Not Found"
-    assert view.current_route == "/results"
-    assert view.visible_primary_heading == "Current result"
-    assert view.page_title == "Current result"
-    assert view.identity_conflict is True
-
-
-def test_mission_environment_strips_refs_from_public_labels_and_history() -> None:
-    world = fused_world(
-        "observation:ref-free-manager",
-        (SemanticTarget("heading", "heading", "Report E19 / Magento Admin"),),
-        surface="browsergym",
-    )
-    recent = (
-        AgentTurnView(
-            "selectaction",
-            "activate",
-            AgentHistoricalTargetView("link", "REPORTS R14 <expired-ref-1>"),
-            dispatch_status="sent_confirmed",
-            local_postcondition="satisfied",
-        ),
-    )
-
-    serialized = repr(project_mission_environment(world, recent))
-
-    assert "E19" not in serialized
-    assert "R14" not in serialized
-    assert "expired-ref" not in serialized
+def test_functional_region_summary_has_no_action_or_scope_authority() -> None:
+    projection = project_mission_environment(fused_world("source:empty"))
+    region = projection.functional_regions[0]
+    assert set(vars(region)) == {"label", "purpose", "control_families", "coverage"}

@@ -14,9 +14,11 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.immutable import to_json_compatible
 
 _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
+DEFAULT_MODEL_DELIVERY_MAX_RENDERED_BYTES = 10 * 1024
 
 
 @dataclass(frozen=True)
@@ -29,10 +31,12 @@ class ModelTurnDelivery:
     """
 
     view: WorldDeliveryView
+    manifest: DeliveryManifest
     delivery_id: str
     context_id: str
     world_observation_id: str
     action_candidates: ActionCandidateProjection
+    delivery_index: WorldDeliveryIndex
     includes_images: bool = False
     evidence_candidates: object | None = None
 
@@ -43,19 +47,21 @@ class ModelTurnDelivery:
             raise ValueError("model turn delivery identity is invalid")
         if not self.context_id.startswith("context:"):
             raise ValueError("model turn delivery requires current Context identity")
-        if self.view.manifest.world_observation_id != self.world_observation_id:
+        if self.manifest.world_observation_id != self.world_observation_id:
             raise ValueError("model turn delivery manifest belongs to another World")
         if not isinstance(self.action_candidates, ActionCandidateProjection):
             raise TypeError("model turn delivery requires typed action candidates")
         if self.action_candidates.world_observation_id != self.world_observation_id:
             raise ValueError("model turn candidates belong to another World")
-        if any(
-            item.target_ref not in self.view.manifest.executable_refs
-            for item in self.action_candidates.candidates
+        if (
+            not isinstance(self.delivery_index, WorldDeliveryIndex)
+            or self.delivery_index.world_observation_id != self.world_observation_id
         ):
+            raise ValueError("model turn delivery requires the same current delivery index")
+        if any(item.target_ref not in self.manifest.executable_refs for item in self.action_candidates.candidates):
             raise ValueError("every action candidate must enter the same DeliveryManifest")
         if any(
-            destination.target_ref not in self.view.manifest.executable_refs
+            destination.target_ref not in self.manifest.executable_refs
             for item in self.action_candidates.candidates
             for destination in item.destinations
         ):
@@ -67,30 +73,23 @@ class ModelTurnDelivery:
                 raise TypeError("model turn evidence candidates must be typed")
             if self.evidence_candidates.world_observation_id != self.world_observation_id:
                 raise ValueError("model turn evidence candidates belong to another World")
-            if any(
-                item.fact_ref not in self.view.manifest.fact_refs
-                for item in self.evidence_candidates.candidates
-            ):
+            if any(item.fact_ref not in self.manifest.fact_refs for item in self.evidence_candidates.candidates):
                 raise ValueError("every evidence candidate must enter the same DeliveryManifest")
         if type(self.includes_images) is not bool:
             raise TypeError("model turn delivery image selection must be boolean")
-
-    @property
-    def manifest(self) -> DeliveryManifest:
-        return self.view.manifest
 
 
 def build_model_turn_delivery(
     context: AgentContext,
     *,
     include_images: bool,
-    max_rendered_bytes: int | None = None,
+    max_rendered_bytes: int | None = DEFAULT_MODEL_DELIVERY_MAX_RENDERED_BYTES,
 ) -> ModelTurnDelivery:
     """Build the one selected delivery for one current ActionPolicy call."""
 
     if context.action_candidates is None:
         raise ValueError("AgentContext requires a candidate projection before model delivery")
-    view = render_compact_actor_world(
+    rendered = render_compact_actor_world(
         context.actor_world,
         context.grounding,
         include_images=include_images,
@@ -107,15 +106,15 @@ def build_model_turn_delivery(
     )
     payload = {
         "context_id": context.context_id,
-        "world_observation_id": view.manifest.world_observation_id,
-        "projection": view.projection,
+        "world_observation_id": rendered.manifest.world_observation_id,
+        "projection": rendered.projection,
         "includes_images": include_images,
-        "text": view.text,
+        "text": rendered.text,
         "manifest": {
-            "executable_refs": view.manifest.executable_refs,
-            "readonly_refs": view.manifest.readonly_refs,
-            "fact_refs": view.manifest.fact_refs,
-            "region_refs": view.manifest.region_refs,
+            "executable_refs": rendered.manifest.executable_refs,
+            "readonly_refs": rendered.manifest.readonly_refs,
+            "fact_refs": rendered.manifest.fact_refs,
+            "region_refs": rendered.manifest.region_refs,
         },
         "action_candidates": context.action_candidates.projection_id,
         "evidence_candidates": to_json_compatible(context.evidence_candidates),
@@ -124,15 +123,16 @@ def build_model_turn_delivery(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     ).hexdigest()
     return ModelTurnDelivery(
-        view,
+        rendered.view,
+        rendered.manifest,
         f"delivery:{digest}",
         context.context_id,
-        view.manifest.world_observation_id,
+        rendered.manifest.world_observation_id,
         context.action_candidates,
+        context.region_index,
         include_images,
         context.evidence_candidates,
     )
-
 
 def _selected_region_keys(context: AgentContext) -> frozenset[str]:
     selected: list[str] = []

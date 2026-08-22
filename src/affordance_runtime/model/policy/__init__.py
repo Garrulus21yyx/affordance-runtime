@@ -19,9 +19,6 @@ from affordance_runtime.model.policy.grounded_tool_compiler import (
     SelectorMode,
 )
 from affordance_runtime.model.policy.grounded_tool_contracts import GROUNDED_TOOLS_PROTOCOL
-from affordance_runtime.model.policy.grounded_tool_port_bridge import (
-    CompactJsonDecisionPort,
-)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.wire_capability import ActionPolicyWireCapability
@@ -42,6 +39,5 @@ __all__ = [
     "ConcreteActionCandidateRow",
     "CompiledGroundedTool",
     "SelectorMode",
-    "CompactJsonDecisionPort",
     "ActionPolicyWireCapability",
 ]

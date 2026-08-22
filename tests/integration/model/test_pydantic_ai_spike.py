@@ -29,7 +29,6 @@ from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
-from affordance_runtime.model.policy.grounded_tool_port_bridge import CompactJsonDecisionPort
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -78,7 +77,7 @@ class ScriptedModel:
                     "ask_user",
                     "wait",
                     "abort",
-                    "find_actions",
+                    "find_controls",
                     "request_evidence",
                 }
                 name = next(tool.name for tool in info.function_tools if tool.name not in controls)
@@ -96,12 +95,12 @@ class ScriptedModel:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
             parts = [
-                    ToolCallPart(
-                        name,
-                        arguments,
-                        tool_call_id=f"pydantic-call:{self.calls}",
-                    )
-                ]
+                ToolCallPart(
+                    name,
+                    arguments,
+                    tool_call_id=f"pydantic-call:{self.calls}",
+                )
+            ]
             if scripted == "multiple_gui_actions":
                 parts.append(
                     ToolCallPart(
@@ -162,9 +161,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert scripted.calls == 1
         # FunctionModel strips unsupported thinking while preserving the
         # transport-level single-call prohibition and output/sampling budget.
-        assert scripted.model_settings == [
-            {"max_tokens": 1024, "temperature": 0.0, "parallel_tool_calls": False}
-        ]
+        assert scripted.model_settings == [{"max_tokens": 1024, "temperature": 0.0, "parallel_tool_calls": False}]
         assert pydantic_bridge._action_model_settings(policy.port.last_call_profile) == {
             "thinking": False,
             "max_tokens": 1024,
@@ -212,7 +209,7 @@ def test_multiple_provider_tool_calls_return_protocol_feedback_with_zero_dispatc
         assert result.output is not None
         decision = result.output.decision
         assert isinstance(decision, ProtocolFeedback)
-        assert decision.kind is ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS
+        assert decision.feedback_kind is ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS
         assert decision.call_count == 2
         assert scripted.calls == 1
 
@@ -504,9 +501,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
         "resolve_grounded_action_call",
         lambda _catalog, call, **_kwargs: captured.setdefault("resolution", SimpleNamespace(decision=call)),
     )
-    output = DeferredToolRequests(
-        calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")]
-    )
+    output = DeferredToolRequests(calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")])
 
     decision, error, parsed = pydantic_bridge._resolve_deferred(
         output,
@@ -556,15 +551,11 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
     )
     assert isinstance(selected.port, PydanticAIGroundedDecisionPort)
 
-    compact = model_policy_from_environment(
-        {
-            **base,
-            "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
-            "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
-        },
-        call_timeout_s=5.0,
-    )
-    assert isinstance(compact.port, CompactJsonDecisionPort)
+    with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
+        model_policy_from_environment(
+            {**base, "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command"},
+            call_timeout_s=5.0,
+        )
 
 
 def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
@@ -587,7 +578,54 @@ def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
     assert type(policy.port.model).__name__ == "ZaiModel"
 
 
-def test_factory_selects_deepseek_json_single_command_profile() -> None:
+@pytest.mark.parametrize(
+    ("profile", "prefix", "base_url", "model_id"),
+    (
+        ("mistral", "LLM_MISTRAL", "https://mistral.invalid/v1", "mistral-small"),
+        ("gemini", "LLM_GEMINI", "https://gemini.invalid/v1beta/openai", "gemini-flash"),
+    ),
+)
+def test_openai_compatible_profiles_use_the_single_pydantic_ai_policy(
+    profile: str,
+    prefix: str,
+    base_url: str,
+    model_id: str,
+) -> None:
+    policy = model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": profile,
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            f"{prefix}_BASE_URL": base_url,
+            f"{prefix}_API_KEY": "fixture-secret",
+            f"{prefix}_MODEL": model_id,
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
+        call_timeout_s=5.0,
+    )
+
+    assert isinstance(policy.port, PydanticAIGroundedDecisionPort)
+    assert policy.port.provider_id == profile
+    assert policy.port.model_id == model_id
+
+
+def test_local_openai_compatible_profile_uses_the_single_pydantic_ai_policy() -> None:
+    policy = model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "local",
+            "LLM_LOCAL_PROVIDER": "openai_compatible",
+            "LLM_LOCAL_BASE_URL": "http://127.0.0.1:11434/v1",
+            "LLM_LOCAL_MODEL": "qwen-test",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+        },
+        call_timeout_s=5.0,
+    )
+
+    assert isinstance(policy.port, PydanticAIGroundedDecisionPort)
+    assert policy.port.provider_id == "local"
+    assert policy.port.model_id == "qwen-test"
+
+
+def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
     selected = model_policy_from_environment(
         {
             "LLM_ACTIVE_PROFILE": "deepseek",
@@ -600,51 +638,19 @@ def test_factory_selects_deepseek_json_single_command_profile() -> None:
         call_timeout_s=5.0,
     )
 
-    assert isinstance(selected.port, CompactJsonDecisionPort)
+    assert isinstance(selected.port, PydanticAIGroundedDecisionPort)
     assert selected.port.provider_id == "deepseek"
     assert selected.port.model_id == "deepseek-v4-flash"
-    assert selected.port.port.endpoint_class == "remote"
-    assert selected.port.port.supports_multimodal is False
-    assert selected.port.config.max_tokens == 1_024
-    assert selected.port.config.timeout_s == 1.52
-    assert selected.port.config.provider_total_timeout_s == 1.52
-    assert selected.port.timeout_fast_retry_timeout_s == 1.48
-    assert selected.port.semantic_timeout_budget_s == 3.0
-    assert selected.port.config.rate_limit_retries == 1
-    assert selected.port.config.transient_retries == 1
+    assert selected.port.supports_multimodal is False
+    assert selected.port.transport_timeout_s == 2.0
     assert selected.port.reasoning_policy.repair_max_tokens == 512
 
-    live_deadline = model_policy_from_environment(
-        {
-            "LLM_ACTIVE_PROFILE": "deepseek",
-            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-            "LLM_DEEPSEEK_API_KEY": "fixture-secret",
-            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
-            "LLM_DECISION_PERCEPTION": "text-only.v1",
-        },
-        call_timeout_s=90.0,
-    )
-    assert live_deadline.port.config.timeout_s == 55.0
-    assert live_deadline.port.config.provider_total_timeout_s == 55.0
-    assert live_deadline.port.timeout_fast_retry_timeout_s == 33.0
-    assert live_deadline.port.semantic_call_deadline_s == 89.0
-    assert live_deadline.port.semantic_timeout_budget_s == 88.0
-
-    frozen_campaign = model_policy_from_environment(
-        {
-            "LLM_ACTIVE_PROFILE": "deepseek",
-            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-            "LLM_DEEPSEEK_API_KEY": "fixture-secret",
-            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
-            "LLM_DECISION_PERCEPTION": "text-only.v1",
-        },
-        call_timeout_s=5.0,
-        provider_retry_budget=0,
-    )
-    assert frozen_campaign.port.config.timeout_s == 4.0
-    assert frozen_campaign.port.config.provider_total_timeout_s == 4.0
-    assert frozen_campaign.port.timeout_fast_retry_timeout_s is None
-    assert frozen_campaign.port.config.rate_limit_retries == 0
-    assert frozen_campaign.port.config.transient_retries == 0
+    with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
+        model_policy_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "deepseek",
+                "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+                "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+            },
+            call_timeout_s=5.0,
+        )

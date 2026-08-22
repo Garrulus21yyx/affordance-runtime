@@ -61,10 +61,8 @@
 - 不引入 Manager/Worker、每步 planner/compiler、单独 LLM goal evaluator、mutable TaskPlan、memory、RAG、ArgMin、
   achievement record、第二 Binder 或第二 Runtime loop。只能由已命名 benchmark 缺口另行触发。
 
-设计解释、SOTA 对齐和实施/验收状态只维护在 `docs/architecture.md` 与 `docs/benchmark.md`。当前状态：
-`Goal semantics architecture reopened / Simple GoalPlan implementation complete / Ready delivered / policy behavior failed`。
-2026-08-17 的第二次正式 Like run 中 GoalCompiler 首次调用成功并向每 turn 投影三项 Ready plan；ActionPolicy 先激活
-三个 Like，随后反复撤销已 active Like，十步耗尽且未 Submit，official success=0。不得继续案例特化或写作 G1/G2 closed。
+设计解释、SOTA 对齐和实施/验收状态只维护在 `docs/architecture.md` 与 `docs/benchmark.md`。当前状态以这两个文件为准：
+milestone architecture 的 provider-free G0–G6 已通过；live benchmark 仍需用户单独授权，不得继续案例特化。
 
 ## MiniWoB / BrowserGym runtime facts
 

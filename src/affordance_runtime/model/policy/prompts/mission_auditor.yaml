@@ -5,5 +5,5 @@ auditor: |-
   predeclared strict-verification policy.
   Judge only that claim from the supplied fresh public evidence and cite only offered F evidence refs.
   Return one assessment: satisfied, unsatisfied, unknown, or blocked, with a bounded reason.
-  Do not plan, route, create a subtask, operate the GUI, mutate MissionState, or declare official success.
+  Do not plan, route, create a milestone, operate the GUI, mutate MissionState, or declare official success.
   Output only the typed AuditorDecision.

@@ -10,10 +10,13 @@ from affordance_runtime.execution.contracts import (
     ActionError,
     ActionResult,
     BoundActionRequest,
+    BoundFormFieldsRequest,
     DispatchStatus,
     ExecutionCancelled,
     ExecutionObservationRecovery,
     ExecutionOutcome,
+    FormFieldsExecutionCancelled,
+    FormFieldsExecutionOutcome,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -809,6 +812,103 @@ class ObservationAcquisitionCoordinator:
                 result = replace(result, diagnostics=(*result.diagnostics, *diagnostics))
         return ExecutionOutcome(request, result, post)
 
+    async def execute_form_fields(
+        self,
+        command: BoundFormFieldsRequest,
+    ) -> FormFieldsExecutionOutcome:
+        """Dispatch one admitted current-form command and capture exactly once at its boundary."""
+
+        if not isinstance(command, BoundFormFieldsRequest):
+            raise TypeError("form field execution requires one bound command")
+        requests = command.requests
+        adapter = self._surface_adapter(requests[0].binding.surface)
+        if adapter is None or any(not self.is_current(item) for item in requests):
+            result = ActionResult(
+                requests[0].request_id,
+                DispatchStatus.NOT_SENT,
+                requests[0].binding.executor_id,
+                False,
+                ActionError.STALE_BINDING if adapter is not None else ActionError.UNSUPPORTED_ACTION,
+            )
+            return FormFieldsExecutionOutcome(command, (result,), None, 0)
+
+        results: list[ActionResult] = []
+        failed_index: int | None = None
+        for index, request in enumerate(requests):
+            try:
+                result = await adapter.execute(request)
+            except ActionDispatchCancelled as exc:
+                result = exc.result
+                results.append(result)
+                post = (
+                    self._cancelled_post_acquisition(
+                        requests[0],
+                        tuple(need for item in requests[: index + 1] for need in item.verification_needs),
+                    )
+                    if any(item.dispatch_status is not DispatchStatus.NOT_SENT for item in results)
+                    else None
+                )
+                raise FormFieldsExecutionCancelled(
+                    FormFieldsExecutionOutcome(command, tuple(results), post, index)
+                ) from exc
+            except asyncio.CancelledError as exc:
+                result = ActionResult(
+                    request.request_id,
+                    DispatchStatus.NOT_SENT,
+                    request.binding.executor_id,
+                    False,
+                    ActionError.CANCELLED,
+                )
+                results.append(result)
+                post = (
+                    self._cancelled_post_acquisition(
+                        requests[0],
+                        tuple(need for item in requests[: index + 1] for need in item.verification_needs),
+                    )
+                    if any(item.dispatch_status is not DispatchStatus.NOT_SENT for item in results)
+                    else None
+                )
+                raise FormFieldsExecutionCancelled(
+                    FormFieldsExecutionOutcome(command, tuple(results), post, index)
+                ) from exc
+            if result.request_id != request.request_id or result.backend != request.binding.executor_id:
+                raise ValueError("form field result lineage mismatch")
+            results.append(result)
+            if result.dispatch_status is not DispatchStatus.SENT:
+                failed_index = index
+                break
+
+        dispatched = any(item.dispatch_status is not DispatchStatus.NOT_SENT for item in results)
+        post = None
+        if dispatched:
+            verification_needs = tuple(
+                need for request in requests[: len(results)] for need in request.verification_needs
+            )
+            post_request = WorldObservationRequest(
+                ObservationRequestKind.POST_ACTION_FALLBACK,
+                "post set form fields",
+                verification_needs,
+            )
+            post_plan = self._post_action_plan(
+                post_request,
+                self._route_source_for_binding(requests[0].binding.source_observation_id),
+            )
+            try:
+                post = (
+                    post_plan
+                    if isinstance(post_plan, ObservationAcquisition)
+                    else await self._acquire(
+                        post_request,
+                        AcquisitionOrigin.POST_ACTION,
+                        post_plan,
+                    )
+                )
+            except AcquisitionCancelled as exc:
+                raise FormFieldsExecutionCancelled(
+                    FormFieldsExecutionOutcome(command, tuple(results), exc.acquisition, failed_index)
+                ) from exc
+        return FormFieldsExecutionOutcome(command, tuple(results), post, failed_index)
+
     async def session_health(self, request: BoundActionRequest) -> SessionHealth:
         """Probe health through the adapter that owns this execution surface."""
 
@@ -843,10 +943,18 @@ class ObservationAcquisitionCoordinator:
             raise ValueError("cancelled execution result lineage mismatch")
         if result.dispatch_status is DispatchStatus.NOT_SENT:
             return ExecutionOutcome(request, result, None)
+        post = self._cancelled_post_acquisition(request, request.verification_needs)
+        return ExecutionOutcome(request, result, post)
+
+    def _cancelled_post_acquisition(
+        self,
+        request: BoundActionRequest,
+        verification_needs: tuple,
+    ) -> ObservationAcquisition:
         post_request = WorldObservationRequest(
             ObservationRequestKind.POST_ACTION_FALLBACK,
             "post action cancellation",
-            request.verification_needs,
+            verification_needs,
         )
         acquisition_id = self._next_acquisition_id()
         selected = self.observation_orchestrator.select(
@@ -884,7 +992,7 @@ class ObservationAcquisitionCoordinator:
                 self._activations(selected_requests, cancelled_results),
                 "source_acquisition_cancelled",
             )
-        return ExecutionOutcome(request, result, self._remember(post))
+        return self._remember(post)
 
     def _post_action_plan(
         self,
@@ -944,6 +1052,8 @@ class ObservationAcquisitionCoordinator:
             )
         adapter = adapters[0]
         finalize = getattr(adapter, "finalize", None)
+        if not callable(finalize):
+            raise ValueError("finalization adapter contract mismatch")
         result = await finalize(content)
         if not isinstance(result, ActionResult):
             raise ValueError("finalization result lineage mismatch")
@@ -977,8 +1087,7 @@ class ObservationAcquisitionCoordinator:
         return tuple(
             adapter
             for adapter in self.adapters
-            if bool(getattr(adapter, "supports_finalization", False))
-            and callable(getattr(adapter, "finalize", None))
+            if bool(getattr(adapter, "supports_finalization", False)) and callable(getattr(adapter, "finalize", None))
         )
 
 
@@ -1013,10 +1122,9 @@ class UnifiedWorldEnvironment:
 
     @property
     def goal_semantic_contract(self) -> GoalSemanticContract:
-        return merge_goal_semantic_contracts(tuple(
-            getattr(adapter, "goal_semantic_contract", GoalSemanticContract())
-            for adapter in self.adapters
-        ))
+        return merge_goal_semantic_contracts(
+            tuple(getattr(adapter, "goal_semantic_contract", GoalSemanticContract()) for adapter in self.adapters)
+        )
 
     @property
     def last_acquisition(self) -> ObservationAcquisition | None:
@@ -1036,6 +1144,12 @@ class UnifiedWorldEnvironment:
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome:
         return await self.acquisition_coordinator.execute(request)
+
+    async def execute_form_fields(
+        self,
+        command: BoundFormFieldsRequest,
+    ) -> FormFieldsExecutionOutcome:
+        return await self.acquisition_coordinator.execute_form_fields(command)
 
     async def session_health(self, request: BoundActionRequest) -> SessionHealth:
         return await self.acquisition_coordinator.session_health(request)

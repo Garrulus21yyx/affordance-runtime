@@ -8,15 +8,14 @@ from enum import StrEnum
 
 class ActionPolicyWireCapability(StrEnum):
     NATIVE_SINGLE_TOOL = "native_single_tool"
-    JSON_SINGLE_COMMAND = "json_single_command"
 
 
 _PROFILE_DEFAULTS = {
     "aliyun": ActionPolicyWireCapability.NATIVE_SINGLE_TOOL,
-    "deepseek": ActionPolicyWireCapability.JSON_SINGLE_COMMAND,
-    "gemini": ActionPolicyWireCapability.JSON_SINGLE_COMMAND,
-    "local": ActionPolicyWireCapability.JSON_SINGLE_COMMAND,
-    "mistral": ActionPolicyWireCapability.JSON_SINGLE_COMMAND,
+    "deepseek": ActionPolicyWireCapability.NATIVE_SINGLE_TOOL,
+    "gemini": ActionPolicyWireCapability.NATIVE_SINGLE_TOOL,
+    "local": ActionPolicyWireCapability.NATIVE_SINGLE_TOOL,
+    "mistral": ActionPolicyWireCapability.NATIVE_SINGLE_TOOL,
     "zhipu": ActionPolicyWireCapability.NATIVE_SINGLE_TOOL,
 }
 
