@@ -22,6 +22,7 @@ from affordance_runtime.agent.context.context import (
 )
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
+from affordance_runtime.agent.workspace import AgentWorkspace, SemanticEvent, SemanticEventKind
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
@@ -446,6 +447,57 @@ def test_irreducible_over_budget_returns_context_capacity_without_provider_attem
         assert result.diagnostics["policy_model_call_count"] == 0
         assert result.diagnostics["admission_action"] == "context_capacity"
         assert result.diagnostics["estimated_total_tokens"] > result.diagnostics["admission_limit"]
+
+    asyncio.run(scenario())
+
+
+def test_request_admission_fits_reducible_workspace_before_complete_reestimate() -> None:
+    async def scenario() -> None:
+        request, catalog, original_delivery = await _request()
+        baseline = GroundedPolicyContextBinder().action_request(
+            request,
+            catalog.specs,
+            original_delivery,
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+        events = tuple(
+            SemanticEvent(index, SemanticEventKind.GUI_EFFECT, f"ordinary effect {index} " + ("x" * 180))
+            for index in range(1, 25)
+        )
+        context = replace(
+            request.agent_context,
+            workspace=AgentWorkspace(semantic_events=events),
+            current_step_index=24,
+        )
+        request = ModelDecisionRequest(request.request_id, context)
+        delivery = build_model_turn_delivery(context, include_images=False)
+        high = GroundedPolicyContextBinder().action_request(
+            request,
+            catalog.specs,
+            delivery,
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+        fitted = GroundedPolicyContextBinder(
+            request_budget=ModelRequestBudget(
+                admission_limit=(baseline.breakdown.estimated_total_tokens + high.breakdown.estimated_total_tokens) // 2
+            )
+        ).action_request(
+            request,
+            catalog.specs,
+            delivery,
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        )
+
+        payload = json.loads(fitted.messages[1].content)
+        assert fitted.breakdown.prefit_estimated_total_tokens > fitted.breakdown.estimated_total_tokens
+        assert payload["recent_steps"]["semantic_events"] == []
+        assert request.agent_context.workspace.semantic_events == events
 
     asyncio.run(scenario())
 

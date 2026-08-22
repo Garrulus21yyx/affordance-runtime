@@ -281,12 +281,12 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         "context_id": context.context_id,
         "visible_action_count": len(context.actions.options),
         "selected_source_modalities": tuple(source.modality for source in context.actor_world.sources),
-        "recent_step_count": len(context.recent_steps.items),
+        "recent_step_count": len(context.workspace.recent_steps),
         "provider_attempts": tuple(_attempt_trace(item) for item in generation_attempts),
         "exception": exception,
     }
-    if context.recent_steps.items:
-        latest_step = context.recent_steps.items[-1]
+    if context.workspace.recent_steps:
+        latest_step = context.workspace.recent_steps[-1]
         tool_result = latest_step.semantic_summary.get("result")
         if isinstance(tool_result, Mapping):
             event["previous_runtime_tool_result"] = to_json_compatible(tool_result)

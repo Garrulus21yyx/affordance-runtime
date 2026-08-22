@@ -5,8 +5,10 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import Callable
 
+from affordance_runtime.agent.workspace import DefaultWorkspaceReducer, WorkspaceCapacityError, WorkspaceReducer
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelMessage
@@ -158,6 +160,79 @@ class ModelRequestCapacityError(ValueError):
     def __init__(self, breakdown: ModelRequestBreakdown) -> None:
         super().__init__("context_capacity")
         self.breakdown = breakdown
+
+
+@dataclass(frozen=True)
+class RequestAdmission:
+    """Sole owner of workspace fitting and complete provider-request capacity."""
+
+    workspace_reducer: WorkspaceReducer = field(default_factory=DefaultWorkspaceReducer)
+
+    def admit(
+        self,
+        *,
+        request: object,
+        tools: tuple[ToolSpec, ...],
+        budget: ModelRequestBudget,
+        serialize: Callable[[object], object],
+        include_images: bool,
+        phase: str = "initial",
+        full_candidate_tokens: int = 0,
+    ) -> AdmittedModelRequest:
+        candidate = serialize(request)
+        breakdown = self._estimate(candidate, request, tools, budget, include_images, phase)
+        prefit = breakdown.estimated_total_tokens
+        if breakdown.admission_action == "context_capacity":
+            available_tokens = max(0, budget.admission_limit - (prefit - breakdown.history_tokens))
+            try:
+                context = getattr(request, "agent_context")
+                fitted = self.workspace_reducer.fit(context.workspace, available_tokens * 3)
+            except (AttributeError, WorkspaceCapacityError):
+                raise ModelRequestCapacityError(
+                    _diagnostic_breakdown(breakdown, candidate, prefit, full_candidate_tokens)
+                ) from None
+            if fitted != context.workspace:
+                request = replace(request, agent_context=replace(context, workspace=fitted))
+                candidate = serialize(request)
+                breakdown = self._estimate(candidate, request, tools, budget, include_images, phase)
+        diagnosed = _diagnostic_breakdown(breakdown, candidate, prefit, full_candidate_tokens)
+        if diagnosed.admission_action == "context_capacity":
+            raise ModelRequestCapacityError(diagnosed)
+        return AdmittedModelRequest(candidate.messages, tools, diagnosed)
+
+    @staticmethod
+    def _estimate(candidate, request, tools, budget, include_images, phase) -> ModelRequestBreakdown:
+        return estimate_model_request(
+            messages=candidate.messages,
+            tools=tools,
+            budget=budget,
+            phase=phase,
+            component_payloads=candidate.component_payloads,
+            image_inputs=getattr(request, "image_inputs", ()) if include_images else (),
+        )
+
+
+def _diagnostic_breakdown(
+    breakdown: ModelRequestBreakdown,
+    candidate: object,
+    prefit: int,
+    full_candidate_tokens: int,
+) -> ModelRequestBreakdown:
+    full_total = max(
+        1,
+        breakdown.estimated_total_tokens - breakdown.actor_world_tokens + full_candidate_tokens,
+    )
+    return replace(
+        breakdown,
+        prefit_estimated_total_tokens=prefit,
+        delivery_projection=str(getattr(candidate, "delivery_projection", "full")),
+        full_candidate_tokens=full_total,
+        lens_candidate_tokens=breakdown.estimated_total_tokens,
+        expanded_region_count=int(getattr(candidate, "expanded_region_count", 0)),
+        folded_region_count=int(getattr(candidate, "folded_region_count", 0)),
+        direct_action_count=int(getattr(candidate, "direct_action_count", 0)),
+        searchable_action_count=int(getattr(candidate, "searchable_action_count", 0)),
+    )
 
 
 def admit_model_request(

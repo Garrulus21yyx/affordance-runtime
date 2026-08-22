@@ -422,7 +422,7 @@ def _oracle_errors(ports: list[BrowserGymStructuredDecisionPort]) -> tuple[str, 
                 context.task,
                 context.goal_plan,
                 context.actions,
-                context.recent_steps,
+                context.workspace.recent_steps,
                 context.actor_world,
             )).casefold()
             if any(value in lowered for value in (*task_ids, *_ORACLE_MARKERS)):

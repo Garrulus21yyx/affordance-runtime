@@ -2,8 +2,8 @@
 
 ## Status
 
-Current status: **single-ActionPolicy control-path migration and BrowserGym causal-transition automation present /
-change-first Observation Delivery and bounded AgentWorkspace convergence reopened / live closure gates blocked**. The mandatory
+Current status: **single-ActionPolicy control path plus C8 stages 1–6 implemented provider-free /
+generated diagnostics, fresh audit, and live closure gates blocked**. The mandatory
 Planner/Milestone/Evidence/Auditor production path has been removed. Prior Planner/Auditor G0–G6 evidence remains
 historical scoped evidence, not whole-runtime closure.
 
@@ -18,18 +18,25 @@ They do not override this document.
 The target runtime is a small, continuous GUI runtime with one execution authority: optional start/revision-only
 GoalCompiler, one static advisory GoalPlan, and one ActionPolicy loop. Long-horizon behavior in the baseline comes from
 a bounded `AgentWorkspace` and optional exact working notes, not mandatory roadmap, milestone, Auditor, or MissionState
-transitions. The current code has not yet closed the `AgentWorkspace` and change-first delivery properties described
-below; implementation completion is therefore not verified closure.
+transitions. The current code implements change-first delivery, bounded workspace, sole whole-request admission, and
+the information-increment Monitor; remaining generated diagnostics and a fresh audit still prevent verified closure.
 
-Stages 1–3 of the C8–C9 migration are now implemented provider-free. The seven named contracts are frozen, and
+Stages 1–6 of the C8–C9 migration are now implemented provider-free. The seven named contracts are frozen, and
 `WorldTransitionProjector` is the sole producer of `PublicWorldDelta`. `StepResult`, `ActionOutcome`, evaluation
 delivery, the existing `WorldDeliveryIndex`, `EpisodeMonitor`, compact continuity, and trace consume that delta object
 or its exact serialization. The existing index now owns document lineage, content/structure digests, monotonic region
 versions, exact current membership, and unchanged-outline reuse. Production model delivery is ordered
 `LatestEffect → CurrentFindings → ChangedRegions → ActionCandidates → PageOutline → RecoveryDirectory`; local
 read/search/find operations preserve the latest external GUI effect, and default production requests no longer produce
-global lexical `EvidenceCandidates`. The total WorkspaceReducer, RequestAdmission, Monitor-state migration, remaining
-C8 diagnostics, and C9 gates stay open; this stage status does not authorize a live run.
+global lexical `EvidenceCandidates`. `RunState` now stores one bounded `AgentWorkspace`: the latest four committed
+steps remain detailed, exact GUI results/effects/working facts/failures/recovery become bounded `SemanticEvent`s, and
+ordinary read/search/find/wait/no-effect activity collapses by family. Full Trace still receives every original step.
+The append-only `recent_steps`, old history renderer, history-capacity exception, RunState pre-cap, and
+`fact_change_count` precision loss are removed. `RequestAdmission` is the sole complete-request capacity owner and the
+provider Binder only serializes an admitted request. `EpisodeMonitor` stores only the World, CurrentFindings, and
+WorkingFacts digests plus observation-only/recovery counters; query and region variation cannot disguise a
+zero-information loop. Its `30/8/1` profile caps, but never raises, the prior task turn budget. Remaining C8 diagnostics
+and later C9 gates stay open; this stage status does not authorize a live run.
 
 ## Current end-to-end data flow
 
@@ -232,10 +239,10 @@ requires no vendored external runtime code.
 
 ## AgentWorkspace and request capacity
 
-The repeated history-capacity and post-result wandering failures share one cause: model continuity is currently an
+The repeated history-capacity and post-result wandering failures shared one cause: model continuity was an
 append-oriented rendering of `recent_steps`, while result salience, repetition folding, request fitting, and provider
-serialization are split across different owners. Raising the history byte limit or adding another prompt instruction
-cannot close that lifecycle.
+serialization were split across different owners. The production state now uses the reducer below; whole-request
+fitting remains the next migration stage.
 
 Each committed `StepResult` therefore has three independent consumers:
 
@@ -296,7 +303,7 @@ remains a whole address unless the page separately exposes structured state/post
 guesses new business facts from a string. `SemanticEvent.summary` is a deterministic template over the committed
 operation/effect/failure; no per-step LLM summarizer is introduced.
 
-`WorkspaceReducer.reduce(previous, step, current_findings, allocation)` is a total deterministic function for every
+`WorkspaceReducer.reduce(previous, step, detailed_step, step_index, current_findings)` is a total deterministic function for every
 ordinary supported step. Its rules are:
 
 - keep the latest four steps in detailed form;
@@ -304,13 +311,13 @@ ordinary supported step. Its rules are:
   typed failure, or recovery transition;
 - aggregate ordinary reads/searches/waits with no new finding into `ActivitySummary` instead of appending history;
 - deterministically deduplicate repeated exact public values and fold older low-priority events within the supplied
-  allocation;
+  fixed workspace bounds;
 - write every original step to Full Trace regardless of workspace retention.
 
 Forty searches with no information gain therefore occupy one activity record, not forty model-history entries.
-`WorkspaceReducer` does not throw an episode-history-capacity exception for ordinary growth. It may report that the
-irreducible workspace exceeds its assigned allocation, but only `RequestAdmission` converts that fact into the typed
-whole-request outcome `context_capacity` with `provider_attempts=0`.
+`WorkspaceReducer` does not throw an episode-history-capacity exception for ordinary growth. Allocation-aware
+`WorkspaceReducer.fit()` and conversion of irreducible overflow to `context_capacity` with `provider_attempts=0` remain
+owned by the next `RequestAdmission` stage.
 
 `RequestAdmission` is the sole capacity authority:
 

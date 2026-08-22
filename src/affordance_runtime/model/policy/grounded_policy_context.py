@@ -6,19 +6,19 @@ import base64
 import json
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context import AgentContext
-from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.model_turn_delivery import (
     ModelTurnDelivery,
     build_model_turn_delivery,
 )
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.working_facts import public_working_facts
+from affordance_runtime.agent.workspace import render_agent_workspace
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_tool_contracts import MAX_GROUNDED_WORKSPACE_BYTES
@@ -33,14 +33,10 @@ from affordance_runtime.model.policy.prompt import (
 from affordance_runtime.model.policy.request_admission import (
     AdmittedModelRequest,
     ModelRequestBudget,
-    ModelRequestCapacityError,
-    admit_model_request,
-    estimate_model_request,
+    RequestAdmission,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
-
-_MODEL_HISTORY_MAX_BYTES = 6 * 1024
 
 
 @dataclass(frozen=True)
@@ -63,6 +59,7 @@ class GroundedPolicyContextBinder:
 
     prompts: GroundedAgentPrompts = field(default_factory=load_grounded_agent_prompts)
     request_budget: ModelRequestBudget = field(default_factory=ModelRequestBudget)
+    request_admission: RequestAdmission = field(default_factory=RequestAdmission)
 
     def prompt_version(self, context: AgentContext) -> str:
         del context
@@ -104,15 +101,6 @@ class GroundedPolicyContextBinder:
             raise ValueError("model turn delivery belongs to another Context")
         if delivery.includes_images != include_images:
             raise ValueError("model turn delivery image selection is inconsistent")
-        selected = self._candidate(
-            request,
-            tools,
-            delivery,
-            include_images=include_images,
-            include_tool_menu=include_tool_menu,
-            request_budget=budget,
-        )
-        selected_projection = delivery.view.projection
         full_view = render_compact_actor_world(
             request.agent_context.actor_world,
             request.agent_context.grounding,
@@ -128,49 +116,19 @@ class GroundedPolicyContextBinder:
             ensure_ascii=False,
         )
         full_actor_tokens = max(1, math.ceil(len(full_actor_payload.encode()) / 3))
-        full_candidate_tokens = max(
-            1,
-            selected.breakdown.estimated_total_tokens
-            - selected.breakdown.actor_world_tokens
-            + full_actor_tokens,
-        )
-        try:
-            admitted = admit_model_request(
-                messages=selected.messages,
-                tools=selected.tools,
-                budget=budget,
-                phase="initial",
-                component_payloads=selected.component_payloads,
-                image_inputs=request.image_inputs if include_images else (),
-            )
-        except ModelRequestCapacityError as exc:
-            raise ModelRequestCapacityError(
-                replace(
-                    exc.breakdown,
-                    prefit_estimated_total_tokens=selected.breakdown.estimated_total_tokens,
-                    delivery_projection=selected_projection,
-                    full_candidate_tokens=full_candidate_tokens,
-                    lens_candidate_tokens=selected.breakdown.estimated_total_tokens,
-                    expanded_region_count=selected.expanded_region_count,
-                    folded_region_count=selected.folded_region_count,
-                    direct_action_count=selected.direct_action_count,
-                    searchable_action_count=selected.searchable_action_count,
-                )
-            ) from exc
-        return AdmittedModelRequest(
-            admitted.messages,
-            admitted.tools,
-            replace(
-                admitted.breakdown,
-                prefit_estimated_total_tokens=selected.breakdown.estimated_total_tokens,
-                delivery_projection=selected_projection,
-                full_candidate_tokens=full_candidate_tokens,
-                lens_candidate_tokens=selected.breakdown.estimated_total_tokens,
-                expanded_region_count=selected.expanded_region_count,
-                folded_region_count=selected.folded_region_count,
-                direct_action_count=selected.direct_action_count,
-                searchable_action_count=selected.searchable_action_count,
+        return self.request_admission.admit(
+            request=request,
+            tools=tools,
+            budget=budget,
+            serialize=lambda fitted_request: self._candidate(
+                fitted_request,
+                tools,
+                delivery,
+                include_images=include_images,
+                include_tool_menu=include_tool_menu,
             ),
+            include_images=include_images,
+            full_candidate_tokens=full_actor_tokens,
         )
 
     def _candidate(
@@ -181,14 +139,11 @@ class GroundedPolicyContextBinder:
         *,
         include_images: bool,
         include_tool_menu: bool,
-        max_actor_bytes: int | None = None,
-        request_budget: ModelRequestBudget | None = None,
     ) -> "_PolicyRequestCandidate":
         sections = self._public_context_sections(
             request.agent_context,
             include_images,
             delivery,
-            max_actor_bytes=max_actor_bytes,
         )
         view = sections["delivery_view"]
         if view is not delivery.view:
@@ -209,14 +164,6 @@ class GroundedPolicyContextBinder:
             "history": sections["history"],
             "working_set": sections["working_set"],
         }
-        breakdown = estimate_model_request(
-            messages=messages,
-            tools=direct_tools,
-            budget=request_budget or self.request_budget,
-            phase="initial",
-            component_payloads=component_payloads,
-            image_inputs=request.image_inputs if include_images else (),
-        )
         expanded = int(view.coverage.get("expanded_regions", 0))
         folded = int(view.coverage.get("folded_regions", 0))
         direct_refs = frozenset(delivery.manifest.executable_refs)
@@ -225,7 +172,7 @@ class GroundedPolicyContextBinder:
             messages,
             direct_tools,
             component_payloads,
-            breakdown,
+            delivery.view.projection,
             expanded,
             folded,
             len(request.agent_context.complete_actions) - searchable,
@@ -251,10 +198,7 @@ class GroundedPolicyContextBinder:
         context: AgentContext,
         include_images: bool,
         delivery: ModelTurnDelivery,
-        *,
-        max_actor_bytes: int | None = None,
     ) -> dict[str, object]:
-        del max_actor_bytes
         if delivery.context_id != context.context_id:
             raise ValueError("model turn delivery belongs to another Context")
         if delivery.includes_images != include_images:
@@ -262,11 +206,15 @@ class GroundedPolicyContextBinder:
         task = _task(context)
         view = delivery.view
         observation = view.text
-        recent_steps = render_episode_history(
-            context.recent_steps.items,
-            min(context.history_byte_budget, _MODEL_HISTORY_MAX_BYTES),
+        recent_steps = render_agent_workspace(
+            context.workspace,
+            total_step_count=context.current_step_index,
         )
-        working_set = public_working_facts(context.working_facts) if context.working_facts else ()
+        working_set = (
+            public_working_facts(context.workspace.working_facts)
+            if context.workspace.working_facts
+            else ()
+        )
         public: dict[str, object] = {
             "task": task,
             "observation": observation,
@@ -436,7 +384,7 @@ class _PolicyRequestCandidate:
     messages: tuple[ModelMessage, ...]
     tools: tuple[ToolSpec, ...]
     component_payloads: Mapping[str, object]
-    breakdown: object
+    delivery_projection: str
     expanded_region_count: int
     folded_region_count: int
     direct_action_count: int

@@ -40,7 +40,9 @@ from affordance_runtime.agent.workspace import (
     ActivitySummary,
     AgentWorkspace,
     CurrentFinding,
+    DefaultWorkspaceReducer,
     SemanticEvent,
+    WorkspaceReducer,
 )
 
 __all__ = [
@@ -56,6 +58,7 @@ __all__ = [
     "CoreAgentLoop",
     "CoreLoopStartError",
     "CurrentFinding",
+    "DefaultWorkspaceReducer",
     "DecisionCapability",
     "DecisionKind",
     "FailureKind",
@@ -83,4 +86,5 @@ __all__ = [
     "Wait",
     "WorkingFact",
     "WorldTransitionProjector",
+    "WorkspaceReducer",
 ]

@@ -8,12 +8,6 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import InternalActionPage
-from affordance_runtime.agent.context.budgets import DEFAULT_MAX_HISTORY_SERIALIZED_BYTES
-from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.context.episode_history import (
-    EpisodeHistoryCapacityError,
-    render_episode_history,
-)
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -33,11 +27,7 @@ from affordance_runtime.agent.finalization import FinalizationProtocolResult
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
-from affordance_runtime.agent.working_facts import (
-    MAX_WORKING_FACTS,
-    WorkingFact,
-    validate_working_fact_collection,
-)
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
     TaskEvaluation,
@@ -220,13 +210,12 @@ class RunState:
     execution_count: int = 0
     step_count: int = 0
     context_generation: int = 0
-    recent_steps: tuple[AgentTurnView, ...] = ()
+    workspace: AgentWorkspace = field(default_factory=AgentWorkspace)
     action_page: InternalActionPage | None = None
     waited_ms: int = 0
     task_revision: int = 1
     goal_resolution: GoalPlanResolution | None = None
     goal_plan_version_counter: int = 0
-    working_facts: tuple[WorkingFact, ...] = ()
     delivery_lens: WorldDeliveryLens | None = None
     recovery_signal: RecoverySignal | None = None
     committed_sent_unknown_count: int = 0
@@ -297,10 +286,8 @@ class RunState:
                 raise ValueError("ready run goal plan must match the current task")
             if self.goal_plan_version_counter < plan.plan_version:
                 raise ValueError("goal plan counter cannot precede the accepted plan")
-        self.recent_steps = tuple(self.recent_steps)
-        if any(not isinstance(item, AgentTurnView) for item in self.recent_steps):
-            raise ValueError("recent step context must be public")
-        self.working_facts = validate_working_fact_collection(self.working_facts)
+        if not isinstance(self.workspace, AgentWorkspace):
+            raise TypeError("run workspace must be typed")
         if self.delivery_lens is not None:
             if not isinstance(self.delivery_lens, WorldDeliveryLens):
                 raise TypeError("run delivery lens must be typed")
@@ -365,42 +352,6 @@ class RunState:
             raise ValueError("run resume status does not match the pending boundary")
         self.status = RunStatus.RUNNING
 
-    def remember_step(
-        self,
-        step: AgentTurnView,
-        *,
-        max_bytes: int = DEFAULT_MAX_HISTORY_SERIALIZED_BYTES,
-    ) -> None:
-        if not isinstance(step, AgentTurnView):
-            raise TypeError("run step memory must be model-safe")
-        candidate = (*self.recent_steps, step)
-        render_episode_history(candidate, max_bytes)
-        self.recent_steps = candidate
-
-    def can_remember_step(
-        self,
-        step: AgentTurnView,
-        *,
-        max_bytes: int = DEFAULT_MAX_HISTORY_SERIALIZED_BYTES,
-    ) -> bool:
-        if not isinstance(step, AgentTurnView):
-            raise TypeError("run step memory must be model-safe")
-        try:
-            render_episode_history((*self.recent_steps, step), max_bytes)
-        except EpisodeHistoryCapacityError:
-            return False
-        return True
-
-    def remember_working_fact(self, fact: WorkingFact) -> None:
-        previous = next((item for item in self.working_facts if item.key == fact.key), None)
-        if previous is not None:
-            if previous.record.evidence_ref == fact.record.evidence_ref:
-                return
-            raise ValueError("working fact key already identifies different evidence")
-        if len(self.working_facts) >= MAX_WORKING_FACTS:
-            raise ValueError("episode working fact capacity is exhausted")
-        self.working_facts = validate_working_fact_collection((*self.working_facts, fact))
-
     def apply(self, result: StepResult, *, consume_step: bool = True) -> None:
         if self.status is not RunStatus.RUNNING:
             raise ValueError("only a running state can accept a step")
@@ -434,8 +385,6 @@ class RunState:
             self.delivery_lens = None
             self.action_page = None
         self.waited_ms += result.waited_ms
-        if isinstance(result.decision, LocalToolResult) and result.decision.working_fact is not None:
-            self.remember_working_fact(result.decision.working_fact)
         if isinstance(result.decision, LocalToolResult) and result.decision.delivery_lens is not None:
             lens = result.decision.delivery_lens
             if lens.world_observation_id == self.current_world.observation_id:

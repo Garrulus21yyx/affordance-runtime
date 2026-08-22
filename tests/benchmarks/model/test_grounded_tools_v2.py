@@ -29,7 +29,6 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import close_action_candidates
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
-from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import inspect_actor_world
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import (
@@ -38,9 +37,12 @@ from affordance_runtime.agent.context.contracts import (
 )
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.observation_delivery import current_findings_digest
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.monitor import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
+from affordance_runtime.agent.profile import AgentLoopProfile
+from affordance_runtime.agent.workspace import AgentWorkspace, working_facts_digest
 from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingDecisionPort,
@@ -573,7 +575,7 @@ def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_r
             context.actor_world,
             sources=(*context.actor_world.sources, visual_source),
         ),
-        recent_steps=BoundedSection(
+        workspace=AgentWorkspace(
             (
                 AgentTurnView(
                     "requestobservation",
@@ -584,9 +586,8 @@ def test_structure_first_attaches_current_image_for_explicit_unresolved_visual_r
                     },
                 ),
             ),
-            1,
-            False,
         ),
+        current_step_index=1,
     )
     port = _ActionPort()
     adapter = CompactJsonDecisionPort(
@@ -946,7 +947,10 @@ def test_remember_fact_resolves_the_value_from_current_public_evidence() -> None
     assert resolution.decision.working_fact.value == record.value
     assert "value" not in resolution.decision.result
 
-    next_context = replace(context, working_facts=(resolution.decision.working_fact,))
+    next_context = replace(
+        context,
+        workspace=replace(context.workspace, working_facts=(resolution.decision.working_fact,)),
+    )
     public = _bound_public_context(next_context)
     assert public["working_set"] == [
         {
@@ -1043,7 +1047,7 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     assert pinned.working_fact.value == "Metric: 33 units"
     assert pinned.working_fact.record.observation_id == (context.current_observation.observation_id)
 
-    with_fact = replace(alpha_view, working_facts=(pinned.working_fact,))
+    with_fact = replace(alpha_view, workspace=replace(alpha_view.workspace, working_facts=(pinned.working_fact,)))
     second_search = _resolve_catalog_call(
         _compile_catalog(with_fact),
         ToolCall("search_page_content", {"query": "48 units"}, "provider-call:find-beta"),
@@ -1051,7 +1055,7 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     ).decision
     beta_view = replace(with_fact, delivery_lens=second_search.delivery_lens)
 
-    assert beta_view.working_facts == (pinned.working_fact,)
+    assert beta_view.workspace.working_facts == (pinned.working_fact,)
     assert _bound_public_context(beta_view)["working_set"] == [
         {
             "key": "alpha_metric",
@@ -1079,7 +1083,7 @@ def test_remember_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict(
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(first, LocalToolResult) and first.working_fact is not None
-    pinned = replace(context, working_facts=(first.working_fact,))
+    pinned = replace(context, workspace=replace(context.workspace, working_facts=(first.working_fact,)))
     catalog = _compile_catalog(pinned, GroundedToolPhase.ACTION_SELECTION)
 
     same = _resolve_catalog_call(
@@ -1153,7 +1157,7 @@ def test_remember_fact_rejects_a_second_observation_version_of_one_retained_cano
         after,
         ActionSpaceBuilder().build(task, after),
         TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
-        working_facts=(first.working_fact,),
+        workspace=AgentWorkspace(working_facts=(first.working_fact,)),
     )
     after_delivery = _delivery(after_context)
     after_ref = next(
@@ -1191,7 +1195,10 @@ def test_remember_fact_capacity_rejection_is_typed_before_run_state_application(
     assert isinstance(first, LocalToolResult) and first.working_fact is not None
     full = replace(
         context,
-        working_facts=tuple(replace(first.working_fact, key=f"value_{index}") for index in range(16)),
+        workspace=replace(
+            context.workspace,
+            working_facts=tuple(replace(first.working_fact, key=f"value_{index}") for index in range(16)),
+        ),
     )
     catalog = _compile_catalog(full, GroundedToolPhase.ACTION_SELECTION)
 
@@ -1482,7 +1489,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert empty_step.action_page_result["authority_changed"] is False
     assert "shorten_query" in empty_step.action_page_result["safe_relaxations"]
 
-    monitor = EpisodeMonitor()
+    monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
     local = SearchPageContentResult(
         context.context_id,
         "search_page_content",
@@ -1490,14 +1497,15 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
         {"action": "find", "matches": (), "total_count": 0},
     )
     local_step = replace(empty_step, decision=local, feedback="local_tool_result", action_page_result={})
-    assert (
-        monitor.evaluate(local_step, (), world.observation_id).recommendation is EpisodeMonitorRecommendation.CONTINUE
-    )
-    recovery = monitor.evaluate(local_step, (), world.observation_id)
+    monitor.start_episode(world, evaluation)
+    findings_digest = current_findings_digest(world)
+    facts_digest = working_facts_digest(AgentWorkspace())
+    assert monitor.evaluate(local_step, findings_digest, facts_digest).recommendation is EpisodeMonitorRecommendation.CONTINUE
+    recovery = monitor.evaluate(local_step, findings_digest, facts_digest)
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    blocked = monitor.evaluate(local_step, (), world.observation_id)
+    blocked = monitor.evaluate(local_step, findings_digest, facts_digest)
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
 
 
@@ -1592,7 +1600,7 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
 def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
     context = replace(
         _nested_context(),
-        recent_steps=BoundedSection(
+        workspace=AgentWorkspace(
             (
                 AgentTurnView(
                     "localtoolresult",
@@ -1604,9 +1612,8 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
                     },
                 ),
             ),
-            1,
-            False,
         ),
+        current_step_index=1,
     )
 
     recent = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
@@ -1878,7 +1885,7 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
     )
     context = replace(
         context,
-        recent_steps=BoundedSection(
+        workspace=AgentWorkspace(
             (
                 AgentTurnView(
                     "selectaction",
@@ -1916,14 +1923,12 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
                     semantic_summary={"feedback_code": "action_outcome_unknown"},
                 ),
             ),
-            3,
-            False,
         ),
+        current_step_index=3,
     )
 
     history = _bound_public_context(context)["recent_steps"]
 
-    assert history["earlier_actions"] == []
     assert history["retained_count"] == 3
     trajectory = history["recent_trajectory"]
     assert [item["action"]["target"]["label"] for item in trajectory] == [
@@ -1955,7 +1960,7 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
                 {"modality": "visual", "assurance": "weak", "purposes": ("entity_discovery",)},
             ),
         ),
-        recent_steps=BoundedSection(
+        workspace=AgentWorkspace(
             (
                 AgentTurnView(
                     "requestobservation",
@@ -1968,9 +1973,8 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
                     },
                 ),
             ),
-            1,
-            False,
         ),
+        current_step_index=1,
     )
 
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
@@ -1982,7 +1986,7 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
     assert "Runtime chooses how" in descriptions["request_evidence"]
 
 
-def test_grounded_recent_steps_keep_all_compact_and_latest_four_detailed() -> None:
+def test_grounded_workspace_keeps_only_latest_four_steps_detailed() -> None:
     context = _context()
     target = AgentHistoricalTargetView("textbox", "Value", ("Form",))
     turns = tuple(
@@ -1999,13 +2003,13 @@ def test_grounded_recent_steps_keep_all_compact_and_latest_four_detailed() -> No
         )
         for index in range(10)
     )
-    context = replace(context, recent_steps=BoundedSection(turns, len(turns), False))
+    context = replace(context, workspace=AgentWorkspace(turns[-4:]), current_step_index=len(turns))
 
     recent_steps = _bound_public_context(context)["recent_steps"]
 
     assert recent_steps["retained_count"] == 10
-    assert len(recent_steps["earlier_actions"]) == 6
-    assert recent_steps["earlier_actions"][0]["outcome"] == "step-0 used"
+    assert recent_steps["semantic_events"] == []
+    assert recent_steps["activity_summaries"] == []
     assert "expired-ref" not in json.dumps(recent_steps)
     assert len(recent_steps["recent_trajectory"]) == 4
     assert recent_steps["recent_trajectory"][-1]["action"]["arguments"] == {"text": "9"}
@@ -2022,13 +2026,11 @@ def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
         )
         for index in range(5)
     )
-    context = replace(context, recent_steps=BoundedSection(turns, len(turns), False))
+    context = replace(context, workspace=AgentWorkspace(turns[-4:]), current_step_index=len(turns))
 
     history = _bound_public_context(context)["recent_steps"]
 
-    assert len(history["earlier_actions"]) == 1
     assert {"observation", "target_ref", "destination_ref", "images"}.isdisjoint(AgentTurnView.__dataclass_fields__)
-    assert "observation" not in history["earlier_actions"][0]
     assert len(history["recent_trajectory"]) == 4
     assert all("observation" not in item for item in history["recent_trajectory"])
     assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", json.dumps(history))
@@ -2114,7 +2116,7 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
             reason="target changed again",
         ),
     )
-    context = replace(context, recent_steps=BoundedSection(turns, len(turns), False))
+    context = replace(context, workspace=AgentWorkspace(turns), current_step_index=len(turns))
 
     first = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
 
@@ -2126,7 +2128,6 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
         "observed_change": "changed",
         "evidence_method": "structural",
         "target_changed": True,
-        "fact_change_count": 1,
     }
 
 

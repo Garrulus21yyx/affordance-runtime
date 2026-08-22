@@ -2,23 +2,24 @@ from __future__ import annotations
 
 import json
 import re
+from types import SimpleNamespace
 
 import pytest
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.step_projection import project_step_result
-from affordance_runtime.agent.decisions import (
-    ReadRegionResult,
-    RememberFactResult,
-    ToolRejectedResult,
-)
-from affordance_runtime.agent.run_state import (
-    RunState,
-    RunStatus,
-    StepResult,
-)
+from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
+from affordance_runtime.agent.decisions import ReadRegionResult, RememberFactResult, ToolRejectedResult
+from affordance_runtime.agent.observability import RunTraceRecorder
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.working_facts import WorkingFact
+from affordance_runtime.agent.workspace import (
+    ActivityFamily,
+    AgentWorkspace,
+    DefaultWorkspaceReducer,
+    SemanticEventKind,
+    render_agent_workspace,
+)
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus, WorldEvidenceIndex
 from affordance_runtime.immutable import to_json_compatible
 from tests.support.agent.core_loop_support import shared_world
@@ -28,50 +29,80 @@ def _evaluation(observation_id: str) -> TaskEvaluation:
     return TaskEvaluation("task", observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing")
 
 
-def test_episode_history_retains_all_steps_and_never_repeats_the_latest_four() -> None:
-    steps = tuple(AgentTurnView("wait", "wait", reason=f"step-{index}") for index in range(12))
+def test_workspace_reducer_is_total_for_one_thousand_ordinary_reads() -> None:
+    world = shared_world("observation:reads", False)
+    reducer = DefaultWorkspaceReducer()
+    workspace = AgentWorkspace()
+    trace = RunTraceRecorder()
 
-    rendered = render_episode_history(steps)
-
-    assert rendered["retained_count"] == 12
-    assert tuple(item["outcome"] for item in rendered["earlier_actions"]) == tuple(
-        f"step-{index}" for index in range(8)
-    )
-    assert tuple(item["result"]["reason"] for item in rendered["recent_trajectory"]) == tuple(
-        f"step-{index}" for index in range(8, 12)
-    )
-
-
-def test_fifty_step_history_keeps_semantic_trace_without_refs_ids_or_screenshots() -> None:
-    steps = tuple(
-        AgentTurnView(
-            "selectaction",
-            "activate",
-            reason="unchanged",
-            transition={
-                "observed_change": "unchanged",
-                "before_world_fingerprint": f"fingerprint-before-{index}",
-                "after_world_fingerprint": f"fingerprint-after-{index}",
-                "screenshot_changed": False,
-                "fact_changes": tuple({"predicate": f"p{inner}", "before": "a", "after": "b"} for inner in range(6)),
-            },
+    for index in range(1_000):
+        decision = ReadRegionResult(
+            f"context:{index}",
+            "read_region",
+            {"region_ref": "R1", "query": f"query-{index}"},
+            {"items": ()},
         )
-        for index in range(50)
+        step = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
+        workspace = reducer.reduce(workspace, step, project_step_result(step), index + 1)
+        trace.step_completed(index + 1, step)
+
+    assert len(workspace.recent_steps) == 4
+    assert tuple(item.semantic_summary["query"] for item in workspace.recent_steps) == tuple(
+        f"query-{index}" for index in range(996, 1_000)
     )
-
-    rendered = render_episode_history(steps, max_bytes=3_000)
-    encoded = json.dumps(to_json_compatible(rendered))
-
-    assert rendered["retained_count"] == 50
-    assert len(rendered["recent_trajectory"]) == 4
-    assert len(rendered["earlier_actions"]) < 46
-    assert "activate" in encoded
-    assert "fingerprint" not in encoded
-    assert "screenshot" not in encoded
-    assert not re.search(r"\b[EFNR][1-9][0-9]{0,3}\b", encoded)
+    activity = next(item for item in workspace.activities if item.family is ActivityFamily.READ_REGION)
+    assert activity.attempt_count == 1_000
+    assert workspace.semantic_events == ()
+    assert sum(item["event"] == "step_completed" for item in trace.events) == 1_000
 
 
-def test_projected_history_removes_generation_local_entity_and_fact_refs() -> None:
+def test_exact_gui_result_survives_after_it_leaves_latest_four_steps() -> None:
+    before = shared_world("observation:before", False)
+    after = shared_world("observation:after", True)
+    delta = WorldTransitionProjector().project(before, after)
+    reducer = DefaultWorkspaceReducer()
+    effect = SimpleNamespace(
+        public_world_delta=delta,
+        execution_receipts=SimpleNamespace(receipts=(object(),)),
+        decision=SimpleNamespace(working_fact=None),
+        recovery_signal=None,
+        status_after="running",
+        failure_code=None,
+        runtime_failure=None,
+        feedback="action_changed",
+    )
+    workspace = reducer.reduce(
+        AgentWorkspace(),
+        effect,
+        AgentTurnView("select_action", "activate", reason="changed"),
+        1,
+    )
+    ordinary = SimpleNamespace(
+        public_world_delta=WorldTransitionProjector().project(after, after),
+        execution_receipts=None,
+        decision=SimpleNamespace(working_fact=None),
+        recovery_signal=None,
+        status_after="running",
+        failure_code=None,
+        runtime_failure=None,
+        feedback="local_tool_result",
+    )
+    for index in range(2, 10):
+        workspace = reducer.reduce(
+            workspace,
+            ordinary,
+            AgentTurnView("read_region", "read_region", reason=f"read-{index}"),
+            index,
+        )
+
+    assert all(item.semantic_action != "activate" for item in workspace.recent_steps)
+    event = next(item for item in workspace.semantic_events if item.kind is SemanticEventKind.PUBLIC_RESULT)
+    assert any(item["predicate"] == "enabled" and item["value"] is True for item in event.exact_public_values)
+    rendered = json.dumps(to_json_compatible(render_agent_workspace(workspace, total_step_count=9)))
+    assert '"value": true' in rendered
+
+
+def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> None:
     world = shared_world("observation:refs", False)
     decision = ReadRegionResult(
         "context:test",
@@ -80,29 +111,16 @@ def test_projected_history_removes_generation_local_entity_and_fact_refs() -> No
         {"counts": {"E1": 2}, "source": "F2"},
         "provider-call:refs",
     )
-    result = StepResult(
-        decision,
-        world,
-        world,
-        _evaluation(world.observation_id),
-        feedback="local result used E1 and F2",
-    )
-
+    result = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="used E1 and F2")
     projected = project_step_result(result)
-    encoded = json.dumps(
-        to_json_compatible(
-            {
-                "summary": projected.semantic_summary,
-                "reason": projected.reason,
-            }
-        )
-    )
+    rendered = render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1)
+    encoded = json.dumps(to_json_compatible(rendered))
 
     assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
     assert "expired-ref" not in encoded
 
 
-def test_rejected_action_history_keeps_semantics_and_capability_not_ref_identity() -> None:
+def test_rejected_action_workspace_keeps_semantics_not_ref_identity() -> None:
     world = shared_world("observation:rejected", False)
     decision = ToolRejectedResult(
         "context:test",
@@ -118,68 +136,21 @@ def test_rejected_action_history_keeps_semantics_and_capability_not_ref_identity
         },
     )
     projected = project_step_result(
-        StepResult(
-            decision,
-            world,
-            world,
-            _evaluation(world.observation_id),
-            feedback="tool_rejected",
-        )
+        StepResult(decision, world, world, _evaluation(world.observation_id), feedback="tool_rejected")
     )
-    encoded = json.dumps(to_json_compatible(render_episode_history((projected,))))
+    encoded = json.dumps(
+        to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1))
+    )
 
     assert projected.semantic_summary["result"]["target"] == {
         "role": "focused_context",
         "label": "REPORTS",
     }
-    assert projected.semantic_summary["result"]["available_operations"] == ("press_key",)
-    assert "E59" not in encoded
-    assert "expired-ref" not in encoded
-
-
-def test_history_sanitizer_removes_legacy_expired_ref_aliases() -> None:
-    decision = ToolRejectedResult(
-        "context:test",
-        "tool_rejected",
-        {"summary": "activate <expired-ref-1>"},
-        {
-            "failure_reason": "<expired-ref-2> is not actionable",
-            "available_operations": ("press_key",),
-        },
-    )
-    world = shared_world("observation:legacy-alias", False)
-
-    projected = project_step_result(
-        StepResult(
-            decision,
-            world,
-            world,
-            _evaluation(world.observation_id),
-            feedback="tool_rejected",
-        )
-    )
-    encoded = json.dumps(to_json_compatible(render_episode_history((projected,))))
-
-    assert "expired-ref" not in encoded
-    assert "activate" in encoded
     assert "press_key" in encoded
+    assert "E59" not in encoded
 
 
-def test_irreducible_history_overflow_yields_with_typed_reason() -> None:
-    world = shared_world("observation:capacity", False)
-    state = RunState(world, _evaluation(world.observation_id), 10)
-
-    accepted = state.can_remember_step(
-        AgentTurnView("abort", "abort", reason="x" * 240),
-        max_bytes=32,
-    )
-
-    assert accepted is False
-    assert state.status is RunStatus.RUNNING
-    assert state.recent_steps == ()
-
-
-def test_working_fact_is_runtime_value_and_local_tool_has_zero_gui_execution() -> None:
+def test_working_fact_moves_into_workspace_without_gui_execution() -> None:
     world = shared_world("observation:pin", False)
     record = WorldEvidenceIndex.from_observation(world).records[0]
     fact = WorkingFact("saved_enabled", record, 0, "reuse later")
@@ -191,22 +162,31 @@ def test_working_fact_is_runtime_value_and_local_tool_has_zero_gui_execution() -
         "provider-call:pin",
         working_fact=fact,
     )
-    state = RunState(world, _evaluation(world.observation_id), 3)
+    step = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
+    workspace = DefaultWorkspaceReducer().reduce(AgentWorkspace(), step, project_step_result(step), 1)
 
-    state.apply(
-        StepResult(
-            decision,
-            world,
-            world,
-            _evaluation(world.observation_id),
-            feedback="local_tool_result",
-        )
+    assert workspace.working_facts == (fact,)
+    assert workspace.semantic_events[-1].kind is SemanticEventKind.WORKING_FACT
+
+
+def test_typed_failure_is_retained_as_a_bounded_semantic_event() -> None:
+    world = shared_world("observation:failure", False)
+    step = SimpleNamespace(
+        public_world_delta=WorldTransitionProjector().project(world, world),
+        execution_receipts=None,
+        decision=SimpleNamespace(working_fact=None),
+        recovery_signal=None,
+        status_after="failed",
+        failure_code="internal_error",
+        runtime_failure=object(),
+        feedback="unexpected runtime failure",
     )
 
-    assert state.working_facts == (fact,)
-    assert state.execution_count == 0
-    state.remember_working_fact(fact)
-    assert state.working_facts == (fact,)
+    workspace = DefaultWorkspaceReducer().reduce(AgentWorkspace(), step, None, 7)
+
+    assert len(workspace.semantic_events) == 1
+    assert workspace.semantic_events[0].kind is SemanticEventKind.TYPED_FAILURE
+    assert workspace.semantic_events[0].step_index == 7
 
 
 def test_working_fact_rejects_non_scalar_evidence() -> None:
@@ -227,24 +207,3 @@ def test_working_fact_rejects_non_scalar_evidence() -> None:
 
     with pytest.raises(ValueError, match="scalar"):
         WorkingFact("invalid", non_scalar, 0, "later")
-
-
-def test_working_fact_collection_has_a_serialized_byte_budget() -> None:
-    world = shared_world("observation:working-capacity", False)
-    record = WorldEvidenceIndex.from_observation(world).records[0]
-    large = type(record)(
-        record.evidence_ref,
-        record.observation_id,
-        record.kind,
-        record.source_id,
-        record.source_observation_id,
-        record.source_modality,
-        record.source_assurance,
-        record.subject_id,
-        record.predicate,
-        "x" * 2_000,
-    )
-    facts = tuple(WorkingFact(f"value_{index}", large, index, "later") for index in range(3))
-
-    with pytest.raises(ValueError, match="serialized byte budget"):
-        RunState(world, _evaluation(world.observation_id), 5, working_facts=facts)

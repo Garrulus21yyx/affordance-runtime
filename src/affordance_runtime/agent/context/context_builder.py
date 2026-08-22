@@ -14,15 +14,9 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     project_action_candidates,
 )
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
-from affordance_runtime.agent.context.budgets import (
-    BoundedSection,
-    ContextProjectionBudget,
-)
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
-from affordance_runtime.agent.context.contracts import (
-    AgentActionPageView,
-    AgentTurnView,
-)
+from affordance_runtime.agent.context.contracts import AgentActionPageView
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
@@ -39,7 +33,8 @@ from affordance_runtime.agent.context.world_projection import (
     project_model_world,
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
-from affordance_runtime.agent.working_facts import WorkingFact, is_public_scalar
+from affordance_runtime.agent.working_facts import is_public_scalar
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.goals.plan import Failed, GoalPlanResolution, NeedsInput
@@ -63,13 +58,12 @@ class ContextBuilder:
         observation: WorldObservation,
         action_space: ActionSpace,
         task_evaluation: TaskEvaluation,
-        recent_steps: tuple[AgentTurnView, ...] = (),
-        recent_step_total_count: int | None = None,
+        workspace: AgentWorkspace = AgentWorkspace(),
         action_page: InternalActionPage | None = None,
         context_generation: int = 0,
+        current_step_index: int = 0,
         observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
         goal_resolution: GoalPlanResolution | None = None,
-        working_facts: tuple[WorkingFact, ...] = (),
         runtime_controls: tuple[str, ...] = (),
         delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldDeliveryIndex | None = None,
@@ -140,10 +134,9 @@ class ContextBuilder:
             page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
-        history_items = tuple(recent_steps)
-        history_total = len(recent_steps) if recent_step_total_count is None else recent_step_total_count
-        if history_total < len(recent_steps):
-            raise ValueError("recent step total cannot be smaller than the retained steps")
+        if not isinstance(workspace, AgentWorkspace):
+            raise TypeError("context builder requires typed AgentWorkspace")
+        history_items = workspace.recent_steps
         complete_page = AgentActionPageView(
             complete_projected_actions.options,
             len(complete_projected_actions.options),
@@ -200,15 +193,10 @@ class ContextBuilder:
             observation,
             world,
             actions,
-            BoundedSection(
-                history_items,
-                len(history_items),
-                False,
-            ),
+            workspace,
             grounding,
             self.budget,
-            working_facts,
-            history_total,
+            current_step_index,
             runtime_controls,
             delivery_lens,
             current_region_index,
@@ -374,10 +362,9 @@ def _fit_context(
     observation: WorldObservation,
     world: ModelWorldView,
     actions: AgentActionPageView,
-    history: BoundedSection[AgentTurnView],
+    workspace: AgentWorkspace,
     grounding: GroundingProjectionResult,
     budget: ContextProjectionBudget,
-    working_facts: tuple[WorkingFact, ...],
     current_step_index: int,
     runtime_controls: tuple[str, ...],
     delivery_lens: WorldDeliveryLens | None,
@@ -425,7 +412,7 @@ def _fit_context(
         task_view,
         goal_plan,
         actions,
-        history,
+        workspace,
         project_actor_world_snapshot(
             observation,
             world,
@@ -439,14 +426,12 @@ def _fit_context(
         ),
         grounding.images,
         grounding.index,
-        working_facts,
         private_fact_bindings,
         evidence_index,
         observation,
         delivery_lens,
         region_index,
         current_step_index,
-        budget.max_history_serialized_bytes,
         runtime_controls,
         control_feedback,
         complete_actions,

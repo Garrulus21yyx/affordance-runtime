@@ -320,7 +320,7 @@ class CorePolicy:
             if self.turns == 1:
                 return RequestActionPage(context.context_id, query="shared state")
             assert context.actions.active_query == "shared state"
-            assert context.recent_steps.items[-1].semantic_action == "find_controls"
+            assert context.workspace.recent_steps[-1].semantic_action == "find_controls"
             return Abort(context.context_id, "page observed", AbortCategory.USER_REQUEST)
         if self.choice == "wait":
             if self.turns == 1:
@@ -330,7 +330,7 @@ class CorePolicy:
             if self.turns == 1:
                 return AskUser(context.context_id, "Which value?", ("value",))
             assert context.task.public_inputs["value"] == "provided"
-            assert context.recent_steps.items[-1].reason == "user_input_received"
+            assert context.workspace.recent_steps[-1].reason == "user_input_received"
             return Abort(context.context_id, "input observed", AbortCategory.USER_REQUEST)
         if self.choice == "count_children":
             if self.turns == 1:
@@ -341,7 +341,7 @@ class CorePolicy:
                     {"counts": {"N1": 2, "N4": 3}, "total": 5},
                     "provider-call:count",
                 )
-            step = context.recent_steps.items[-1]
+            step = context.workspace.recent_steps[-1]
             assert step.semantic_action == "count_children"
             assert step.semantic_summary["result"] == {
                 "counts": {},
@@ -351,7 +351,7 @@ class CorePolicy:
         if self.choice == "confirm_once":
             if self.turns == 1:
                 return SelectAction(context.context_id, context.actions.options[0].action_id)
-            assert context.recent_steps.items[-1].reason == "confirmation_declined"
+            assert context.workspace.recent_steps[-1].reason == "confirmation_declined"
             return Abort(context.context_id, "decline observed", AbortCategory.USER_REQUEST)
         raise AssertionError("policy should not be called")
 
@@ -671,10 +671,11 @@ def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_ep
         assert state.status is RunStatus.CANCELLED
         assert policy.turns == 7
         assert state.execution_count == 4
-        assert [step.semantic_action for step in state.recent_steps][-3:] == [
+        assert [step.semantic_action for step in state.workspace.recent_steps] == [
             "search_page_content",
             "read_region",
             "remember_fact",
+            "abort",
         ]
         assert isinstance(state.last_step.decision, Abort)
 
@@ -1083,7 +1084,7 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
         assert state.status is RunStatus.CANCELLED
         assert state.execution_count == 0
         assert state.observation_count == 1
-        assert state.recent_steps[0].semantic_summary["result"] == {
+        assert state.workspace.recent_steps[0].semantic_summary["result"] == {
             "counts": {},
             "total": 5,
         }
@@ -1216,9 +1217,9 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
         async def decide(self, context):
             self.turns += 1
             if self.turns == 1:
-                assert not context.recent_steps.items
+                assert not context.workspace.recent_steps
                 return SelectAction(context.context_id, context.actions.options[0].action_id)
-            previous = context.recent_steps.items
+            previous = context.workspace.recent_steps
             assert len(previous) == 1
             assert previous[0].semantic_action == "activate"
             assert previous[0].target is not None
@@ -1280,7 +1281,7 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
 
         assert state.status is RunStatus.CANCELLED
         assert policy.turns == 2
-        assert len(state.recent_steps) == 1
+        assert len(state.workspace.recent_steps) == 2
         assert state.last_step is not None
         assert state.last_step.policy_observation is not None
         assert environment.execute_calls == 1

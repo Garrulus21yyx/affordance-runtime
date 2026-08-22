@@ -208,7 +208,7 @@ def test_benchmark_policy_projection_does_not_mutate_persisted_trace_events() ->
         context_id="context:test",
         actions=SimpleNamespace(options=()),
         actor_world=SimpleNamespace(sources=()),
-        recent_steps=SimpleNamespace(items=()),
+        workspace=SimpleNamespace(recent_steps=()),
         image_inputs=(),
     )
 

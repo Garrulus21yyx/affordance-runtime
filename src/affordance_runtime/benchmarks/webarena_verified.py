@@ -19,6 +19,7 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery, build_model_turn_delivery
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.working_facts import is_public_scalar
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
 )
@@ -1253,7 +1254,7 @@ def _evidence_retention_diagnostic(
         evaluation,
         action_page=changed_page,
         context_generation=1,
-        working_facts=(fact,),
+        workspace=AgentWorkspace(working_facts=(fact,)),
         region_index=context.region_index,
     )
     binder = GroundedPolicyContextBinder()
@@ -1282,7 +1283,7 @@ def _evidence_retention_diagnostic(
     original_record = context.evidence_index.resolve_record(canonical_ref)
     exact_value_retained = bool(
         original_record is not None
-        and next_context.working_facts == (fact,)
+        and next_context.workspace.working_facts == (fact,)
         and fact.record == original_record
         and next_context.evidence_index is not None
         and next_context.evidence_index.resolve_record(canonical_ref) == original_record

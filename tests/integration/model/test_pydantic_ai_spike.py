@@ -419,7 +419,7 @@ def test_pydantic_ai_rejects_repair_that_invents_missing_semantic_content() -> N
         assert state.status is RunStatus.FAILED
         assert scripted.calls == 2
         assert "representation-only repaired tool call" in repr(scripted.messages)
-        assert state.recent_steps == ()
+        assert state.workspace.recent_steps == ()
 
     asyncio.run(scenario())
 

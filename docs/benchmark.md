@@ -2,8 +2,8 @@
 
 ## Status
 
-Current status: **single-ActionPolicy control migration and BrowserGym causal-transition automation present /
-change-first Observation Delivery and bounded AgentWorkspace gates reopened / live closure gates blocked**. Prior
+Current status: **single-ActionPolicy control path plus C8 stages 1–6 implemented provider-free /
+generated diagnostics, fresh audit, and live closure gates blocked**. Prior
 Planner/Auditor G0–G6 artifacts remain historical scoped evidence for the superseded mission path; they do not
 authorize another live run.
 
@@ -68,16 +68,25 @@ This gate must use generic generated/property cases plus the six real-page diagn
 regression witnesses only; production tests and code may not branch on them. C8–C9 implementation, full checks, durable
 provider-free evidence, and a new independent fresh-context review must agree before any live witness is authorized.
 
-Implementation checkpoint on 2026-08-22 (not C8–C9 closure): stages 1–3 freeze `PublicWorldDelta`, `RegionVersion`,
+Implementation checkpoint on 2026-08-22 (not C8–C9 closure): stages 1–6 freeze `PublicWorldDelta`, `RegionVersion`,
 `CurrentFinding`, `SemanticEvent`, `ActivitySummary`, `AgentWorkspace`, and `AgentLoopProfile`; one
 `WorldTransitionProjector` now supplies exact target/fact additions, removals, modifications, stable region membership,
 and before/after lineage. Runtime action evaluation, observation evaluation, current delivery index, Monitor, compact
 continuity, and trace share that projection. The existing `WorldDeliveryIndex` now versions stable regions, reuses
 unchanged cached outlines, and keeps exact current membership. Default production delivery is change-first and carries
 the latest exact GUI effect across local reads/searches; it no longer produces global lexical `EvidenceCandidates`.
-Focused cache/effect/order/authorization tests, Ruff, compileall, and the full provider-free suite pass with 1,441 tests
-and 19 skips. No live or Task-7 run was performed, no prompt or historical budget changed, and the remaining C8
-diagnostics plus workspace/capacity/Monitor gates stay open.
+`RunState` now stores a bounded `AgentWorkspace` rather than append-only recent history. A total reducer retains only
+four detailed steps, exact bounded semantic events and working facts, aggregates ordinary activity by family, and does
+not fail after 1,000 differing reads; Full Trace retains all 1,000 raw steps. The old history renderer, independent
+history byte cap, RunState pre-cap, `EpisodeHistoryCapacityError`, and `fact_change_count` projection are removed.
+`RequestAdmission` now owns complete request allocation, workspace fitting, estimation, and local
+`context_capacity`; irreducible requests reach no provider. The provider Binder only serializes admitted requests.
+`EpisodeMonitor` now owns exactly three information digests and two counters. Different query/region observations with
+no World/Findings/Facts increment form one streak, threshold crossing produces one recovery, and recurrence returns
+operational `control_stalled` without changing TaskEvaluation semantics. `AgentLoopProfile(30, 8, 1)` caps the old turn
+budget rather than increasing it. Focused properties, Ruff, compileall, and the full provider-free suite pass with
+1,438 tests and 19 skips. No live or Task-7 run was performed, no prompt or historical budget was increased, and
+remaining C8 diagnostics and fresh-audit gates stay open.
 
 Run17 recorded `CASE_FINISHED`, `cleanup_status=succeeded`, and `report_status=exported`; it does not reopen cleanup.
 The existing persist-before-cleanup order and bounded cleanup/viewer contracts remain unchanged. A future

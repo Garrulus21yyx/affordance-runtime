@@ -150,10 +150,10 @@ def _selected_region_keys(context: AgentContext) -> frozenset[str]:
     if (
         context.region_index is not None
         and context.current_observation is not None
-        and context.recent_steps.items
-        and context.recent_steps.items[-1].target is not None
+        and context.workspace.recent_steps
+        and context.workspace.recent_steps[-1].target is not None
     ):
-        historical = context.recent_steps.items[-1].target
+        historical = context.workspace.recent_steps[-1].target
         for target in context.current_observation.targets:
             if target.role == historical.role and target.label == historical.label:
                 region = context.region_index.region_for_target(target.target_id)

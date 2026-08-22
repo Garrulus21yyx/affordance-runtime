@@ -12,6 +12,7 @@ from affordance_runtime.agent.attempt_signature import public_attempt_signature
 from affordance_runtime.agent.budgets import StandaloneRunBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.observation_delivery import current_findings_digest
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
@@ -50,6 +51,11 @@ from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitController, WaitController
+from affordance_runtime.agent.workspace import (
+    DefaultWorkspaceReducer,
+    WorkspaceReducer,
+    working_facts_digest,
+)
 from affordance_runtime.evaluation.contracts import (
     CriterionEvaluationStatus,
     LocalPostconditionStatus,
@@ -88,7 +94,6 @@ from affordance_runtime.world.acquisition import (
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
-from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
 _ASSURANCE_RANK = {
@@ -123,6 +128,7 @@ class CoreAgentLoop:
     binder: ActionBinder = field(default_factory=ActionBinder)
     risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
+    workspace_reducer: WorkspaceReducer = field(default_factory=DefaultWorkspaceReducer)
     wait_controller: WaitController = field(default_factory=SystemWaitController)
     trace_sink: RunTraceSink = field(default_factory=NullRunTraceSink)
     goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
@@ -161,7 +167,16 @@ class CoreAgentLoop:
             task,
             acquisition.observation,
             resolution,
-            budget=StandaloneRunBudget(task.loop_budget.max_turns),
+            budget=StandaloneRunBudget(
+                min(
+                    task.loop_budget.max_turns,
+                    getattr(
+                        getattr(self.episode_monitor, "profile", None),
+                        "max_policy_decisions",
+                        task.loop_budget.max_turns,
+                    ),
+                )
+            ),
         )
         self.trace_sink.run_started(task, state)
         self.trace_sink.goal_compiler_completed(
@@ -182,7 +197,6 @@ class CoreAgentLoop:
         goal_resolution: GoalPlanResolution,
         *,
         budget: StandaloneRunBudget,
-        working_facts=(),
     ) -> RunState:
         """Create the sole run state from an already acquired initial World."""
 
@@ -206,11 +220,10 @@ class CoreAgentLoop:
             goal_plan_version_counter=(
                 goal_resolution.accepted_plan.plan_version if isinstance(goal_resolution, Ready) else 0
             ),
-            working_facts=working_facts,
         )
         start_episode = getattr(self.episode_monitor, "start_episode", None)
         if callable(start_episode):
-            start_episode(initial, evaluation, working_facts)
+            start_episode(initial, evaluation, state.workspace.working_facts)
         if isinstance(goal_resolution, NeedsInput) and initial_status is RunStatus.WAITING_USER:
             state.apply(
                 StepResult(
@@ -344,25 +357,15 @@ class CoreAgentLoop:
         consume_step: bool = True,
         trace_step: bool = True,
     ) -> StepResult:
-        projected = None
-        if result.status_after is RunStatus.RUNNING and not isinstance(
-            result.decision,
-            PolicyFailure,
-        ):
-            projected = project_step_result(result)
-            if not state.can_remember_step(
-                projected,
-                max_bytes=self.context_builder.budget.max_history_serialized_bytes,
-            ):
-                result = replace(
-                    result,
-                    status_after=RunStatus.BLOCKED,
-                    feedback="context_capacity",
-                    failure_code=None,
-                    runtime_failure=None,
-                )
-                projected = None
+        projected = None if isinstance(result.decision, PolicyFailure) else project_step_result(result)
+        workspace = self.workspace_reducer.reduce(
+            state.workspace,
+            result,
+            projected,
+            max(1, state.step_count + int(consume_step)),
+        )
         state.apply(result, consume_step=consume_step)
+        state.workspace = workspace
         if (
             result.finalization is not None and result.finalization.native_evaluation_status is not None
         ) or result.task_evaluation.status in {
@@ -372,11 +375,6 @@ class CoreAgentLoop:
             self._record_official_outcome(result.task_evaluation)
         if trace_step:
             self.trace_sink.step_completed(state.step_count, result)
-        if projected is not None:
-            state.remember_step(
-                projected,
-                max_bytes=self.context_builder.budget.max_history_serialized_bytes,
-            )
         return result
 
     def _record_official_outcome(self, evaluation: TaskEvaluation) -> None:
@@ -398,7 +396,12 @@ class CoreAgentLoop:
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
             return result
-        transition = evaluate(result, state.recent_steps, _world_fingerprint(result.after_world))
+        pending_fact = getattr(result.decision, "working_fact", None)
+        transition = evaluate(
+            result,
+            current_findings_digest(result.after_world),
+            working_facts_digest(state.workspace, pending_fact),
+        )
         recommendation = getattr(transition, "recommendation", "")
         if str(recommendation) == "recover":
             signal = getattr(transition, "recovery_signal", None)
@@ -509,13 +512,12 @@ class CoreAgentLoop:
             state.current_world,
             action_space,
             state.current_task_evaluation,
-            state.recent_steps,
-            max(state.step_count, len(state.recent_steps)),
+            state.workspace,
             action_page=action_page,
             context_generation=state.next_context_generation(),
+            current_step_index=state.step_count,
             observation_capabilities=environment.observation_capabilities,
             goal_resolution=state.goal_resolution,
-            working_facts=state.working_facts,
             runtime_controls=self.runtime_controls,
             delivery_lens=lens,
             region_index=region_index,
@@ -670,7 +672,7 @@ class CoreAgentLoop:
         state: RunState,
         decision: FinalResponse,
     ) -> StepResult:
-        admission = admit_final_response(task, state.current_world, state.working_facts, decision)
+        admission = admit_final_response(task, state.current_world, state.workspace.working_facts, decision)
         if not admission.admitted:
             return _same_world_step(
                 state,
@@ -1554,10 +1556,6 @@ def _repeats_recovery_signature(signal, selection, world) -> bool:
         world,
     )
     return current == signal.prohibited_attempt_signature
-
-
-def _world_fingerprint(world: WorldObservation) -> str:
-    return public_world_semantic_digest(world)
 
 
 def _criterion_assurance(

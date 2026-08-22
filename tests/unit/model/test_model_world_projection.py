@@ -13,6 +13,7 @@ from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import (
     CriterionEvaluation,
     CriterionEvaluationStatus,
@@ -798,7 +799,7 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
     assert f"region [{navigation_region.public_ref}]" not in rendered.text
 
 
-def test_recent_steps_keep_the_complete_episode_history() -> None:
+def test_context_delivers_only_the_workspace_latest_four_detailed_steps() -> None:
     observation = fused_world("world:history", surface="dom")
     task = TaskGoal("history", "Inspect recent steps")
     steps = tuple(AgentTurnView("abort", reason=f"step:{index}") for index in range(10))
@@ -808,12 +809,14 @@ def test_recent_steps_keep_the_complete_episode_history() -> None:
         observation,
         ActionSpace(observation.observation_id, ()),
         _evaluation(task, observation.observation_id),
-        steps,
+        AgentWorkspace(steps[-4:]),
+        current_step_index=len(steps),
     )
 
-    assert context.recent_steps.total_count == 10
-    assert not context.recent_steps.truncated
-    assert tuple(item.reason for item in context.recent_steps.items) == tuple(f"step:{index}" for index in range(10))
+    assert tuple(item.reason for item in context.workspace.recent_steps) == tuple(
+        f"step:{index}" for index in range(6, 10)
+    )
+    assert context.current_step_index == 10
 
 
 def _walk_actor(root):

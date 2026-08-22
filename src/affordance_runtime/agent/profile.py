@@ -17,3 +17,6 @@ class AgentLoopProfile:
         )
         if any(type(value) is not int or value < 1 for value in values):
             raise ValueError("agent loop profile values must be positive exact integers")
+
+
+DEFAULT_AGENT_LOOP_PROFILE = AgentLoopProfile(30, 8, 1)

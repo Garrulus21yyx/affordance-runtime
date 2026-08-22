@@ -642,7 +642,7 @@ def compile_grounded_tool_catalog(
                     _RememberFactBinding(
                         eligible,
                         context.evidence_index,
-                        {item.key: item for item in context.working_facts},
+                        {item.key: item for item in context.workspace.working_facts},
                         context.current_step_index,
                     ),
                 )

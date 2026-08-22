@@ -24,9 +24,9 @@ def perception_uses_images(
     if profile is DecisionPerceptionProfile.SCREENSHOT_AX:
         return True
     context = request.agent_context
-    if context is None or not context.recent_steps.items:
+    if context is None or not context.workspace.recent_steps:
         return False
-    latest = context.recent_steps.items[-1]
+    latest = context.workspace.recent_steps[-1]
     if (
         latest.decision_kind != "requestobservation"
         or latest.semantic_summary.get("purpose") not in _RAW_VISUAL_PURPOSES

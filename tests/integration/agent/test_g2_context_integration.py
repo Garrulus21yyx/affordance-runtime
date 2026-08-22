@@ -8,6 +8,7 @@ from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.goals import Failed, GoalPlan, GoalPlanItem, NotRequired, Ready, Unsupported
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
@@ -46,7 +47,8 @@ def _context(world, resolution=None, recent_steps: tuple[AgentTurnView, ...] = (
         world,
         ActionSpace(world.observation_id, ()),
         TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "incomplete"),
-        recent_steps,
+        AgentWorkspace(recent_steps[-4:]),
+        current_step_index=len(recent_steps),
         goal_resolution=resolution,
     )
 

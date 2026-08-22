@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -17,6 +19,7 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.public_semantic_digest import public_subject_semantics
 
 
 @dataclass(frozen=True)
@@ -170,6 +173,29 @@ class ObservationDeliveryStore:
         label = target.label if target is not None and target.label.strip() else target.role if target is not None else "target"
         cause = f'{intent.semantic_action} {label!r}'
         return ObservationDeliveryStore(LatestEffect(step_index, cause[:240], dispatch, delta))
+
+
+def current_findings_digest(observation: WorldObservation) -> str:
+    """Digest current public scalar findings without Runtime or observation identity."""
+
+    source_coverage = {
+        key: item.coverage
+        for item in observation.sources
+        for key in (item.observation_id, item.surface)
+    }
+    findings = sorted(
+        (
+            public_subject_semantics(observation, fact.subject_id),
+            fact.predicate,
+            fact.value,
+            source_coverage.get(fact.source_id, CoverageState.COMPLETE).value,
+        )
+        for fact in observation.facts
+        if is_public_scalar(fact.value)
+        and source_coverage.get(fact.source_id, CoverageState.COMPLETE) is not CoverageState.STALE
+    )
+    encoded = json.dumps(findings, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def project_observation_delivery(
