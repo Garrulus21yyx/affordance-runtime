@@ -23,6 +23,7 @@ from affordance_runtime.immutable import freeze_json
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
     from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -193,6 +194,12 @@ class AgentContext:
         metadata={"serialize": False},
     )
     evidence_candidates: object | None = field(default=None, repr=False, compare=False)
+    observation_delivery: ObservationDelivery | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -235,11 +242,21 @@ class AgentContext:
         from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
+        from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 
         if self.evidence_candidates is not None and not isinstance(
             self.evidence_candidates, EvidenceCandidateProjection
         ):
             raise TypeError("AgentContext evidence candidates must be typed")
+        if self.observation_delivery is not None:
+            if not isinstance(self.observation_delivery, ObservationDelivery):
+                raise TypeError("AgentContext observation delivery must be typed")
+            if (
+                self.current_observation is not None
+                and self.observation_delivery.world_observation_id
+                != self.current_observation.observation_id
+            ):
+                raise ValueError("AgentContext observation delivery belongs to another World")
         from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
         from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex

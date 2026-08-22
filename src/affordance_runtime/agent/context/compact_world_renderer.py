@@ -15,6 +15,7 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 )
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
 from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
+from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import (
     DELIVERY_LIMITS_V1,
@@ -255,6 +256,7 @@ def render_compact_actor_world(
     evidence_candidates: EvidenceCandidateProjection | None = None,
     public_fact_bindings: Mapping[str, str] | None = None,
     evidence_index: WorldEvidenceIndex | None = None,
+    observation_delivery: ObservationDelivery | None = None,
     max_rendered_bytes: int | None = None,
     force_region_delivery: bool = False,
     limits: DeliveryLimits = DELIVERY_LIMITS_V1,
@@ -282,6 +284,7 @@ def render_compact_actor_world(
             observation_id,
             action_candidates=action_candidates,
             evidence_candidates=evidence_candidates,
+            observation_delivery=observation_delivery,
         )
     if region_index.world_observation_id != observation.observation_id:
         raise ValueError("delivery index belongs to a previous observation")
@@ -298,6 +301,7 @@ def render_compact_actor_world(
         evidence_candidates=evidence_candidates,
         public_fact_bindings=public_fact_bindings or {},
         evidence_index=evidence_index,
+        observation_delivery=observation_delivery,
         selected_cursor=selected_cursor,
         max_rendered_bytes=max_rendered_bytes,
         limits=limits,
@@ -311,6 +315,7 @@ def _render_full(
     *,
     action_candidates: ActionCandidateProjection | None = None,
     evidence_candidates: EvidenceCandidateProjection | None = None,
+    observation_delivery: ObservationDelivery | None = None,
 ) -> WorldDeliveryView:
     manifest = _ManifestBuilder(observation_id)
     lines = ["compact_world format=compact_ax.v2", "projection=full"]
@@ -327,7 +332,11 @@ def _render_full(
         for item in delivered.global_facts:
             manifest.fact(item.evidence_ref)
             lines.append(f"  {item.subject}.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}")
-    if evidence_candidates is not None and evidence_candidates.candidates:
+    if observation_delivery is not None:
+        lines.extend(_render_latest_effect(observation_delivery, manifest))
+        lines.extend(_render_current_findings(observation_delivery, manifest))
+        lines.extend(_render_changed_regions(observation_delivery, manifest))
+    elif evidence_candidates is not None and evidence_candidates.candidates:
         lines.append(f"EvidenceCandidates exact=true count={len(evidence_candidates.candidates)}")
         for item in evidence_candidates.candidates:
             manifest.fact(item.fact_ref)
@@ -364,6 +373,7 @@ def _render_page_map(
     evidence_candidates: EvidenceCandidateProjection | None,
     public_fact_bindings: Mapping[str, str],
     evidence_index: WorldEvidenceIndex | None,
+    observation_delivery: ObservationDelivery | None,
     selected_cursor: str,
     max_rendered_bytes: int | None,
     limits: DeliveryLimits,
@@ -377,27 +387,10 @@ def _render_page_map(
         "compact_world format=compact_ax.v2",
         "projection=page_map public_content=folded recovery=read_region/search_page_content/find_controls",
         f"{page_identity} coverage={_index_coverage(index)}",
-        f"PageMap regions={len(index.regions)}",
     ]
-    invalid_descriptor = False
-    for region in index.regions:
-        descriptor = _region_descriptor_text(region, limits)
-        if not descriptor:
-            invalid_descriptor = True
-            break
-        manifest.region(region.public_ref)
-        lines.append("  " + descriptor)
-    if invalid_descriptor:
-        fallback = _render_full(delivered, verbs, observation.observation_id)
-        return RenderedWorldDelivery(
-            WorldDeliveryView(
-                fallback.text,
-                "full",
-                {"public_content": "exact", "partition": "failed"},
-                "delivery_partition_failed",
-            ),
-            fallback.manifest,
-        )
+    if observation_delivery is not None:
+        lines.extend(_render_latest_effect(observation_delivery, manifest))
+        lines.extend(_render_current_findings(observation_delivery, manifest))
 
     search_lines: list[str] = []
     exact_region_keys = set(selected_region_keys)
@@ -432,10 +425,13 @@ def _render_page_map(
     )
     exact_region_keys.update(default_region_order)
     if search_lines:
-        lines.append(f"ContentSearchResults exact=true count={len(search_lines)}")
+        lines.append(f"CurrentFindings source=local_search exact=true count={len(search_lines)}")
         lines.extend(search_lines)
 
-    if evidence_candidates is not None and evidence_candidates.candidates:
+    if observation_delivery is not None:
+        lines.extend(_render_changed_regions(observation_delivery, manifest))
+        exact_region_keys.update(item.region_key for item in observation_delivery.changed_regions)
+    elif evidence_candidates is not None and evidence_candidates.candidates:
         lines.append(f"EvidenceCandidates exact=true count={len(evidence_candidates.candidates)}")
         for rank, item in enumerate(evidence_candidates.candidates, 1):
             manifest.fact(item.fact_ref)
@@ -458,6 +454,17 @@ def _render_page_map(
                 observation,
             )
         )
+    elif observation_delivery is not None:
+        lines.append("ActionCandidates exact=true count=0")
+
+    if observation_delivery is not None:
+        lines.extend(_render_page_outline(observation_delivery, manifest))
+        lines.extend(_render_recovery_directory(observation_delivery, manifest))
+    else:
+        lines.append(f"PageMap regions={len(index.regions)}")
+        for region in index.regions:
+            manifest.region(region.public_ref)
+            lines.append("  " + _region_descriptor_text(region, limits))
 
     lines.append("ActiveView exact=true")
     rendered_any = False
@@ -536,6 +543,101 @@ def _render_page_map(
         WorldDeliveryView(text, "page_map", coverage),
         manifest.build(),
     )
+
+
+def _render_latest_effect(
+    delivery: ObservationDelivery,
+    manifest: _ManifestBuilder,
+) -> list[str]:
+    effect = delivery.latest_effect
+    if effect is None:
+        return ["LatestEffect none"]
+    lines = [
+        f"LatestEffect caused_by={_value(effect.caused_by)} "
+        f"dispatch={effect.dispatch_status.value} "
+        f"changed_regions={_value(tuple(item.region_ref for item in delivery.changed_regions))} "
+        f"exact=true count={len(delivery.latest_effect_values)}"
+    ]
+    for item in delivery.latest_effect_values:
+        _manifest_public_ref(manifest, item.public_ref)
+        if item.region_ref:
+            manifest.region(item.region_ref)
+        lines.append(
+            f"  kind={item.kind.value} [{item.public_ref or '-'}] "
+            f"predicate={_value(item.predicate)} value={_value(item.exact_value)} "
+            f"region={_value(item.region_ref)} source={_value(item.source_context)}"
+        )
+    return lines
+
+
+def _render_current_findings(
+    delivery: ObservationDelivery,
+    manifest: _ManifestBuilder,
+) -> list[str]:
+    lines = [f"CurrentFindings exact=true count={len(delivery.current_findings)}"]
+    for item in delivery.current_findings:
+        manifest.fact(item.evidence_ref)
+        lines.append(
+            f"  [{item.evidence_ref}] predicate={_value(item.predicate)} "
+            f"value={_value(item.exact_value)} source={_value(item.source_context)} "
+            f"coverage={item.coverage.value}"
+        )
+    return lines
+
+
+def _render_changed_regions(
+    delivery: ObservationDelivery,
+    manifest: _ManifestBuilder,
+) -> list[str]:
+    lines = [f"ChangedRegions count={len(delivery.changed_regions)}"]
+    for item in delivery.changed_regions:
+        manifest.region(item.region_ref)
+        omitted = max(0, item.member_count - 20)
+        lines.append(
+            f"  [{item.region_ref}] version={item.version} outline={_value(item.cached_outline)} "
+            f"members={item.member_count} omitted_count={omitted} "
+            f"cursor={_value(item.recovery_cursor)}"
+        )
+    return lines
+
+
+def _render_page_outline(
+    delivery: ObservationDelivery,
+    manifest: _ManifestBuilder,
+) -> list[str]:
+    lines = [f"PageOutline cached=true regions={len(delivery.page_outline)}"]
+    for item in delivery.page_outline:
+        manifest.region(item.region_ref)
+        lines.append(
+            f"  [{item.region_ref}] version={item.version} outline={_value(item.outline)}"
+        )
+    return lines
+
+
+def _render_recovery_directory(
+    delivery: ObservationDelivery,
+    manifest: _ManifestBuilder,
+) -> list[str]:
+    lines = [f"RecoveryDirectory regions={len(delivery.recovery_directory)}"]
+    for item in delivery.recovery_directory:
+        manifest.region(item.region_ref)
+        lines.append(
+            f"  [{item.region_ref}] version={item.version} members={item.member_count} "
+            f"operations={_value(item.operations)}"
+        )
+    return lines
+
+
+def _manifest_public_ref(
+    manifest: _ManifestBuilder,
+    ref: str,
+) -> None:
+    if ref.startswith("F"):
+        manifest.fact(ref)
+    elif ref.startswith("E"):
+        manifest.node(ref, executable=True)
+    elif ref.startswith("N"):
+        manifest.node(ref, executable=False)
 
 
 def inspect_actor_world(

@@ -68,13 +68,16 @@ This gate must use generic generated/property cases plus the six real-page diagn
 regression witnesses only; production tests and code may not branch on them. C8–C9 implementation, full checks, durable
 provider-free evidence, and a new independent fresh-context review must agree before any live witness is authorized.
 
-Implementation checkpoint on 2026-08-22 (not C8–C9 closure): stages 1–2 freeze `PublicWorldDelta`, `RegionVersion`,
+Implementation checkpoint on 2026-08-22 (not C8–C9 closure): stages 1–3 freeze `PublicWorldDelta`, `RegionVersion`,
 `CurrentFinding`, `SemanticEvent`, `ActivitySummary`, `AgentWorkspace`, and `AgentLoopProfile`; one
 `WorldTransitionProjector` now supplies exact target/fact additions, removals, modifications, stable region membership,
 and before/after lineage. Runtime action evaluation, observation evaluation, current delivery index, Monitor, compact
-continuity, and trace share that projection. Focused transition/owner/lifecycle tests, Ruff, compileall, and the full
-provider-free suite pass with 1,438 tests and 19 skips. No live or Task-7 run was performed, no prompt or historical
-budget changed, and the remaining C8 delivery/cache/workspace/capacity/Monitor gates stay open.
+continuity, and trace share that projection. The existing `WorldDeliveryIndex` now versions stable regions, reuses
+unchanged cached outlines, and keeps exact current membership. Default production delivery is change-first and carries
+the latest exact GUI effect across local reads/searches; it no longer produces global lexical `EvidenceCandidates`.
+Focused cache/effect/order/authorization tests, Ruff, compileall, and the full provider-free suite pass with 1,441 tests
+and 19 skips. No live or Task-7 run was performed, no prompt or historical budget changed, and the remaining C8
+diagnostics plus workspace/capacity/Monitor gates stay open.
 
 Run17 recorded `CASE_FINISHED`, `cleanup_status=succeeded`, and `report_status=exported`; it does not reopen cleanup.
 The existing persist-before-cleanup order and bounded cleanup/viewer contracts remain unchanged. A future

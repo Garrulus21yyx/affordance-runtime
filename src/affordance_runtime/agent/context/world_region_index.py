@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from affordance_runtime.immutable import freeze_json
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 
 
@@ -155,6 +156,8 @@ class WorldDeliveryIndex:
         repr=False,
     )
     public_world_delta: object | None = field(default=None, repr=False, compare=False)
+    document_lineage: str = ""
+    region_versions: tuple[RegionVersion, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.world_observation_id.strip():
@@ -196,6 +199,27 @@ class WorldDeliveryIndex:
                 raise TypeError("delivery index transition must be a typed public World delta")
             if self.public_world_delta.after_observation_id != self.world_observation_id:
                 raise ValueError("delivery index transition must terminate at its current World")
+        lineage = self.document_lineage or f"document:{self.world_observation_id}"
+        if not lineage.startswith("document:"):
+            raise ValueError("delivery index document lineage is invalid")
+        versions = tuple(self.region_versions)
+        if versions:
+            if len({item.region_key for item in versions}) != len(versions):
+                raise ValueError("delivery region versions must be unique")
+            if {item.region_key for item in versions} != keys:
+                raise ValueError("delivery region versions must cover the exact partition")
+            if any(item.document_lineage != lineage for item in versions):
+                raise ValueError("delivery region version belongs to another document lineage")
+            for item in versions:
+                region = self.get(item.region_key)
+                assert region is not None
+                if (
+                    item.member_target_ids != region.member_target_ids
+                    or item.member_fact_ids != region.member_fact_ids
+                ):
+                    raise ValueError("delivery region version membership must be exact")
+        object.__setattr__(self, "document_lineage", lineage)
+        object.__setattr__(self, "region_versions", versions)
 
     @classmethod
     def from_observation(
@@ -205,6 +229,7 @@ class WorldDeliveryIndex:
         *,
         limits: DeliveryLimits = DELIVERY_LIMITS_V1,
         public_world_delta: object | None = None,
+        previous_index: "WorldDeliveryIndex | None" = None,
     ) -> "WorldDeliveryIndex":
         seeds = _functional_partition(observation, action_options, limits)
         regions = _assign_public_refs(observation, seeds)
@@ -212,6 +237,14 @@ class WorldDeliveryIndex:
         fact_keys = {fact_id: region.key for region in regions for fact_id in region.member_fact_ids}
         action_keys = {action_id: region.key for region in regions for action_id in region.member_action_ids}
         paths = _target_functional_paths(observation, regions, target_keys)
+        document_lineage = _document_lineage(observation)
+        versions = _region_versions(
+            observation,
+            regions,
+            document_lineage,
+            previous_index,
+            limits,
+        )
         return cls(
             observation.observation_id,
             regions,
@@ -220,6 +253,8 @@ class WorldDeliveryIndex:
             action_keys,
             paths,
             public_world_delta,
+            document_lineage,
+            versions,
         )
 
     @property
@@ -254,6 +289,9 @@ class WorldDeliveryIndex:
             return tuple(path)
         region = self.region_for_target(target_id)
         return region.scope_path if region is not None else ()
+
+    def version_for(self, region_key: str) -> RegionVersion | None:
+        return next((item for item in self.region_versions if item.region_key == region_key), None)
 
 
 @dataclass(frozen=True)
@@ -768,6 +806,119 @@ def _assign_public_refs(observation: WorldObservation, seeds: tuple[_RegionSeed,
             )
         )
     return tuple(regions)
+
+
+def _document_lineage(observation: WorldObservation) -> str:
+    routes = tuple(
+        sorted(
+            str(target.state.get("page.route", "")).strip()
+            for target in observation.targets
+            if str(target.state.get("page.route", "")).strip()
+        )
+    )
+    viewport_ids = tuple(
+        sorted(
+            target.target_id
+            for target in observation.targets
+            if target.role.casefold() == "viewport"
+        )
+    )
+    sources = tuple(
+        sorted(
+            (item.surface, item.modality, item.profile)
+            for item in observation.source_manifest
+        )
+    )
+    digest = _json_digest((routes, viewport_ids, sources))
+    return f"document:{digest[:32]}"
+
+
+def _region_versions(
+    observation: WorldObservation,
+    regions: tuple[WorldRegion, ...],
+    document_lineage: str,
+    previous_index: WorldDeliveryIndex | None,
+    limits: DeliveryLimits,
+) -> tuple[RegionVersion, ...]:
+    previous = {
+        item.region_key: item
+        for item in previous_index.region_versions
+        if previous_index.document_lineage == document_lineage
+    } if previous_index is not None else {}
+    targets = {item.target_id: item for item in observation.targets}
+    facts = {item.fact_id: item for item in observation.facts}
+    sources = {item.observation_id: item for item in observation.sources}
+    versions: list[RegionVersion] = []
+    for region in regions:
+        content_digest = _json_digest(
+            (
+                tuple(
+                    (
+                        target.target_id,
+                        target.role,
+                        target.label,
+                        target.state,
+                        target.relations,
+                    )
+                    for item in region.member_target_ids
+                    if (target := targets.get(item)) is not None
+                ),
+                tuple(
+                    (fact.subject_id, fact.predicate, fact.value)
+                    for item in region.member_fact_ids
+                    if (fact := facts.get(item)) is not None
+                ),
+            )
+        )
+        source = sources.get(region.source_id)
+        structures = {item.structure_id: item for item in source.structure} if source is not None else {}
+        structure_digest = _json_digest(
+            tuple(
+                structures[item]
+                for item in region.member_structure_ids
+                if item in structures
+            )
+        )
+        prior = previous.get(region.key)
+        unchanged = bool(
+            prior is not None
+            and prior.content_digest == content_digest
+            and prior.structure_digest == structure_digest
+        )
+        versions.append(
+            RegionVersion(
+                region.key,
+                document_lineage,
+                content_digest,
+                structure_digest,
+                prior.version if unchanged else prior.version + 1 if prior is not None else 1,
+                prior.cached_outline if unchanged else _cached_outline(region, limits),
+                region.member_target_ids,
+                region.member_fact_ids,
+            )
+        )
+    return tuple(versions)
+
+
+def _cached_outline(region: WorldRegion, limits: DeliveryLimits) -> tuple[str, ...]:
+    values = (
+        region.heading,
+        region.role,
+        *region.scope_path,
+        *region.direct_labels,
+    )
+    bounded = tuple(dict.fromkeys(" ".join(str(item).split())[: limits.descriptor_tokens] for item in values if str(item).strip()))
+    return bounded or (region.role,)
+
+
+def _json_digest(value: object) -> str:
+    encoded = json.dumps(
+        to_json_compatible(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _coverage(source_coverage: CoverageState, retained: int, total: int) -> str:

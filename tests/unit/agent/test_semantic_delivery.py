@@ -23,12 +23,15 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.benchmarks.webarena_verified import (
     DeliveryRetrievalProbe,
     _delivery_probe_item_diagnostic,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import (
@@ -342,6 +345,68 @@ def test_functional_partition_uses_landmarks_headings_lists_and_merges_empty_ico
     repeated = next(item for item in index.regions if item.role == "list")
     assert repeated.repeated_item_roots == ("row:0", "row:1", "row:2")
     assert set(index.target_region_keys) == {item.target_id for item in world.targets}
+
+
+def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> None:
+    before = _world("world:before", False)
+    after = _world("world:after", True)
+    delta = WorldTransitionProjector().project(before, after)
+    external_step = SimpleNamespace(
+        before_world=before,
+        public_world_delta=delta,
+        execution_receipts=SimpleNamespace(
+            receipts=(
+                SimpleNamespace(
+                    request=SimpleNamespace(
+                        intent=SimpleNamespace(
+                            semantic_action="activate",
+                            target_id=before.targets[0].target_id,
+                        )
+                    ),
+                    result=SimpleNamespace(dispatch_status=DispatchStatus.SENT),
+                ),
+            )
+        ),
+    )
+    store = ObservationDeliveryStore().advance(external_step, step_index=1)
+    local_read = SimpleNamespace(execution_receipts=None, public_world_delta=delta)
+
+    assert store.advance(local_read, step_index=2) is store
+
+    task = _task()
+    action_space = ActionSpaceBuilder().build(task, after)
+    index = WorldDeliveryIndex.from_observation(
+        after,
+        action_space.options,
+        public_world_delta=delta,
+        previous_index=WorldDeliveryIndex.from_observation(before),
+    )
+    context = ContextBuilder().build(
+        task,
+        after,
+        action_space,
+        _evaluation(task, after.observation_id),
+        region_index=index,
+        delivery_store=store,
+    )
+    delivery = build_model_turn_delivery(context, include_images=False)
+    rendered = delivery.view.text
+
+    headings = (
+        "LatestEffect",
+        "CurrentFindings",
+        "ChangedRegions",
+        "ActionCandidates",
+        "PageOutline",
+        "RecoveryDirectory",
+    )
+    positions = tuple(rendered.index(item) for item in headings)
+    assert positions == tuple(sorted(positions))
+    assert "EvidenceCandidates" not in rendered
+    assert "value=true" in rendered
+    assert context.evidence_candidates is None
+    assert context.observation_delivery is delivery.observation_delivery
+    assert set(delivery.manifest.executable_refs) <= set(context.grounding.target_refs.values())
 
 
 def test_repeated_collection_inspect_pages_at_twenty_complete_items() -> None:

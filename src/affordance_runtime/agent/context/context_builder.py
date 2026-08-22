@@ -23,12 +23,13 @@ from affordance_runtime.agent.context.contracts import (
     AgentActionPageView,
     AgentTurnView,
 )
-from affordance_runtime.agent.context.evidence_candidate_projection import (
-    project_evidence_candidates,
-)
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
+)
+from affordance_runtime.agent.context.observation_delivery import (
+    ObservationDeliveryStore,
+    project_observation_delivery,
 )
 from affordance_runtime.agent.context.projection import project_action_page, project_action_space
 from affordance_runtime.agent.context.task_projection import project_task
@@ -72,6 +73,7 @@ class ContextBuilder:
         runtime_controls: tuple[str, ...] = (),
         delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldDeliveryIndex | None = None,
+        delivery_store: ObservationDeliveryStore = ObservationDeliveryStore(),
         control_feedback: dict[str, object] | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
@@ -215,6 +217,7 @@ class ContextBuilder:
             complete_page.options,
             action_space.action_space_id,
             candidate_projection,
+            delivery_store,
         )
 
     def page(
@@ -384,6 +387,7 @@ def _fit_context(
     complete_actions,
     action_space_id: str,
     action_candidates,
+    delivery_store: ObservationDeliveryStore,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
@@ -394,19 +398,6 @@ def _fit_context(
         task_evaluation,
         evidence_index,
         observation,
-    )
-    evidence_candidates = project_evidence_candidates(
-        observation,
-        evidence_index,
-        fact_refs,
-        region_index,
-        intent=" ".join(
-            (
-                task.instruction,
-                *(item.objective for item in goal_plan.items),
-                *(item.done_when for item in goal_plan.items),
-            )
-        ),
     )
     task_view = project_task(
         task,
@@ -420,6 +411,14 @@ def _fit_context(
         observation,
         evidence_index,
         fact_refs,
+    )
+    observation_delivery = project_observation_delivery(
+        observation,
+        region_index,
+        evidence_index,
+        fact_refs,
+        grounding.index,
+        delivery_store,
     )
     return AgentContext(
         context_id,
@@ -453,7 +452,8 @@ def _fit_context(
         complete_actions,
         action_space_id,
         action_candidates,
-        evidence_candidates,
+        None,
+        observation_delivery,
     )
 
 

@@ -114,6 +114,48 @@ def test_delivery_index_consumes_only_a_delta_ending_at_its_world() -> None:
         WorldDeliveryIndex.from_observation(before, public_world_delta=delta)
 
 
+def test_region_versions_reuse_unchanged_cache_and_advance_changed_content() -> None:
+    first_world = _world("source:first", {"a": 1, "b": 2})
+    unchanged_world = _world("source:unchanged", {"a": 1, "b": 2})
+    changed_world = _world("source:changed", {"a": 3, "b": 2})
+    first = WorldDeliveryIndex.from_observation(first_world)
+    unchanged = WorldDeliveryIndex.from_observation(unchanged_world, previous_index=first)
+    changed = WorldDeliveryIndex.from_observation(changed_world, previous_index=unchanged)
+
+    assert first.document_lineage == unchanged.document_lineage == changed.document_lineage
+    assert len(first.region_versions) == 1
+    initial = first.region_versions[0]
+    reused = unchanged.version_for(initial.region_key)
+    advanced = changed.version_for(initial.region_key)
+    assert reused is not None and advanced is not None
+    assert reused.version == initial.version
+    assert reused.cached_outline is initial.cached_outline
+    assert advanced.version == initial.version + 1
+    assert advanced.content_digest != reused.content_digest
+    assert advanced.member_target_ids == changed.regions[0].member_target_ids
+    assert advanced.member_fact_ids == changed.regions[0].member_fact_ids
+
+
+def test_document_route_change_invalidates_prior_region_cache() -> None:
+    before = fused_world(
+        "source:before",
+        (SemanticTarget("viewport", "viewport", "Current page", {"page.route": "/before"}),),
+        surface="dom",
+    )
+    after = fused_world(
+        "source:after",
+        (SemanticTarget("viewport", "viewport", "Current page", {"page.route": "/after"}),),
+        surface="dom",
+    )
+    first = WorldDeliveryIndex.from_observation(before)
+    navigated = WorldDeliveryIndex.from_observation(after, previous_index=first)
+
+    assert first.document_lineage != navigated.document_lineage
+    assert navigated.region_versions
+    assert {item.version for item in navigated.region_versions} == {1}
+    assert all(item.document_lineage == navigated.document_lineage for item in navigated.region_versions)
+
+
 def test_runtime_consumers_share_one_delta_instance_or_exact_serialization() -> None:
     before = _world("source:before", {"a": 1})
     after = _world("source:after", {"a": 2})

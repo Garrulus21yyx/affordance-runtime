@@ -618,15 +618,16 @@ def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_ep
                     {"items": ({"text": "route result"},)},
                 )
             if self.turns == 6:
-                candidate = context.evidence_candidates.candidates[0]
-                canonical = context.private_fact_bindings[candidate.fact_ref]
+                assert context.observation_delivery is not None
+                finding = context.observation_delivery.current_findings[0]
+                canonical = context.private_fact_bindings[finding.evidence_ref]
                 record = context.evidence_index.resolve_record(canonical)
                 assert record is not None
                 fact = WorkingFact("route_result", record, context.current_step_index, "retain route result")
                 return RememberFactResult(
                     context.context_id,
                     "remember_fact",
-                    {"key": "route_result", "evidence_ref": candidate.fact_ref},
+                    {"key": "route_result", "evidence_ref": finding.evidence_ref},
                     {"key": "route_result", "value": fact.value},
                     working_fact=fact,
                 )

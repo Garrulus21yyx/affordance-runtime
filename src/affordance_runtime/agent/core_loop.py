@@ -482,7 +482,9 @@ class CoreAgentLoop:
                 if state.last_step is not None and state.last_step.after_world is state.current_world
                 else None
             ),
+            previous_index=state.delivery_index or state.prior_delivery_index,
         )
+        state.install_delivery_index(region_index)
         lens = (
             state.delivery_lens
             if state.delivery_lens is not None
@@ -517,6 +519,7 @@ class CoreAgentLoop:
             runtime_controls=self.runtime_controls,
             delivery_lens=lens,
             region_index=region_index,
+            delivery_store=state.delivery_store,
             control_feedback=_recovery_feedback(state.recovery_signal),
         )
         try:

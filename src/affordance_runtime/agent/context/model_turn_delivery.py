@@ -14,6 +14,7 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.immutable import to_json_compatible
 
@@ -39,6 +40,7 @@ class ModelTurnDelivery:
     delivery_index: WorldDeliveryIndex
     includes_images: bool = False
     evidence_candidates: object | None = None
+    observation_delivery: ObservationDelivery | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.view, WorldDeliveryView):
@@ -77,6 +79,10 @@ class ModelTurnDelivery:
                 raise ValueError("every evidence candidate must enter the same DeliveryManifest")
         if type(self.includes_images) is not bool:
             raise TypeError("model turn delivery image selection must be boolean")
+        if not isinstance(self.observation_delivery, ObservationDelivery):
+            raise TypeError("model turn requires typed change-first observation delivery")
+        if self.observation_delivery.world_observation_id != self.world_observation_id:
+            raise ValueError("change-first delivery belongs to another World")
 
 
 def build_model_turn_delivery(
@@ -102,6 +108,7 @@ def build_model_turn_delivery(
         evidence_candidates=context.evidence_candidates,
         public_fact_bindings=context.private_fact_bindings,
         evidence_index=context.evidence_index,
+        observation_delivery=context.observation_delivery,
         max_rendered_bytes=max_rendered_bytes,
     )
     payload = {
@@ -117,7 +124,7 @@ def build_model_turn_delivery(
             "region_refs": rendered.manifest.region_refs,
         },
         "action_candidates": context.action_candidates.projection_id,
-        "evidence_candidates": to_json_compatible(context.evidence_candidates),
+        "observation_delivery": to_json_compatible(context.observation_delivery),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -131,7 +138,8 @@ def build_model_turn_delivery(
         context.action_candidates,
         context.region_index,
         include_images,
-        context.evidence_candidates,
+        None,
+        context.observation_delivery,
     )
 
 def _selected_region_keys(context: AgentContext) -> frozenset[str]:

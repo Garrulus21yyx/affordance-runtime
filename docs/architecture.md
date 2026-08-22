@@ -21,11 +21,15 @@ a bounded `AgentWorkspace` and optional exact working notes, not mandatory roadm
 transitions. The current code has not yet closed the `AgentWorkspace` and change-first delivery properties described
 below; implementation completion is therefore not verified closure.
 
-Stages 1–2 of the C8–C9 migration are now implemented provider-free. The seven named contracts are frozen, and
+Stages 1–3 of the C8–C9 migration are now implemented provider-free. The seven named contracts are frozen, and
 `WorldTransitionProjector` is the sole producer of `PublicWorldDelta`. `StepResult`, `ActionOutcome`, evaluation
 delivery, the existing `WorldDeliveryIndex`, `EpisodeMonitor`, compact continuity, and trace consume that delta object
-or its exact serialization. The later RegionVersion cache, change-first delivery order, total WorkspaceReducer,
-RequestAdmission, and Monitor-state migration remain open; this stage status does not authorize a live run.
+or its exact serialization. The existing index now owns document lineage, content/structure digests, monotonic region
+versions, exact current membership, and unchanged-outline reuse. Production model delivery is ordered
+`LatestEffect → CurrentFindings → ChangedRegions → ActionCandidates → PageOutline → RecoveryDirectory`; local
+read/search/find operations preserve the latest external GUI effect, and default production requests no longer produce
+global lexical `EvidenceCandidates`. The total WorkspaceReducer, RequestAdmission, Monitor-state migration, remaining
+C8 diagnostics, and C9 gates stay open; this stage status does not authorize a live run.
 
 ## Current end-to-end data flow
 
@@ -119,7 +123,7 @@ BrowserGym raw observation
 → lossless supported-public ActorWorldSnapshot + complete ActionSpace
 → WorldTransitionProjector(before World, after World)
 → PublicWorldDelta
-→ RegionVersionIndex
+→ versioned WorldDeliveryIndex
 → ObservationDeliveryStore
    - latest external GUI effect
    - current exact findings
@@ -135,7 +139,7 @@ facts, their stable region membership, and before/after World lineage. `ActionOu
 delivery, compact continuity, and trace consume this object. They may select fields for their own views, but may not
 compute competing definitions of what changed.
 
-`RegionVersionIndex` upgrades the existing `WorldDeliveryIndex`; it is not a second region system. Each stable region
+`RegionVersion` state upgrades the existing `WorldDeliveryIndex`; it is not a second region system. Each stable region
 key has structural/content digests, a monotonically increasing version within the current document lineage, exact
 target/fact membership, and public delivery cost. Unchanged regions reuse their cached outline. Changed regions alone
 are rebuilt. Navigation creates a new document lineage and invalidates generation-local refs and the old region cache.
@@ -191,7 +195,9 @@ Offered targets, changed public contents, decision-relevant state, labels, table
 handles are never silently dropped. A separately rendered full view remains a non-authoritative cost baseline, not a
 fallback that may expand the executable set.
 
-The old global `EvidenceCandidates` ranking path is removed at migration completion. Task-aware ranking remains useful
+The old global `EvidenceCandidates` ranking path is absent from default production delivery. Its compatibility type is
+temporarily retained for direct legacy callers and is scheduled for deletion with the remaining old delivery paths.
+Task-aware ranking remains useful
 for `ActionCandidates` and for ordering pages inside an already identified changed region, but it cannot decide whether
 a post-action public change is visible at all.
 

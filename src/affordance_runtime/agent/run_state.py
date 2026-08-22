@@ -14,7 +14,9 @@ from affordance_runtime.agent.context.episode_history import (
     EpisodeHistoryCapacityError,
     render_episode_history,
 )
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
     PublicWorldDelta,
     WorldTransitionProjector,
@@ -232,6 +234,9 @@ class RunState:
     currentness_probe_count: int = 0
     latest_action_outcome: ActionOutcome | None = None
     finalization: FinalizationProtocolResult | None = None
+    delivery_store: ObservationDeliveryStore = field(default_factory=ObservationDeliveryStore)
+    delivery_index: WorldDeliveryIndex | None = None
+    prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.current_task_evaluation.observation_id != self.current_world.observation_id:
@@ -269,6 +274,18 @@ class RunState:
             ):
                 raise ValueError("run finalization status must match the current task evaluation")
             _validate_finalization_run_status(self.finalization, self.status)
+        if not isinstance(self.delivery_store, ObservationDeliveryStore):
+            raise TypeError("run observation delivery store must be typed")
+        if self.delivery_index is not None:
+            if not isinstance(self.delivery_index, WorldDeliveryIndex):
+                raise TypeError("run delivery index must be typed")
+            if self.delivery_index.world_observation_id != self.current_world.observation_id:
+                raise ValueError("run delivery index must belong to the current World")
+        if self.prior_delivery_index is not None and not isinstance(
+            self.prior_delivery_index,
+            WorldDeliveryIndex,
+        ):
+            raise TypeError("run prior delivery index must be typed")
         if any(
             not isinstance(kind, DecisionKind) or type(count) is not int or count < 0
             for kind, count in self.decision_counts.items()
@@ -333,6 +350,12 @@ class RunState:
         self.context_generation += 1
         return self.context_generation
 
+    def install_delivery_index(self, index: WorldDeliveryIndex) -> None:
+        if index.world_observation_id != self.current_world.observation_id:
+            raise ValueError("cannot install a delivery index for another World")
+        self.delivery_index = index
+        self.prior_delivery_index = None
+
     def resume(self, expected: RunStatus) -> None:
         """Perform the sole non-StepResult transition back into the running loop."""
 
@@ -384,6 +407,10 @@ class RunState:
         if result.before_world.observation_id != self.current_world.observation_id:
             raise ValueError("step starts from a stale world")
         acquired_new_world = result.after_world.observation_id != result.before_world.observation_id
+        self.delivery_store = self.delivery_store.advance(
+            result,
+            step_index=max(1, self.step_count + int(consume_step)),
+        )
         self.current_world = result.after_world
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result
@@ -402,6 +429,8 @@ class RunState:
             self.decision_counts[kind] = self.decision_counts.get(kind, 0) + 1
         self.action_page = result.action_page
         if acquired_new_world:
+            self.prior_delivery_index = self.delivery_index
+            self.delivery_index = None
             self.delivery_lens = None
             self.action_page = None
         self.waited_ms += result.waited_ms
