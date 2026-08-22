@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Mapping
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
@@ -80,6 +80,7 @@ class PydanticAIRoleInvocation:
     output: BaseModel | None
     failure: ModelFailure | None
     attempts: tuple[ModelGenerationAttempt, ...]
+    structured_output_violations: tuple[Mapping[str, object], ...] = ()
 
 
 class ProviderFailureOrigin(StrEnum):
@@ -210,7 +211,7 @@ class PydanticAIRoleInvoker:
                 request_records=recording_model.requests,
             )
             return PydanticAIRoleInvocation(result.output, None, attempts)
-        except UnexpectedModelBehavior:
+        except UnexpectedModelBehavior as exc:
             attempts = _attempts(
                 config,
                 schema,
@@ -226,6 +227,7 @@ class PydanticAIRoleInvoker:
                 None,
                 ModelFailure(ModelFailureKind.SCHEMA_ERROR, "role output invalid", False),
                 attempts,
+                _validation_violations(exc.__cause__, attempts),
             )
         except Exception as exc:
             provider_failure = classify_provider_failure(exc)
@@ -395,6 +397,39 @@ def _request_transcript(
             ModelMessagesTypeAdapter.dump_python([response], mode="json") if response is not None else []
         ),
     }
+
+
+def _validation_violations(
+    error: BaseException | None,
+    attempts: tuple[ModelGenerationAttempt, ...],
+) -> tuple[Mapping[str, object], ...]:
+    """Project final Pydantic failure shape without retaining rejected values."""
+
+    if not isinstance(error, ValidationError):
+        return ()
+    attempt = attempts[-1] if attempts else None
+    violations: list[Mapping[str, object]] = []
+    for item in error.errors()[:4]:
+        loc = item.get("loc", ())
+        code = item.get("type")
+        field_path = ".".join(str(value) for value in loc) if isinstance(loc, tuple | list) else "$"
+        safe_path = "".join(
+            char for char in field_path if char.isalnum() or char in {"_", "-", ".", "[", "]", "$"}
+        )[:160]
+        safe_code = (
+            "".join(char for char in code if char.isalnum() or char in {"_", "-"})[:80]
+            if isinstance(code, str)
+            else ""
+        )
+        violations.append(
+            {
+                "field_path": safe_path or "$",
+                "code": safe_code or "validation_error",
+                "attempt": attempt.attempt if attempt is not None else 1,
+                "phase": "output_retry" if attempt is not None and attempt.phase.endswith("output_retry") else "initial",
+            }
+        )
+    return tuple(violations)
 
 
 def _failure_transcript(

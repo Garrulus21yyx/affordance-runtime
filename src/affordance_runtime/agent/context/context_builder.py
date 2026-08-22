@@ -508,6 +508,8 @@ def _active_milestone_view(
         requirements,
         contract.depends_on,
         contract.final,
+        contract.missing_evidence_keys,
+        contract.audit_guidance,
     )
 
 

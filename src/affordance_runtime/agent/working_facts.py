@@ -65,6 +65,12 @@ def validate_working_fact_collection(items: tuple[WorkingFact, ...]) -> tuple[Wo
         or len({item.key for item in values}) != len(values)
     ):
         raise ValueError("episode working facts must be bounded, typed, and unique")
+    records_by_ref: dict[str, EvidenceRecord] = {}
+    for item in values:
+        previous = records_by_ref.get(item.record.evidence_ref)
+        if previous is not None and previous != item.record:
+            raise ValueError("one working fact evidence ref cannot identify conflicting observation versions")
+        records_by_ref[item.record.evidence_ref] = item.record
     encoded = json.dumps(
         public_working_facts(values),
         sort_keys=True,

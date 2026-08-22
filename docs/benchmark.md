@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: **provider-free G0–G6 passed / W1b-Agent requires separate authorization**.
+Current status: **Planner/Auditor provider-free G0–G6 passed / W1b-Agent requires separate authorization**.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
@@ -109,7 +109,8 @@ Archived traces that previously reached useful GUI states are replayed provider-
 - report navigation, form fill, submit, and result read stay inside one milestone episode;
 - directions form fill, submit, result read, and evidence capture stay inside one milestone episode;
 - intermediate navigation/search/field-change/read/pin does not call the Planner;
-- an admitted outcome or typed strategic failure is the only normal Planner boundary;
+- an admitted outcome with a ready successor mechanically advances without a Planner call;
+- Planner calls occur only at START, typed NEEDS_REPLAN, or ROADMAP_EXHAUSTED_NOT_FINALIZABLE;
 - planner call count is bounded by roadmap/milestone transitions rather than page transitions;
 - Runtime hard cap remains 15 and does not silently expand.
 
@@ -155,8 +156,13 @@ Held-out, non-site-specific tests must prove:
 
 ### G5 — finalization authority
 
-- deterministic evidence admission is tried first;
-- semantic Auditor runs only on UNKNOWN, not after every ordinary state change;
+- deterministic admission distinguishes `CONTINUE_EVIDENCE`, formal `SATISFIED|UNSATISFIED`, and `SEMANTIC_AUDIT`;
+- missing/stale/non-scalar evidence and zero-change/no-new-evidence never call Auditor;
+- semantic Auditor runs only for evidence-complete business uncertainty;
+- Auditor unknown/unsatisfied returns bounded guidance to the same milestone without clearing World or WorkingFacts;
+- exhausted Auditor failure returns `AUDIT_UNAVAILABLE`, preserves World/WorkingFacts, and performs no GUI replay;
+- Auditor input excludes full World, screenshots, trajectory, action/tool contracts, reasoning, transcripts, expected
+  answers, and rewards;
 - natural-language final answers are accepted when current admitted evidence is sufficient; universal pinning is not
   required;
 - no LLM Finalizer is present in manager-guided mode;
@@ -175,16 +181,16 @@ can pass while the claimed invariant is false.
 | Gate | Current evidence | Result |
 |---|---|---|
 | G0 | production negative search plus architecture authority tests | passed |
-| G1 | decision/state/receipt/lifecycle properties, including production instrumentation forwarding and cancellation during role schema repair after a synchronously persisted first physical exchange | passed |
-| G2 | archived exact-action replay plus production `CoreAgentLoop` navigation → compound fields → submit → search/read/pin route in one episode | passed |
-| G3 | run7: six PageMaps; p50 7,674, max 8,773; nonzero larger full baselines; per-page exact F-ref pin/change/retention; zero provider/dispatch | passed |
+| G1 | state/lifecycle properties plus behavioral transport-retry scope and persist-before-retry ordering | passed |
+| G2 | archived and typed continuous-route replay; three mechanical Planner triggers; accepted-tail revision matrix | passed |
+| G3 | run8: six PageMaps; p50 7,660.5, max 8,768; nonzero larger full baselines; every page exact F-ref pin/change/retention; zero provider/dispatch | passed |
 | G4 | held-out monitor, route-cycle, evidence-progress, and typed attempt-signature tests | passed |
-| G5 | failed/missing-required-evidence FinalResponse cannot route to STOP; the finite public `json_schema` algebra is enforced fail-closed; `SENT_UNKNOWN` post-state reaches native evaluator once | passed |
-| full repository/static checks | 1,458 passed, 19 skipped; Ruff, compileall, and diff check clean | passed |
-| G6 | final zero-context independent review: no remaining P0/P1/P2; 26 targeted provider-free rechecks passed | passed |
+| G5 | strict Planner vocabulary/schema; deterministic route matrix; Auditor UNKNOWN/UNSAT/failure retention and frequency; serialized oracle exclusion; formal final SAT/UNSAT Supervisor paths | passed |
+| full repository/static checks | 1,487 passed, 19 skipped; Ruff, compileall, and diff check clean | passed |
+| G6 fresh-context review | independent full-tree audit found no P0/P1/P2; independently confirmed 1,487 passed, 19 skipped and run8 evidence | passed |
 
 The authoritative G3 artifact is
-`evidence/w1b-world-milestone-convergence-provider-free-20260822-run7/w1b-world-summary.json`. No live model or
+`evidence/w1b-world-planner-auditor-provider-free-20260822-run8/w1b-world-summary.json`. No live model or
 W1b-Agent run was performed.
 
 ## Live W1b acceptance

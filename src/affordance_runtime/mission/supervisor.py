@@ -17,12 +17,14 @@ from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluati
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.mission.boundary import EvidenceBoundary
 from affordance_runtime.mission.contracts import (
+    AuditGuidance,
     AuditorPort,
     AuditorRoleRequest,
     EvidenceAssessment,
     EvidenceBundle,
     ExecutionMode,
     Milestone,
+    MilestoneAdmissionRoute,
     MissionOutcome,
     MissionState,
     PlannerPort,
@@ -30,6 +32,7 @@ from affordance_runtime.mission.contracts import (
     PlannerRequestMode,
     PlannerRoleRequest,
     PlannerRoute,
+    PublicOutcomeSummary,
     RecoveryKind,
     RecoverySignal,
     SupervisorPhase,
@@ -46,6 +49,7 @@ from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import AcquisitionStatus
 from affordance_runtime.world.environment import WorldEnvironment
 from affordance_runtime.world.finalization import EnvironmentFinalization
+from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 
 @dataclass(frozen=True)
@@ -184,29 +188,66 @@ class MissionSupervisor:
             return terminal
         roadmap = planned.output.roadmap
         assert roadmap is not None
+        pending_milestone_id = ""
+        pending_working_facts = ()
+        action_guidance: AuditGuidance | None = None
+        last_soft_outcome: MissionOutcome | None = None
 
         for round_index in range(self.max_rounds):
             active = roadmap.select_ready(mission)
             if active is None:
-                return _result(
-                    state,
+                exhausted_request = PlannerRoleRequest(
+                    PlannerRequestMode.ROADMAP_EXHAUSTED_NOT_FINALIZABLE,
+                    task,
                     mission,
                     roadmap,
-                    MissionOutcome.FINALIZATION_NOT_READY,
-                    planner_calls,
-                    auditor_calls,
-                    boundary_rejections,
+                    "roadmap_exhausted_not_finalizable",
+                    self.max_rounds - round_index,
+                    environment=project_mission_environment(current_world, ()),
+                    last_milestone_id=roadmap.milestones[-1].id,
                 )
+                replanned = await self._plan(exhausted_request)
+                planner_calls += 1
+                _record_role_invocation(
+                    self.trace_sink,
+                    "planner",
+                    planner_calls,
+                    exhausted_request,
+                    replanned,
+                    trigger_kind="roadmap_exhausted_not_finalizable",
+                    milestone_id=roadmap.milestones[-1].id,
+                    mission_version=mission.version,
+                )
+                if replanned.failure is not None or replanned.output is None:
+                    return _result(state, mission, roadmap, MissionOutcome.PLANNER_FAILURE, planner_calls, auditor_calls, boundary_rejections)
+                terminal = _non_roadmap_result(
+                    replanned.output, state, mission, roadmap, planner_calls, auditor_calls, boundary_rejections
+                )
+                if terminal is not None:
+                    return terminal
+                assert replanned.output.roadmap is not None
+                next_roadmap = replanned.output.roadmap
+                if not _roadmap_revision_preserves_accepted_semantics(roadmap, next_roadmap, mission):
+                    return _result(state, mission, roadmap, MissionOutcome.PLANNER_FAILURE, planner_calls, auditor_calls, boundary_rejections)
+                roadmap = next_roadmap
+                pending_milestone_id = ""
+                pending_working_facts = ()
+                action_guidance = None
+                continue
             episode_start_world = current_world
             carry_keys = tuple(item.key for item in active.required_evidence)
+            if pending_milestone_id != active.id:
+                pending_working_facts = ()
+                action_guidance = None
+            carried_facts = pending_working_facts or mission.carry_working_facts(carry_keys)
             state = await runtime.initialize_from_world(
                 task,
                 current_world,
                 milestone_goal_resolution(task, active, plan_version=roadmap.version),
                 budget=EpisodeBudget.ordinary(),
                 yield_on_budget_exhaustion=True,
-                working_facts=mission.carry_working_facts(carry_keys),
-                active_milestone=_action_policy_milestone_contract(active),
+                working_facts=carried_facts,
+                active_milestone=_action_policy_milestone_contract(active, action_guidance),
             )
             state = await runtime.continue_task(environment, task, state)
             current_world = state.current_world
@@ -297,20 +338,51 @@ class MissionSupervisor:
                     current_world,
                     state.working_facts,
                     summary,
+                    state.current_task_evaluation,
                 )
                 proposal = admission.proposal
-                if admission.assessment is EvidenceAssessment.UNKNOWN:
+                if admission.route is MilestoneAdmissionRoute.CONTINUE_EVIDENCE:
+                    pending_milestone_id = active.id
+                    pending_working_facts = state.working_facts
+                    missing = tuple(
+                        item.key
+                        for item in active.required_evidence
+                        if item.key not in {fact.key for fact in state.working_facts}
+                    )
+                    action_guidance = AuditGuidance(missing, admission.reason_code)
+                    last_soft_outcome = MissionOutcome.EVIDENCE_GAP
+                    continue
+                if admission.route is MilestoneAdmissionRoute.UNSATISFIED:
+                    pending_milestone_id = active.id
+                    pending_working_facts = state.working_facts
+                    action_guidance = AuditGuidance((), admission.reason_code)
+                    last_soft_outcome = MissionOutcome.EVIDENCE_GAP
+                    continue
+                if admission.route is MilestoneAdmissionRoute.SEMANTIC_AUDIT:
                     if self.auditor is None:
-                        return _result(state, mission, roadmap, MissionOutcome.EVIDENCE_GAP, planner_calls, auditor_calls, boundary_rejections)
-                    bundle = EvidenceBundle.from_world(current_world, state.working_facts)
+                        return _result(
+                            state,
+                            mission,
+                            roadmap,
+                            MissionOutcome.AUDIT_UNAVAILABLE,
+                            planner_calls,
+                            auditor_calls,
+                            boundary_rejections,
+                        )
+                    bundle = EvidenceBundle.from_world(current_world, state.working_facts).bounded_packet()
                     audit_request = AuditorRoleRequest.from_authorities(
                         task,
                         active,
                         mission,
-                        current_world,
                         state.working_facts,
+                        _public_outcome_summary(
+                            episode_start_world,
+                            current_world,
+                            mission,
+                            state.working_facts,
+                            summary,
+                        ),
                         "outcome_proposed",
-                        state.recent_steps,
                         bundle,
                     )
                     audit = await self.auditor.audit(audit_request)
@@ -326,9 +398,54 @@ class MissionSupervisor:
                         mission_version=mission.version,
                     )
                     if audit.failure is not None or audit.output is None:
-                        return _result(state, mission, roadmap, MissionOutcome.AUDITOR_FAILURE, planner_calls, auditor_calls, boundary_rejections)
+                        return _result(
+                            state,
+                            mission,
+                            roadmap,
+                            MissionOutcome.AUDIT_UNAVAILABLE,
+                            planner_calls,
+                            auditor_calls,
+                            boundary_rejections,
+                        )
+                    allowed_missing_keys = {item.key for item in active.required_evidence}
+                    if (
+                        not set(audit.output.missing_evidence_keys).issubset(allowed_missing_keys)
+                        or any(bundle.resolve(ref) is None for ref in audit.output.evidence_refs)
+                    ):
+                        return _result(
+                            state,
+                            mission,
+                            roadmap,
+                            MissionOutcome.AUDIT_UNAVAILABLE,
+                            planner_calls,
+                            auditor_calls,
+                            boundary_rejections,
+                        )
                     if audit.output.assessment is not EvidenceAssessment.SATISFIED:
-                        return _result(state, mission, roadmap, MissionOutcome.EVIDENCE_GAP, planner_calls, auditor_calls, boundary_rejections)
+                        pending_milestone_id = active.id
+                        pending_working_facts = state.working_facts
+                        action_guidance = AuditGuidance(
+                            audit.output.missing_evidence_keys,
+                            audit.output.guidance or f"auditor_{audit.output.assessment.value}",
+                        )
+                        last_soft_outcome = MissionOutcome.EVIDENCE_GAP
+                        continue
+                    required_keys = {item.key for item in active.required_evidence}
+                    required_refs = {
+                        item.record.evidence_ref
+                        for item in state.working_facts
+                        if item.key in required_keys
+                    }
+                    if not required_refs.issubset(audit.output.evidence_refs):
+                        return _result(
+                            state,
+                            mission,
+                            roadmap,
+                            MissionOutcome.AUDIT_UNAVAILABLE,
+                            planner_calls,
+                            auditor_calls,
+                            boundary_rejections,
+                        )
                     proposal = _audited_proposal(mission, active, state, audit.output.evidence_refs, summary)
                 assert proposal is not None
                 accepted = self.boundary.accept(mission, proposal, EvidenceBundle.from_world(current_world, state.working_facts))
@@ -336,8 +453,10 @@ class MissionSupervisor:
                     boundary_rejections += 1
                     return _result(state, mission, roadmap, MissionOutcome.BOUNDARY_REJECTED, planner_calls, auditor_calls, boundary_rejections)
                 mission = accepted.mission_state
-                if active.final:
-                    return _result(state, mission, roadmap, MissionOutcome.FINALIZATION_NOT_READY, planner_calls, auditor_calls, boundary_rejections)
+                pending_milestone_id = ""
+                pending_working_facts = ()
+                action_guidance = None
+                last_soft_outcome = None
                 continue
 
             assert route is _EpisodeRoute.NEEDS_REPLAN
@@ -393,8 +512,19 @@ class MissionSupervisor:
                     boundary_rejections,
                 )
             roadmap = next_roadmap
+            pending_milestone_id = ""
+            pending_working_facts = ()
+            action_guidance = None
 
-        return _result(state, mission, roadmap, MissionOutcome.ROUND_BUDGET_EXHAUSTED, planner_calls, auditor_calls, boundary_rejections)
+        return _result(
+            state,
+            mission,
+            roadmap,
+            last_soft_outcome or MissionOutcome.ROUND_BUDGET_EXHAUSTED,
+            planner_calls,
+            auditor_calls,
+            boundary_rejections,
+        )
 
     async def _plan(self, request: PlannerRoleRequest):
         self.lifecycle_sink.planner_started()
@@ -461,8 +591,6 @@ class MissionSupervisor:
 def _episode_route(state: RunState) -> _EpisodeRoute:
     if state.current_task_evaluation.status is TaskEvaluationStatus.BLOCKED:
         return _EpisodeRoute.TASK_BLOCKED
-    if state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE:
-        return _EpisodeRoute.TASK_COMPLETE
     if state.status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
         return _EpisodeRoute.WAITING_USER
     if state.status is RunStatus.CANCELLED:
@@ -471,6 +599,8 @@ def _episode_route(state: RunState) -> _EpisodeRoute:
         return _EpisodeRoute.OPERATIONAL_FAILURE
     if state.last_step is not None and isinstance(state.last_step.decision, FinalResponse):
         return _EpisodeRoute.FINAL_RESPONSE
+    if state.current_task_evaluation.status is TaskEvaluationStatus.COMPLETE:
+        return _EpisodeRoute.TASK_COMPLETE
     if state.status is RunStatus.YIELDED:
         if state.yield_reason is EpisodeYieldReason.OUTCOME_PROPOSED:
             return _EpisodeRoute.OUTCOME_PROPOSED
@@ -534,7 +664,10 @@ def _audited_proposal(mission, milestone, state, evidence_refs, summary):
     )
 
 
-def _action_policy_milestone_contract(milestone: Milestone) -> AgentMilestoneContractView:
+def _action_policy_milestone_contract(
+    milestone: Milestone,
+    guidance: AuditGuidance | None = None,
+) -> AgentMilestoneContractView:
     return AgentMilestoneContractView(
         milestone.id,
         milestone.outcome,
@@ -542,6 +675,31 @@ def _action_policy_milestone_contract(milestone: Milestone) -> AgentMilestoneCon
         tuple((item.key, item.description) for item in milestone.required_evidence),
         milestone.depends_on,
         milestone.final,
+        guidance.missing_evidence if guidance is not None else (),
+        guidance.recovery_hint if guidance is not None else "",
+    )
+
+
+def _public_outcome_summary(
+    before_world,
+    after_world,
+    mission: MissionState,
+    working_facts,
+    summary: str,
+) -> PublicOutcomeSummary:
+    accepted_refs = {item.record.evidence_ref for item in mission.accepted_facts}
+    return PublicOutcomeSummary(
+        before_world.observation_id,
+        after_world.observation_id,
+        public_world_semantic_digest(before_world) != public_world_semantic_digest(after_world),
+        tuple(
+            dict.fromkeys(
+                item.record.evidence_ref
+                for item in working_facts
+                if item.record.evidence_ref not in accepted_refs
+            )
+        ),
+        summary,
     )
 
 

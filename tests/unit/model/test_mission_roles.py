@@ -1,5 +1,4 @@
 import asyncio
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -75,26 +74,30 @@ def test_model_backed_planner_lowers_one_closed_roadmap_and_records_physical_mod
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    "value",
     [
-        ("outcome", "Click submit"),
-        ("done_when", "Selector #result is visible"),
-        ("outcome", "Use read_region to obtain the result"),
-        ("done_when", "E7 contains the answer"),
+        "geographic coordinates are included in the report",
+        "the product selector contains the requested category",
+        "the selected product is shown",
+        "the press release is available",
+        "the click-through rate is reported",
+        "the requested type of account is active",
+        "the navigation coordinates are documented",
+        "Selector #result is visible",
+        "E7 contains the answer",
     ],
 )
-def test_planner_rejects_gui_operations_and_private_implementation_identity(field, value) -> None:
+def test_planner_business_vocabulary_is_never_interpreted_as_gui_authority(value) -> None:
     milestone = {
         "id": "result",
-        "outcome": "Requested result is available",
-        "done_when": "Fresh result is observable",
+        "outcome": value,
+        "done_when": value,
         "required_evidence": [],
         "depends_on": [],
         "final": False,
     }
-    milestone[field] = value
-    with pytest.raises(ValueError):
-        MilestoneRoadmapModel.model_validate({"version": 1, "milestones": [milestone]})
+    model = MilestoneRoadmapModel.model_validate({"version": 1, "milestones": [milestone]})
+    assert model.milestones[0].outcome == value
 
 
 def test_planner_allows_submit_as_a_business_state_term() -> None:
@@ -116,9 +119,78 @@ def test_planner_allows_submit_as_a_business_state_term() -> None:
     assert model.milestones[0].outcome == "Submit application is accepted"
 
 
-def test_side_effect_free_planner_and_auditor_are_the_only_roles_with_transport_retry() -> None:
-    source = inspect.getsource(PydanticAIRoleInvoker.invoke)
-    assert 'role in {"planner", "auditor"}' in source
+@pytest.mark.parametrize(
+    ("role", "expected_calls", "succeeds"),
+    (("planner", 2, True), ("auditor", 2, True), ("action_policy", 1, False)),
+)
+def test_only_side_effect_free_roles_retry_transport_and_persist_before_retry(
+    role: str,
+    expected_calls: int,
+    succeeds: bool,
+) -> None:
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
+
+    async def scenario() -> None:
+        calls = 0
+        persisted = []
+
+        async def respond(_messages, _info):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise TimeoutError("provider timeout")
+            assert len(persisted) == 1
+            assert persisted[0].status == "failed"
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "planner_start_output",
+                        {
+                            "route": "roadmap",
+                            "roadmap": {
+                                "version": 1,
+                                "milestones": [
+                                    {
+                                        "id": "result",
+                                        "outcome": "result is available",
+                                        "done_when": "fresh result is observable",
+                                        "required_evidence": [],
+                                        "depends_on": [],
+                                        "final": True,
+                                    }
+                                ],
+                            },
+                        },
+                    )
+                ]
+            )
+
+        invocation = await PydanticAIRoleInvoker(
+            FunctionModel(respond, model_name="scripted"),
+            "fixture",
+            "scripted",
+            "fixture.invalid",
+            provider_retry_backoff_s=0,
+            attempt_sink=persisted.append,
+        ).invoke(
+            messages=(ModelMessage(role="user", content="return a roadmap"),),
+            schema=PlannerDecisionModel,
+            output_tool_name="planner_start_output",
+            config=ModelConfig(max_tokens=128, timeout_s=5.0),
+            role=role,
+            mode="start",
+            schema_version="mission.planner.v1",
+            trigger="task_start",
+        )
+
+        assert calls == expected_calls
+        assert (invocation.output is not None) is succeeds
+        assert len(invocation.attempts) == expected_calls
+        assert len(persisted) == expected_calls
+        assert [item.attempt for item in persisted] == list(range(1, expected_calls + 1))
+
+    asyncio.run(scenario())
 
 
 def test_first_physical_role_attempt_is_persisted_before_cancelled_schema_repair() -> None:
@@ -170,3 +242,54 @@ def test_first_physical_role_attempt_is_persisted_before_cancelled_schema_repair
         assert persisted[1].transcript["llm.input_messages"]
 
     asyncio.run(scenario())
+
+
+def test_planner_schema_failure_reports_only_bounded_field_path_code_attempt_and_phase() -> None:
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
+
+    calls = 0
+
+    async def respond(_messages, _info):
+        nonlocal calls
+        calls += 1
+        invalid_field = "done_when" if calls == 1 else "outcome"
+        milestone = {
+            "id": "report",
+            "outcome": "result",
+            "done_when": "fresh result",
+            "required_evidence": [],
+            "depends_on": [],
+            "final": True,
+        }
+        milestone[invalid_field] = "x" * 501
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "planner_start_output",
+                    {
+                        "route": "roadmap",
+                        "roadmap": {
+                            "version": 1,
+                            "milestones": [milestone],
+                        },
+                    },
+                )
+            ]
+        )
+
+    planner = ModelBackedMilestonePlanner(
+        PydanticAIRoleInvoker(FunctionModel(respond), "fixture", "scripted", "fixture.invalid")
+    )
+    result = asyncio.run(planner.plan(_request()))
+
+    assert result.failure is not None
+    assert result.diagnostics["structured_output_violations"] == (
+        {
+            "field_path": "roadmap.milestones.0.outcome",
+            "code": "string_too_long",
+            "attempt": 2,
+            "phase": "output_retry",
+        },
+    )
+    assert "x" * 32 not in repr(result.diagnostics)

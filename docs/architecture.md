@@ -2,8 +2,8 @@
 
 ## Status
 
-Current status: **milestone architecture provider-free convergence verified / G0–G6 passed / live benchmark requires
-separate authorization**.
+Current status: **Planner/Auditor provider-free convergence verified / G0–G6 passed / live benchmark requires separate
+authorization**.
 
 This file is the sole normative architecture contract. Chronological run evidence, superseded designs, and prior
 reopenings are preserved in
@@ -33,9 +33,10 @@ User request
     → StepResult → RunState.apply
 → observable milestone outcome | typed needs_replan | hard cap | terminal failure
 → deterministic evidence admission
-→ optional semantic Auditor only when deterministic verification is UNKNOWN
+→ continue same milestone | admit formal result | optional Auditor only for semantic UNKNOWN
 → MissionState
-→ MilestonePlanner only at a milestone boundary or typed strategic replan
+→ mechanically select the next dependency-ready milestone
+→ MilestonePlanner only at START, typed NEEDS_REPLAN, or ROADMAP_EXHAUSTED_NOT_FINALIZABLE
 → mechanical final-response admission
 → one STOP → fresh acquire → native evaluator
 → durable case result
@@ -133,6 +134,31 @@ multi-tool execution. Those remain explicit policy decisions.
 
 ## Milestone planning
 
+### Reopening causal model
+
+The repeated Planner/Auditor reopenings shared one cause: model roles were constrained and scheduled through semantic
+guessing in the Runtime instead of closed typed boundaries. Planner authority was policed by free-text keywords, while
+Auditor routing collapsed mechanically incomplete evidence and genuinely semantic uncertainty into the same
+`UNKNOWN`. This produced both false Planner rejection (for example, business uses of “coordinates” or “selector”)
+and near-unconditional Auditor cost.
+
+The defects are classified as follows:
+
+| Class | Shared mechanism | Converged owner change |
+|---|---|---|
+| architecture | semantic and mechanical uncertainty shared one route | `EvidenceBoundary` owns a closed admission route algebra |
+| contract ambiguity | Planner text was treated as latent GUI authority | Pydantic schema is the complete authority boundary; text remains advisory |
+| duplicated truth | Auditor failure could terminate despite retained World/WorkingFacts | Supervisor retains the same milestone and pending facts without writing MissionState |
+| verification | example keyword tests and “Auditor called on UNKNOWN” tests preserved the defect | vocabulary generation, state-machine route, call-frequency, and exceptional-path properties |
+| diagnostics/governance | schema failure erased field-level cause; old passing gates remained displayed | bounded field-path/code diagnostics and reopened gate attestation |
+
+This is not an event-sourcing or workflow-platform change. It closes only the Planner schema/frequency and milestone
+admission/Auditor contract within the existing Supervisor and single CoreAgentLoop.
+
+Migration impact is bounded: new cases use `target-loop-case.v10` because the four former terminal Auditor failure
+labels collapse to `audit_unavailable`. Older evidence remains historical/read-only; production does not expose aliases
+that could recreate the removed control outcomes. No benchmark task data or MissionState migration is required.
+
 ### Contract
 
 The old public `Manager → execute_subtask` assignment model is superseded. `MilestonePlanner` proposes a bounded
@@ -152,9 +178,12 @@ Milestone
   final                    # at most one
 ```
 
-The roadmap contains no GUI ref, tool name, selector, per-field command, `entry_scope_key`, episode budget, or mutable
-completion flag. `MissionState` is the completion authority. The Supervisor mechanically selects a milestone whose
-dependencies have accepted outcomes.
+The roadmap Pydantic schema is strict, frozen, and `extra="forbid"`. Its six milestone fields are the complete supported
+algebra, so `tool`, `action`, `selector`, `target_ref`, `coordinates`, `field_commands`, episode budgets, mutable
+completion, and any unknown field fail structurally. Free text is checked only for type and length. Natural-language
+business concepts such as geographic coordinates, product selectors, selected values, and click-through rates are
+valid and have no execution authority. `MissionState` is the completion authority. The Supervisor mechanically
+selects a milestone whose dependencies have accepted outcomes.
 
 One milestone may require many tightly coupled GUI actions. Opening menus, navigating pages, filling fields, reading
 results, and pinning facts normally stay in the same continuous episode. A milestone ends only when its declared
@@ -163,14 +192,14 @@ reached.
 
 Planner calls are allowed only:
 
-1. at long-task start;
-2. after an admitted milestone outcome;
-3. after typed `needs_replan`;
-4. before finalization when roadmap status is insufficient.
+1. `START` at long-task start;
+2. `NEEDS_REPLAN` after a typed strategic infeasibility;
+3. `ROADMAP_EXHAUSTED_NOT_FINALIZABLE` when no dependency-ready unresolved milestone remains and final response is not
+   yet possible.
 
-The current closed request algebra implements `start` and typed `needs_replan`. Admitted outcomes advance by
-mechanical dependency selection, and an insufficient final roadmap fails closed; neither path invents an unused
-Planner request mode.
+An admitted milestone with another ready milestone never invokes Planner. A revised version must increase; every
+milestone already accepted by `MissionState` must remain byte-for-byte equal, while only the unresolved tail may be
+replaced. Runtime performs no natural-language “materially different” comparison.
 
 Ordinary state changes, reads, searches, action paging, first stalls, and fact pins do not call the Planner.
 
@@ -230,10 +259,36 @@ milestones do not require pins unless an exact value is needed later. Evidence-p
 facts before `yield_milestone(outcome_proposed)` is admitted. Natural-language answers may be returned directly when
 the current evidence packet is complete; pinning is not a universal prerequisite for final response.
 
-Only deterministic evidence admission may promote a working fact or outcome into `MissionState`. A semantic Auditor is
-called only when deterministic verification returns UNKNOWN. It is not called after every episode and does not mutate
-MissionState directly. A generic World semantic change is never proof of a planner-described business outcome: a
-milestone without explicit mechanically checkable evidence returns `UNKNOWN` and requires the Auditor boundary.
+Only `EvidenceBoundary.accept` may promote a working fact or outcome into `MissionState`. Its pre-Auditor route algebra
+is closed and ordered:
+
+| Deterministic result | Supervisor route | Auditor |
+|---|---|---|
+| required evidence missing, non-public/non-scalar, or invalid lineage | same milestone with bounded evidence guidance | never |
+| final milestone and task-global formal evaluation is COMPLETE | construct a proved proposal for boundary admission | never |
+| final milestone, evaluation is INCOMPLETE, and an explicit criterion is UNSATISFIED | same milestone with typed unsatisfied guidance | never |
+| no public semantic change and no newly retained evidence | same milestone with `outcome_unproven` | never |
+| evidence shape/currentness/lineage complete, but business meaning unresolved | `SEMANTIC_AUDIT` | once |
+
+Task-global evaluation is never projected onto a non-final milestone. `BLOCKED` remains a terminal TaskEvaluator result
+owned by Supervisor rather than a recoverable milestone assessment. Within the final milestone, formal evaluation
+precedes the no-change test because it is authoritative even when the public semantic digest is stable.
+
+The Auditor receives only a bounded TaskGoal projection, current Milestone, pre-milestone MissionState, fresh public
+evidence packet, WorkingFacts, before/after public outcome summary, and yield reason. It receives no World object,
+screenshot, full trajectory, ActionSpace, ToolCatalog, model reasoning, provider transcript, expected answer, or
+reward. Its result is only `satisfied|unsatisfied|unknown`, cited evidence refs, missing evidence keys, and bounded
+guidance. It cannot mutate state, plan, act, or certify official success.
+
+`unsatisfied`/`unknown` retain the current World and pending WorkingFacts, do not write MissionState, and project
+guidance back into the same ActionPolicy milestone. Exhausted Auditor transport/schema repair returns typed
+`AUDIT_UNAVAILABLE` with those GUI results intact and performs no GUI replay. Planner is invoked only if ActionPolicy
+later emits typed `needs_replan`. There is no separate post-roadmap or post-response “Final Auditor” stage; an ordinary
+semantic audit may still resolve a genuinely unknown final milestone before `FinalResponse` is proposed.
+
+WorkingFact keys may alias the same exact EvidenceRecord. One canonical evidence ref may not identify conflicting
+observation versions in a single working set: the second pin is rejected as typed invalid arguments before RunState or
+EvidenceBundle admission, while the Bundle independently fails closed if a producer bypasses that invariant.
 
 ## Progress, recovery, and budgets
 
@@ -275,7 +330,22 @@ Role reasoning is explicit rather than globally disabled:
 - mechanical boundaries: no model call.
 
 Read-only Planner and Auditor transport failures receive one bounded retry with no GUI replay. Every physical attempt
-records its actual reasoning mode, output limit, origin, duration, and typed result.
+records its actual reasoning mode, output limit, origin, duration, and typed result. Exhausted schema repair exposes at
+most four `{field_path, code, attempt, phase}` diagnostics; raw rejected values are not copied into public diagnostics.
+
+### Current SOTA alignment (reviewed 2026-08-22)
+
+- [Plan-and-Act (ICML 2025)](https://proceedings.mlr.press/v267/erdogan25a.html) separates a structured high-level
+  Planner from an environment-specific Executor. This supports keeping roadmap outcomes separate from continuous GUI
+  action selection. Its dynamic replanning after HTML changes is a research design, not a production assurance
+  requirement; the project’s lower-frequency trigger set is an engineering inference chosen to preserve one action
+  authority and reduce provider cost.
+- [WorkArena / BrowserGym (ICML 2024)](https://proceedings.mlr.press/v235/drouin24a.html) evaluates realistic knowledge
+  work through rich actions and multimodal observations, supporting validation on actual browser tasks rather than
+  planner-shaped fixtures.
+- [WebArena (ICLR 2024)](https://openreview.net/forum?id=Jjn5IFp3qP) evaluates functional correctness of resulting site
+  state and permits multiple valid action paths. This supports keeping native evaluation authoritative and forbids
+  Auditor/Planner claims or reference action sequences from becoming completion truth.
 
 ## Results, persistence, cleanup, and observability
 

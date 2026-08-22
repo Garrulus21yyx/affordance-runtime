@@ -16,7 +16,7 @@ def test_planner_prompt_freezes_low_frequency_roadmap_contract_and_boundaries() 
     prompt = _prompt("milestone_planner.yaml", "planner")
     assert "one to five milestones" in prompt
     assert all(field in prompt for field in ("id", "outcome", "done_when", "required_evidence", "depends_on", "final"))
-    assert all(trigger in prompt for trigger in ("start", "needs_replan"))
+    assert all(trigger in prompt for trigger in ("start", "needs_replan", "roadmap_exhausted_not_finalizable"))
     assert all(trigger not in prompt for trigger in ("outcome_admitted", "finalization_gap"))
     assert "one page, form field, click, navigation" in prompt
     assert "filling its related filters, submitting, and reading" in prompt
@@ -28,8 +28,10 @@ def test_planner_prompt_forbids_gui_authority_budget_and_mutable_progress() -> N
     assert "Do not output mutable completed state" in prompt
     assert "episode budget" in prompt
     assert "entry scope" in prompt
-    assert "GUI refs" in prompt
-    assert "selectors, BIDs, coordinates" in prompt
+    assert "generation-local GUI refs" in prompt
+    assert "screen-space click points, selectors, BIDs" in prompt
+    assert "geographic coordinates" in prompt
+    assert "product selectors" in prompt
     assert not any(term in prompt for term in ("WebArena", "airport", "Magento", "Bestsellers", "Task-7"))
 
 

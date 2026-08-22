@@ -137,14 +137,23 @@ class AgentMilestoneContractView:
     required_evidence: tuple[tuple[str, str], ...] = ()
     depends_on: tuple[str, ...] = ()
     final: bool = False
+    missing_evidence_keys: tuple[str, ...] = ()
+    audit_guidance: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
         object.__setattr__(self, "depends_on", tuple(self.depends_on))
+        object.__setattr__(self, "missing_evidence_keys", tuple(self.missing_evidence_keys))
         if len(self.required_evidence) > 32 or len({item[0] for item in self.required_evidence}) != len(
             self.required_evidence
         ):
             raise ValueError("active milestone evidence requirements are invalid")
+        if len(self.missing_evidence_keys) > 32 or len(set(self.missing_evidence_keys)) != len(
+            self.missing_evidence_keys
+        ):
+            raise ValueError("active milestone missing evidence guidance is invalid")
+        if len(self.audit_guidance) > 500:
+            raise ValueError("active milestone audit guidance exceeds bounds")
 
 
 @dataclass(frozen=True)
@@ -155,10 +164,13 @@ class AgentMilestoneView:
     required_evidence: tuple[AgentEvidenceRequirementView, ...] = ()
     depends_on: tuple[str, ...] = ()
     final: bool = False
+    missing_evidence_keys: tuple[str, ...] = ()
+    audit_guidance: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
         object.__setattr__(self, "depends_on", tuple(self.depends_on))
+        object.__setattr__(self, "missing_evidence_keys", tuple(self.missing_evidence_keys))
 
 
 @dataclass(frozen=True)

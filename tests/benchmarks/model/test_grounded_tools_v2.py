@@ -50,7 +50,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     CountingPolicy,
     _policy_trace_event,
 )
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus, WorldEvidenceIndex
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.mission import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
@@ -1217,6 +1217,73 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
             expected_context_id=context.context_id,
         )
     assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+
+def test_pin_fact_rejects_a_second_observation_version_of_one_retained_canonical_ref() -> None:
+    task = TaskGoal("task:pin-version", "Retain the toggle state")
+    before = fused_world(
+        "pin-version-before",
+        targets=(SemanticTarget("toggle", "checkbox", "Toggle"),),
+        facts=(StateFact("toggle", "toggle", "enabled", False, "pin-version-before"),),
+    )
+    before_context = ContextBuilder().build(
+        task,
+        before,
+        ActionSpaceBuilder().build(task, before),
+        TaskEvaluation(task.task_id, before.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+    )
+    before_delivery = _delivery(before_context)
+    before_record = next(
+        item
+        for item in WorldEvidenceIndex.from_observation(before).records
+        if item.subject_id == "toggle" and item.predicate == "enabled"
+    )
+    before_ref = next(
+        ref
+        for ref in before_delivery.manifest.fact_refs
+        if before_context.private_fact_bindings.get(ref) == before_record.evidence_ref
+    )
+    first = _resolve_catalog_call(
+        _compile_catalog(before_context),
+        ToolCall(
+            "pin_fact",
+            {"key": "before_value", "evidence_ref": before_ref, "purpose": "retain before state"},
+            "provider-call:pin-before-version",
+        ),
+        expected_context_id=before_context.context_id,
+    ).decision
+    assert isinstance(first, LocalToolResult) and first.working_fact is not None
+
+    after = fused_world(
+        "pin-version-after",
+        targets=(SemanticTarget("toggle", "checkbox", "Toggle"),),
+        facts=(StateFact("toggle", "toggle", "enabled", True, "pin-version-after"),),
+    )
+    after_context = ContextBuilder().build(
+        task,
+        after,
+        ActionSpaceBuilder().build(task, after),
+        TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+        working_facts=(first.working_fact,),
+    )
+    after_delivery = _delivery(after_context)
+    after_ref = next(
+        ref
+        for ref in after_delivery.manifest.fact_refs
+        if after_context.private_fact_bindings.get(ref) == first.working_fact.record.evidence_ref
+    )
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        _resolve_catalog_call(
+            _compile_catalog(after_context),
+            ToolCall(
+                "pin_fact",
+                {"key": "after_value", "evidence_ref": after_ref, "purpose": "retain after state"},
+                "provider-call:pin-after-version",
+            ),
+            expected_context_id=after_context.context_id,
+        )
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    assert "conflicting observation versions" in str(captured.value)
 
 
 def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> None:

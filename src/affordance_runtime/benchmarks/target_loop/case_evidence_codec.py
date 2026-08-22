@@ -48,7 +48,11 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
     if payload["schema_version"] != payload["case_schema_version"]:
         raise ValueError("public case schema identity is inconsistent")
     if payload["schema_version"] not in {
-        "target-loop-case.v6", "target-loop-case.v7", "target-loop-case.v8", CASE_SCHEMA_VERSION,
+        "target-loop-case.v6",
+        "target-loop-case.v7",
+        "target-loop-case.v8",
+        "target-loop-case.v9",
+        CASE_SCHEMA_VERSION,
     }:
         raise ValueError("public case evidence schema is unsupported")
     measurements = {}
@@ -64,6 +68,8 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
     expected_fact_fields = {
         "target-loop-case.v6": v6_fact_fields,
         "target-loop-case.v7": v7_fact_fields,
+        "target-loop-case.v8": fact_fields,
+        "target-loop-case.v9": fact_fields,
         CASE_SCHEMA_VERSION: fact_fields,
     }[payload["schema_version"]]
     if set(raw_facts) != expected_fact_fields:

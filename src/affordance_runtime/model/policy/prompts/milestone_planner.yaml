@@ -17,9 +17,10 @@ planner: |-
 
   required_evidence names business evidence that must survive the milestone boundary. Omit it for a state-change
   outcome that can be admitted from a fresh observable state. Do not output mutable completed state, progress flags,
-  an episode budget, an entry scope, GUI refs, tool or action names, selectors, BIDs, coordinates, field-by-field
-  commands, page text instructions, or provider/runtime implementation details.
+  an episode budget, or an entry scope. Do not prescribe screen-space click points, selectors, BIDs,
+  generation-local GUI refs, tool calls, or field-by-field commands. Business concepts such as geographic coordinates,
+  product selectors, selected values, and click-through rates are valid when required by the task.
 
-  The trigger is start or needs_replan. Preserve accepted MissionState.
-  On needs_replan, change the outcome structure or dependency route in response to the typed failure; do not merely
-  rephrase the failed roadmap. Output only the typed PlannerDecision.
+  The trigger is start, needs_replan, or roadmap_exhausted_not_finalizable. Preserve every accepted milestone exactly
+  and replace only the unresolved roadmap tail. A revised roadmap version must increase. Output only the typed
+  PlannerDecision.

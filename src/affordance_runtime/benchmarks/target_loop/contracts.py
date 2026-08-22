@@ -45,12 +45,13 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
-CASE_SCHEMA_VERSION = "target-loop-case.v9"
+CASE_SCHEMA_VERSION = "target-loop-case.v10"
 SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
     {
         "target-loop-case.v6",
         "target-loop-case.v7",
         "target-loop-case.v8",
+        "target-loop-case.v9",
         CASE_SCHEMA_VERSION,
     }
 )
@@ -58,10 +59,7 @@ SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
 _MISSION_FAILURE_OUTCOMES = frozenset(
     {
         MissionOutcome.PLANNER_FAILURE,
-        MissionOutcome.AUDITOR_FAILURE,
-        MissionOutcome.AUDITOR_CONTEXT_CAPACITY,
-        MissionOutcome.AUDITOR_PROVIDER_FAILURE,
-        MissionOutcome.AUDITOR_SCHEMA_FAILURE,
+        MissionOutcome.AUDIT_UNAVAILABLE,
         MissionOutcome.BOUNDARY_REJECTED,
         MissionOutcome.EVIDENCE_GAP,
         MissionOutcome.FINALIZATION_NOT_READY,

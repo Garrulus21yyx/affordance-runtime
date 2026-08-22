@@ -1,0 +1,482 @@
+{
+  "acceptance_errors": [],
+  "action_candidates": {
+    "acceptance_errors": [],
+    "automatic_candidate_count": 5,
+    "automatic_candidates": [
+      {
+        "functional_path": [
+          "Postmill",
+          "Comments"
+        ],
+        "label": "Comments",
+        "operation": "activate",
+        "rank": 1,
+        "reasons": [
+          "exact_label",
+          "lexical_match",
+          "path_match",
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R11",
+        "role": "link",
+        "target_ref": "E9"
+      },
+      {
+        "functional_path": [
+          "Postmill",
+          "Forums"
+        ],
+        "label": "Forums",
+        "operation": "activate",
+        "rank": 2,
+        "reasons": [
+          "lexical_match",
+          "path_match",
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R10",
+        "role": "link",
+        "target_ref": "E2"
+      },
+      {
+        "functional_path": [
+          "Postmill"
+        ],
+        "label": "Postmill",
+        "operation": "activate",
+        "rank": 3,
+        "reasons": [
+          "lexical_match",
+          "path_match",
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R2",
+        "role": "link",
+        "target_ref": "E12"
+      },
+      {
+        "functional_path": [
+          "Postmill",
+          "Home"
+        ],
+        "label": "Home",
+        "operation": "activate",
+        "rank": 4,
+        "reasons": [
+          "path_match",
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R4",
+        "role": "link",
+        "target_ref": "E1"
+      },
+      {
+        "functional_path": [
+          "Postmill",
+          "Submit"
+        ],
+        "label": "Submit",
+        "operation": "activate",
+        "rank": 5,
+        "reasons": [
+          "path_match",
+          "role_compatible",
+          "state_ready"
+        ],
+        "region_ref": "R7",
+        "role": "link",
+        "target_ref": "E5"
+      }
+    ],
+    "automatic_find_controls_ordering_identity": true,
+    "candidate_action_space_closure": true,
+    "candidate_manifest_closure": true,
+    "discovery_gui_dispatch_count": 0,
+    "full_request_tokens": 7439,
+    "observation_only_calls_before_candidate_execution": 0,
+    "provider_attempts": 0,
+    "repeated_region_version_reads": 0,
+    "target_rank": 1,
+    "target_recall_at_5": true,
+    "target_witnesses": [
+      {
+        "expected_path_tokens": [],
+        "matched_paths": [
+          [
+            "Postmill",
+            "Comments"
+          ]
+        ],
+        "matched_refs": [
+          "E9"
+        ],
+        "query": "Comments",
+        "recall_at_5": true,
+        "target_rank": 1
+      }
+    ],
+    "tool_schema_tokens": 1768
+  },
+  "action_inventory": {
+    "partial": false,
+    "recovery": "not_required",
+    "total_count": 30,
+    "visible_count": 30
+  },
+  "actor": {
+    "delivery_projection": "page_map",
+    "document_count": 1,
+    "manifest": {
+      "executable": 9,
+      "facts": 59,
+      "readonly": 24,
+      "regions": 14
+    },
+    "rendered_bytes": 9215,
+    "rendered_token_estimate": 2304,
+    "retained_node_count": 111,
+    "serialized_bytes": 47007,
+    "source_coverage": [
+      {
+        "assurance": "structural",
+        "freshness": "current",
+        "inventory_coverage": "complete",
+        "modality": "structural",
+        "projection_coverage": "complete",
+        "rendering_coverage": "current_screenshot_available",
+        "semantic_interpretation": "open_world",
+        "source_ref": "S1"
+      }
+    ],
+    "total_node_count": 111
+  },
+  "capability_census": [
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 13,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "click"
+      ],
+      "registry_defined": true,
+      "semantic_action": "activate",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "fill"
+      ],
+      "registry_defined": true,
+      "semantic_action": "type_text",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "select_option"
+      ],
+      "registry_defined": true,
+      "semantic_action": "select_option",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "read",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "scroll"
+      ],
+      "registry_defined": true,
+      "semantic_action": "scroll",
+      "subject_kinds": [
+        "viewport"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 15,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "press",
+        "keyboard_press"
+      ],
+      "registry_defined": true,
+      "semantic_action": "press_key",
+      "subject_kinds": [
+        "entity",
+        "focused_context"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "focus",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "drag_and_drop"
+      ],
+      "registry_defined": true,
+      "semantic_action": "drag_to",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "set_value",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "hover",
+      "subject_kinds": [
+        "entity"
+      ]
+    }
+  ],
+  "case": {
+    "cohort": "w1",
+    "gym_id": "browsergym/webarena_verified.33.27.2",
+    "intent_template_id": 33,
+    "public_intent_digest": "",
+    "revision": 2,
+    "sites": [
+      "reddit"
+    ],
+    "task_id": 27,
+    "task_type": "smoke"
+  },
+  "decision_state": {
+    "coverage": "complete",
+    "mismatches": [],
+    "retained": 36,
+    "total": 36,
+    "verb_mismatch_count": 0
+  },
+  "delivery_probe": {
+    "acceptance_errors": [],
+    "page_identity": true,
+    "probe_version": "v2",
+    "probe_visible_to_production": false,
+    "provider_attempts": 0,
+    "required_regions": true,
+    "retrievals": [
+      {
+        "item_count": 1,
+        "joint_match_count": 1,
+        "kind_found": true,
+        "label_found": true,
+        "manifest_ref_visible": true,
+        "matched_refs": [
+          "E9"
+        ],
+        "operation_found": true,
+        "ordering_identity": true,
+        "passed": true,
+        "query": "Comments",
+        "search_results_visible": true
+      }
+    ],
+    "site_key": "reddit",
+    "target_related_route": true
+  },
+  "evidence_retention": {
+    "acceptance_errors": [],
+    "default_candidate_count": 5,
+    "eligible_scalar_count": 44,
+    "exact_value_retained": true,
+    "gui_dispatch_count": 0,
+    "pin_resolved": true,
+    "provider_attempts": 0,
+    "selected_default_candidate": "F1",
+    "view_changed": true,
+    "working_set_tokens": 36,
+    "working_set_visible": true
+  },
+  "perception_route": {
+    "image_attached": false,
+    "profile": "TEXT_ONLY",
+    "reason": "w1b-world read-only structured diagnostic"
+  },
+  "presentation_collapse": {
+    "appearance_state_fields": 50,
+    "empty_generic_wrappers": 26,
+    "inline_text_boxes": 16
+  },
+  "private_isolation": {
+    "leak_count": 0,
+    "markers": []
+  },
+  "recoverability": {
+    "acceptance_errors": [],
+    "checks": {
+      "continuation": true,
+      "expanded_current_ref": true,
+      "expanded_tool_target": true,
+      "find": true,
+      "lens_effect": true,
+      "read_region": true,
+      "semantic_digest_unchanged": true,
+      "stale_context": true,
+      "view_all": true,
+      "zero_dispatch_metrics_unchanged": true
+    },
+    "sample": {
+      "query": "Postmill",
+      "region_ref": "R2",
+      "target_id_digest": "sha256:05503b61b0bbe543b5a4b5df4702906efe83b11d652c93d63fb793c02c5b6e03"
+    },
+    "status": "ok"
+  },
+  "request_budget": {
+    "actor_world_tokens": 3274,
+    "admission_action": "admitted",
+    "admission_limit": 62904,
+    "delivery_projection": "page_map",
+    "direct_action_count": 17,
+    "estimated_total_tokens": 7439,
+    "evidence_tokens": 0,
+    "expanded_region_count": 6,
+    "folded_region_count": 8,
+    "full_candidate_tokens": 7753,
+    "history_tokens": 35,
+    "image_estimated_tokens": 0,
+    "lens_candidate_tokens": 7439,
+    "phase": "initial",
+    "prefit_estimated_total_tokens": 7439,
+    "provider_envelope_tokens": 244,
+    "provider_reported_prompt_tokens": 0,
+    "repair_tokens": 0,
+    "searchable_action_count": 13,
+    "system_tokens": 1772,
+    "task_plan_tokens": 346,
+    "tool_schema_tokens": 1768,
+    "working_set_tokens": 0
+  },
+  "schema_version": "webarena-verified-w1b-world.v4",
+  "source": {
+    "browsergym_diagnostic": {
+      "actionable_target_count": 16,
+      "diagnostic_role_distribution": {
+        "StaticText": 16,
+        "button": 3,
+        "generic": 26,
+        "heading": 1,
+        "link": 10,
+        "list": 4,
+        "listitem": 9,
+        "searchbox": 1
+      },
+      "informational_target_count": 56,
+      "inventory_profile_id": "browsergym-ax-target-inventory.v3",
+      "inventory_status": "represented",
+      "non_executable_target_count": 56,
+      "omitted_target_count": 0,
+      "projected_target_count": 72,
+      "recognized_target_count": 72
+    },
+    "coverage": [
+      {
+        "coverage": "complete",
+        "entity_inventory": "complete",
+        "entity_issues": [],
+        "semantic_inventory": "represented",
+        "source": "browsergym"
+      }
+    ],
+    "raw_fact_total_count": 211,
+    "raw_structure_total_count": 111,
+    "raw_target_total_count": 72,
+    "world_source_fact_count": 211,
+    "world_source_structure_count": 111,
+    "world_source_target_count": 72
+  },
+  "status": "ok",
+  "structural_closure": {
+    "violation_count": 0,
+    "violations": []
+  },
+  "tools": {
+    "actor_missing_offered_targets": [],
+    "catalog_serialized_bytes": 5302,
+    "catalog_tool_count": 14,
+    "find_controls_offered": true,
+    "offered_action_ref_count": 16,
+    "offered_tool_target_count": 9
+  },
+  "world": {
+    "binding_count": 30,
+    "fact_count": 211,
+    "semantic_digest": "sha256:7a148d3acbb9ae8d46b4d403402b44423a17cf7955dabadf53adf489615dd24a",
+    "serialized_bytes": 556614,
+    "source_count": 1,
+    "target_count": 72
+  }
+}

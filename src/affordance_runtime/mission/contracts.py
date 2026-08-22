@@ -10,7 +10,7 @@ from typing import Protocol
 
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.budgets import ORDINARY_EPISODE_TURNS
-from affordance_runtime.agent.context.contracts import AgentTurnView, sanitize_history_value
+from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.immutable import freeze_json
@@ -39,6 +39,7 @@ class PlannerRoute(StrEnum):
 class PlannerRequestMode(StrEnum):
     START = "start"
     NEEDS_REPLAN = "needs_replan"
+    ROADMAP_EXHAUSTED_NOT_FINALIZABLE = "roadmap_exhausted_not_finalizable"
 
 
 class EvidenceAssessment(StrEnum):
@@ -47,6 +48,13 @@ class EvidenceAssessment(StrEnum):
     UNSATISFIED = "unsatisfied"
     UNKNOWN = "unknown"
     BLOCKED = "blocked"
+
+
+class MilestoneAdmissionRoute(StrEnum):
+    SATISFIED = "satisfied"
+    UNSATISFIED = "unsatisfied"
+    CONTINUE_EVIDENCE = "continue_evidence"
+    SEMANTIC_AUDIT = "semantic_audit"
 
 
 class EvidenceBoundaryRejectionClass(StrEnum):
@@ -70,10 +78,7 @@ class MissionOutcome(StrEnum):
     NEEDS_USER_INPUT = "needs_user_input"
     BLOCKED = "blocked"
     PLANNER_FAILURE = "planner_failure"
-    AUDITOR_FAILURE = "auditor_failure"
-    AUDITOR_CONTEXT_CAPACITY = "auditor_context_capacity"
-    AUDITOR_PROVIDER_FAILURE = "auditor_provider_failure"
-    AUDITOR_SCHEMA_FAILURE = "auditor_schema_failure"
+    AUDIT_UNAVAILABLE = "audit_unavailable"
     BOUNDARY_REJECTED = "boundary_rejected"
     EVIDENCE_GAP = "evidence_gap"
     FINALIZATION_NOT_READY = "finalization_not_ready"
@@ -376,7 +381,7 @@ class SupervisorState:
 
 @dataclass(frozen=True)
 class AuditGuidance:
-    """Bounded Auditor advice for one immediately following deterministic UNKNOWN result."""
+    """Bounded evidence/audit feedback for the same ActionPolicy milestone."""
 
     missing_evidence: tuple[str, ...] = ()
     recovery_hint: str = ""
@@ -394,6 +399,30 @@ class AuditGuidance:
 
 
 @dataclass(frozen=True)
+class PublicOutcomeSummary:
+    """Bounded public change summary; never a second World or completion authority."""
+
+    before_observation_id: str
+    after_observation_id: str
+    world_changed: bool
+    new_evidence_refs: tuple[str, ...] = ()
+    outcome: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.before_observation_id.strip() or not self.after_observation_id.strip():
+            raise ValueError("public outcome summary requires before/after identity")
+        if type(self.world_changed) is not bool:
+            raise TypeError("public outcome world_changed must be boolean")
+        object.__setattr__(
+            self,
+            "new_evidence_refs",
+            _bounded_evidence_refs(self.new_evidence_refs),
+        )
+        if self.outcome:
+            _bounded_text(self.outcome, "public outcome summary")
+
+
+@dataclass(frozen=True)
 class PlannerRecoveryView:
     """Non-authoritative, one-shot recovery context owned by Supervisor routing."""
 
@@ -402,7 +431,6 @@ class PlannerRecoveryView:
     prior_milestone: Milestone
     recovery_signal: RecoverySignal | None = None
     attempted_modes: tuple[str, ...] = ()
-    audit_guidance: AuditGuidance | None = None
     outcome_proposal: str = ""
     working_proposal_feedback: str = ""
 
@@ -419,8 +447,6 @@ class PlannerRecoveryView:
             "attempted_modes",
             _bounded_unique(self.attempted_modes, "attempted_modes"),
         )
-        if self.audit_guidance is not None and not isinstance(self.audit_guidance, AuditGuidance):
-            raise TypeError("planner audit guidance must be typed")
         if self.outcome_proposal:
             _bounded_text(self.outcome_proposal, "outcome proposal")
         if self.working_proposal_feedback:
@@ -569,7 +595,13 @@ class EvidenceBundle:
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 
         index = WorldEvidenceIndex.from_observation(world)
-        pinned = tuple(item.record for item in working_facts)
+        pinned_by_ref: dict[str, EvidenceRecord] = {}
+        for item in working_facts:
+            previous = pinned_by_ref.get(item.record.evidence_ref)
+            if previous is not None and previous != item.record:
+                raise ValueError("one pinned evidence ref cannot identify conflicting records")
+            pinned_by_ref[item.record.evidence_ref] = item.record
+        pinned = tuple(pinned_by_ref.values())
         by_ref = {item.evidence_ref: item for item in (*index.records, *public_text_evidence_records(world), *pinned)}
         pinned_refs = {item.evidence_ref for item in pinned}
         all_records = tuple(sorted(by_ref.values(), key=lambda item: item.evidence_ref))
@@ -609,6 +641,24 @@ class EvidenceBundle:
     def resolve(self, evidence_ref: str) -> EvidenceRecord | None:
         return next((item for item in self.evidence_records if item.evidence_ref == evidence_ref), None)
 
+    def bounded_packet(self, limit: int = 128) -> EvidenceBundle:
+        """Return the exact evidence packet offered to one semantic Auditor call."""
+
+        if not 1 <= limit <= 128:
+            raise ValueError("Auditor evidence packet limit is outside bounds")
+        records = self.evidence_records[:limit]
+        retained = {item.evidence_ref for item in records}
+        if any(ref not in retained for ref in self.pinned_evidence_refs):
+            raise ValueError("Auditor evidence packet cannot drop pinned WorkingFacts")
+        return EvidenceBundle(
+            self.observation_id,
+            self.source_observation_ids,
+            records,
+            self.source_coverages,
+            self.total_evidence_count or len(self.evidence_records),
+            self.pinned_evidence_refs,
+        )
+
     @property
     def truncated(self) -> bool:
         return bool(self.total_evidence_count and self.total_evidence_count > len(self.evidence_records))
@@ -622,7 +672,6 @@ class AuditorTaskProjection:
     revision: int
     instruction: str
     constraints: tuple[str, ...] = ()
-    related_success_criteria: tuple[Mapping[str, object], ...] = ()
     related_requested_outputs: tuple[str, ...] = ()
 
     @classmethod
@@ -637,7 +686,6 @@ class AuditorTaskProjection:
             task.revision,
             task.instruction,
             task.constraints,
-            tuple(task.success_criteria),
             tuple(item for item in task.requested_outputs if item in outputs),
         )
 
@@ -647,11 +695,6 @@ class AuditorTaskProjection:
         if type(self.revision) is not int or self.revision < 1:
             raise ValueError("Auditor task projection revision must be positive")
         object.__setattr__(self, "constraints", _bounded_unique(self.constraints, "audit task constraints"))
-        object.__setattr__(
-            self,
-            "related_success_criteria",
-            tuple(freeze_json(item) for item in self.related_success_criteria),
-        )
         object.__setattr__(
             self,
             "related_requested_outputs",
@@ -664,10 +707,9 @@ class AuditorRoleRequest:
     task: AuditorTaskProjection
     milestone: Milestone
     pre_mission_state: MissionState
-    after_world: WorldObservation
     working_facts: tuple[WorkingFact, ...]
+    outcome_summary: PublicOutcomeSummary
     yield_reason: str
-    episode_history: tuple[AgentTurnView, ...]
     audit_bundle: EvidenceBundle
 
     @classmethod
@@ -676,20 +718,18 @@ class AuditorRoleRequest:
         original_task: TaskGoal,
         milestone: Milestone,
         pre_mission_state: MissionState,
-        after_world: WorldObservation,
         working_facts: tuple[WorkingFact, ...],
+        outcome_summary: PublicOutcomeSummary,
         yield_reason: str,
-        episode_history: tuple[AgentTurnView, ...],
         audit_bundle: EvidenceBundle,
     ) -> AuditorRoleRequest:
         return cls(
             AuditorTaskProjection.from_authorities(original_task, milestone),
             milestone,
             pre_mission_state,
-            after_world,
             working_facts,
+            outcome_summary,
             yield_reason,
-            episode_history,
             audit_bundle,
         )
 
@@ -700,19 +740,18 @@ class AuditorRoleRequest:
             raise TypeError("auditor request requires a typed milestone")
         if not isinstance(self.pre_mission_state, MissionState):
             raise TypeError("auditor request requires typed pre-MissionState")
-        if not isinstance(self.after_world, WorldObservation):
-            raise TypeError("auditor request requires a fresh typed WorldObservation")
-        if self.yield_reason not in {"outcome_proposed", "request_finalization"}:
-            raise ValueError("Auditor is available only for a semantic commit or final uncertainty")
+        if not isinstance(self.outcome_summary, PublicOutcomeSummary):
+            raise TypeError("auditor request requires a typed public outcome summary")
+        if self.yield_reason != "outcome_proposed":
+            raise ValueError("Auditor is available only for a semantic milestone uncertainty")
         object.__setattr__(self, "working_facts", tuple(self.working_facts))
         if any(not isinstance(item, WorkingFact) for item in self.working_facts):
             raise TypeError("auditor working facts must be typed")
-        object.__setattr__(self, "episode_history", tuple(self.episode_history))
-        if any(not isinstance(item, AgentTurnView) for item in self.episode_history):
-            raise TypeError("auditor history must be public and typed")
         if not isinstance(self.audit_bundle, EvidenceBundle):
             raise TypeError("auditor request requires a typed audit bundle")
-        if self.audit_bundle.observation_id != self.after_world.observation_id:
+        if len(self.audit_bundle.evidence_records) > 128:
+            raise ValueError("auditor request evidence packet exceeds 128 records")
+        if self.audit_bundle.observation_id != self.outcome_summary.after_observation_id:
             raise ValueError("auditor bundle must describe the fresh audit world")
         if any(
             self.audit_bundle.resolve(item.record.evidence_ref) != item.record
@@ -726,11 +765,16 @@ class AuditorRoleRequest:
 class AuditorDecision:
     assessment: EvidenceAssessment
     evidence_refs: tuple[str, ...] = ()
-    reason: str = ""
+    missing_evidence_keys: tuple[str, ...] = ()
+    guidance: str = ""
 
     def __post_init__(self) -> None:
-        if self.assessment is EvidenceAssessment.NOT_APPLICABLE:
-            raise ValueError("Auditor must return an opinion or unknown")
+        if self.assessment not in {
+            EvidenceAssessment.SATISFIED,
+            EvidenceAssessment.UNSATISFIED,
+            EvidenceAssessment.UNKNOWN,
+        }:
+            raise ValueError("Auditor must return satisfied, unsatisfied, or unknown")
         object.__setattr__(
             self,
             "evidence_refs",
@@ -738,8 +782,13 @@ class AuditorDecision:
         )
         if self.assessment is EvidenceAssessment.SATISFIED and not self.evidence_refs:
             raise ValueError("satisfied Auditor decision requires evidence refs")
-        if self.reason:
-            _bounded_text(self.reason, "auditor reason")
+        object.__setattr__(
+            self,
+            "missing_evidence_keys",
+            _bounded_unique(self.missing_evidence_keys, "auditor missing evidence keys"),
+        )
+        if self.guidance:
+            _bounded_text(self.guidance, "auditor guidance")
 
 
 @dataclass(frozen=True)
@@ -818,17 +867,28 @@ class EvidenceBoundaryResult:
 
 @dataclass(frozen=True)
 class MilestoneAdmission:
+    route: MilestoneAdmissionRoute
     assessment: EvidenceAssessment
     proposal: WorkingStateProposal | None = None
     reason_code: str = ""
 
     def __post_init__(self) -> None:
+        if not isinstance(self.route, MilestoneAdmissionRoute):
+            raise TypeError("milestone admission route must be typed")
         if not isinstance(self.assessment, EvidenceAssessment):
             raise TypeError("milestone admission assessment must be typed")
         if self.proposal is not None and not isinstance(self.proposal, WorkingStateProposal):
             raise TypeError("milestone admission proposal must be typed")
         if self.assessment is EvidenceAssessment.SATISFIED and self.proposal is None:
             raise ValueError("satisfied milestone admission requires a proposal")
+        expected = {
+            MilestoneAdmissionRoute.SATISFIED: EvidenceAssessment.SATISFIED,
+            MilestoneAdmissionRoute.UNSATISFIED: EvidenceAssessment.UNSATISFIED,
+            MilestoneAdmissionRoute.CONTINUE_EVIDENCE: EvidenceAssessment.UNKNOWN,
+            MilestoneAdmissionRoute.SEMANTIC_AUDIT: EvidenceAssessment.UNKNOWN,
+        }[self.route]
+        if self.assessment is not expected:
+            raise ValueError("milestone admission route and assessment disagree")
         if self.reason_code:
             _bounded_text(self.reason_code, "milestone admission reason", limit=200)
 

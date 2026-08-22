@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from importlib.resources import files
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
 from affordance_runtime.immutable import to_json_compatible
@@ -32,15 +31,6 @@ from affordance_runtime.model.pydantic_ai_role_invoker import PydanticAIRoleInvo
 
 _PLANNER_MODEL_REASON_MAX = 4_000
 _PLANNER_RUNTIME_REASON_MAX = 500
-_GUI_IMPLEMENTATION_REF = re.compile(
-    r"(?:\b[ENFR][1-9][0-9]{0,3}\b|\bselector\b|(?:css|xpath)\s*(?:selector|=)|querySelector|\bBID\b|coordinates?)",
-    re.IGNORECASE,
-)
-_PRESCRIBED_OPERATION = re.compile(
-    r"(?:\b(?:find_controls|search_page_content|read_region|pin_fact|set_form_fields)\b|"
-    r"^\s*(?:click|type|fill|press|scroll|hover|select|navigate)\b)",
-    re.IGNORECASE,
-)
 
 
 def _load_prompt(name: str, key: str) -> tuple[str, str]:
@@ -64,25 +54,13 @@ MILESTONE_ROADMAP_SCHEMA_VERSION = "milestone-roadmap.v1"
 AUDITOR_SCHEMA_VERSION = "milestone-auditor.v1"
 
 
-def _business_text(value: str) -> str:
-    if _GUI_IMPLEMENTATION_REF.search(value) or _PRESCRIBED_OPERATION.search(value):
-        raise ValueError("roadmap fields must describe business outcomes, not GUI operations")
-    return value
-
-
 class EvidenceRequirementModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     description: str = Field(min_length=1, max_length=500)
 
-    @field_validator("description")
-    @classmethod
-    def _validate_description(cls, value: str) -> str:
-        return _business_text(value)
-
-
 class MilestoneModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     id: str = Field(pattern=r"^[a-z][a-z0-9_:-]{0,95}$")
     outcome: str = Field(min_length=1, max_length=500)
     done_when: str = Field(min_length=1, max_length=500)
@@ -90,14 +68,8 @@ class MilestoneModel(BaseModel):
     depends_on: list[str] = Field(default_factory=list, max_length=5)
     final: bool = False
 
-    @field_validator("outcome", "done_when")
-    @classmethod
-    def _validate_business_text(cls, value: str) -> str:
-        return _business_text(value)
-
-
 class MilestoneRoadmapModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     version: int = Field(ge=1)
     milestones: list[MilestoneModel] = Field(min_length=1, max_length=5)
 
@@ -131,9 +103,10 @@ class PlannerDecisionModel(BaseModel):
 
 class AuditorDecisionModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    assessment: Literal["satisfied", "unsatisfied", "unknown", "blocked"]
+    assessment: Literal["satisfied", "unsatisfied", "unknown"]
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
-    reason: str = Field(default="", max_length=500)
+    missing_evidence_keys: tuple[str, ...] = Field(default=(), max_length=32)
+    guidance: str = Field(default="", max_length=500)
 
     @model_validator(mode="after")
     def _evidence_required_for_satisfaction(self) -> AuditorDecisionModel:
@@ -164,6 +137,7 @@ class _Invocation:
     output: BaseModel | None
     failure: ModelFailure | None
     attempts: tuple[ModelGenerationAttempt, ...] = ()
+    structured_output_violations: tuple[Mapping[str, object], ...] = ()
 
 
 async def _invoke(
@@ -190,7 +164,12 @@ async def _invoke(
         )
     except Exception:
         return _Invocation(None, ModelFailure(ModelFailureKind.INTERNAL_ERROR, "role invocation failed", False))
-    return _Invocation(result.output, result.failure, result.attempts)
+    return _Invocation(
+        result.output,
+        result.failure,
+        result.attempts,
+        getattr(result, "structured_output_violations", ()),
+    )
 
 
 def _messages(instructions: str, payload: Mapping[str, object]) -> tuple[ModelMessage, ...]:
@@ -240,7 +219,12 @@ class ModelBackedMilestonePlanner:
             trigger=request.mode.value,
         )
         if invocation.failure is not None:
-            return self._finish(failure=invocation.failure, attempts=invocation.attempts, config=config)
+            return self._finish(
+                failure=invocation.failure,
+                attempts=invocation.attempts,
+                config=config,
+                structured_output_violations=invocation.structured_output_violations,
+            )
         if not isinstance(invocation.output, PlannerDecisionModel):
             return self._finish(
                 failure=ModelFailure(ModelFailureKind.SCHEMA_ERROR, "planner contract invalid", False),
@@ -269,6 +253,7 @@ class ModelBackedMilestonePlanner:
         failure: ModelFailure | None = None,
         attempts: tuple[ModelGenerationAttempt, ...],
         config: ModelConfig,
+        structured_output_violations: tuple[Mapping[str, object], ...] = (),
     ) -> ModelInvocationResult[PlannerDecision]:
         result = ModelInvocationResult(
             output=output,
@@ -276,7 +261,13 @@ class ModelBackedMilestonePlanner:
             metadata=_metadata(self.invoker, config, attempts, MILESTONE_ROADMAP_SCHEMA_VERSION),
             attempts=attempts,
             repair_diagnostics=_repair_diagnostics(attempts),
-            diagnostics={"role": "planner", "provider_attempts": len(attempts)},
+            diagnostics={
+                "role": "planner",
+                "provider_attempts": len(attempts),
+                "structured_output_violations": (
+                    structured_output_violations or _structured_output_violations(attempts)
+                ),
+            },
             lineage={"role": "MilestonePlanner"},
         )
         object.__setattr__(self, "last_invocation_result", result)
@@ -316,10 +307,25 @@ class ModelBackedMissionAuditor:
         output = None
         if failure is None and isinstance(invocation.output, AuditorDecisionModel):
             try:
+                if any(request.audit_bundle.resolve(ref) is None for ref in invocation.output.evidence_refs):
+                    raise ValueError("Auditor cited evidence outside its packet")
+                requirement_keys = {item.key for item in request.milestone.required_evidence}
+                if not set(invocation.output.missing_evidence_keys).issubset(requirement_keys):
+                    raise ValueError("Auditor requested evidence outside the milestone contract")
+                required_refs = {
+                    item.record.evidence_ref
+                    for item in request.working_facts
+                    if item.key in requirement_keys
+                }
+                if invocation.output.assessment == "satisfied" and not required_refs.issubset(
+                    invocation.output.evidence_refs
+                ):
+                    raise ValueError("satisfied Auditor decision omitted required retained evidence")
                 output = AuditorDecision(
                     EvidenceAssessment(invocation.output.assessment),
                     invocation.output.evidence_refs,
-                    invocation.output.reason,
+                    invocation.output.missing_evidence_keys,
+                    invocation.output.guidance,
                 )
             except (TypeError, ValueError):
                 failure = ModelFailure(ModelFailureKind.SCHEMA_ERROR, "auditor contract invalid", False)
@@ -361,15 +367,20 @@ def _auditor_messages(request: AuditorRoleRequest) -> tuple[ModelMessage, ...]:
             "value": item.value,
             "source": item.source_observation_id,
         }
-        for item in request.audit_bundle.evidence_records[:128]
+        for item in request.audit_bundle.evidence_records
     )
     payload = {
         "task": to_json_compatible(request.task),
         "milestone": to_json_compatible(request.milestone),
         "mission_state": to_json_compatible(request.pre_mission_state),
         "working_facts": to_json_compatible(request.working_facts),
+        "outcome_summary": to_json_compatible(request.outcome_summary),
         "yield_reason": request.yield_reason,
-        "evidence": records,
+        "evidence_packet": {
+            "records": records,
+            "total_count": request.audit_bundle.total_evidence_count,
+            "truncated": request.audit_bundle.truncated,
+        },
     }
     return _messages(MISSION_AUDITOR_INSTRUCTIONS, payload)
 
@@ -437,3 +448,39 @@ def _repair_diagnostics(attempts) -> tuple[Mapping[str, object], ...]:
         for item in attempts
         if item.phase.endswith("output_retry")
     )
+
+
+def _structured_output_violations(attempts) -> tuple[Mapping[str, object], ...]:
+    violations: list[Mapping[str, object]] = []
+    for attempt in attempts:
+        if not attempt.phase.endswith("output_retry"):
+            continue
+        messages = attempt.transcript.get("llm.input_messages", ())
+        if not isinstance(messages, list | tuple):
+            continue
+        for message in messages:
+            parts = message.get("parts", ()) if isinstance(message, Mapping) else ()
+            for part in parts if isinstance(parts, list | tuple) else ():
+                if not isinstance(part, Mapping) or part.get("part_kind") != "retry-prompt":
+                    continue
+                content = part.get("content")
+                for item in content if isinstance(content, list | tuple) else ():
+                    if not isinstance(item, Mapping):
+                        continue
+                    loc = item.get("loc", ())
+                    code = item.get("type")
+                    if not isinstance(loc, list | tuple) or not isinstance(code, str):
+                        continue
+                    field_path = ".".join(str(value) for value in loc)[:160]
+                    safe_code = "".join(char for char in code if char.isalnum() or char in {"_", "-"})[:80]
+                    violations.append(
+                        {
+                            "field_path": field_path or "$",
+                            "code": safe_code or "validation_error",
+                            "attempt": attempt.attempt,
+                            "phase": "output_retry",
+                        }
+                    )
+                    if len(violations) >= 4:
+                        return tuple(violations)
+    return tuple(violations)

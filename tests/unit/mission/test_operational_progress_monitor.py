@@ -584,7 +584,6 @@ def test_planner_recovery_view_preserves_typed_signal_without_inventing_outcome_
         "prior_milestone",
         "recovery_signal",
         "attempted_modes",
-        "audit_guidance",
         "outcome_proposal",
         "working_proposal_feedback",
     )

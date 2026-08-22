@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from affordance_runtime.agent.working_facts import is_public_scalar
+from affordance_runtime.agent.working_facts import WorkingFact, is_public_scalar
+from affordance_runtime.evaluation.contracts import (
+    CriterionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.evaluation.evidence import validate_evidence_refs
 from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.mission.contracts import (
@@ -16,10 +21,14 @@ from affordance_runtime.mission.contracts import (
     EvidenceBundle,
     Milestone,
     MilestoneAdmission,
+    MilestoneAdmissionRoute,
     MissionState,
+    WorkingFactProposal,
+    WorkingOutcomeProposal,
     WorkingStateProposal,
 )
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 
 @dataclass(frozen=True)
@@ -34,21 +43,78 @@ class EvidenceBoundary:
         after_world: WorldObservation,
         working_facts,
         outcome_summary: str,
+        formal_evaluation: TaskEvaluation | None = None,
     ) -> MilestoneAdmission:
+        accepted_records = {item.record.evidence_ref: item.record for item in mission.accepted_facts}
+        for item in working_facts:
+            if not isinstance(item, WorkingFact) or not isinstance(item.record, EvidenceRecord):
+                return MilestoneAdmission(
+                    MilestoneAdmissionRoute.CONTINUE_EVIDENCE,
+                    EvidenceAssessment.UNKNOWN,
+                    reason_code="evidence_shape_invalid",
+                )
+            if not is_public_scalar(item.record.value):
+                return MilestoneAdmission(
+                    MilestoneAdmissionRoute.CONTINUE_EVIDENCE,
+                    EvidenceAssessment.UNKNOWN,
+                    reason_code="evidence_non_public_scalar",
+                )
+            if accepted_records.get(item.record.evidence_ref) != item.record and not item.record.has_typed_source:
+                return MilestoneAdmission(
+                    MilestoneAdmissionRoute.CONTINUE_EVIDENCE,
+                    EvidenceAssessment.UNKNOWN,
+                    reason_code="evidence_stale_or_untyped_lineage",
+                )
         facts = {item.key: item for item in working_facts}
         missing = tuple(item.key for item in milestone.required_evidence if item.key not in facts)
         if missing:
-            return MilestoneAdmission(EvidenceAssessment.UNKNOWN, reason_code="required_evidence_missing")
-        if not milestone.required_evidence:
-            reason = "observable_outcome_unknown"
-            if before_world.observation_id == after_world.observation_id:
-                reason = "observable_outcome_unchanged"
-            return MilestoneAdmission(EvidenceAssessment.UNKNOWN, reason_code=reason)
-        # Keys establish availability and lineage only. Their descriptions and
-        # milestone done_when are natural-language semantics, so this mechanical
-        # boundary cannot infer that a scalar filed under a matching key proves
-        # the requested business outcome. The Auditor owns that assessment.
+            return MilestoneAdmission(
+                MilestoneAdmissionRoute.CONTINUE_EVIDENCE,
+                EvidenceAssessment.UNKNOWN,
+                reason_code="missing_required_evidence",
+            )
+        if (
+            milestone.final
+            and formal_evaluation is not None
+            and formal_evaluation.status is TaskEvaluationStatus.COMPLETE
+        ):
+            proposal = _formal_proposal(
+                mission,
+                milestone,
+                working_facts,
+                formal_evaluation,
+                outcome_summary,
+            )
+            return MilestoneAdmission(
+                MilestoneAdmissionRoute.SATISFIED,
+                EvidenceAssessment.SATISFIED,
+                proposal,
+                "formal_task_criterion_satisfied",
+            )
+        if (
+            milestone.final
+            and formal_evaluation is not None
+            and formal_evaluation.status is TaskEvaluationStatus.INCOMPLETE
+            and any(
+                item.status is CriterionEvaluationStatus.UNSATISFIED
+                for item in formal_evaluation.criteria
+            )
+        ):
+            return MilestoneAdmission(
+                MilestoneAdmissionRoute.UNSATISFIED,
+                EvidenceAssessment.UNSATISFIED,
+                reason_code="formal_task_criterion_unsatisfied",
+            )
+        existing_refs = {item.record.evidence_ref for item in mission.accepted_facts}
+        new_refs = {item.record.evidence_ref for item in working_facts} - existing_refs
+        if public_world_semantic_digest(before_world) == public_world_semantic_digest(after_world) and not new_refs:
+            return MilestoneAdmission(
+                MilestoneAdmissionRoute.CONTINUE_EVIDENCE,
+                EvidenceAssessment.UNKNOWN,
+                reason_code="outcome_unproven",
+            )
         return MilestoneAdmission(
+            MilestoneAdmissionRoute.SEMANTIC_AUDIT,
             EvidenceAssessment.UNKNOWN,
             reason_code="semantic_evidence_assessment_required",
         )
@@ -107,6 +173,32 @@ class EvidenceBoundary:
             (*mission.evidence_lineage, *(item.outcome_id for item in proposal.working_outcomes)),
         )
         return EvidenceBoundaryResult(True, next_state)
+
+
+def _formal_proposal(
+    mission: MissionState,
+    milestone: Milestone,
+    working_facts: tuple[WorkingFact, ...],
+    evaluation: TaskEvaluation,
+    summary: str,
+) -> WorkingStateProposal:
+    refs = evaluation.completion_evidence_refs
+    return WorkingStateProposal(
+        EvidenceAssessment.SATISFIED,
+        mission.version,
+        (
+            WorkingOutcomeProposal(
+                milestone.id,
+                EvidenceAssessment.SATISFIED,
+                refs,
+                summary,
+            ),
+        ),
+        tuple(
+            WorkingFactProposal(item.key, item.record.evidence_ref, item.purpose)
+            for item in working_facts
+        ),
+    )
 
 
 def _rejected(
