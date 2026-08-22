@@ -2,8 +2,8 @@
 
 ## Status
 
-Current status: **single-ActionPolicy C8–C9 provider-free implementation/evidence/audit verified /
-live closure awaiting explicit authorization**. Prior
+Current status: **single-ActionPolicy implementation advanced / repeat-convergence contract reopened and non-closed /
+no live run authorized**. Prior
 Planner/Auditor G0–G6 artifacts remain historical scoped evidence for the superseded mission path; they do not
 authorize another live run.
 
@@ -100,12 +100,24 @@ not claim a real dispatched site mutation or replace the separately authorized l
 diagnostic records `provider_attempts=0`, and all seven JSON artifacts explicitly record the unchanged
 `AgentLoopProfile(30, 8, 1)`. The complete initial-page request estimates are 7,432–8,591 tokens with a 7,881.5
 median, below the frozen 8,000 median gate. The global EvidenceCandidates compatibility path and secondary
-`admit_model_request` owner are physically deleted; unexpected local ValueError maps to `internal_error`. The full suite passes 1,450 tests with 19
+`admit_model_request` owner are physically deleted; unexpected local ValueError maps to `internal_error`. The full suite passes 1,460 tests with 19
 skips, and Ruff, compileall, and diff-check pass. Independent fresh-context review reports no P0/P1/P2.
 
-Run17 recorded `CASE_FINISHED`, `cleanup_status=succeeded`, and `report_status=exported`; it does not reopen cleanup.
-The existing persist-before-cleanup order and bounded cleanup/viewer contracts remain unchanged. A future
-`cleanup_timeout` must be handled as a separate lifecycle witness rather than folded into C8–C9.
+Run19 confirmed that external GUI change-first delivery works, then falsified the broader closure claim: repeated
+`search_page_content` calls returned the same non-empty local result, but no owner classified delivery novelty, the
+Workspace hard-coded `new_finding_count=0`, and Monitor observed only unchanged World findings. The active contract is
+therefore `StepResult → ObservationDeliveryStore.reduce → DeliveryTransition(next_store, information_delta)`, with the
+same delta consumed by Workspace and Monitor. First unseen result items are `new_information`; identical World,
+arguments, and result are `exact_replay`, recover immediately, omit the repeated full payload, and stall on recurrence
+after recovery. Varied observation methods retain the general `AgentLoopProfile` threshold.
+
+The same run also showed an independent finalization boundary defect: STOP and post capture succeeded, while an
+exception in native snapshot/classification/projection/validation was broadly caught and rewritten as UNKNOWN; after
+`run_finished`, the case body did not return, so preliminary persistence and cleanup did not begin. The implementation
+now has a closed evaluator outcome algebra with immediate local diagnostics, a local-only `run_finished` handoff, and
+a two-second case-return deadline that still reaches preliminary persistence before cleanup. These changes are
+provider-free verified locally but are not closure until the full suite, updated evidence, and a new independent audit
+agree. No further live run is authorized.
 
 ## Purpose
 
@@ -228,6 +240,8 @@ Property/state-machine tests must prove:
 - 1,000 ordinary supported steps, including non-identical read/search arguments, always return a reduced workspace or
   one typed irreducible capacity result; ordinary accumulation never raises a history exception;
 - repeated no-information reads/searches/waits update one bounded `ActivitySummary` family rather than append entries;
+- first non-empty local observation result records its unseen public items and exact count; the same World/arguments/
+  result is `exact_replay`, is not redelivered in full, recovers immediately, and stalls on post-recovery recurrence;
 - a precise public result remains available after leaving the latest-four window and after a local search-view change;
 - a whole address is retained exactly and is not mechanically split into inferred business fields;
 - `RequestAdmission` is the only component that allocates/adjudicates capacity for the complete request;
@@ -344,6 +358,10 @@ Held-out, non-site-specific tests must prove:
 - STOP is sent at most once;
 - `SENT` and `SENT_UNKNOWN` with acquired post-state invoke the native evaluator once and never replay STOP;
 - benchmark status derives from post-STOP native evaluation and committed receipts.
+- evaluator exception/unavailability never fabricates UNKNOWN, immediately persists a bounded typed diagnostic, and
+  never enters the official-outcome sink;
+- `run_finished` cannot wait on a viewer/provider resource; case-body return has an independent deadline and
+  preliminary result persistence precedes cleanup even when that deadline expires.
 
 ### G6 — independent review
 

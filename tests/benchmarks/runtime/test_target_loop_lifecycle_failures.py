@@ -264,6 +264,68 @@ def test_watchdog_cancel_wait_has_bounded_grace(monkeypatch) -> None:
         loop.close()
 
 
+def test_terminal_runtime_fact_has_independent_case_return_deadline(monkeypatch) -> None:
+    from affordance_runtime.benchmarks.target_loop import runner
+
+    monkeypatch.setattr(runner, "_CASE_RETURN_TIMEOUT_S", 0.005)
+    finished = asyncio.Event()
+
+    async def terminal_but_not_returned() -> None:
+        finished.set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            return
+
+    started = time.perf_counter()
+    with pytest.raises(runner._CaseReturnTimeout) as raised:
+        asyncio.run(
+            runner._run_with_watchdog(
+                terminal_but_not_returned(),
+                10,
+                runtime_finished=finished,
+            )
+        )
+
+    assert raised.value.task_detached is False
+    assert time.perf_counter() - started < 0.1
+
+
+def test_case_return_timeout_persists_preliminary_result_before_cleanup(monkeypatch, tmp_path) -> None:
+    from affordance_runtime.benchmarks.target_loop import runner
+
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    case = manifest.cases[0]
+    monkeypatch.setattr(runner, "_CASE_RETURN_TIMEOUT_S", 0.005)
+
+    async def terminal_but_hung(_case, _runtime, _environment, _task, instrumentation, _holder):
+        instrumentation.run_finished(SimpleNamespace(status=RunStatus.FAILED))
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            return None
+
+    monkeypatch.setattr(runner, "_run_episode", terminal_but_hung)
+    result = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    ).cases[0]
+
+    store = SQLiteRunResultStore(tmp_path / "run-results.sqlite3")
+    phases = store.load_case_phases(case.case_id)
+    assert result.failure_reason == "case return timeout"
+    assert result.failure_facts.watchdog_code == "case_return_timeout"
+    assert phases.index("RESULT_PERSISTED") < phases.index("CLEANUP_STARTED")
+
+
 def test_watchdog_report_retains_persisted_official_outcome(tmp_path) -> None:
     instrumentation = BenchmarkInstrumentation(
         trace_recorder=RunTraceRecorder(),

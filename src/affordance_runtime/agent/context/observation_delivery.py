@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -20,6 +21,62 @@ from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 from affordance_runtime.world.public_semantic_digest import public_subject_semantics
+
+_MAX_LOCAL_DELIVERY_RECORDS = 64
+_MAX_LOCAL_INFORMATION_ITEMS = 32
+
+
+class InformationDeltaKind(StrEnum):
+    NEW_INFORMATION = "new_information"
+    NO_MATCHES = "no_matches"
+    NO_NEW_INFORMATION = "no_new_information"
+    EXACT_REPLAY = "exact_replay"
+
+
+@dataclass(frozen=True)
+class InformationDelta:
+    kind: InformationDeltaKind
+    operation: str
+    world_digest: str
+    arguments_digest: str
+    result_digest: str
+    new_items: tuple[Mapping[str, object], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, InformationDeltaKind):
+            raise TypeError("information delta kind must be typed")
+        if not self.operation.strip() or not all(
+            value.startswith("sha256:")
+            for value in (self.world_digest, self.arguments_digest, self.result_digest)
+        ):
+            raise ValueError("information delta requires stable public identities")
+        items = tuple(freeze_json(dict(item)) for item in self.new_items)
+        if len(items) > _MAX_LOCAL_INFORMATION_ITEMS:
+            raise ValueError("information delta exceeds its public item bound")
+        if self.kind is InformationDeltaKind.NEW_INFORMATION and not items:
+            raise ValueError("new information requires public items")
+        if self.kind is not InformationDeltaKind.NEW_INFORMATION and items:
+            raise ValueError("non-new delivery cannot carry public items")
+        object.__setattr__(self, "new_items", items)
+
+    @property
+    def new_information_count(self) -> int:
+        return len(self.new_items)
+
+
+@dataclass(frozen=True)
+class LocalDeliveryRecord:
+    operation: str
+    world_digest: str
+    arguments_digest: str
+    result_digest: str
+    item_digests: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DeliveryTransition:
+    next_store: "ObservationDeliveryStore"
+    information_delta: InformationDelta | None
 
 
 @dataclass(frozen=True)
@@ -147,9 +204,88 @@ class ObservationDelivery:
 
 @dataclass(frozen=True)
 class ObservationDeliveryStore:
-    """Own only latest external GUI effect lifecycle; never current World truth."""
+    """Own the bounded lifecycle of public information delivered to the model."""
 
     latest_effect: LatestEffect | None = None
+    local_deliveries: tuple[LocalDeliveryRecord, ...] = ()
+
+    def __post_init__(self) -> None:
+        records = tuple(self.local_deliveries)
+        if len(records) > _MAX_LOCAL_DELIVERY_RECORDS or any(
+            not isinstance(item, LocalDeliveryRecord) for item in records
+        ):
+            raise ValueError("local delivery lifecycle exceeds its fixed bound")
+        object.__setattr__(self, "local_deliveries", records)
+
+    def reduce(self, step: object, *, step_index: int) -> DeliveryTransition:
+        external = self.advance(step, step_index=step_index)
+        decision = getattr(step, "decision", None)
+        operation = str(getattr(decision, "tool_name", ""))
+        arguments = getattr(decision, "arguments", None)
+        result = getattr(decision, "result", None)
+        if not operation and getattr(step, "action_page_result", None):
+            operation = "find_controls"
+            arguments = {
+                "query": getattr(decision, "query", ""),
+                "target_id": getattr(decision, "target_id", ""),
+                "cursor": getattr(decision, "cursor", ""),
+            }
+            result = getattr(step, "action_page_result")
+        if operation not in {"read_region", "search_page_content", "find_controls"} or not isinstance(
+            result, Mapping
+        ):
+            return DeliveryTransition(external, None)
+
+        world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
+        arguments_digest = _public_digest(arguments or {})
+        result_digest = _public_digest(result)
+        items = _public_result_items(result)
+        item_digests = tuple(_public_digest(item) for item in items)
+        exact = next(
+            (
+                item for item in reversed(external.local_deliveries)
+                if (item.operation, item.world_digest, item.arguments_digest, item.result_digest)
+                == (operation, world_digest, arguments_digest, result_digest)
+            ),
+            None,
+        )
+        if exact is not None:
+            delta = InformationDelta(
+                InformationDeltaKind.EXACT_REPLAY,
+                operation,
+                world_digest,
+                arguments_digest,
+                result_digest,
+            )
+            return DeliveryTransition(external, delta)
+
+        delivered = {
+            digest
+            for record in external.local_deliveries
+            if record.world_digest == world_digest
+            for digest in record.item_digests
+        }
+        new_items = tuple(item for item, digest in zip(items, item_digests, strict=True) if digest not in delivered)
+        if new_items:
+            kind = InformationDeltaKind.NEW_INFORMATION
+        elif not items:
+            kind = InformationDeltaKind.NO_MATCHES
+        else:
+            kind = InformationDeltaKind.NO_NEW_INFORMATION
+        delta = InformationDelta(
+            kind,
+            operation,
+            world_digest,
+            arguments_digest,
+            result_digest,
+            new_items if kind is InformationDeltaKind.NEW_INFORMATION else (),
+        )
+        record = LocalDeliveryRecord(operation, world_digest, arguments_digest, result_digest, item_digests)
+        next_store = ObservationDeliveryStore(
+            external.latest_effect,
+            (*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
+        )
+        return DeliveryTransition(next_store, delta)
 
     def advance(self, step: object, *, step_index: int) -> "ObservationDeliveryStore":
         batch = getattr(step, "execution_receipts", None)
@@ -172,7 +308,31 @@ class ObservationDeliveryStore:
         )
         label = target.label if target is not None and target.label.strip() else target.role if target is not None else "target"
         cause = f'{intent.semantic_action} {label!r}'
-        return ObservationDeliveryStore(LatestEffect(step_index, cause[:240], dispatch, delta))
+        return ObservationDeliveryStore(
+            LatestEffect(step_index, cause[:240], dispatch, delta),
+            self.local_deliveries,
+        )
+
+
+def _public_result_items(result: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
+    raw = result.get("items", result.get("matches", ()))
+    if not isinstance(raw, (tuple, list)):
+        return ()
+    items: list[Mapping[str, object]] = []
+    for value in raw[:_MAX_LOCAL_INFORMATION_ITEMS]:
+        items.append(dict(value) if isinstance(value, Mapping) else {"value": value})
+    return tuple(items)
+
+
+def _public_digest(value: object) -> str:
+    encoded = json.dumps(
+        to_json_compatible(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return "sha256:" + hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def current_findings_digest(observation: WorldObservation) -> str:

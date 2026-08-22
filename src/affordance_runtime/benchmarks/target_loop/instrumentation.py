@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from collections.abc import Mapping
@@ -113,6 +114,7 @@ class BenchmarkInstrumentation:
     trace_recorder: RunTraceRecorder = field(default_factory=RunTraceRecorder)
     _unknown_attempts: set[str] = field(default_factory=set, repr=False)
     _policy_trace: list[dict[str, object]] = field(default_factory=list, repr=False)
+    _runtime_finished_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     @property
     def policy_trace(self) -> list[dict[str, object]]:
@@ -151,6 +153,13 @@ class BenchmarkInstrumentation:
     def finalization_protocol(self, **counts) -> None:
         self.trace_recorder.finalization_protocol(**counts)
 
+    def native_evaluator_failed(self, *, outcome: str, code: str, diagnostic: object) -> None:
+        self.trace_recorder.native_evaluator_failed(
+            outcome=outcome,
+            code=code,
+            diagnostic=diagnostic,
+        )
+
     def benchmark_lifecycle_phase(self, phase: str, **event) -> None:
         self.trace_recorder.benchmark_lifecycle_phase(phase, **event)
 
@@ -176,6 +185,11 @@ class BenchmarkInstrumentation:
 
     def run_finished(self, state) -> None:
         self.trace_recorder.run_finished(state)
+        self._runtime_finished_event.set()
+
+    @property
+    def runtime_finished_event(self) -> asyncio.Event:
+        return self._runtime_finished_event
 
     def increment(self, name: str, value: int = 1) -> None:
         require_custom_metric_name(name)

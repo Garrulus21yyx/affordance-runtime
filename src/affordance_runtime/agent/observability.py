@@ -53,6 +53,8 @@ class RunTraceSink(Protocol):
 
     def native_evaluator_returned(self, evaluation: object) -> None: ...
 
+    def native_evaluator_failed(self, *, outcome: str, code: str, diagnostic: object) -> None: ...
+
     def official_outcome_persistence(
         self,
         *,
@@ -137,6 +139,10 @@ class NullRunTraceSink:
 
     def native_evaluator_returned(self, evaluation: object) -> None:
         del evaluation
+        return None
+
+    def native_evaluator_failed(self, *, outcome: str, code: str, diagnostic: object) -> None:
+        del outcome, code, diagnostic
         return None
 
     def official_outcome_persistence(self, **event: object) -> None:
@@ -295,6 +301,24 @@ class RunTraceRecorder:
             checkpoint_id=checkpoint_id,
         )
 
+    def native_evaluator_failed(self, *, outcome: str, code: str, diagnostic: object) -> None:
+        """Persist boundary failure locally before any remote viewer offer."""
+
+        self._emit_local(
+            "native_evaluator_failed",
+            outcome=outcome,
+            code=code,
+            phase=_enum_value(getattr(diagnostic, "stage", "")),
+            exception_type=str(getattr(diagnostic, "exception_type", "")),
+            safe_message=str(getattr(diagnostic, "safe_message", "")),
+            observation_id=str(getattr(diagnostic, "observation_id", "")),
+            native_snapshot_present_fields=tuple(
+                getattr(diagnostic, "native_snapshot_present_fields", ())
+            ),
+            diagnostic_ref=str(getattr(diagnostic, "diagnostic_ref", "")),
+            traceback_ref=str(getattr(diagnostic, "traceback_ref", "")),
+        )
+
     def official_outcome_persistence(
         self,
         *,
@@ -383,7 +407,9 @@ class RunTraceRecorder:
 
     def run_finished(self, state: object) -> None:
         status = _enum_value(getattr(state, "status", ""))
-        self._emit(
+        # This is the Runtime/case-return handoff. Persist locally and do not
+        # touch viewer IPC until the runner has committed the preliminary case.
+        self._emit_local(
             "run_finished",
             status=status,
             step_count=getattr(state, "step_count", None),
@@ -404,6 +430,9 @@ class RunTraceRecorder:
         )
 
     def _emit(self, event_type: str, **payload: object) -> None:
+        self._emit_local(event_type, **payload)
+
+    def _emit_local(self, event_type: str, **payload: object) -> None:
         try:
             with self._lock:
                 self._sequence += 1

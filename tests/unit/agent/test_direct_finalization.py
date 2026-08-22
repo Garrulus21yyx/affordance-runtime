@@ -18,6 +18,12 @@ from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
 )
 from affordance_runtime.benchmarks.target_loop.result_store import SQLiteRunResultStore
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation.invocation import (
+    TaskEvaluationStage,
+    TaskEvaluationUnavailableError,
+    Unavailable,
+    task_evaluation_diagnostic_from_exception,
+)
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.task import TaskGoal
@@ -227,6 +233,87 @@ def test_native_blocked_after_stop_enters_durable_official_sink_exactly_once(tmp
     assert [event["event"] for event in trace.events].count("native_evaluator_returned") == 1
     assert state.finalization is not None
     assert state.finalization.native_evaluation_status is TaskEvaluationStatus.BLOCKED
+
+
+def test_native_evaluator_exception_is_typed_and_durably_traced_without_unknown(tmp_path) -> None:
+    before = shared_world("evaluator-failure-before", False)
+    after = shared_world("evaluator-failure-after", False)
+
+    class FailingAfterStopEvaluator(TerminalEvaluator):
+        async def evaluate(self, task, observation):
+            if observation.observation_id == after.observation_id:
+                raise ValueError("projection failed for token=secret-value")
+            return await super().evaluate(task, observation)
+
+    trace = RunTraceRecorder(tmp_path / "trace")
+    runtime = TargetRuntime(
+        AgentDecisionPorts(FinalResponsePolicy("done")),
+        SharedActionOutcomeProjector(),
+        FailingAfterStopEvaluator("never"),
+        goal_compiler=NotRequiredGoalCompiler("direct_finalization_test"),
+        trace_sink=trace,
+    )
+    environment = FinalizingEnvironment(ScriptedEnvironment(before), after, DispatchStatus.SENT)
+
+    state = asyncio.run(runtime.run_task(environment, TaskGoal("task:evaluator-failure", "Answer.")))
+
+    assert state.status is RunStatus.FAILED
+    assert state.current_task_evaluation is None
+    assert state.runtime_failure is not None
+    assert state.runtime_failure.stage.value == "evaluation"
+    assert state.runtime_failure.kind.value == "internal"
+    events = [event for event in trace.events if event["event"] == "native_evaluator_failed"]
+    assert len(events) == 1
+    assert events[0]["phase"] == "evaluator_call"
+    assert events[0]["exception_type"] == "ValueError"
+    assert events[0]["observation_id"] == after.observation_id
+    assert "secret-value" not in events[0]["safe_message"]
+    assert not [event for event in trace.events if event["event"] == "native_evaluator_returned"]
+
+
+def test_native_evaluator_unavailable_is_typed_and_never_enters_official_sink(tmp_path) -> None:
+    before = shared_world("evaluator-unavailable-before", False)
+    after = shared_world("evaluator-unavailable-after", False)
+
+    class UnavailableAfterStopEvaluator(TerminalEvaluator):
+        async def evaluate(self, task, observation):
+            if observation.observation_id == after.observation_id:
+                error = RuntimeError("native evaluator dependency unavailable")
+                raise TaskEvaluationUnavailableError(
+                    Unavailable(
+                        "native_evaluator_unavailable",
+                        task_evaluation_diagnostic_from_exception(
+                            error,
+                            stage=TaskEvaluationStage.EVALUATOR_CALL,
+                            observation_id=observation.observation_id,
+                        ),
+                    )
+                )
+            return await super().evaluate(task, observation)
+
+    trace = RunTraceRecorder(tmp_path / "trace")
+    sink = OutcomeSink()
+    runtime = TargetRuntime(
+        AgentDecisionPorts(FinalResponsePolicy("done")),
+        SharedActionOutcomeProjector(),
+        UnavailableAfterStopEvaluator("never"),
+        goal_compiler=NotRequiredGoalCompiler("direct_finalization_test"),
+        official_outcome_sink=sink,
+        trace_sink=trace,
+    )
+    environment = FinalizingEnvironment(ScriptedEnvironment(before), after, DispatchStatus.SENT)
+
+    state = asyncio.run(runtime.run_task(environment, TaskGoal("task:evaluator-unavailable", "Answer.")))
+
+    assert state.status is RunStatus.FAILED
+    assert state.current_task_evaluation is None
+    assert state.runtime_failure is not None
+    assert state.runtime_failure.kind.value == "capability_unavailable"
+    assert sink.evaluations == []
+    failures = [event for event in trace.events if event["event"] == "native_evaluator_failed"]
+    assert len(failures) == 1
+    assert failures[0]["outcome"] == "unavailable"
+    assert failures[0]["code"] == "native_evaluator_unavailable"
 
 
 def test_finalization_protocol_rejects_facts_after_unsent_stop() -> None:

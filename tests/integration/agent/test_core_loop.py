@@ -19,6 +19,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.decisions import AbortCategory, FormFieldUpdate, SetFormFields
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.monitor import EpisodeMonitor
+from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -521,6 +522,44 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
                 state.last_step,
                 decision=replace(state.last_step.decision, tool_call_id="provider-call:wrong"),
             )
+
+    asyncio.run(scenario())
+
+
+def test_post_dispatch_evaluator_exception_is_typed_and_never_fabricates_unknown(tmp_path) -> None:
+    class FailingPostDispatchEvaluator(CoreTaskEvaluator):
+        async def evaluate(self, task, observation):
+            if observation.observation_id == "after-failure":
+                raise RuntimeError("native projection failed")
+            return await super().evaluate(task, observation)
+
+    async def scenario() -> None:
+        trace = RunTraceRecorder(tmp_path / "trace")
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            CoreActionOutcomeProjector(),
+            FailingPostDispatchEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("typed_evaluator_failure_test"),
+            trace_sink=trace,
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before-failure", False),
+            post_observations=(_world("after-failure", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.FAILED
+        assert state.current_task_evaluation is None
+        assert state.runtime_failure is not None
+        assert state.runtime_failure.stage.value == "evaluation"
+        assert state.runtime_failure.kind.value == "internal"
+        assert state.execution_count == 1
+        failures = [event for event in trace.events if event["event"] == "native_evaluator_failed"]
+        assert len(failures) == 1
+        assert failures[0]["observation_id"] == "after-failure"
+        assert failures[0]["phase"] == "evaluator_call"
 
     asyncio.run(scenario())
 

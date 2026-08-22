@@ -10,9 +10,15 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
-from affordance_runtime.agent.decisions import ReadRegionResult, RememberFactResult, ToolRejectedResult
+from affordance_runtime.agent.decisions import (
+    ReadRegionResult,
+    RememberFactResult,
+    SearchPageContentResult,
+    ToolRejectedResult,
+)
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.working_facts import WorkingFact
@@ -210,6 +216,41 @@ def test_working_fact_moves_into_workspace_without_gui_execution() -> None:
 
     assert workspace.working_facts == (fact,)
     assert workspace.semantic_events[-1].kind is SemanticEventKind.WORKING_FACT
+
+
+def test_local_delivery_new_items_enter_workspace_and_replay_is_compact() -> None:
+    world = shared_world("observation:local-delivery", False)
+    decision = SearchPageContentResult(
+        "context:test",
+        "search_page_content",
+        {"query": "airport"},
+        {
+            "kind": "Matches",
+            "items": (
+                {"label": "Airport", "value": "33 km"},
+                {"label": "postcode", "value": "15231"},
+            ),
+        },
+    )
+    step = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
+    first = ObservationDeliveryStore().reduce(step, step_index=1)
+    reducer = DefaultWorkspaceReducer()
+    workspace = reducer.reduce(
+        AgentWorkspace(),
+        step,
+        project_step_result(step, information_delta=first.information_delta),
+        1,
+        information_delta=first.information_delta,
+    )
+    replay = first.next_store.reduce(step, step_index=2)
+    replay_view = project_step_result(step, information_delta=replay.information_delta)
+
+    assert workspace.semantic_events[-1].kind is SemanticEventKind.PUBLIC_RESULT
+    assert len(workspace.semantic_events[-1].exact_public_values) == 2
+    assert workspace.activities[-1].new_finding_count == 2
+    assert workspace.activities[-1].last_outcome == "new_information"
+    assert replay_view.semantic_summary["information_delta"] == "exact_replay"
+    assert "result" not in replay_view.semantic_summary
 
 
 def test_typed_failure_is_retained_as_a_bounded_semantic_event() -> None:

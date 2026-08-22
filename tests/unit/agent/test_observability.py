@@ -5,6 +5,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,6 +33,24 @@ from tests.integration.agent.test_core_loop import (
     _task,
     _world,
 )
+
+
+def test_run_finished_is_local_only_and_never_offers_to_queued_viewer(tmp_path) -> None:
+    class BlockingViewer:
+        calls = 0
+
+        def enqueue(self, _event):
+            self.calls += 1
+            raise AssertionError("terminal handoff must not enter viewer IPC")
+
+    viewer = BlockingViewer()
+    recorder = QueuedViewerRunTraceRecorder(tmp_path, viewer_process=viewer)  # type: ignore[arg-type]
+
+    recorder.run_finished(SimpleNamespace(status=RunStatus.FAILED, step_count=3))
+
+    assert viewer.calls == 0
+    assert recorder.events[-1]["event"] == "run_finished"
+    assert json.loads(recorder.path.read_text().splitlines()[-1])["event"] == "run_finished"
 
 
 def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -> None:

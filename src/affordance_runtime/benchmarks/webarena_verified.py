@@ -43,6 +43,12 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.evaluation.invocation import (
+    InternalFailure,
+    TaskEvaluationInternalError,
+    TaskEvaluationStage,
+    task_evaluation_diagnostic_from_exception,
+)
 from affordance_runtime.execution import (
     ActionResult,
     DispatchStatus,
@@ -435,8 +441,38 @@ class WebArenaVerifiedNativeEvaluator:
     environment: WebArenaVerifiedCaseEnvironment
 
     async def evaluate(self, task, observation) -> TaskEvaluation:
-        outcome_kind, code, refs = self.environment.current_native_result()
-        evidence_index = WorldEvidenceIndex.from_observation(observation)
+        snapshot = None
+        if not self.environment.final_delivery_attempted:
+            self.environment.native_evaluator_queries += 1
+            outcome_kind, code, refs = TaskOutcomeKind.RUNNING_INCOMPLETE, "stop_not_confirmed", ()
+        else:
+            self.environment.native_evaluator_queries += 1
+            try:
+                snapshot = self.environment.surface.current_task_state()
+            except Exception as exc:
+                raise _native_evaluator_internal_error(
+                    exc,
+                    TaskEvaluationStage.NATIVE_SNAPSHOT,
+                    observation.observation_id,
+                ) from exc
+            try:
+                outcome_kind, code, refs = classify_webarena_terminal_snapshot(snapshot)
+            except Exception as exc:
+                raise _native_evaluator_internal_error(
+                    exc,
+                    TaskEvaluationStage.NATIVE_CLASSIFICATION,
+                    observation.observation_id,
+                    snapshot,
+                ) from exc
+        try:
+            evidence_index = WorldEvidenceIndex.from_observation(observation)
+        except Exception as exc:
+            raise _native_evaluator_internal_error(
+                exc,
+                TaskEvaluationStage.EVIDENCE_INDEX,
+                observation.observation_id,
+                snapshot,
+            ) from exc
         if refs and not all(evidence_index.resolve_record(ref) is not None for ref in refs):
             outcome_kind, code, refs = (
                 TaskOutcomeKind.VERIFIER_UNAVAILABLE,
@@ -449,14 +485,42 @@ class WebArenaVerifiedNativeEvaluator:
             TaskOutcomeKind.RUNNING_INCOMPLETE: TaskEvaluationStatus.INCOMPLETE,
             TaskOutcomeKind.VERIFIER_UNAVAILABLE: TaskEvaluationStatus.UNKNOWN,
         }[outcome_kind]
-        return TaskEvaluation(
-            task.task_id,
-            observation.observation_id,
-            status,
-            f"webarena-verified native evaluator: {code}",
-            completion_evidence_refs=refs if outcome_kind is TaskOutcomeKind.TERMINAL_SUCCESS else (),
-            outcome=TaskOutcomeFact(outcome_kind, code, refs),
+        try:
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                status,
+                f"webarena-verified native evaluator: {code}",
+                completion_evidence_refs=refs if outcome_kind is TaskOutcomeKind.TERMINAL_SUCCESS else (),
+                outcome=TaskOutcomeFact(outcome_kind, code, refs),
+            )
+        except Exception as exc:
+            raise _native_evaluator_internal_error(
+                exc,
+                TaskEvaluationStage.NATIVE_PROJECTION,
+                observation.observation_id,
+                snapshot,
+            ) from exc
+
+
+def _native_evaluator_internal_error(
+    exc: Exception,
+    stage: TaskEvaluationStage,
+    observation_id: str,
+    snapshot: BrowserGymTaskStateSnapshot | None = None,
+) -> TaskEvaluationInternalError:
+    fields = tuple(sorted(snapshot.present_fields)) if snapshot is not None else ()
+    return TaskEvaluationInternalError(
+        InternalFailure(
+            "native_evaluator_internal_failure",
+            task_evaluation_diagnostic_from_exception(
+                exc,
+                stage=stage,
+                observation_id=observation_id,
+                native_snapshot_present_fields=fields,
+            ),
         )
+    )
 
 
 def open_webarena_verified_case(

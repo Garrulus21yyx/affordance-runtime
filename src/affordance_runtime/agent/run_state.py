@@ -26,7 +26,7 @@ from affordance_runtime.agent.decisions import (
 from affordance_runtime.agent.finalization import FinalizationProtocolResult
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.agent.runtime_failure import RuntimeFailure
+from affordance_runtime.agent.runtime_failure import FailureStage, RuntimeFailure
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
@@ -61,7 +61,7 @@ class StepResult:
     decision: AgentDecision | PolicyFailure
     before_world: WorldObservation
     after_world: WorldObservation
-    task_evaluation: TaskEvaluation
+    task_evaluation: TaskEvaluation | None
     status_after: RunStatus = RunStatus.RUNNING
     execution_receipts: ExecutionReceiptBatch | None = None
     action_outcome: ActionOutcome | None = None
@@ -96,7 +96,7 @@ class StepResult:
             raise TypeError("step status must be typed")
         if self.waited_ms < 0:
             raise ValueError("step wait duration cannot be negative")
-        if self.task_evaluation.observation_id != self.after_world.observation_id:
+        if self.task_evaluation is not None and self.task_evaluation.observation_id != self.after_world.observation_id:
             raise ValueError("step task evaluation must describe the after-world")
         if self.action_outcome is not None:
             if self.execution_receipts is None or not self.execution_receipts.receipts:
@@ -139,6 +139,15 @@ class StepResult:
             raise ValueError("RUNNING step cannot carry terminal failure fields")
         if self.runtime_failure is not None and self.status_after is not RunStatus.FAILED:
             raise ValueError("runtime failure requires FAILED status")
+        if self.task_evaluation is None and not (
+            (
+                self.status_after is RunStatus.FAILED
+                and self.runtime_failure is not None
+                and self.runtime_failure.stage is FailureStage.EVALUATION
+            )
+            or self.status_after is RunStatus.CANCELLED
+        ):
+            raise ValueError("missing task evaluation requires a typed terminal evaluation failure")
         if isinstance(self.decision, LocalToolResult) and self.execution_receipts is not None:
             raise ValueError("a local tool result cannot contain GUI receipts")
         if (
@@ -170,6 +179,7 @@ class StepResult:
                 raise ValueError("finalization capture must identify the step after-world")
             if (
                 self.finalization.native_evaluation_status is not None
+                and self.task_evaluation is not None
                 and self.finalization.native_evaluation_status is not self.task_evaluation.status
             ):
                 raise ValueError("finalization status must match the step task evaluation")
@@ -202,7 +212,7 @@ class RunState:
     """The sole mutable control value for one simplified run."""
 
     current_world: WorldObservation
-    current_task_evaluation: TaskEvaluation
+    current_task_evaluation: TaskEvaluation | None
     remaining_steps: int
     status: RunStatus = RunStatus.RUNNING
     last_step: StepResult | None = None
@@ -228,8 +238,13 @@ class RunState:
     prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        if self.current_task_evaluation.observation_id != self.current_world.observation_id:
+        if (
+            self.current_task_evaluation is not None
+            and self.current_task_evaluation.observation_id != self.current_world.observation_id
+        ):
             raise ValueError("run evaluation must describe the current world")
+        if self.current_task_evaluation is None and self.status not in {RunStatus.FAILED, RunStatus.CANCELLED}:
+            raise ValueError("only a failed or cancelled run may lack a task evaluation")
         if self.remaining_steps < 0:
             raise ValueError("remaining steps cannot be negative")
         if self.observation_count < 1 or self.execution_count < 0 or self.step_count < 0:
@@ -259,6 +274,7 @@ class RunState:
                 raise ValueError("run finalization capture must identify the current world")
             if (
                 self.finalization.native_evaluation_status is not None
+                and self.current_task_evaluation is not None
                 and self.finalization.native_evaluation_status is not self.current_task_evaluation.status
             ):
                 raise ValueError("run finalization status must match the current task evaluation")
@@ -323,7 +339,7 @@ class RunState:
 
     @property
     def task_outcome(self):
-        return self.current_task_evaluation.outcome
+        return self.current_task_evaluation.outcome if self.current_task_evaluation is not None else None
 
     @property
     def runtime_failure(self) -> RuntimeFailure | None:
@@ -352,16 +368,26 @@ class RunState:
             raise ValueError("run resume status does not match the pending boundary")
         self.status = RunStatus.RUNNING
 
-    def apply(self, result: StepResult, *, consume_step: bool = True) -> None:
+    def apply(
+        self,
+        result: StepResult,
+        *,
+        consume_step: bool = True,
+        next_delivery_store: ObservationDeliveryStore | None = None,
+    ) -> None:
         if self.status is not RunStatus.RUNNING:
             raise ValueError("only a running state can accept a step")
         if result.before_world.observation_id != self.current_world.observation_id:
             raise ValueError("step starts from a stale world")
         acquired_new_world = result.after_world.observation_id != result.before_world.observation_id
-        self.delivery_store = self.delivery_store.advance(
-            result,
-            step_index=max(1, self.step_count + int(consume_step)),
-        )
+        if next_delivery_store is None:
+            next_delivery_store = self.delivery_store.reduce(
+                result,
+                step_index=max(1, self.step_count + int(consume_step)),
+            ).next_store
+        if not isinstance(next_delivery_store, ObservationDeliveryStore):
+            raise TypeError("run state requires the delivery owner's next store")
+        self.delivery_store = next_delivery_store
         self.current_world = result.after_world
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result

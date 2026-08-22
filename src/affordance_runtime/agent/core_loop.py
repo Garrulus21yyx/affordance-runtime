@@ -12,7 +12,11 @@ from affordance_runtime.agent.attempt_signature import public_attempt_signature
 from affordance_runtime.agent.budgets import StandaloneRunBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
-from affordance_runtime.agent.context.observation_delivery import current_findings_digest
+from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryTransition,
+    InformationDelta,
+    current_findings_digest,
+)
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
@@ -32,7 +36,7 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.evaluation_control import (
     validated_action_outcome,
-    validated_task_evaluation,
+    validated_task_evaluation_attempt,
 )
 from affordance_runtime.agent.finalization import FinalizationProtocolResult, admit_final_response
 from affordance_runtime.agent.observability import (
@@ -64,6 +68,13 @@ from affordance_runtime.evaluation.contracts import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
+from affordance_runtime.evaluation.invocation import (
+    Evaluated,
+    InternalFailure,
+    TaskEvaluationInternalError,
+    TaskEvaluationUnavailableError,
+    Unavailable,
+)
 from affordance_runtime.execution.contracts import (
     DispatchStatus,
     ExecutionCancellationPhase,
@@ -204,7 +215,7 @@ class CoreAgentLoop:
             raise TypeError("CoreLoop requires one validated typed budget")
         if goal_resolution.task_revision != task.revision:
             raise ValueError("episode goal resolution belongs to a previous task revision")
-        evaluation = await validated_task_evaluation(self.task_evaluator, task, initial)
+        evaluation = await self._validated_task_evaluation(task, initial)
         initial_status = self._status_for_goal_resolution(task, evaluation, goal_resolution)
         state = RunState(
             initial,
@@ -266,8 +277,9 @@ class CoreAgentLoop:
             except BaseException as exc:
                 self.trace_sink.run_error(exc, state)
                 raise
-            result = self._apply_episode_monitor(result, state)
-            self._commit_step(state, result)
+            delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count + 1))
+            result = self._apply_episode_monitor(result, state, delivery.information_delta)
+            self._commit_step(state, result, delivery_transition=delivery)
         if state.terminal:
             self.trace_sink.run_finished(state)
         else:
@@ -287,11 +299,7 @@ class CoreAgentLoop:
             raise ValueError("core user resume requires one consecutive task revision")
         await environment.revise_task(task)
         state.goal_resolution = None
-        evaluation = await validated_task_evaluation(
-            self.task_evaluator,
-            task,
-            state.current_world,
-        )
+        evaluation = await self._validated_task_evaluation(task, state.current_world)
         resolution = await self.goal_plan_boundary.resolve(
             self.goal_compiler,
             task,
@@ -356,22 +364,40 @@ class CoreAgentLoop:
         *,
         consume_step: bool = True,
         trace_step: bool = True,
+        delivery_transition: DeliveryTransition | None = None,
     ) -> StepResult:
-        projected = None if isinstance(result.decision, PolicyFailure) else project_step_result(result)
+        if delivery_transition is None:
+            delivery_transition = state.delivery_store.reduce(
+                result,
+                step_index=max(1, state.step_count + int(consume_step)),
+            )
+        information_delta = delivery_transition.information_delta
+        projected = (
+            None
+            if isinstance(result.decision, PolicyFailure)
+            else project_step_result(result, information_delta=information_delta)
+        )
         workspace = self.workspace_reducer.reduce(
             state.workspace,
             result,
             projected,
             max(1, state.step_count + int(consume_step)),
+            information_delta=information_delta,
         )
-        state.apply(result, consume_step=consume_step)
+        state.apply(
+            result,
+            consume_step=consume_step,
+            next_delivery_store=delivery_transition.next_store,
+        )
         state.workspace = workspace
-        if (
-            result.finalization is not None and result.finalization.native_evaluation_status is not None
-        ) or result.task_evaluation.status in {
-            TaskEvaluationStatus.COMPLETE,
-            TaskEvaluationStatus.BLOCKED,
-        }:
+        if result.task_evaluation is not None and (
+            (
+                result.finalization is not None
+                and result.finalization.native_evaluation_status is not None
+            )
+            or result.task_evaluation.status
+            in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
+        ):
             self._record_official_outcome(result.task_evaluation)
         if trace_step:
             self.trace_sink.step_completed(state.step_count, result)
@@ -384,9 +410,14 @@ class CoreAgentLoop:
         if callable(recorder):
             recorder(evaluation)
 
-    def _apply_episode_monitor(self, result: StepResult, state: RunState) -> StepResult:
+    def _apply_episode_monitor(
+        self,
+        result: StepResult,
+        state: RunState,
+        information_delta: InformationDelta | None = None,
+    ) -> StepResult:
         monitor = self.episode_monitor
-        if monitor is None or result.status_after in {
+        if monitor is None or result.task_evaluation is None or result.status_after in {
             RunStatus.DONE,
             RunStatus.WAITING_USER,
             RunStatus.WAITING_CONFIRMATION,
@@ -401,6 +432,7 @@ class CoreAgentLoop:
             result,
             current_findings_digest(result.after_world),
             working_facts_digest(state.workspace, pending_fact),
+            information_delta,
         )
         recommendation = getattr(transition, "recommendation", "")
         if str(recommendation) == "recover":
@@ -723,7 +755,7 @@ class CoreAgentLoop:
             assert post is not None and post.observation is not None
             native_evaluator_invoked = True
             try:
-                evaluation = await validated_task_evaluation(self.task_evaluator, task, post.observation)
+                attempt = await validated_task_evaluation_attempt(self.task_evaluator, task, post.observation)
             except asyncio.CancelledError:
                 facts = FinalizationProtocolResult(
                     finalization.result.dispatch_status,
@@ -735,25 +767,35 @@ class CoreAgentLoop:
                     decision,
                     state.current_world,
                     post.observation,
-                    _interrupted_task_evaluation(state, post.observation, "final_response_evaluation_cancelled"),
+                    None,
                     RunStatus.CANCELLED,
                     feedback="final_response_evaluation_cancelled",
                     finalization=facts,
                 )
-            except Exception:
+            if isinstance(attempt, Evaluated):
+                evaluation = attempt.evaluation
+            else:
+                assert isinstance(attempt, Unavailable | InternalFailure)
                 facts = FinalizationProtocolResult(
                     finalization.result.dispatch_status,
                     post.observation.observation_id,
                     native_evaluator_invoked=True,
                 )
                 self._trace_finalization(facts)
+                self._trace_native_evaluator_failure(attempt)
                 return StepResult(
                     decision,
                     state.current_world,
                     post.observation,
-                    _interrupted_task_evaluation(state, post.observation, "final_response_evaluation_failed"),
+                    None,
                     RunStatus.FAILED,
-                    feedback="final_response_evaluation_failed",
+                    feedback=attempt.code,
+                    runtime_failure=RuntimeFailure(
+                        FailureStage.EVALUATION,
+                        FailureKind.CAPABILITY_UNAVAILABLE if isinstance(attempt, Unavailable) else FailureKind.INTERNAL,
+                        attempt.code,
+                        exception_class=attempt.diagnostic.exception_type,
+                    ),
                     finalization=facts,
                 )
         facts = FinalizationProtocolResult(
@@ -797,6 +839,15 @@ class CoreAgentLoop:
                 post_stop_capture_count=facts.post_stop_capture_count,
                 native_evaluator_count=facts.native_evaluator_count,
                 dispatch_status=facts.dispatch_status.value,
+            )
+
+    def _trace_native_evaluator_failure(self, outcome: Unavailable | InternalFailure) -> None:
+        emit = getattr(self.trace_sink, "native_evaluator_failed", None)
+        if callable(emit):
+            emit(
+                outcome="unavailable" if isinstance(outcome, Unavailable) else "internal_failure",
+                code=outcome.code,
+                diagnostic=outcome.diagnostic,
             )
 
     def _action_page(self, task, state, action_space, decision: RequestActionPage) -> StepResult:
@@ -859,7 +910,7 @@ class CoreAgentLoop:
                 waited_ms=decision.max_wait_ms,
             )
         after = acquisition.observation
-        task_evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
+        task_evaluation = await self._validated_task_evaluation(task, after)
         return StepResult(
             decision,
             state.current_world,
@@ -907,7 +958,7 @@ class CoreAgentLoop:
                 f"observation_unavailable:{acquisition.reason_code}",
             )
         after = acquisition.observation
-        task_evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
+        task_evaluation = await self._validated_task_evaluation(task, after)
         return StepResult(
             decision,
             state.current_world,
@@ -1004,7 +1055,7 @@ class CoreAgentLoop:
                 decision,
                 state.current_world,
                 after,
-                _interrupted_task_evaluation(state, after, "action_execution_cancelled"),
+                None,
                 RunStatus.CANCELLED,
                 execution_receipts=ExecutionReceiptBatch.from_atomic(
                     exc.outcome,
@@ -1200,7 +1251,7 @@ class CoreAgentLoop:
                 decision,
                 state.current_world,
                 after,
-                _interrupted_task_evaluation(state, after, "form_fields_execution_cancelled"),
+                None,
                 RunStatus.CANCELLED,
                 execution_receipts=ExecutionReceiptBatch.from_form_fields(
                     exc.outcome,
@@ -1363,7 +1414,7 @@ class CoreAgentLoop:
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
             return _same_world_step(state, decision, RunStatus.BLOCKED, "binding_refresh_unavailable")
         after = acquisition.observation
-        task_evaluation = await validated_task_evaluation(self.task_evaluator, task, after)
+        task_evaluation = await self._validated_task_evaluation(task, after)
         return StepResult(
             decision,
             state.current_world,
@@ -1390,7 +1441,7 @@ class CoreAgentLoop:
         """Close evaluator failure without losing already-crossed dispatch truth."""
 
         try:
-            return await validated_task_evaluation(self.task_evaluator, task, after)
+            return await self._validated_task_evaluation(task, after)
         except asyncio.CancelledError:
             return _post_dispatch_evaluation_failure(
                 state,
@@ -1404,16 +1455,35 @@ class CoreAgentLoop:
                 cancelled=True,
                 code="task_evaluation_cancelled",
             )
-        except Exception as exc:
+        except (TaskEvaluationUnavailableError, TaskEvaluationInternalError) as exc:
+            outcome = exc.outcome
             return _post_dispatch_evaluation_failure(
                 state,
                 decision,
                 after,
                 batch,
                 cancelled=False,
-                code="task_evaluation_failed",
-                exception_class=type(exc).__name__,
+                code=outcome.code,
+                failure_kind=(
+                    FailureKind.CAPABILITY_UNAVAILABLE
+                    if isinstance(outcome, Unavailable)
+                    else FailureKind.INTERNAL
+                ),
+                exception_class=outcome.diagnostic.exception_type,
             )
+
+    async def _validated_task_evaluation(
+        self,
+        task: TaskGoal,
+        observation: WorldObservation,
+    ) -> TaskEvaluation:
+        attempt = await validated_task_evaluation_attempt(self.task_evaluator, task, observation)
+        if isinstance(attempt, Evaluated):
+            return attempt.evaluation
+        self._trace_native_evaluator_failure(attempt)
+        if isinstance(attempt, Unavailable):
+            raise TaskEvaluationUnavailableError(attempt)
+        raise TaskEvaluationInternalError(attempt)
 
     def _status_for_task(self, task: TaskGoal, evaluation: TaskEvaluation) -> RunStatus:
         return _status_for_evaluation(evaluation)
@@ -1427,16 +1497,16 @@ def _post_dispatch_evaluation_failure(
     *,
     cancelled: bool,
     code: str,
+    failure_kind: FailureKind = FailureKind.INTERNAL,
     exception_class: str = "",
 ) -> StepResult:
     """Materialize the reached dispatch prefix before evaluation terminates."""
 
-    evaluation = _interrupted_task_evaluation(state, after, code)
     return StepResult(
         decision,
         state.current_world,
         after,
-        evaluation,
+        None,
         RunStatus.CANCELLED if cancelled else RunStatus.FAILED,
         execution_receipts=batch,
         feedback=code,
@@ -1445,24 +1515,11 @@ def _post_dispatch_evaluation_failure(
             if cancelled
             else RuntimeFailure(
                 FailureStage.EVALUATION,
-                FailureKind.CALL_FAILED,
+                failure_kind,
                 code,
                 exception_class=exception_class,
             )
         ),
-    )
-
-
-def _interrupted_task_evaluation(
-    state: RunState,
-    after: WorldObservation,
-    code: str,
-) -> TaskEvaluation:
-    return TaskEvaluation(
-        state.current_task_evaluation.task_id,
-        after.observation_id,
-        TaskEvaluationStatus.UNKNOWN,
-        code,
     )
 
 

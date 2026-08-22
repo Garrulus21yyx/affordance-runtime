@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from hypothesis import given
+from hypothesis import strategies as st
+
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpaceBuilder
 from affordance_runtime.agent import SearchPageContentResult, SelectAction
-from affordance_runtime.agent.context.observation_delivery import current_findings_digest
+from affordance_runtime.agent.context.observation_delivery import (
+    InformationDeltaKind,
+    ObservationDeliveryStore,
+    current_findings_digest,
+)
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.agent.recovery import (
@@ -116,6 +123,143 @@ def _evaluate(monitor: EpisodeMonitor, step: StepResult):
         current_findings_digest(step.after_world),
         working_facts_digest(AgentWorkspace()),
     )
+
+
+def _search_with_items(world) -> StepResult:
+    return StepResult(
+        SearchPageContentResult(
+            "context:test",
+            "search_page_content",
+            {"query": "airport"},
+            {
+                "kind": "Matches",
+                "items": (
+                    {"label": "Pittsburgh International Airport", "value": "33 km"},
+                    {"label": "postcode", "value": "15231"},
+                ),
+                "total_count": 2,
+            },
+        ),
+        world,
+        world,
+        _evaluation(world),
+        feedback="local_tool_result",
+    )
+
+
+def test_exact_local_result_replay_recovers_then_stalls() -> None:
+    world = _world("observation:stable")
+    step = _search_with_items(world)
+    store = ObservationDeliveryStore()
+    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    first = store.reduce(step, step_index=1)
+    store = first.next_store
+    first_monitor = monitor.evaluate(
+        step,
+        current_findings_digest(world),
+        working_facts_digest(AgentWorkspace()),
+        first.information_delta,
+    )
+    replay = store.reduce(step, step_index=2)
+    recovery = monitor.evaluate(
+        step,
+        current_findings_digest(world),
+        working_facts_digest(AgentWorkspace()),
+        replay.information_delta,
+    )
+    stalled = monitor.evaluate(
+        step,
+        current_findings_digest(world),
+        working_facts_digest(AgentWorkspace()),
+        replay.information_delta,
+    )
+
+    assert first.information_delta is not None
+    assert first.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert first.information_delta.new_information_count == 2
+    assert first_monitor.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert replay.information_delta is not None
+    assert replay.information_delta.kind is InformationDeltaKind.EXACT_REPLAY
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert stalled.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert stalled.reason == "control_stalled"
+
+
+@given(
+    query=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=20),
+    values=st.lists(
+        st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789 ", min_size=1, max_size=30),
+        min_size=1,
+        max_size=8,
+        unique=True,
+    ),
+)
+def test_local_delivery_novelty_is_stable_for_generated_nonempty_results(query, values) -> None:
+    world = _world("observation:generated-stable")
+    step = StepResult(
+        SearchPageContentResult(
+            "context:test",
+            "search_page_content",
+            {"query": query},
+            {
+                "kind": "Matches",
+                "items": tuple({"label": f"result-{index}", "value": value} for index, value in enumerate(values)),
+                "total_count": len(values),
+            },
+        ),
+        world,
+        world,
+        _evaluation(world),
+        feedback="local_tool_result",
+    )
+    first = ObservationDeliveryStore().reduce(step, step_index=1)
+    replay = first.next_store.reduce(step, step_index=2)
+
+    assert first.information_delta is not None
+    assert first.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert first.information_delta.new_information_count == len(values)
+    assert replay.information_delta is not None
+    assert replay.information_delta.kind is InformationDeltaKind.EXACT_REPLAY
+    assert replay.information_delta.new_information_count == 0
+
+
+def test_local_delivery_closed_algebra_covers_empty_overlap_and_new_world() -> None:
+    first_world = _world("observation:algebra-first")
+    second_world = _world("observation:algebra-second", route="/other")
+
+    def step(world, query, items):
+        return StepResult(
+            SearchPageContentResult(
+                "context:test",
+                "search_page_content",
+                {"query": query},
+                {"kind": "Matches" if items else "NoMatches", "items": items, "total_count": len(items)},
+            ),
+            world,
+            world,
+            _evaluation(world),
+            feedback="local_tool_result",
+        )
+
+    item_a = {"label": "alpha", "value": "one"}
+    item_b = {"label": "beta", "value": "two"}
+    store = ObservationDeliveryStore()
+
+    empty = store.reduce(step(first_world, "missing", ()), step_index=1)
+    first = empty.next_store.reduce(step(first_world, "both", (item_a, item_b)), step_index=2)
+    overlap = first.next_store.reduce(step(first_world, "only beta", (item_b,)), step_index=3)
+    changed_world = overlap.next_store.reduce(step(second_world, "both", (item_a, item_b)), step_index=4)
+
+    assert empty.information_delta is not None
+    assert empty.information_delta.kind is InformationDeltaKind.NO_MATCHES
+    assert overlap.information_delta is not None
+    assert overlap.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
+    assert overlap.information_delta.new_information_count == 0
+    assert changed_world.information_delta is not None
+    assert changed_world.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert changed_world.information_delta.new_information_count == 2
 
 
 def test_different_queries_and_regions_share_one_no_progress_family() -> None:

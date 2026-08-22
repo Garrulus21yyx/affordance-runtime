@@ -86,14 +86,14 @@ def snapshot_episode(
     latest = state.last_step
     latest_action = state.latest_action_outcome
     task_evaluation = terminal_evaluation or state.current_task_evaluation
-    task_outcome = task_evaluation.outcome
+    task_outcome = task_evaluation.outcome if task_evaluation is not None else None
     latest_attempt = episode_monitor.latest_attempt_signature if episode_monitor is not None else None
     return EpisodeSnapshot(
         state.observation_count,
         state.execution_count,
         state.currentness_probe_count,
         state.step_count,
-        str(task_evaluation.status),
+        str(task_evaluation.status) if task_evaluation is not None else "",
         str(latest_action.observed_change) if latest_action is not None else "",
         str(latest_action.local_postcondition) if latest_action is not None else "",
         str(latest_action.evidence_method) if latest_action is not None else "",

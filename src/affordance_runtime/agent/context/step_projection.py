@@ -13,6 +13,10 @@ from affordance_runtime.agent.context.contracts import (
     AgentTurnView,
     sanitize_history_value,
 )
+from affordance_runtime.agent.context.observation_delivery import (
+    InformationDelta,
+    InformationDeltaKind,
+)
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -33,7 +37,11 @@ from affordance_runtime.immutable import to_json_compatible
 _MAX_STRING = 240
 
 
-def project_step_result(result: StepResult) -> AgentTurnView:
+def project_step_result(
+    result: StepResult,
+    *,
+    information_delta: InformationDelta | None = None,
+) -> AgentTurnView:
     """Pair one chosen action with its observed outcome and task status."""
 
     decision = result.decision
@@ -70,7 +78,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             str(sanitize_history_value(str(receipt.result.dispatch_status))),
             str(sanitize_history_value(str(action.local_postcondition))) if action is not None else "",
             _transition(result, action),
-            str(result.task_evaluation.status),
+            _task_evaluation_status(result),
             str(sanitize_history_value(action.reason if action is not None else result.feedback)),
             {"feedback_code": result.feedback},
         )
@@ -92,7 +100,7 @@ def project_step_result(result: StepResult) -> AgentTurnView:
         return AgentTurnView(
             decision.kind.value,
             "set_form_fields",
-            task_evaluation_status=str(result.task_evaluation.status),
+            task_evaluation_status=_task_evaluation_status(result),
             reason=str(sanitize_history_value(result.feedback)),
             semantic_summary=_historical_value(
                 {
@@ -106,16 +114,20 @@ def project_step_result(result: StepResult) -> AgentTurnView:
     if isinstance(decision, RequestObservation | RequestActionPage):
         target_id = decision.subject_id if isinstance(decision, RequestObservation) else decision.target_id
     summary = dict(project_decision_summary(decision))
-    if result.tool_result is not None:
+    if information_delta is not None:
+        summary["information_delta"] = information_delta.kind.value
+        summary["new_information_count"] = information_delta.new_information_count
+    replay = information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY
+    if result.tool_result is not None and not replay:
         summary["result"] = project_public_value(result.tool_result)
-    if isinstance(decision, RequestActionPage) and result.action_page_result:
+    if isinstance(decision, RequestActionPage) and result.action_page_result and not replay:
         summary["result"] = project_public_value(result.action_page_result)
     summary["feedback_code"] = result.feedback
     return AgentTurnView(
         decision.kind.value,
         _control_tool_name(decision),
         _historical_target(result, target_id),
-        task_evaluation_status=str(result.task_evaluation.status),
+        task_evaluation_status=_task_evaluation_status(result),
         reason=str(sanitize_history_value(result.feedback)),
         semantic_summary=_historical_value(summary),
     )
@@ -135,6 +147,10 @@ def _historical_target(result: StepResult, target_id: str) -> AgentHistoricalTar
         _bounded(label),
         _semantic_neighborhood(path),
     )
+
+
+def _task_evaluation_status(result: StepResult) -> str:
+    return str(result.task_evaluation.status) if result.task_evaluation is not None else "not_evaluated"
 
 
 def _historical_target_summary(result: StepResult, target_id: str) -> dict[str, object] | None:

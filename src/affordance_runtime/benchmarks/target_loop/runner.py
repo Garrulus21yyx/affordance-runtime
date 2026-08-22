@@ -52,6 +52,7 @@ _CLEANUP_TIMEOUT_S = 10.0
 _REPORT_TIMEOUT_S = 5.0
 _VIEWER_FLUSH_TIMEOUT_S = 5.0
 _WATCHDOG_CANCEL_GRACE_S = 2.0
+_CASE_RETURN_TIMEOUT_S = 2.0
 _DETACHED_WATCHDOG_TASKS: set[asyncio.Task] = set()
 
 
@@ -251,6 +252,7 @@ async def _run_case(
             run,
             case.timeout_s,
             interruption_requested=interruption_requested,
+            runtime_finished=instrumentation.runtime_finished_event,
         )
     except ExternalInterruption as exc:
         failure = "external interruption"
@@ -272,6 +274,15 @@ async def _run_case(
         if state is not None:
             partial = snapshot_episode(
                 state,
+                episode_monitor=runtime.episode_monitor if runtime is not None else None,
+            )
+    except _CaseReturnTimeout as exc:
+        failure = "case return timeout"
+        instrumentation.record_watchdog("case_return_timeout", exc)
+        result = state_holder.get("state")
+        if result is not None:
+            partial = snapshot_episode(
+                result,
                 episode_monitor=runtime.episode_monitor if runtime is not None else None,
             )
     except _CaseStageError as exc:
@@ -639,15 +650,28 @@ async def _run_with_watchdog(
     timeout_s: float,
     *,
     interruption_requested: asyncio.Event | None = None,
+    runtime_finished: asyncio.Event | None = None,
 ):
     """Own the deadline explicitly so component TimeoutError remains component truth."""
     task = asyncio.create_task(awaitable)
     interruption = asyncio.create_task(interruption_requested.wait()) if interruption_requested is not None else None
+    finished = asyncio.create_task(runtime_finished.wait()) if runtime_finished is not None else None
     try:
-        pending = {task} if interruption is None else {task, interruption}
-        done, _ = await asyncio.wait(pending, timeout=timeout_s)
+        pending = {item for item in (task, interruption, finished) if item is not None}
+        done, _ = await asyncio.wait(
+            pending,
+            timeout=timeout_s,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
         if task in done:
             return task.result()
+        if finished is not None and finished in done:
+            returned, _ = await asyncio.wait({task}, timeout=_CASE_RETURN_TIMEOUT_S)
+            if task in returned:
+                return task.result()
+            task.cancel()
+            await _await_cancel_grace(task)
+            raise _CaseReturnTimeout(task_detached=not task.done())
         task.cancel()
         await _await_cancel_grace(task)
         if interruption is not None and interruption in done:
@@ -658,9 +682,11 @@ async def _run_with_watchdog(
         await _await_cancel_grace(task)
         raise
     finally:
-        if interruption is not None:
-            interruption.cancel()
-            await asyncio.gather(interruption, return_exceptions=True)
+        auxiliaries = tuple(item for item in (interruption, finished) if item is not None)
+        for item in auxiliaries:
+            item.cancel()
+        if auxiliaries:
+            await asyncio.gather(*auxiliaries, return_exceptions=True)
 
 
 async def _await_cancel_grace(task: asyncio.Task) -> None:
@@ -700,6 +726,13 @@ class _CaseStageError(RuntimeError):
 
 class _HarnessWatchdogTimeout(RuntimeError):
     """Private sentinel raised only by the harness-owned deadline."""
+
+    def __init__(self, *, task_detached: bool = False) -> None:
+        self.task_detached = task_detached
+
+
+class _CaseReturnTimeout(RuntimeError):
+    """Runtime emitted its terminal fact but did not return control to the harness."""
 
     def __init__(self, *, task_detached: bool = False) -> None:
         self.task_detached = task_detached

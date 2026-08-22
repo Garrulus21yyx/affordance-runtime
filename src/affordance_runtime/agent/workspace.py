@@ -150,6 +150,7 @@ class WorkspaceReducer(Protocol):
         detailed_step: AgentTurnView | None,
         step_index: int,
         current_findings: tuple[CurrentFinding, ...] = (),
+        information_delta: object | None = None,
     ) -> AgentWorkspace: ...
 
     def fit(self, workspace: AgentWorkspace, allocation_bytes: int) -> AgentWorkspace: ...
@@ -200,6 +201,7 @@ class DefaultWorkspaceReducer:
         detailed_step: AgentTurnView | None,
         step_index: int,
         current_findings: tuple[CurrentFinding, ...] = (),
+        information_delta: object | None = None,
     ) -> AgentWorkspace:
         if not isinstance(previous, AgentWorkspace):
             raise TypeError("workspace reducer requires typed previous state")
@@ -239,6 +241,18 @@ class DefaultWorkspaceReducer:
                     ),
                 )
 
+        local_values = tuple(getattr(information_delta, "new_items", ()))
+        if local_values:
+            operation = str(getattr(information_delta, "operation", "local observation"))
+            _append_event(
+                events,
+                SemanticEvent(
+                    step_index,
+                    SemanticEventKind.PUBLIC_RESULT,
+                    f"new public information from {operation}"[:240],
+                    local_values,
+                ),
+            )
         decision = getattr(step, "decision", None)
         working_fact = getattr(decision, "working_fact", None)
         working_facts = {item.key: item for item in previous.working_facts}
@@ -280,7 +294,7 @@ class DefaultWorkspaceReducer:
                 ),
             )
 
-        activities = _reduce_activity(previous.activities, detailed_step, delta)
+        activities = _reduce_activity(previous.activities, detailed_step, delta, information_delta)
         return AgentWorkspace(
             recent,
             tuple(events[-MAX_WORKSPACE_SEMANTIC_EVENTS:]),
@@ -403,6 +417,7 @@ def _reduce_activity(
     previous: tuple[ActivitySummary, ...],
     detailed_step: AgentTurnView | None,
     delta: PublicWorldDelta,
+    information_delta: object | None = None,
 ) -> tuple[ActivitySummary, ...]:
     family = _ACTIVITY_BY_TOOL.get(detailed_step.semantic_action if detailed_step is not None else "")
     if family is None and not delta.changed and detailed_step is not None and detailed_step.dispatch_status:
@@ -415,8 +430,9 @@ def _reduce_activity(
         family,
         delta.after_world_digest,
         count,
-        0,
-        detailed_step.reason if detailed_step is not None and detailed_step.reason else "unchanged",
+        int(getattr(information_delta, "new_information_count", 0)),
+        str(getattr(getattr(information_delta, "kind", None), "value", ""))
+        or (detailed_step.reason if detailed_step is not None and detailed_step.reason else "unchanged"),
     )
     return tuple(item for item in previous if item.family is not family) + (summary,)
 

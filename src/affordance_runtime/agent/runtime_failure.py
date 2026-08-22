@@ -43,7 +43,12 @@ _SUPPORTED_STAGE_KINDS = {
         FailureKind.CAPABILITY_UNAVAILABLE,
     },
     FailureStage.EXECUTION: {FailureKind.CALL_FAILED, FailureKind.INVALID_OUTPUT},
-    FailureStage.EVALUATION: {FailureKind.CALL_FAILED, FailureKind.INVALID_OUTPUT},
+    FailureStage.EVALUATION: {
+        FailureKind.CALL_FAILED,
+        FailureKind.INVALID_OUTPUT,
+        FailureKind.CAPABILITY_UNAVAILABLE,
+        FailureKind.INTERNAL,
+    },
     FailureStage.SESSION: {
         FailureKind.CALL_FAILED,
         FailureKind.CANCELLED,

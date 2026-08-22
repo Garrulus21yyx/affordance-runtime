@@ -186,6 +186,8 @@ _RUNTIME_FAILURE_OUTCOMES = {
     (FailureStage.EXECUTION, FailureKind.INVALID_OUTPUT): (MiniWobTaskOutcome.EXECUTION_FAILURE),
     (FailureStage.EVALUATION, FailureKind.CALL_FAILED): (MiniWobTaskOutcome.TASK_FAILED),
     (FailureStage.EVALUATION, FailureKind.INVALID_OUTPUT): (MiniWobTaskOutcome.TASK_FAILED),
+    (FailureStage.EVALUATION, FailureKind.CAPABILITY_UNAVAILABLE): (MiniWobTaskOutcome.TASK_FAILED),
+    (FailureStage.EVALUATION, FailureKind.INTERNAL): (MiniWobTaskOutcome.TASK_FAILED),
     (FailureStage.CONTROL, FailureKind.NO_PROGRESS): (MiniWobTaskOutcome.NO_PROGRESS_REPETITION),
     (FailureStage.CONTROL, FailureKind.REJECTED): (MiniWobTaskOutcome.RUNTIME_REJECTED),
     (FailureStage.SESSION, FailureKind.CANCELLED): MiniWobTaskOutcome.TASK_FAILED,

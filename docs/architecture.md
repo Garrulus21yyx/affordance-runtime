@@ -2,14 +2,14 @@
 
 ## Status
 
-Current status: **single-ActionPolicy C8–C9 provider-free implementation/evidence/audit verified /
-live closure awaiting explicit authorization**. The mandatory
+Current status: **single-ActionPolicy implementation advanced / repeat-convergence contract reopened and non-closed /
+no live run authorized**. The mandatory
 Planner/Milestone/Evidence/Auditor production path has been removed. Prior Planner/Auditor G0–G6 evidence remains
 historical scoped evidence, not whole-runtime closure.
 
 The accepted root-cause design and concrete removal plan are in
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md). This file and that convergence contract
-describe the current single-policy production path and its verified provider-free C8–C9 convergence; milestone-path sections below
+describe the current single-policy production path; milestone-path sections below
 are historical analysis, not a selectable path.
 Chronological run evidence, superseded designs, and prior reopenings are preserved in
 [`history/architecture-pre-milestone-convergence-2026-08-22.md`](history/architecture-pre-milestone-convergence-2026-08-22.md).
@@ -19,7 +19,9 @@ The target runtime is a small, continuous GUI runtime with one execution authori
 GoalCompiler, one static advisory GoalPlan, and one ActionPolicy loop. Long-horizon behavior in the baseline comes from
 a bounded `AgentWorkspace` and optional exact working notes, not mandatory roadmap, milestone, Auditor, or MissionState
 transitions. The current code implements change-first delivery, bounded workspace, sole whole-request admission, and
-the information-increment Monitor; the independent fresh-context audit reports no P0/P1/P2.
+the information-increment Monitor. Later live evidence showed that local observation-result novelty and the native
+evaluator/case-return boundary were absent from the prior closure proof, so that audit remains historical evidence for
+the narrower implementation it reviewed.
 
 Stages 1–8 of the C8–C9 migration are now verified provider-free. The seven named contracts are frozen, and
 `WorldTransitionProjector` is the sole producer of `PublicWorldDelta`. `StepResult`, `ActionOutcome`, evaluation
@@ -38,7 +40,7 @@ WorkingFacts digests plus bounded observation/recovery and public-attempt diagno
 cannot disguise a zero-information loop, and a dispatched GUI action no longer resets the monitor merely because it
 was sent. Its `30/8/1` profile caps, but never raises, the prior task turn budget. Six-page C8 transition
 diagnostics and the independent fresh-context audit pass. This status does not authorize a live run. The current full suite passes
-1,450 tests with 19 skips; Ruff, compileall, and diff-check pass.
+1,460 tests with 19 skips; Ruff, compileall, and diff-check pass.
 
 ## Current end-to-end data flow
 
@@ -153,8 +155,11 @@ key has structural/content digests, a monotonically increasing version within th
 target/fact membership, and public delivery cost. Unchanged regions reuse their cached outline. Changed regions alone
 are rebuilt. Navigation creates a new document lineage and invalidates generation-local refs and the old region cache.
 
-`ObservationDeliveryStore` owns the lifecycle of the latest external GUI effect. Local operations such as
-`read_region`, `search_page_content`, and `find_controls` do not clear or replace it. A later external GUI effect
+`ObservationDeliveryStore` owns both the latest external GUI effect and the bounded lifecycle of public local
+observation delivery. Local operations such as `read_region`, `search_page_content`, and `find_controls` do not clear
+or replace the GUI effect. For each local result, the Store alone emits a `DeliveryTransition` with its next state and
+one closed `InformationDelta`: `new_information | no_matches | no_new_information | exact_replay`. Workspace and
+Monitor consume that exact delta instance; neither compares local results independently. A later external GUI effect
 supersedes it; before replacement, its exact public additions/modifications are input to `WorkspaceReducer`, the sole
 owner that may retain them as a bounded ref-free `SemanticEvent`. The delivery store is not a memory framework,
 task-progress authority, or completion proof.
@@ -570,6 +575,12 @@ continues, the second emits RECOVER with the typed prohibited signature, and Cor
 selection before Binder/executor dispatch. The monitor-owned signature digest and counters are projected read-only into
 `EpisodeSnapshot`; benchmark projection does not recount trace events.
 
+For local observations, a first delivery containing unseen public items is progress and its exact bounded items enter
+one `PUBLIC_RESULT` SemanticEvent. The same World, public arguments, and public result digest is `exact_replay`: the
+full payload is omitted from recent model history and Monitor immediately emits RECOVER. Repeating it after recovery
+produces `CONTROL_STALLED`. Different observation operations without information increment retain the general profile
+threshold. This prevents World stability from being mistaken for delivery novelty.
+
 Keyboard dispatch has one public route per intent. A focused concrete element with an executable BrowserGym `press`
 binding exposes only element `press_key`, which resolves to `press(BID, key)`. The page-level focused-context fallback
 is offered only when there is no concrete element press route; it resolves the actual focus at dispatch time through
@@ -646,6 +657,13 @@ serialization, and internal defects as model mistakes. Malformed provider argume
   Playwright/Agent/memory stack or additional per-step summarizer calls.
 - [agent-browser diffing](https://agent-browser.dev/diffing) provides compact structural snapshot comparisons. It is
   used as an independent diagnostic reference rather than a second browser or production World authority.
+- [Python `asyncio` task documentation](https://docs.python.org/3/library/asyncio-task.html) defines
+  `FIRST_COMPLETED`, cancellation, and bounded timeout behavior. The harness explicitly waits for the first terminal,
+  interruption, or case-return signal and uses a separate cancellation grace because cancellation completion itself
+  is not instantaneous.
+- [OpenTelemetry SDK lifecycle requirements](https://opentelemetry.io/docs/specs/otel/trace/sdk/#shutdown) require
+  shutdown/flush to honor a timeout and report failure. Langfuse export follows that mature observer pattern but stays
+  weaker than the local result path: it is bounded, fail-open, and never awaited by the Runtime handoff.
 
 ## Results, persistence, cleanup, and observability
 
@@ -659,11 +677,18 @@ STOP once, acquires one post-STOP World, invokes the native evaluator once, and 
 post-STOP capture nor native evaluation, even if an inconsistent adapter returns an acquisition. Standalone atomic
 tasks may still terminate directly from their native evaluator; the STOP gate is the mission benchmark protocol.
 
+The native evaluator boundary returns exactly one of `Evaluated(TaskEvaluation)`, typed `Unavailable`, or typed
+`InternalFailure`. Only `Evaluated` may populate native status or the official-outcome sink. Failure diagnostics are
+bounded and synchronously appended to local trace at the evaluator owner boundary, including stage, exception type,
+safe message, observation identity, native snapshot present-field names, and diagnostic/traceback references; Runtime
+never fabricates `UNKNOWN` from an exception.
+
 The preliminary case result is durably committed before cleanup or remote export. The supported order is:
 
 ```text
 case body terminal outcome
 → local trace flush
+→ bounded case-body return handoff
 → fsync temp result + atomic replace + parent-directory fsync
 → durable case-result acknowledgement
 → bounded environment cleanup
@@ -674,6 +699,11 @@ case body terminal outcome
 Persistence failure becomes typed `HARNESS_PERSISTENCE`; display text is not sufficient. Environment cleanup has a
 deadline, and already-closed conditions such as Playwright `TargetClosedError` are idempotent cleanup success. Other
 cleanup failures are secondary harness facts and cannot replace a previously durable task outcome.
+
+`run_finished` is a synchronous local handoff fact and never waits on viewer IPC. Once observed, the harness permits a
+fixed two-second case-body return window; expiry is typed `case_return_timeout`, snapshots the terminal state, and
+continues through `CASE_BODY_RETURNED → preliminary RESULT_PERSISTED → CLEANUP_STARTED`. The overall watchdog waits
+for the first of case completion, external interruption, or this terminal handoff, not all signals.
 
 Langfuse is a viewer, not part of the control path. Local JSONL is synchronous and authoritative. Remote projection is
 bounded before `put_nowait` to an isolated child process. Queue full/closed/broken, child death/hang, network failure,

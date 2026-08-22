@@ -9,7 +9,11 @@ from dataclasses import dataclass
 
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature, public_attempt_signature
 from affordance_runtime.agent.context.contracts import sanitize_history_value
-from affordance_runtime.agent.context.observation_delivery import current_findings_digest
+from affordance_runtime.agent.context.observation_delivery import (
+    InformationDelta,
+    InformationDeltaKind,
+    current_findings_digest,
+)
 from affordance_runtime.agent.decisions import LocalToolResult, RequestActionPage, RequestObservation, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE, AgentLoopProfile
@@ -65,6 +69,7 @@ class EpisodeMonitor:
         result: StepResult,
         findings_digest: str,
         facts_digest: str,
+        information_delta: InformationDelta | None = None,
     ) -> EpisodeMonitorTransition:
         """Advance only from owner-produced digests and a typed dispatch receipt."""
 
@@ -82,6 +87,8 @@ class EpisodeMonitor:
                 next_world_digest != self.world_digest,
                 findings_digest != self.current_findings_digest,
                 facts_digest != self.working_facts_digest,
+                information_delta is not None
+                and information_delta.kind is InformationDeltaKind.NEW_INFORMATION,
             )
         )
         gui_dispatched = _gui_dispatched(result)
@@ -97,6 +104,8 @@ class EpisodeMonitor:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
 
         # Native evaluation remains the only task-completion/impossibility authority.
+        if result.task_evaluation is None:
+            return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
         if result.task_evaluation.status not in {
             TaskEvaluationStatus.INCOMPLETE,
             TaskEvaluationStatus.UNKNOWN,
@@ -140,6 +149,27 @@ class EpisodeMonitor:
                 return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
             self.recovery_count += 1
             signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.CONTROL_STALL.value,
+                signal,
+            )
+
+        if information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY:
+            self.observation_only_streak = 0
+            self.no_progress_count += 1
+            self.same_attempt_streak += 1
+            self.last_progress_event_type = InformationDeltaKind.EXACT_REPLAY.value
+            signal = _control_stall_signal(result, self, recovery_attempt=max(1, self.recovery_count + 1))
+            if self.recovery_count:
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
+            self.recovery_count = 1
             return EpisodeMonitorTransition(
                 tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
                 EpisodeMonitorRecommendation.RECOVER,
