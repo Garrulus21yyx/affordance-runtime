@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 
 from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.agent.context.budgets import BoundedSection
@@ -108,71 +107,6 @@ class AgentTaskEvaluationView:
         object.__setattr__(self, "verified_public_facts", tuple(self.verified_public_facts))
 
 
-class EvidenceRequirementStatus(StrEnum):
-    MISSING = "missing"
-    CURRENTLY_VISIBLE = "currently_visible"
-    RETAINED = "retained"
-
-
-@dataclass(frozen=True)
-class AgentEvidenceRequirementView:
-    key: str
-    description: str
-    status: EvidenceRequirementStatus
-
-    def __post_init__(self) -> None:
-        if not self.key or not self.description:
-            raise ValueError("active milestone evidence requirement is incomplete")
-        if not isinstance(self.status, EvidenceRequirementStatus):
-            object.__setattr__(self, "status", EvidenceRequirementStatus(self.status))
-
-
-@dataclass(frozen=True)
-class AgentMilestoneContractView:
-    """Bounded semantic contract stored by the episode, without progress state."""
-
-    id: str
-    outcome: str
-    done_when: str
-    required_evidence: tuple[tuple[str, str], ...] = ()
-    depends_on: tuple[str, ...] = ()
-    final: bool = False
-    missing_evidence_keys: tuple[str, ...] = ()
-    audit_guidance: str = ""
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
-        object.__setattr__(self, "depends_on", tuple(self.depends_on))
-        object.__setattr__(self, "missing_evidence_keys", tuple(self.missing_evidence_keys))
-        if len(self.required_evidence) > 32 or len({item[0] for item in self.required_evidence}) != len(
-            self.required_evidence
-        ):
-            raise ValueError("active milestone evidence requirements are invalid")
-        if len(self.missing_evidence_keys) > 32 or len(set(self.missing_evidence_keys)) != len(
-            self.missing_evidence_keys
-        ):
-            raise ValueError("active milestone missing evidence guidance is invalid")
-        if len(self.audit_guidance) > 500:
-            raise ValueError("active milestone audit guidance exceeds bounds")
-
-
-@dataclass(frozen=True)
-class AgentMilestoneView:
-    id: str
-    outcome: str
-    done_when: str
-    required_evidence: tuple[AgentEvidenceRequirementView, ...] = ()
-    depends_on: tuple[str, ...] = ()
-    final: bool = False
-    missing_evidence_keys: tuple[str, ...] = ()
-    audit_guidance: str = ""
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "required_evidence", tuple(self.required_evidence))
-        object.__setattr__(self, "depends_on", tuple(self.depends_on))
-        object.__setattr__(self, "missing_evidence_keys", tuple(self.missing_evidence_keys))
-
-
 @dataclass(frozen=True)
 class AgentTaskView:
     task_id: str
@@ -191,13 +125,10 @@ class AgentTaskView:
     public_inputs_truncated: bool = False
     evaluation: AgentTaskEvaluationView = field(default_factory=lambda: AgentTaskEvaluationView("unknown"))
     final_response_contract: Mapping[str, object] = field(default_factory=dict)
-    active_milestone: AgentMilestoneView | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
         object.__setattr__(self, "final_response_contract", freeze_json(self.final_response_contract))
-        if self.active_milestone is not None and not isinstance(self.active_milestone, AgentMilestoneView):
-            raise TypeError("Task active_milestone must be typed")
         if self.public_inputs_total_count < len(self.public_inputs):
             raise ValueError("public input total cannot be smaller than its projection")
         if self.public_inputs_truncated != (self.public_inputs_total_count > len(self.public_inputs)):

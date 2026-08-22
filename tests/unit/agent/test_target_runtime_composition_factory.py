@@ -8,6 +8,7 @@ from affordance_runtime import (
 from affordance_runtime.agent import (
     TOOL_ACTION_DECISION_CAPABILITIES,
 )
+from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.app import (
     compose_target_runtime,
 )
@@ -40,6 +41,7 @@ def test_public_target_composition_factory_builds_the_runtime_contract() -> None
     assert isinstance(runtime, TargetRuntime)
     assert runtime.required_decisions == TOOL_ACTION_DECISION_CAPABILITIES
     assert tuple(runtime.decision_ports.__dataclass_fields__) == ("action_policy",)
+    assert isinstance(runtime.episode_monitor, EpisodeMonitor)
 
 
 def test_root_package_exports_target_natural_language_run_contracts() -> None:

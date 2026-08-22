@@ -74,6 +74,8 @@ src/affordance_runtime/
 The target boundaries are described in [Architecture](docs/architecture.md).
 Benchmark profiles and current evidence are in [Benchmark](docs/benchmark.md).
 Extension rules are in [Extending](docs/extending.md).
+The accepted control-path migration is in
+[Single-ActionPolicy Convergence](docs/single-action-policy-convergence.md).
 
 Durable implementation constraints are in [Project agent policy](AGENTS.md). These five files are the maintained
 project documentation set; implementation evidence stays in reports and traces rather than new design documents.

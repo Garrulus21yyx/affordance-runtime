@@ -13,6 +13,7 @@ from pathlib import Path
 
 from affordance_runtime.agent.core_loop import CoreLoopStartError
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
+from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import (
     RunTraceRecorder,
     trace_recorder_from_environment,
@@ -46,9 +47,6 @@ from affordance_runtime.benchmarks.target_loop.result_store import (
     RunResultStoreError,
     SQLiteRunResultStore,
 )
-from affordance_runtime.goals.compiler import UnavailableGoalCompiler
-from affordance_runtime.mission import EpisodeMonitor, MissionSupervisor
-from affordance_runtime.mission.contracts import ExecutionMode
 
 _CLEANUP_TIMEOUT_S = 10.0
 _REPORT_TIMEOUT_S = 5.0
@@ -72,12 +70,6 @@ class _CaseLifecycle:
             self.store.record_case_phase(self.case_id, phase)
         except RunResultStoreError as exc:
             self.persistence_error = type(exc).__name__
-
-    def planner_started(self) -> None:
-        self.transition(CaseLifecyclePhase.PLANNER_STARTED)
-
-    def planner_returned(self) -> None:
-        self.transition(CaseLifecyclePhase.PLANNER_RETURNED)
 
 
 async def run_suite(
@@ -253,21 +245,7 @@ async def _run_case(
                 exc,
             )
             raise _CaseStageError("CoreAgentLoop construction", exc) from exc
-        run = (
-            _run_mission(
-                case,
-                runtime,
-                counted_environment,
-                task,
-                composition,
-                instrumentation,
-                outcome_recorder,
-                state_holder,
-                lifecycle,
-            )
-            if composition.execution_mode is ExecutionMode.MISSION
-            else _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder)
-        )
+        run = _run_episode(case, runtime, counted_environment, task, instrumentation, state_holder)
         result = await _run_with_watchdog(
             run,
             case.timeout_s,
@@ -301,10 +279,7 @@ async def _run_case(
         result = state_holder.get("state")
     finally:
         state = state_holder.get("state")
-        mission_snapshot = getattr(result, "episode_snapshot", None)
-        if mission_snapshot is not None:
-            snapshot = mission_snapshot
-        elif state is not None:
+        if state is not None:
             snapshot = snapshot_episode(state)
         lifecycle.transition(CaseLifecyclePhase.CASE_BODY_RETURNED)
         if result_store is not None:
@@ -538,20 +513,13 @@ def _build_runtime(composition, instrumentation, outcome_recorder):
         instrument_task_evaluator(
             composition.task_evaluator,
             instrumentation,
-            official_outcome_sink=(
-                outcome_recorder if composition.execution_mode is not ExecutionMode.MISSION else None
-            ),
         ),
         risk_policy=composition.risk_policy,
         required_decisions=composition.required_decisions,
         trace_sink=instrumentation,
-        goal_compiler=(
-            UnavailableGoalCompiler()
-            if composition.execution_mode is ExecutionMode.MISSION
-            else composition.goal_compiler
-        ),
-        runtime_controls=(("yield_milestone",) if composition.execution_mode is ExecutionMode.MISSION else ()),
-        episode_monitor=(EpisodeMonitor() if composition.execution_mode is ExecutionMode.MISSION else None),
+        goal_compiler=composition.goal_compiler,
+        episode_monitor=EpisodeMonitor(),
+        official_outcome_sink=outcome_recorder,
     )
 
 
@@ -574,89 +542,30 @@ async def _run_episode(case, runtime, environment, task, instrumentation, state_
             result,
             approved=True,
         )
-    instrumentation.set_custom_metric("mission_planner_calls", 0)
-    instrumentation.set_custom_metric("mission_auditor_calls", 0)
-    instrumentation.set_custom_metric("mission_state_version", 0)
-    instrumentation.set_custom_metric("mission_working_outcomes", 0)
-    instrumentation.set_custom_metric("mission_accepted_facts", 0)
-    instrumentation.set_custom_metric("mission_boundary_rejections", 0)
-    instrumentation.set_custom_metric("mission_final_response_delivered", 0)
-    instrumentation.set_custom_metric("final_response_boundary_admission_count", 0)
-    instrumentation.set_custom_metric("final_response_boundary_rejection_count", 0)
-    instrumentation.set_custom_metric("stop_send_count", 0)
-    instrumentation.set_custom_metric("post_stop_capture_count", 0)
-    instrumentation.set_custom_metric("native_evaluator_count", 0)
-    instrumentation.set_custom_metric("semantic_verifier_skipped_mechanical_count", 0)
-    instrumentation.set_custom_metric("finalization_reused_evidence_count", 0)
-    instrumentation.set_custom_metric("optional_auditor_calls", 0)
-    return result
-
-
-async def _run_mission(
-    case,
-    runtime,
-    environment,
-    task,
-    composition,
-    instrumentation,
-    outcome_recorder,
-    state_holder,
-    lifecycle,
-):
-    del case
-    supervisor = MissionSupervisor(
-        composition.mission_planner,
-        composition.mission_auditor,
-        trace_sink=instrumentation,
-        official_outcome_sink=outcome_recorder,
-        lifecycle_sink=lifecycle,
-    )
-    result = await supervisor.run(runtime, environment, task)
-    state_holder["mission_result"] = result
-    if result.state is not None:
-        state_holder["state"] = result.state
-    instrumentation.set_custom_metric("mission_planner_calls", result.planner_calls)
-    instrumentation.set_custom_metric("mission_auditor_calls", result.auditor_calls)
+    finalization = result.finalization
     instrumentation.set_custom_metric(
-        "final_response_boundary_admission_count",
-        result.final_response_boundary_admission_count,
+        "stop_send_count",
+        finalization.stop_send_count if finalization is not None else 0,
     )
     instrumentation.set_custom_metric(
-        "final_response_boundary_rejection_count",
-        result.final_response_boundary_rejection_count,
-    )
-    instrumentation.set_custom_metric("stop_send_count", result.stop_send_count)
-    instrumentation.set_custom_metric("post_stop_capture_count", result.post_stop_capture_count)
-    instrumentation.set_custom_metric("native_evaluator_count", result.native_evaluator_count)
-    instrumentation.set_custom_metric("optional_auditor_calls", result.auditor_calls)
-    instrumentation.set_custom_metric("mission_state_version", result.mission_state.version)
-    instrumentation.set_custom_metric("mission_working_outcomes", len(result.mission_state.working_outcomes))
-    instrumentation.set_custom_metric("mission_accepted_facts", len(result.mission_state.accepted_facts))
-    instrumentation.set_custom_metric("mission_boundary_rejections", result.boundary_rejections)
-    instrumentation.set_custom_metric(
-        "mission_final_response_delivered", int(result.supervisor_state.final_response_delivered)
-    )
-    role_events = tuple(
-        event for event in instrumentation.trace_recorder.events if event.get("event") == "mission_role_invocation"
-    )
-    for role in ("planner", "auditor"):
-        triggers = {str(event.get("trigger_kind", "unknown")) for event in role_events if event.get("role") == role}
-        for trigger in triggers:
-            instrumentation.set_custom_metric(
-                f"{role}_call_count_by_trigger_{trigger}",
-                sum(event.get("role") == role and event.get("trigger_kind") == trigger for event in role_events),
-            )
-    instrumentation.set_custom_metric(
-        "semantic_verifier_skipped_mechanical_count",
-        max(0, len(result.mission_state.accepted_facts) - result.auditor_calls),
+        "post_stop_capture_count",
+        finalization.post_stop_capture_count if finalization is not None else 0,
     )
     instrumentation.set_custom_metric(
-        "finalization_reused_evidence_count",
-        int(
-            result.finalization is not None
-            and result.auditor_calls == 0
-            and bool(result.mission_state.accepted_facts or result.mission_state.working_outcomes)
-        ),
+        "native_evaluator_count",
+        finalization.native_evaluator_count if finalization is not None else 0,
+    )
+    instrumentation.set_custom_metric(
+        "action_policy_ordinary_calls",
+        instrumentation.action_policy_ordinary_calls,
+    )
+    instrumentation.set_custom_metric(
+        "action_policy_recovery_calls",
+        instrumentation.action_policy_recovery_calls,
+    )
+    instrumentation.set_custom_metric(
+        "representation_repair_calls",
+        instrumentation.representation_repair_calls,
     )
     return result
 

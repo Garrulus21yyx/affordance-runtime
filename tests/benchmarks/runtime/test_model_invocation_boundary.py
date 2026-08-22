@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,6 +56,38 @@ def test_counting_decision_port_counts_only_transport_attempts() -> None:
     ]
     assert instrumentation.provider_attempts == 2
     assert instrumentation.provider_retry_count == 1
+    assert instrumentation.action_policy_ordinary_calls == 1
+    assert instrumentation.action_policy_recovery_calls == 0
+    assert instrumentation.representation_repair_calls == 0
+
+
+def test_counting_decision_port_separates_recovery_and_representation_repair() -> None:
+    class WrappedPort:
+        async def generate(self, request):
+            del request
+            return ModelInvocationResult(
+                failure=ModelFailure(ModelFailureKind.SCHEMA_ERROR, "repair failed", False),
+                attempts=(
+                    ModelGenerationAttempt(1, "deliberate", "grounded_tools.v2", "invalid"),
+                    ModelGenerationAttempt(
+                        2,
+                        "representation_repair",
+                        "grounded_tools.v2",
+                        "failed",
+                    ),
+                ),
+                diagnostics={"policy_model_call_count": 2},
+            )
+
+    instrumentation = BenchmarkInstrumentation()
+    request = SimpleNamespace(agent_context=SimpleNamespace(control_feedback={"kind": "effect_stall"}))
+
+    asyncio.run(CountingDecisionPort(WrappedPort(), instrumentation).generate(request))
+
+    assert instrumentation.action_policy_ordinary_calls == 0
+    assert instrumentation.action_policy_recovery_calls == 1
+    assert instrumentation.representation_repair_calls == 1
+    assert instrumentation.provider_attempts == 2
 
 
 def test_invocation_attempts_are_role_output_lineage_not_runtime_authority() -> None:

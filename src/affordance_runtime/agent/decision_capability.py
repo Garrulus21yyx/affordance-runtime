@@ -15,7 +15,6 @@ class DecisionCapability(StrEnum):
     REQUEST_ACTION_PAGE = "request_action_page"
     ASK_USER = "ask_user"
     COUNT_CHILDREN = "count_children"
-    YIELD_MILESTONE = "yield_milestone"
     WAIT = "wait"
     ABORT = "abort"
 

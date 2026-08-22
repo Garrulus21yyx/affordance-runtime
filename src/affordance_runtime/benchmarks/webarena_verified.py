@@ -707,7 +707,6 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             action_space,
             evaluation,
             observation_capabilities=environment.observation_capabilities,
-            runtime_controls=("yield_milestone",),
         )
         binder = GroundedPolicyContextBinder()
         request = ModelDecisionRequest(
@@ -1176,7 +1175,7 @@ def _evidence_retention_diagnostic(
                 and is_public_scalar(record.value)
             ):
                 eligible.append((public_ref, canonical_ref))
-    if not eligible or "pin_fact" not in {item.name for item in catalog.specs}:
+    if not eligible or "remember_fact" not in {item.name for item in catalog.specs}:
         return {
             "provider_attempts": 0,
             "gui_dispatch_count": 0,
@@ -1210,7 +1209,7 @@ def _evidence_retention_diagnostic(
     resolution = resolve_grounded_tool_call(
         catalog,
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {
                 "key": "diagnostic_fact",
                 "evidence_ref": public_ref,
@@ -1231,7 +1230,7 @@ def _evidence_retention_diagnostic(
             "view_changed": False,
             "exact_value_retained": False,
             "working_set_visible": False,
-            "acceptance_errors": ("evidence:pin_fact_resolution_failed",),
+            "acceptance_errors": ("evidence:remember_fact_resolution_failed",),
         }
 
     builder = ContextBuilder()
@@ -1602,11 +1601,11 @@ def _catalog_has_action_tool(catalog) -> bool:
         "action_results_next_page",
         "request_evidence",
         "count_" + "children",
-        "pin_fact",
+        "remember_fact",
         "ask_user",
         "wait",
         "abort",
-        "yield_milestone",
+        "submit_final_response",
     }
     return any(spec.name not in local_tools for spec in catalog.specs)
 

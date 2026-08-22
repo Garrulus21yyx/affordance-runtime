@@ -15,7 +15,6 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     CaseFailureOrigin,
     FailureFacts,
     MetricMeasurement,
-    mission_failure_code,
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.legacy_case_projection import (
@@ -113,8 +112,6 @@ def project_case_result(
         if metadata is not None and metadata.latest_control_status
         else str(RunStatus.FAILED)
     )
-    mission_outcome = metadata.mission_outcome if metadata is not None else ""
-    mission_last_ref = metadata.mission_last_ref if metadata is not None else ""
     candidate_task_outcome_kind = (
         str(official_checkpoint.outcome_kind)
         if official_checkpoint is not None and official_checkpoint.outcome_kind is not None
@@ -150,7 +147,6 @@ def project_case_result(
         task_outcome_code,
     )
     legacy = project_legacy_case_fields(status, facts)
-    mission_primary_code = mission_failure_code(mission_outcome)
     harness_primary_code = (
         _safe_code(instrumentation.watchdog_code, "case_timeout")
         if instrumentation.watchdog_code
@@ -163,11 +159,7 @@ def project_case_result(
         or instrumentation.primary_execution_failure_code
         or legacy.case_failure_code
     )
-    if mission_primary_code and projected_case_failure_code in {"", cleanup_code}:
-        projected_case_failure_code = mission_primary_code
-    primary_failure_code = harness_primary_code or instrumentation.primary_execution_failure_code or (
-        mission_primary_code if projected_case_failure_code == mission_primary_code else ""
-    )
+    primary_failure_code = harness_primary_code or instrumentation.primary_execution_failure_code
     return BenchmarkCaseResult(
         case_id=case_id,
         status=status,
@@ -183,8 +175,6 @@ def project_case_result(
             if component_origin is CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION
             else "component"
             if instrumentation.primary_execution_failure_code
-            else "runtime"
-            if mission_primary_code and projected_case_failure_code == mission_primary_code
             else legacy.termination_origin
         ),
         case_failure_code=projected_case_failure_code,
@@ -201,13 +191,7 @@ def project_case_result(
         last_action_space_option_count=(metadata.last_action_space_option_count if metadata else 0),
         last_world_target_count=metadata.last_world_target_count if metadata else 0,
         last_world_coverage=metadata.last_world_coverage if metadata else "",
-        pending_kind=(
-            "user_question"
-            if mission_outcome == "needs_user_input" and metadata and metadata.user_question
-            else metadata.pending_kind
-            if metadata
-            else ""
-        ),
+        pending_kind=metadata.pending_kind if metadata else "",
         latest_task_status=(
             metadata.latest_task_status
             if metadata
@@ -229,13 +213,11 @@ def project_case_result(
         primary_diagnostic_ref=instrumentation.primary_execution_diagnostic_ref,
         recovery_failure_codes=tuple(instrumentation.recovery_failure_codes),
         secondary_failure_codes=(cleanup_code,) if cleanup_code else (),
-        terminal_failure_code=public_runtime_failure or mission_primary_code,
+        terminal_failure_code=public_runtime_failure,
         cleanup_diagnostic=instrumentation.cleanup_diagnostic,
         watchdog_triggered=(bool(instrumentation.watchdog_code)),
         harness_integrity_code=integrity_code,
         harness_integrity_failures=int(bool(metric_collisions)),
-        mission_outcome=mission_outcome,
-        mission_last_ref=mission_last_ref,
         failure_facts=facts,
     )
 

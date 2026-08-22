@@ -20,7 +20,8 @@ import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
-from affordance_runtime.agent.decisions import ProtocolFeedback, ProtocolFeedbackKind
+from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -29,6 +30,10 @@ from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.grounded_tool_contracts import (
+    GroundedToolResolutionCode,
+    GroundedToolResolutionError,
+)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -39,7 +44,7 @@ from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
     zhipu_pydantic_ai_policy_from_environment,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
     SharedTaskEvaluator,
@@ -57,6 +62,7 @@ class ScriptedModel:
     messages: list[object] = field(default_factory=list)
     offered_tools: list[tuple[str, ...]] = field(default_factory=list)
     model_settings: list[object] = field(default_factory=list)
+    last_gui_call: tuple[str, dict[str, object]] | None = None
 
     def build(self) -> FunctionModel:
         async def respond(messages, info: AgentInfo) -> ModelResponse:
@@ -67,12 +73,22 @@ class ScriptedModel:
             scripted = self.decisions.pop(0)
             if isinstance(scripted, Exception):
                 raise scripted
-            if scripted == "final_response":
+            if isinstance(scripted, str) and scripted in {"final_response", "zero_calls"}:
                 return ModelResponse(
-                    parts=[TextPart("Shared state is enabled.")],
+                    parts=[TextPart("Shared state is enabled." if scripted == "final_response" else "no tool call")],
                     provider_response_id=f"pydantic-response:{self.calls}",
                 )
-            if scripted == "first_gui_action" or scripted == "multiple_gui_actions":
+            if scripted == "malformed_tool_call":
+                name = info.function_tools[0].name
+                return ModelResponse(
+                    parts=[ToolCallPart(name, "{not-json", tool_call_id=f"pydantic-call:{self.calls}")],
+                    provider_response_id=f"pydantic-response:{self.calls}",
+                )
+            if isinstance(scripted, str) and scripted in {
+                "first_gui_action",
+                "first_gui_action_invalid_extra",
+                "multiple_gui_actions",
+            }:
                 controls = {
                     "ask_user",
                     "wait",
@@ -91,6 +107,13 @@ class ScriptedModel:
                 assert match is not None
                 target = match.group(1)
                 arguments: dict[str, object] = {"target": target} if target_schema else {}
+                self.last_gui_call = (name, dict(arguments))
+                if scripted == "first_gui_action_invalid_extra":
+                    arguments["unexpected"] = "remove-me"
+            elif scripted == "repeat_last_gui_call":
+                assert self.last_gui_call is not None
+                name, remembered_arguments = self.last_gui_call
+                arguments = dict(remembered_arguments)
             else:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
@@ -189,9 +212,9 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
     asyncio.run(scenario())
 
 
-def test_multiple_provider_tool_calls_return_protocol_feedback_with_zero_dispatch() -> None:
+def test_multiple_provider_tool_calls_execute_neither_and_use_one_same_turn_repair() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(["multiple_gui_actions"])
+        scripted = ScriptedModel(["multiple_gui_actions", "repeat_last_gui_call"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("multiple-calls", False)
@@ -208,10 +231,64 @@ def test_multiple_provider_tool_calls_return_protocol_feedback_with_zero_dispatc
         assert result.failure is None
         assert result.output is not None
         decision = result.output.decision
-        assert isinstance(decision, ProtocolFeedback)
-        assert decision.feedback_kind is ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS
-        assert decision.call_count == 2
+        assert isinstance(decision, SelectAction)
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("scripted_output", ["zero_calls", "malformed_tool_call"])
+def test_zero_or_wholly_unparseable_output_fails_without_representation_repair(
+    scripted_output: str,
+) -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel([scripted_output])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world(f"invalid-envelope:{scripted_output}", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(
+            ModelDecisionRequest(f"request:{scripted_output}", context)
+        )
+
+        assert result.failure is not None
         assert scripted.calls == 1
+        assert len(result.attempts) == 1
+        assert all(attempt.phase != "representation_repair" for attempt in result.attempts)
+
+    asyncio.run(scenario())
+
+
+def test_multiple_call_repair_cannot_reselect_operation_or_target() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            ["multiple_gui_actions", ("ask_user", {"question": "Which value should be used?"})]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("multiple-call-reselection", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:multiple-reselection", context))
+
+        assert result.output is None
+        assert result.failure is not None
+        assert result.failure.kind is ModelFailureKind.INVALID_TOOL_ARGUMENTS
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
 
     asyncio.run(scenario())
 
@@ -327,7 +404,7 @@ def test_pydantic_ai_ask_user_preserves_question_and_runtime_resume() -> None:
     asyncio.run(scenario())
 
 
-def test_pydantic_ai_returns_invalid_arguments_as_next_turn_feedback_without_provider_repair() -> None:
+def test_pydantic_ai_rejects_repair_that_invents_missing_semantic_content() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -339,11 +416,178 @@ def test_pydantic_ai_returns_invalid_arguments_as_next_turn_feedback_without_pro
 
         state = await _runtime(scripted.build()).run_task(environment, shared_task())
 
-        assert state.status is RunStatus.WAITING_USER
+        assert state.status is RunStatus.FAILED
         assert scripted.calls == 2
-        assert "Re-emit exactly one call" not in repr(scripted.messages)
-        assert state.recent_steps[0].semantic_action == "tool_rejected"
-        assert state.recent_steps[0].semantic_summary["result"]["failure_kind"] == "invalid_tool_arguments"
+        assert "representation-only repaired tool call" in repr(scripted.messages)
+        assert state.recent_steps == ()
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_repairs_invalid_representation_without_changing_target() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action_invalid_extra", "repeat_last_gui_call"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("invalid-extra", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:invalid-extra", context))
+
+        assert result.failure is None
+        assert result.output is not None
+        assert isinstance(result.output.decision, SelectAction)
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
+
+    asyncio.run(scenario())
+
+
+def test_representation_repair_cannot_change_effect_bearing_leaf_values() -> None:
+    preserves = pydantic_bridge._repair_preserves_rejected_semantics
+    invalid = GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+    type_text = ToolSpec(
+        "type_text",
+        "fixture",
+        {
+            "type": "object",
+            "properties": {"target": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["target", "text"],
+            "additionalProperties": False,
+        },
+    )
+    set_form_fields = ToolSpec(
+        "set_form_fields",
+        "fixture",
+        {
+            "type": "object",
+            "properties": {
+                "form_ref": {"type": "string"},
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "target": {"type": "string"},
+                            "value": {"type": "string"},
+                        },
+                        "required": ["target", "value"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["form_ref", "fields"],
+            "additionalProperties": False,
+        },
+    )
+
+    assert not preserves(
+        invalid,
+        (ToolCall("type_text", {"target": "E1", "text": "original", "unexpected": True}),),
+        ToolCall("type_text", {"target": "E1", "text": "CHANGED"}),
+        (type_text,),
+    )
+    assert not preserves(
+        invalid,
+        (
+            ToolCall(
+                "set_form_fields",
+                {"form_ref": "N1", "fields": [{"target": "E1", "value": "old"}]},
+            ),
+        ),
+        ToolCall(
+            "set_form_fields",
+            {"form_ref": "N1", "fields": [{"target": "E1", "value": "new"}]},
+        ),
+        (set_form_fields,),
+    )
+    assert preserves(
+        invalid,
+        (ToolCall("type_text", {"target": "E1", "text": "same", "unexpected": True}),),
+        ToolCall("type_text", {"target": "E1", "text": "same"}),
+        (type_text,),
+    )
+
+
+def test_representation_repair_cannot_delete_legal_optional_operands() -> None:
+    spec = ToolSpec(
+        "ask_user",
+        "fixture",
+        {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "requested_fields": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    )
+    rejected = ToolCall(
+        "ask_user",
+        {
+            "question": "Which value?",
+            "requested_fields": ["account"],
+            "unexpected": "x",
+        },
+    )
+
+    assert not pydantic_bridge._repair_preserves_rejected_semantics(
+        GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS),
+        (rejected,),
+        ToolCall("ask_user", {"question": "Which value?"}),
+        (spec,),
+    )
+    assert pydantic_bridge._repair_preserves_rejected_semantics(
+        GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS),
+        (rejected,),
+        ToolCall(
+            "ask_user",
+            {"question": "Which value?", "requested_fields": ["account"]},
+        ),
+        (spec,),
+    )
+
+
+def test_provider_repair_dropping_legal_optional_operand_is_rejected() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                (
+                    "ask_user",
+                    {
+                        "question": "Which value?",
+                        "requested_fields": ["account"],
+                        "unexpected": "x",
+                    },
+                ),
+                ("ask_user", {"question": "Which value?"}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("optional-operand-pruning", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:optional-pruning", context))
+
+        assert result.failure is not None
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == [
+            "ordinary",
+            "representation_repair",
+        ]
 
     asyncio.run(scenario())
 
@@ -514,7 +758,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
 
     assert decision == normalized
     assert error is None
-    assert parsed == normalized
+    assert parsed == (normalized,)
     assert captured["resolution"].decision == normalized
 
 

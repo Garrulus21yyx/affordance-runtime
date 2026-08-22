@@ -253,17 +253,17 @@ def test_public_typed_projection_strings_use_closed_vocabularies(changes) -> Non
         BenchmarkCaseResult("case:one", "failed", True, "", 1.0, **changes)
 
 
-def test_protocol_feedback_is_in_the_closed_decision_vocabulary() -> None:
+def test_final_response_is_in_the_closed_decision_vocabulary() -> None:
     result = BenchmarkCaseResult(
-        "case:protocol",
+        "case:final-response",
         "failed",
         True,
         "",
         1.0,
-        last_decision_kind="protocol_feedback",
+        last_decision_kind="submit_final_response",
     )
 
-    assert result.last_decision_kind == "protocol_feedback"
+    assert result.last_decision_kind == "submit_final_response"
 
 
 def test_partial_and_completed_episode_truth_are_mutually_exclusive() -> None:

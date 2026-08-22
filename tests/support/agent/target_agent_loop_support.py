@@ -65,7 +65,15 @@ class SharedStateTaskEvaluator:
 
 
 class SharedStateActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(
+        self,
+        task,
+        before,
+        request,
+        result,
+        after,
+        public_world_delta=None,
+    ):
         del task, result
         was_expanded = any(target.state.get("expanded") is True for target in before.targets)
         is_expanded = any(target.state.get("expanded") is True for target in after.targets)
@@ -104,4 +112,4 @@ def run_immediate(coroutine):
         coroutine.send(None)
     except StopIteration as completed:
         return completed.value
-    raise AssertionError("real browser test unexpectedly yielded asynchronous work")
+    raise AssertionError("real browser test unexpectedly blocked asynchronous work")

@@ -43,9 +43,6 @@ class EpisodeSnapshot:
     agent_failure_code: str = ""
     policy_failure_code: str = ""
     runtime_failure: RuntimeFailure | None = None
-    yield_reason: str = ""
-    mission_outcome: str = ""
-    mission_last_ref: str = ""
     user_question: str = ""
 
 
@@ -53,8 +50,6 @@ def snapshot_episode(
     state: RunState | None,
     *,
     control_status: RunStatus | None = None,
-    mission_outcome: object | None = None,
-    mission_last_ref: str = "",
     user_question: str = "",
     terminal_evaluation: TaskEvaluation | None = None,
 ) -> EpisodeSnapshot:
@@ -83,8 +78,6 @@ def snapshot_episode(
             last_world_coverage="",
             pending_kind="",
             latest_control_status=str(control_status),
-            mission_outcome=str(mission_outcome) if mission_outcome is not None else "",
-            mission_last_ref=mission_last_ref,
             user_question=user_question,
         )
 
@@ -124,9 +117,6 @@ def snapshot_episode(
         state.failure_code.value if state.failure_code is not None else "",
         state.policy_failure.kind.value if state.policy_failure is not None else "",
         state.runtime_failure,
-        state.yield_reason.value if state.yield_reason is not None else "",
-        str(mission_outcome) if mission_outcome is not None else "",
-        mission_last_ref,
         user_question,
     )
 

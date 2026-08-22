@@ -203,7 +203,6 @@ def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(monkeypatch, 
         "policy_calls",
         "provider_attempts",
         "executions",
-        "mission_planner_calls",
         "stop_send_count",
     ):
         assert result.measurements[name].value == baseline.measurements[name].value
@@ -311,7 +310,7 @@ def test_watchdog_report_retains_persisted_official_outcome(tmp_path) -> None:
             0,
             "",
             0,
-            "yield_milestone",
+            "submit_final_response",
             0,
             1,
             "complete",

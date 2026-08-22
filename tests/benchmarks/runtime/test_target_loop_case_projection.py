@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from affordance_runtime.agent import AgentFailureCode, EpisodeYieldReason, RunStatus
+from affordance_runtime.agent import AgentFailureCode, RunStatus
 from affordance_runtime.agent.episode_snapshot import EpisodeSnapshot
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -22,8 +22,6 @@ def _snapshot(
     turns: int = 1,
     reason: str = "runtime_exception",
     control_status: str = "failed",
-    mission_outcome: str = "",
-    mission_last_ref: str = "",
     task_outcome_kind: str = "",
     task_outcome_code: str = "",
     runtime_failure: RuntimeFailure | None = None,
@@ -53,8 +51,6 @@ def _snapshot(
     )
     return replace(
         snapshot,
-        mission_outcome=mission_outcome,
-        mission_last_ref=mission_last_ref,
         task_outcome_kind=task_outcome_kind,
         task_outcome_code=task_outcome_code,
         runtime_failure=runtime_failure,
@@ -270,47 +266,6 @@ def test_cleanup_is_secondary_to_runtime_reason() -> None:
     assert projected.measurements["cleanup_failures"].value == 1
 
 
-def test_cleanup_does_not_mask_earlier_planner_failure() -> None:
-    instrumentation = BenchmarkInstrumentation()
-    instrumentation.record_cleanup_failure("cleanup_exception", RuntimeError("private cleanup detail"))
-    result = SimpleNamespace(
-        status=RunStatus.FAILED,
-        outcome="planner_failure",
-        sent_unknown_count=0,
-        observation_count=0,
-        execution_count=0,
-        currentness_probe_count=0,
-        step_count=0,
-        failure_code=None,
-        policy_failure=None,
-        runtime_failure=None,
-        task_outcome=None,
-        supervisor_state=SimpleNamespace(last_ref="mission:planner:1"),
-    )
-
-    projected = project_case_result(
-        "case",
-        result,
-        instrumentation,
-        1.0,
-        "cleanup failed",
-        final_snapshot=_snapshot(
-            observations=0,
-            executions=0,
-            turns=0,
-            mission_outcome="planner_failure",
-            mission_last_ref="mission:planner:1",
-        ),
-    )
-
-    assert projected.case_failure_code == "planner_failure"
-    assert projected.primary_failure_code == "planner_failure"
-    assert projected.termination_origin == "runtime"
-    assert projected.secondary_failure_codes == ("cleanup_exception",)
-    assert projected.cleanup_diagnostic is not None
-    assert projected.cleanup_diagnostic.safe_message == "private cleanup detail"
-
-
 def test_cleanup_timeout_does_not_mask_provider_failure() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.record_cleanup_failure("cleanup_timeout", TimeoutError("bounded cleanup expired"))
@@ -416,7 +371,6 @@ def test_instrumentation_does_not_reconstruct_unresolved_runtime_state() -> None
     resolved.step_completed(
         1,
         SimpleNamespace(
-            yield_reason=None,
             status_after=RunStatus.RUNNING,
             runtime_failure=None,
         ),
@@ -428,8 +382,7 @@ def test_instrumentation_does_not_reconstruct_unresolved_runtime_state() -> None
     unresolved.step_completed(
         1,
         SimpleNamespace(
-            yield_reason=EpisodeYieldReason.UNCERTAIN_EFFECT,
-            status_after=RunStatus.YIELDED,
+            status_after=RunStatus.BLOCKED,
             runtime_failure=None,
         ),
     )

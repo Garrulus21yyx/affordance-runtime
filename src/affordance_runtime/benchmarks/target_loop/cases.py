@@ -52,10 +52,8 @@ from affordance_runtime.benchmarks.webarena_verified import (
 )
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.mission.contracts import ExecutionMode
-from affordance_runtime.model.mission_roles import mission_planner_from_environment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.factory import model_roles_from_environment
 
 WA_W1B_CASE_TIMEOUT_S = 900.0
 WA_W1B_MAX_TURNS = 100
@@ -117,13 +115,12 @@ def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
         evaluator = holder.get("evaluator")
         if evaluator is None:
             raise RuntimeError("WebArena-Verified W1b evaluator requested before environment setup")
+        roles = model_roles_from_environment(os.environ, call_timeout_s=WA_W1B_MODEL_CALL_TIMEOUT_S)
         return BenchmarkComposition(
-            model_policy_from_environment(os.environ, call_timeout_s=WA_W1B_MODEL_CALL_TIMEOUT_S),
+            roles.action_policy,
             ProductionActionOutcomeProjector(),
             evaluator,
-            mission_planner=mission_planner_from_environment(os.environ),
-            mission_auditor=None,
-            execution_mode=ExecutionMode.MISSION,
+            goal_compiler=roles.goal_compiler,
         )
 
     return BenchmarkCase(
@@ -140,26 +137,16 @@ def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
             "observations",
             "policy_calls",
             "provider_attempts",
-            "mission_planner_calls",
-            "mission_auditor_calls",
-            "final_response_boundary_admission_count",
-            "final_response_boundary_rejection_count",
             "stop_send_count",
             "post_stop_capture_count",
             "native_evaluator_count",
-            "mission_final_response_delivered",
         ),
         (
             *_expect(
-                mission_auditor_calls=0,
-                final_response_boundary_admission_count=1,
-                final_response_boundary_rejection_count=0,
                 stop_send_count=1,
                 post_stop_capture_count=1,
                 native_evaluator_count=1,
-                mission_final_response_delivered=1,
             ),
-            MetricExpectation("mission_planner_calls", MetricExpectationOperator.MAX, 8),
         ),
     )
 
@@ -255,10 +242,10 @@ def _forbidden_case(seed: int) -> BenchmarkCase:
 
 def _sent_unknown_case(seed: int) -> BenchmarkCase:
     return BenchmarkCase(
-        "sent-unknown-no-replay", "internal-safety", "SENT_UNKNOWN yields after bounded observation recovery",
+        "sent-unknown-no-replay", "internal-safety", "SENT_UNKNOWN blocks after bounded observation recovery",
         shared_task, lambda _metrics: shared_environment("dom", sent_unknown=True),
         lambda _metrics: BenchmarkComposition.atomic(policy_for("scripted-model"), CurrentFactActionOutcomeProjector(), SharedTaskEvaluator()),
-        (RunStatus.YIELDED,), 10.0, seed,
+        (RunStatus.BLOCKED,), 10.0, seed,
         ("sent_unknown_count", "duplicate_unknown_attempts"),
         _expect(sent_unknown_count=1, duplicate_unknown_attempts=0),
     )

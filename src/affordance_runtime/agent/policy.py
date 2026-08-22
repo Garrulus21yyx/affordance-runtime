@@ -7,6 +7,7 @@ from typing import Protocol, TypeAlias
 
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.world_transition import PublicWorldDelta
 from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
     normalize_decision_capabilities,
@@ -68,6 +69,7 @@ class ActionOutcomeProjector(Protocol):
         request: BoundActionRequest,
         result: ActionResult,
         after: WorldObservation,
+        public_world_delta: PublicWorldDelta,
     ) -> ActionOutcome: ...
 
 

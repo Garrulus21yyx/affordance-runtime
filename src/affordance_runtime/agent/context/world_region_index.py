@@ -26,12 +26,31 @@ class DeliveryLimits:
 
 DELIVERY_LIMITS_V1 = DeliveryLimits()
 
-_BOUNDARY_ROLES = frozenset({
-    "alert", "alertdialog", "application", "complementary", "dialog",
-    "document", "feed", "form", "grid", "list", "main", "menu",
-    "menubar", "navigation", "region", "search", "table", "toolbar",
-    "tree", "webarea", "rootwebarea",
-})
+_BOUNDARY_ROLES = frozenset(
+    {
+        "alert",
+        "alertdialog",
+        "application",
+        "complementary",
+        "dialog",
+        "document",
+        "feed",
+        "form",
+        "grid",
+        "list",
+        "main",
+        "menu",
+        "menubar",
+        "navigation",
+        "region",
+        "search",
+        "table",
+        "toolbar",
+        "tree",
+        "webarea",
+        "rootwebarea",
+    }
+)
 _REPEATED_ITEM_ROLES = frozenset({"article", "card", "listitem", "row", "treeitem"})
 _ATOMIC_CONTAINER_ROLES = frozenset({"grid", "list", "table"})
 _HEADING_ROLES = frozenset({"heading"})
@@ -68,8 +87,12 @@ class WorldRegion:
         ):
             raise ValueError("delivery region requires current private identity and public handle")
         for name in (
-            "member_structure_ids", "member_target_ids", "member_fact_ids",
-            "member_action_ids", "direct_labels", "repeated_item_roots",
+            "member_structure_ids",
+            "member_target_ids",
+            "member_fact_ids",
+            "member_action_ids",
+            "direct_labels",
+            "repeated_item_roots",
             "scope_path",
         ):
             values = tuple(getattr(self, name))
@@ -92,6 +115,33 @@ class WorldRegion:
 
 
 @dataclass(frozen=True)
+class RegionVersion:
+    """Frozen per-document region cache contract; lifecycle wiring is stage 3."""
+
+    region_key: str
+    document_lineage: str
+    content_digest: str
+    structure_digest: str
+    version: int
+    cached_outline: tuple[str, ...] = ()
+    member_target_ids: tuple[str, ...] = ()
+    member_fact_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.region_key.startswith("region:") or not all(
+            value.strip() for value in (self.document_lineage, self.content_digest, self.structure_digest)
+        ):
+            raise ValueError("region version requires stable identity, lineage, and digests")
+        if type(self.version) is not int or self.version < 1:
+            raise ValueError("region version must be a positive exact integer")
+        for name in ("cached_outline", "member_target_ids", "member_fact_ids"):
+            values = tuple(getattr(self, name))
+            if len(values) != len(set(values)):
+                raise ValueError(f"region version {name} must be exact and unique")
+            object.__setattr__(self, name, values)
+
+
+@dataclass(frozen=True)
 class WorldDeliveryIndex:
     """One recomputable partition plus complete public content/action indexes."""
 
@@ -104,6 +154,7 @@ class WorldDeliveryIndex:
         default_factory=dict,
         repr=False,
     )
+    public_world_delta: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.world_observation_id.strip():
@@ -122,11 +173,7 @@ class WorldDeliveryIndex:
                     "fact_region_keys": "member_fact_ids",
                     "action_region_keys": "member_action_ids",
                 }[name]
-                mapping = {
-                    member_id: region.key
-                    for region in regions
-                    for member_id in getattr(region, member_name)
-                }
+                mapping = {member_id: region.key for region in regions for member_id in getattr(region, member_name)}
             if any(key not in keys for key in mapping.values()):
                 raise ValueError(f"{name} points outside the delivery partition")
             object.__setattr__(self, name, freeze_json(mapping))
@@ -142,6 +189,13 @@ class WorldDeliveryIndex:
             raise ValueError("functional path points outside the target partition")
         object.__setattr__(self, "target_functional_paths", freeze_json(paths))
         object.__setattr__(self, "regions", regions)
+        if self.public_world_delta is not None:
+            from affordance_runtime.agent.context.world_transition import PublicWorldDelta
+
+            if not isinstance(self.public_world_delta, PublicWorldDelta):
+                raise TypeError("delivery index transition must be a typed public World delta")
+            if self.public_world_delta.after_observation_id != self.world_observation_id:
+                raise ValueError("delivery index transition must terminate at its current World")
 
     @classmethod
     def from_observation(
@@ -150,18 +204,23 @@ class WorldDeliveryIndex:
         action_options: Sequence[object] = (),
         *,
         limits: DeliveryLimits = DELIVERY_LIMITS_V1,
+        public_world_delta: object | None = None,
     ) -> "WorldDeliveryIndex":
         seeds = _functional_partition(observation, action_options, limits)
-        regions = _assign_public_refs(observation.observation_id, seeds)
-        target_keys = {
-            target_id: region.key for region in regions for target_id in region.member_target_ids
-        }
+        regions = _assign_public_refs(observation, seeds)
+        target_keys = {target_id: region.key for region in regions for target_id in region.member_target_ids}
         fact_keys = {fact_id: region.key for region in regions for fact_id in region.member_fact_ids}
-        action_keys = {
-            action_id: region.key for region in regions for action_id in region.member_action_ids
-        }
+        action_keys = {action_id: region.key for region in regions for action_id in region.member_action_ids}
         paths = _target_functional_paths(observation, regions, target_keys)
-        return cls(observation.observation_id, regions, target_keys, fact_keys, action_keys, paths)
+        return cls(
+            observation.observation_id,
+            regions,
+            target_keys,
+            fact_keys,
+            action_keys,
+            paths,
+            public_world_delta,
+        )
 
     @property
     def public_refs(self) -> tuple[str, ...]:
@@ -240,7 +299,9 @@ def _functional_partition(
         # Icon-only/empty boundaries are representation fragments; omitting the
         # boundary merges their descendants into the nearest meaningful owner.
         candidates = {
-            item for item in candidates if _meaningful_subtree(item, nodes, canonical, source.observation_id, target_by_id)
+            item
+            for item in candidates
+            if _meaningful_subtree(item, nodes, canonical, source.observation_id, target_by_id)
         }
         if not candidates:
             candidates = set(roots[:1])
@@ -252,12 +313,14 @@ def _functional_partition(
             assigned[owner].append(structure_id)
         for root_id in sorted(candidates, key=lambda item: _source_order(item, source.structure)):
             member_structures = tuple(assigned[root_id])
-            member_targets = tuple(dict.fromkeys(
-                canonical.get((source.observation_id, nodes[item].semantic_target_id), "")
-                for item in member_structures
-                if nodes[item].semantic_target_id
-                and canonical.get((source.observation_id, nodes[item].semantic_target_id), "")
-            ))
+            member_targets = tuple(
+                dict.fromkeys(
+                    canonical.get((source.observation_id, nodes[item].semantic_target_id), "")
+                    for item in member_structures
+                    if nodes[item].semantic_target_id
+                    and canonical.get((source.observation_id, nodes[item].semantic_target_id), "")
+                )
+            )
             root = nodes[root_id]
             heading = _exact_heading(root_id, member_structures, nodes, target_by_id, canonical, source.observation_id)
             direct_labels = _direct_labels(root_id, nodes)
@@ -265,21 +328,23 @@ def _functional_partition(
             state_badges = _state_badges(member_targets, target_by_id)
             seed_index = len(seeds)
             scope_path = _scope_path(root_id, nodes, parents)
-            seeds.append({
-                "source_id": source.observation_id,
-                "root_structure_id": root_id,
-                "member_structure_ids": member_structures,
-                "member_target_ids": member_targets,
-                "member_fact_ids": [],
-                "member_action_ids": [],
-                "heading": heading,
-                "role": _region_kind(root.role),
-                "direct_labels": direct_labels,
-                "repeated_item_roots": repeated_roots,
-                "state_badges": state_badges,
-                "coverage": _coverage(source.coverage, len(source.structure), source.structure_total_count),
-                "scope_path": scope_path,
-            })
+            seeds.append(
+                {
+                    "source_id": source.observation_id,
+                    "root_structure_id": root_id,
+                    "member_structure_ids": member_structures,
+                    "member_target_ids": member_targets,
+                    "member_fact_ids": [],
+                    "member_action_ids": [],
+                    "heading": heading,
+                    "role": _region_kind(root.role),
+                    "direct_labels": direct_labels,
+                    "repeated_item_roots": repeated_roots,
+                    "state_badges": state_badges,
+                    "coverage": _coverage(source.coverage, len(source.structure), source.structure_total_count),
+                    "scope_path": scope_path,
+                }
+            )
             for structure_id in member_structures:
                 structure_region[(source.observation_id, structure_id)] = seed_index
             for target_id in member_targets:
@@ -292,21 +357,23 @@ def _functional_partition(
             if any(source.coverage is not CoverageState.COMPLETE for source in observation.sources)
             else "complete"
         )
-        seeds.append({
-            "source_id": observation.sources[0].observation_id if observation.sources else "world",
-            "root_structure_id": "world",
-            "member_structure_ids": (),
-            "member_target_ids": (),
-            "member_fact_ids": [],
-            "member_action_ids": [],
-            "heading": "Current page",
-            "role": "document",
-            "direct_labels": (),
-            "repeated_item_roots": (),
-            "state_badges": {},
-            "coverage": world_coverage,
-            "scope_path": ("Current page",),
-        })
+        seeds.append(
+            {
+                "source_id": observation.sources[0].observation_id if observation.sources else "world",
+                "root_structure_id": "world",
+                "member_structure_ids": (),
+                "member_target_ids": (),
+                "member_fact_ids": [],
+                "member_action_ids": [],
+                "heading": "Current page",
+                "role": "document",
+                "direct_labels": (),
+                "repeated_item_roots": (),
+                "state_badges": {},
+                "coverage": world_coverage,
+                "scope_path": ("Current page",),
+            }
+        )
 
     target_owner: dict[str, int] = {}
     for index, seed in enumerate(seeds):
@@ -330,7 +397,11 @@ def _functional_partition(
         owner = target_owner.get(fact.subject_id)
         if owner is None:
             owner = next(
-                (index for (source_id, structure_id), index in structure_region.items() if structure_id == fact.subject_id),
+                (
+                    index
+                    for (source_id, structure_id), index in structure_region.items()
+                    if structure_id == fact.subject_id
+                ),
                 0,
             )
         seeds[owner]["member_fact_ids"].append(fact.fact_id)  # type: ignore[union-attr]
@@ -346,9 +417,7 @@ def _functional_partition(
     result: list[_RegionSeed] = []
     facts_by_id = {item.fact_id: item for item in observation.facts}
     options_by_id = {
-        str(getattr(item, "action_id", "")): item
-        for item in action_options
-        if str(getattr(item, "action_id", ""))
+        str(getattr(item, "action_id", "")): item for item in action_options if str(getattr(item, "action_id", ""))
     }
     for seed in seeds:
         targets = tuple(seed["member_target_ids"])  # type: ignore[arg-type]
@@ -358,57 +427,62 @@ def _functional_partition(
             str(getattr(options_by_id[action_id], "target_id", ""))
             for action_id in actions
             if action_id in options_by_id
-            and str(getattr(options_by_id[action_id], "semantic_action", ""))
-            in {"select_option", "type_text"}
+            and str(getattr(options_by_id[action_id], "semantic_action", "")) in {"select_option", "type_text"}
         }
         structures = tuple(seed["member_structure_ids"])  # type: ignore[arg-type]
         source = next(
             (item for item in observation.sources if item.observation_id == seed["source_id"]),
             None,
         )
-        structures_by_id = {
-            item.structure_id: item for item in source.structure
-        } if source is not None else {}
-        estimated_tokens = _estimate_tokens(" ".join((
-            *(
-                f"{structures_by_id[item].role} {structures_by_id[item].label} "
-                f"{dict(structures_by_id[item].state)}"
-                for item in structures if item in structures_by_id
-            ),
-            *(
-                f"{target_by_id[item].role} {target_by_id[item].label} "
-                f"{dict(target_by_id[item].state)}"
-                for item in targets if item in target_by_id
-            ),
-            *(
-                f"{facts_by_id[item].predicate} {facts_by_id[item].value}"
-                for item in facts if item in facts_by_id
-            ),
-        )))
-        result.append(_RegionSeed(
-            str(seed["source_id"]),
-            str(seed["root_structure_id"]),
-            structures,
-            targets,
-            facts,
-            actions,
-            str(seed["heading"]),
-            str(seed["role"]),
-            tuple(seed["direct_labels"]),  # type: ignore[arg-type]
-            tuple(seed["repeated_item_roots"]),  # type: ignore[arg-type]
-            {
-                "structures": len(structures),
-                "targets": len(targets),
-                "facts": len(facts),
-                "actions": len(actions),
-                "items": len(tuple(seed["repeated_item_roots"])),  # type: ignore[arg-type]
-                "estimated_tokens": estimated_tokens,
-                "filter_controls": len(filter_targets),
-            },
-            dict(seed["state_badges"]),  # type: ignore[arg-type]
-            str(seed["coverage"]),
-            tuple(seed["scope_path"]),  # type: ignore[arg-type]
-        ))
+        structures_by_id = {item.structure_id: item for item in source.structure} if source is not None else {}
+        estimated_tokens = _estimate_tokens(
+            " ".join(
+                (
+                    *(
+                        f"{structures_by_id[item].role} {structures_by_id[item].label} "
+                        f"{dict(structures_by_id[item].state)}"
+                        for item in structures
+                        if item in structures_by_id
+                    ),
+                    *(
+                        f"{target_by_id[item].role} {target_by_id[item].label} {dict(target_by_id[item].state)}"
+                        for item in targets
+                        if item in target_by_id
+                    ),
+                    *(
+                        f"{facts_by_id[item].predicate} {facts_by_id[item].value}"
+                        for item in facts
+                        if item in facts_by_id
+                    ),
+                )
+            )
+        )
+        result.append(
+            _RegionSeed(
+                str(seed["source_id"]),
+                str(seed["root_structure_id"]),
+                structures,
+                targets,
+                facts,
+                actions,
+                str(seed["heading"]),
+                str(seed["role"]),
+                tuple(seed["direct_labels"]),  # type: ignore[arg-type]
+                tuple(seed["repeated_item_roots"]),  # type: ignore[arg-type]
+                {
+                    "structures": len(structures),
+                    "targets": len(targets),
+                    "facts": len(facts),
+                    "actions": len(actions),
+                    "items": len(tuple(seed["repeated_item_roots"])),  # type: ignore[arg-type]
+                    "estimated_tokens": estimated_tokens,
+                    "filter_controls": len(filter_targets),
+                },
+                dict(seed["state_badges"]),  # type: ignore[arg-type]
+                str(seed["coverage"]),
+                tuple(seed["scope_path"]),  # type: ignore[arg-type]
+            )
+        )
     return tuple(result)
 
 
@@ -466,16 +540,10 @@ def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits)
         root = nodes[root_id]
         descendants = tuple(_walk_ids(root_id, nodes))
         boundary_count = sum(
-            1
-            for item in descendants[1:]
-            if nodes[item].role.casefold() in _BOUNDARY_ROLES | _HEADING_ROLES
+            1 for item in descendants[1:] if nodes[item].role.casefold() in _BOUNDARY_ROLES | _HEADING_ROLES
         )
-        estimated_tokens = _estimate_tokens(
-            " ".join(nodes[item].label for item in descendants if nodes[item].label)
-        )
-        if root.role.casefold() == "generic" and (
-            boundary_count >= 2 or estimated_tokens > limits.exact_region_tokens
-        ):
+        estimated_tokens = _estimate_tokens(" ".join(nodes[item].label for item in descendants if nodes[item].label))
+        if root.role.casefold() == "generic" and (boundary_count >= 2 or estimated_tokens > limits.exact_region_tokens):
             for child_id in root.child_structure_ids:
                 if child_id in nodes and _meaningful_text(nodes[child_id].label):
                     candidates.add(child_id)
@@ -483,11 +551,7 @@ def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits)
     # semantic region. Descendant rowgroups/rows/listitems and incidental
     # heading boundaries cannot become orphan top-level sibling regions.
     parents = _parents(nodes)
-    return {
-        item
-        for item in candidates
-        if not _has_atomic_container_ancestor(item, nodes, parents)
-    }
+    return {item for item in candidates if not _has_atomic_container_ancestor(item, nodes, parents)}
 
 
 def _has_atomic_container_ancestor(structure_id: str, nodes, parents: Mapping[str, str]) -> bool:
@@ -509,9 +573,7 @@ def _meaningful_subtree(root_id, nodes, canonical, source_id, targets) -> bool:
             return True
         target_id = canonical.get((source_id, item.semantic_target_id), "")
         target = targets.get(target_id)
-        if target is not None and (
-            _meaningful_text(target.label) or _meaningful_state(target.state)
-        ):
+        if target is not None and (_meaningful_text(target.label) or _meaningful_state(target.state)):
             return True
     return False
 
@@ -573,7 +635,11 @@ def _exact_heading(root_id, member_ids, nodes, targets, canonical, source_id) ->
 
 def _direct_labels(root_id, nodes) -> tuple[str, ...]:
     root = nodes[root_id]
-    labels = [nodes[item].label.strip() for item in root.child_structure_ids if item in nodes and _meaningful_text(nodes[item].label)]
+    labels = [
+        nodes[item].label.strip()
+        for item in root.child_structure_ids
+        if item in nodes and _meaningful_text(nodes[item].label)
+    ]
     return tuple(dict.fromkeys(labels[:8]))
 
 
@@ -588,8 +654,17 @@ def _scope_path(root_id: str, nodes, parents: Mapping[str, str]) -> tuple[str, .
         item = nodes[current]
         label = _scope_label(item.label)
         if label and item.role.casefold() in {
-            "document", "webarea", "rootwebarea", "main", "region",
-            "tabpanel", "form", "search", "table", "grid", "list",
+            "document",
+            "webarea",
+            "rootwebarea",
+            "main",
+            "region",
+            "tabpanel",
+            "form",
+            "search",
+            "table",
+            "grid",
+            "list",
         }:
             lineage.append(label)
         current = parents.get(current, "")
@@ -598,18 +673,13 @@ def _scope_path(root_id: str, nodes, parents: Mapping[str, str]) -> tuple[str, .
         (
             _scope_label(item.label)
             for item in nodes.values()
-            if item.role.casefold() in {"document", "webarea", "rootwebarea"}
-            and _scope_label(item.label)
+            if item.role.casefold() in {"document", "webarea", "rootwebarea"} and _scope_label(item.label)
         ),
         "",
     )
     if page_scope and page_scope not in lineage:
         lineage.insert(0, page_scope)
-    bounded = (
-        (page_scope, *lineage[-5:])
-        if page_scope and len(lineage) > 6
-        else tuple(lineage[-6:])
-    )
+    bounded = (page_scope, *lineage[-5:]) if page_scope and len(lineage) > 6 else tuple(lineage[-6:])
     return tuple(dict.fromkeys(bounded))
 
 
@@ -630,7 +700,8 @@ def _scope_label(value: object) -> str:
 def _repeated_item_roots(root_id, member_ids, nodes) -> tuple[str, ...]:
     root = nodes[root_id]
     direct = tuple(
-        item for item in root.child_structure_ids
+        item
+        for item in root.child_structure_ids
         if item in nodes and item in member_ids and nodes[item].role.casefold() in _REPEATED_ITEM_ROLES
     )
     if len(direct) >= 2:
@@ -642,11 +713,7 @@ def _repeated_item_roots(root_id, member_ids, nodes) -> tuple[str, ...]:
             repeated = tuple(
                 child
                 for child in container.child_structure_ids
-                if (
-                    child in nodes
-                    and child in member_ids
-                    and nodes[child].role.casefold() in _REPEATED_ITEM_ROLES
-                )
+                if (child in nodes and child in member_ids and nodes[child].role.casefold() in _REPEATED_ITEM_ROLES)
             )
             if len(repeated) >= 2:
                 groups.append(repeated)
@@ -669,32 +736,37 @@ def _region_kind(role: str) -> str:
     return "document" if normalized in {"webarea", "rootwebarea"} else normalized
 
 
-def _assign_public_refs(observation_id: str, seeds: tuple[_RegionSeed, ...]) -> tuple[WorldRegion, ...]:
+def _assign_public_refs(observation: WorldObservation, seeds: tuple[_RegionSeed, ...]) -> tuple[WorldRegion, ...]:
     regions: list[WorldRegion] = []
+    manifests = {item.source_observation_id: item for item in observation.source_manifest}
     for index, seed in enumerate(seeds, 1):
-        digest = hashlib.sha256(
-            f"{observation_id}\0{seed.source_id}\0{seed.root_structure_id}".encode()
-        ).hexdigest()[:24]
-        regions.append(WorldRegion(
-            key=f"region:{digest}",
-            public_ref=f"R{index}",
-            source_id=seed.source_id,
-            root_structure_id=seed.root_structure_id,
-            member_target_ids=seed.member_target_ids,
-            member_fact_ids=seed.member_fact_ids,
-            heading=seed.heading,
-            role=seed.role,
-            counts=seed.counts,
-            coverage=seed.coverage,
-            member_structure_ids=seed.member_structure_ids,
-            member_action_ids=seed.member_action_ids,
-            direct_labels=seed.direct_labels,
-            repeated_item_roots=seed.repeated_item_roots,
-            state_badges=seed.state_badges,
-            source_coverage=seed.coverage,
-            region_membership="complete",
-            scope_path=seed.scope_path,
-        ))
+        manifest = manifests.get(seed.source_id)
+        source_family = (
+            f"{manifest.surface}\0{manifest.modality}\0{manifest.profile}" if manifest is not None else "world"
+        )
+        digest = hashlib.sha256(f"{source_family}\0{seed.root_structure_id}".encode()).hexdigest()[:24]
+        regions.append(
+            WorldRegion(
+                key=f"region:{digest}",
+                public_ref=f"R{index}",
+                source_id=seed.source_id,
+                root_structure_id=seed.root_structure_id,
+                member_target_ids=seed.member_target_ids,
+                member_fact_ids=seed.member_fact_ids,
+                heading=seed.heading,
+                role=seed.role,
+                counts=seed.counts,
+                coverage=seed.coverage,
+                member_structure_ids=seed.member_structure_ids,
+                member_action_ids=seed.member_action_ids,
+                direct_labels=seed.direct_labels,
+                repeated_item_roots=seed.repeated_item_roots,
+                state_badges=seed.state_badges,
+                source_coverage=seed.coverage,
+                region_membership="complete",
+                scope_path=seed.scope_path,
+            )
+        )
     return tuple(regions)
 
 

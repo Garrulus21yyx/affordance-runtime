@@ -56,8 +56,6 @@ def test_case_result_has_one_metric_authority() -> None:
         "cleanup_diagnostic",
         "harness_integrity_code",
         "harness_integrity_failures",
-        "mission_outcome",
-        "mission_last_ref",
         "failure_facts",
         "case_schema_version",
         "suite_id",

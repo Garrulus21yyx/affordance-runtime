@@ -1,26 +1,11 @@
 import asyncio
-import json
-import multiprocessing
-import time
 from dataclasses import dataclass
 from types import SimpleNamespace
 
 from affordance_runtime.actions import (
     ActionBinding,
 )
-from affordance_runtime.agent import (
-    ProtocolFeedback,
-    ProtocolFeedbackKind,
-    RunStatus,
-    SelectAction,
-    YieldMilestone,
-)
-from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
-from affordance_runtime.agent.decision_capability import DecisionCapability
-from affordance_runtime.agent.observability import (
-    LangfuseViewerProcess,
-    QueuedViewerRunTraceRecorder,
-)
+from affordance_runtime.agent import RunStatus, SelectAction
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.contracts import (
@@ -34,7 +19,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 )
 from affordance_runtime.benchmarks.target_loop.reporting import (
     write_case_report,
-    write_run_report,
 )
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.benchmarks.webarena_verified import WebArenaVerifiedCaseEnvironment
@@ -48,14 +32,6 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from affordance_runtime.execution import ActionResult, DispatchStatus
-from affordance_runtime.mission import (
-    ExecutionMode,
-    Milestone,
-    MilestoneRoadmap,
-    PlannerDecision,
-    PlannerRoute,
-)
-from affordance_runtime.model.policy.contracts import ModelInvocationResult
 from affordance_runtime.surfaces.browsergym.task_state import (
     BrowserGymTaskStateSnapshot,
     BrowserGymTaskStateSource,
@@ -138,7 +114,7 @@ def test_webarena_native_evaluator_uses_terminal_post_state_after_sent_unknown_s
 
 
 class ActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         return ActionOutcome(
             request.request_id,
             before.observation_id,
@@ -208,255 +184,6 @@ def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
     assert [item.case_id for item in result.cases] == ["a", "b"]
     assert (tmp_path / "traces" / "a" / "trace.jsonl").is_file()
     assert (tmp_path / "traces" / "b" / "trace.jsonl").is_file()
-
-
-def test_mission_runner_projects_outer_outcome_and_metrics() -> None:
-    class YieldPolicy:
-        @property
-        def supported_decisions(self):
-            return frozenset({DecisionCapability.YIELD_MILESTONE})
-
-        async def decide(self, context):
-            return YieldMilestone(context.context_id, "outcome_proposed", "ready")
-
-    class Planner:
-        def __init__(self):
-            self.requests = []
-            self.decisions = [
-                PlannerDecision(
-                    PlannerRoute.ASK_USER,
-                    question="Which account should be used?",
-                ),
-            ]
-
-        async def plan(self, request):
-            self.requests.append(request)
-            return ModelInvocationResult(output=self.decisions.pop(0))
-
-    planner = Planner()
-
-    case = BenchmarkCase(
-        "mission-ask",
-        "suite",
-        "mission ask projection",
-        lambda: TaskGoal("mission", "Complete a long task."),
-        lambda _metrics: ScriptedEnvironment(
-            initial_observation=fused_world("mission"),
-            independent_observations=(fused_world("mission-capture"),),
-        ),
-        lambda _metrics: BenchmarkComposition(
-            YieldPolicy(),
-            ActionOutcomeProjector(),
-            UnknownEvaluator(),
-            required_decisions=frozenset({DecisionCapability.YIELD_MILESTONE}),
-            mission_planner=planner,
-            mission_auditor=None,
-            execution_mode=ExecutionMode.MISSION,
-        ),
-        (RunStatus.WAITING_USER,),
-        2.0,
-        7,
-        ("observations",),
-    )
-    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
-
-    result = asyncio.run(
-        run_suite(
-            BenchmarkManifest(
-                "target-loop-manifest.v1",
-                "suite",
-                "deterministic",
-                7,
-                (case,),
-            )
-        )
-    ).cases[0]
-
-    assert result.status == "waiting_user"
-    assert result.pending_kind == "user_question"
-    assert result.mission_outcome == "needs_user_input"
-    assert result.mission_last_ref == "needs_user_input"
-    assert result.measurements["mission_planner_calls"].value == 1
-    assert result.measurements["mission_auditor_calls"].value == 0
-    assert result.measurements["mission_state_version"].value == 0
-    assert result.measurements["mission_boundary_rejections"].value == 0
-    assert len(planner.requests) == 1
-
-
-def test_hung_langfuse_projection_cannot_delay_planner_provider_failure_report(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    from affordance_runtime.benchmarks.target_loop import runner
-    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
-
-    monkeypatch.setattr(runner, "_VIEWER_FLUSH_TIMEOUT_S", 0.05)
-    viewer_entered = multiprocessing.Event()
-    never_release = multiprocessing.Event()
-
-    class HungClient:
-        def start_as_current_observation(self, **_kwargs):
-            viewer_entered.set()
-            never_release.wait()
-
-    def trace_factory(_environment, *, directory, run_id, session_id, benchmark_managed):
-        return QueuedViewerRunTraceRecorder(
-            directory,
-            run_id=run_id,
-            viewer_process=LangfuseViewerProcess(
-                lambda: HungClient(),
-                session_id=session_id,
-                benchmark_managed=benchmark_managed,
-            ),
-        )
-
-    monkeypatch.setattr(runner, "trace_recorder_from_environment", trace_factory)
-
-    class ProviderUnavailablePlanner:
-        async def plan(self, _request):
-            return ModelInvocationResult(
-                failure=ModelFailure(
-                    ModelFailureKind.PROVIDER_UNAVAILABLE,
-                    "synthetic provider unavailable",
-                    True,
-                )
-            )
-
-    case = BenchmarkCase(
-        "mission-provider-unavailable",
-        "suite",
-        "provider failure with a hung read-only viewer",
-        lambda: TaskGoal("mission-provider", "Complete a bounded task."),
-        lambda _metrics: ScriptedEnvironment(initial_observation=fused_world("provider-failure")),
-        lambda _metrics: BenchmarkComposition(
-            NeverPolicy(),
-            ActionOutcomeProjector(),
-            UnknownEvaluator(),
-            mission_planner=ProviderUnavailablePlanner(),
-            mission_auditor=None,
-            execution_mode=ExecutionMode.MISSION,
-        ),
-        (RunStatus.FAILED,),
-        2.0,
-        7,
-        ("observations",),
-    )
-
-    started = time.perf_counter()
-    result = asyncio.run(
-        run_suite(
-            BenchmarkManifest(
-                "target-loop-manifest.v1",
-                "suite",
-                "deterministic",
-                7,
-                (case,),
-            ),
-            trace_dir=tmp_path,
-        )
-    ).cases[0]
-    elapsed = time.perf_counter() - started
-
-    assert viewer_entered.is_set()
-    assert elapsed < 0.5
-    assert result.status == "failed"
-    assert result.mission_outcome == "planner_failure"
-    assert "viewer" not in result.failure_code
-    trace_path = tmp_path / "traces" / case.case_id / "trace.jsonl"
-    events = [json.loads(line) for line in trace_path.read_text().splitlines()]
-    role = next(event for event in events if event["event"] == "mission_role_invocation")
-    assert role["failure"]["kind"] == "provider_unavailable"
-    assert any(event["event"] == "case_lifecycle_phase" and event["phase"] == "CASE_BODY_RETURNED" for event in events)
-    assert any(event["event"] == "viewer_status" for event in events)
-    assert (tmp_path / "cases" / f"{case.case_id}.json").is_file()
-
-
-def test_protocol_stall_planner_blocked_projects_and_writes_formal_reports(tmp_path) -> None:
-    class ProtocolPolicy:
-        @property
-        def supported_decisions(self):
-            return frozenset()
-
-        async def decide(self, context):
-            return ProtocolFeedback(
-                context.context_id,
-                ProtocolFeedbackKind.MULTIPLE_TOOL_CALLS,
-                2,
-                "multiple_tool_calls",
-            )
-
-    class Planner:
-        def __init__(self):
-            self.decisions = [
-                PlannerDecision(
-                    PlannerRoute.ROADMAP,
-                    roadmap=MilestoneRoadmap(
-                        1,
-                        (
-                            Milestone(
-                                "complete_form",
-                                "The requested form result is available",
-                                "The submitted result is observable",
-                            ),
-                        ),
-                    ),
-                ),
-                PlannerDecision(
-                    PlannerRoute.BLOCKED,
-                    reason="protocol recovery exhausted",
-                ),
-            ]
-
-        async def plan(self, request):
-            del request
-            return ModelInvocationResult(output=self.decisions.pop(0))
-
-    case = BenchmarkCase(
-        "mission-protocol-stall",
-        "suite",
-        "protocol feedback projection",
-        lambda: TaskGoal("mission-protocol", "Complete the current UI task."),
-        lambda _metrics: ScriptedEnvironment(
-            initial_observation=fused_world("protocol-stall"),
-            independent_observations=(fused_world("protocol-review"),),
-        ),
-        lambda _metrics: BenchmarkComposition(
-            ProtocolPolicy(),
-            ActionOutcomeProjector(),
-            UnknownEvaluator(),
-            mission_planner=Planner(),
-            mission_auditor=None,
-            execution_mode=ExecutionMode.MISSION,
-        ),
-        (RunStatus.BLOCKED,),
-        2.0,
-        7,
-        ("observations",),
-    )
-    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
-
-    suite = asyncio.run(
-        run_suite(
-            BenchmarkManifest(
-                "target-loop-manifest.v1",
-                "suite",
-                "deterministic",
-                7,
-                (case,),
-            )
-        )
-    )
-    result = suite.cases[0]
-    write_run_report(suite, str(tmp_path))
-
-    assert result.status == "blocked", result
-    assert result.last_decision_kind == "protocol_feedback"
-    assert result.measurements["executions"].value == 0
-    assert result.measurements["mission_planner_calls"].value == 2
-    assert result.measurements["mission_auditor_calls"].value == 0
-    assert (tmp_path / "run.json").is_file()
-    assert (tmp_path / "summary.json").is_file()
-    assert (tmp_path / "cases" / "mission-protocol-stall.json").is_file()
 
 
 def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:

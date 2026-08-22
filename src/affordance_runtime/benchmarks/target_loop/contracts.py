@@ -36,7 +36,6 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution.contracts import ExecutionDiagnostic
 from affordance_runtime.goals.compiler import GoalCompiler, NotRequiredGoalCompiler
-from affordance_runtime.mission.contracts import ExecutionMode, MissionOutcome
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world.contracts import CoverageState
@@ -45,7 +44,9 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
-CASE_SCHEMA_VERSION = "target-loop-case.v10"
+CASE_SCHEMA_VERSION = "target-loop-case.v11"
+# v10 encoded the removed mission control path. Its files remain raw archival
+# JSON rather than a compatibility surface for the current exact-field decoder.
 SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
     {
         "target-loop-case.v6",
@@ -55,27 +56,6 @@ SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
         CASE_SCHEMA_VERSION,
     }
 )
-
-_MISSION_FAILURE_OUTCOMES = frozenset(
-    {
-        MissionOutcome.PLANNER_FAILURE,
-        MissionOutcome.AUDIT_UNAVAILABLE,
-        MissionOutcome.BOUNDARY_REJECTED,
-        MissionOutcome.EVIDENCE_GAP,
-        MissionOutcome.FINALIZATION_NOT_READY,
-        MissionOutcome.CANCELLED,
-        MissionOutcome.OPERATIONAL_FAILURE,
-        MissionOutcome.UNHANDLED_EPISODE_STATE,
-        MissionOutcome.ROUND_BUDGET_EXHAUSTED,
-    }
-)
-
-
-def mission_failure_code(outcome: str) -> str:
-    """Project typed mission terminal truth without letting cleanup replace it."""
-
-    return outcome if outcome in {str(item) for item in _MISSION_FAILURE_OUTCOMES} else ""
-
 
 _FACT_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
 _EXCEPTION_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -328,9 +308,6 @@ class BenchmarkComposition:
     risk_policy: RiskPolicy | None = None
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler | None = None
-    mission_planner: object | None = None
-    mission_auditor: object | None = None
-    execution_mode: ExecutionMode = ExecutionMode.STANDALONE
 
     @classmethod
     def atomic(
@@ -353,14 +330,6 @@ class BenchmarkComposition:
         )
 
     def __post_init__(self) -> None:
-        if not isinstance(self.execution_mode, ExecutionMode):
-            raise TypeError("benchmark execution mode must be typed")
-        if self.execution_mode is ExecutionMode.MISSION and self.mission_planner is None:
-            raise ValueError("mission composition requires a MilestonePlanner port")
-        if self.execution_mode is ExecutionMode.STANDALONE and (
-            self.mission_planner is not None or self.mission_auditor is not None
-        ):
-            raise ValueError("standalone composition cannot install mission roles")
         object.__setattr__(
             self,
             "required_decisions",
@@ -486,8 +455,6 @@ class BenchmarkCaseResult:
     watchdog_triggered: bool = False
     harness_integrity_code: str = ""
     harness_integrity_failures: int = 0
-    mission_outcome: str = ""
-    mission_last_ref: str = ""
     failure_facts: FailureFacts = field(default_factory=FailureFacts)
     case_schema_version: str = CASE_SCHEMA_VERSION
     suite_id: str = ""
@@ -531,8 +498,6 @@ class BenchmarkCaseResult:
             self.primary_diagnostic_ref,
             self.terminal_failure_code,
             self.harness_integrity_code,
-            self.mission_outcome,
-            self.mission_last_ref,
             self.case_schema_version,
             self.suite_id,
             self.profile_id,
@@ -628,8 +593,6 @@ class BenchmarkCaseResult:
             raise ValueError("benchmark action postcondition status is outside the closed vocabulary")
         if self.latest_action_evidence_method not in {"", *(str(item) for item in EvidenceMethod)}:
             raise ValueError("benchmark action verification method is outside the closed vocabulary")
-        if self.mission_outcome and self.mission_outcome not in {str(item) for item in MissionOutcome}:
-            raise ValueError("benchmark mission outcome is outside the closed vocabulary")
         if self.last_decision_kind:
             from affordance_runtime.agent.decisions import DecisionKind
 
@@ -908,19 +871,12 @@ _KNOWN_METRICS = (
             "completion_tokens",
             "total_tokens",
             "model_latency_ms",
-            "mission_planner_calls",
-            "mission_auditor_calls",
-            "final_response_boundary_admission_count",
-            "final_response_boundary_rejection_count",
+            "action_policy_ordinary_calls",
+            "action_policy_recovery_calls",
+            "representation_repair_calls",
             "stop_send_count",
             "post_stop_capture_count",
             "native_evaluator_count",
-            "optional_auditor_calls",
-            "mission_state_version",
-            "mission_working_outcomes",
-            "mission_accepted_facts",
-            "mission_boundary_rejections",
-            "mission_final_response_delivered",
             "click_calls",
             "already_satisfied_suppressions",
             "no_progress_terminations",

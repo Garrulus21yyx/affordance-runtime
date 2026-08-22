@@ -42,21 +42,6 @@ class RunTraceSink(Protocol):
         exception: str = "",
     ) -> None: ...
 
-    def mission_role_invocation(
-        self,
-        role: str,
-        call_index: int,
-        request: object,
-        result: object,
-        *,
-        trigger_kind: str,
-        execution_mode: str,
-        milestone_id: str,
-        mission_version: int,
-    ) -> None: ...
-
-    def mission_role_provider_attempt(self, attempt: object) -> None: ...
-
     def finalization_protocol(
         self,
         *,
@@ -74,18 +59,6 @@ class RunTraceSink(Protocol):
         checkpoint_id: str,
         persistence_status: str,
         persistence_error: str,
-    ) -> None: ...
-
-    def final_response_boundary_evaluated(
-        self,
-        *,
-        mission_version: int,
-        review_world_observation_id: str,
-        schema_digest: str,
-        cited_evidence_refs: tuple[str, ...],
-        admitted: bool,
-        rejection_code: str,
-        response_digest: str,
     ) -> None: ...
 
     def benchmark_lifecycle_phase(
@@ -151,25 +124,6 @@ class NullRunTraceSink:
     ) -> None:
         return None
 
-    def mission_role_invocation(
-        self,
-        role: str,
-        call_index: int,
-        request: object,
-        result: object,
-        *,
-        trigger_kind: str,
-        execution_mode: str,
-        milestone_id: str,
-        mission_version: int,
-    ) -> None:
-        del role, call_index, request, result, trigger_kind, execution_mode, milestone_id, mission_version
-        return None
-
-    def mission_role_provider_attempt(self, attempt: object) -> None:
-        del attempt
-        return None
-
     def finalization_protocol(
         self,
         *,
@@ -186,10 +140,6 @@ class NullRunTraceSink:
         return None
 
     def official_outcome_persistence(self, **event: object) -> None:
-        del event
-        return None
-
-    def final_response_boundary_evaluated(self, **event: object) -> None:
         del event
         return None
 
@@ -293,49 +243,6 @@ class RunTraceRecorder:
         payload = model_turn_payload(context, outcome, policy, exception=exception)
         payload["agent_context"] = _json_value(context, self.directory)
         self._emit("model_turn", **payload)
-
-    def mission_role_invocation(
-        self,
-        role: str,
-        call_index: int,
-        request: object,
-        result: object,
-        *,
-        trigger_kind: str,
-        execution_mode: str,
-        milestone_id: str,
-        mission_version: int,
-    ) -> None:
-        metadata = getattr(result, "metadata", None)
-        failure = getattr(result, "failure", None)
-        attempts = tuple(getattr(result, "attempts", ()))
-        output = getattr(result, "output", None)
-        if output is None and isinstance(result, Mapping):
-            output = result.get("decision")
-        self._emit(
-            "mission_role_invocation",
-            role=role,
-            call_index=call_index,
-            trigger_kind=trigger_kind,
-            execution_mode=execution_mode,
-            milestone_id=milestone_id,
-            mission_version=mission_version,
-            planner_request_mode=_enum_value(getattr(request, "mode", "")),
-            assessment=_enum_value(getattr(output, "assessment", "")),
-            route=_enum_value(getattr(output, "route", "")),
-            optional_auditor_trigger=(trigger_kind if role == "auditor" else ""),
-            input_tokens=int(getattr(metadata, "prompt_tokens", 0)),
-            output_tokens=int(getattr(metadata, "completion_tokens", 0)),
-            latency_ms=float(getattr(metadata, "latency_ms", 0.0)),
-            provider_attempts=len(attempts),
-            result="failure" if failure is not None else "accepted",
-            failure=_json_value(failure, self.directory),
-            role_request=_json_value(request, self.directory),
-            model_invocation=_json_value(result, self.directory),
-        )
-
-    def mission_role_provider_attempt(self, attempt: object) -> None:
-        self._emit("mission_role_provider_attempt", attempt=_json_value(attempt, self.directory))
 
     def finalization_protocol(
         self,
@@ -447,29 +354,6 @@ class RunTraceRecorder:
             cancel_grace_exceeded=cancel_grace_exceeded,
         )
 
-    def final_response_boundary_evaluated(
-        self,
-        *,
-        mission_version: int,
-        review_world_observation_id: str,
-        schema_digest: str,
-        cited_evidence_refs: tuple[str, ...],
-        admitted: bool,
-        rejection_code: str,
-        response_digest: str,
-    ) -> None:
-        self._emit(
-            "final_response_boundary_evaluated",
-            mission_version=mission_version,
-            review_world_observation_id=review_world_observation_id,
-            schema_digest=schema_digest,
-            cited_evidence_refs=cited_evidence_refs,
-            cited_evidence_count=len(cited_evidence_refs),
-            admitted=admitted,
-            rejection_code=rejection_code,
-            response_digest=response_digest,
-        )
-
     def step_completed(self, step_number: int, result: object) -> None:
         self._observation(getattr(result, "before_world", None))
         self._observation(getattr(result, "after_world", None))
@@ -484,7 +368,6 @@ class RunTraceRecorder:
         self._emit(
             "run_paused",
             status=_enum_value(getattr(state, "status", "")),
-            reason=_enum_value(getattr(state, "yield_reason", "")),
         )
 
     def run_resumed(self, kind: str, details: Mapping[str, object]) -> None:
@@ -727,7 +610,7 @@ class LangfuseOtelSink:
                 return
         if self.root is None or self._ended:
             return
-        if event_type in {"model_turn", "mission_role_invocation"}:
+        if event_type == "model_turn":
             self._record_model_event(event)
         else:
             projection = _langfuse_event_projection(event)
@@ -1148,8 +1031,6 @@ def _langfuse_client_from_environment() -> Any:
 
 def _langfuse_event_name(event: Mapping[str, object]) -> str:
     event_type = str(event.get("event", "runtime-event"))
-    if event_type == "mission_role_invocation":
-        return f"{event.get('role', 'mission-role')}-call"
     return {
         "model_turn": "action-policy-call",
         "step_completed": "runtime-step",
@@ -1166,8 +1047,6 @@ def _langfuse_observation_type(event: Mapping[str, object]) -> str:
 
 
 def _langfuse_generation_name(event: Mapping[str, object]) -> str:
-    if event.get("event") == "mission_role_invocation":
-        return f"{event.get('role', 'mission-role')}-generation"
     return "action-policy-generation"
 
 
@@ -1221,22 +1100,6 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
             "model_metadata",
             "visible_action_count",
             "exception",
-        ),
-        "mission_role_invocation": (
-            "role",
-            "call_index",
-            "trigger_kind",
-            "execution_mode",
-            "milestone_id",
-            "mission_version",
-            "assessment",
-            "route",
-            "input_tokens",
-            "output_tokens",
-            "latency_ms",
-            "provider_attempts",
-            "result",
-            "failure",
         ),
         "step_completed": ("step", "lineage", "result"),
         "observation": ("observation_id", "observation"),
@@ -1303,7 +1166,6 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
                     "status_before",
                     "status_after",
                     "feedback",
-                    "yield_reason",
                     "decision",
                     "action_outcome",
                     "task_evaluation",
@@ -1311,10 +1173,6 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
                 )
                 if key in result
             }
-    if event_type in {"model_turn", "mission_role_invocation"}:
-        active_milestone = _public_active_milestone(event)
-        if active_milestone:
-            projected["active_milestone"] = active_milestone
     return _bounded_remote_projection({**common, **projected})
 
 
@@ -1376,33 +1234,6 @@ def _langfuse_attempt_projection(
             "llm.output_messages": _external_projection(transcript.get("llm.output_messages", ())),
         }
     return projected
-
-
-def _public_active_milestone(event: Mapping[str, object]) -> dict[str, object]:
-    candidates: list[object] = []
-    context = event.get("agent_context")
-    if isinstance(context, Mapping):
-        task = context.get("task")
-        if isinstance(task, Mapping):
-            candidates.append(task.get("active_milestone"))
-    role_request = event.get("role_request")
-    if isinstance(role_request, Mapping):
-        candidates.append(role_request.get("active_milestone"))
-    milestone = next((item for item in candidates if isinstance(item, Mapping)), None)
-    if not isinstance(milestone, Mapping):
-        return {}
-    return {
-        key: _external_projection(milestone[key])
-        for key in (
-            "id",
-            "outcome",
-            "done_when",
-            "required_evidence",
-            "depends_on",
-            "final",
-        )
-        if key in milestone
-    }
 
 
 def _compact_world_summary(value: object) -> dict[str, object]:
@@ -1519,14 +1350,25 @@ def _step_lineage(result: object) -> dict[str, object]:
     batch = getattr(result, "execution_receipts", None)
     receipts = tuple(getattr(batch, "receipts", ()))
     request = getattr(receipts[-1], "request", None) if receipts else None
+    delta = getattr(result, "public_world_delta", None)
     return {
         "context_id": getattr(decision, "context_id", ""),
         "tool_call_id": getattr(decision, "tool_call_id", ""),
         "action_id": getattr(decision, "action_id", ""),
         "destination_id": getattr(decision, "destination_id", ""),
         "request_id": getattr(request, "request_id", ""),
-        "before_observation_id": getattr(getattr(result, "before_world", None), "observation_id", ""),
-        "after_observation_id": getattr(getattr(result, "after_world", None), "observation_id", ""),
+        "before_observation_id": getattr(
+            delta,
+            "before_observation_id",
+            getattr(getattr(result, "before_world", None), "observation_id", ""),
+        ),
+        "after_observation_id": getattr(
+            delta,
+            "after_observation_id",
+            getattr(getattr(result, "after_world", None), "observation_id", ""),
+        ),
+        "before_world_digest": getattr(delta, "before_world_digest", ""),
+        "after_world_digest": getattr(delta, "after_world_digest", ""),
     }
 
 
@@ -1613,7 +1455,6 @@ _REMOTE_PUBLIC_ID_KEYS = frozenset(
         "observation_id",
         "request_id",
         "run_id",
-        "milestone_id",
         "task_id",
     }
 )

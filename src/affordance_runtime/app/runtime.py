@@ -6,7 +6,6 @@ from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.agent.budgets import EpisodeBudget, StandaloneRunBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.decision_capability import (
@@ -20,7 +19,6 @@ from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisio
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
-from affordance_runtime.goals.plan import GoalPlanResolution
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
@@ -30,7 +28,6 @@ from affordance_runtime.task.intake import (
     TaskIntakeOutcome,
     ThinTaskIntake,
 )
-from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
 
 
@@ -69,6 +66,7 @@ class TargetRuntime:
     goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
+    official_outcome_sink: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
@@ -106,6 +104,7 @@ class TargetRuntime:
             goal_plan_boundary=self.goal_plan_boundary,
             runtime_controls=self.runtime_controls,
             episode_monitor=self.episode_monitor,
+            official_outcome_sink=self.official_outcome_sink,
         )
 
     def with_runtime_controls(
@@ -133,27 +132,6 @@ class TargetRuntime:
         task: TaskGoal,
     ) -> RunState:
         return await self.build_loop().initialize(environment, task)
-
-    async def initialize_from_world(
-        self,
-        task: TaskGoal,
-        initial: WorldObservation,
-        goal_resolution: GoalPlanResolution,
-        *,
-        budget: EpisodeBudget | StandaloneRunBudget,
-        yield_on_budget_exhaustion: bool,
-        working_facts=(),
-        active_milestone=None,
-    ) -> RunState:
-        return await self.build_loop().initialize_from_world(
-            task,
-            initial,
-            goal_resolution,
-            budget=budget,
-            yield_on_budget_exhaustion=yield_on_budget_exhaustion,
-            working_facts=working_facts,
-            active_milestone=active_milestone,
-        )
 
     async def continue_task(
         self,

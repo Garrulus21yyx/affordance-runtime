@@ -2,43 +2,49 @@
 
 ## Status
 
-Current status: **BrowserGym causal post-action transition REOPENED / live benchmark blocked**. The prior
-Planner/Auditor G0–G6 evidence remains historical evidence for that causal surface, but it is not whole-runtime
-closure; Planner lexical admission also has one separately tracked known gap.
+Current status: **single-ActionPolicy control-path migration and BrowserGym causal-transition automation present /
+change-first Observation Delivery and bounded AgentWorkspace convergence reopened / live closure gates blocked**. The mandatory
+Planner/Milestone/Evidence/Auditor production path has been removed. Prior Planner/Auditor G0–G6 evidence remains
+historical scoped evidence, not whole-runtime closure.
 
-This file is the sole normative architecture contract. Chronological run evidence, superseded designs, and prior
-reopenings are preserved in
+The accepted root-cause design and concrete removal plan are in
+[`single-action-policy-convergence.md`](single-action-policy-convergence.md). This file and that convergence contract
+describe the current single-policy production path and its pending C8–C9 convergence; milestone-path sections below
+are historical analysis, not a selectable path.
+Chronological run evidence, superseded designs, and prior reopenings are preserved in
 [`history/architecture-pre-milestone-convergence-2026-08-22.md`](history/architecture-pre-milestone-convergence-2026-08-22.md).
 They do not override this document.
 
-The convergence goal is a small, continuous GUI runtime with one execution authority. Long-horizon support adds a
-low-frequency outcome roadmap and verified cross-milestone state; it does not turn ordinary page transitions into
-Manager assignments.
+The target runtime is a small, continuous GUI runtime with one execution authority: optional start/revision-only
+GoalCompiler, one static advisory GoalPlan, and one ActionPolicy loop. Long-horizon behavior in the baseline comes from
+a bounded `AgentWorkspace` and optional exact working notes, not mandatory roadmap, milestone, Auditor, or MissionState
+transitions. The current code has not yet closed the `AgentWorkspace` and change-first delivery properties described
+below; implementation completion is therefore not verified closure.
 
-## End-to-end data flow
+Stages 1–2 of the C8–C9 migration are now implemented provider-free. The seven named contracts are frozen, and
+`WorldTransitionProjector` is the sole producer of `PublicWorldDelta`. `StepResult`, `ActionOutcome`, evaluation
+delivery, the existing `WorldDeliveryIndex`, `EpisodeMonitor`, compact continuity, and trace consume that delta object
+or its exact serialization. The later RegionVersion cache, change-first delivery order, total WorkspaceReducer,
+RequestAdmission, and Monitor-state migration remain open; this stage status does not authorize a live run.
+
+## Current end-to-end data flow
 
 ```text
 User request
 → TaskGoal
-→ [short task] optional GoalCompiler → advisory GoalPlan
-  [long task]  MilestonePlanner → advisory MilestoneRoadmap
-→ Supervisor selects one dependency-ready outcome milestone
-→ one continuous CoreAgentLoop episode
-    TaskGoal + current milestone + selected accepted facts
-    + fresh WorldDeliveryView + ActionCandidates + EvidenceCandidates
-    + episode working facts + compact history
+→ optional GoalCompiler once → static advisory GoalPlan
+→ one continuous CoreAgentLoop
+    TaskGoal + GoalPlan
+    + fresh change-first WorldDeliveryView + ActionCandidates
+    + bounded AgentWorkspace
     → ActionPolicy
-    → one semantic decision or bounded set_form_fields
+    → exactly one typed decision or bounded set_form_fields
     → Resolver → Admission → Binder → BrowserGym Executor
-    → ExecutionReceiptBatch → fresh WorldObservation
-    → StepResult → RunState.apply
-→ observable milestone outcome | typed needs_replan | hard cap | terminal failure
-→ deterministic evidence admission
-→ continue same milestone | admit formal result | optional Auditor only for semantic UNKNOWN
-→ MissionState
-→ mechanically select the next dependency-ready milestone
-→ MilestonePlanner only at START, typed NEEDS_REPLAN, or ROADMAP_EXHAUSTED_NOT_FINALIZABLE
-→ mechanical final-response admission
+    → ExecutionReceiptBatch → causal stable fresh WorldObservation
+    → WorldTransitionProjector → StepResult
+    → RunState.apply + total WorkspaceReducer + fixed-size EpisodeMonitor update
+    → TaskEvaluator + deterministic ordinary/recovery control
+→ representation-only final-response admission
 → one STOP → fresh acquire → native evaluator
 → durable case result
 → bounded cleanup and optional observability export
@@ -85,44 +91,109 @@ separates commit/load states and warns that time-based waits can observe stale s
 |---|---|---|
 | user intent | `TaskGoal` | plans may describe but never replace it |
 | current GUI truth | fresh `WorldObservation` | no downstream DOM/AX re-interpretation |
+| public transition between two Worlds | `WorldTransitionProjector` | ActionOutcome, Monitor, delivery, history, and trace consume one delta rather than rebuilding it |
 | currently legal semantic actions | complete `ActionSpace` | rendered text and model output cannot authorize actions |
+| current model delivery | `ObservationDeliveryStore` + deterministic `DeliveryPlanner` | delivery is a reversible read model and cannot alter World or ActionSpace |
+| model-facing current-run continuity | total `WorkspaceReducer` producing `AgentWorkspace` | raw history, provider messages, and trace cannot become a second workspace |
+| whole-request capacity | `RequestAdmission` | RunState, history projection, renderer, and provider Binder cannot own independent caps |
 | model-visible action contract | `PerTurnToolCatalog` | provider wire adapters only transport it |
 | private physical binding | Binder | model never submits selector, BID, or coordinates |
 | physical dispatch truth | `ExecutionReceiptBatch` | projection cannot reconstruct or overwrite receipts |
 | episode transition | validated `StepResult` through `RunState.apply` | history, monitor, trace, and benchmark only consume committed state |
-| milestone proposal | `MilestonePlanner` plus schema admission | advisory outcome description only |
-| verified cross-milestone state | `MissionState` through evidence admission | planner/executor claims cannot write it directly |
-| mission benchmark completion | native `TaskEvaluator` after one delivered STOP | planner, policy, auditor, and final response cannot self-certify |
+| advisory goal decomposition | start/revision-only `GoalCompiler` | `GoalPlan` is static guidance and has no progress state |
+| operational recovery | deterministic `EpisodeMonitor` + same `ActionPolicy` | monitor signals cannot claim task semantics |
+| benchmark completion | native `TaskEvaluator` after one delivered STOP | policy and final response cannot self-certify |
 | local trace | synchronous JSONL recorder | remote viewers are lossy and fail-open |
 | benchmark result | durable result store | cleanup/export cannot erase or revise it |
 
 ## World delivery and discovery
 
-The complete current World remains authoritative. Model delivery is a reversible projection, not destructive memory:
+The complete current World remains authoritative. Model delivery is a reversible, change-first projection, not
+destructive memory. This replaces the prior design in which every turn rebuilt a page projection and ranked a global
+pool of public scalar facts using task/plan lexical similarity.
 
 ```text
 BrowserGym raw observation
 → SurfaceAdapter
 → full WorldObservation
 → lossless supported-public ActorWorldSnapshot + complete ActionSpace
-→ WorldDeliveryIndex
-→ PageMap + ActiveView/SearchResults + DeliveryManifest
-→ ActionCandidates and EvidenceCandidates
+→ WorldTransitionProjector(before World, after World)
+→ PublicWorldDelta
+→ RegionVersionIndex
+→ ObservationDeliveryStore
+   - latest external GUI effect
+   - current exact findings
+   - current region versions
+   - cached page outline
+→ DeliveryPlanner
+→ LatestEffect + CurrentFindings + ChangedRegions + ActionCandidates + PageOutline + RecoveryDirectory
+→ DeliveryManifest
 ```
 
-The default first view contains:
+`PublicWorldDelta` is the one typed account of public change. It records added, removed, and modified public targets and
+facts, their stable region membership, and before/after World lineage. `ActionOutcome`, `EpisodeMonitor`, model
+delivery, compact continuity, and trace consume this object. They may select fields for their own views, but may not
+compute competing definitions of what changed.
+
+`RegionVersionIndex` upgrades the existing `WorldDeliveryIndex`; it is not a second region system. Each stable region
+key has structural/content digests, a monotonically increasing version within the current document lineage, exact
+target/fact membership, and public delivery cost. Unchanged regions reuse their cached outline. Changed regions alone
+are rebuilt. Navigation creates a new document lineage and invalidates generation-local refs and the old region cache.
+
+`ObservationDeliveryStore` owns the lifecycle of the latest external GUI effect. Local operations such as
+`read_region`, `search_page_content`, and `find_controls` do not clear or replace it. A later external GUI effect
+supersedes it; before replacement, its exact public additions/modifications are input to `WorkspaceReducer`, the sole
+owner that may retain them as a bounded ref-free `SemanticEvent`. The delivery store is not a memory framework,
+task-progress authority, or completion proof.
+
+`CurrentFindings` is derived only from exact current public World values and the current delta. Result/status/table
+cells, selected values, identifiers, amounts, dates, and full address strings rank ahead of generic DOM metadata;
+newly added or modified values receive the highest delivery priority. Fields such as `semantic.dom.attribute.*`,
+decorative class/color tokens, and generic inactive-state facts are folded by default but remain recoverable through
+their region. This is a delivery ordering rule, not semantic completion logic. Source-provided structure may identify a
+table cell or status; Runtime may not infer new business fields from unstructured text.
+
+The default delivery order is fixed:
+
+1. exact public additions/modifications caused by the latest GUI effect;
+2. current exact findings, with changed values first;
+3. exact contents or a bounded first page of changed regions;
+4. automatically retrieved current executable candidates;
+5. a cached functional PageOutline;
+6. a typed directory and cursors for every folded current or changed region.
+
+For example, after activating `Go`, the next request must put this before the ordinary page outline:
+
+```yaml
+LatestEffect:
+  caused_by: activate button "Go"
+  dispatch: sent
+  changed_regions: [Directions]
+  added_public_content:
+    - "Distance: 33km. Time: 0:32."
+    - "Pittsburgh International Airport, Findlay Township, Allegheny County, 15231"
+```
+
+This block preserves exact page text. Runtime does not infer that `33km` satisfies the task, split an address into
+state/postcode fields, or claim completeness. Those remain ActionPolicy judgments. If a changed region exceeds its
+delivery allocation, the first page plus `omitted_count` and a lossless cursor are mandatory; omission without a
+recovery handle is invalid.
+
+The default new-document view contains:
 
 - a compact page identity and functional-region map;
 - task-relevant navigation, dialog, form, result, and status structure with ancestor/label/header closure;
 - automatically retrieved top-k executable candidates;
-- newly exposed exact result facts and state evidence;
 - summaries plus typed recovery handles for folded regions.
 
 Large repeated siblings, boilerplate, duplicate parent/child text, decorative state, and inactive content are folded.
-Offered targets, decision-relevant state, labels, table headers, dialog ownership, and exact evidence required by the
-current milestone are never silently dropped. The PageMap remains the scoped delivery contract; a separately rendered
-full view is a non-authoritative cost baseline, not a fallback that may expand the executable set or remove recovery
-handles. Acceptance requires the compact view to beat that baseline while its manifest proves recoverability.
+Offered targets, changed public contents, decision-relevant state, labels, table headers, dialog ownership, and recovery
+handles are never silently dropped. A separately rendered full view remains a non-authoritative cost baseline, not a
+fallback that may expand the executable set.
+
+The old global `EvidenceCandidates` ranking path is removed at migration completion. Task-aware ranking remains useful
+for `ActionCandidates` and for ordering pages inside an already identified changed region, but it cannot decide whether
+a post-action public change is visible at all.
 
 Discovery has three distinct contracts:
 
@@ -138,11 +209,153 @@ as parallel compatibility tools. Empty results return typed scope and a mechanic
 Action candidates are generated automatically after every fresh World. A model should not have to read regions merely
 to discover a currently executable control. `find_controls` remains an explicit full-inventory fallback.
 
+### Open-source reuse boundary
+
+The target adopts three public designs without importing their competing browser and Agent authorities:
+
+| Reference implementation | Adopted contract or algorithm | Integration boundary |
+|---|---|---|
+| [Agent-E Change Observation](https://github.com/EmergenceAI/Agent-E/blob/master/ae/utils/dom_mutation_observer.py) | every external action returns a first-class account of newly appearing/changing page content | its MutationObserver may be an optional non-authoritative BrowserGym settle hint; the authoritative delta is still the full before/after World diff because Agent-E's observer does not cover every style/class/visibility transition |
+| [WebChallenger PageMem](https://github.com/jayoohwang1/webchallenger) | stable page sections, unchanged-section reuse, changed-section refresh, and selective exact expansion | implement on the existing `WorldDeliveryIndex`; do not import its Playwright session, Agent loop, LLM section summarizer, offline site memory, or compound-action authority |
+| [agent-browser snapshot diff](https://github.com/vercel-labs/agent-browser/blob/main/cli/src/native/diff.rs) | independent added/removed/changed snapshot comparison | use as a diagnostic/conformance oracle over serialized public snapshots; its line-level diff is not the production typed World authority and its browser session is never composed |
+
+BrowserGym remains the only capture/execution dependency. No second DOM walker, selector map, browser session, ref
+registry, action registry, or Agent loop is introduced. If external source code is copied rather than reimplemented
+against typed World objects, its MIT/Apache attribution and exact pinned revision must be recorded; the initial baseline
+requires no vendored external runtime code.
+
+## AgentWorkspace and request capacity
+
+The repeated history-capacity and post-result wandering failures share one cause: model continuity is currently an
+append-oriented rendering of `recent_steps`, while result salience, repetition folding, request fitting, and provider
+serialization are split across different owners. Raising the history byte limit or adding another prompt instruction
+cannot close that lifecycle.
+
+Each committed `StepResult` therefore has three independent consumers:
+
+```text
+StepResult
+├── Full Trace: complete and lossless
+├── WorkspaceReducer: total update of bounded model workspace
+└── EpisodeMonitor: fixed-size operational-stall state
+```
+
+The model-facing contract is:
+
+```text
+fresh public World + PublicWorldDelta
+→ CurrentFindings
+→ WorkspaceReducer(previous workspace, committed StepResult)
+→ AgentWorkspace within the allocation supplied by RequestAdmission
+```
+
+```python
+@dataclass(frozen=True)
+class CurrentFinding:
+    evidence_ref: str
+    predicate: str
+    exact_value: PublicScalar
+    source_context: str
+    coverage: CoverageState
+
+@dataclass(frozen=True)
+class SemanticEvent:
+    step_index: int
+    kind: Literal[
+        "gui_effect", "public_result", "working_fact", "typed_failure", "recovery"
+    ]
+    summary: str
+    exact_public_values: tuple[PublicValue, ...]
+
+@dataclass(frozen=True)
+class ActivitySummary:
+    family: Literal[
+        "read_region", "search_page_content", "find_controls", "wait", "no_effect"
+    ]
+    world_digest: str
+    attempt_count: int
+    new_finding_count: int
+    last_outcome: str
+
+@dataclass(frozen=True)
+class AgentWorkspace:
+    recent_steps: tuple[DetailedStep, ...]       # at most four
+    semantic_events: tuple[SemanticEvent, ...]  # fitted within allocation
+    activities: tuple[ActivitySummary, ...]     # aggregated
+    working_facts: tuple[WorkingFact, ...]
+```
+
+`CurrentFinding` accepts only values explicitly present in the public World or current public delta. A whole address
+remains a whole address unless the page separately exposes structured state/postcode values. Runtime never parses or
+guesses new business facts from a string. `SemanticEvent.summary` is a deterministic template over the committed
+operation/effect/failure; no per-step LLM summarizer is introduced.
+
+`WorkspaceReducer.reduce(previous, step, current_findings, allocation)` is a total deterministic function for every
+ordinary supported step. Its rules are:
+
+- keep the latest four steps in detailed form;
+- retain an exact bounded `SemanticEvent` for a real GUI effect, newly exposed public result, working-note change,
+  typed failure, or recovery transition;
+- aggregate ordinary reads/searches/waits with no new finding into `ActivitySummary` instead of appending history;
+- deterministically deduplicate repeated exact public values and fold older low-priority events within the supplied
+  allocation;
+- write every original step to Full Trace regardless of workspace retention.
+
+Forty searches with no information gain therefore occupy one activity record, not forty model-history entries.
+`WorkspaceReducer` does not throw an episode-history-capacity exception for ordinary growth. It may report that the
+irreducible workspace exceeds its assigned allocation, but only `RequestAdmission` converts that fact into the typed
+whole-request outcome `context_capacity` with `provider_attempts=0`.
+
+`RequestAdmission` is the sole capacity authority:
+
+```text
+model/provider window and configured request target
+→ allocate task/plan, current delivery, tools, images, recent detail, workspace
+→ WorkspaceReducer.fit(workspace allocation)
+→ estimate the complete request
+→ admit or typed context_capacity
+→ Provider Binder serializes the admitted request unchanged
+```
+
+The old independent model-history byte cap, RunState pre-validation cap, `EpisodeHistoryCapacityError`, and any provider
+Binder pruning/capacity decision are removed. The provider Binder does not summarize, trim, reinterpret, or retry a
+locally rejected request.
+
+`EpisodeMonitor` holds fixed-size digests and counters rather than reading retained model history:
+
+```text
+world digest
+current-findings digest
+working-facts digest
+observation-only stall family/count
+recovery count
+```
+
+Different read/search queries or regions are still one stall family when there is no World, finding, working-fact, or
+GUI-dispatch delta. The configured profile determines when feedback becomes RECOVERY and when recurrence becomes
+`CONTROL_STALLED`. Monitor terminates a control loop; it does not change `TaskEvaluation` to `BLOCKED` or claim that the
+user task is impossible. A recovery call receives current findings, the aggregated activity, fresh delivery, and the
+same `submit_final_response` option through the same ActionPolicy.
+
+Budget values are carried by one generic profile:
+
+```python
+@dataclass(frozen=True)
+class AgentLoopProfile:
+    max_policy_decisions: int
+    max_consecutive_observation_only: int
+    max_recoveries_per_stall: int
+```
+
+Values such as `30/8/1` are experiment-profile defaults. A larger number such as 100 may remain an abnormal global
+safety ceiling, but cannot authorize dozens of zero-information reads/searches. Profile values are not site/task
+branches and do not change the fixed contracts above.
+
 ## Tool and action path
 
 Tools express stable operations; current refs express operands. Executable targets use `E*`, public scalar evidence
 uses `F*`, read-only structural nodes use `N*`, and expandable regions use `R*`. Generation-local refs are valid only
-for the current context and are removed from compact history.
+for the current context and are removed before any StepResult is retained in AgentWorkspace.
 
 ```text
 Semantic Capability Registry
@@ -156,15 +369,15 @@ Semantic Capability Registry
 ```
 
 The provider layer may normalize wire representation and validate Pydantic models. It cannot repair an invalid target
-by choosing a different semantic target or operation. Grounding rejection returns typed feedback to the normal policy
-loop.
+by choosing a different semantic target or operation. A representation violation receives at most one same-turn,
+schema-only repair; a repeated violation becomes a typed policy failure and never creates a GUI step.
 
 `set_form_fields` is one optional compound semantic action for two to four already visible, independent form fields.
 The Binder resolves every field against the same current catalog, the executor dispatches in order, and the receipt
 batch retains complete/partial/unknown truth. It never includes submit, navigation, menu exploration, or arbitrary
 multi-tool execution. Those remain explicit policy decisions.
 
-## Milestone planning
+## Superseded milestone planning
 
 ### Reopening causal model
 
@@ -187,9 +400,10 @@ The defects are classified as follows:
 This is not an event-sourcing or workflow-platform change. It closes only the Planner schema/frequency and milestone
 admission/Auditor contract within the existing Supervisor and single CoreAgentLoop.
 
-Migration impact is bounded: new cases use `target-loop-case.v10` because the four former terminal Auditor failure
-labels collapse to `audit_unavailable`. Older evidence remains historical/read-only; production does not expose aliases
-that could recreate the removed control outcomes. No benchmark task data or MissionState migration is required.
+Historical migration impact was bounded; current cases use `target-loop-case.v11`. Pre-mission v6-v9 cases remain
+accepted by the legacy decoder. Mission-shaped v10 JSON is retained only as raw archival evidence and is intentionally
+not accepted by the exact-field decoder; “read-only” does not mean schema-compatible. Production exposes no aliases
+that can recreate the removed control outcomes.
 
 ### Contract
 
@@ -270,7 +484,7 @@ M4 produce the requested final list from accepted evidence
 Within one M2 episode the policy may open Directions, call one `set_form_fields(From, To)`, submit, read distance and
 address fields, pin exact evidence, and yield the milestone. Planner invocation between those steps is prohibited.
 
-## Episode context, working facts, and mission state
+## Superseded episode/milestone state path
 
 Three stores remain separate:
 
@@ -324,46 +538,62 @@ EvidenceBundle admission, while the Bundle independently fails closed if a produ
 
 ## Progress, recovery, and budgets
 
-`EpisodeMonitor` is deterministic and owns an episode-local route trail independent of model-facing history. Every
-committed step contributes a sample, including local reads/searches, protocol rejection, and no-dispatch outcomes.
+`EpisodeMonitor` is deterministic and owns a current-run route trail independent of model-facing history. Every
+committed GUI or local-tool step contributes a sample; provider representation failures remain at the provider
+boundary and do not become monitor-visible GUI steps.
 
 Progress distinguishes authoritative/structural result change from focus, hover, cursor, appearance, or screenshot-only
-change. Route regression compares page identity, formal task progress, newly visible public result evidence, and working
-facts. The first repeated route without new evidence produces RECOVER; the repeated cycle produces YIELD. A useful
-unpinned public result prevents a false no-progress decision.
+change. Route regression compares page identity, current findings, newly visible public result evidence, and working
+facts. The first repeated route without new evidence produces RECOVER; recurrence after recovery produces the typed
+control termination `CONTROL_STALLED`. Task evaluation remains `INCOMPLETE|UNKNOWN`; Monitor does not claim that the
+task is semantically blocked. A useful unremembered public result prevents a false no-progress decision.
 
 Machine repeat prevention uses one shared typed `AttemptSignature`; human recovery text is a separate field. Resolver
 or Admission produces typed operation/target rejection, Monitor accumulates it, and CoreLoop compares the same
 signature helper before dispatch.
 
-Runtime owns budgets:
+Runtime owns bounded execution budgets:
 
-- ordinary long-horizon episode target: enough turns to finish one milestone;
-- hard episode cap: 15 ActionPolicy turns;
+- one `AgentLoopProfile` with maximum policy decisions, maximum consecutive observation-only activity, and maximum
+  recoveries per stall;
+- one bounded hard ActionPolicy safety cap;
 - a compound form action counts as one policy decision and multiple conserved dispatch receipts;
 - recovery does not automatically expand the cap;
-- Planner cannot submit or rewrite the cap.
+- model output cannot submit or rewrite the cap.
 
-The hard cap is a safety boundary, not a reason to split coherent work into eight-turn assignments.
+The hard cap is a safety boundary, not a second planning authority.
 
 ## Provider, schema, and reasoning boundary
 
-PydanticAI owns supported provider message/tool transport and Pydantic validation. A mature local JSON parser/repair
-may repair only representation defects such as fences, brackets, commas, and quoting. Semantic repair is a single
-bounded model call. Unsupported or still-invalid output becomes a typed role failure.
+PydanticAI owns supported provider message/tool transport and Pydantic validation. The current ToolCatalog closes the
+available output schemas. One parseable invalid call admits at most one same-turn representation-pruning repair that
+may delete invalid fields but cannot add or change any effect-bearing leaf. A multiple-call envelope may repair only
+to one exactly unchanged parseable member of the rejected set. Zero-call and wholly unparseable envelopes fail typed without
+repair because no semantic identity exists to preserve. Unsupported or still-invalid output becomes a typed policy
+failure.
 
 Role reasoning is explicit rather than globally disabled:
 
 - ordinary ActionPolicy: low/off extended thinking with a small tool-call output budget;
 - genuine ambiguity or typed recovery: one bounded deliberate policy call;
-- MilestonePlanner: low-frequency deliberate reasoning, with structured answer budget protected from reasoning where
-  the provider shares one token pool;
-- syntactic/schema repair: thinking off and narrow output;
+- representation repair: thinking off and narrow output;
 - mechanical boundaries: no model call.
 
-Read-only Planner and Auditor transport failures receive one bounded retry with no GUI replay. Every physical attempt
-records its actual reasoning mode, output limit, origin, duration, and typed result. Exhausted schema repair exposes at
-most four `{field_path, code, attempt, phase}` diagnostics; raw rejected values are not copied into public diagnostics.
+Provider transport retry remains separate from semantic policy calls and never replays GUI effects. Every physical
+attempt records its actual reasoning mode, output limit, origin, duration, phase, and typed result. Exhausted repair
+exposes bounded field-path/code diagnostics; raw rejected values are not copied into public diagnostics.
+
+Exception classification is closed at the provider boundary:
+
+| Owner failure | Public policy failure |
+|---|---|
+| `GroundedToolResolutionError` | `invalid_tool_arguments` |
+| `ModelRequestCapacityError` / RequestAdmission rejection | `context_capacity` |
+| provider transport failure | `provider_unavailable` |
+| unexpected Runtime failure | `internal_error` |
+
+A broad `except (ValueError, TypeError) -> invalid_tool_arguments` mapping is unsupported because it hides workspace,
+serialization, and internal defects as model mistakes.
 
 ### Current SOTA alignment (reviewed 2026-08-22)
 
@@ -378,26 +608,29 @@ most four `{field_path, code, attempt, phase}` diagnostics; raw rejected values 
 - [BrowserGym's current environment implementation](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/env.py)
   applies `pre_observation_delay` before extracting an observation. That is useful compatibility pacing but, by
   inference, cannot identify which dispatch owns a later navigation and is not accepted as causal proof here.
-- [Plan-and-Act (ICML 2025)](https://proceedings.mlr.press/v267/erdogan25a.html) separates a structured high-level
-  Planner from an environment-specific Executor. This supports keeping roadmap outcomes separate from continuous GUI
-  action selection. Its dynamic replanning after HTML changes is a research design, not a production assurance
-  requirement; the project’s lower-frequency trigger set is an engineering inference chosen to preserve one action
-  authority and reduce provider cost.
 - [WorkArena / BrowserGym (ICML 2024)](https://proceedings.mlr.press/v235/drouin24a.html) evaluates realistic knowledge
   work through rich actions and multimodal observations, supporting validation on actual browser tasks rather than
   planner-shaped fixtures.
 - [WebArena (ICLR 2024)](https://openreview.net/forum?id=Jjn5IFp3qP) evaluates functional correctness of resulting site
   state and permits multiple valid action paths. This supports keeping native evaluation authoritative and forbids
   Auditor/Planner claims or reference action sequences from becoming completion truth.
+- [Agent-E](https://arxiv.org/abs/2407.13032) makes action-caused DOM changes first-class model feedback. Its released
+  observer is a useful change-notification reference but is not complete enough to replace typed before/after World
+  comparison.
+- [WebChallenger](https://arxiv.org/abs/2606.10423) uses stable page sections, cached summaries, and changed-section
+  refresh. The target adopts this incremental-delivery shape on the existing RegionIndex without its separate
+  Playwright/Agent/memory stack or additional per-step summarizer calls.
+- [agent-browser diffing](https://agent-browser.dev/diffing) provides compact structural snapshot comparisons. It is
+  used as an independent diagnostic reference rather than a second browser or production World authority.
 
 ## Results, persistence, cleanup, and observability
 
-Task completion does not require an LLM Finalizer. When admitted public evidence supports the requested answer, a
-`FinalResponse` cites current public evidence refs; the Resolver privately maps them to canonical evidence and the
-mechanical final-response boundary validates current lineage and output shape. Public output schemas use one finite
+Task completion does not require an LLM Finalizer. `submit_final_response` may optionally cite current or explicitly
+remembered public evidence refs; the mechanical final-response boundary validates lineage and output shape without
+claiming semantic completeness. Public output schemas use one finite
 closed subset (`type`, object properties/required/additionalProperties, arrays/items/bounds, scalar constraints, and
-bounded `oneOf`/`anyOf`); unknown keywords or malformed combinations fail closed before value validation. Core yields this proposal without
-writing `DONE`, then Supervisor sends STOP once, acquires one post-STOP World, and invokes the native evaluator once.
+bounded `oneOf`/`anyOf`); unknown keywords or malformed combinations fail closed before value validation. Core sends
+STOP once, acquires one post-STOP World, invokes the native evaluator once, and does not resume ActionPolicy afterward.
 `SENT_UNKNOWN` is evaluated from the acquired post-state without replaying STOP. `NOT_SENT` admits neither a
 post-STOP capture nor native evaluation, even if an inconsistent adapter returns an acquisition. Standalone atomic
 tasks may still terminate directly from their native evaluator; the STOP gate is the mission benchmark protocol.
@@ -423,11 +656,12 @@ bounded before `put_nowait` to an isolated child process. Queue full/closed/brok
 flush, close, and repeated close are total fail-open conditions. No Langfuse future, socket, or shutdown may block the
 Supervisor or result commit.
 
-## Implementation migration
+## Superseded mission-path implementation inventory
 
-The provider-free implementation migration is complete. The active contract map is:
+The provider-free implementation of the mission path was completed before the single-ActionPolicy redesign reopened
+the architecture. This map records the contracts C1–C6 removed or replaced; none is a current production owner:
 
-| Superseded contract | Current owner and contract |
+| Superseded contract | Historical owner and contract |
 |---|---|
 | Manager page/control assignment | `MilestonePlanner` proposes one bounded `MilestoneRoadmap` |
 | mutable subtask status | admitted `MissionState` outcomes; roadmap remains advisory |
@@ -453,9 +687,11 @@ stage and is not implied by provider-free implementation completion.
 - no long-term cross-case recall during W1b/W2;
 - no production-grade workflow platform, event-sourcing system, or generalized ledger.
 
-## Closure criteria
+## Superseded mission-path closure criteria (historical)
 
-Implementation is not closure. The milestone architecture can close only when:
+The milestone architecture is no longer a closure target. The following criteria are retained as historical evidence
+and regression input; active closure is defined by C0–C9 in the linked convergence document, including change-first
+delivery and bounded workspace convergence:
 
 1. production search finds no old assignment contract or compatibility alias;
 2. provider-free replay proves successful continuous routes are not split at ordinary page/state changes;

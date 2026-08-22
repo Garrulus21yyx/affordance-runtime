@@ -12,6 +12,7 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
+from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import (
     NullRunTraceSink,
     RunTraceSink,
@@ -49,6 +50,7 @@ def compose_target_runtime(
     goal_plan_boundary: GoalPlanBoundary | None = None,
     runtime_controls: tuple[str, ...] = (),
     episode_monitor: object | None = None,
+    official_outcome_sink: object | None = None,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -67,7 +69,8 @@ def compose_target_runtime(
         goal_compiler=goal_compiler or UnavailableGoalCompiler(),
         goal_plan_boundary=goal_plan_boundary or GoalPlanBoundary(),
         runtime_controls=runtime_controls,
-        episode_monitor=episode_monitor,
+        episode_monitor=episode_monitor if episode_monitor is not None else EpisodeMonitor(),
+        official_outcome_sink=official_outcome_sink,
     )
 
 

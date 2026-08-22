@@ -31,7 +31,7 @@ class NeverPolicy:
 
 
 class UnusedActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         del task, before, request, result, after
         raise AssertionError("terminal initial observation must not evaluate an action")
 

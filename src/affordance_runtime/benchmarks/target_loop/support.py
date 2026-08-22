@@ -125,7 +125,7 @@ class SharedTaskEvaluator:
 
 
 class CurrentFactActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         del task, result
         before_values = {fact.predicate: fact.value for fact in before.facts}
         changed = next((fact for fact in after.facts if before_values.get(fact.predicate) != fact.value), None)

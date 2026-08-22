@@ -9,8 +9,8 @@ from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.episode_history import render_episode_history
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.decisions import (
-    PinFactResult,
     ReadRegionResult,
+    RememberFactResult,
     ToolRejectedResult,
 )
 from affordance_runtime.agent.run_state import (
@@ -176,7 +176,6 @@ def test_irreducible_history_overflow_yields_with_typed_reason() -> None:
 
     assert accepted is False
     assert state.status is RunStatus.RUNNING
-    assert state.yield_reason is None
     assert state.recent_steps == ()
 
 
@@ -184,9 +183,9 @@ def test_working_fact_is_runtime_value_and_local_tool_has_zero_gui_execution() -
     world = shared_world("observation:pin", False)
     record = WorldEvidenceIndex.from_observation(world).records[0]
     fact = WorkingFact("saved_enabled", record, 0, "reuse later")
-    decision = PinFactResult(
+    decision = RememberFactResult(
         "context:test",
-        "pin_fact",
+        "remember_fact",
         {"key": "saved_enabled", "evidence_ref": "F1", "purpose": "reuse later"},
         {"status": "pinned", "key": "saved_enabled"},
         "provider-call:pin",

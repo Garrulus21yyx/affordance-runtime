@@ -20,16 +20,15 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     LocalToolResult,
-    ProtocolFeedback,
     RequestActionPage,
     RequestObservation,
     SelectAction,
     SetFormFields,
     Wait,
-    YieldMilestone,
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import ActionOutcome
+from affordance_runtime.immutable import to_json_compatible
 
 _MAX_STRING = 240
 
@@ -47,8 +46,6 @@ def project_step_result(result: StepResult) -> AgentTurnView:
             RequestActionPage,
             AskUser,
             LocalToolResult,
-            ProtocolFeedback,
-            YieldMilestone,
             FinalResponse,
             Wait,
             Abort,
@@ -247,18 +244,6 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         return {"question": decision.question, "requested_fields": decision.requested_fields}
     if isinstance(decision, LocalToolResult):
         return project_public_value(decision.arguments)
-    if isinstance(decision, ProtocolFeedback):
-        return {
-            "kind": decision.feedback_kind.value,
-            "call_count": decision.call_count,
-            "detail": decision.detail,
-        }
-    if isinstance(decision, YieldMilestone):
-        return {
-            "kind": decision.yield_kind,
-            "reason": _bounded(decision.reason),
-            "reason_code": decision.reason_code.value if decision.reason_code is not None else "",
-        }
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content)}
     if isinstance(decision, Wait):
@@ -275,26 +260,20 @@ def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str
         else None
     )
     transition = dict(_target_snapshot(result, receipt.request.intent.target_id if receipt else ""))
-    transition["before_world"] = result.before_world.observation_id
-    transition["after_world"] = result.after_world.observation_id
-    transition["before_world_fingerprint"] = _world_digest(result.before_world)
-    transition["after_world_fingerprint"] = _world_digest(result.after_world)
+    delta = result.public_world_delta
+    assert delta is not None
+    transition["before_world"] = delta.before_observation_id
+    transition["after_world"] = delta.after_observation_id
+    transition["before_world_fingerprint"] = delta.before_world_digest
+    transition["after_world_fingerprint"] = delta.after_world_digest
+    transition["public_world_delta"] = _historical_value(to_json_compatible(delta))
     if action is not None:
         transition["observed_change"] = action.observed_change.value
         transition["evidence_method"] = action.evidence_method.value
-        for key in ("fact_changes", "screenshot_changed", "target_changed", "structural_world_changed"):
+        for key in ("screenshot_changed", "target_changed", "structural_world_changed"):
             if key in action.evidence:
                 transition[key] = _historical_value(project_public_value(action.evidence[key]))
     return transition
-
-
-def _world_digest(world) -> str:
-    try:
-        from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
-
-        return public_world_semantic_digest(world)
-    except Exception:
-        return ""
 
 
 def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]:
@@ -319,8 +298,6 @@ def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]
 def _control_tool_name(decision: AgentDecision) -> str:
     if isinstance(decision, LocalToolResult):
         return decision.tool_name
-    if isinstance(decision, ProtocolFeedback):
-        return "protocol_feedback"
     return decision.kind.value
 
 

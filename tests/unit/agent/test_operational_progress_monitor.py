@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import fields
-
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpaceBuilder
 from affordance_runtime.agent import ReadRegionResult, SearchPageContentResult, SelectAction
 from affordance_runtime.agent.attempt_signature import public_attempt_signature
 from affordance_runtime.agent.context import AgentTurnView
 from affordance_runtime.agent.core_loop import _repeats_recovery_signature
+from affordance_runtime.agent.monitor import EpisodeMonitor
+from affordance_runtime.agent.recovery import (
+    EpisodeMonitorEvent,
+    EpisodeMonitorRecommendation,
+    RecoveryKind,
+    RecoverySignal,
+)
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation import (
     ActionOutcome,
@@ -21,15 +26,6 @@ from affordance_runtime.execution import (
     DispatchStatus,
     ExecutionOutcome,
     ExecutionReceiptBatch,
-)
-from affordance_runtime.mission import (
-    EpisodeMonitor,
-    EpisodeMonitorEvent,
-    EpisodeMonitorRecommendation,
-    Milestone,
-    PlannerRecoveryView,
-    RecoveryKind,
-    RecoverySignal,
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import AcquisitionOrigin, SemanticTarget, StateFact
@@ -356,7 +352,7 @@ def test_typed_attempt_signature_blocks_exact_rejected_repeat() -> None:
     )
 
 
-def test_visual_and_focus_only_change_recover_second_then_yield_after_recovery() -> None:
+def test_visual_and_focus_only_change_recover_second_then_block_after_recovery() -> None:
     before = _world("observation:before", focused=False)
     after = _world("observation:after", focused=True)
     step = _step(
@@ -376,7 +372,7 @@ def test_visual_and_focus_only_change_recover_second_then_yield_after_recovery()
     assert EpisodeMonitorEvent.NO_OBSERVED_CHANGE in first.events
     assert EpisodeMonitorEvent.STATE_CHANGED not in first.events
     assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert third.recommendation is EpisodeMonitorRecommendation.YIELD
+    assert third.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert second.recovery_signal is not None
     assert third.recovery_signal is not None
     assert second.recovery_signal.stable_signature == third.recovery_signal.stable_signature
@@ -552,46 +548,6 @@ def test_recovery_signature_is_ref_free_bounded_and_deterministic() -> None:
     assert "observation:" not in encoded
     assert "binding:" not in encoded
     assert "request:" not in encoded
-
-
-def test_planner_recovery_view_preserves_typed_signal_without_inventing_outcome_proposal() -> None:
-    before = _world("observation:before")
-    after = _world("observation:after", focused=True)
-    step = _step(
-        before,
-        after,
-        observed_change=ObservedChange.CHANGED,
-        postcondition=LocalPostconditionStatus.UNKNOWN,
-        method=EvidenceMethod.VISUAL_DIFF,
-    )
-    monitor = EpisodeMonitor()
-    monitor.evaluate(step, (), "fresh:one")
-    recovered = monitor.evaluate(step, (), "fresh:two")
-    assert recovered.recovery_signal is not None
-    milestone = Milestone("route_result", "Requested route result is available", "Route result is visible")
-
-    view = PlannerRecoveryView(
-        "needs_replan",
-        True,
-        milestone,
-        recovered.recovery_signal,
-    )
-
-    assert view.recovery_signal is recovered.recovery_signal
-    assert tuple(item.name for item in fields(PlannerRecoveryView)) == (
-        "exit_kind",
-        "world_changed",
-        "prior_milestone",
-        "recovery_signal",
-        "attempted_modes",
-        "outcome_proposal",
-        "working_proposal_feedback",
-    )
-    assert view.outcome_proposal == ""
-    encoded = str(view)
-    assert "trajectory" not in encoded
-    assert "screenshot" not in encoded
-    assert "provider_reasoning" not in encoded
 
 
 def test_model_history_world_fingerprints_are_not_route_authority() -> None:

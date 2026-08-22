@@ -1,11 +1,14 @@
 """Production mechanical action-outcome projection from current public world state."""
 
-from dataclasses import replace
-
 from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     ParameterContractKind,
     VerificationFamily,
+)
+from affordance_runtime.agent.context.world_transition import (
+    PublicFactChange,
+    PublicWorldDelta,
+    WorldTransitionProjector,
 )
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
@@ -16,34 +19,42 @@ from affordance_runtime.evaluation.contracts import (
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world import CoverageState
-from affordance_runtime.world.evidence_refs import canonical_artifact_ref
-from affordance_runtime.world.public_semantic_digest import target_semantics
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 from affordance_runtime.world.source_profile import assurance_satisfies
 
 
 class ProductionActionOutcomeProjector:
     """Project observable local transitions; never infer task progress."""
 
-    async def evaluate(self, task, before, request, result, after) -> ActionOutcome:
+    async def evaluate(
+        self,
+        task,
+        before,
+        request,
+        result,
+        after,
+        public_world_delta: PublicWorldDelta | None = None,
+    ) -> ActionOutcome:
         del task, result
+        public_world_delta = public_world_delta or WorldTransitionProjector().project(before, after)
         definition = INTERACTION_CAPABILITY_REGISTRY.require(request.intent.semantic_action)
         family = request.selection.verification_contract.family
         if family is VerificationFamily.NAVIGATION_CONTEXT:
-            return _evaluate_activate(before, request, after)
+            return _evaluate_activate(before, request, after, public_world_delta)
         if family is not VerificationFamily.VALUE_STATE:
-            return _evaluation(request, before, after)
+            return _evaluation(request, before, after, public_world_delta=public_world_delta)
         if definition.parameter_contract not in {
             ParameterContractKind.TEXT,
             ParameterContractKind.OPTION_VALUE,
         }:
-            return _evaluation(request, before, after)
+            return _evaluation(request, before, after, public_world_delta=public_world_delta)
         parameter_name = definition.parameter_names[0]
         requested = request.intent.parameters.get(parameter_name)
         if not isinstance(requested, str):
-            return _evaluation(request, before, after)
+            return _evaluation(request, before, after, public_world_delta=public_world_delta)
         current = _current_value_evidence(after, request.intent.target_id)
         if current is None:
-            return _evaluation(request, before, after)
+            return _evaluation(request, before, after, public_world_delta=public_world_delta)
         after_value, evidence_ref = current
         before_value = _single_value(before, request.intent.target_id)
         if after_value == requested:
@@ -53,9 +64,13 @@ class ProductionActionOutcomeProjector:
         effect = (
             ObservedChange.UNKNOWN
             if before_value is _MISSING
-            else ObservedChange.UNCHANGED
-            if after_value == before_value
             else ObservedChange.CHANGED
+            if _fact_predicate_changed(
+                public_world_delta,
+                request.intent.target_id,
+                "value",
+            )
+            else ObservedChange.UNCHANGED
         )
         return _evaluation(
             request,
@@ -65,6 +80,7 @@ class ProductionActionOutcomeProjector:
             postcondition,
             EvidenceMethod.NATIVE,
             (evidence_ref,),
+            public_world_delta=public_world_delta,
         )
 
 
@@ -73,8 +89,7 @@ _MISSING = object()
 
 def _single_value(observation, target_id: str):
     values = tuple(
-        fact.value for fact in observation.facts
-        if fact.subject_id == target_id and fact.predicate == "value"
+        fact.value for fact in observation.facts if fact.subject_id == target_id and fact.predicate == "value"
     )
     return values[0] if len(values) == 1 else _MISSING
 
@@ -82,14 +97,12 @@ def _single_value(observation, target_id: str):
 def _current_value_evidence(observation, target_id: str) -> tuple[object, str] | None:
     if target_id not in {item.target_id for item in observation.targets}:
         return None
-    if any(
-        item.subject_id == target_id and item.predicate == "value"
-        for item in observation.conflicts
-    ):
+    if any(item.subject_id == target_id and item.predicate == "value" for item in observation.conflicts):
         return None
     index = WorldEvidenceIndex.from_observation(observation)
     records = tuple(
-        item for item in index.records
+        item
+        for item in index.records
         if item.kind == "fact" and item.subject_id == target_id and item.predicate == "value"
     )
     if len(records) != 1:
@@ -103,8 +116,7 @@ def _current_value_evidence(observation, target_id: str) -> tuple[object, str] |
         source is None
         or source.coverage != CoverageState.COMPLETE
         or not any(
-            item.source_observation_id == source.observation_id
-            and item.coverage == CoverageState.COMPLETE
+            item.source_observation_id == source.observation_id and item.coverage == CoverageState.COMPLETE
             for item in observation.source_manifest
         )
         or not evidence_source_is_current(record, observation)
@@ -122,6 +134,8 @@ def _evaluation(
     local_postcondition=LocalPostconditionStatus.UNKNOWN,
     evidence_method=EvidenceMethod.NONE,
     refs=(),
+    *,
+    public_world_delta: PublicWorldDelta,
 ) -> ActionOutcome:
     reason = _reason(observed_change, local_postcondition, evidence_method)
     evidence: dict[str, object] = {}
@@ -131,12 +145,20 @@ def _evaluation(
         evidence["local_postcondition"] = local_postcondition.value
     if evidence_method is not EvidenceMethod.NONE:
         evidence["evidence_method"] = evidence_method.value
-    changes = _fact_changes(before, after, tuple(refs))
+    changes = _fact_change_payloads(public_world_delta, tuple(refs))
     if changes:
         evidence["fact_changes"] = changes
     return ActionOutcome(
-        request.request_id, before.observation_id, after.observation_id,
-        observed_change, local_postcondition, evidence_method, reason, tuple(refs), evidence,
+        request.request_id,
+        before.observation_id,
+        after.observation_id,
+        observed_change,
+        local_postcondition,
+        evidence_method,
+        reason,
+        tuple(refs),
+        evidence,
+        public_world_delta,
     )
 
 
@@ -146,18 +168,19 @@ def _reason(effect, postcondition, method) -> str:
     return f"local action outcome: effect={effect.value}, postcondition={postcondition.value}, method={method.value}"
 
 
-def _evaluate_activate(before, request, after) -> ActionOutcome:
-    target_changed = _target_semantics(before, request.intent.target_id) != _target_semantics(
-        after, request.intent.target_id,
+def _evaluate_activate(before, request, after, public_world_delta: PublicWorldDelta) -> ActionOutcome:
+    target_changed = any(
+        item.target_id == request.intent.target_id
+        for item in public_world_delta.target_changes
     )
-    target_refs = _changed_target_fact_refs(
-        before,
+    target_refs = _changed_fact_refs(
+        public_world_delta,
         after,
-        request.intent.target_id,
+        target_id=request.intent.target_id,
     )
-    structural_refs = target_refs or _changed_world_fact_refs(before, after)
+    structural_refs = target_refs or _changed_fact_refs(public_world_delta, after)
     if structural_refs:
-        fact_changes = _fact_changes(before, after, structural_refs)
+        fact_changes = _fact_change_payloads(public_world_delta, structural_refs)
         return ActionOutcome(
             request.request_id,
             before.observation_id,
@@ -176,33 +199,24 @@ def _evaluate_activate(before, request, after) -> ActionOutcome:
             ),
             structural_refs,
             {
-                "verification_profile": (
-                    "structural_target_diff_v1"
-                    if target_refs
-                    else "structural_world_diff_v1"
-                ),
+                "verification_profile": ("structural_target_diff_v1" if target_refs else "structural_world_diff_v1"),
                 "expected_effects": request.selection.semantic_effects,
                 "observed_change": ObservedChange.CHANGED.value,
                 "target_changed": bool(target_refs),
                 "structural_world_changed": True,
                 "fact_changes": fact_changes,
             },
+            public_world_delta,
         )
     before_digests = _screenshot_digests(before)
     after_digests = _screenshot_digests(after)
     evidence_ref = _screenshot_evidence_ref(after)
     if not before_digests or not after_digests or evidence_ref is None:
-        return _evaluation(request, before, after)
+        return _evaluation(request, before, after, public_world_delta=public_world_delta)
     screenshot_changed = before_digests != after_digests
-    observed_change = (
-        ObservedChange.CHANGED
-        if screenshot_changed or target_changed
-        else ObservedChange.UNCHANGED
-    )
+    observed_change = ObservedChange.CHANGED if screenshot_changed or target_changed else ObservedChange.UNCHANGED
     local_postcondition = (
-        LocalPostconditionStatus.UNKNOWN
-        if request.intent.expected_outcome
-        else LocalPostconditionStatus.NOT_APPLICABLE
+        LocalPostconditionStatus.UNKNOWN if request.intent.expected_outcome else LocalPostconditionStatus.NOT_APPLICABLE
     )
     reason = (
         "public screenshot or target semantics changed after activation"
@@ -226,26 +240,27 @@ def _evaluate_activate(before, request, after) -> ActionOutcome:
             "screenshot_changed": screenshot_changed,
             "target_changed": target_changed,
         },
+        public_world_delta,
     )
 
 
-def _changed_target_fact_refs(before, after, target_id: str) -> tuple[str, ...]:
-    before_values = {
-        fact.predicate: fact.value
-        for fact in before.facts
-        if fact.subject_id == target_id
+def _changed_fact_refs(
+    public_world_delta: PublicWorldDelta,
+    after,
+    *,
+    target_id: str = "",
+) -> tuple[str, ...]:
+    index = WorldEvidenceIndex.from_observation(after)
+    changed_refs = {
+        canonical_fact_ref(item.after.fact_id)
+        for item in public_world_delta.fact_changes
+        if item.after is not None and item.predicate != "focused" and (not target_id or item.subject_id == target_id)
     }
-    if not before_values:
-        return ()
-    index = WorldEvidenceIndex.from_observation(after)
     refs = tuple(
         record.evidence_ref
         for record in index.records
         if record.kind == "fact"
-        and record.subject_id == target_id
-        and record.predicate != "focused"
-        and record.predicate in before_values
-        and record.value != before_values[record.predicate]
+        and record.evidence_ref in changed_refs
         and evidence_source_is_current(record, after)
         and assurance_satisfies(record.source_assurance, "structural")
         and _source_coverage_complete(record.source_observation_id, after)
@@ -253,54 +268,41 @@ def _changed_target_fact_refs(before, after, target_id: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(refs))
 
 
-def _changed_world_fact_refs(before, after) -> tuple[str, ...]:
-    before_values: dict[tuple[str, str], tuple[object, ...]] = {}
-    for fact in before.facts:
-        before_values.setdefault((fact.subject_id, fact.predicate), ())
-        before_values[(fact.subject_id, fact.predicate)] += (fact.value,)
-    conflicted = {(item.subject_id, item.predicate) for item in after.conflicts}
-    index = WorldEvidenceIndex.from_observation(after)
-    refs = tuple(
-        record.evidence_ref
-        for record in index.records
-        if record.kind == "fact"
-        and record.predicate != "focused"
-        and (record.subject_id, record.predicate) not in conflicted
-        and before_values.get((record.subject_id, record.predicate), ()) != (record.value,)
-        and evidence_source_is_current(record, after)
-        and assurance_satisfies(record.source_assurance, "structural")
-        and _source_coverage_complete(record.source_observation_id, after)
+def _fact_predicate_changed(
+    public_world_delta: PublicWorldDelta,
+    subject_id: str,
+    predicate: str,
+) -> bool:
+    return any(
+        item.subject_id == subject_id and item.predicate == predicate
+        for item in public_world_delta.fact_changes
     )
-    return tuple(dict.fromkeys(refs))
 
 
-def _fact_changes(before, after, evidence_refs: tuple[str, ...]) -> tuple[dict[str, object], ...]:
-    """Describe public fact transitions already proved by current after evidence."""
+def _fact_change_payloads(
+    public_world_delta: PublicWorldDelta,
+    evidence_refs: tuple[str, ...],
+) -> tuple[dict[str, object], ...]:
+    selected = set(evidence_refs)
+    return tuple(
+        _fact_change_payload(item)
+        for item in public_world_delta.fact_changes
+        if item.after is not None and canonical_fact_ref(item.after.fact_id) in selected
+    )
 
-    index = WorldEvidenceIndex.from_observation(after)
-    changes: list[dict[str, object]] = []
-    for evidence_ref in evidence_refs:
-        record = index.resolve_record(evidence_ref)
-        if record is None or record.kind != "fact":
-            continue
-        before_values = tuple(
-            fact.value
-            for fact in before.facts
-            if fact.subject_id == record.subject_id and fact.predicate == record.predicate
-        )
-        if before_values == (record.value,):
-            continue
-        change: dict[str, object] = {
-            "subject_id": record.subject_id,
-            "predicate": record.predicate,
-            "after": record.value,
-        }
-        if len(before_values) == 1:
-            change["before"] = before_values[0]
-        else:
-            change["before_values"] = before_values
-        changes.append(change)
-    return tuple(changes)
+
+def _fact_change_payload(change: PublicFactChange) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "kind": change.kind.value,
+        "subject_id": change.subject_id,
+        "predicate": change.predicate,
+        "after": change.after.value if change.after is not None else None,
+        "before_region_key": change.before_region_key,
+        "after_region_key": change.after_region_key,
+    }
+    if change.before is not None:
+        payload["before"] = change.before.value
+    return payload
 
 
 def _source_coverage_complete(source_observation_id: str, observation) -> bool:
@@ -312,40 +314,21 @@ def _source_coverage_complete(source_observation_id: str, observation) -> bool:
         source is not None
         and source.coverage == CoverageState.COMPLETE
         and any(
-            item.source_observation_id == source.observation_id
-            and item.coverage == CoverageState.COMPLETE
+            item.source_observation_id == source.observation_id and item.coverage == CoverageState.COMPLETE
             for item in observation.source_manifest
         )
     )
 
 
 def _screenshot_digests(observation) -> tuple[str, ...]:
-    return tuple(sorted({
-        media.sha256
-        for source in observation.sources
-        for media in source.media
-        if media.kind == "screenshot"
-    }))
+    return tuple(
+        sorted({media.sha256 for source in observation.sources for media in source.media if media.kind == "screenshot"})
+    )
 
 
 def _screenshot_evidence_ref(observation) -> str | None:
     source = next(
-        (
-            source for source in observation.sources
-            if "screenshot_semantic_state" in source.artifacts and source.media
-        ),
+        (source for source in observation.sources if "screenshot_semantic_state" in source.artifacts and source.media),
         None,
     )
-    return (
-        canonical_artifact_ref(source.observation_id, "screenshot_semantic_state")
-        if source is not None
-        else None
-    )
-
-
-def _target_semantics(observation, target_id: str):
-    target = next((item for item in observation.targets if item.target_id == target_id), None)
-    if target is None:
-        return None
-    state = {key: value for key, value in target.state.items() if key != "focused"}
-    return target_semantics(replace(target, state=state))
+    return canonical_artifact_ref(source.observation_id, "screenshot_semantic_state") if source is not None else None

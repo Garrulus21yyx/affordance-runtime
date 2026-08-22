@@ -23,8 +23,8 @@ def _class_owners(name: str) -> tuple[str, ...]:
 def test_workflow_task_plan_owner_is_physically_absent() -> None:
     assert _class_owners("TaskPlan") == ()
     assert _class_owners("TaskProgram") == ()
-    assert _class_owners("Milestone") == ("mission/contracts.py",)
-    assert _class_owners("MilestoneRoadmap") == ("mission/contracts.py",)
+    assert _class_owners("Milestone") == ()
+    assert _class_owners("MilestoneRoadmap") == ()
     assert not (RUNTIME / "task_plan_contracts.py").exists()
     assert not (RUNTIME / "task" / "task_program.py").exists()
 
@@ -196,15 +196,16 @@ def test_step_result_has_one_root_owned_projection_chain() -> None:
     assert "ModelPort" not in projection and "provider" not in projection
 
 
-def test_final_response_is_an_evidence_citing_boundary_yield_not_task_completion() -> None:
+def test_final_response_runs_direct_native_finalization_without_local_semantic_proof() -> None:
     loop = (RUNTIME / "agent" / "core_loop.py").read_text(encoding="utf-8")
     decisions = (RUNTIME / "agent" / "decisions.py").read_text(encoding="utf-8")
     branch = loop.split("case DecisionKind.SUBMIT_FINAL_RESPONSE:", 1)[1].split(
         "case DecisionKind.ASK_USER:", 1
     )[0]
-    assert "RunStatus.YIELDED" in branch
-    assert "RunStatus.DONE" not in branch
-    assert "evidence_refs: tuple[str, ...]" in decisions
+    assert "await self._finalize" in branch
+    assert "_final_response_available" not in loop
+    assert "environment.finalize" in loop
+    assert "evidence_refs: tuple[str, ...] = ()" in decisions
 
 
 def test_named_local_tool_semantics_remain_catalog_owned() -> None:
@@ -226,7 +227,7 @@ def test_normative_architecture_contains_the_single_authority_map() -> None:
     assert "## Authority" in architecture
     assert "| current GUI truth | fresh `WorldObservation` |" in architecture
     assert "| model-visible action contract | `PerTurnToolCatalog` |" in architecture
-    assert "| mission benchmark completion | native `TaskEvaluator` after one delivered STOP |" in architecture
-    assert "Standalone atomic" in architecture
-    assert "tasks may still terminate directly from their native evaluator" in architecture
+    convergence = (ROOT / "docs" / "single-action-policy-convergence.md").read_text(encoding="utf-8")
+    assert "| official completion | native evaluator after one STOP |" in convergence
+    assert "one `CoreAgentLoop`" in convergence
     assert not (ROOT / "docs" / "task-execution-authority-map.md").exists()

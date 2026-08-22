@@ -10,7 +10,6 @@ from time import perf_counter
 
 from affordance_runtime.agent.decisions import (
     LocalToolResult,
-    ProtocolFeedback,
     RequestObservation,
     SelectAction,
     SetFormFields,
@@ -21,7 +20,6 @@ from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigi
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
-from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.execution import (
     ActionError,
     ActionResult,
@@ -43,6 +41,9 @@ from affordance_runtime.world import AcquisitionStatus, ObservationAcquisition
 @dataclass
 class BenchmarkInstrumentation:
     policy_calls: int = 0
+    action_policy_ordinary_calls: int = 0
+    action_policy_recovery_calls: int = 0
+    representation_repair_calls: int = 0
     goal_compiler_calls: int = 0
     goal_compiler_provider_attempts: int = 0
     goal_compiler_schema_repair_count: int = 0
@@ -147,37 +148,8 @@ class BenchmarkInstrumentation:
         self.trace_recorder.model_turn(context, outcome, policy, exception=exception)
         self._policy_trace.append(_policy_trace_event(self.policy_calls, context, outcome, policy, exception=exception))
 
-    def mission_role_invocation(
-        self,
-        role,
-        call_index,
-        request,
-        result,
-        *,
-        trigger_kind,
-        execution_mode,
-        milestone_id,
-        mission_version,
-    ) -> None:
-        self.trace_recorder.mission_role_invocation(
-            role,
-            call_index,
-            request,
-            result,
-            trigger_kind=trigger_kind,
-            execution_mode=execution_mode,
-            milestone_id=milestone_id,
-            mission_version=mission_version,
-        )
-
-    def mission_role_provider_attempt(self, attempt) -> None:
-        self.trace_recorder.mission_role_provider_attempt(attempt)
-
     def finalization_protocol(self, **counts) -> None:
         self.trace_recorder.finalization_protocol(**counts)
-
-    def final_response_boundary_evaluated(self, **event) -> None:
-        self.trace_recorder.final_response_boundary_evaluated(**event)
 
     def benchmark_lifecycle_phase(self, phase: str, **event) -> None:
         self.trace_recorder.benchmark_lifecycle_phase(phase, **event)
@@ -339,7 +311,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     decision = outcome
     if isinstance(
         decision,
-        (SelectAction, SetFormFields, RequestObservation, LocalToolResult, ProtocolFeedback),
+        (SelectAction, SetFormFields, RequestObservation, LocalToolResult),
     ):
         event["outcome"] = decision.kind.value
         event["decision"] = _decision_trace(decision)
@@ -417,7 +389,6 @@ def _decision_trace(decision):
         "call_count",
         "detail",
         "feedback_kind",
-        "yield_kind",
         "form_key",
     ):
         item = getattr(decision, name, None)
@@ -480,10 +451,17 @@ class CountingActionOutcomeProjector:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
 
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         self.instrumentation.action_outcome_projector_calls += 1
         try:
-            return await self.wrapped.evaluate(task, before, request, result, after)
+            return await self.wrapped.evaluate(
+                task,
+                before,
+                request,
+                result,
+                after,
+                public_world_delta,
+            )
         except Exception as exc:
             self.instrumentation.record_failure(
                 CaseFailureOrigin.ACTION_EVALUATION,
@@ -497,7 +475,6 @@ class CountingActionOutcomeProjector:
 class CountingTaskEvaluator:
     wrapped: object
     instrumentation: BenchmarkInstrumentation
-    official_outcome_sink: object | None = None
 
     async def evaluate(self, task, observation):
         self.instrumentation.task_evaluator_calls += 1
@@ -510,11 +487,6 @@ class CountingTaskEvaluator:
                 exc,
             )
             raise
-        if self.official_outcome_sink is not None and evaluation.status in {
-            TaskEvaluationStatus.COMPLETE,
-            TaskEvaluationStatus.BLOCKED,
-        }:
-            self.official_outcome_sink.native_evaluator_returned(evaluation)
         return evaluation
 
 
@@ -533,6 +505,14 @@ class CountingDecisionPort:
     async def generate(self, request):
         outcome = await self.wrapped.generate(request)
         attempts = tuple(outcome.attempts)
+        context = getattr(request, "agent_context", None)
+        if getattr(context, "control_feedback", {}):
+            self.instrumentation.action_policy_recovery_calls += 1
+        else:
+            self.instrumentation.action_policy_ordinary_calls += 1
+        self.instrumentation.representation_repair_calls += int(
+            any(getattr(attempt, "phase", "") == "representation_repair" for attempt in attempts)
+        )
         diagnostics = outcome.diagnostics
         model_calls = int(diagnostics.get("policy_model_call_count", len(attempts)))
         physical_attempts = int(diagnostics.get("provider_physical_attempt_count", 0))
@@ -759,15 +739,13 @@ def _configured_retry_count(port: object) -> int | None:
 def instrument_task_evaluator(
     evaluator,
     instrumentation: BenchmarkInstrumentation,
-    *,
-    official_outcome_sink: object | None = None,
 ):
     if isinstance(evaluator, ProductionTaskEvaluator) and evaluator.semantic_judge is not None:
         judge = evaluator.semantic_judge
         if isinstance(judge, ModelPortSemanticCriterionJudge):
             judge = replace(judge, port=CountingModelPort(judge.port, instrumentation))
         evaluator = replace(evaluator, semantic_judge=CountingSemanticJudge(judge, instrumentation))
-    return CountingTaskEvaluator(evaluator, instrumentation, official_outcome_sink)
+    return CountingTaskEvaluator(evaluator, instrumentation)
 
 
 def _executed_count(environment) -> int | None:

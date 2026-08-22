@@ -75,7 +75,6 @@ def test_each_action_protocol_declares_its_exact_supported_decisions() -> None:
         "count_children",
         "wait",
         "abort",
-        "yield_milestone",
     }
 
 

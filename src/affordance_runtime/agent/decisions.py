@@ -40,27 +40,6 @@ class AbortCategory(StrEnum):
     INTERNAL = "internal"
 
 
-class YieldMilestoneKind(StrEnum):
-    OUTCOME_PROPOSED = "outcome_proposed"
-    STALLED = "stalled"
-    BLOCKED = "blocked"
-    CAPABILITY_GAP = "capability_gap"
-    NEEDS_REPLAN = "needs_replan"
-
-
-class ReplanReasonCode(StrEnum):
-    DELIVERY_NOT_OBSERVABLE = "delivery_not_observable"
-    MILESTONE_TASK_MISMATCH = "milestone_task_mismatch"
-    CAPABILITY_UNAVAILABLE = "capability_unavailable"
-
-
-class ProtocolFeedbackKind(StrEnum):
-    MULTIPLE_TOOL_CALLS = "multiple_tool_calls"
-    OUTPUT_TRUNCATED = "output_truncated"
-    EMPTY_FINAL_CONTENT = "empty_final_content"
-    JSON_INVALID = "json_invalid"
-
-
 class DecisionKind(StrEnum):
     """The sole formal vocabulary for policy and Runtime-local decisions."""
 
@@ -69,13 +48,11 @@ class DecisionKind(StrEnum):
     READ_REGION = "read_region"
     FIND_CONTROLS = "find_controls"
     SEARCH_PAGE_CONTENT = "search_page_content"
-    PIN_FACT = "pin_fact"
-    YIELD_MILESTONE = "yield_milestone"
+    REMEMBER_FACT = "remember_fact"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
     ABORT = "abort"
     REQUEST_OBSERVATION = "request_observation"
-    PROTOCOL_FEEDBACK = "protocol_feedback"
     TOOL_REJECTED = "tool_rejected"
     WAIT = "wait"
 
@@ -273,8 +250,8 @@ class SearchPageContentResult(LocalToolResult):
 
 
 @dataclass(frozen=True)
-class PinFactResult(LocalToolResult):
-    kind: ClassVar[DecisionKind] = DecisionKind.PIN_FACT
+class RememberFactResult(LocalToolResult):
+    kind: ClassVar[DecisionKind] = DecisionKind.REMEMBER_FACT
 
 
 @dataclass(frozen=True)
@@ -283,69 +260,20 @@ class ToolRejectedResult(LocalToolResult):
 
 
 @dataclass(frozen=True)
-class ProtocolFeedback:
-    """No-dispatch feedback for one invalid provider action envelope."""
-
-    kind: ClassVar[DecisionKind] = DecisionKind.PROTOCOL_FEEDBACK
-
-    context_id: str
-    feedback_kind: ProtocolFeedbackKind
-    call_count: int = 0
-    detail: str = ""
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        if not isinstance(self.feedback_kind, ProtocolFeedbackKind):
-            object.__setattr__(self, "feedback_kind", ProtocolFeedbackKind(self.feedback_kind))
-        if not 0 <= self.call_count <= 32:
-            raise ValueError("protocol feedback call count is outside bounds")
-        if len(self.detail) > 240:
-            raise ValueError("protocol feedback detail exceeds its bound")
-
-
-@dataclass(frozen=True)
-class YieldMilestone:
-    """Local episode exit request; never dispatches to the environment."""
-
-    kind: ClassVar[DecisionKind] = DecisionKind.YIELD_MILESTONE
-
-    context_id: str
-    yield_kind: str
-    reason: str
-    tool_call_id: str = ""
-    reason_code: ReplanReasonCode | None = None
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        _require_tool_call_id(self.tool_call_id)
-        try:
-            kind = YieldMilestoneKind(self.yield_kind)
-        except ValueError as exc:
-            raise ValueError("yield_milestone kind is unsupported") from exc
-        _require_bounded(self.reason, _MAX_REASON, "yield reason")
-        if self.reason_code is not None and not isinstance(self.reason_code, ReplanReasonCode):
-            object.__setattr__(self, "reason_code", ReplanReasonCode(self.reason_code))
-        if (kind is YieldMilestoneKind.NEEDS_REPLAN) != (self.reason_code is not None):
-            raise ValueError("needs_replan requires exactly one typed reason code")
-
-
-@dataclass(frozen=True)
 class FinalResponse:
-    """Evidence-citing response proposal admitted before native final evaluation."""
+    """One bounded response submitted directly to the native evaluator path."""
 
     kind: ClassVar[DecisionKind] = DecisionKind.SUBMIT_FINAL_RESPONSE
 
     context_id: str
     content: str
-    evidence_refs: tuple[str, ...]
+    evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_bounded(self.content, MAX_FINAL_RESPONSE_CHARS, "final response")
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
         _require_collection(self.evidence_refs, "final response evidence refs", item_limit=200)
-        if not self.evidence_refs:
-            raise ValueError("final response requires current evidence citations")
         if len(set(self.evidence_refs)) != len(self.evidence_refs):
             raise ValueError("final response evidence citations must be unique")
 
@@ -391,10 +319,8 @@ AgentDecision: TypeAlias = (
     | AskUser
     | ReadRegionResult
     | SearchPageContentResult
-    | PinFactResult
+    | RememberFactResult
     | ToolRejectedResult
-    | ProtocolFeedback
-    | YieldMilestone
     | FinalResponse
     | Wait
     | Abort

@@ -114,7 +114,7 @@ class SharedTaskEvaluator:
 
 
 class SharedActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         del task
         changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
         if result.dispatch_status == DispatchStatus.SENT_UNKNOWN and not changed:

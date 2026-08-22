@@ -1,6 +1,11 @@
 """Public contracts for the single thin GUI-agent Runtime."""
 
-from affordance_runtime.agent.budgets import EpisodeBudget, StandaloneRunBudget
+from affordance_runtime.agent.budgets import StandaloneRunBudget
+from affordance_runtime.agent.context.world_region_index import RegionVersion
+from affordance_runtime.agent.context.world_transition import (
+    PublicWorldDelta,
+    WorldTransitionProjector,
+)
 from affordance_runtime.agent.core_loop import CoreAgentLoop, CoreLoopStartError
 from affordance_runtime.agent.decision_capability import (
     ALL_DECISION_CAPABILITIES,
@@ -16,11 +21,8 @@ from affordance_runtime.agent.decisions import (
     DecisionKind,
     FinalResponse,
     LocalToolResult,
-    PinFactResult,
-    ProtocolFeedback,
-    ProtocolFeedbackKind,
     ReadRegionResult,
-    ReplanReasonCode,
+    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
@@ -28,29 +30,34 @@ from affordance_runtime.agent.decisions import (
     SetFormFields,
     ToolRejectedResult,
     Wait,
-    YieldMilestone,
-    YieldMilestoneKind,
 )
+from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.agent.run_state import EpisodeYieldReason, RunState, RunStatus, StepResult
+from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.working_facts import WorkingFact
+from affordance_runtime.agent.workspace import (
+    ActivitySummary,
+    AgentWorkspace,
+    CurrentFinding,
+    SemanticEvent,
+)
 
 __all__ = [
     "ALL_DECISION_CAPABILITIES",
     "Abort",
     "AgentFailureCode",
+    "AgentLoopProfile",
+    "AgentWorkspace",
+    "ActivitySummary",
     "AskUser",
     "LocalToolResult",
-    "PinFactResult",
-    "ProtocolFeedback",
-    "ProtocolFeedbackKind",
+    "RememberFactResult",
     "CoreAgentLoop",
     "CoreLoopStartError",
+    "CurrentFinding",
     "DecisionCapability",
     "DecisionKind",
-    "EpisodeBudget",
-    "EpisodeYieldReason",
     "FailureKind",
     "FailureStage",
     "FinalResponse",
@@ -58,13 +65,15 @@ __all__ = [
     "RequestActionPage",
     "RequestObservation",
     "ReadRegionResult",
-    "ReplanReasonCode",
+    "RegionVersion",
     "RunState",
     "RunStatus",
     "RuntimeFailure",
+    "PublicWorldDelta",
     "SelectAction",
     "SetFormFields",
     "SearchPageContentResult",
+    "SemanticEvent",
     "StepResult",
     "StandaloneRunBudget",
     "ToolRejectedResult",
@@ -73,6 +82,5 @@ __all__ = [
     "UnsupportedCompositionError",
     "Wait",
     "WorkingFact",
-    "YieldMilestone",
-    "YieldMilestoneKind",
+    "WorldTransitionProjector",
 ]

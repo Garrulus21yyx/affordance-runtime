@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -7,10 +7,8 @@ from affordance_runtime.actions import ActionBinding, ActionRisk
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    EpisodeBudget,
-    EpisodeYieldReason,
-    PinFactResult,
     ReadRegionResult,
+    RememberFactResult,
     RequestActionPage,
     RunStatus,
     SearchPageContentResult,
@@ -18,7 +16,6 @@ from affordance_runtime.agent import (
     Wait,
     WorkingFact,
 )
-from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.decisions import AbortCategory, FormFieldUpdate, SetFormFields
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.policy import AgentDecisionPorts
@@ -51,7 +48,7 @@ from affordance_runtime.execution.contracts import (
     SessionHealth,
     SessionHealthStatus,
 )
-from affordance_runtime.goals import NotRequired, NotRequiredGoalCompiler
+from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.task import LoopBudget, RiskProfile, TaskGoal
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import (
@@ -63,7 +60,6 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
-from affordance_runtime.world.acquisition import ObservationRequestKind, WorldObservationRequest
 
 
 def _world(observation_id: str, enabled: bool) -> WorldObservation:
@@ -384,7 +380,7 @@ class CoreTaskEvaluator:
 
 
 class CoreActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         del task, result
         return ActionOutcome(
             request.request_id,
@@ -399,7 +395,7 @@ class CoreActionOutcomeProjector:
 
 
 class DispatchPostconditionProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         del task, result
         changed = before.targets[0].state.get("enabled") != after.targets[0].state.get("enabled")
         return ActionOutcome(
@@ -467,7 +463,6 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
             )
 
     asyncio.run(scenario())
-
 
 def test_failed_causal_post_acquisition_stops_before_next_policy_turn() -> None:
     async def scenario() -> None:
@@ -628,9 +623,9 @@ def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_ep
                 record = context.evidence_index.resolve_record(canonical)
                 assert record is not None
                 fact = WorkingFact("route_result", record, context.current_step_index, "retain route result")
-                return PinFactResult(
+                return RememberFactResult(
                     context.context_id,
-                    "pin_fact",
+                    "remember_fact",
                     {"key": "route_result", "evidence_ref": candidate.fact_ref},
                     {"key": "route_result", "value": fact.value},
                     working_fact=fact,
@@ -678,7 +673,7 @@ def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_ep
         assert [step.semantic_action for step in state.recent_steps][-3:] == [
             "search_page_content",
             "read_region",
-            "pin_fact",
+            "remember_fact",
         ]
         assert isinstance(state.last_step.decision, Abort)
 
@@ -1034,7 +1029,7 @@ def test_sent_unknown_is_committed_once_without_automatic_replay() -> None:
     asyncio.run(scenario())
 
 
-def test_failed_recapture_with_live_session_yields_environment_recovery() -> None:
+def test_failed_recapture_with_live_session_blocks_without_replay() -> None:
     async def scenario() -> None:
         runtime = TargetRuntime(
             AgentDecisionPorts(CorePolicy("first_action")),
@@ -1068,8 +1063,7 @@ def test_failed_recapture_with_live_session_yields_environment_recovery() -> Non
         environment.session_health = session_health
         state = await runtime.run_task(environment, _task())
 
-        assert state.status is RunStatus.YIELDED
-        assert state.yield_reason is EpisodeYieldReason.ENVIRONMENT_RECOVERY
+        assert state.status is RunStatus.BLOCKED
         assert environment.execute_calls == 1
         assert environment.capture_calls == 1
         assert state.last_step is not None
@@ -1255,7 +1249,7 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             return Abort(context.context_id, "feedback projection verified", AbortCategory.USER_REQUEST)
 
     class NoEffectActionOutcomeProjector:
-        async def evaluate(self, task, before, request, result, after):
+        async def evaluate(self, task, before, request, result, after, public_world_delta):
             del task, result
             return ActionOutcome(
                 request.request_id,
@@ -1289,99 +1283,5 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
         assert state.last_step is not None
         assert state.last_step.policy_observation is not None
         assert environment.execute_calls == 1
-
-    asyncio.run(scenario())
-
-
-def test_executor_episode_can_yield_and_reinitialize_from_fresh_world_without_reset() -> None:
-    @dataclass
-    class EpisodePolicy:
-        actions: list[str]
-
-        async def decide(self, context):
-            action = self.actions.pop(0)
-            if action == "activate":
-                return SelectAction(
-                    context.context_id,
-                    context.actions.options[0].action_id,
-                    tool_call_id="provider-call:episode-1",
-                )
-            return Abort(context.context_id, "episode observed fresh world", AbortCategory.USER_REQUEST)
-
-    @dataclass(frozen=True)
-    class RecordingContextBuilder(ContextBuilder):
-        seen_observation_ids: list[str] = field(default_factory=list)
-
-        def build(self, task, observation, action_space, task_evaluation, *args, **kwargs):
-            self.seen_observation_ids.append(observation.observation_id)
-            return super().build(task, observation, action_space, task_evaluation, *args, **kwargs)
-
-    @dataclass
-    class ExplodingGoalCompiler:
-        calls: int = 0
-
-        async def compile(self, request):
-            del request
-            self.calls += 1
-            raise AssertionError("episode initialization must not call GoalCompiler")
-
-    async def scenario() -> None:
-        policy = EpisodePolicy(["activate", "abort"])
-        context_builder = RecordingContextBuilder()
-        compiler = ExplodingGoalCompiler()
-        runtime = TargetRuntime(
-            AgentDecisionPorts(policy),
-            CoreActionOutcomeProjector(),
-            CoreTaskEvaluator(),
-            context_builder=context_builder,
-            goal_compiler=compiler,
-        )
-        loop = runtime.build_loop()
-        task = _task()
-        goal_resolution = NotRequired(task.revision, "planner_supplied_episode_goal")
-        environment = ScriptedEnvironment(
-            initial_observation=_world("before", False),
-            post_observations=(_world("after-action", False),),
-            independent_observations=(_world("fresh-current", False),),
-            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
-        )
-
-        initial = await environment.reset(task)
-        assert initial.observation is not None
-        first = await loop.initialize_from_world(
-            task,
-            initial.observation,
-            goal_resolution,
-            budget=EpisodeBudget.explicit(1),
-            yield_on_budget_exhaustion=True,
-        )
-        yielded = await loop.continue_run(environment, task, first)
-
-        assert yielded.status is RunStatus.YIELDED
-        assert yielded.current_world.observation_id == "after-action"
-        assert yielded.recent_steps[-1].semantic_action == "activate"
-        assert environment.reset_calls == 1
-
-        refreshed = await environment.capture(
-            WorldObservationRequest(
-                ObservationRequestKind.POLICY_REQUEST,
-                "fresh world before next executor episode",
-            )
-        )
-        assert refreshed.observation is not None
-        second = await loop.initialize_from_world(
-            task,
-            refreshed.observation,
-            goal_resolution,
-            budget=EpisodeBudget.explicit(1),
-            yield_on_budget_exhaustion=True,
-        )
-        resumed = await loop.continue_run(environment, task, second)
-
-        assert resumed.status is RunStatus.CANCELLED
-        assert resumed.current_world.observation_id == "fresh-current"
-        assert environment.reset_calls == 1
-        assert context_builder.seen_observation_ids == ["before", "fresh-current"]
-        assert compiler.calls == 0
 
     asyncio.run(scenario())

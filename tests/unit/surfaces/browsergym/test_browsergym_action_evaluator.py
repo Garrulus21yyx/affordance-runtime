@@ -300,10 +300,13 @@ def test_activate_target_state_change_keeps_public_before_after_fact_delta() -> 
     button = next(item for item in before.targets if item.role == "button")
     assert evaluation.evidence["fact_changes"] == (
         {
+            "kind": "modified",
             "subject_id": button.target_id,
             "predicate": "active",
             "before": False,
             "after": True,
+            "before_region_key": evaluation.public_world_delta.fact_changes[0].before_region_key,
+            "after_region_key": evaluation.public_world_delta.fact_changes[0].after_region_key,
         },
     )
 

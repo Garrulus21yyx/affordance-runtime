@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,7 +12,6 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
 )
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
 from affordance_runtime.benchmarks.webarena_verified import WA_W1_SMOKE_CASES
-from affordance_runtime.mission import ExecutionMode
 
 
 def test_manifest_digest_covers_profile_seed_and_expectations() -> None:
@@ -43,7 +43,7 @@ def test_manifest_rejects_duplicate_or_mismatched_cases() -> None:
         replace(manifest, cases=(replace(manifest.cases[0], suite_id="wrong"),))
 
 
-def test_webarena_verified_w1b_manifest_is_explicit_planner_guided_without_auditor(monkeypatch) -> None:
+def test_webarena_verified_w1b_manifest_uses_one_action_policy_and_goal_compiler(monkeypatch) -> None:
     manifest = get_manifest("webarena-verified-w1b", "model-long-horizon", 20260818)
 
     assert manifest.suite_id == "webarena-verified-w1b"
@@ -53,22 +53,14 @@ def test_webarena_verified_w1b_manifest_is_explicit_planner_guided_without_audit
     ]
     assert all(case.expected_terminal_statuses == (RunStatus.DONE,) for case in manifest.cases)
     assert all(case.timeout_s == 900.0 for case in manifest.cases)
-    assert all("mission_planner_calls" in case.required_measurements for case in manifest.cases)
-    assert all(
-        any(
-            expectation.metric == "mission_planner_calls"
-            and expectation.operator is MetricExpectationOperator.MAX
-            and expectation.value == 8
-            for expectation in case.metric_expectations
-        )
-        for case in manifest.cases
-    )
-    monkeypatch.setattr(target_cases, "model_policy_from_environment", lambda *_args, **_kwargs: object())
-    manager = object()
+    assert all("planner_calls" not in case.required_measurements for case in manifest.cases)
+    assert all("auditor_calls" not in case.required_measurements for case in manifest.cases)
+    policy = object()
+    compiler = object()
     monkeypatch.setattr(
         target_cases,
-        "mission_planner_from_environment",
-        lambda *_args, **_kwargs: manager,
+        "model_roles_from_environment",
+        lambda *_args, **_kwargs: SimpleNamespace(action_policy=policy, goal_compiler=compiler),
     )
     for case in manifest.cases:
         holder = next(
@@ -78,6 +70,6 @@ def test_webarena_verified_w1b_manifest_is_explicit_planner_guided_without_audit
         )
         holder["evaluator"] = object()
         composition = case.composition_factory(None)
-        assert composition.execution_mode is ExecutionMode.MISSION
-        assert composition.mission_planner is manager
-        assert composition.mission_auditor is None
+        assert composition.policy is policy
+        assert composition.goal_compiler is compiler
+        assert not hasattr(composition, "mission_planner")

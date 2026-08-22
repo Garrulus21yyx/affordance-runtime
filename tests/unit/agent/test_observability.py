@@ -22,7 +22,6 @@ from affordance_runtime.agent.observability import (
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
-from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
@@ -76,6 +75,7 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
             "observation",
             "goal_compiler_completed",
             "model_turn",
+            "native_evaluator_returned",
             "observation",
             "step_completed",
             "run_finished",
@@ -155,28 +155,6 @@ def test_cancelled_policy_turn_projects_already_captured_provider_attempts(tmp_p
         assert events[-1]["event"] == "run_finished"
 
     asyncio.run(scenario())
-
-
-def test_benchmark_instrumentation_forwards_each_physical_mission_role_attempt_immediately(tmp_path) -> None:
-    recorder = RunTraceRecorder(tmp_path)
-    instrumentation = BenchmarkInstrumentation(trace_recorder=recorder)
-    attempt = ModelGenerationAttempt(
-        1,
-        "planner_initial",
-        "PlannerDecisionModel",
-        "provider_returned",
-        role="planner",
-        mode="start",
-        trigger="task_start",
-        transcript={"llm.output_messages": [{"content": "physical response"}]},
-    )
-
-    instrumentation.mission_role_provider_attempt(attempt)
-
-    event = json.loads(recorder.path.read_text())
-    assert event["event"] == "mission_role_provider_attempt"
-    assert event["attempt"]["role"] == "planner"
-    assert event["attempt"]["transcript"]["llm.output_messages"][0]["content"] == "physical response"
 
 
 def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirrors(tmp_path) -> None:
@@ -714,15 +692,12 @@ def test_one_megabyte_trace_event_is_projected_before_viewer_ipc(tmp_path) -> No
         viewer_process=CapturingViewer(),
     )
     recorder._emit(
-        "mission_role_invocation",
-        role="manager",
-        result="failure",
-        model_invocation={
-            "metadata": {"provider_id": "fixture", "model_id": "fixture-model"},
-            "attempts": [
+        "model_turn",
+        model_metadata={"provider_id": "fixture", "model_id": "fixture-model"},
+        generation_attempts=[
                 {
                     "attempt": 1,
-                    "phase": "planner_initial",
+                    "phase": "representation_repair",
                     "status": "failed",
                     "transcript": {
                         "llm.input_messages": [{"role": "user", "content": "x" * 1_000_000}],
@@ -730,14 +705,13 @@ def test_one_megabyte_trace_event_is_projected_before_viewer_ipc(tmp_path) -> No
                     },
                 }
             ],
-        },
     )
 
     assert recorder.path.stat().st_size > 1_000_000
     assert len(captured) == 1
     assert len(json.dumps(captured[0], sort_keys=True).encode()) <= 16_384
-    assert captured[0]["event"] == "mission_role_invocation"
-    assert captured[0]["generation_attempts"][0]["phase"] == "planner_initial"
+    assert captured[0]["event"] == "model_turn"
+    assert captured[0]["generation_attempts"][0]["phase"] == "representation_repair"
 
 
 def test_ipc_projection_of_run13_sized_event_is_bounded_and_ref_free() -> None:
@@ -813,7 +787,7 @@ def test_langfuse_v4_session_attributes_cover_root_and_children(tmp_path) -> Non
     client.shutdown()
 
 
-def test_benchmark_case_owns_one_queued_root_and_one_typed_planner_generation(tmp_path) -> None:
+def test_benchmark_case_owns_one_queued_root_and_one_action_policy_generation(tmp_path) -> None:
     observed = multiprocessing.Queue()
     flushes = multiprocessing.Value("i", 0)
 
@@ -853,33 +827,9 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_planner_generation(tm
         viewer_process=LangfuseViewerProcess(Client, benchmark_managed=True),
     )
     recorder.benchmark_case_started(
-        case_id="case:manager-failure",
+        case_id="case:policy-failure",
         description="x" * 100_000,
         timeout_s=10,
-    )
-    recorder._emit(
-        "mission_role_invocation",
-        role="manager",
-        result="failure",
-        model_invocation={
-            "metadata": {"provider_id": "fixture", "model_id": "fixture-model"},
-            "attempts": [
-                {
-                    "attempt": 1,
-                    "phase": "planner_initial",
-                    "trigger": "task_start",
-                    "status": "failed",
-                    "max_output_tokens": 2048,
-                    "prompt_tokens": 7,
-                    "completion_tokens": 0,
-                    "total_tokens": 7,
-                    "transcript": {
-                        "llm.input_messages": [{"role": "user", "content": "public task"}],
-                        "llm.output_messages": [],
-                    },
-                }
-            ],
-        },
     )
     recorder._emit(
         "model_turn",
@@ -907,7 +857,7 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_planner_generation(tm
         lineage={},
         result={"feedback": "sent", "decision": {"kind": "select_action"}},
     )
-    recorder.benchmark_case_finished(case_id="case:manager-failure", status="failed")
+    recorder.benchmark_case_finished(case_id="case:policy-failure", status="failed")
     recorder.flush_viewer(timeout_s=0.5)
 
     events = []
@@ -916,9 +866,6 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_planner_generation(tm
     started_events = [item for item in events if item[0] == "started"]
     names = {item[1] for item in started_events}
     assert "benchmark-gui-agent-case" in names
-    assert "manager-call" in names
-    assert sum(item[1] == "manager-generation" for item in started_events) == 1
-    assert next(item for item in started_events if item[1] == "manager-generation")[2] == "generation"
     assert sum(item[1] == "action-policy-generation" for item in started_events) == 1
     assert "runtime-step" in names
     assert "run-gui-agent-case" not in names
@@ -927,35 +874,3 @@ def test_benchmark_case_owns_one_queued_root_and_one_typed_planner_generation(tm
     root_input = started_events[0][3]
     assert len(json.dumps(root_input).encode()) <= 16_384
     assert len(root_input["description"]) < 100_000
-
-
-def test_langfuse_projection_keeps_only_execution_relevant_public_milestone() -> None:
-    projected = _langfuse_event_projection(
-        {
-            "event": "model_turn",
-            "sequence": 2,
-            "agent_context": {
-                "task": {
-                        "active_milestone": {
-                            "id": "collect_result",
-                            "outcome": "Current result is available",
-                            "done_when": "The result is visible",
-                            "depends_on": [],
-                            "final": False,
-                        "required_evidence": [
-                            {"key": "result", "description": "Current result", "status": "available"}
-                        ],
-                        "episode_turn_budget": 8,
-                        "relevant_fact_keys": ["private-filter"],
-                        "related_audit_ids": ["audit:private"],
-                    }
-                }
-            },
-            "decision": {"kind": "yield_milestone"},
-        }
-    )
-
-    assert projected["active_milestone"]["outcome"] == "Current result is available"
-    assert "episode_turn_budget" not in projected["active_milestone"]
-    assert "relevant_fact_keys" not in projected["active_milestone"]
-    assert "related_audit_ids" not in projected["active_milestone"]

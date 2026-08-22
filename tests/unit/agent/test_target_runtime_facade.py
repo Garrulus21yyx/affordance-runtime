@@ -30,7 +30,7 @@ def _world() -> WorldObservation:
 
 
 class UnusedActionOutcomeProjector:
-    async def evaluate(self, task, before, request, result, after):
+    async def evaluate(self, task, before, request, result, after, public_world_delta):
         del task, before, request, result, after
         raise AssertionError("target runtime fixture must not execute an action")
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -19,7 +20,7 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
-from affordance_runtime.agent.decisions import ProtocolFeedback, ProtocolFeedbackKind
+from affordance_runtime.agent.decisions import ToolRejectedResult
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelGenerationAttempt,
@@ -73,6 +74,42 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputFailureKind,
     StructuredOutputViolation,
 )
+
+
+class ProtocolFeedbackKind(StrEnum):
+    """Historical fixture vocabulary retained only for legacy-adapter tests."""
+
+    MULTIPLE_TOOL_CALLS = "multiple_tool_calls"
+    OUTPUT_TRUNCATED = "output_truncated"
+    EMPTY_FINAL_CONTENT = "empty_final_content"
+    JSON_INVALID = "json_invalid"
+
+
+@dataclass(frozen=True, init=False)
+class ProtocolFeedback(ToolRejectedResult):
+    """Legacy view backed by the current typed local-rejection decision."""
+
+    feedback_kind: ProtocolFeedbackKind
+    call_count: int
+    detail: str
+
+    def __init__(
+        self,
+        context_id: str,
+        feedback_kind: ProtocolFeedbackKind,
+        call_count: int = 0,
+        detail: str = "",
+    ) -> None:
+        ToolRejectedResult.__init__(
+            self,
+            context_id,
+            "tool_rejected",
+            {},
+            {"feedback_kind": feedback_kind.value, "call_count": call_count, "detail": detail},
+        )
+        object.__setattr__(self, "feedback_kind", feedback_kind)
+        object.__setattr__(self, "call_count", call_count)
+        object.__setattr__(self, "detail", detail)
 
 
 class _GroundedCommandPayloadBase(BaseModel):

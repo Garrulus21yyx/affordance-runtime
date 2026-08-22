@@ -1,4 +1,4 @@
-"""Small episode-local facts pinned from current public World evidence."""
+"""Small current-run exact notes copied from current public World evidence."""
 
 from __future__ import annotations
 

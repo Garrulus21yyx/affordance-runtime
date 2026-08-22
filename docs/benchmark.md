@@ -2,13 +2,21 @@
 
 ## Status
 
-Current status: **BrowserGym causal post-action transition REOPENED / live runs blocked**. Prior Planner/Auditor G0–G6
-artifacts remain scoped evidence only; Planner lexical admission has a separate known gap.
+Current status: **single-ActionPolicy control migration and BrowserGym causal-transition automation present /
+change-first Observation Delivery and bounded AgentWorkspace gates reopened / live closure gates blocked**. Prior
+Planner/Auditor G0–G6 artifacts remain historical scoped evidence for the superseded mission path; they do not
+authorize another live run.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
+The target runtime, deletion map, recovery state machine, migration order, and replacement acceptance invariants are in
+[`single-action-policy-convergence.md`](single-action-policy-convergence.md).
 
 No live run is authorized merely because implementation or unit tests pass.
+
+Current public case evidence is `target-loop-case.v11`. The exact-field decoder also accepts pre-mission v6-v9.
+Mission-shaped v10 files remain readable only as raw archived JSON and are deliberately not decoded into the v11
+type; preserving an artifact is not a compatibility promise for its removed control vocabulary.
 
 ### Reopened BrowserGym transition gate
 
@@ -29,11 +37,48 @@ quality dimension; neither may be used to patch or waive the transition invarian
 
 Implementation verification on 2026-08-22 (not closure): the generic real-Playwright delayed-navigation, pending,
 DOM-instability, non-navigation fast-path, trace-forwarding, and next-policy-stop witnesses pass under both the normal
-test interpreter and the pinned BrowserGym Python 3.12 interpreter. The final repository suite passed 1,497 tests with
-19 skips; fresh-context review and the separate Planner lexical admission gap remain outstanding. Ruff, compileall,
-and diff checks pass. Whole-repository
+test interpreter and the pinned BrowserGym Python 3.12 interpreter. After the single-policy migration, the repository
+partitions pass 1,425 tests with 19 skips and the independent fresh-context re-review reports no P0/P1/P2. Explicitly
+authorized live witnesses remain outstanding. Ruff, compileall, and diff checks pass. Whole-repository
 mypy remains a known pre-existing red baseline (310 errors in 39 files); the changed BrowserGym files add no new mypy
 diagnostics beyond their prior baseline.
+
+### Reopened Observation Delivery and AgentWorkspace gate
+
+Later live evidence falsified two assumptions that the earlier six-page initial-World diagnostic did not test:
+
+1. a global task/plan lexical Top-k over current public scalar facts does not guarantee that an exact result produced by
+   the preceding GUI action is placed in the next model request;
+2. append-oriented `recent_steps` with a fixed history cap is not a total bounded workspace and can fail before any
+   provider request after useful results have already appeared.
+
+The active provider-free gate therefore proves the full transition-to-request path:
+
+```text
+causal before/after World
+→ one typed PublicWorldDelta
+→ versioned existing regions and cached unchanged outline
+→ exact LatestEffect/CurrentFindings/ChangedRegions delivery
+→ total WorkspaceReducer
+→ RequestAdmission as sole capacity authority
+→ provider request or typed local context_capacity
+```
+
+This gate must use generic generated/property cases plus the six real-page diagnostics. Task-7 and the text `33km` are
+regression witnesses only; production tests and code may not branch on them. C8–C9 implementation, full checks, durable
+provider-free evidence, and a new independent fresh-context review must agree before any live witness is authorized.
+
+Implementation checkpoint on 2026-08-22 (not C8–C9 closure): stages 1–2 freeze `PublicWorldDelta`, `RegionVersion`,
+`CurrentFinding`, `SemanticEvent`, `ActivitySummary`, `AgentWorkspace`, and `AgentLoopProfile`; one
+`WorldTransitionProjector` now supplies exact target/fact additions, removals, modifications, stable region membership,
+and before/after lineage. Runtime action evaluation, observation evaluation, current delivery index, Monitor, compact
+continuity, and trace share that projection. Focused transition/owner/lifecycle tests, Ruff, compileall, and the full
+provider-free suite pass with 1,438 tests and 19 skips. No live or Task-7 run was performed, no prompt or historical
+budget changed, and the remaining C8 delivery/cache/workspace/capacity/Monitor gates stay open.
+
+Run17 recorded `CASE_FINISHED`, `cleanup_status=succeeded`, and `report_status=exported`; it does not reopen cleanup.
+The existing persist-before-cleanup order and bounded cleanup/viewer contracts remain unchanged. A future
+`cleanup_timeout` must be handled as a separate lifecycle witness rather than folded into C8–C9.
 
 ## Purpose
 
@@ -45,12 +90,18 @@ Primary questions:
 
 1. Does the agent complete supported tasks through the official native evaluator?
 2. Does World delivery remain compact, understandable, and recoverable on real pages?
-3. Are currently legal controls automatically discoverable without repeated region reads?
-4. Can exact public evidence be found, pinned when needed, admitted across milestones, and used in the final answer?
-5. Does one milestone remain a continuous execution episode rather than page-sized Manager assignments?
-6. Do stalls, route regression, provider failure, uncertain dispatch, cleanup, and viewer failure terminate or recover
+3. Does the exact public effect of the latest GUI action appear before the ordinary page outline without a model search
+   call?
+4. Are currently legal controls automatically discoverable without repeated region reads?
+5. Can current public evidence be used directly, with an optional exact working note only when it must survive a view
+   change?
+6. Does arbitrary ordinary step growth remain bounded through one total AgentWorkspace reducer and one request-capacity
+   owner?
+7. Can one continuous ActionPolicy complete the task without mandatory Planner, milestone, Auditor, or MissionState
+   transitions?
+8. Do stalls, route regression, provider failure, uncertain dispatch, cleanup, and viewer failure terminate or recover
    through typed bounded paths?
-7. Are token, latency, model-call, and unnecessary-action costs competitive with a compact single-agent baseline?
+9. Are token, latency, model-call, and unnecessary-action costs competitive with a compact single-agent baseline?
 
 ## Cohorts
 
@@ -67,9 +118,13 @@ W1a exercises the architecture without a real model:
 - one BrowserGym session across milestone episodes and no second reset;
 - complete decision/receipt/state-transition algebra;
 - native-tool wire and representation-only normalization;
-- World/Action/Evidence recoverability and ref currentness;
-- working-fact and MissionState admission;
-- milestone scheduling and removal of page-level assignment;
+- one before/after public World delta consumed consistently by outcome, delivery, Monitor, continuity, and trace;
+- changed-region version/cache behavior, latest-effect salience, World/Action recovery, and ref currentness;
+- current evidence use without mandatory pin/audit and optional exact working-note retention;
+- total AgentWorkspace reduction under arbitrary ordinary step growth and whole-request admission by one capacity owner;
+- information-delta activity aggregation and operational `CONTROL_STALLED` without task-semantic blocking;
+- closed capacity/tool/provider/internal exception classification;
+- direct GoalCompiler/CoreAgentLoop composition with no mission fallback;
 - route/effect/protocol stall recovery;
 - durable result, cleanup deadline, transport retry, and viewer fail-open behavior.
 
@@ -89,6 +144,11 @@ Read-only provider-free diagnostics use these frozen official cases as heterogen
 These cases verify general contracts; production code may not branch on task id, site label, text witness, selector, or
 expected output.
 
+For each page the diagnostic captures at least one generic typed transition in addition to the initial World. It must
+prove that added/modified public values enter `LatestEffect` and `CurrentFindings` where eligible, changed regions are
+exact or completely paged, unchanged regions reuse cached versions, local read/search does not erase the effect, and
+agent-browser-style serialized diff does not reveal a public addition absent from the typed delta/delivery manifest.
+
 ### W1b-Agent — live compatibility smokes
 
 Live cases begin only after W1a and W1b-World close. Run one explicitly requested witness at a time, persist the case
@@ -97,10 +157,72 @@ does not close W1b.
 
 ### W2 — frozen hard cohort
 
-W2 is the predeclared 12-case WebArena-Verified Hard cohort. Each case has an isolated MissionState, working set,
+W2 is the predeclared 12-case WebArena-Verified Hard cohort. Each case has an isolated TaskGoal/GoalPlan, working set,
 session, and trace. No cross-case long-term memory or recall is allowed. W2 starts only after W1b closure.
 
-## Current normative gates
+## Active C8–C9 provider-free gates
+
+### C8 — transition and incremental-delivery properties
+
+Generated typed Worlds and held-out real-page transitions must prove:
+
+- `PublicWorldDelta` is complete for every supported public addition, removal, and modification and binds one exact
+  before/after lineage;
+- ActionOutcome, Monitor, ObservationDelivery, SemanticEvent projection, and trace consume that same delta object or
+  exact serialized value, rather than independently rebuilding change;
+- every added/modified public value enters the next `LatestEffect`, or a bounded changed-region page plus typed cursor;
+- local `read_region`, `search_page_content`, and `find_controls` do not clear the latest external effect;
+- a later GUI effect supersedes the prior effect only after its exact public values are retained in a bounded
+  `SemanticEvent`;
+- unchanged region digests reuse their cached outline; changed region versions increase; navigation/document-lineage
+  change invalidates stale refs and old cache membership;
+- rendering/fitting never authorizes a target absent from the current complete ActionSpace;
+- an independent serialized public-snapshot diff detects no addition/removal absent from the typed delta, except an
+  explicitly documented non-semantic serialization difference;
+- no second browser session, DOM walker, RegionIndex, selector/ref registry, action registry, or Agent loop is created.
+
+Required regression shape:
+
+```text
+form submit or Go-like action
+→ result/status/table text appears in after World
+→ next ordinary request begins with the exact public change
+→ zero content-search/read calls required for first visibility
+```
+
+The witness values and labels are generated or held out. An assertion tied only to `Distance: 33km` is insufficient.
+
+### C9 — bounded-workspace and capacity properties
+
+Property/state-machine tests must prove:
+
+- four or fewer latest steps retain detail; older significant GUI effects, public results, working-note changes, typed
+  failures, and recovery transitions retain exact bounded SemanticEvents;
+- 1,000 ordinary supported steps, including non-identical read/search arguments, always return a reduced workspace or
+  one typed irreducible capacity result; ordinary accumulation never raises a history exception;
+- repeated no-information reads/searches/waits update one bounded `ActivitySummary` family rather than append entries;
+- a precise public result remains available after leaving the latest-four window and after a local search-view change;
+- a whole address is retained exactly and is not mechanically split into inferred business fields;
+- `RequestAdmission` is the only component that allocates/adjudicates capacity for the complete request;
+- RunState, history, renderer, and provider Binder contain no independent model-history cap or pruning authority;
+- local irreducible overflow is `context_capacity`, `provider_attempts=0`; only grounded tool-resolution failure is
+  `invalid_tool_arguments`; transport failure is `provider_unavailable`; unexpected Runtime failure is
+  `internal_error`;
+- World/finding/working-fact digests unchanged across observation-only activity produce one generic stall family even
+  when query or region changes;
+- the configured recovery threshold produces RECOVERY once, recurrence produces operational `CONTROL_STALLED`, and
+  TaskEvaluation remains `INCOMPLETE|UNKNOWN`;
+- Full Trace retains every raw step and is not read back as model workspace.
+
+Profile values are recorded in each artifact. They may vary by declared experiment profile, but may not depend on task
+id, site, page label, expected answer, or known trajectory.
+
+## Superseded milestone-path gates (historical scoped evidence)
+
+G0–G6 below describe what the current mission implementation previously proved. They are retained to prevent loss of
+useful regression evidence while the code is removed, but they are not the acceptance gates for the target baseline.
+The active migration and closure gates are C0–C9 and the acceptance invariants in
+[`single-action-policy-convergence.md`](single-action-policy-convergence.md).
 
 ### G0 — single-path structural gate
 
@@ -202,7 +324,7 @@ After implementation and all provider-free gates pass, a fresh-context reviewer 
 tests, and evidence. The reviewer must find no P0/P1 contract gap, old control path, duplicated authority, or gate that
 can pass while the claimed invariant is false.
 
-## Current provider-free verification
+## Historical provider-free verification of the superseded path
 
 | Gate | Current evidence | Result |
 |---|---|---|
@@ -226,11 +348,15 @@ Live execution is separately authorized. For each run report:
 - official task id, site family, seed, model/profile, prompt/catalog/context versions;
 - official success and native-evaluator result;
 - GUI decisions and physical dispatch receipts;
-- Planner, ActionPolicy, deliberate-recovery, Auditor, repair, and transport-retry calls;
+- ActionPolicy ordinary/recovery, representation-repair, and transport-retry calls; Planner/Auditor counts must be zero
+  after migration;
 - per-role prompt/completion/reasoning tokens and latency;
-- request component estimates for task/roadmap, delivery view, history, tool schema, and images;
-- ActionCandidate recall/rank, content/evidence recovery, repeated-read rate, navigation excess, and no-progress rate;
-- milestone boundaries, accepted facts/outcomes, typed recoveries, and hard-cap exits;
+- request component estimates for task/plan, latest effect, changed regions, cached outline, AgentWorkspace, tool schema,
+  and images;
+- public-delta counts, changed/unchanged region reuse, latest-effect bytes/tokens, recoverability, ActionCandidate
+  recall/rank, repeated-read rate, navigation excess, and no-progress rate;
+- recent-detail, SemanticEvent, ActivitySummary, WorkingFact, workspace-fit, and whole-request-admission costs;
+- optional working-note events, typed recoveries, direct final-response lifecycle, and hard-cap exits;
 - primary failure, recovery failures, secondary cleanup/viewer failures, and durable-result status.
 
 For a short single-site report task, engineering targets are:
@@ -238,7 +364,7 @@ For a short single-site report task, engineering targets are:
 - total provider tokens: target 50k–80k, ordinary upper bound 100k;
 - ordinary prompt p95 below 12k;
 - zero full-context semantic repair;
-- no Planner call between intermediate GUI steps;
+- zero Planner and Auditor calls;
 - no repeated unchanged region read before a valid control/evidence alternative is offered.
 
 These are cost targets, not success substitutions.
@@ -262,13 +388,22 @@ does not change Runtime control behavior.
 
 ## Execution order
 
-1. Complete and test viewer isolation, cleanup deadline/idempotency, durable result ordering, and side-effect-free role
-   transport retry.
-2. Implement the milestone contract and continuous-episode Supervisor scheduling.
-3. Remove all superseded assignment/tool compatibility paths.
-4. Run G0–G5 provider-free properties and archived-trace replay.
-5. Run the six W1b-World diagnostics and cost gates.
-6. Run full tests, lint, compile/diff checks, then G6 fresh-context review.
-7. Only after an explicit user request, run one W1b-Agent live witness.
-8. Diagnose against the shared contracts; do not patch a case or increase turns as the first response.
-9. Close W1b only after representative live evidence; then freeze and run W2.
+1. Preserve the implemented single-ActionPolicy control migration and superseded mission evidence; do not reopen the
+   removed Manager/Auditor chain.
+2. Freeze `CurrentFinding`, `SemanticEvent`, `ActivitySummary`, `AgentWorkspace`, `PublicWorldDelta`, region-version,
+   and whole-request-admission contracts.
+3. Produce one typed public World delta and migrate ActionOutcome, delivery, Monitor, history continuity, and trace to
+   consume it; delete competing fact/change projections.
+4. Upgrade the existing RegionIndex with version/digest/cache state and replace global EvidenceCandidates delivery with
+   `LatestEffect + CurrentFindings + ChangedRegions + ActionCandidates + cached PageOutline + RecoveryDirectory`.
+5. Implement total `WorkspaceReducer`; migrate RunState to store AgentWorkspace rather than unbounded model history;
+   retain all raw steps only in Full Trace.
+6. Remove `EpisodeHistoryCapacityError`, the fixed history byte cap, RunState pre-cap, provider-side fitting, old history
+   renderer, and compatibility delivery paths.
+7. Make `RequestAdmission` the sole capacity owner, close exception classification, and make Monitor's information-delta
+   state machine terminate as operational `CONTROL_STALLED` without task-semantic blocking.
+8. Run C8–C9 generated properties, held-out transition cases, and six-page W1b-World diagnostics; persist complete
+   provider-free artifacts.
+9. Run full tests/static checks and an independent fresh-context review of current docs, code, tests, and evidence.
+10. Only after an explicit user request, run one W1b-Agent live witness and one held-out witness; close W1b only when
+    success, latest-result salience, bounded recovery, token cost, code, docs, and evidence agree.

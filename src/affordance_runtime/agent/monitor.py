@@ -11,29 +11,27 @@ from dataclasses import dataclass, field
 from affordance_runtime.agent.context.contracts import AgentTurnView, sanitize_history_value
 from affordance_runtime.agent.decisions import (
     LocalToolResult,
-    ProtocolFeedback,
     RequestActionPage,
     RequestObservation,
     SelectAction,
 )
 from affordance_runtime.agent.policy import PolicyFailure
-from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.evaluation.contracts import (
-    EvidenceMethod,
-    LocalPostconditionStatus,
-    ObservedChange,
-    TaskEvaluation,
-    TaskEvaluationStatus,
-)
-from affordance_runtime.execution.contracts import DispatchStatus
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.mission.contracts import (
+from affordance_runtime.agent.recovery import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
     EpisodeMonitorTransition,
     RecoveryKind,
     RecoverySignal,
 )
+from affordance_runtime.agent.run_state import StepResult
+from affordance_runtime.evaluation.contracts import (
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
+from affordance_runtime.execution.contracts import DispatchStatus
+from affordance_runtime.immutable import to_json_compatible
 
 
 @dataclass(frozen=True)
@@ -123,7 +121,7 @@ class EpisodeMonitor:
             self.route_recovery_page_fingerprint = self.route_history[-1].page_fingerprint
             return EpisodeMonitorTransition(
                 tuple(events),
-                EpisodeMonitorRecommendation.YIELD if repeated else EpisodeMonitorRecommendation.RECOVER,
+                EpisodeMonitorRecommendation.BLOCK if repeated else EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.ROUTE_REGRESSION.value,
                 signal,
             )
@@ -143,7 +141,7 @@ class EpisodeMonitor:
                 )
                 return EpisodeMonitorTransition(
                     tuple(events),
-                    EpisodeMonitorRecommendation.YIELD,
+                    EpisodeMonitorRecommendation.BLOCK,
                     signal.kind.value,
                     signal,
                 )
@@ -164,7 +162,7 @@ class EpisodeMonitor:
             if self.repeated_failure_count >= self.config.repeated_failure_limit:
                 return EpisodeMonitorTransition(
                     tuple(events),
-                    EpisodeMonitorRecommendation.YIELD,
+                    EpisodeMonitorRecommendation.BLOCK,
                     "repeated_failure_limit",
                 )
         else:
@@ -217,7 +215,7 @@ class EpisodeMonitor:
                 )
                 return EpisodeMonitorTransition(
                     tuple(events),
-                    EpisodeMonitorRecommendation.YIELD,
+                    EpisodeMonitorRecommendation.BLOCK,
                     RecoveryKind.STATE_OSCILLATION.value,
                     signal,
                 )
@@ -234,7 +232,8 @@ class EpisodeMonitor:
             or EpisodeMonitorEvent.FORMAL_CRITERION_CHANGED in events
             or (
                 result.action_outcome is None
-                and _world_digest(result.before_world) != _world_digest(result.after_world)
+                and result.public_world_delta is not None
+                and result.public_world_delta.changed
             )
         ):
             self.recovery_in_progress_key = ""
@@ -339,7 +338,11 @@ def _has_operational_progress(result: StepResult) -> bool:
         return False
     if action.local_postcondition is LocalPostconditionStatus.SATISFIED:
         return True
-    return action.observed_change is ObservedChange.CHANGED and action.evidence_method is EvidenceMethod.STRUCTURAL
+    return bool(
+        result.public_world_delta is not None
+        and result.public_world_delta.changed
+        and action.evidence_method is EvidenceMethod.STRUCTURAL
+    )
 
 
 def _repeated_failure_key(
@@ -348,9 +351,9 @@ def _repeated_failure_key(
 ) -> str:
     if result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}:
         return ""
-    before_world = _world_digest(result.before_world)
-    after_world = _world_digest(result.after_world)
-    if result.action_outcome is None and before_world and after_world and before_world != after_world:
+    delta = result.public_world_delta
+    after_world = delta.after_world_digest if delta is not None else _world_digest(result.after_world)
+    if result.action_outcome is None and delta is not None and delta.changed:
         return ""
     if isinstance(result.decision, PolicyFailure):
         return _stable_key(
@@ -403,16 +406,6 @@ def _repeated_failure_key(
                 "tool": result.decision.tool_name,
                 "canonical_args": to_json_compatible(result.decision.arguments),
                 "result": to_json_compatible(result.decision.result),
-                "task_progress": _task_progress_digest(result.task_evaluation),
-            }
-        )
-    if isinstance(result.decision, ProtocolFeedback):
-        return _stable_key(
-            {
-                "kind": "protocol_feedback",
-                "world": after_world,
-                "failure": result.decision.feedback_kind.value,
-                "call_count": result.decision.call_count,
                 "task_progress": _task_progress_digest(result.task_evaluation),
             }
         )
@@ -740,8 +733,6 @@ def _recovery_kind(result: StepResult, events: list[EpisodeMonitorEvent]) -> Rec
         return RecoveryKind.STATE_OSCILLATION
     if isinstance(result.decision, LocalToolResult | RequestActionPage):
         return RecoveryKind.CONTROL_STALL
-    if isinstance(result.decision, ProtocolFeedback):
-        return RecoveryKind.PROTOCOL_STALL
     if EpisodeMonitorEvent.CAPABILITY_GAP in events:
         return RecoveryKind.CAPABILITY_GAP
     if result.feedback in {"binding_unavailable"} or result.feedback.startswith("action_not_sent:"):
@@ -760,8 +751,6 @@ def _attempted_modes(result: StepResult, events: list[EpisodeMonitorEvent]) -> t
     modes = []
     if isinstance(result.decision, LocalToolResult):
         modes.append(result.decision.tool_name)
-    elif isinstance(result.decision, ProtocolFeedback):
-        modes.append(result.decision.feedback_kind.value)
     elif isinstance(result.decision, RequestActionPage):
         modes.append("find_controls")
     elif isinstance(result.decision, SelectAction):
@@ -778,14 +767,6 @@ def _prohibited_repeat(result: StepResult) -> str:
         query = sanitize_history_value(str(arguments.get("query", "")))
         subject = str(query)[:120] if query else "the same semantic arguments"
         return f"Do not repeat {result.decision.tool_name} on {subject} without new evidence."
-    if isinstance(result.decision, ProtocolFeedback):
-        guidance = {
-            "multiple_tool_calls": ("Return exactly one offered tool call; do not repeat a multi-call response."),
-            "output_truncated": ("Return one compact final command; the prior response exhausted its output budget."),
-            "empty_final_content": "Return one non-empty final JSON command.",
-            "json_invalid": "Return one valid JSON command matching the current schema.",
-        }
-        return guidance[result.decision.feedback_kind.value]
     if isinstance(result.decision, RequestActionPage):
         return "Do not repeat find_controls with the same query without new evidence."
     if isinstance(result.decision, SelectAction):

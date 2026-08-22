@@ -21,14 +21,9 @@ from affordance_runtime.agent.context.budgets import (
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
 from affordance_runtime.agent.context.contracts import (
     AgentActionPageView,
-    AgentEvidenceRequirementView,
-    AgentMilestoneContractView,
-    AgentMilestoneView,
     AgentTurnView,
-    EvidenceRequirementStatus,
 )
 from affordance_runtime.agent.context.evidence_candidate_projection import (
-    evidence_requirement_available_in_index,
     project_evidence_candidates,
 )
 from affordance_runtime.agent.context.grounding_projection import (
@@ -78,7 +73,6 @@ class ContextBuilder:
         delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldDeliveryIndex | None = None,
         control_feedback: dict[str, object] | None = None,
-        active_milestone: AgentMilestoneContractView | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -221,7 +215,6 @@ class ContextBuilder:
             complete_page.options,
             action_space.action_space_id,
             candidate_projection,
-            active_milestone,
         )
 
     def page(
@@ -391,7 +384,6 @@ def _fit_context(
     complete_actions,
     action_space_id: str,
     action_candidates,
-    active_milestone: AgentMilestoneContractView | None,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
@@ -408,15 +400,13 @@ def _fit_context(
         evidence_index,
         fact_refs,
         region_index,
-        required_evidence=(active_milestone.required_evidence if active_milestone is not None else ()),
-    )
-    active_milestone_view = _active_milestone_view(
-        active_milestone,
-        working_facts,
-        observation,
-        evidence_index,
-        fact_refs,
-        region_index,
+        intent=" ".join(
+            (
+                task.instruction,
+                *(item.objective for item in goal_plan.items),
+                *(item.done_when for item in goal_plan.items),
+            )
+        ),
     )
     task_view = project_task(
         task,
@@ -424,8 +414,7 @@ def _fit_context(
         world.facts.items,
         fact_refs,
         grounding.index.target_refs,
-        include_final_response_contract=bool(active_milestone is not None and active_milestone.final),
-        active_milestone=active_milestone_view,
+        include_final_response_contract=True,
     )
     private_fact_bindings = _current_public_fact_bindings(
         observation,
@@ -465,51 +454,6 @@ def _fit_context(
         action_space_id,
         action_candidates,
         evidence_candidates,
-        active_milestone,
-    )
-
-
-def _active_milestone_view(
-    contract,
-    working_facts,
-    observation,
-    evidence_index,
-    fact_refs,
-    region_index,
-):
-    if contract is None:
-        return None
-    pinned = {item.key for item in working_facts}
-    requirements = tuple(
-        AgentEvidenceRequirementView(
-            key,
-            description,
-            (
-                EvidenceRequirementStatus.RETAINED
-                if key in pinned
-                else EvidenceRequirementStatus.CURRENTLY_VISIBLE
-                if evidence_requirement_available_in_index(
-                    key,
-                    description,
-                    observation,
-                    evidence_index,
-                    fact_refs,
-                    region_index,
-                )
-                else EvidenceRequirementStatus.MISSING
-            ),
-        )
-        for key, description in contract.required_evidence
-    )
-    return AgentMilestoneView(
-        contract.id,
-        contract.outcome,
-        contract.done_when,
-        requirements,
-        contract.depends_on,
-        contract.final,
-        contract.missing_evidence_keys,
-        contract.audit_guidance,
     )
 
 

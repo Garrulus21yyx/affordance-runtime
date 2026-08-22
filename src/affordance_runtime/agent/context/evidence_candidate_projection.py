@@ -51,7 +51,7 @@ def project_evidence_candidates(
     canonical_to_public: Mapping[str, str],
     region_index: WorldDeliveryIndex,
     *,
-    required_evidence: tuple[tuple[str, str], ...] = (),
+    intent: str = "",
 ) -> EvidenceCandidateProjection:
     sources = {item.observation_id: item for item in observation.sources}
     eligible = []
@@ -89,7 +89,6 @@ def project_evidence_candidates(
         )
         eligible.append(candidate)
         descriptors.append((public_ref, f"{record.predicate} {record.value}", (source_context, region_ref)))
-    intent = " ".join(f"{key} {description}" for key, description in required_evidence)
     order = rank_delivery_descriptors(tuple(descriptors), intent=intent)
     by_ref = {item.fact_ref: item for item in eligible}
     return EvidenceCandidateProjection(

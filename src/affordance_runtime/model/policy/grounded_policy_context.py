@@ -366,22 +366,6 @@ def _task(context: AgentContext) -> dict[str, object]:
     }
     if task.final_response_contract:
         result["final_response_contract"] = to_json_compatible(task.final_response_contract)
-    if task.active_milestone is not None:
-        result["active_milestone"] = {
-            "id": task.active_milestone.id,
-            "outcome": task.active_milestone.outcome,
-            "done_when": task.active_milestone.done_when,
-            "depends_on": task.active_milestone.depends_on,
-            "final": task.active_milestone.final,
-            "required_evidence": tuple(
-                {
-                    "key": item.key,
-                    "description": item.description,
-                    "status": item.status.value,
-                }
-                for item in task.active_milestone.required_evidence
-            ),
-        }
     evaluation = {
         "status": str(task.evaluation.status),
         "criteria": tuple(

@@ -1,5 +1,11 @@
 """Narrow evaluator-proposal validation at CoreAgentLoop boundaries."""
 
+from dataclasses import replace
+
+from affordance_runtime.agent.context.world_transition import (
+    PublicWorldDelta,
+    WorldTransitionProjector,
+)
 from affordance_runtime.agent.policy import ActionOutcomeProjector, TaskEvaluator
 from affordance_runtime.evaluation.contracts import ActionOutcome, TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -32,11 +38,27 @@ async def validated_action_outcome(
     request: BoundActionRequest,
     result: ActionResult,
     after: WorldObservation,
+    public_world_delta: PublicWorldDelta | None = None,
 ) -> ActionOutcome:
-    proposal = await evaluator.evaluate(task, before, request, result, after)
+    if public_world_delta is None and isinstance(before, WorldObservation) and isinstance(
+        after, WorldObservation
+    ):
+        public_world_delta = WorldTransitionProjector().project(before, after)
+    proposal = await evaluator.evaluate(
+        task,
+        before,
+        request,
+        result,
+        after,
+        public_world_delta,
+    )
     if not isinstance(proposal, ActionOutcome):
         raise ValueError("action outcome projector returned a malformed result")
-    return validate_action_outcome(
+    if public_world_delta is None:
+        public_world_delta = WorldTransitionProjector().project(before, after)
+    if proposal.public_world_delta is None:
+        proposal = replace(proposal, public_world_delta=public_world_delta)
+    validated = validate_action_outcome(
         proposal,
         task,
         request,
@@ -44,3 +66,6 @@ async def validated_action_outcome(
         after,
         WorldEvidenceIndex.from_observation(after),
     )
+    if validated.public_world_delta is not public_world_delta:
+        raise ValueError("action outcome projector must consume the supplied public World delta")
+    return validated

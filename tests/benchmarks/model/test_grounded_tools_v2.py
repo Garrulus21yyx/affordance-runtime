@@ -18,10 +18,7 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    FinalResponse,
     LocalToolResult,
-    ProtocolFeedback,
-    ProtocolFeedbackKind,
     ReadRegionResult,
     RequestActionPage,
     SearchPageContentResult,
@@ -37,13 +34,13 @@ from affordance_runtime.agent.context.compact_world_renderer import inspect_acto
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
-    AgentMilestoneContractView,
     AgentTurnView,
 )
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.step_projection import _semantic_neighborhood
 from affordance_runtime.agent.core_loop import CoreAgentLoop
+from affordance_runtime.agent.monitor import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
 from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingDecisionPort,
@@ -52,7 +49,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus, WorldEvidenceIndex
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.mission import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
@@ -105,6 +101,8 @@ from affordance_runtime.world import CoverageState, ObservationSourceProfile, Se
 from tests.support.legacy_compact_json_decision_port import (
     CompactJsonDecisionPort,
     GroundedToolCommandPayload,
+    ProtocolFeedback,
+    ProtocolFeedbackKind,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from tests.support.surfaces.browsergym.projection_support import project_browsergym_observation
@@ -507,12 +505,13 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "activate",
         "press_key",
         "scroll",
-        "pin_fact",
+        "remember_fact",
         "read_region",
         "search_page_content",
         "list_regions",
-        "find_controls",
-        "ask_user",
+            "find_controls",
+            "submit_final_response",
+            "ask_user",
         "wait",
         "abort",
     }
@@ -799,14 +798,15 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "activate",
         "press",
         "scroll",
-        "pin",
+            "remember",
         "read",
         "search",
         "find",
         "list",
         "ask",
         "wait",
-        "abort",
+            "abort",
+            "submit",
     }
     assert all("E1(" not in item["description"] for item in public["tools"])
     assert all(
@@ -916,10 +916,10 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     assert tuple(item.binding for item in catalog.tools) == catalog.bindings
 
 
-def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
+def test_remember_fact_resolves_the_value_from_current_public_evidence() -> None:
     context = _context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in catalog.specs if item.name == "pin_fact")
+    spec = next(item for item in catalog.specs if item.name == "remember_fact")
     assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
     evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
 
@@ -927,7 +927,7 @@ def test_pin_fact_resolves_the_value_from_current_public_evidence() -> None:
     resolution = _resolve_catalog_call(
         catalog,
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {
                 "key": "login_field_value",
                 "evidence_ref": evidence_ref,
@@ -990,117 +990,6 @@ def test_search_page_content_offers_one_runtime_evidence_ref_for_exact_public_sc
     assert record is not None and record.value == item["value"]
 
 
-def test_complete_execution_relevant_milestone_view_reaches_existing_task_section() -> None:
-    base = _evidence_handoff_context()
-    contract = AgentMilestoneContractView(
-        "capture_measurement",
-        "One measured result is available",
-        "One exact measurement is retained",
-        (("measured_value", "Metric 33 units"),),
-        (),
-        False,
-    )
-    task = TaskGoal("task:milestone-view", "Capture one measured result")
-    context = ContextBuilder().build(
-        task,
-        base.current_observation,
-        ActionSpaceBuilder().build(task, base.current_observation),
-        TaskEvaluation(
-            "task:milestone-view",
-            base.current_observation.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-        active_milestone=contract,
-    )
-    public = _bound_public_context(context)
-    active = public["task"]["active_milestone"]
-    assert active == {
-        "id": contract.id,
-        "outcome": contract.outcome,
-        "done_when": contract.done_when,
-        "depends_on": [],
-        "final": False,
-        "required_evidence": [
-            {
-                "key": "measured_value",
-                "description": "Metric 33 units",
-                "status": "currently_visible",
-            }
-        ],
-    }
-    assert "relevant_fact_keys" not in active
-    assert "episode_turn_budget" not in active
-    assert "related_audit_ids" not in active
-    assert "EvidenceCandidates exact=true" in _delivery(context).view.text
-    assert context.evidence_candidates is not None
-    assert len(context.evidence_candidates.candidates) <= 5
-    assert "33" in str(context.evidence_candidates.candidates[0].value)
-
-
-def test_final_response_requires_and_privately_resolves_current_evidence_refs() -> None:
-    base = _evidence_handoff_context()
-    contract = AgentMilestoneContractView(
-        "answer",
-        "Return the evidence-backed answer",
-        "The answer cites current evidence",
-        (),
-        (),
-        True,
-    )
-    task = TaskGoal("task:final-response-evidence", "Return the measured result")
-    context = ContextBuilder().build(
-        task,
-        base.current_observation,
-        ActionSpaceBuilder().build(task, base.current_observation),
-        TaskEvaluation(
-            task.task_id,
-            base.current_observation.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-        active_milestone=contract,
-    )
-    delivery = _delivery(context)
-    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
-    public_ref = next(ref for ref in delivery.manifest.fact_refs if ref in context.private_fact_bindings)
-
-    decision = _resolve_catalog_call(
-        catalog,
-        ToolCall("submit_final_response", {"content": "33 units", "evidence_refs": [public_ref]}),
-        expected_context_id=context.context_id,
-    ).decision
-
-    assert isinstance(decision, FinalResponse)
-    assert decision.evidence_refs == (context.private_fact_bindings[public_ref],)
-
-
-def test_final_response_is_not_offered_before_required_evidence_is_retained() -> None:
-    base = _evidence_handoff_context()
-    contract = AgentMilestoneContractView(
-        "answer",
-        "Return the evidence-backed answer",
-        "The exact measurement is retained",
-        (("measurement", "Metric 33 units"),),
-        (),
-        True,
-    )
-    task = TaskGoal("task:required-final-evidence", "Return the measured result")
-    context = ContextBuilder().build(
-        task,
-        base.current_observation,
-        ActionSpaceBuilder().build(task, base.current_observation),
-        TaskEvaluation(
-            task.task_id,
-            base.current_observation.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-        active_milestone=contract,
-    )
-    assert "submit_final_response" not in {item.name for item in _compile_catalog(context).specs}
-
-
 def test_read_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> None:
     context = _evidence_handoff_context()
     found = _resolve_catalog_call(
@@ -1122,7 +1011,7 @@ def test_read_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> N
     opened_view = replace(context, delivery_lens=opened.delivery_lens)
     offered_refs = set(_delivery(opened_view).manifest.fact_refs)
     assert any(item["evidence_ref"] in offered_refs for item in evidence)
-    assert "pin_fact" in {item.name for item in _compile_catalog(opened_view).specs}
+    assert "remember_fact" in {item.name for item in _compile_catalog(opened_view).specs}
 
 
 def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> None:
@@ -1140,7 +1029,7 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     pinned = _resolve_catalog_call(
         _compile_catalog(alpha_view),
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {
                 "key": "alpha_metric",
                 "evidence_ref": alpha_ref,
@@ -1173,17 +1062,17 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     ]
 
 
-def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
+def test_remember_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
     context = _context()
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in first_catalog.specs if item.name == "pin_fact")
+    spec = next(item for item in first_catalog.specs if item.name == "remember_fact")
     assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
     refs = tuple(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
     assert len(refs) >= 2
     first = _resolve_catalog_call(
         first_catalog,
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {"key": "saved_value", "evidence_ref": refs[0], "purpose": "later use"},
             "provider-call:first-pin",
         ),
@@ -1196,7 +1085,7 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     same = _resolve_catalog_call(
         catalog,
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {"key": "saved_value", "evidence_ref": refs[0], "purpose": "later use"},
             "provider-call:same-pin",
         ),
@@ -1204,13 +1093,13 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     ).decision
     assert isinstance(same, LocalToolResult)
     assert same.working_fact is None
-    assert same.result["status"] == "already_pinned"
+    assert same.result["status"] == "already_remembered"
 
     with pytest.raises(GroundedToolResolutionError) as captured:
         _resolve_catalog_call(
             catalog,
             ToolCall(
-                "pin_fact",
+                "remember_fact",
                 {"key": "saved_value", "evidence_ref": refs[1], "purpose": "later use"},
                 "provider-call:conflicting-pin",
             ),
@@ -1219,7 +1108,7 @@ def test_pin_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> 
     assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
-def test_pin_fact_rejects_a_second_observation_version_of_one_retained_canonical_ref() -> None:
+def test_remember_fact_rejects_a_second_observation_version_of_one_retained_canonical_ref() -> None:
     task = TaskGoal("task:pin-version", "Retain the toggle state")
     before = fused_world(
         "pin-version-before",
@@ -1246,7 +1135,7 @@ def test_pin_fact_rejects_a_second_observation_version_of_one_retained_canonical
     first = _resolve_catalog_call(
         _compile_catalog(before_context),
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {"key": "before_value", "evidence_ref": before_ref, "purpose": "retain before state"},
             "provider-call:pin-before-version",
         ),
@@ -1276,7 +1165,7 @@ def test_pin_fact_rejects_a_second_observation_version_of_one_retained_canonical
         _resolve_catalog_call(
             _compile_catalog(after_context),
             ToolCall(
-                "pin_fact",
+                "remember_fact",
                 {"key": "after_value", "evidence_ref": after_ref, "purpose": "retain after state"},
                 "provider-call:pin-after-version",
             ),
@@ -1286,14 +1175,14 @@ def test_pin_fact_rejects_a_second_observation_version_of_one_retained_canonical
     assert "conflicting observation versions" in str(captured.value)
 
 
-def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
+def test_remember_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
     context = _context()
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
     first = _resolve_catalog_call(
         first_catalog,
         ToolCall(
-            "pin_fact",
+            "remember_fact",
             {"key": "value_0", "evidence_ref": evidence_ref, "purpose": "later use"},
             "provider-call:capacity-basis",
         ),
@@ -1310,7 +1199,7 @@ def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> 
         _resolve_catalog_call(
             catalog,
             ToolCall(
-                "pin_fact",
+                "remember_fact",
                 {"key": "overflow", "evidence_ref": evidence_ref, "purpose": "later use"},
                 "provider-call:capacity",
             ),
@@ -1319,7 +1208,7 @@ def test_pin_fact_capacity_rejection_is_typed_before_run_state_application() -> 
     assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
-def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema() -> None:
+def test_remember_fact_rejects_stale_or_private_evidence_names_at_the_public_schema() -> None:
     context = _context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     for invalid in ("F999", next(iter(context.private_fact_bindings.values()))):
@@ -1327,7 +1216,7 @@ def test_pin_fact_rejects_stale_or_private_evidence_names_at_the_public_schema()
             _resolve_catalog_call(
                 catalog,
                 ToolCall(
-                    "pin_fact",
+                    "remember_fact",
                     {"key": "saved_value", "evidence_ref": invalid, "purpose": "later use"},
                     "provider-call:invalid-pin",
                 ),
@@ -1376,12 +1265,12 @@ def test_stale_source_scalar_is_not_offered_as_pinnable_evidence() -> None:
     assert isinstance(found, LocalToolResult)
     assert found.result["items"]
     assert all("evidence_ref" not in item for item in found.result["items"])
-    assert "pin_fact" not in {item.name for item in _compile_catalog(context).specs}
+    assert "remember_fact" not in {item.name for item in _compile_catalog(context).specs}
     stale_view = replace(context, delivery_lens=found.delivery_lens)
     assert _delivery(stale_view).manifest.fact_refs == ()
 
 
-def test_pin_fact_rejects_a_current_non_scalar_evidence_record() -> None:
+def test_remember_fact_rejects_a_current_non_scalar_evidence_record() -> None:
     target = SemanticTarget("target:complex", "text", "Complex value")
     world = fused_world(
         "source:complex",
@@ -1416,7 +1305,7 @@ def test_pin_fact_rejects_a_current_non_scalar_evidence_record() -> None:
         _resolve_catalog_call(
             _compile_catalog(context),
             ToolCall(
-                "pin_fact",
+                "remember_fact",
                 {
                     "key": "complex_value",
                     "evidence_ref": complex_ref,
@@ -1608,8 +1497,8 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    yielded = monitor.evaluate(local_step, (), world.observation_id)
-    assert yielded.recommendation is EpisodeMonitorRecommendation.YIELD
+    blocked = monitor.evaluate(local_step, (), world.observation_id)
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
 
 
 def test_cumulative_provider_usage_is_delta_counted_across_physical_attempts() -> None:

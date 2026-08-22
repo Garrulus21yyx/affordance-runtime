@@ -27,14 +27,13 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     FormFieldUpdate,
-    PinFactResult,
     ReadRegionResult,
+    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
     SetFormFields,
     Wait,
-    YieldMilestone,
 )
 from affordance_runtime.agent.working_facts import (
     WorkingFact,
@@ -63,7 +62,7 @@ class GroundedLocalToolName(StrEnum):
 
     REQUEST_EVIDENCE = "request_evidence"
     COUNT_CHILDREN = "count_children"
-    PIN_FACT = "pin_fact"
+    REMEMBER_FACT = "remember_fact"
     READ_REGION = "read_region"
     SEARCH_PAGE_CONTENT = "search_page_content"
     LIST_REGIONS = "list_regions"
@@ -71,7 +70,6 @@ class GroundedLocalToolName(StrEnum):
     SET_FORM_FIELDS = "set_form_fields"
     READ_NEXT_PAGE = "read_next_page"
     ACTION_RESULTS_NEXT_PAGE = "action_results_next_page"
-    YIELD_MILESTONE = "yield_milestone"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
     WAIT = "wait"
@@ -227,14 +225,6 @@ class _ControlBinding:
                 str(arguments["category"]),
                 tool_call_id,
             )
-        if self.kind is GroundedLocalToolName.YIELD_MILESTONE:
-            return YieldMilestone(
-                context_id,
-                str(arguments["kind"]),
-                str(arguments["reason"]),
-                tool_call_id,
-                arguments.get("reason_code"),
-            )
         if self.kind is GroundedLocalToolName.SUBMIT_FINAL_RESPONSE:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -246,7 +236,7 @@ class _FinalResponseBinding:
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         del tool_call_id
-        raw_refs = arguments["evidence_refs"]
+        raw_refs = arguments.get("evidence_refs", ())
         if not isinstance(raw_refs, list | tuple):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         try:
@@ -281,7 +271,7 @@ class _CountChildrenBinding:
 
 
 @dataclass(frozen=True)
-class _PinFactBinding:
+class _RememberFactBinding:
     public_to_canonical: Mapping[str, str]
     evidence_index: WorldEvidenceIndex
     existing: Mapping[str, WorkingFact]
@@ -312,11 +302,11 @@ class _PinFactBinding:
                     GroundedToolResolutionCode.INVALID_ARGUMENTS,
                     "working fact key already identifies different evidence",
                 )
-            return PinFactResult(
+            return RememberFactResult(
                 context_id,
-                GroundedLocalToolName.PIN_FACT.value,
+                GroundedLocalToolName.REMEMBER_FACT.value,
                 {"key": key, "evidence_ref": public_ref, "purpose": purpose},
-                {"status": "already_pinned", "key": key},
+                {"status": "already_remembered", "key": key},
                 tool_call_id,
             )
         try:
@@ -326,11 +316,11 @@ class _PinFactBinding:
                 GroundedToolResolutionCode.INVALID_ARGUMENTS,
                 str(exc),
             ) from exc
-        return PinFactResult(
+        return RememberFactResult(
             context_id,
-            GroundedLocalToolName.PIN_FACT.value,
+            GroundedLocalToolName.REMEMBER_FACT.value,
             {"key": key, "evidence_ref": public_ref, "purpose": purpose},
-            {"status": "pinned", "key": key},
+            {"status": "remembered", "key": key},
             tool_call_id,
             working_fact=fact,
         )
@@ -625,7 +615,7 @@ def compile_grounded_tool_catalog(
             registered.append(
                 RegisteredGroundedTool(
                     ToolSpec(
-                        GroundedLocalToolName.PIN_FACT.value,
+                        GroundedLocalToolName.REMEMBER_FACT.value,
                         "Remember one current scalar F-ref for this episode.",
                         _object_schema(
                             {
@@ -649,7 +639,7 @@ def compile_grounded_tool_catalog(
                             ("key", "evidence_ref", "purpose"),
                         ),
                     ),
-                    _PinFactBinding(
+                    _RememberFactBinding(
                         eligible,
                         context.evidence_index,
                         {item.key: item for item in context.working_facts},
@@ -755,88 +745,37 @@ def compile_grounded_tool_catalog(
             )
         )
 
-    if GroundedLocalToolName.YIELD_MILESTONE.value in context.runtime_controls:
-        registered.append(
-            RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.YIELD_MILESTONE.value,
-                    "Return this executor episode and a brief result proposal for review without claiming success.",
-                    _object_schema(
-                        {
-                            "kind": {
-                                "type": "string",
-                                "description": "review outcome",
-                                "enum": [
-                                    "outcome_proposed",
-                                    "stalled",
-                                    "blocked",
-                                    "capability_gap",
-                                    "needs_replan",
-                                ],
-                            },
-                            "reason": {
-                                "type": "string",
-                                "description": "brief natural-language result proposal or explanation",
-                                "minLength": 1,
-                                "maxLength": 500,
-                            },
-                            "reason_code": {
-                                "type": "string",
-                                "description": "required only for needs_replan",
-                                "enum": [
-                                    "delivery_not_observable",
-                                    "milestone_task_mismatch",
-                                    "capability_unavailable",
-                                ],
-                            },
+    final_evidence = {
+        public: canonical
+        for public, canonical in context.private_fact_bindings.items()
+        if public in delivery.manifest.fact_refs
+    }
+    registered.append(
+        RegisteredGroundedTool(
+            ToolSpec(
+                GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
+                "Submit the complete final answer from the current World directly for native evaluation.",
+                _object_schema(
+                    {
+                        "content": {
+                            "type": "string",
+                            "description": "complete final answer, JSON when the task contract requires JSON",
+                            "minLength": 1,
+                            "maxLength": 8000,
                         },
-                        ("kind", "reason"),
-                    ),
+                        "evidence_refs": {
+                            "type": "array",
+                            "description": "optional current F-refs for traceability",
+                            "items": {"type": "string", "pattern": "^F[1-9][0-9]{0,3}$"},
+                            "maxItems": 32,
+                        },
+                    },
+                    ("content",),
                 ),
-                _ControlBinding(GroundedLocalToolName.YIELD_MILESTONE),
-            )
+            ),
+            _FinalResponseBinding(final_evidence),
         )
-
-    milestone = context.active_milestone_contract
-    retained_keys = {item.key for item in context.working_facts}
-    final_requirements_ready = bool(
-        milestone is not None
-        and milestone.final
-        and {key for key, _description in milestone.required_evidence}.issubset(retained_keys)
     )
-    if final_requirements_ready:
-        final_evidence = {
-            public: canonical
-            for public, canonical in context.private_fact_bindings.items()
-            if public in delivery.manifest.fact_refs
-        }
-        registered.append(
-            RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
-                    "Submit the complete evidence-backed final answer for mechanical admission.",
-                    _object_schema(
-                        {
-                            "content": {
-                                "type": "string",
-                                "description": "complete final answer, JSON when the task contract requires JSON",
-                                "minLength": 1,
-                                "maxLength": 8000,
-                            },
-                            "evidence_refs": {
-                                "type": "array",
-                                "description": "current F-refs that support the final answer",
-                                "items": {"type": "string", "pattern": "^F[1-9][0-9]{0,3}$"},
-                                "minItems": 1,
-                                "maxItems": 32,
-                            },
-                        },
-                        ("content", "evidence_refs"),
-                    ),
-                ),
-                _FinalResponseBinding(final_evidence),
-            )
-        )
 
     registered.extend(
         (

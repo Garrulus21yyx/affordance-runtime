@@ -92,8 +92,6 @@ class RuntimeErrorCode(StrEnum):
     UNSAFE_ACTION = "unsafe_action"
     STALE_TASK_REVISION = "stale_task_revision"
     STALE_STATE_VERSION = "stale_state_version"
-    PLANNER_PROPOSAL_REJECTED = "planner_proposal_rejected"
-    PLANNER_FAILED = "planner_failed"
     EFFECT_ALREADY_SATISFIED = "effect_already_satisfied"
     NO_PROGRESS_REPEAT = "no_progress_repeat"
     PROGRESS_CREDIT_INVARIANT = "progress_credit_invariant"

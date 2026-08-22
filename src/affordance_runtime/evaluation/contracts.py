@@ -6,12 +6,16 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from affordance_runtime.evaluation.evidence import validate_evidence_refs
 from affordance_runtime.execution.contracts import DispatchStatus, ExecutionOutcome
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.acquisition import ObservationAcquisition
 from affordance_runtime.world.contracts import WorldObservation
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.context.world_transition import PublicWorldDelta
 
 
 class ObservedChange(StrEnum):
@@ -83,6 +87,7 @@ class ActionOutcome:
     reason: str
     evidence_refs: tuple[str, ...] = ()
     evidence: Mapping[str, object] = field(default_factory=dict)
+    public_world_delta: PublicWorldDelta | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.observed_change, ObservedChange):
@@ -118,6 +123,16 @@ class ActionOutcome:
         if _contains_secret_key(self.evidence):
             raise ValueError("action outcome evidence cannot contain secret fields")
         object.__setattr__(self, "evidence", freeze_json(self.evidence))
+        if self.public_world_delta is not None:
+            from affordance_runtime.agent.context.world_transition import PublicWorldDelta
+
+            if not isinstance(self.public_world_delta, PublicWorldDelta):
+                raise TypeError("action outcome public transition must be typed")
+            if (
+                self.public_world_delta.before_observation_id != self.before_observation_id
+                or self.public_world_delta.after_observation_id != self.after_observation_id
+            ):
+                raise ValueError("action outcome public transition lineage does not match")
 
 
 @dataclass(frozen=True)
@@ -254,7 +269,7 @@ class EvaluationOutcome:
     after_observation: WorldObservation
     action_outcome: ActionOutcome | None
     task_evaluation: TaskEvaluation
-    semantic_delta: None = None
+    public_world_delta: PublicWorldDelta | None = field(default=None, repr=False)
 
     @classmethod
     def completed_after_execution(
@@ -275,6 +290,7 @@ class EvaluationOutcome:
             after,
             action_outcome,
             task_evaluation,
+            _transition_delta(before, after, action_outcome),
         )
 
     @classmethod
@@ -294,6 +310,7 @@ class EvaluationOutcome:
             after,
             None,
             task_evaluation,
+            _transition_delta(before, after),
         )
 
     def __post_init__(self) -> None:
@@ -313,6 +330,12 @@ class EvaluationOutcome:
             raise TypeError("evaluation task result must be typed")
         if self.task_evaluation.observation_id != self.after_observation.observation_id:
             raise ValueError("task evaluation must match the consumed after world")
+        _validate_transition_delta(
+            self.public_world_delta,
+            self.before_observation,
+            self.after_observation,
+            self.action_outcome,
+        )
         if self.execution is not None:
             if self.execution.result.dispatch_status is DispatchStatus.NOT_SENT:
                 raise ValueError("NOT_SENT execution cannot trigger action outcome")
@@ -343,6 +366,7 @@ class EvaluationInterruption:
     after_observation: WorldObservation
     action_outcome: ActionOutcome | None
     reason_code: EvaluationInterruptionReason
+    public_world_delta: PublicWorldDelta | None = field(default=None, repr=False)
 
     @classmethod
     def interrupted_after_execution(
@@ -363,6 +387,7 @@ class EvaluationInterruption:
             after,
             action_outcome,
             reason_code,
+            _transition_delta(before, after, action_outcome),
         )
 
     @classmethod
@@ -382,6 +407,7 @@ class EvaluationInterruption:
             after,
             None,
             reason_code,
+            _transition_delta(before, after),
         )
 
     def __post_init__(self) -> None:
@@ -393,6 +419,12 @@ class EvaluationInterruption:
             raise ValueError("evaluation interruption requires exactly one causal trigger")
         if self.consumed_acquisition.observation is not self.after_observation:
             raise ValueError("evaluation interruption must retain consumed after world")
+        _validate_transition_delta(
+            self.public_world_delta,
+            self.before_observation,
+            self.after_observation,
+            self.action_outcome,
+        )
         if self.execution is not None:
             if self.execution.result.dispatch_status is DispatchStatus.NOT_SENT:
                 raise ValueError("NOT_SENT execution cannot enter evaluation")
@@ -424,6 +456,41 @@ def _contains_secret_key(value: object) -> bool:
     if isinstance(value, tuple | list):
         return any(_contains_secret_key(item) for item in value)
     return False
+
+
+def _transition_delta(
+    before: WorldObservation,
+    after: WorldObservation,
+    action_outcome: ActionOutcome | None = None,
+) -> PublicWorldDelta:
+    if action_outcome is not None and action_outcome.public_world_delta is not None:
+        return action_outcome.public_world_delta
+    from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
+
+    return WorldTransitionProjector().project(before, after)
+
+
+def _validate_transition_delta(
+    delta: PublicWorldDelta | None,
+    before: WorldObservation,
+    after: WorldObservation,
+    action_outcome: ActionOutcome | None,
+) -> None:
+    from affordance_runtime.agent.context.world_transition import PublicWorldDelta
+
+    if not isinstance(delta, PublicWorldDelta):
+        raise TypeError("evaluation transition requires a typed public World delta")
+    if (
+        delta.before_observation_id != before.observation_id
+        or delta.after_observation_id != after.observation_id
+    ):
+        raise ValueError("evaluation public World delta lineage mismatch")
+    if (
+        action_outcome is not None
+        and action_outcome.public_world_delta is not None
+        and action_outcome.public_world_delta is not delta
+    ):
+        raise ValueError("evaluation consumers must share one public World delta instance")
 
 
 def _evaluation_id(acquisition: ObservationAcquisition) -> str:
