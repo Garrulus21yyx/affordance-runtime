@@ -73,3 +73,24 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
     assert "working_facts_digest(state.workspace, pending_fact)" in core_source
     assert '"max_policy_decisions"' in core_source
     assert '"control_stalled"' in monitor_source
+
+
+def test_superseded_delivery_capacity_and_error_mapping_paths_are_absent() -> None:
+    production = "\n".join(
+        path.read_text()
+        for pattern in ("*.py", "*.yaml", "*.yml")
+        for path in _SRC.rglob(pattern)
+    )
+    bridge = (_SRC / "model" / "policy" / "pydantic_ai_bridge.py").read_text()
+    admission = (_SRC / "model" / "policy" / "request_admission.py").read_text()
+    binder = (_SRC / "model" / "policy" / "grounded_policy_context.py").read_text()
+
+    assert not (_SRC / "agent" / "context" / "evidence_candidate_projection.py").exists()
+    assert "EvidenceCandidate" not in production
+    assert "evidence_candidates" not in production
+    assert "MAX_GROUNDED_WORKSPACE_BYTES" not in binder
+    assert "def admit_model_request(" not in admission
+    assert '_record_local_failure(error, "grounded_tool_resolution"' not in bridge
+    assert "except ModelRequestCapacityError" in bridge
+    assert "except GroundedToolResolutionError" in bridge
+    assert "ModelFailureKind.INTERNAL_ERROR" in bridge

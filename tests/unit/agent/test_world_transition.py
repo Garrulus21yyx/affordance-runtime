@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.observation_delivery import current_findings_digest
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_region_index import RegionVersion, WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
@@ -77,6 +80,24 @@ def test_public_world_delta_is_complete_and_binds_exact_lineage() -> None:
     assert set(delta.changed_region_keys)
 
 
+def test_current_findings_digest_orders_nested_subject_semantics_canonically() -> None:
+    observation_id = "source:nested-semantics"
+    world = fused_world(
+        observation_id,
+        (
+            SemanticTarget("a", "status", "same", {"nested": {"z": 1}}),
+            SemanticTarget("b", "status", "same", {"nested": {"a": 2}}),
+        ),
+        (
+            StateFact("fact:a", "a", "value", 1, observation_id),
+            StateFact("fact:b", "b", "value", 2, observation_id),
+        ),
+        surface="dom",
+    )
+
+    assert current_findings_digest(world) == current_findings_digest(world)
+
+
 @pytest.mark.parametrize(
     ("before_values", "after_values", "expected_changes"),
     (
@@ -100,6 +121,42 @@ def test_public_world_delta_covers_supported_target_and_fact_changes(
 
     assert len(delta.target_changes) + len(delta.fact_changes) == expected_changes
     assert delta.changed is bool(expected_changes)
+
+
+@given(
+    st.dictionaries(st.text(alphabet="abcde", min_size=1, max_size=4), st.integers(), max_size=12),
+    st.dictionaries(st.text(alphabet="abcde", min_size=1, max_size=4), st.integers(), max_size=12),
+)
+def test_public_world_delta_classifies_every_generated_supported_transition(
+    before_values: dict[str, int],
+    after_values: dict[str, int],
+) -> None:
+    projector = WorldTransitionProjector()
+    delta = projector.project(
+        _world("source:before", before_values),
+        _world("source:after", after_values),
+    )
+    target_kinds = {item.target_id: item.kind for item in delta.target_changes}
+    fact_kinds = {item.subject_id: item.kind for item in delta.fact_changes}
+    expected = {
+        key: (
+            PublicChangeKind.ADDED
+            if key not in before_values
+            else PublicChangeKind.REMOVED
+            if key not in after_values
+            else PublicChangeKind.MODIFIED
+        )
+        for key in before_values.keys() | after_values.keys()
+        if before_values.get(key) != after_values.get(key) or key not in before_values or key not in after_values
+    }
+
+    assert target_kinds == expected
+    assert fact_kinds == expected
+    assert delta == projector.project(
+        _world("source:before", before_values),
+        _world("source:after", after_values),
+    )
+    assert delta.changed is bool(expected)
 
 
 def test_delivery_index_consumes_only_a_delta_ending_at_its_world() -> None:

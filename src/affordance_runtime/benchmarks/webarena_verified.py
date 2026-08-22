@@ -12,14 +12,27 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent.context.budgets import serialized_size
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery, build_model_turn_delivery
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore, current_findings_digest
+from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
+from affordance_runtime.agent.decisions import SearchPageContentResult, SelectAction
+from affordance_runtime.agent.monitor import EpisodeMonitor
+from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE
+from affordance_runtime.agent.recovery import EpisodeMonitorRecommendation
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.working_facts import is_public_scalar
-from affordance_runtime.agent.workspace import AgentWorkspace
+from affordance_runtime.agent.workspace import (
+    AgentWorkspace,
+    DefaultWorkspaceReducer,
+    working_facts_digest,
+)
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
 )
@@ -30,7 +43,13 @@ from affordance_runtime.evaluation import (
     TaskOutcomeKind,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.execution import (
+    ActionResult,
+    DispatchStatus,
+    ExecutionCompletion,
+    ExecutionReceipt,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
@@ -73,7 +92,7 @@ WA_DEFAULT_TIMEOUT_S = 0.0
 WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
 WA_FINAL_OUTPUT_ID = "webarena_final_response"
 WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
-WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v4"
+WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v1"
 _W1B_PRIVATE_MARKERS = (
@@ -531,24 +550,43 @@ def _public_final_response_contract(format_text: str) -> dict[str, object]:
     text = format_text.strip()
     if not text:
         return {}
-    contract: dict[str, object] = {"format": text[:4096]}
-    schema = _extract_json_object(text)
-    if isinstance(schema, Mapping):
-        contract["json_schema"] = to_json_compatible(schema)
-    return contract
+    extracted = _extract_json_object(text)
+    if extracted is not None:
+        schema, start, end = extracted
+        contract = {"json_schema": _validation_only_json_schema(schema)}
+        guidance = " ".join((text[:start] + " " + text[end:]).split())[:1024]
+        if guidance:
+            contract["guidance"] = guidance
+        return contract
+    return {"format": text[:4096]}
 
 
-def _extract_json_object(text: str) -> object | None:
+def _validation_only_json_schema(value: object) -> object:
+    """Remove duplicate prose annotations while preserving validation semantics."""
+
+    if isinstance(value, Mapping):
+        annotations = {"$comment", "description", "example", "examples", "title"}
+        return {
+            str(key): _validation_only_json_schema(item)
+            for key, item in value.items()
+            if str(key) not in annotations
+        }
+    if isinstance(value, list | tuple):
+        return tuple(_validation_only_json_schema(item) for item in value)
+    return to_json_compatible(value)
+
+
+def _extract_json_object(text: str) -> tuple[Mapping[str, object], int, int] | None:
     decoder = json.JSONDecoder()
     for index, char in enumerate(text):
         if char != "{":
             continue
         try:
-            value, _end = decoder.raw_decode(text[index:])
+            value, end = decoder.raw_decode(text[index:])
         except json.JSONDecodeError:
             continue
         if isinstance(value, Mapping):
-            return value
+            return value, index, index + end
     return None
 
 
@@ -652,6 +690,7 @@ async def inspect_webarena_verified_w1b_world(
     summary = {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "stage": "w1b-world",
+        "agent_loop_profile": _agent_loop_profile_diagnostics(),
         "selection_seed": seed,
         "case_count": len(cases),
         "ready": (
@@ -809,6 +848,11 @@ def _w1b_world_success(
         catalog,
         delivery,
     )
+    transition_diagnostic = _transition_delivery_diagnostic(
+        task,
+        observation,
+        context,
+    )
     acceptance_errors = []
     if missing_tool_refs:
         acceptance_errors.append(f"tool_targets_missing_from_actor:{len(missing_tool_refs)}")
@@ -824,10 +868,12 @@ def _w1b_world_success(
     acceptance_errors.extend(delivery_probe["acceptance_errors"])
     acceptance_errors.extend(candidate_diagnostic["acceptance_errors"])
     acceptance_errors.extend(evidence_diagnostic["acceptance_errors"])
+    acceptance_errors.extend(transition_diagnostic["acceptance_errors"])
     acceptance_errors.extend(_w1b_cost_errors(request_budget))
     return {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "status": "ok",
+        "agent_loop_profile": _agent_loop_profile_diagnostics(),
         "acceptance_errors": tuple(acceptance_errors),
         "case": case_ref.public_payload(),
         "source": {
@@ -872,6 +918,7 @@ def _w1b_world_success(
             "partial": context.actions.has_more,
             "recovery": "find_controls" if context.actions.has_more else "not_required",
         },
+        "transition_delivery": transition_diagnostic,
         "capability_census": _capability_census(context, catalog),
         "decision_state": state_metrics,
         "structural_closure": {
@@ -894,6 +941,354 @@ def _w1b_world_success(
         },
         "request_budget": dict(request_budget),
     }
+
+
+def _transition_delivery_diagnostic(
+    task: TaskGoal,
+    before,
+    before_context,
+) -> dict[str, object]:
+    """Run one generic real-page-shape transition through the provider-free owner chain."""
+
+    key_counts = Counter((item.subject_id, item.predicate) for item in before.facts)
+    selected = next(
+        (
+            item
+            for item in before.facts
+            if key_counts[(item.subject_id, item.predicate)] == 1 and is_public_scalar(item.value)
+        ),
+        None,
+    )
+    if selected is None:
+        return {
+            "provider_attempts": 0,
+            "acceptance_errors": ("transition:no_unique_public_scalar_fact",),
+        }
+    changed_value = _diagnostic_changed_value(selected.value)
+    after_id = f"{before.observation_id}:provider-free-transition"
+    after = replace(
+        before,
+        observation_id=after_id,
+        targets=tuple(
+            replace(
+                item,
+                state={**item.state, selected.predicate: changed_value},
+            )
+            if item.target_id == selected.subject_id and selected.predicate in item.state
+            else item
+            for item in before.targets
+        ),
+        facts=tuple(
+            replace(item, value=changed_value) if item.fact_id == selected.fact_id else item
+            for item in before.facts
+        ),
+        bindings=tuple(replace(item, world_observation_id=after_id) for item in before.bindings),
+    )
+    delta = WorldTransitionProjector().project(before, after)
+    builder = ActionSpaceBuilder()
+    executable_option = next(
+        (
+            option
+            for option in builder.build(task, before).options
+            if not option.destination_required and not option.parameter_schema.get("required")
+        ),
+        None,
+    )
+    if executable_option is None:
+        return {
+            "provider_attempts": 0,
+            "acceptance_errors": ("transition:no_parameter_free_action",),
+        }
+    selection = builder.admit(executable_option, {})
+    bound = ActionBinder().bind(
+        selection,
+        before,
+        before_context.context_id,
+        tool_call_id="diagnostic:transition",
+    )
+    action_result = ActionResult(
+        bound.request_id,
+        DispatchStatus.SENT,
+        "provider-free-diagnostic",
+        True,
+    )
+    receipts = ExecutionReceiptBatch(
+        (
+            ExecutionReceipt(
+                bound,
+                action_result,
+                before.observation_id,
+                after.observation_id,
+            ),
+        ),
+        ExecutionCompletion.COMPLETE,
+    )
+    decision = SelectAction(
+        before_context.context_id,
+        executable_option.action_id,
+        tool_call_id="diagnostic:transition",
+    )
+    evaluation = TaskEvaluation(
+        task.task_id,
+        after.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "provider-free transition diagnostic",
+    )
+    transition_step = StepResult(
+        decision,
+        before,
+        after,
+        evaluation,
+        execution_receipts=receipts,
+        feedback="provider_free_public_transition",
+        public_world_delta=delta,
+    )
+    after_action_space = ActionSpaceBuilder().build(task, after)
+    before_index = before_context.region_index
+    after_index = WorldDeliveryIndex.from_observation(
+        after,
+        after_action_space.options,
+        public_world_delta=delta,
+        previous_index=before_index,
+    )
+    store = ObservationDeliveryStore().advance(transition_step, step_index=1)
+    bootstrap_context = ContextBuilder().build(
+        task,
+        after,
+        after_action_space,
+        evaluation,
+        current_step_index=1,
+        region_index=after_index,
+        delivery_store=store,
+    )
+    reducer = DefaultWorkspaceReducer()
+    workspace = reducer.reduce(
+        AgentWorkspace(),
+        transition_step,
+        project_step_result(transition_step),
+        1,
+        bootstrap_context.observation_delivery.current_findings,
+    )
+    after_context = ContextBuilder().build(
+        task,
+        after,
+        after_action_space,
+        evaluation,
+        workspace=workspace,
+        current_step_index=1,
+        region_index=after_index,
+        delivery_store=store,
+    )
+    delivery = build_model_turn_delivery(after_context, include_images=False)
+    monitor = EpisodeMonitor()
+    monitor.start_episode(before, before_context.task.evaluation)
+    transition_monitor = monitor.evaluate(
+        transition_step,
+        current_findings_digest(after),
+        working_facts_digest(workspace),
+    )
+
+    binder = GroundedPolicyContextBinder()
+    request = ModelDecisionRequest(
+        request_id=f"diagnostic:transition:{after_context.context_id}",
+        agent_context=after_context,
+    )
+    catalog = compile_grounded_tool_catalog(
+        after_context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+    )
+    admitted = binder.action_request(
+        request,
+        catalog.specs,
+        delivery,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        include_tool_menu=False,
+    )
+
+    local_decision = SearchPageContentResult(
+        after_context.context_id,
+        "search_page_content",
+        {"query": "provider-free transition diagnostic"},
+        {"kind": "NoMatches", "items": (), "total_count": 0},
+        tool_call_id="diagnostic:local-search",
+    )
+    local_step = StepResult(
+        local_decision,
+        after,
+        after,
+        evaluation,
+        feedback="local_tool_result",
+    )
+    local_store = store.advance(local_step, step_index=2)
+    local_workspace = reducer.reduce(
+        workspace,
+        local_step,
+        project_step_result(local_step),
+        2,
+        after_context.observation_delivery.current_findings,
+    )
+    local_monitor = monitor.evaluate(
+        local_step,
+        current_findings_digest(after),
+        working_facts_digest(local_workspace),
+    )
+    local_context = ContextBuilder().build(
+        task,
+        after,
+        after_action_space,
+        evaluation,
+        workspace=local_workspace,
+        current_step_index=2,
+        context_generation=1,
+        region_index=after_index,
+        delivery_store=local_store,
+    )
+    local_delivery = build_model_turn_delivery(local_context, include_images=False)
+    local_request = ModelDecisionRequest(
+        request_id=f"diagnostic:local:{local_context.context_id}",
+        agent_context=local_context,
+    )
+    local_catalog = compile_grounded_tool_catalog(
+        local_context,
+        GroundedToolPhase.ACTION_SELECTION,
+        local_delivery,
+    )
+    local_admitted = binder.action_request(
+        local_request,
+        local_catalog.specs,
+        local_delivery,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        include_tool_menu=False,
+    )
+
+    public_diff = _serialized_public_snapshot_diff(before, after)
+    delta_keys = tuple(
+        sorted(
+            (
+                *(
+                    ("target", item.target_id, "semantic")
+                    for item in delta.target_changes
+                ),
+                *(
+                    ("fact", item.subject_id, item.predicate)
+                    for item in delta.fact_changes
+                ),
+            )
+        )
+    )
+    common_keys = {item.key for item in before_index.regions}.intersection(
+        item.key for item in after_index.regions
+    )
+    unchanged_keys = tuple(key for key in common_keys if key not in delta.changed_region_keys)
+    reused = tuple(
+        key
+        for key in unchanged_keys
+        if before_index.version_for(key) is not None
+        and after_index.version_for(key) is not None
+        and before_index.version_for(key).version == after_index.version_for(key).version
+        and before_index.version_for(key).cached_outline == after_index.version_for(key).cached_outline
+    )
+    latest_values = tuple(delivery.observation_delivery.latest_effect_values)
+    exact_effect_visible = any(item.exact_value == changed_value for item in latest_values)
+    local_effect_preserved = (
+        local_delivery.observation_delivery.latest_effect is not None
+        and local_delivery.observation_delivery.latest_effect.public_world_delta == delta
+    )
+    errors = []
+    if public_diff != delta_keys:
+        errors.append("transition:serialized_snapshot_delta_mismatch")
+    if not exact_effect_visible:
+        errors.append("transition:latest_effect_exact_value_missing")
+    if not delivery.observation_delivery.changed_regions:
+        errors.append("transition:changed_region_missing")
+    if unchanged_keys and len(reused) != len(unchanged_keys):
+        errors.append("transition:unchanged_region_cache_not_reused")
+    if not local_effect_preserved:
+        errors.append("transition:local_delivery_cleared_latest_effect")
+    if transition_step.public_world_delta != delta:
+        errors.append("transition:step_delta_lineage_mismatch")
+    if not workspace.recent_steps or not workspace.semantic_events:
+        errors.append("transition:workspace_reducer_did_not_commit")
+    if transition_monitor.recommendation is not EpisodeMonitorRecommendation.CONTINUE:
+        errors.append("transition:monitor_rejected_information_increment")
+    if local_monitor.recommendation is not EpisodeMonitorRecommendation.CONTINUE:
+        errors.append("transition:monitor_rejected_bounded_local_search")
+    if admitted.breakdown.estimated_total_tokens <= 0 or local_admitted.breakdown.estimated_total_tokens <= 0:
+        errors.append("transition:post_transition_request_not_admitted")
+    if "LatestEffect" not in delivery.view.text or "CurrentFindings" not in delivery.view.text:
+        errors.append("transition:change_first_order_missing")
+    return {
+        "provider_attempts": 0,
+        "agent_loop_profile": _agent_loop_profile_diagnostics(),
+        "mutation_kind": "generic_unique_scalar_modification",
+        "public_world_delta": {
+            "target_change_count": len(delta.target_changes),
+            "fact_changes": len(delta.fact_changes),
+            "changed_region_count": len(delta.changed_region_keys),
+            "before_digest": delta.before_world_digest,
+            "after_digest": delta.after_world_digest,
+        },
+        "serialized_snapshot_diff_count": len(public_diff),
+        "serialized_snapshot_matches_delta": public_diff == delta_keys,
+        "latest_effect_exact_value_visible": exact_effect_visible,
+        "changed_region_count": len(delivery.observation_delivery.changed_regions),
+        "unchanged_region_count": len(unchanged_keys),
+        "unchanged_region_reused_count": len(reused),
+        "local_delivery_preserved_latest_effect": local_effect_preserved,
+        "step_delta_shared": transition_step.public_world_delta == delta,
+        "workspace_reduced": bool(workspace.recent_steps and workspace.semantic_events),
+        "monitor_recommendation": transition_monitor.recommendation.value,
+        "local_operation": "search_page_content",
+        "local_monitor_recommendation": local_monitor.recommendation.value,
+        "post_transition_request_admitted": admitted.breakdown.estimated_total_tokens > 0,
+        "post_transition_request_tokens": admitted.breakdown.estimated_total_tokens,
+        "post_local_request_admitted": local_admitted.breakdown.estimated_total_tokens > 0,
+        "post_local_request_tokens": local_admitted.breakdown.estimated_total_tokens,
+        "acceptance_errors": tuple(errors),
+    }
+
+
+def _agent_loop_profile_diagnostics() -> dict[str, int]:
+    return {
+        "max_policy_decisions": DEFAULT_AGENT_LOOP_PROFILE.max_policy_decisions,
+        "max_consecutive_observation_only": DEFAULT_AGENT_LOOP_PROFILE.max_consecutive_observation_only,
+        "max_recoveries_per_stall": DEFAULT_AGENT_LOOP_PROFILE.max_recoveries_per_stall,
+    }
+
+
+def _diagnostic_changed_value(value: object) -> object:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, float):
+        return value + 1.0
+    return f"{value} [provider-free update]"
+
+
+def _serialized_public_snapshot_diff(before, after) -> tuple[tuple[str, str, str], ...]:
+    def snapshot(world) -> dict[tuple[str, str, str], str]:
+        values: dict[tuple[str, str, str], str] = {}
+        for target in world.targets:
+            values[("target", target.target_id, "semantic")] = json.dumps(
+                to_json_compatible((target.role, target.label, target.state, target.relations)),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        for fact in world.facts:
+            values[("fact", fact.subject_id, fact.predicate)] = json.dumps(
+                to_json_compatible(fact.value),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        return values
+
+    prior = snapshot(before)
+    current = snapshot(after)
+    return tuple(sorted(key for key in prior.keys() | current.keys() if prior.get(key) != current.get(key)))
 
 
 def _w1b_cost_errors(request_budget: Mapping[str, object]) -> tuple[str, ...]:
@@ -1189,9 +1584,9 @@ def _evidence_retention_diagnostic(
         }
 
     default_candidates = tuple(
-        item.fact_ref
-        for item in getattr(context.evidence_candidates, "candidates", ())
-        if item.fact_ref in {public for public, _canonical in eligible}
+        item.evidence_ref
+        for item in context.observation_delivery.current_findings
+        if item.evidence_ref in {public for public, _canonical in eligible}
     )
     if not default_candidates:
         return {
@@ -1203,7 +1598,7 @@ def _evidence_retention_diagnostic(
             "view_changed": False,
             "exact_value_retained": False,
             "working_set_visible": False,
-            "acceptance_errors": ("evidence:no_default_exact_scalar_candidate",),
+            "acceptance_errors": ("evidence:no_current_exact_scalar_finding",),
         }
     public_ref = default_candidates[0]
     canonical_ref = dict(eligible)[public_ref]
@@ -1624,6 +2019,7 @@ def _w1b_world_failure(
     return {
         "schema_version": WA_SCHEMA_W1B_WORLD,
         "status": "failed",
+        "agent_loop_profile": _agent_loop_profile_diagnostics(),
         "acceptance_errors": (f"{origin}:{code}",),
         "case": case_ref.public_payload(),
         "failure_origin": origin,

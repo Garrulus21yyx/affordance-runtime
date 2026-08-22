@@ -293,6 +293,27 @@ def test_multiple_call_repair_cannot_reselect_operation_or_target() -> None:
     asyncio.run(scenario())
 
 
+def test_unexpected_value_error_is_internal_not_invalid_tool_arguments() -> None:
+    async def scenario() -> None:
+        policy = _policy(ScriptedModel([ValueError("unexpected local invariant")]).build())
+        task = shared_task()
+        world = shared_world("unexpected-value-error", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:unexpected-value-error", context))
+
+        assert result.output is None
+        assert result.failure is not None
+        assert result.failure.kind is ModelFailureKind.INTERNAL_ERROR
+
+    asyncio.run(scenario())
+
+
 def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action", "first_gui_action"])

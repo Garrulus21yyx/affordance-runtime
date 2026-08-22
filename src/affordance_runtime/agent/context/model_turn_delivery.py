@@ -39,7 +39,6 @@ class ModelTurnDelivery:
     action_candidates: ActionCandidateProjection
     delivery_index: WorldDeliveryIndex
     includes_images: bool = False
-    evidence_candidates: object | None = None
     observation_delivery: ObservationDelivery | None = None
 
     def __post_init__(self) -> None:
@@ -68,15 +67,6 @@ class ModelTurnDelivery:
             for destination in item.destinations
         ):
             raise ValueError("every candidate destination must enter the same DeliveryManifest")
-        if self.evidence_candidates is not None:
-            from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
-
-            if not isinstance(self.evidence_candidates, EvidenceCandidateProjection):
-                raise TypeError("model turn evidence candidates must be typed")
-            if self.evidence_candidates.world_observation_id != self.world_observation_id:
-                raise ValueError("model turn evidence candidates belong to another World")
-            if any(item.fact_ref not in self.manifest.fact_refs for item in self.evidence_candidates.candidates):
-                raise ValueError("every evidence candidate must enter the same DeliveryManifest")
         if type(self.includes_images) is not bool:
             raise TypeError("model turn delivery image selection must be boolean")
         if not isinstance(self.observation_delivery, ObservationDelivery):
@@ -105,7 +95,6 @@ def build_model_turn_delivery(
         selected_region_keys=_selected_region_keys(context),
         selected_cursor=context.delivery_lens.page_cursor if context.delivery_lens is not None else "",
         action_candidates=context.action_candidates,
-        evidence_candidates=context.evidence_candidates,
         public_fact_bindings=context.private_fact_bindings,
         evidence_index=context.evidence_index,
         observation_delivery=context.observation_delivery,
@@ -138,7 +127,6 @@ def build_model_turn_delivery(
         context.action_candidates,
         context.region_index,
         include_images,
-        None,
         context.observation_delivery,
     )
 

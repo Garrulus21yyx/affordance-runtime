@@ -14,7 +14,6 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
     actor_world_for_delivery,
 )
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
-from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
 from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import (
@@ -253,7 +252,6 @@ def render_compact_actor_world(
     selected_region_keys: frozenset[str] | None = None,
     selected_cursor: str = "",
     action_candidates: ActionCandidateProjection | None = None,
-    evidence_candidates: EvidenceCandidateProjection | None = None,
     public_fact_bindings: Mapping[str, str] | None = None,
     evidence_index: WorldEvidenceIndex | None = None,
     observation_delivery: ObservationDelivery | None = None,
@@ -283,7 +281,6 @@ def render_compact_actor_world(
             verbs,
             observation_id,
             action_candidates=action_candidates,
-            evidence_candidates=evidence_candidates,
             observation_delivery=observation_delivery,
         )
     if region_index.world_observation_id != observation.observation_id:
@@ -298,7 +295,6 @@ def render_compact_actor_world(
         selected_region_keys=selected_region_keys or frozenset(),
         expanded_refs=expanded_refs or frozenset(),
         action_candidates=action_candidates,
-        evidence_candidates=evidence_candidates,
         public_fact_bindings=public_fact_bindings or {},
         evidence_index=evidence_index,
         observation_delivery=observation_delivery,
@@ -314,7 +310,6 @@ def _render_full(
     observation_id: str,
     *,
     action_candidates: ActionCandidateProjection | None = None,
-    evidence_candidates: EvidenceCandidateProjection | None = None,
     observation_delivery: ObservationDelivery | None = None,
 ) -> WorldDeliveryView:
     manifest = _ManifestBuilder(observation_id)
@@ -336,11 +331,6 @@ def _render_full(
         lines.extend(_render_latest_effect(observation_delivery, manifest))
         lines.extend(_render_current_findings(observation_delivery, manifest))
         lines.extend(_render_changed_regions(observation_delivery, manifest))
-    elif evidence_candidates is not None and evidence_candidates.candidates:
-        lines.append(f"EvidenceCandidates exact=true count={len(evidence_candidates.candidates)}")
-        for item in evidence_candidates.candidates:
-            manifest.fact(item.fact_ref)
-            lines.append(f"  [{item.fact_ref}] predicate={_value(item.predicate)} value={_value(item.value)}")
     if action_candidates is not None and action_candidates.candidates:
         lines.append(f"ActionCandidates exact=true count={len(action_candidates.candidates)}")
         for item in action_candidates.candidates:
@@ -370,7 +360,6 @@ def _render_page_map(
     selected_region_keys: frozenset[str],
     expanded_refs: frozenset[str],
     action_candidates: ActionCandidateProjection | None,
-    evidence_candidates: EvidenceCandidateProjection | None,
     public_fact_bindings: Mapping[str, str],
     evidence_index: WorldEvidenceIndex | None,
     observation_delivery: ObservationDelivery | None,
@@ -431,17 +420,6 @@ def _render_page_map(
     if observation_delivery is not None:
         lines.extend(_render_changed_regions(observation_delivery, manifest))
         exact_region_keys.update(item.region_key for item in observation_delivery.changed_regions)
-    elif evidence_candidates is not None and evidence_candidates.candidates:
-        lines.append(f"EvidenceCandidates exact=true count={len(evidence_candidates.candidates)}")
-        for rank, item in enumerate(evidence_candidates.candidates, 1):
-            manifest.fact(item.fact_ref)
-            lines.append(
-                f"  rank={rank} [{item.fact_ref}] predicate={_value(item.predicate)} "
-                f"value={_value(item.value)} region={_value(item.region_ref)} "
-                f"source={_value(item.source_context)} coverage={_value(item.coverage)} "
-                f"lineage={_value(item.lineage)}"
-            )
-
     if action_candidates is not None and action_candidates.candidates:
         lines.extend(
             _render_action_candidates(

@@ -9,7 +9,7 @@ actor: |-
   - observation is an AX-style compact rendering of the authoritative current World. Indentation preserves hierarchy;
     coverage headers state whether each current structural document is complete.
   - Executable E refs print their currently supported verbs inline in ActionCandidates/ActiveView/SearchResults.
-    EvidenceCandidates contains current scalar/result F refs and exact values; it never makes them executable.
+    LatestEffect and CurrentFindings contain current scalar/result F refs and exact values; they never make them executable.
     Folded PageMap entries contain only R refs and exact descriptors. Use read_region when you already know the PageMap
     region to inspect. Use search_page_content to locate readable text, values, or facts. Use find_controls to locate a current
     executable GUI control. Finding content never makes it executable; execute only a current E-ref. A next-page tool

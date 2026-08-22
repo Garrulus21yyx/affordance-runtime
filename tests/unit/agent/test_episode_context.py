@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from types import SimpleNamespace
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -54,6 +57,46 @@ def test_workspace_reducer_is_total_for_one_thousand_ordinary_reads() -> None:
     assert activity.attempt_count == 1_000
     assert workspace.semantic_events == ()
     assert sum(item["event"] == "step_completed" for item in trace.events) == 1_000
+
+
+@given(
+    st.lists(
+        st.sampled_from(("read_region", "search_page_content", "find_controls", "wait")),
+        max_size=200,
+    )
+)
+def test_workspace_reducer_folds_generated_observation_activity_sequences(
+    operations: list[str],
+) -> None:
+    world = shared_world("observation:generated-activity", False)
+    unchanged = WorldTransitionProjector().project(world, world)
+    reducer = DefaultWorkspaceReducer()
+    workspace = AgentWorkspace()
+
+    for step_index, operation in enumerate(operations, 1):
+        step = SimpleNamespace(
+            public_world_delta=unchanged,
+            execution_receipts=None,
+            decision=SimpleNamespace(working_fact=None),
+            recovery_signal=None,
+            status_after="running",
+            failure_code=None,
+            runtime_failure=None,
+            feedback="local_tool_result",
+        )
+        workspace = reducer.reduce(
+            workspace,
+            step,
+            AgentTurnView(operation, operation, reason="unchanged"),
+            step_index,
+        )
+
+    expected = Counter(operations)
+    actual = {item.family.value: item.attempt_count for item in workspace.activities}
+    assert actual == expected
+    assert len(workspace.recent_steps) == min(4, len(operations))
+    assert tuple(item.semantic_action for item in workspace.recent_steps) == tuple(operations[-4:])
+    assert workspace.semantic_events == ()
 
 
 def test_exact_gui_result_survives_after_it_leaves_latest_four_steps() -> None:

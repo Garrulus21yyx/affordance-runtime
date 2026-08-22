@@ -235,32 +235,6 @@ def _diagnostic_breakdown(
     )
 
 
-def admit_model_request(
-    *,
-    messages: tuple[ModelMessage, ...],
-    tools: tuple[ToolSpec, ...],
-    budget: ModelRequestBudget,
-    phase: str,
-    component_payloads: Mapping[str, object] | None = None,
-    image_byte_count: int = 0,
-    image_inputs: Sequence[object] = (),
-    repair_payload: object | None = None,
-) -> AdmittedModelRequest:
-    breakdown = estimate_model_request(
-        messages=messages,
-        tools=tools,
-        budget=budget,
-        phase=phase,
-        component_payloads=component_payloads,
-        image_byte_count=image_byte_count,
-        image_inputs=image_inputs,
-        repair_payload=repair_payload,
-    )
-    if breakdown.admission_action == "context_capacity":
-        raise ModelRequestCapacityError(breakdown)
-    return AdmittedModelRequest(messages, tools, breakdown)
-
-
 def estimate_model_request(
     *,
     messages: tuple[ModelMessage, ...],

@@ -4,11 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.benchmarks.webarena_verified import (
     WA_HARD_SUBSET_SHA256,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
     _capability_census,
+    _public_final_response_contract,
+    _transition_delivery_diagnostic,
     evaluate_webarena_verified_manifest,
     inspect_webarena_verified_w0_readiness,
     load_webarena_verified_tasks,
@@ -17,6 +21,7 @@ from affordance_runtime.benchmarks.webarena_verified import (
     write_webarena_verified_subset,
     write_webarena_verified_w0_manifest,
 )
+from tests.support.agent.core_loop_support import SharedTaskEvaluator, shared_task, shared_world
 
 
 def _dataset(path: Path, *, count: int = 36) -> Path:
@@ -63,6 +68,56 @@ def test_w1b_world_capability_census_reports_t1_browsergym_support() -> None:
     assert census["hover"]["registry_defined"] is True
     assert census["hover"]["adapter_supported"] is False
     assert census["hover"]["absence_reason"] == "adapter_not_supported"
+
+
+def test_public_final_response_contract_has_one_normalized_representation() -> None:
+    schema = (
+        '{"title":"Answer","type":"object","properties":'
+        '{"answer":{"type":"string","description":"Verbose duplicate prose"}}}'
+    )
+
+    assert _public_final_response_contract(f"Return JSON like this:\n{schema}") == {
+        "json_schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+        },
+        "guidance": "Return JSON like this:",
+    }
+    assert _public_final_response_contract("Return one concise sentence") == {
+        "format": "Return one concise sentence"
+    }
+
+
+@pytest.mark.asyncio
+async def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> None:
+    task = shared_task()
+    world = shared_world("w1b-transition", False)
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        await SharedTaskEvaluator().evaluate(task, world),
+    )
+
+    diagnostic = _transition_delivery_diagnostic(task, world, context)
+
+    assert diagnostic["provider_attempts"] == 0
+    assert diagnostic["agent_loop_profile"] == {
+        "max_policy_decisions": 30,
+        "max_consecutive_observation_only": 8,
+        "max_recoveries_per_stall": 1,
+    }
+    assert diagnostic["serialized_snapshot_matches_delta"] is True
+    assert diagnostic["latest_effect_exact_value_visible"] is True
+    assert diagnostic["local_delivery_preserved_latest_effect"] is True
+    assert diagnostic["step_delta_shared"] is True
+    assert diagnostic["workspace_reduced"] is True
+    assert diagnostic["monitor_recommendation"] == "continue"
+    assert diagnostic["local_operation"] == "search_page_content"
+    assert diagnostic["local_monitor_recommendation"] == "continue"
+    assert diagnostic["post_transition_request_admitted"] is True
+    assert diagnostic["post_local_request_admitted"] is True
+    assert diagnostic["acceptance_errors"] == ()
 
 
 def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp_path: Path) -> None:

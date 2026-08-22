@@ -21,7 +21,6 @@ from affordance_runtime.agent.working_facts import public_working_facts
 from affordance_runtime.agent.workspace import render_agent_workspace
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
-from affordance_runtime.model.policy.grounded_tool_contracts import MAX_GROUNDED_WORKSPACE_BYTES
 from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
     perception_uses_images,
@@ -107,7 +106,6 @@ class GroundedPolicyContextBinder:
             include_images=include_images,
             observation=request.agent_context.current_observation,
             action_candidates=request.agent_context.action_candidates,
-            evidence_candidates=request.agent_context.evidence_candidates,
         )
         full_actor_payload = json.dumps(
             {"observation": full_view.text},
@@ -267,8 +265,6 @@ class GroundedPolicyContextBinder:
         include_images: bool,
     ) -> tuple[ModelMessage, ...]:
         text = json.dumps(public, separators=(",", ":"), ensure_ascii=False)
-        if len(text.encode()) > MAX_GROUNDED_WORKSPACE_BYTES:
-            raise ValueError("grounded AgentContext exceeds its model workspace bound")
         if not include_images:
             return (
                 ModelMessage(role="system", content=system_prompt),

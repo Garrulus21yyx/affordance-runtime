@@ -2,8 +2,8 @@
 
 ## Status
 
-Current status: **single-ActionPolicy control path plus C8 stages 1–6 implemented provider-free /
-generated diagnostics, fresh audit, and live closure gates blocked**. Prior
+Current status: **single-ActionPolicy C8–C9 provider-free implementation/evidence/audit verified /
+live closure awaiting explicit authorization**. Prior
 Planner/Auditor G0–G6 artifacts remain historical scoped evidence for the superseded mission path; they do not
 authorize another live run.
 
@@ -84,9 +84,21 @@ history byte cap, RunState pre-cap, `EpisodeHistoryCapacityError`, and `fact_cha
 `EpisodeMonitor` now owns exactly three information digests and two counters. Different query/region observations with
 no World/Findings/Facts increment form one streak, threshold crossing produces one recovery, and recurrence returns
 operational `control_stalled` without changing TaskEvaluation semantics. `AgentLoopProfile(30, 8, 1)` caps the old turn
-budget rather than increasing it. Focused properties, Ruff, compileall, and the full provider-free suite pass with
-1,438 tests and 19 skips. No live or Task-7 run was performed, no prompt or historical budget was increased, and
-remaining C8 diagnostics and fresh-audit gates stay open.
+budget rather than increasing it. No live or Task-7 run was performed, no prompt or historical budget was increased,
+the fresh-audit gate passed, and the separately authorized live gate stays open.
+
+Provider-free transition evidence on 2026-08-22 is persisted at
+`evidence/w1b-world-c8-transition-provider-free-run3/`. All six frozen cases report no acceptance errors: typed delta
+and independent serialized snapshot diff agree, the exact changed value enters LatestEffect, and every unchanged
+region reuses its version/cache. Each provider-free mutation fixture is applied to a separately captured real-page
+shape, then committed through `StepResult → WorkspaceReducer → EpisodeMonitor → RequestAdmission`; an actual typed
+`search_page_content` local step follows and preserves LatestEffect before a second admitted request. These fixtures do
+not claim a real dispatched site mutation or replace the separately authorized live witnesses. Every transition
+diagnostic records `provider_attempts=0`, and all seven JSON artifacts explicitly record the unchanged
+`AgentLoopProfile(30, 8, 1)`. The complete initial-page request estimates are 7,432–8,591 tokens with a 7,881.5
+median, below the frozen 8,000 median gate. The global EvidenceCandidates compatibility path and secondary
+`admit_model_request` owner are physically deleted; unexpected local ValueError maps to `internal_error`. The full suite passes 1,445 tests with 19
+skips, and Ruff, compileall, and diff-check pass. Independent fresh-context review reports no P0/P1/P2.
 
 Run17 recorded `CASE_FINISHED`, `cleanup_status=succeeded`, and `report_status=exported`; it does not reopen cleanup.
 The existing persist-before-cleanup order and bounded cleanup/viewer contracts remain unchanged. A future
@@ -288,8 +300,8 @@ For every W1b-World page:
 - executable controls are found through `find_controls`, content through `search_page_content`, and known content
   through `read_region`;
 - same-item probe matching requires label, allowed role, required operation, and next-manifest membership;
-- required-evidence ranking properties place a matching exact public scalar in default EvidenceCandidates; the
-  six-page initial-world diagnostic separately proves a default current scalar F-ref can be pinned and retained;
+- change-first CurrentFindings exposes an eligible exact current scalar without a global lexical ranking path; the
+  six-page diagnostic separately proves a default current scalar F-ref can be pinned and retained;
 - `F-ref → pin_fact → WorkingFact → search/view change → retained value` is provider-free verified;
 - folded views retain structural closure and beat a separately measured, non-authoritative full-delivery baseline;
 - no private binding, selector, hidden evaluator state, credential, or stale local ref leaks.

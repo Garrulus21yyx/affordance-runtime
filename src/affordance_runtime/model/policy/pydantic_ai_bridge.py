@@ -389,13 +389,6 @@ class PydanticAIGroundedDecisionPort:
                 request,
                 delivery,
             )
-        except (ValueError, TypeError) as error:
-            self._record_local_failure(error, "grounded_tool_resolution", catalog.specs)
-            return self._invocation_failure(
-                _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, "grounded tool response could not be resolved"),
-                request,
-                delivery,
-            )
         except Exception as error:
             self._record_local_failure(error, "local_runtime", catalog.specs)
             return self._invocation_failure(

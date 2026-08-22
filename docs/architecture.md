@@ -2,14 +2,14 @@
 
 ## Status
 
-Current status: **single-ActionPolicy control path plus C8 stages 1–6 implemented provider-free /
-generated diagnostics, fresh audit, and live closure gates blocked**. The mandatory
+Current status: **single-ActionPolicy C8–C9 provider-free implementation/evidence/audit verified /
+live closure awaiting explicit authorization**. The mandatory
 Planner/Milestone/Evidence/Auditor production path has been removed. Prior Planner/Auditor G0–G6 evidence remains
 historical scoped evidence, not whole-runtime closure.
 
 The accepted root-cause design and concrete removal plan are in
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md). This file and that convergence contract
-describe the current single-policy production path and its pending C8–C9 convergence; milestone-path sections below
+describe the current single-policy production path and its verified provider-free C8–C9 convergence; milestone-path sections below
 are historical analysis, not a selectable path.
 Chronological run evidence, superseded designs, and prior reopenings are preserved in
 [`history/architecture-pre-milestone-convergence-2026-08-22.md`](history/architecture-pre-milestone-convergence-2026-08-22.md).
@@ -19,9 +19,9 @@ The target runtime is a small, continuous GUI runtime with one execution authori
 GoalCompiler, one static advisory GoalPlan, and one ActionPolicy loop. Long-horizon behavior in the baseline comes from
 a bounded `AgentWorkspace` and optional exact working notes, not mandatory roadmap, milestone, Auditor, or MissionState
 transitions. The current code implements change-first delivery, bounded workspace, sole whole-request admission, and
-the information-increment Monitor; remaining generated diagnostics and a fresh audit still prevent verified closure.
+the information-increment Monitor; the independent fresh-context audit reports no P0/P1/P2.
 
-Stages 1–6 of the C8–C9 migration are now implemented provider-free. The seven named contracts are frozen, and
+Stages 1–8 of the C8–C9 migration are now verified provider-free. The seven named contracts are frozen, and
 `WorldTransitionProjector` is the sole producer of `PublicWorldDelta`. `StepResult`, `ActionOutcome`, evaluation
 delivery, the existing `WorldDeliveryIndex`, `EpisodeMonitor`, compact continuity, and trace consume that delta object
 or its exact serialization. The existing index now owns document lineage, content/structure digests, monotonic region
@@ -35,8 +35,9 @@ The append-only `recent_steps`, old history renderer, history-capacity exception
 `fact_change_count` precision loss are removed. `RequestAdmission` is the sole complete-request capacity owner and the
 provider Binder only serializes an admitted request. `EpisodeMonitor` stores only the World, CurrentFindings, and
 WorkingFacts digests plus observation-only/recovery counters; query and region variation cannot disguise a
-zero-information loop. Its `30/8/1` profile caps, but never raises, the prior task turn budget. Remaining C8 diagnostics
-and later C9 gates stay open; this stage status does not authorize a live run.
+zero-information loop. Its `30/8/1` profile caps, but never raises, the prior task turn budget. Six-page C8 transition
+diagnostics and the independent fresh-context audit pass. This status does not authorize a live run. The current full suite passes
+1,445 tests with 19 skips; Ruff, compileall, and diff-check pass.
 
 ## Current end-to-end data flow
 
@@ -202,8 +203,7 @@ Offered targets, changed public contents, decision-relevant state, labels, table
 handles are never silently dropped. A separately rendered full view remains a non-authoritative cost baseline, not a
 fallback that may expand the executable set.
 
-The old global `EvidenceCandidates` ranking path is absent from default production delivery. Its compatibility type is
-temporarily retained for direct legacy callers and is scheduled for deletion with the remaining old delivery paths.
+The old global `EvidenceCandidates` ranking path, type, context field, and renderer branch are physically removed.
 Task-aware ranking remains useful
 for `ActionCandidates` and for ordering pages inside an already identified changed region, but it cannot decide whether
 a post-action public change is visible at all.
@@ -242,7 +242,7 @@ requires no vendored external runtime code.
 The repeated history-capacity and post-result wandering failures shared one cause: model continuity was an
 append-oriented rendering of `recent_steps`, while result salience, repetition folding, request fitting, and provider
 serialization were split across different owners. The production state now uses the reducer below; whole-request
-fitting remains the next migration stage.
+fitting is owned by `RequestAdmission`, while provider binders only serialize an already fitted/admitted candidate.
 
 Each committed `StepResult` therefore has three independent consumers:
 
@@ -605,8 +605,9 @@ Exception classification is closed at the provider boundary:
 | provider transport failure | `provider_unavailable` |
 | unexpected Runtime failure | `internal_error` |
 
-A broad `except (ValueError, TypeError) -> invalid_tool_arguments` mapping is unsupported because it hides workspace,
-serialization, and internal defects as model mistakes.
+A broad `except (ValueError, TypeError) -> invalid_tool_arguments` mapping is absent because it hides workspace,
+serialization, and internal defects as model mistakes. Malformed provider arguments first close into a typed
+`GroundedToolResolutionError`; an unexpected ValueError follows the `internal_error` path.
 
 ### Current SOTA alignment (reviewed 2026-08-22)
 

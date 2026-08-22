@@ -189,7 +189,6 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
-    evidence_candidates: object | None = field(default=None, repr=False, compare=False)
     observation_delivery: ObservationDelivery | None = field(
         default=None,
         repr=False,
@@ -234,13 +233,8 @@ class AgentContext:
             raise ValueError("AgentContext requires current ActionSpace identity")
         from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
-        from affordance_runtime.agent.context.evidence_candidate_projection import EvidenceCandidateProjection
         from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 
-        if self.evidence_candidates is not None and not isinstance(
-            self.evidence_candidates, EvidenceCandidateProjection
-        ):
-            raise TypeError("AgentContext evidence candidates must be typed")
         if self.observation_delivery is not None:
             if not isinstance(self.observation_delivery, ObservationDelivery):
                 raise TypeError("AgentContext observation delivery must be typed")

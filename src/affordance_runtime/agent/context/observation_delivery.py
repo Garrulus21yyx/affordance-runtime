@@ -17,7 +17,7 @@ from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import CurrentFinding
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution.contracts import DispatchStatus
-from affordance_runtime.immutable import freeze_json
+from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 from affordance_runtime.world.public_semantic_digest import public_subject_semantics
 
@@ -185,14 +185,23 @@ def current_findings_digest(observation: WorldObservation) -> str:
     }
     findings = sorted(
         (
-            public_subject_semantics(observation, fact.subject_id),
-            fact.predicate,
-            fact.value,
-            source_coverage.get(fact.source_id, CoverageState.COMPLETE).value,
-        )
-        for fact in observation.facts
-        if is_public_scalar(fact.value)
-        and source_coverage.get(fact.source_id, CoverageState.COMPLETE) is not CoverageState.STALE
+            (
+                public_subject_semantics(observation, fact.subject_id),
+                fact.predicate,
+                fact.value,
+                source_coverage.get(fact.source_id, CoverageState.COMPLETE).value,
+            )
+            for fact in observation.facts
+            if is_public_scalar(fact.value)
+            and source_coverage.get(fact.source_id, CoverageState.COMPLETE) is not CoverageState.STALE
+        ),
+        key=lambda item: json.dumps(
+            to_json_compatible(item),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ),
     )
     encoded = json.dumps(findings, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()

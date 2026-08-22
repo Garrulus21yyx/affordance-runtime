@@ -437,7 +437,6 @@ def _fit_context(
         complete_actions,
         action_space_id,
         action_candidates,
-        None,
         observation_delivery,
     )
 

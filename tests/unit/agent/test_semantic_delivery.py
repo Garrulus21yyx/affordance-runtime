@@ -404,7 +404,6 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
     assert positions == tuple(sorted(positions))
     assert "EvidenceCandidates" not in rendered
     assert "value=true" in rendered
-    assert context.evidence_candidates is None
     assert context.observation_delivery is delivery.observation_delivery
     assert set(delivery.manifest.executable_refs) <= set(context.grounding.target_refs.values())
 
