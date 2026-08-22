@@ -43,7 +43,29 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         environment = ScriptedEnvironment(
             initial_observation=_world("before", False),
             post_observations=(_world("after", True),),
-            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+            results=(
+                ActionResult(
+                    "*",
+                    DispatchStatus.SENT,
+                    "dom",
+                    True,
+                    adapter_evidence={
+                        "browsergym_transition": {
+                            "dispatch_started": 0.0,
+                            "dispatch_returned": 1.0,
+                            "navigation_started": 2.0,
+                            "navigation_committed": 3.0,
+                            "post_capture_started": 4.0,
+                            "post_capture_completed": 5.0,
+                            "before_url": "https://example.test/search",
+                            "after_url": "https://example.test/result",
+                            "before_document_epoch": 7,
+                            "after_document_epoch": 8,
+                            "stability_status": "stable_navigation",
+                        }
+                    },
+                ),
+            ),
         )
 
         await runtime.run_task(environment, _task())
@@ -73,6 +95,13 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert "before_world" not in step["result"]
         assert "after_world" not in step["result"]
         assert step["result"]["execution_receipts"] is not None
+        transition = step["result"]["execution_receipts"]["receipts"][0]["result"][
+            "adapter_evidence"
+        ]["browsergym_transition"]
+        assert transition["navigation_committed"] < transition["post_capture_started"]
+        assert transition["before_url"].endswith("/search")
+        assert transition["after_url"].endswith("/result")
+        assert transition["stability_status"] == "stable_navigation"
         assert step["result"]["action_outcome"] is not None
         assert step["result"]["task_evaluation"]["status"] == "complete"
 

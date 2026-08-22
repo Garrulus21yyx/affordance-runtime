@@ -2,12 +2,38 @@
 
 ## Status
 
-Current status: **Planner/Auditor provider-free G0–G6 passed / W1b-Agent requires separate authorization**.
+Current status: **BrowserGym causal post-action transition REOPENED / live runs blocked**. Prior Planner/Auditor G0–G6
+artifacts remain scoped evidence only; Planner lexical admission has a separate known gap.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
 
 No live run is authorized merely because implementation or unit tests pass.
+
+### Reopened BrowserGym transition gate
+
+The new gate proves `dispatch → causal stable World → StepResult` without using Task-7 or OSM-specific branches:
+
+- a link whose click returns before a 300 ms JavaScript-delayed navigation must capture the destination as the click's
+  `after_world`;
+- next ActionPolicy invocation is impossible before navigation commit, DOMContentLoaded, quiet-window satisfaction,
+  and post capture;
+- destination error content is carried by the click transition trace rather than attributed to the following action;
+- navigation timeout and unstable acquisition are typed and admit no World;
+- a mechanically non-navigation button skips the navigation-start lease;
+- source inspection and timing tests reject a fixed long sleep as the synchronization owner.
+
+Until this gate, the full provider-free suite, static checks, durable evidence, and a fresh-context review agree, do not
+run Task-7 live again. The OSM broken route is environment/data failure and ActionPolicy route efficiency is a separate
+quality dimension; neither may be used to patch or waive the transition invariant.
+
+Implementation verification on 2026-08-22 (not closure): the generic real-Playwright delayed-navigation, pending,
+DOM-instability, non-navigation fast-path, trace-forwarding, and next-policy-stop witnesses pass under both the normal
+test interpreter and the pinned BrowserGym Python 3.12 interpreter. The final repository suite passed 1,497 tests with
+19 skips; fresh-context review and the separate Planner lexical admission gap remain outstanding. Ruff, compileall,
+and diff checks pass. Whole-repository
+mypy remains a known pre-existing red baseline (310 errors in 39 files); the changed BrowserGym files add no new mypy
+diagnostics beyond their prior baseline.
 
 ## Purpose
 

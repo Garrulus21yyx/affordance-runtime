@@ -507,6 +507,7 @@ def _focused_context_subject(
         target_id,
         "keyboard_press",
         focused_private,
+        focused_control.private_navigation_potential if focused_control is not None else False,
     )
     return target, structure, public, private
 

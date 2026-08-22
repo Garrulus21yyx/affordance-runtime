@@ -18,6 +18,7 @@ from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurface
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
+from affordance_runtime.surfaces.browsergym.transition import BrowserGymStabilityStatus
 from affordance_runtime.world import AcquisitionStatus, ObservationRequestKind, WorldObservationRequest
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
@@ -172,6 +173,56 @@ def test_activate_fill_and_select_each_dispatch_one_official_action() -> None:
         assert len(fake.actions) == 1 and fake.actions[0].startswith(prefix)
         assert environment.probe_calls == 1 and environment.step_calls == 1
         asyncio.run(environment.close())
+
+
+def test_navigation_lease_is_mechanical_and_non_navigation_button_keeps_fast_path() -> None:
+    fake, environment, task, world = _fixture()
+    asyncio.run(environment.execute(request_for(world, task, "activate")))
+    assert fake.navigation_expectations == [False]
+    asyncio.run(environment.close())
+
+    raw = raw_observation(ax_node("link", "link", "Open result"))
+    fake = FakeBrowserGym(raw, raw)
+    environment, task = open_fake(fake)
+    world = start_environment(environment, task)
+    asyncio.run(environment.execute(request_for(world, task, "activate")))
+    assert fake.navigation_expectations == [True]
+    asyncio.run(environment.close())
+
+    fake = FakeBrowserGym(raw, raw)
+    environment, task = open_fake(fake)
+    world = start_environment(environment, task)
+    asyncio.run(
+        environment.execute(
+            request_for(world, task, "press_key", {"key": "Enter"})
+        )
+    )
+    assert fake.navigation_expectations == [True]
+    asyncio.run(environment.close())
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        BrowserGymStabilityStatus.NAVIGATION_PENDING,
+        BrowserGymStabilityStatus.ACQUISITION_UNSTABLE,
+    ),
+)
+def test_unstable_causal_post_state_is_typed_and_not_admitted(status) -> None:
+    fake, environment, task, world = _fixture()
+    fake.step_stability_status = status
+
+    outcome = asyncio.run(environment.execute(request_for(world, task, "activate")))
+
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert outcome.result.adapter_evidence["browsergym_transition"]["stability_status"] == status.value
+    assert outcome.post_acquisition is not None
+    assert outcome.post_acquisition.status is AcquisitionStatus.FAILED
+    assert any(
+        source.reason_code == status.value
+        for source in outcome.post_acquisition.source_results
+    )
+    asyncio.run(environment.close())
 
 
 def test_missing_native_task_globals_use_lifecycle_fallback_for_element_dispatch() -> None:

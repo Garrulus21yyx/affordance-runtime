@@ -99,6 +99,7 @@ class CanonicalBrowserControl:
     private_bbox: tuple[int, int, int, int] | None = None
     private_gesture_group: str = ""
     private_gesture_kind: str = ""
+    private_navigation_potential: bool = False
 
     @property
     def role_spec(self) -> BrowserGymRoleSpec:
@@ -937,6 +938,7 @@ def _canonical_control(
         private_options,
         _private_gesture_group(physical),
         _private_gesture_kind(physical),
+        _private_navigation_potential(physical),
         tuple((offer.semantic_action, offer.primitive_action) for offer in spec.offers),
     )
     return CanonicalBrowserControl(
@@ -955,6 +957,7 @@ def _canonical_control(
         _private_bbox(physical),
         _private_gesture_group(physical),
         _private_gesture_kind(physical),
+        _private_navigation_potential(physical),
     )
 
 
@@ -1054,6 +1057,10 @@ def _private_gesture_kind(physical: object) -> str:
         return ""
     value = physical.get("gesture_kind")
     return value if isinstance(value, str) else ""
+
+
+def _private_navigation_potential(physical: object) -> bool:
+    return isinstance(physical, dict) and physical.get("navigation_potential") is True
 
 
 def _properties(node: dict[str, object]) -> dict[str, object]:

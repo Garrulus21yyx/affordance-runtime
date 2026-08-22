@@ -469,6 +469,42 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
     asyncio.run(scenario())
 
 
+def test_failed_causal_post_acquisition_stops_before_next_policy_turn() -> None:
+    async def scenario() -> None:
+        policy = CorePolicy("first_action")
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("causal_post_gate_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            results=(
+                ActionResult(
+                    "*",
+                    DispatchStatus.SENT,
+                    "browsergym",
+                    True,
+                    adapter_evidence={
+                        "browsergym_transition": {
+                            "stability_status": "navigation_pending",
+                        }
+                    },
+                ),
+            ),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.FAILED
+        assert policy.turns == 1
+        assert environment.execute_calls == 1
+        assert state.current_world.observation_id == "before"
+
+    asyncio.run(scenario())
+
+
 def test_core_executes_one_bound_form_command_through_the_world_port() -> None:
     @dataclass
     class FormPolicy:

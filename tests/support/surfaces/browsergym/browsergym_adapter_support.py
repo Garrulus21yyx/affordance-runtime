@@ -13,6 +13,11 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     BrowserGymTaskStateSource,
     task_state_from_transition,
 )
+from affordance_runtime.surfaces.browsergym.transition import (
+    BrowserGymStabilityStatus,
+    BrowserGymStepTransition,
+    BrowserGymTransitionTrace,
+)
 from affordance_runtime.task import (
     LoopBudget,
     NaturalLanguageTaskRequest,
@@ -136,6 +141,7 @@ class FakeBrowserGym:
         self.fail_probe = fail_probe
         self.fail_final = fail_final
         self.actions = []
+        self.navigation_expectations = []
         self.final_messages = []
         self.reset_count = 0
         self.close_count = 0
@@ -158,18 +164,25 @@ class FakeBrowserGym:
         self.step_terminated = True
         self.step_truncated = False
         self.step_done = True
+        self.step_stability_status = BrowserGymStabilityStatus.STABLE_NO_NAVIGATION
 
     def reset(self, *, seed):
         assert isinstance(seed, int)
         self.reset_count += 1
         return self.initial, {"task_info": task_info()}
 
-    def step(self, action):
+    def step(self, action, *, may_navigate):
         self.actions.append(action)
+        self.navigation_expectations.append(may_navigate)
         if self.fail_step:
             raise RuntimeError("after dispatch")
-        return (
-            self.post,
+        stable = self.step_stability_status in {
+            BrowserGymStabilityStatus.STABLE_NO_NAVIGATION,
+            BrowserGymStabilityStatus.STABLE_NAVIGATION,
+        }
+        navigated = self.step_stability_status is BrowserGymStabilityStatus.STABLE_NAVIGATION
+        return BrowserGymStepTransition(
+            self.post if stable else None,
             self.step_reward,
             self.step_terminated,
             self.step_truncated,
@@ -179,6 +192,19 @@ class FakeBrowserGym:
                     done=self.step_done,
                 )
             },
+            BrowserGymTransitionTrace(
+                0.0,
+                1.0,
+                0.2 if navigated or self.step_stability_status is BrowserGymStabilityStatus.NAVIGATION_PENDING else None,
+                0.4 if navigated else None,
+                1.1 if stable else None,
+                1.2 if stable else None,
+                str(self.initial.get("url", "")),
+                str(self.post.get("url", "")),
+                1,
+                2 if navigated else 1,
+                self.step_stability_status,
+            ),
         )
 
     def send_msg_to_user(self, content):

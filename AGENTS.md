@@ -62,7 +62,9 @@
   achievement record、第二 Binder 或第二 Runtime loop。只能由已命名 benchmark 缺口另行触发。
 
 设计解释、SOTA 对齐和实施/验收状态只维护在 `docs/architecture.md` 与 `docs/benchmark.md`。当前状态以这两个文件为准：
-Planner/Auditor convergence 的 provider-free G0–G6 已通过；live benchmark 仍需用户单独授权，不得继续案例特化。
+Planner/Auditor convergence 的既有 provider-free G0–G6 证据保留，但 BrowserGym 的
+`dispatch → causal stable World → StepResult` 不变量已重新打开，另有 Planner lexical admission 已知缺口；
+在两者分别闭合前不得宣称整体 closure。live benchmark 仍需用户单独授权，不得继续案例特化。
 
 ## MiniWoB / BrowserGym runtime facts
 

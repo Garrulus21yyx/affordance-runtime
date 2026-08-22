@@ -6,11 +6,17 @@ import queue
 import threading
 import time
 from concurrent.futures import Future
+from dataclasses import dataclass
 from importlib import import_module
-from typing import cast
+from typing import Callable, Protocol, cast
 
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
+)
+from affordance_runtime.surfaces.browsergym.transition import (
+    BrowserGymStabilityStatus,
+    BrowserGymStepTransition,
+    BrowserGymTransitionTrace,
 )
 
 _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
@@ -171,6 +177,20 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     if (tabindex === null || tabindex === '') return false;
     const parsed = Number.parseInt(tabindex, 10);
     return Number.isFinite(parsed) && parsed >= 0;
+  })(),
+  navigationPotential: (() => {
+    const target = el.closest('a[href],area[href]');
+    if (target) return true;
+    const tag = el.tagName.toLowerCase();
+    const type = String(el.getAttribute('type') || '').toLowerCase();
+    if ((tag === 'button' && (!type || type === 'submit')) ||
+        (tag === 'input' && ['submit', 'image'].includes(type))) {
+      if (el.form || el.hasAttribute('formaction')) return true;
+    }
+    if (tag === 'input' && el.form && ![
+      'button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'
+    ].includes(type)) return true;
+    return false;
   })()
 })"""
 
@@ -187,6 +207,106 @@ _VERIFIER_PROBE_SCRIPT = """() => {
 
 _STABLE_OBSERVATION_ATTEMPTS = 2
 _STABLE_OBSERVATION_WAIT_MS = 120
+_NAVIGATION_START_GRACE_MS = 450
+_NAVIGATION_COMPLETION_TIMEOUT_MS = 5_000
+_DOM_QUIET_WINDOW_MS = 80
+_DOM_QUIET_TIMEOUT_MS = 1_500
+
+_INSTALL_DOM_QUIET_TRACKER = r"""() => {
+  const key = '__affordanceRuntimeLastMutation';
+  window[key] = performance.now();
+  const observer = new MutationObserver(() => { window[key] = performance.now(); });
+  observer.observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
+}"""
+
+_DOM_IS_QUIET = r"""quietMs => {
+  const value = window.__affordanceRuntimeLastMutation;
+  return typeof value === 'number' && performance.now() - value >= quietMs;
+}"""
+
+
+class _NavigationRequestPort(Protocol):
+    frame: object
+
+    def is_navigation_request(self) -> bool: ...
+
+
+class _PagePort(Protocol):
+    url: str
+    main_frame: object
+
+    def on(self, event: str, handler: Callable[..., object]) -> None: ...
+    def remove_listener(self, event: str, handler: Callable[..., object]) -> None: ...
+    def evaluate(self, expression: str) -> object: ...
+    def wait_for_event(self, event: str, **kwargs: object) -> object: ...
+    def wait_for_load_state(self, state: str, **kwargs: object) -> None: ...
+    def wait_for_function(self, expression: str, **kwargs: object) -> object: ...
+
+
+class _StepEnvironmentPort(Protocol):
+    def step(self, action: str) -> object: ...
+
+
+class _UnwrappedPort(Protocol):
+    page: _PagePort
+
+    def _get_obs(self) -> object: ...
+
+
+@dataclass
+class _NavigationWatcher:
+    page: _PagePort
+    started_at: float
+    before_url: str
+    before_document_epoch: int
+    navigation_started: float | None = None
+    navigation_committed: float | None = None
+    dom_content_loaded: float | None = None
+    commit_count: int = 0
+
+    def elapsed_ms(self) -> float:
+        return round((time.perf_counter() - self.started_at) * 1000, 3)
+
+    def on_request(self, request: object) -> None:
+        try:
+            request = cast(_NavigationRequestPort, request)
+            if request.is_navigation_request() and request.frame == self.page.main_frame:
+                self.navigation_started = self.navigation_started or self.elapsed_ms()
+        except BaseException:
+            return
+
+    def on_commit(self, frame: object) -> None:
+        try:
+            if frame == self.page.main_frame:
+                self.navigation_started = self.navigation_started or self.elapsed_ms()
+                self.navigation_committed = self.navigation_committed or self.elapsed_ms()
+                self.commit_count += 1
+        except BaseException:
+            return
+
+    def on_dom_content_loaded(self) -> None:
+        if self.navigation_committed is not None:
+            self.dom_content_loaded = self.dom_content_loaded or self.elapsed_ms()
+
+    def install(self) -> None:
+        self.page.on("request", self.on_request)
+        self.page.on("framenavigated", self.on_commit)
+        self.page.on("domcontentloaded", self.on_dom_content_loaded)
+        try:
+            self.page.evaluate(_INSTALL_DOM_QUIET_TRACKER)
+        except BaseException:
+            pass
+
+    def remove(self) -> None:
+        for event, handler in (
+            ("request", self.on_request),
+            ("framenavigated", self.on_commit),
+            ("domcontentloaded", self.on_dom_content_loaded),
+        ):
+            try:
+                self.page.remove_listener(event, handler)
+            except BaseException:
+                pass
 
 
 class ThreadBoundBrowserGym:
@@ -242,6 +362,7 @@ class ThreadBoundBrowserGym:
         except BaseException as exc:
             self._ready.set_exception(exc)
             return
+        document_epoch = 0
         while (command := self._commands.get()) is not None:
             name, args, kwargs, outcome = command
             try:
@@ -281,22 +402,24 @@ class ThreadBoundBrowserGym:
                     raw = _with_stable_private_control_properties(unwrapped.page, getter, getter())
                     verifier = unwrapped.page.evaluate(_VERIFIER_PROBE_SCRIPT)
                     value = (raw, verifier)
+                elif name == "causal_step":
+                    action, may_navigate = cast(tuple[str, bool], args)
+                    value, document_epoch = _causal_step(
+                        environment,
+                        unwrapped,
+                        action,
+                        may_navigate=may_navigate,
+                        document_epoch=document_epoch,
+                    )
                 else:
                     value = getattr(environment, name)(*args, **kwargs)
                     getter = getattr(unwrapped, "_get_obs", None)
                     if name == "reset":
                         reset_raw, info = cast(tuple[object, object], value)
+                        document_epoch += 1
                         value = (
                             _with_stable_private_control_properties(unwrapped.page, getter, reset_raw),
                             info,
-                        )
-                    elif name == "step":
-                        step_raw, reward, terminated, truncated, info = cast(
-                            tuple[object, object, object, object, object], value,
-                        )
-                        value = (
-                            _with_stable_private_control_properties(unwrapped.page, getter, step_raw),
-                            reward, terminated, truncated, info,
                         )
                     elif name == "close":
                         import browsergym.core as browsergym_core  # type: ignore[import-not-found]
@@ -324,8 +447,8 @@ class ThreadBoundBrowserGym:
     def reset(self, *, seed: int):
         return self._call("reset", seed=seed)
 
-    def step(self, action: str):
-        return self._call("step", action)
+    def step(self, action: str, *, may_navigate: bool):
+        return self._call("causal_step", action, may_navigate)
 
     def send_msg_to_user(self, content: str):
         import json
@@ -358,6 +481,188 @@ class ThreadBoundBrowserGym:
             self.context = None
         if self._thread.is_alive():
             raise RuntimeError("BrowserGym owner thread remained alive after cleanup")
+
+
+def _causal_step(
+    environment: object,
+    unwrapped: object,
+    action: str,
+    *,
+    may_navigate: bool,
+    document_epoch: int,
+) -> tuple[BrowserGymStepTransition, int]:
+    """Dispatch once and return only a causally stable post-state or typed instability."""
+
+    environment = cast(_StepEnvironmentPort, environment)
+    unwrapped = cast(_UnwrappedPort, unwrapped)
+    page = unwrapped.page
+    getter = getattr(unwrapped, "_get_obs", None)
+    if not callable(getter):
+        raise RuntimeError("pinned BrowserGym has no read-only observation API")
+    started_at = time.perf_counter()
+    watcher = _NavigationWatcher(
+        page,
+        started_at,
+        str(getattr(page, "url", "")),
+        document_epoch,
+    )
+    watcher.install()
+    try:
+        value = environment.step(action)
+        _step_raw, reward, terminated, truncated, info = cast(
+            tuple[object, object, object, object, object], value,
+        )
+        dispatch_returned = watcher.elapsed_ms()
+
+        if may_navigate and watcher.navigation_started is None:
+            try:
+                page.wait_for_event(
+                    "request",
+                    predicate=lambda request: (
+                        request.is_navigation_request() and request.frame == page.main_frame
+                    ),
+                    timeout=_NAVIGATION_START_GRACE_MS,
+                )
+            except BaseException:
+                pass
+
+        if watcher.navigation_started is not None and watcher.navigation_committed is None:
+            try:
+                page.wait_for_event(
+                    "framenavigated",
+                    predicate=lambda frame: frame == page.main_frame,
+                    timeout=_NAVIGATION_COMPLETION_TIMEOUT_MS,
+                )
+            except BaseException:
+                pass
+
+        if watcher.navigation_committed is not None and watcher.dom_content_loaded is None:
+            try:
+                page.wait_for_load_state(
+                    "domcontentloaded",
+                    timeout=_NAVIGATION_COMPLETION_TIMEOUT_MS,
+                )
+                watcher.dom_content_loaded = watcher.elapsed_ms()
+            except BaseException:
+                pass
+
+        epoch_after_navigation = document_epoch + watcher.commit_count
+        if watcher.navigation_started is not None and (
+            watcher.navigation_committed is None or watcher.dom_content_loaded is None
+        ):
+            trace = _transition_trace(
+                watcher,
+                dispatch_returned,
+                BrowserGymStabilityStatus.NAVIGATION_PENDING,
+                epoch_after_navigation,
+            )
+            return BrowserGymStepTransition(
+                None,
+                reward,
+                terminated,
+                truncated,
+                _step_info(info),
+                trace,
+            ), epoch_after_navigation
+
+        # A navigation replaces the document and its MutationObserver. Install
+        # the quiet predicate on the causal post-document before acquisition.
+        if watcher.navigation_committed is not None:
+            try:
+                page.evaluate(_INSTALL_DOM_QUIET_TRACKER)
+            except BaseException:
+                trace = _transition_trace(
+                    watcher,
+                    dispatch_returned,
+                    BrowserGymStabilityStatus.ACQUISITION_UNSTABLE,
+                    epoch_after_navigation,
+                )
+                return BrowserGymStepTransition(
+                    None,
+                    reward,
+                    terminated,
+                    truncated,
+                    _step_info(info),
+                    trace,
+                ), epoch_after_navigation
+        try:
+            page.wait_for_function(
+                _DOM_IS_QUIET,
+                arg=_DOM_QUIET_WINDOW_MS,
+                timeout=_DOM_QUIET_TIMEOUT_MS,
+            )
+        except BaseException:
+            trace = _transition_trace(
+                watcher,
+                dispatch_returned,
+                BrowserGymStabilityStatus.ACQUISITION_UNSTABLE,
+                epoch_after_navigation,
+            )
+            return BrowserGymStepTransition(
+                None,
+                reward,
+                terminated,
+                truncated,
+                _step_info(info),
+                trace,
+            ), epoch_after_navigation
+
+        post_capture_started = watcher.elapsed_ms()
+        raw = _with_private_control_properties(page, getter())
+        post_capture_completed = watcher.elapsed_ms()
+        status = (
+            BrowserGymStabilityStatus.STABLE_NAVIGATION
+            if watcher.navigation_committed is not None
+            else BrowserGymStabilityStatus.STABLE_NO_NAVIGATION
+        )
+        trace = _transition_trace(
+            watcher,
+            dispatch_returned,
+            status,
+            epoch_after_navigation,
+            post_capture_started=post_capture_started,
+            post_capture_completed=post_capture_completed,
+        )
+        return BrowserGymStepTransition(
+            raw,
+            reward,
+            terminated,
+            truncated,
+            _step_info(info),
+            trace,
+        ), epoch_after_navigation
+    finally:
+        watcher.remove()
+
+
+def _transition_trace(
+    watcher: _NavigationWatcher,
+    dispatch_returned: float,
+    status: BrowserGymStabilityStatus,
+    after_document_epoch: int,
+    *,
+    post_capture_started: float | None = None,
+    post_capture_completed: float | None = None,
+) -> BrowserGymTransitionTrace:
+    return BrowserGymTransitionTrace(
+        0.0,
+        dispatch_returned,
+        watcher.navigation_started,
+        watcher.navigation_committed,
+        post_capture_started,
+        post_capture_completed,
+        watcher.before_url,
+        str(getattr(watcher.page, "url", "")),
+        watcher.before_document_epoch,
+        after_document_epoch,
+        status,
+    )
+
+
+def _step_info(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise RuntimeError("BrowserGym step info is not a mapping")
+    return value
 
 
 def _with_private_control_properties(page: object, raw: object) -> dict[str, object]:
@@ -468,6 +773,7 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
                 gesture.get("kind") if isinstance(gesture.get("kind"), str) else ""
             ),
             "potential_svg_drop": gesture.get("potentialSvgDrop") is True,
+            "navigation_potential": physical.get("navigationPotential") is True,
             "spatial_horizontal": (
                 spatial.get("horizontal") if spatial.get("horizontal") in {"left", "center", "right"} else ""
             ),

@@ -137,6 +137,7 @@ class BrowserGymFocusedContextBinding:
     semantic_target_id: str
     supported_primitive: str
     focused_private_element_id: str = ""
+    navigation_potential: bool = False
 
     def __post_init__(self) -> None:
         if not all(
@@ -152,6 +153,8 @@ class BrowserGymFocusedContextBinding:
             )
         ):
             raise ValueError("BrowserGym focused-context binding requires current identity")
+        if type(self.navigation_potential) is not bool:
+            raise TypeError("BrowserGym focused-context navigation hint must be boolean")
 
 
 BrowserGymPrivateBinding = (

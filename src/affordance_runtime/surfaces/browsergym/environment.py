@@ -74,6 +74,7 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     task_state_from_probe,
     task_state_from_transition,
 )
+from affordance_runtime.surfaces.browsergym.transition import BrowserGymStepTransition
 from affordance_runtime.surfaces.browsergym.visual_disambiguation import (
     BrowserGymVisualDisambiguationProjectionError,
     project_browsergym_visual_disambiguation_source,
@@ -110,12 +111,30 @@ class BrowserGymPort(Protocol):
     supports_capture_current: bool
 
     def reset(self, *, seed: int) -> tuple[dict[str, object], dict[str, object]]: ...
-    def step(self, action: str) -> tuple[dict[str, object], object, object, object, dict[str, object]]: ...
+    def step(self, action: str, *, may_navigate: bool) -> BrowserGymStepTransition: ...
     def send_msg_to_user(self, content: str) -> tuple[dict[str, object], object, object, object, dict[str, object]]: ...
     def capture_current(self) -> tuple[dict[str, object], dict[str, object]]: ...
     def currentness_probe(self, bid: str) -> object: ...
     def session_health(self) -> object: ...
     def close(self) -> None: ...
+
+
+def _may_navigate(request: BoundActionRequest, private: object) -> bool:
+    """Closed mechanical hint for actions whose causal lease includes navigation."""
+
+    key = request.intent.parameters.get("key")
+    if isinstance(private, BrowserGymFocusedContextBinding):
+        return private.navigation_potential and key == "Enter"
+    if not isinstance(private, BrowserGymElementBinding):
+        return False
+    candidate = (
+        private.canonical_control.role == "link"
+        or private.canonical_control.private_navigation_potential
+    )
+    return candidate and (
+        private.supported_primitive == "click"
+        or (private.supported_primitive == "press" and key == "Enter")
+    )
 
 
 @dataclass(frozen=True)
@@ -456,6 +475,15 @@ class BrowserGymSurfaceAdapter:
         acquisition_id = requests[0].acquisition_id
         started = perf_counter()
         try:
+            if self._pending_error_code in {"navigation_pending", "acquisition_unstable"}:
+                return tuple(
+                    SelectedObservationResult.failed(
+                        request,
+                        SourceAcquisitionStatus.FAILED,
+                        self._pending_error_code,
+                    )
+                    for request in requests
+                )
             if self._pending_raw is not None and not self._pending_acquisition_id:
                 self._pending_acquisition_id = acquisition_id
             elif self._pending_acquisition_id != acquisition_id:
@@ -535,9 +563,13 @@ class BrowserGymSurfaceAdapter:
         self._pending_snapshot = None
         self._pending_projection = None
         self._pending_acquisition_id = ""
+        self._pending_error_code = ""
         started = perf_counter()
         try:
-            raw, reward, terminated, truncated, info = self.gym_environment.step(action)
+            transition = self.gym_environment.step(
+                action,
+                may_navigate=_may_navigate(request, private),
+            )
         except BaseException as exc:
             self._pending_error_code = "step_failed_after_dispatch"
             return ActionResult(
@@ -556,13 +588,26 @@ class BrowserGymSurfaceAdapter:
                     ),
                 ),
             )
+        transition_evidence = transition.trace.as_evidence()
         result = ActionResult(
             request.request_id,
             DispatchStatus.SENT,
             "browsergym",
             True,
-            adapter_evidence=self._currentness_evidence(1, 1),
+            adapter_evidence={
+                **self._currentness_evidence(1, 1),
+                "browsergym_transition": transition_evidence,
+            },
         )
+        if not transition.stable:
+            self._pending_error_code = transition.trace.stability_status.value
+            return result
+        raw = transition.raw
+        reward = transition.reward
+        terminated = transition.terminated
+        truncated = transition.truncated
+        info = transition.info
+        assert raw is not None
         try:
             current_task_info = task_info(info)
             self._terminated = terminated is True or truncated is True

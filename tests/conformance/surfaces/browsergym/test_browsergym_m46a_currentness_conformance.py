@@ -111,6 +111,7 @@ def test_real_login_user_popup_terminal_reentry_is_stale_and_zero_step() -> None
             # the login button without credentials deterministically ends at -1.
             environment.gym_environment.step(
                 f"click({json.dumps(private.private_element_id)})",
+                may_navigate=False,
             )
             assert environment.step_calls == 0
 

@@ -2,8 +2,9 @@
 
 ## Status
 
-Current status: **Planner/Auditor provider-free convergence verified / G0–G6 passed / live benchmark requires separate
-authorization**.
+Current status: **BrowserGym causal post-action transition REOPENED / live benchmark blocked**. The prior
+Planner/Auditor G0–G6 evidence remains historical evidence for that causal surface, but it is not whole-runtime
+closure; Planner lexical admission also has one separately tracked known gap.
 
 This file is the sole normative architecture contract. Chronological run evidence, superseded designs, and prior
 reopenings are preserved in
@@ -46,6 +47,37 @@ User request
 There is one BrowserGym session, one current World authority, one ActionSpace, one Binder, one executor, one
 TaskEvaluator/native-verifier authority, and one mutable episode transition point. Projections are read models, not
 alternative control paths.
+
+## Causal post-action observation boundary
+
+`WorldObservation` freshness has two independent dimensions: it must be newly acquired, and it must belong to the
+stable causal post-state of the dispatched action. BrowserGym returning from a click and producing an observation does
+not by itself establish the second fact. Playwright distinguishes navigation request/start, main-frame commit, and
+DOMContentLoaded; actionability and action completion do not close an arbitrary delayed navigation.
+
+The BrowserGym/Playwright owner thread therefore owns this closed transition:
+
+```text
+STABLE_NO_NAVIGATION
+STABLE_NAVIGATION
+NAVIGATION_PENDING
+ACQUISITION_UNSTABLE
+```
+
+Before dispatch it installs main-frame navigation and document-mutation observers and records URL/document epoch.
+Browser-native link and form-submit controls receive a bounded navigation-start lease. A mechanically non-navigation
+control skips that lease. When navigation starts, the same step waits boundedly for main-frame commit,
+DOMContentLoaded, and a short DOM-quiet predicate before a fresh `_get_obs` capture. No fixed long sleep is an
+authority. `NAVIGATION_PENDING` and `ACQUISITION_UNSTABLE` carry no post observation, fail post-action acquisition, and
+therefore cannot start another ActionPolicy turn.
+
+The owner emits, and trace only forwards, `dispatch_started`, `dispatch_returned`, `navigation_started`,
+`navigation_committed`, `post_capture_started`, `post_capture_completed`, before/after URL, before/after document
+epoch, and stability status. Neither CoreLoop, Monitor, nor trace may reconstruct these facts from adjacent steps.
+
+This contract follows the current Playwright navigation lifecycle and event-waiting model; Playwright explicitly
+separates commit/load states and warns that time-based waits can observe stale state. BrowserGym's upstream fixed
+`pre_observation_delay` remains a compatibility delay, not causal proof.
 
 ## Authority and owners
 
@@ -335,6 +367,17 @@ most four `{field_path, code, attempt, phase}` diagnostics; raw rejected values 
 
 ### Current SOTA alignment (reviewed 2026-08-22)
 
+- [Playwright navigation lifecycle](https://playwright.dev/python/docs/navigations) and
+  [Page API](https://playwright.dev/python/docs/api/class-page) distinguish navigation start, commit,
+  DOMContentLoaded, and later load states, and provide event/predicate waits around actions. This is the direct
+  execution-boundary reference for causal post-action capture; Playwright actionability alone does not certify an
+  arbitrary timer-delayed navigation.
+- [Playwright library guidance](https://playwright.dev/python/docs/library) warns that time-based sleeps can leave code
+  observing outdated state. The Runtime therefore uses bounded navigation events and DOM-quiet predicates rather than
+  a fixed long sleep.
+- [BrowserGym's current environment implementation](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/env.py)
+  applies `pre_observation_delay` before extracting an observation. That is useful compatibility pacing but, by
+  inference, cannot identify which dispatch owns a later navigation and is not accepted as causal proof here.
 - [Plan-and-Act (ICML 2025)](https://proceedings.mlr.press/v267/erdogan25a.html) separates a structured high-level
   Planner from an environment-specific Executor. This supports keeping roadmap outcomes separate from continuous GUI
   action selection. Its dynamic replanning after HTML changes is a research design, not a production assurance
@@ -423,3 +466,8 @@ Implementation is not closure. The milestone architecture can close only when:
 6. full tests, lint, diff check, docs, and durable evidence agree;
 7. an independent fresh-context architecture review passes;
 8. a later explicit live W1b witness improves or preserves success and cost without reopening the same authority gap.
+
+The reopened BrowserGym transition additionally requires a generic delayed-link witness, typed navigation timeout,
+typed acquisition-instability witness, a non-navigation fast-path bound, trace-order assertions, and proof that no
+next policy decision is admitted before stable capture. Task-7 replay is not closure evidence and remains blocked until
+those properties, the full provider-free suite, docs, and a fresh-context review agree.
