@@ -34,10 +34,11 @@ ordinary read/search/find/wait/no-effect activity collapses by family. Full Trac
 The append-only `recent_steps`, old history renderer, history-capacity exception, RunState pre-cap, and
 `fact_change_count` precision loss are removed. `RequestAdmission` is the sole complete-request capacity owner and the
 provider Binder only serializes an admitted request. `EpisodeMonitor` stores only the World, CurrentFindings, and
-WorkingFacts digests plus observation-only/recovery counters; query and region variation cannot disguise a
-zero-information loop. Its `30/8/1` profile caps, but never raises, the prior task turn budget. Six-page C8 transition
+WorkingFacts digests plus bounded observation/recovery and public-attempt diagnostic state; query and region variation
+cannot disguise a zero-information loop, and a dispatched GUI action no longer resets the monitor merely because it
+was sent. Its `30/8/1` profile caps, but never raises, the prior task turn budget. Six-page C8 transition
 diagnostics and the independent fresh-context audit pass. This status does not authorize a live run. The current full suite passes
-1,445 tests with 19 skips; Ruff, compileall, and diff-check pass.
+1,450 tests with 19 skips; Ruff, compileall, and diff-check pass.
 
 ## Current end-to-end data flow
 
@@ -342,6 +343,7 @@ current-findings digest
 working-facts digest
 observation-only stall family/count
 recovery count
+latest public attempt signature / same-attempt streak / cumulative no-progress count
 ```
 
 Different read/search queries or regions are still one stall family when there is no World, finding, working-fact, or
@@ -561,9 +563,17 @@ facts. The first repeated route without new evidence produces RECOVER; recurrenc
 control termination `CONTROL_STALLED`. Task evaluation remains `INCOMPLETE|UNKNOWN`; Monitor does not claim that the
 task is semantically blocked. A useful unremembered public result prevents a false no-progress decision.
 
-Machine repeat prevention uses one shared typed `AttemptSignature`; human recovery text is a separate field. Resolver
-or Admission produces typed operation/target rejection, Monitor accumulates it, and CoreLoop compares the same
-signature helper before dispatch.
+Machine repeat prevention uses one shared typed `PublicAttemptSignature`; human recovery text is a separate field.
+For a dispatched GUI action, Monitor derives that signature from the admitted receipt intent and the public pre-action
+World. If World, CurrentFindings, WorkingFacts, and structured action outcome all show no increment, the first attempt
+continues, the second emits RECOVER with the typed prohibited signature, and CoreLoop rejects a third identical
+selection before Binder/executor dispatch. The monitor-owned signature digest and counters are projected read-only into
+`EpisodeSnapshot`; benchmark projection does not recount trace events.
+
+Keyboard dispatch has one public route per intent. A focused concrete element with an executable BrowserGym `press`
+binding exposes only element `press_key`, which resolves to `press(BID, key)`. The page-level focused-context fallback
+is offered only when there is no concrete element press route; it resolves the actual focus at dispatch time through
+`keyboard_press(key)` and does not invent BID currentness.
 
 Runtime owns bounded execution budgets:
 

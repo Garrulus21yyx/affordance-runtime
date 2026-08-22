@@ -18,6 +18,7 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent.decisions import AbortCategory, FormFieldUpdate, SetFormFields
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
+from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -228,6 +229,65 @@ def _text_world(observation_id: str, value: str) -> WorldObservation:
         (target,),
         (fact,),
         (binding,),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
+def _search_fixture_observation(observation_id: str, value: str) -> WorldObservation:
+    target = SemanticTarget("search-input", "searchbox", "Search", {"value": value})
+    common = {
+        "world_observation_id": observation_id,
+        "source_observation_id": observation_id,
+        "source_revision": f"revision:{observation_id}",
+        "target_fingerprint": f"fingerprint:{observation_id}",
+        "target_id": target.target_id,
+        "source_target_id": target.target_id,
+        "surface": "dom",
+        "executor_id": "dom",
+        "effect_category": "local_reversible",
+        "risk": ActionRisk.LOW,
+    }
+    bindings = (
+        ActionBinding(
+            binding_id=f"binding:{observation_id}:fill",
+            semantic_action="type_text",
+            primitive_action="fill",
+            semantic_effects=("value_changed",),
+            parameter_schema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            payload={"selector": "#search"},
+            **common,
+        ),
+        ActionBinding(
+            binding_id=f"binding:{observation_id}:press",
+            semantic_action="press_key",
+            primitive_action="press",
+            semantic_effects=("form_submitted",),
+            parameter_schema={
+                "type": "object",
+                "properties": {"key": {"type": "string", "enum": ["Enter"]}},
+                "required": ["key"],
+                "additionalProperties": False,
+            },
+            payload={"selector": "#search"},
+            **common,
+        ),
+    )
+    fact = StateFact(f"fact:{observation_id}:value", target.target_id, "value", value, observation_id)
+    source = SurfaceObservation(
+        observation_id,
+        "dom",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (target,),
+        (fact,),
+        bindings,
     )
     fused = WorldFusion().fuse((source,))
     assert fused.observation is not None
@@ -461,6 +521,77 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
                 state.last_step,
                 decision=replace(state.last_step.decision, tool_call_id="provider-call:wrong"),
             )
+
+    asyncio.run(scenario())
+
+
+def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None:
+    @dataclass
+    class SearchPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            operation = "type_text" if self.turns == 1 else "press_key"
+            option = next(item for item in context.complete_actions if item.operation == operation)
+            parameters = {"text": "Pittsburgh"} if operation == "type_text" else {"key": "Enter"}
+            return SelectAction(context.context_id, option.action_id, parameters)
+
+    class IncompleteEvaluator:
+        async def evaluate(self, task, observation):
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "search result has not appeared",
+            )
+
+    async def scenario() -> None:
+        task = TaskGoal(
+            "search-enter-repeat",
+            "Type a search and submit it.",
+            allowed_effects=("value_changed", "form_submitted"),
+            risk_profile=RiskProfile.LOW,
+        )
+        policy = SearchPolicy()
+        monitor = EpisodeMonitor()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            ProductionActionOutcomeProjector(),
+            IncompleteEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("search_enter_repeat_regression"),
+            episode_monitor=monitor,
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_search_fixture_observation("search-empty", ""),
+            post_observations=(
+                _search_fixture_observation("search-filled", "Pittsburgh"),
+                _search_fixture_observation("search-enter-1", "Pittsburgh"),
+                _search_fixture_observation("search-enter-2", "Pittsburgh"),
+            ),
+            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(3)),
+        )
+
+        state = await runtime.run_task(environment, task)
+        snapshot = snapshot_episode(state, episode_monitor=monitor)
+
+        assert state.status is RunStatus.BLOCKED
+        assert policy.turns == 4
+        assert environment.execute_calls == 3
+        assert [item.intent.semantic_action for item in environment.dispatched_requests] == [
+            "type_text",
+            "press_key",
+            "press_key",
+        ]
+        assert state.last_step is not None
+        assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"
+        assert state.workspace.recent_steps[-1].reason == "episode_monitor_blocked:control_stalled"
+        assert monitor.same_attempt_streak == 2
+        assert monitor.no_progress_count == 2
+        assert snapshot.same_attempt_streak == 2
+        assert snapshot.no_progress_count == 2
+        assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
+        assert snapshot.last_progress_event_type == "no_operational_progress"
 
     asyncio.run(scenario())
 

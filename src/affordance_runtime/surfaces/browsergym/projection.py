@@ -449,10 +449,18 @@ def _focused_context_subject(
     if len(focused) > 1:
         return None
     focused_control = focused[0] if focused else None
+    if focused_control is not None and any(
+        offer.semantic_action == "press_key" and offer.primitive_action == "press"
+        for offer in focused_control.executable_offers
+    ):
+        # One physical intent gets one public route. BrowserGym's element
+        # press already focuses this exact BID before dispatch; exposing the
+        # page-level keyboard fallback as well would duplicate the intent and
+        # weaken binding/currentness semantics.
+        return None
     target_id = "focused-context:current"
     state: dict[str, object] = {"subject.kind": "focused_context"}
     relations: dict[str, object] = {}
-    focused_private = ""
     child_ids: tuple[str, ...] = ()
     if focused_control is not None:
         state["focused"] = True
@@ -462,7 +470,6 @@ def _focused_context_subject(
         focused_target_id = target_ids[focused_control.private_node_id]
         relations["child_ids"] = (focused_target_id,)
         child_ids = (focused_target_id,)
-        focused_private = focused_control.private_bid
     else:
         state["focused"] = "unknown"
     target = SemanticTarget(target_id, "focused_context", "Current keyboard focus", state, relations)
@@ -506,7 +513,7 @@ def _focused_context_subject(
         episode_identity,
         target_id,
         "keyboard_press",
-        focused_private,
+        "",
         focused_control.private_navigation_potential if focused_control is not None else False,
     )
     return target, structure, public, private

@@ -186,7 +186,7 @@ def test_findings_or_working_fact_increment_resets_streak() -> None:
     assert EpisodeMonitorEvent.STATE_CHANGED in facts_transition.events
 
 
-def test_gui_dispatch_breaks_observation_only_streak_even_without_world_change() -> None:
+def test_first_gui_dispatch_without_information_increment_records_no_progress() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -197,6 +197,27 @@ def test_gui_dispatch_breaks_observation_only_streak_even_without_world_change()
     assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert monitor.observation_only_streak == 0
     assert monitor.recovery_count == 0
+    assert monitor.same_attempt_streak == 1
+    assert monitor.no_progress_count == 1
+    assert monitor.latest_attempt_signature is not None
+
+
+def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature() -> None:
+    world = _world("observation:stable")
+    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    first = _evaluate(monitor, _dispatched_step(world))
+    second = _evaluate(monitor, _dispatched_step(world))
+
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second.recovery_signal is not None
+    assert second.recovery_signal.prohibited_attempt_signature == monitor.latest_attempt_signature
+    assert monitor.same_attempt_streak == 2
+    assert monitor.no_progress_count == 2
+    assert monitor.latest_attempt_signature is not None
+    assert monitor.latest_attempt_signature.digest.startswith("sha256:")
 
 
 def test_dispatched_recovery_without_information_increment_is_control_stalled() -> None:
@@ -225,7 +246,7 @@ def test_monitor_never_overrides_native_terminal_evaluation() -> None:
     assert monitor.recovery_count == 0
 
 
-def test_monitor_runtime_state_is_the_fixed_five_value_contract() -> None:
+def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract() -> None:
     monitor = EpisodeMonitor()
 
     assert {
@@ -234,4 +255,8 @@ def test_monitor_runtime_state_is_the_fixed_five_value_contract() -> None:
         "working_facts_digest",
         "observation_only_streak",
         "recovery_count",
+        "latest_attempt_signature",
+        "same_attempt_streak",
+        "no_progress_count",
+        "last_progress_event_type",
     } == set(vars(monitor)) - {"profile"}

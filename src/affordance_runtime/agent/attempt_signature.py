@@ -32,6 +32,10 @@ class PublicAttemptSignature:
             if value and (len(value) != 64 or any(char not in "0123456789abcdef" for char in value)):
                 raise ValueError("attempt signature digest is invalid")
 
+    @property
+    def digest(self) -> str:
+        return "sha256:" + _digest(to_json_compatible(self))
+
 
 def public_attempt_signature(
     operation: str,

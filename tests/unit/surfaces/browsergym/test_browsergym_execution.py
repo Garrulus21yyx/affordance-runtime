@@ -343,6 +343,30 @@ def test_press_key_dispatches_entity_press_and_focused_keyboard_press() -> None:
     asyncio.run(environment.close())
 
 
+def test_focused_context_fallback_uses_dispatch_time_focus_without_invented_bid_identity() -> None:
+    initial = raw_observation(ax_node("status", "status", "Ready"))
+    initial[PRIVATE_CONTROL_PROPERTIES_KEY]["status"]["focused"] = True
+    changed = copy.deepcopy(initial)
+    changed[PRIVATE_CONTROL_PROPERTIES_KEY]["status"]["focused"] = False
+    fake = FakeBrowserGym(initial, changed)
+    environment, task = open_fake(fake)
+    world = start_environment(environment, task)
+    request = _request_for_role(
+        world,
+        task,
+        "press_key",
+        "focused_context",
+        {"key": "Enter"},
+    )
+
+    result = asyncio.run(environment.execute(request)).result
+
+    assert (result.dispatch_status, result.error) == (DispatchStatus.SENT, None)
+    assert fake.actions == ['keyboard_press("Enter")']
+    assert environment.keyboard_press_calls == environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
 def test_press_key_rejects_keys_outside_current_closed_enum_before_dispatch() -> None:
     fake, environment, task, world = _fixture()
     builder = ActionSpaceBuilder()

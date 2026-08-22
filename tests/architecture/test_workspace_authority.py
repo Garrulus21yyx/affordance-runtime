@@ -60,6 +60,10 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         "working_facts_digest",
         "observation_only_streak",
         "recovery_count",
+        "latest_attempt_signature",
+        "same_attempt_streak",
+        "no_progress_count",
+        "last_progress_event_type",
     }
     for removed in (
         "EpisodeMonitorConfig",

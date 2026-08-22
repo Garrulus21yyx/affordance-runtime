@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.agent.decisions import Abort
+from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.run_state import RunState, RunStatus
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
@@ -49,6 +50,7 @@ class EpisodeSnapshot:
 def snapshot_episode(
     state: RunState | None,
     *,
+    episode_monitor: EpisodeMonitor | None = None,
     control_status: RunStatus | None = None,
     user_question: str = "",
     terminal_evaluation: TaskEvaluation | None = None,
@@ -85,6 +87,7 @@ def snapshot_episode(
     latest_action = state.latest_action_outcome
     task_evaluation = terminal_evaluation or state.current_task_evaluation
     task_outcome = task_evaluation.outcome
+    latest_attempt = episode_monitor.latest_attempt_signature if episode_monitor is not None else None
     return EpisodeSnapshot(
         state.observation_count,
         state.execution_count,
@@ -94,10 +97,10 @@ def snapshot_episode(
         str(latest_action.observed_change) if latest_action is not None else "",
         str(latest_action.local_postcondition) if latest_action is not None else "",
         str(latest_action.evidence_method) if latest_action is not None else "",
-        "",
-        0,
-        0,
-        "",
+        latest_attempt.digest if latest_attempt is not None else "",
+        episode_monitor.same_attempt_streak if episode_monitor is not None else 0,
+        episode_monitor.no_progress_count if episode_monitor is not None else 0,
+        episode_monitor.last_progress_event_type if episode_monitor is not None else "",
         state.sent_unknown_count,
         latest.decision.kind.value if latest is not None and not isinstance(latest.decision, PolicyFailure) else "",
         len(state.action_page.visible_action_ids) if state.action_page is not None else 0,

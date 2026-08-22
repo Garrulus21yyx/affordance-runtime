@@ -81,9 +81,12 @@ not fail after 1,000 differing reads; Full Trace retains all 1,000 raw steps. Th
 history byte cap, RunState pre-cap, `EpisodeHistoryCapacityError`, and `fact_change_count` projection are removed.
 `RequestAdmission` now owns complete request allocation, workspace fitting, estimation, and local
 `context_capacity`; irreducible requests reach no provider. The provider Binder only serializes admitted requests.
-`EpisodeMonitor` now owns exactly three information digests and two counters. Different query/region observations with
-no World/Findings/Facts increment form one streak, threshold crossing produces one recovery, and recurrence returns
-operational `control_stalled` without changing TaskEvaluation semantics. `AgentLoopProfile(30, 8, 1)` caps the old turn
+`EpisodeMonitor` now owns exactly three information digests plus bounded observation/recovery and public-attempt
+diagnostic state. Different query/region observations with no World/Findings/Facts increment form one streak.
+Dispatched GUI actions use the existing ref-free `PublicAttemptSignature`: two identical no-information attempts
+produce one recovery and its prohibited signature, and CoreLoop rejects the third identical selection before physical
+dispatch. Monitor-owned attempt digest/streak/count fields are projected directly into `EpisodeSnapshot`, replacing
+the old constant placeholders without creating a benchmark-side counter. `AgentLoopProfile(30, 8, 1)` caps the old turn
 budget rather than increasing it. No live or Task-7 run was performed, no prompt or historical budget was increased,
 the fresh-audit gate passed, and the separately authorized live gate stays open.
 
@@ -97,7 +100,7 @@ not claim a real dispatched site mutation or replace the separately authorized l
 diagnostic records `provider_attempts=0`, and all seven JSON artifacts explicitly record the unchanged
 `AgentLoopProfile(30, 8, 1)`. The complete initial-page request estimates are 7,432–8,591 tokens with a 7,881.5
 median, below the frozen 8,000 median gate. The global EvidenceCandidates compatibility path and secondary
-`admit_model_request` owner are physically deleted; unexpected local ValueError maps to `internal_error`. The full suite passes 1,445 tests with 19
+`admit_model_request` owner are physically deleted; unexpected local ValueError maps to `internal_error`. The full suite passes 1,450 tests with 19
 skips, and Ruff, compileall, and diff-check pass. Independent fresh-context review reports no P0/P1/P2.
 
 Run17 recorded `CASE_FINISHED`, `cleanup_status=succeeded`, and `report_status=exported`; it does not reopen cleanup.

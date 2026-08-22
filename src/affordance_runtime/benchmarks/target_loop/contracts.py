@@ -609,6 +609,8 @@ class BenchmarkCaseResult:
             "action_unchanged_change_strategy",
             "action_outcome_unknown",
             "repeated_no_progress_selection",
+            "state_changed",
+            "no_operational_progress",
         }:
             raise ValueError("benchmark progress event is outside the closed vocabulary")
         if self.last_world_coverage not in {"", *(str(item) for item in CoverageState)}:

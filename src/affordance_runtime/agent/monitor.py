@@ -7,9 +7,10 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from affordance_runtime.agent.attempt_signature import PublicAttemptSignature, public_attempt_signature
 from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.observation_delivery import current_findings_digest
-from affordance_runtime.agent.decisions import LocalToolResult, RequestActionPage, RequestObservation
+from affordance_runtime.agent.decisions import LocalToolResult, RequestActionPage, RequestObservation, SelectAction
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE, AgentLoopProfile
 from affordance_runtime.agent.recovery import (
@@ -21,7 +22,11 @@ from affordance_runtime.agent.recovery import (
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace, working_facts_digest
-from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
+from affordance_runtime.evaluation.contracts import (
+    LocalPostconditionStatus,
+    ObservedChange,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
@@ -37,6 +42,10 @@ class EpisodeMonitor:
     working_facts_digest: str = ""
     observation_only_streak: int = 0
     recovery_count: int = 0
+    latest_attempt_signature: PublicAttemptSignature | None = None
+    same_attempt_streak: int = 0
+    no_progress_count: int = 0
+    last_progress_event_type: str = ""
 
     def start_episode(self, world, task_evaluation, working_facts=()) -> None:
         del task_evaluation
@@ -46,6 +55,10 @@ class EpisodeMonitor:
         self.working_facts_digest = working_facts_digest(workspace)
         self.observation_only_streak = 0
         self.recovery_count = 0
+        self.latest_attempt_signature = None
+        self.same_attempt_streak = 0
+        self.no_progress_count = 0
+        self.last_progress_event_type = ""
 
     def evaluate(
         self,
@@ -79,7 +92,8 @@ class EpisodeMonitor:
 
         if information_changed:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)
-        elif not gui_dispatched:
+            self.last_progress_event_type = EpisodeMonitorEvent.STATE_CHANGED.value
+        else:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
 
         # Native evaluation remains the only task-completion/impossibility authority.
@@ -89,12 +103,49 @@ class EpisodeMonitor:
         }:
             self.observation_only_streak = 0
             self.recovery_count = 0
+            self.same_attempt_streak = 0
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         if information_changed:
             self.observation_only_streak = 0
             self.recovery_count = 0
+            self.latest_attempt_signature = None
+            self.same_attempt_streak = 0
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
+
+        if gui_dispatched:
+            self.observation_only_streak = 0
+            signature = _gui_attempt_signature(result)
+            if _gui_has_operational_result(result) or signature is None:
+                self.latest_attempt_signature = None
+                self.same_attempt_streak = 0
+                return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
+            self.no_progress_count += 1
+            self.same_attempt_streak = (
+                self.same_attempt_streak + 1
+                if signature == self.latest_attempt_signature
+                else 1
+            )
+            self.latest_attempt_signature = signature
+            self.last_progress_event_type = "no_operational_progress"
+            if self.recovery_count:
+                signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys(events)),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
+            if self.same_attempt_streak < 2:
+                return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
+            self.recovery_count += 1
+            signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.CONTROL_STALL.value,
+                signal,
+            )
 
         if self.recovery_count:
             signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
@@ -104,10 +155,6 @@ class EpisodeMonitor:
                 "control_stalled",
                 signal,
             )
-        if gui_dispatched:
-            self.observation_only_streak = 0
-            return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
-
         self.observation_only_streak += 1
         if self.observation_only_streak < self.profile.max_consecutive_observation_only:
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
@@ -154,11 +201,14 @@ def _control_stall_signal(
     *,
     recovery_attempt: int,
 ) -> RecoverySignal:
-    signature_payload = (
+    prohibited_attempt_signature = _gui_attempt_signature(result) or _prohibited_attempt_signature(result)
+    signature_payload: tuple[object, ...] = (
         monitor.world_digest,
         monitor.current_findings_digest,
         monitor.working_facts_digest,
     )
+    if prohibited_attempt_signature is not None:
+        signature_payload += (prohibited_attempt_signature.digest,)
     signature = "control_stall:sha256:" + hashlib.sha256(_canonical_json(signature_payload).encode()).hexdigest()
     return RecoverySignal(
         RecoveryKind.CONTROL_STALL,
@@ -172,7 +222,7 @@ def _control_stall_signal(
             "working_facts_digest": monitor.working_facts_digest,
         },
         attempted_modes=(_attempted_mode(result),),
-        prohibited_attempt_signature=_prohibited_attempt_signature(result),
+        prohibited_attempt_signature=prohibited_attempt_signature,
         human_instruction="Change strategy or dispatch a grounded GUI action; another observation without new information will stall.",
         recovery_attempt=recovery_attempt,
     )
@@ -190,6 +240,33 @@ def _prohibited_attempt_signature(result: StepResult):
     if isinstance(result.decision, LocalToolResult):
         return result.decision.rejected_attempt_signature
     return None
+
+
+def _gui_attempt_signature(result: StepResult) -> PublicAttemptSignature | None:
+    if not isinstance(result.decision, SelectAction):
+        return None
+    receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
+    if not receipts:
+        return None
+    intent = receipts[-1].request.intent
+    return public_attempt_signature(
+        intent.semantic_action,
+        intent.target_id,
+        intent.destination_id,
+        intent.parameters,
+        result.before_world,
+    )
+
+
+def _gui_has_operational_result(result: StepResult) -> bool:
+    outcome = result.action_outcome
+    return bool(
+        outcome is not None
+        and (
+            outcome.observed_change is ObservedChange.CHANGED
+            or outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
+        )
+    )
 
 
 def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:

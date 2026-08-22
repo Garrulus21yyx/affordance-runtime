@@ -237,6 +237,35 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     assert (inventory.recognized_target_count, inventory.projected_target_count) == (4, 4)
 
 
+def test_focused_executable_bid_has_one_element_press_route_without_focused_fallback() -> None:
+    raw = raw_observation(ax_node("search", "searchbox", "Search"))
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["search"]["focused"] = True
+
+    projected = _project(raw)
+    focused_target = next(item for item in projected.world.targets if item.label == "Search")
+    press_bindings = tuple(
+        item for item in _page_bindings(projected.world)
+        if item.semantic_action == "press_key"
+    )
+
+    assert len(press_bindings) == 1
+    assert press_bindings[0].target_id == focused_target.target_id
+    assert press_bindings[0].primitive_action == "press"
+    assert all(item.role != "focused_context" for item in projected.world.targets)
+
+
+def test_focused_context_fallback_remains_when_no_concrete_press_target_exists() -> None:
+    projected = _project(raw_observation(ax_node("status", "status", "Ready")))
+
+    focused = next(item for item in projected.world.targets if item.role == "focused_context")
+    binding = next(
+        item for item in projected.world.bindings
+        if item.target_id == focused.target_id and item.semantic_action == "press_key"
+    )
+
+    assert binding.primitive_action == "keyboard_press"
+
+
 def test_visible_structure_without_executable_binding_records_eligibility_reason() -> None:
     raw = raw_observation(ax_node("reports-menu-item", "link", "Bestsellers"))
     raw[PRIVATE_CONTROL_PROPERTIES_KEY]["reports-menu-item"]["visible"] = False

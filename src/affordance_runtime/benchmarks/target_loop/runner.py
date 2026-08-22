@@ -188,6 +188,7 @@ async def _run_case(
     )
     outcome_recorder.persistence_error = store_initialization_error
     environment = None
+    runtime = None
     result = None
     partial = None
     snapshot = None
@@ -260,13 +261,19 @@ async def _run_case(
         )
         state = state_holder.get("state")
         if state is not None:
-            partial = snapshot_episode(state)
+            partial = snapshot_episode(
+                state,
+                episode_monitor=runtime.episode_monitor if runtime is not None else None,
+            )
     except _HarnessWatchdogTimeout as exc:
         failure = "case timeout"
         instrumentation.record_watchdog("case_timeout", exc)
         state = state_holder.get("state")
         if state is not None:
-            partial = snapshot_episode(state)
+            partial = snapshot_episode(
+                state,
+                episode_monitor=runtime.episode_monitor if runtime is not None else None,
+            )
     except _CaseStageError as exc:
         failure = f"{exc.stage} failed: {type(exc.cause).__name__}"
     except Exception as exc:
@@ -280,7 +287,10 @@ async def _run_case(
     finally:
         state = state_holder.get("state")
         if state is not None:
-            snapshot = snapshot_episode(state)
+            snapshot = snapshot_episode(
+                state,
+                episode_monitor=runtime.episode_monitor if runtime is not None else None,
+            )
         lifecycle.transition(CaseLifecyclePhase.CASE_BODY_RETURNED)
         if result_store is not None:
             preliminary = project_case_result(
