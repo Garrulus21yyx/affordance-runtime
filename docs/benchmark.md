@@ -9,7 +9,8 @@ Gate 4 admitted after joint fresh provider-free exit review / Overall reopened /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out witness rerun authorization pending / bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
+held-out rerun falsified structured-result Workspace projection / convergence review required /
+bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run. The falsification attestation is
@@ -42,8 +43,18 @@ run, and the bounded cohort remains stopped.
 
 The independent read-only review of `3a325418` passed with no falsification; see
 [`region-read-byte-paging-fresh-review-20260824.json`](../evidence/acceptance/region-read-byte-paging-fresh-review-20260824.json).
-It made no provider/live call. Overall remains non-closed; the only next step is to request authorization for the
-single held-out Task 21 witness, while the bounded cohort remains stopped.
+It made no provider/live call. At that checkpoint Overall remained non-closed; the only next step was to request
+authorization for the single held-out Task 21 witness, while the bounded cohort remained stopped.
+
+The authorized post-byte-paging rerun is recorded in
+[`task21-workspace-structured-result-falsification-20260824.json`](../evidence/acceptance/task21-workspace-structured-result-falsification-20260824.json).
+The 63,090-byte first R9 page and its continuation were delivered successfully, and the first page contained the
+required review-body/reviewer relationships. The next physical request lost those relationships because the generic
+Workspace projection replaced nested `complete_item.targets` with `[TRUNCATED]`; the failure is therefore after region
+delivery and before model consumption, not another capacity rejection or missing R9 route. A single provider timeout
+was recovered and is secondary. This third reopening triggers the mandatory architecture-first convergence review.
+No production patch, held-out rerun, or bounded cohort is authorized until that review defines and falsifiably verifies
+the whole local-result-to-model retention algebra.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

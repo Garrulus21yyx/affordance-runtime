@@ -9,7 +9,8 @@ Gate 4 admitted after joint fresh provider-free exit review / Overall reopened /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out witness rerun authorization pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+held-out rerun falsified structured-result Workspace projection / convergence review required /
+bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -49,8 +50,21 @@ This is implementation acceptance only and did not itself authorize another witn
 The independent read-only review of `3a325418` passed with no falsification, including an additional oversized Unicode
 fragment probe and an independent full-suite run. Its attestation is
 [`region-read-byte-paging-fresh-review-20260824.json`](../evidence/acceptance/region-read-byte-paging-fresh-review-20260824.json).
-Overall remains non-closed. The only next step is to request explicit authorization for the single held-out Task 21
-witness; the bounded cohort remains stopped.
+At that checkpoint Overall remained non-closed, and the only next step was to request explicit authorization for the
+single held-out Task 21 witness; the bounded cohort remained stopped.
+
+Held-out structured-result falsification (2026-08-24, revision `6321366a`): byte-aware `read_region` delivery worked.
+R9 page 1 returned `records:1-10/11`, `has_more=true`, and a 63,090-byte public JSON result. Its complete records paired
+the two matching review bodies with their reviewer names, and `read_next_page(scope=active_read)` delivered the final
+record. The immediately following physical DeepSeek request nevertheless contained neither relevant name: the
+Workspace renderer passed `exact_public_values` through the generic depth-bounded `project_public_value`, which replaced
+every `complete_item.targets` sequence with `[TRUNCATED]`. The model therefore received record shells without the
+body-to-reviewer relationship, repeatedly attempted recovery, and was correctly blocked by the existing Monitor. One
+later provider attempt timed out, but its bounded retry succeeded; it is secondary rather than causal. Evidence:
+[`task21-workspace-structured-result-falsification-20260824.json`](../evidence/acceptance/task21-workspace-structured-result-falsification-20260824.json).
+This is the third reopening of the same bounded public-recovery subsystem. No local production patch or further live
+run is authorized before a repository-wide architecture-first convergence review of result retention, Workspace
+fitting, structured projection, physical request packing, Monitor inputs, properties, and acceptance gates.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the

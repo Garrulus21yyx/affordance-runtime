@@ -1,0 +1,49 @@
+{
+  "kind": "falsification",
+  "revision": "6321366ad1791703a6f1f7ed191f26d04df6ba45",
+  "live": true,
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "case_id": "webarena-verified-w1b-task-21",
+  "run_directory": "evidence/live/w1b-task-21-deepseek-v4-flash-heldout-20260824-run3",
+  "result": "blocked",
+  "falsified_contract": "A bounded local observation result remains semantically consumable after Store -> Workspace -> physical model-context projection.",
+  "observed_chain": [
+    "search_page_content exposed both relevant review-body matches in R9",
+    "read_region(R9) succeeded with records:1-10/11 and a 63090-byte public JSON result",
+    "the same complete_item records paired the matching review bodies with Dibbins and Anglebert Dinkherhump",
+    "the immediately following physical DeepSeek request contained neither reviewer name",
+    "AgentWorkspace exact_public_values projected every complete_item.targets sequence to [TRUNCATED]",
+    "read_next_page completed records:11-11/11, but replaying R9 could not restore the erased intra-record relationships",
+    "Monitor blocked the resulting repeated information sequence"
+  ],
+  "classification": {
+    "search_to_follow_up_region": "passed",
+    "read_region_byte_bounded_delivery": "passed",
+    "provider_timeout": "secondary: one initial attempt timed out and the bounded retry succeeded",
+    "primary_failure": "workspace/model-context structured-result conservation",
+    "overall": "reopened_non_closed",
+    "bounded_cohort": "stopped"
+  },
+  "trace_sequences": {
+    "search_result": 11,
+    "first_region_page": 13,
+    "first_physical_request_after_region_page": 14,
+    "continuation_page": 15,
+    "repeated_region_page": 17,
+    "terminal_block": 24
+  },
+  "source_mechanism": {
+    "workspace_renderer": "src/affordance_runtime/agent/workspace.py: render_agent_workspace calls project_public_value on exact_public_values",
+    "generic_projection": "src/affordance_runtime/agent/context/projection.py: project_public_value replaces values at depth >= 3 with [TRUNCATED]",
+    "violated_shape": "event tuple -> complete_item mapping -> targets sequence -> target mapping reaches the truncation depth before public labels and record relationships are projected"
+  },
+  "artifact_sha256": {
+    "launch.json": "b29f59c9888491bd42afec5446d35c7909273e2f8b717e3c79dd42816479b5f6",
+    "run.json": "26d50061755687f27d3dcd2eac14158ecda5e061534c4497c5ea88b573ecde2e",
+    "summary.json": "8407574f4ba747680cd8d17636ee367f53e9b37e2de776f9b660bf7b62ae329f",
+    "case.json": "e7d4b1e0b64b780d9809dfc240dc6a529524f3dfb48a81c4a2bb77e64b6651dc",
+    "trace.jsonl": "6e07de501224a586fb55847018a6b05224c1544426bf34b2d26371197d52c2bc"
+  },
+  "next_step": "repository-wide architecture-first convergence review of local-result retention, workspace fitting, structured projection, request packing, monitoring, tests, and acceptance; no production patch or live rerun before that review"
+}
