@@ -6,7 +6,8 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
+authorized / Stage-B full acceptance blocked by obsolete W1b component-budget veto**. Causal post-action transition,
+TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
 scoped evidence for the implementations they exercised; they are not whole-runtime closure and do not authorize
@@ -284,6 +285,14 @@ selector data from physical requests; and physical removal of media-route and co
 fallbacks. The focused real-runtime/provider-free review suite passed `57 passed in 9.39s`; the reviewer changed no
 files and ran no live benchmark. Gate 2 and Gate 4 are admitted. Overall remains reopened/non-closed pending the full
 C8–C12/current-revision provider-free acceptance, final fresh-context review, and separately authorized live witness.
+
+Stage-B falsification checkpoint (2026-08-23): all six current-tree provider-free W1b product-chain diagnostics from
+`f3a42dfdd9eb119db8bb4f1bee3841bb86a43d26` completed with `status=ok`, zero provider use, a maximum physical input
+of `7,999` tokens, and a six-page median of `7,982.5`. The W1b projection nevertheless set `ready=false` because
+tasks 27 and 44 had diagnostic Tool Schema breakdowns of `2,062` and `2,103` tokens. The failure owner is the legacy
+component-budget veto in WebArena W1b `_w1b_cost_errors`, after the complete Envelope had already passed
+`RequestAdmission`; it is not a GUI, World, Delivery, route, Catalog, TurnPacker, Envelope, or dispatch falsification.
+Gate 2 and Gate 4 remain admitted. Stage B and Overall remain reopened/non-closed, and live remains unauthorized.
 
 ## Normative single production chain
 

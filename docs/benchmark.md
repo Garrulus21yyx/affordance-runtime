@@ -6,8 +6,9 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
-remain separate reopened gates; the combined current-tree provider-free acceptance remains pending. Prior
+authorized / Stage-B full acceptance blocked by obsolete W1b component-budget veto**. C8 causal post-action
+transition, C11 benchmark finalization, and C12 TaskGoal public-input projection remain separate reopened gates; the
+combined current-tree provider-free acceptance is blocked. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run.
 
@@ -281,6 +282,18 @@ continuation recovery, ordered Manifest → Catalog → physical Envelope → pr
 conservation, private-state exclusion, and deleted fallback paths. The focused production-path/provider-free suite
 passed `57 passed in 9.39s`; no files changed during review and no live benchmark ran. Gate 2 and Gate 4 are admitted;
 overall remains reopened/non-closed. The next authorized work is execution step 7, not a new Gate or live run.
+
+Stage-B falsification (2026-08-23): the C8–C12 owner-focused suite passed `997 passed, 13 skipped`; fixed BrowserGym
+causal-transition/currentness gates passed `54 passed, 13 skipped`; benchmark finalization fault gates passed `123
+passed`; full pytest passed `1620 passed, 24 skipped`; and Ruff, compileall, diff check, and production negative searches
+passed. All six revision-bound provider-free W1b pages then completed the product chain with `status=ok` and
+`failure_origin=none`. Physical input ranged up to `7,999` tokens and the median was `7,982.5`, within the active 12k
+per-page and 8k-median gates. Tasks 27 and 44 were nevertheless rejected by the historical
+`tool_schema_tokens > 2_000` branch at `WebArena W1b _w1b_cost_errors`, with `2,062` and `2,103` diagnostic tokens.
+This is an obsolete benchmark acceptance sub-budget after successful complete-Envelope admission, not a product-chain
+capacity or route failure. The raw evidence is
+`evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-f3a42dfd-py312/`. Gate 2 and Gate 4 remain admitted;
+Stage B and Overall remain reopened/non-closed; no live benchmark ran.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and

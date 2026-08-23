@@ -1,0 +1,670 @@
+{
+  "acceptance_errors": [],
+  "action_candidates": {
+    "acceptance_errors": [],
+    "admitted_record_count": 15,
+    "automatic_candidate_count": 7,
+    "automatic_candidates": [
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "My Account My Wish List Sign Out Welcome, Emma Lopez! Skip to Content \ue611 My Cart \ue615"
+        ],
+        "label": "My Account My Wish List Sign Out Welcome, Emma Lopez! Skip to Content \ue611 My Cart \ue615",
+        "operation": "activate",
+        "rank": 1,
+        "reasons": [
+          "focused"
+        ],
+        "region_ref": "R1",
+        "role": "clickable",
+        "target_ref": "E1"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "Current keyboard focus"
+        ],
+        "label": "Current keyboard focus",
+        "operation": "press_key",
+        "rank": 2,
+        "reasons": [
+          "focused"
+        ],
+        "region_ref": "R15",
+        "role": "focused_context",
+        "target_ref": "E62"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "Add Your Review"
+        ],
+        "label": "Add Your Review",
+        "operation": "activate",
+        "rank": 3,
+        "reasons": [
+          "automatic_relevance"
+        ],
+        "region_ref": "R6",
+        "role": "link",
+        "target_ref": "E56"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "12\u00a0 Reviews"
+        ],
+        "label": "12\u00a0 Reviews ",
+        "operation": "activate",
+        "rank": 4,
+        "reasons": [
+          "automatic_relevance"
+        ],
+        "region_ref": "R6",
+        "role": "link",
+        "target_ref": "E49"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "Reviews (12)"
+        ],
+        "label": "Reviews (12)",
+        "operation": "activate",
+        "rank": 5,
+        "reasons": [
+          "automatic_relevance"
+        ],
+        "region_ref": "R6",
+        "role": "tab",
+        "target_ref": "E22"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "Skip to the end of the images gallery"
+        ],
+        "label": "Skip to the end of the images gallery",
+        "operation": "activate",
+        "rank": 6,
+        "reasons": [
+          "automatic_relevance"
+        ],
+        "region_ref": "R6",
+        "role": "link",
+        "target_ref": "E6"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "Skip to the beginning of the images gallery"
+        ],
+        "label": "Skip to the beginning of the images gallery",
+        "operation": "activate",
+        "rank": 7,
+        "reasons": [
+          "automatic_relevance"
+        ],
+        "region_ref": "R6",
+        "role": "link",
+        "target_ref": "E7"
+      },
+      {
+        "functional_path": [
+          "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+          "Previous"
+        ],
+        "label": "Previous",
+        "operation": "activate",
+        "rank": 8,
+        "reasons": [
+          "base_inventory"
+        ],
+        "region_ref": "R6",
+        "role": "button",
+        "target_ref": "E10"
+      }
+    ],
+    "automatic_find_controls_ordering_identity": true,
+    "available_record_count": 127,
+    "candidate_action_space_closure": true,
+    "candidate_manifest_closure": true,
+    "candidate_region_expansion_reason": "none",
+    "discovery_gui_dispatch_count": 0,
+    "input_request_tokens": 7983,
+    "obligation_group_count": 3,
+    "observation_only_calls_before_candidate_execution": 0,
+    "packing_backoff_count": 2,
+    "provider_attempts": 0,
+    "repeated_region_version_reads": 0,
+    "target_rank": null,
+    "target_recall_at_5": true,
+    "target_witnesses": [
+      {
+        "expected_path_tokens": [],
+        "matched_paths": [
+          [
+            "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+            "Add Your Review"
+          ],
+          [
+            "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+            "12\u00a0 Reviews"
+          ],
+          [
+            "6S Wireless Headphones Over Ear,Noise Canceling Hi-Fi Bass Foldable Stereo Wireless Kid Headsets Earbuds with Built-in Mic, Micro SD/TF, FM for iPhone/Samsung/i",
+            "Reviews (12)"
+          ]
+        ],
+        "matched_refs": [
+          "E56",
+          "E49",
+          "E22"
+        ],
+        "query": "Reviews",
+        "recall_at_5": true,
+        "target_rank": 3
+      }
+    ],
+    "tool_schema_tokens": 1975
+  },
+  "action_inventory": {
+    "partial": true,
+    "recovery": "find_controls",
+    "total_count": 108,
+    "visible_count": 32
+  },
+  "actor": {
+    "delivery_projection": "page_map",
+    "document_count": 1,
+    "manifest": {
+      "executable": 8,
+      "facts": 23,
+      "readonly": 0,
+      "regions": 7
+    },
+    "rendered_bytes": 6896,
+    "rendered_token_estimate": 1720,
+    "retained_node_count": 541,
+    "serialized_bytes": 225229,
+    "source_coverage": [
+      {
+        "assurance": "structural",
+        "freshness": "current",
+        "inventory_coverage": "partial",
+        "modality": "structural",
+        "projection_coverage": "truncated",
+        "rendering_coverage": "current_screenshot_available",
+        "semantic_interpretation": "open_world",
+        "source_ref": "S1"
+      }
+    ],
+    "total_node_count": 541
+  },
+  "agent_loop_profile": {
+    "max_consecutive_observation_only": 8,
+    "max_policy_decisions": 30,
+    "max_recoveries_per_stall": 1
+  },
+  "capability_census": [
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 59,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "click"
+      ],
+      "registry_defined": true,
+      "semantic_action": "activate",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "paged_searchable",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": false,
+      "paged_searchable": true,
+      "primitive_actions": [
+        "fill"
+      ],
+      "registry_defined": true,
+      "semantic_action": "type_text",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "select_option"
+      ],
+      "registry_defined": true,
+      "semantic_action": "select_option",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "read",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "paged_searchable",
+      "adapter_supported": true,
+      "currently_eligible": 1,
+      "model_exposed": false,
+      "paged_searchable": true,
+      "primitive_actions": [
+        "scroll"
+      ],
+      "registry_defined": true,
+      "semantic_action": "scroll",
+      "subject_kinds": [
+        "viewport"
+      ]
+    },
+    {
+      "absence_reason": "",
+      "adapter_supported": true,
+      "currently_eligible": 47,
+      "model_exposed": true,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "press",
+        "keyboard_press"
+      ],
+      "registry_defined": true,
+      "semantic_action": "press_key",
+      "subject_kinds": [
+        "entity",
+        "focused_context"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "focus",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "no_current_eligible_binding",
+      "adapter_supported": true,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [
+        "drag_and_drop"
+      ],
+      "registry_defined": true,
+      "semantic_action": "drag_to",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "set_value",
+      "subject_kinds": [
+        "entity"
+      ]
+    },
+    {
+      "absence_reason": "adapter_not_supported",
+      "adapter_supported": false,
+      "currently_eligible": 0,
+      "model_exposed": false,
+      "paged_searchable": false,
+      "primitive_actions": [],
+      "registry_defined": true,
+      "semantic_action": "hover",
+      "subject_kinds": [
+        "entity"
+      ]
+    }
+  ],
+  "case": {
+    "cohort": "w1",
+    "gym_id": "browsergym/webarena_verified.222.21.2",
+    "intent_template_id": 222,
+    "public_intent_digest": "",
+    "revision": 2,
+    "sites": [
+      "shopping"
+    ],
+    "task_id": 21,
+    "task_type": "smoke"
+  },
+  "decision_state": {
+    "coverage": "complete",
+    "mismatches": [],
+    "retained": 138,
+    "total": 138,
+    "verb_mismatch_count": 0
+  },
+  "delivery_probe": {
+    "acceptance_errors": [],
+    "page_identity": [
+      "E55",
+      "activate"
+    ],
+    "probe_version": "v2",
+    "probe_visible_to_production": false,
+    "provider_attempts": 0,
+    "required_regions": true,
+    "retrievals": [
+      {
+        "cursor_cycle": false,
+        "item_count": 13,
+        "joint_match_count": 3,
+        "kind_found": true,
+        "label_found": true,
+        "manifest_ref_visible": true,
+        "matched_refs": [
+          "E49",
+          "E22",
+          "E56"
+        ],
+        "operation_found": true,
+        "ordering_identity": true,
+        "owner_continuation_path": true,
+        "page_count": 2,
+        "passed": true,
+        "production_continuation_exercised": true,
+        "query": "Reviews",
+        "search_results_visible": true
+      }
+    ],
+    "site_key": "shopping",
+    "target_related_route": true
+  },
+  "evidence_retention": {
+    "acceptance_errors": [],
+    "default_candidate_count": 12,
+    "eligible_scalar_count": 23,
+    "exact_value_retained": true,
+    "gui_dispatch_count": 0,
+    "pin_resolved": true,
+    "provider_attempts": 0,
+    "selected_default_candidate": "F1203",
+    "view_changed": true,
+    "working_set_visible": true
+  },
+  "perception_route": {
+    "image_attached": false,
+    "profile": "TEXT_ONLY",
+    "reason": "w1b-world read-only structured diagnostic"
+  },
+  "presentation_collapse": {
+    "appearance_state_fields": 251,
+    "empty_generic_wrappers": 153,
+    "empty_static_text": 3,
+    "inline_text_boxes": 131
+  },
+  "private_isolation": {
+    "leak_count": 0,
+    "markers": []
+  },
+  "recoverability": {
+    "acceptance_errors": [],
+    "checks": {
+      "active_read_not_in_public_result": true,
+      "active_read_private": true,
+      "continuation": true,
+      "directory_pages": 1,
+      "directory_tail_ref": true,
+      "find": true,
+      "lens_effect": true,
+      "read_region": true,
+      "semantic_digest_unchanged": true,
+      "stale_context": true,
+      "view_all": true,
+      "zero_dispatch_metrics_unchanged": true
+    },
+    "sample": {
+      "query": "My Account My Wish List Sign Out Welcome, Emma Lopez! Skip to Content \ue611 My Cart \ue615",
+      "region_ref": "R1",
+      "target_id_digest": "sha256:14f697f1b0c4f13dda3ecc21c95e3122109fbfcb3c3e96eabe491eab0fc739e1"
+    },
+    "status": "ok"
+  },
+  "request_budget": {
+    "actor_world_tokens": 4371,
+    "admission_action": "admitted",
+    "admitted_record_count": 15,
+    "available_record_count": 127,
+    "complete_request_tokens": 12079,
+    "counting_method": "deterministic-conservative-v1",
+    "delivery_projection": "page_map",
+    "direct_action_count": 14,
+    "effective_input_limit": 62904,
+    "estimated_input_tokens": 7983,
+    "expanded_region_count": 0,
+    "folded_region_count": 17,
+    "history_tokens": 0,
+    "image_estimated_tokens": 0,
+    "manifest_route_count": 8,
+    "media_bytes": 0,
+    "model_settings_tokens": 22,
+    "obligation_group_count": 3,
+    "output_contract_tokens": 31,
+    "output_reserve_tokens": 4096,
+    "packing_backoff_count": 2,
+    "phase": "ordinary",
+    "provider_envelope_tokens": 238,
+    "provider_reported_prompt_tokens": 0,
+    "rendered_request_bytes": 24724,
+    "repair_tokens": 0,
+    "searchable_action_count": 94,
+    "system_tokens": 1346,
+    "tool_schema_bytes": 5923,
+    "tool_schema_tokens": 1975
+  },
+  "schema_version": "webarena-verified-w1b-world.v5",
+  "source": {
+    "browsergym_diagnostic": {
+      "actionable_target_count": 63,
+      "diagnostic_role_distribution": {
+        "StaticText": 101,
+        "button": 9,
+        "clickable": 13,
+        "combobox": 1,
+        "generic": 177,
+        "heading": 2,
+        "link": 21,
+        "list": 4,
+        "listitem": 16,
+        "menuitem": 12,
+        "radio": 5,
+        "row": 5,
+        "rowheader": 5,
+        "spinbutton": 1,
+        "tab": 2,
+        "table": 1,
+        "textbox": 1
+      },
+      "informational_target_count": 311,
+      "inventory_profile_id": "browsergym-ax-target-inventory.v3",
+      "inventory_status": "represented",
+      "non_executable_target_count": 313,
+      "omitted_target_count": 0,
+      "projected_target_count": 376,
+      "recognized_target_count": 376
+    },
+    "coverage": [
+      {
+        "coverage": "truncated",
+        "entity_inventory": "partial",
+        "entity_issues": [
+          "inventory_fact_capacity_exceeded"
+        ],
+        "semantic_inventory": "represented",
+        "source": "browsergym"
+      }
+    ],
+    "raw_fact_total_count": 1060,
+    "raw_structure_total_count": 541,
+    "raw_target_total_count": 376,
+    "world_source_fact_count": 1059,
+    "world_source_structure_count": 541,
+    "world_source_target_count": 376
+  },
+  "status": "ok",
+  "structural_closure": {
+    "violation_count": 0,
+    "violations": []
+  },
+  "tools": {
+    "actor_missing_offered_targets": [],
+    "catalog_serialized_bytes": 5237,
+    "catalog_tool_count": 14,
+    "find_controls_offered": true,
+    "offered_action_ref_count": 63,
+    "offered_tool_target_count": 8
+  },
+  "transition_delivery": {
+    "acceptance_errors": [],
+    "agent_loop_profile": {
+      "max_consecutive_observation_only": 8,
+      "max_policy_decisions": 30,
+      "max_recoveries_per_stall": 1
+    },
+    "changed_region_count": 1,
+    "latest_effect_exact_value_visible": true,
+    "local_delivery_preserved_latest_effect": true,
+    "local_monitor_recommendation": "continue",
+    "local_operation": "search_page_content",
+    "monitor_recommendation": "continue",
+    "mutation_kind": "generic_unique_scalar_modification",
+    "post_local_admitted_record_count": 5,
+    "post_local_manifest_route_count": 1,
+    "post_local_obligation_group_count": 4,
+    "post_local_packing_backoff_count": 4,
+    "post_local_privacy_checked": true,
+    "post_local_request_admitted": true,
+    "post_local_request_budget": {
+      "actor_world_tokens": 4695,
+      "admission_action": "admitted",
+      "admitted_record_count": 5,
+      "available_record_count": 129,
+      "complete_request_tokens": 12081,
+      "counting_method": "deterministic-conservative-v1",
+      "delivery_projection": "page_map",
+      "direct_action_count": 1,
+      "effective_input_limit": 62904,
+      "estimated_input_tokens": 7985,
+      "expanded_region_count": 0,
+      "folded_region_count": 17,
+      "history_tokens": 0,
+      "image_estimated_tokens": 0,
+      "manifest_route_count": 1,
+      "media_bytes": 0,
+      "model_settings_tokens": 22,
+      "obligation_group_count": 4,
+      "output_contract_tokens": 31,
+      "output_reserve_tokens": 4096,
+      "packing_backoff_count": 4,
+      "phase": "ordinary",
+      "provider_envelope_tokens": 214,
+      "provider_reported_prompt_tokens": 0,
+      "rendered_request_bytes": 24919,
+      "repair_tokens": 0,
+      "searchable_action_count": 107,
+      "system_tokens": 1346,
+      "tool_schema_bytes": 5031,
+      "tool_schema_tokens": 1677
+    },
+    "post_local_request_tokens": 7985,
+    "post_transition_admitted_record_count": 7,
+    "post_transition_manifest_route_count": 2,
+    "post_transition_obligation_group_count": 4,
+    "post_transition_packing_backoff_count": 4,
+    "post_transition_privacy_checked": true,
+    "post_transition_request_admitted": true,
+    "post_transition_request_budget": {
+      "actor_world_tokens": 4697,
+      "admission_action": "admitted",
+      "admitted_record_count": 7,
+      "available_record_count": 129,
+      "complete_request_tokens": 12093,
+      "counting_method": "deterministic-conservative-v1",
+      "delivery_projection": "page_map",
+      "direct_action_count": 3,
+      "effective_input_limit": 62904,
+      "estimated_input_tokens": 7997,
+      "expanded_region_count": 0,
+      "folded_region_count": 17,
+      "history_tokens": 0,
+      "image_estimated_tokens": 0,
+      "manifest_route_count": 2,
+      "media_bytes": 0,
+      "model_settings_tokens": 22,
+      "obligation_group_count": 4,
+      "output_contract_tokens": 31,
+      "output_reserve_tokens": 4096,
+      "packing_backoff_count": 4,
+      "phase": "ordinary",
+      "provider_envelope_tokens": 214,
+      "provider_reported_prompt_tokens": 0,
+      "rendered_request_bytes": 24936,
+      "repair_tokens": 0,
+      "searchable_action_count": 105,
+      "system_tokens": 1346,
+      "tool_schema_bytes": 5061,
+      "tool_schema_tokens": 1687
+    },
+    "post_transition_request_tokens": 7997,
+    "provider_attempts": 0,
+    "public_world_delta": {
+      "after_digest": "79a8f8ee7df161829b08425a26ebf60cad6056ccfa20ed65eb765dfb295f3e04",
+      "before_digest": "7dd058206cf450ceef33b3527fdac5f628a8528a5cdb4d93626206d960ae981b",
+      "changed_region_count": 1,
+      "fact_changes": 1,
+      "target_change_count": 1
+    },
+    "serialized_snapshot_diff_count": 2,
+    "serialized_snapshot_matches_delta": true,
+    "step_delta_shared": true,
+    "unchanged_region_count": 16,
+    "unchanged_region_reused_count": 16,
+    "workspace_reduced": true
+  },
+  "world": {
+    "binding_count": 108,
+    "fact_count": 1059,
+    "semantic_digest": "sha256:02e49c0f6dedfcacd6486d1aabcd6acd4f90e3baf3ec288ebef14d00745b242a",
+    "serialized_bytes": 2471703,
+    "source_count": 1,
+    "target_count": 376
+  }
+}

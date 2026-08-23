@@ -1,0 +1,18 @@
+{
+  "artifact_kind": "w1b-world-provider-free-falsification",
+  "command": "PYTHONPATH=src:tests /home/yang/.venvs/affordance-browsergym-py312/bin/python -m affordance_runtime.benchmarks.target_loop.cli --w1b-world --seed 7 --output-dir evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-f3a42dfd-py312",
+  "files_sha256": {
+    "w1b-world-summary.json": "ac781fee1e81394af4789184caf7696da32c89f531d534e6780a9a5b1c42f854",
+    "w1b-world-task-0.json": "c4f84d3b5c2f4fca51ea17f782318326f23682b3ecda50e7a5de1db84dbfbe71",
+    "w1b-world-task-21.json": "896c56b55ef728da6a79b9e4f60701fb2b44508f995fea0d2946afa51be8287f",
+    "w1b-world-task-266.json": "1dce35e9e3c864460c997fde2f722f191c74b4c9987078836a2e6ecf005fd4af",
+    "w1b-world-task-27.json": "01e971838a17f7697b4ed6cb2c5132cbcc1bd38543c5da95b6dc2bff9766d582",
+    "w1b-world-task-44.json": "d36d0338fc85702bef8006789e8bd5cbac46375e8c1ddf1eba6227ae7c5a6307",
+    "w1b-world-task-7.json": "ab6d9d73738f559e626a770c6c4303fc84aecf812534b49d28a009beb3a4fbb2"
+  },
+  "live_run": false,
+  "provider_attempts": 0,
+  "selection_seed": 7,
+  "tracked_tree_clean_before_run": true,
+  "tracked_tree_revision": "f3a42dfdd9eb119db8bb4f1bee3841bb86a43d26"
+}
