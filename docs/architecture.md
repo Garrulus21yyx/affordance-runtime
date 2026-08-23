@@ -6,9 +6,10 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B current-tree provider-free acceptance passed / final fresh-context review pending**. Causal
-post-action transition, TaskGoal public-input projection, and benchmark finalization remain
-separate reopened gates. The mandatory
+authorized / Stage-B current-tree provider-free acceptance passed / final provider-free fresh-context review
+passed / live authorization pending**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
+separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
 scoped evidence for the implementations they exercised; they are not whole-runtime closure and do not authorize
 another live run.
@@ -310,6 +311,15 @@ owner-focused `997 passed, 13 skipped`, fixed BrowserGym causal gates `54 passed
 `123 passed`, full pytest `1620 passed, 24 skipped`, plus green Ruff, compileall, diff check, and production negative
 searches. This is implementation/provider-free acceptance, not verified overall closure; final independent
 fresh-context review and separately authorized live evidence remain pending.
+
+Final provider-free fresh-context review (2026-08-23): an independent read-only reviewer audited current HEAD
+`3c87ffdc96b6c89603dea31da5b7c2930640c38a` and found no falsification. The reviewer proved identical `src` and
+`tests` trees between the artifact execution revision and the evidence/status revision; independently recomputed all
+passing and falsification artifact hashes; reconciled the `1,644` collected tests with `1,620 passed, 24 skipped`;
+and rechecked the sole World, route, Manifest, Catalog, Envelope, Resolver, and Binder chain plus physical-request
+privacy. The passing and falsification evidence sets remain distinctly typed and revision-bound. Implementation
+completion and provider-free acceptance are verified; Overall remains reopened/non-closed because no live held-out
+witness or cohort has been authorized or run.
 
 ## Normative single production chain
 

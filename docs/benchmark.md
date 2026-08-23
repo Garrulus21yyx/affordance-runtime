@@ -6,9 +6,9 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B current-tree provider-free acceptance passed / final fresh-context review pending**. C8 causal
-post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection pass their current-tree
-provider-free gates but remain subject to the final independent review. Prior
+authorized / Stage-B current-tree provider-free acceptance passed / final provider-free fresh-context review
+passed / live authorization pending**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
+public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run.
 
@@ -312,6 +312,16 @@ Owner-focused C8–C12 properties pass `997 passed, 13 skipped`; fixed BrowserGy
 skipped`; finalization fault gates pass `123 passed`; full pytest passes `1620 passed, 24 skipped`; Ruff, compileall,
 diff check, and production negative searches pass. This admits Stage-B provider-free acceptance only. Overall remains
 reopened/non-closed, final fresh-context review is pending, and live remains unauthorized.
+
+The final provider-free fresh-context review then passed at
+`3c87ffdc96b6c89603dea31da5b7c2930640c38a` with no falsification. Independent checks showed that the artifact
+execution revision and current review revision have identical `src` and `tests` trees; all seven passing-artifact and
+seven falsification-artifact declared hashes recompute exactly; `1,644` collected tests reconcile with `1,620 passed,
+24 skipped`; and the two evidence sets remain distinctly typed, revision-bound, and correctly referenced by status.
+The reviewer also rechecked single World/route/Manifest/Envelope authority, Catalog-only Manifest consumption,
+physical-request privacy, W1b's two hard readiness cost coordinates, and the retained relational/continuation
+properties. Provider-free implementation and acceptance are verified. Overall remains reopened/non-closed and live
+remains unauthorized.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -1176,10 +1186,11 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 6. **Admitted after joint fresh provider-free exit review — vertical conservation:** the real Runtime/Recording
    FunctionModel path passes request/response, annotated selected/unselected, sparse relation, ordered continuation,
    private permutation, and capacity-coordinate properties. This does not yet authorize overall closure or a live run.
-7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
-   pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free diagnostic.
-8. Run an independent fresh-context read-only review. Reconcile implementation, docs, schema version, evidence, and
-   status while keeping implementation-complete distinct from verified closure.
+7. **Completed:** all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault
+   gates, full pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free
+   diagnostic pass.
+8. **Completed:** an independent fresh-context read-only review reconciles implementation, docs, schema version,
+   evidence, and status while keeping implementation-complete distinct from verified closure.
 9. Only after every active gate passes and the user explicitly authorizes it, run one non-Task-7 held-out live witness,
    then a bounded W1b cohort. Task-7 replay alone cannot satisfy closure.
 
