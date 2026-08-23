@@ -125,8 +125,10 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope identity is invalid")
         if not self.context_id.startswith("context:") or not self.delivery_id.startswith("delivery:"):
             raise ValueError("canonical provider envelope lineage is invalid")
-        if not self.instructions or any(not item.strip() for item in self.instructions):
-            raise ValueError("canonical provider envelope instructions are incomplete")
+        if len(self.instructions) != 1 or not self.instructions[0].strip():
+            raise ValueError("ActionPolicy canonical envelope requires exactly one instruction")
+        if self.history_messages:
+            raise ValueError("ActionPolicy history must be embedded in canonical user text")
         if not self.user_text:
             raise ValueError("canonical provider envelope user text is empty")
         if self.parallel_tool_calls or self.model_settings.get("parallel_tool_calls") is not False:
@@ -160,10 +162,7 @@ class CanonicalProviderEnvelope:
                 for item in self.media
             ),
         )
-        return (
-            *self.history_messages,
-            {"kind": "request", "parts": ({"part_kind": "user-prompt", "content": user_parts},)},
-        )
+        return ({"kind": "request", "parts": ({"part_kind": "user-prompt", "content": user_parts},)},)
 
     def physical_content(self) -> Mapping[str, object]:
         """Stable physical semantics; excludes Runtime-only lineage and object identity."""
@@ -178,7 +177,6 @@ class CanonicalProviderEnvelope:
             },
             "instructions": self.instructions,
             "messages": (
-                *tuple(to_json_compatible(item) for item in self.history_messages),
                 {
                     "kind": "request",
                     "parts": (

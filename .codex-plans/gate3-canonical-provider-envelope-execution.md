@@ -1,6 +1,6 @@
 # Gate 3 Canonical Provider Envelope execution
 
-Status: complete
+Status: correction_implemented_and_provider_free_verified; exit_review_pending; Gate_4_not_admitted
 
 ## Goal
 
@@ -23,6 +23,11 @@ Cut over the production model boundary to one immutable `CanonicalProviderEnvelo
 5. [completed] Run focused suites, full pytest, Ruff, compileall, diff checks, and production negative searches.
 6. [completed] Update architecture, benchmark, and C10 plan status without claiming overall closure.
 7. [completed] Stage only Gate 3 files, commit `refactor: bind one canonical provider envelope`, verify worktree, and stop.
+8. [completed] Correct reserve algebra so input limits and complete context-window limits each subtract reserve exactly once.
+9. [completed] Close the supported ActionPolicy message algebra at one instruction and no independent history messages.
+10. [completed] Add default-budget, soft-target, complete-window, and ghost-algebra regression properties.
+11. [completed] Re-run Gate 3 focused/full/static/negative verification and update non-admitted status docs.
+12. [completed] Commit the Gate 3 correction independently and stop before Gate 4.
 
 ## Files produced or modified
 
@@ -40,3 +45,9 @@ Cut over the production model boundary to one immutable `CanonicalProviderEnvelo
 - Gate 3 owner-focused C8-C12 suite: `583 passed, 3 skipped`.
 - Full provider-free pytest: `1594 passed, 24 skipped` (using `/dev/shm` basetemp; three strict lifecycle wall-clock tests were filesystem-latency-sensitive under `/tmp` and pass unchanged in memory-backed temp storage).
 - Ruff: pass.
+- Post-commit audit reopened Gate 3: `7844b7f1` double-counts output/protocol/safety reserve against an already-derived
+  input `admission_limit`, and the Envelope type admits multiple instructions/nonempty history that the codec does not
+  transport. Both owner contracts and their default-profile properties now pass, but Gate 4 remains explicitly not
+  admitted until a separate Gate 3 exit review grants entry.
+- Corrected Gate 3 owner-focused C8-C12 suite: `587 passed, 3 skipped`.
+- Corrected full provider-free pytest: `1598 passed, 24 skipped` using `/dev/shm` basetemp.

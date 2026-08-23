@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 from dataclasses import replace
 
+import pytest
+
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
@@ -133,21 +135,88 @@ def test_complete_envelope_count_is_deterministic_and_covers_every_physical_comp
     asyncio.run(scenario())
 
 
-def test_admission_exact_fit_returns_the_same_immutable_envelope_and_one_unit_over_rejects() -> None:
+def test_admission_exact_input_fit_with_nonzero_reserve_returns_same_envelope_and_one_unit_over_rejects() -> None:
     async def scenario() -> None:
         envelope = await _bound_envelope()
-        total = estimate_canonical_envelope(envelope, budget=_budget(1_000_000)).complete_request_tokens
+        counted = estimate_canonical_envelope(envelope, budget=_budget(1_000_000))
+        input_total = counted.estimated_total_tokens
+        complete_total = counted.complete_request_tokens
 
-        admitted = RequestAdmission().admit(envelope, budget=_budget(total))
-        rejected = RequestAdmission().admit(envelope, budget=_budget(total - 1))
+        admitted = RequestAdmission().admit(envelope, budget=_budget(input_total))
+        rejected = RequestAdmission().admit(envelope, budget=_budget(input_total - 1))
 
         assert isinstance(admitted, AdmittedProviderEnvelope)
         assert admitted.envelope is envelope
-        assert admitted.token_breakdown.complete_request_tokens == total
+        assert admitted.token_breakdown.estimated_total_tokens == input_total
+        assert admitted.token_breakdown.complete_request_tokens == complete_total
         assert isinstance(rejected, RejectedProviderEnvelope)
         assert rejected.reason == "context_capacity"
-        assert rejected.token_breakdown.complete_request_tokens == total
+        assert rejected.token_breakdown.estimated_total_tokens == input_total
+        assert rejected.token_breakdown.complete_request_tokens == complete_total
         assert rejected.counting_method == envelope.counting_method
+
+    asyncio.run(scenario())
+
+
+def test_default_budget_deducts_envelope_reserve_exactly_once() -> None:
+    async def scenario() -> None:
+        base = await _bound_envelope()
+        default_budget = ModelRequestBudget()
+        base_count = estimate_canonical_envelope(base, budget=default_budget)
+        fixed_input = base_count.estimated_total_tokens - base_count.actor_world_tokens
+        target_input = 60_000
+        actor_tokens = target_input - fixed_input
+        envelope = _replace_physical(base, user_text="x" * (actor_tokens * 3))
+
+        outcome = RequestAdmission().admit(envelope, budget=default_budget)
+
+        assert default_budget.admission_limit == 62_904
+        assert envelope.output_token_reserve == 4_096
+        assert isinstance(outcome, AdmittedProviderEnvelope)
+        assert outcome.token_breakdown.estimated_total_tokens == target_input
+        assert outcome.token_breakdown.admission_limit == 62_904
+        assert outcome.token_breakdown.complete_request_tokens == 64_096
+        assert outcome.token_breakdown.complete_request_tokens <= default_budget.model_context_window
+
+    asyncio.run(scenario())
+
+
+def test_soft_target_is_an_input_limit_and_does_not_subtract_reserve_again() -> None:
+    async def scenario() -> None:
+        base = await _bound_envelope()
+        base_count = estimate_canonical_envelope(base)
+        fixed_input = base_count.estimated_total_tokens - base_count.actor_world_tokens
+        target_input = 7_000
+        actor_tokens = target_input - fixed_input
+        envelope = _replace_physical(base, user_text="x" * (actor_tokens * 3))
+        soft_budget = replace(ModelRequestBudget(), admission_limit=ModelRequestBudget().soft_target_tokens)
+
+        outcome = RequestAdmission().admit(envelope, budget=soft_budget)
+
+        assert isinstance(outcome, AdmittedProviderEnvelope)
+        assert outcome.token_breakdown.estimated_total_tokens == 7_000
+        assert outcome.token_breakdown.admission_limit == 8_000
+        assert outcome.token_breakdown.complete_request_tokens == 11_096
+
+    asyncio.run(scenario())
+
+
+def test_complete_request_must_also_fit_context_window_with_envelope_reserve() -> None:
+    async def scenario() -> None:
+        base = _replace_physical(await _bound_envelope(), output_token_reserve=5_000)
+        budget = ModelRequestBudget()
+        base_count = estimate_canonical_envelope(base, budget=budget)
+        fixed_input = base_count.estimated_total_tokens - base_count.actor_world_tokens
+        target_input = 62_500
+        envelope = _replace_physical(base, user_text="x" * ((target_input - fixed_input) * 3))
+
+        outcome = RequestAdmission().admit(envelope, budget=budget)
+
+        assert isinstance(outcome, RejectedProviderEnvelope)
+        assert outcome.token_breakdown.estimated_total_tokens == target_input
+        assert outcome.token_breakdown.admission_limit == 62_000
+        assert outcome.token_breakdown.complete_request_tokens == 67_500
+        assert outcome.token_breakdown.complete_request_tokens > budget.model_context_window
 
     asyncio.run(scenario())
 
@@ -323,18 +392,29 @@ def test_private_resolver_value_and_length_do_not_change_public_cost_or_identity
     asyncio.run(scenario())
 
 
-def test_multiple_media_and_large_history_are_counted_without_provider_access() -> None:
+def test_multiple_media_are_counted_without_provider_access() -> None:
     async def scenario() -> None:
         base = await _bound_envelope()
         expanded = _replace_physical(
             base,
-            history_messages=tuple({"kind": "request", "content": "history " + "x" * 1000} for _ in range(8)),
             media=(_media(_png(padding=100)), _media(_png(padding=200))),
         )
 
         breakdown = estimate_canonical_envelope(expanded)
-        assert breakdown.history_tokens > 0
+        assert breakdown.history_tokens == 0
         assert breakdown.image_estimated_tokens > 0
         assert breakdown.media_bytes == sum(len(item.data) for item in expanded.media)
+
+    asyncio.run(scenario())
+
+
+def test_action_policy_envelope_rejects_ghost_instruction_and_history_algebra() -> None:
+    async def scenario() -> None:
+        base = await _bound_envelope()
+
+        with pytest.raises(ValueError, match="exactly one instruction"):
+            _replace_physical(base, instructions=(base.instructions[0], "second instruction"))
+        with pytest.raises(ValueError, match="history must be embedded"):
+            _replace_physical(base, history_messages=({"kind": "request", "content": "ghost history"},))
 
     asyncio.run(scenario())

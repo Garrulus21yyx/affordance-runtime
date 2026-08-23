@@ -154,7 +154,7 @@ def estimate_canonical_envelope(
 
     active_budget = budget or ModelRequestBudget()
     system_tokens = _tokens_for(envelope.instructions)
-    history_tokens = _tokens_for(envelope.history_messages)
+    history_tokens = 0
     actor_world_tokens = _tokens_for(envelope.user_text)
     tools_projection = tuple(
         {
@@ -186,7 +186,7 @@ def estimate_canonical_envelope(
     output_contract_tokens = _tokens_for(output_projection)
     provider_envelope_tokens = (
         _PROVIDER_ENVELOPE_TOKENS
-        + (len(envelope.history_messages) + 1) * _MESSAGE_OVERHEAD_TOKENS
+        + _MESSAGE_OVERHEAD_TOKENS
         + len(envelope.function_tools) * _TOOL_OVERHEAD_TOKENS
     )
     input_total = (
@@ -200,7 +200,12 @@ def estimate_canonical_envelope(
         + provider_envelope_tokens
     )
     complete_total = input_total + envelope.output_token_reserve
-    action = "admitted" if complete_total <= active_budget.admission_limit else "context_capacity"
+    effective_input_limit = active_budget.effective_input_limit(envelope.output_token_reserve)
+    action = (
+        "admitted"
+        if input_total <= effective_input_limit and complete_total <= active_budget.model_context_window
+        else "context_capacity"
+    )
     tool_bytes = len(_json(tools_projection).encode())
     media_bytes = sum(len(item.data) for item in envelope.media)
     request_bytes = (
@@ -220,7 +225,7 @@ def estimate_canonical_envelope(
         model_settings_tokens=settings_tokens,
         output_contract_tokens=output_contract_tokens,
         estimated_total_tokens=input_total,
-        admission_limit=active_budget.admission_limit,
+        admission_limit=effective_input_limit,
         admission_action=action,
         prefit_estimated_total_tokens=complete_total,
         delivery_projection=envelope.delivery_projection,

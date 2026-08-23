@@ -901,7 +901,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
             call_profile=_PROFILE,
             output_token_reserve=_PROFILE.max_output_tokens,
         )
-        return estimate_canonical_envelope(envelope).complete_request_tokens
+        return estimate_canonical_envelope(envelope).estimated_total_tokens
 
     mandatory_total = total(0)
     first_optional_total = total(1)
@@ -1007,7 +1007,15 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
     if count >= 84:
         assert admitted < len(effect.records)
         assert any(item.scope == "effect" for item in packed.delivery.continuation_capabilities)
-    assert packed.admitted_envelope.token_breakdown.complete_request_tokens <= ModelRequestBudget().admission_limit
+    assert (
+        packed.admitted_envelope.token_breakdown.estimated_total_tokens
+        <= ModelRequestBudget().soft_target_tokens
+    )
+    assert packed.admitted_envelope.token_breakdown.estimated_total_tokens <= ModelRequestBudget().admission_limit
+    assert (
+        packed.admitted_envelope.token_breakdown.complete_request_tokens
+        <= ModelRequestBudget().model_context_window
+    )
     assert (*effect.records[:admitted], *effect.records[admitted:]) == effect.records
     changes = {item.change.value for item in store.latest_effect.inventory.atoms}
     assert {"added", "removed", "modified"} <= changes

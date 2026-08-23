@@ -28,7 +28,7 @@ def _environment_admission_limit() -> int:
 
 @dataclass(frozen=True)
 class ModelRequestBudget:
-    """One request profile shared by disposable delivery and final admission."""
+    """Input limits plus one model context window shared by packing and admission."""
 
     soft_target_tokens: int = DEFAULT_MODEL_REQUEST_SOFT_TARGET
     model_context_window: int = 67_000
@@ -58,6 +58,16 @@ class ModelRequestBudget:
         )
         limit = min(self.admission_limit or derived, derived)
         object.__setattr__(self, "admission_limit", max(1, limit))
+
+    def effective_input_limit(self, output_reserve_tokens: int) -> int:
+        """Return the input ceiling for an envelope whose reserve is counted separately."""
+
+        if isinstance(output_reserve_tokens, bool) or output_reserve_tokens < 0:
+            raise ValueError("model output reserve must be non-negative")
+        return min(
+            self.admission_limit,
+            max(0, self.model_context_window - output_reserve_tokens),
+        )
 
 
 @dataclass(frozen=True)

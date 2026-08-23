@@ -3,7 +3,8 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery complete /
-Gate 3 Envelope implemented and provider-free verified / Gate 4 vertical conservation pending / Overall reopened / non-closed / no live run
+Gate 3 Envelope correction implemented and provider-free verified / Gate 3 exit review pending /
+Gate 4 not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -102,8 +103,10 @@ and a two-request real `TargetRuntime/CoreLoop → PydanticAI FunctionModel` seq
 skipped`; Ruff, compileall, diff check, and Delivery negative searches pass. Gate 4 vertical conservation remains
 pending; this is not C10, benchmark, provider, or live closure.
 
-Envelope Gate 3 implementation checkpoint (2026-08-23): `CanonicalProviderEnvelopeBinder` is the sole producer of the
-immutable PydanticAI model-boundary request. It closes ordered instructions and messages, exact media bytes and MIME,
+Envelope Gate 3 correction checkpoint (2026-08-23): `CanonicalProviderEnvelopeBinder` is the sole producer of the
+immutable PydanticAI model-boundary request. The current ActionPolicy algebra closes exactly one instruction and one
+current user request; bounded history/tool-result context is embedded in canonical `user_text`, and independent
+history messages are rejected at the Envelope owner. It also closes exact media bytes and MIME,
 Catalog-derived ordered strict tool definitions and schemas, model identity/settings, parallel-call policy, output
 contract, output reserve, deterministic counting method, and attempt lineage before admission. The stable
 `envelope_id` hashes only physical model-visible content and selected provider/model profile; Runtime-only Catalog
@@ -113,9 +116,9 @@ value on admission. `TurnPacker` reuses its final admitted envelope. The Pydanti
 to ordered `ModelMessages + ModelRequestParameters`; it no longer rebuilds prompt, tools, media, settings, or output
 contract after admission. Every physical initial or repair call records its envelope projection at attempt start.
 Provider-free exact-boundary, identity/cost, media/tool, pre-provider totality, repair, and two-turn production-path
-properties pass. Full pytest is `1594 passed, 24 skipped`; Ruff, compileall, diff check, and production negative
+properties pass. Full pytest is `1598 passed, 24 skipped`; Ruff, compileall, diff check, and production negative
 searches pass. No real provider, live benchmark, Task-7 replay, external token-count request, or raw HTTP payload
-builder was used. Gate 4 vertical conservation remains pending; overall status is reopened/non-closed.
+builder was used. Gate 4 vertical conservation is not admitted and remains pending; overall status is reopened/non-closed.
 
 ## Normative single production chain
 
@@ -125,8 +128,8 @@ provider request, or acceptance sequence. If a later diagram disagrees with this
 later diagram must be corrected or moved to history.
 
 The pre-cutover implementation was frozen because it layered new projections over old owners instead of cutting the
-old owners over. Gates 1–3 have now cut over World, Delivery, and Envelope; the remaining Gate 4 target is one small
-vertical conservation proof, not another Agent framework:
+old owners over. Gates 1–3 have now cut over World, Delivery, and Envelope; Gate 4 remains an explicitly non-admitted
+vertical conservation target, not another Agent framework:
 
 ```text
 BrowserGym observation
@@ -414,8 +417,11 @@ envelope part. Privacy validation checks typed visibility/provenance and structu
 serialization; it never substring-scans public values.
 
 `RequestAdmission` accepts and returns this same envelope value. It verifies typed provenance, provider protocol
-representability, canonical digest integrity, and complete cost including tools, media, settings, output contract, and
-reserve. If workspace fitting changes a public input, the sole binder creates a new envelope and Admission validates
+representability, canonical digest integrity, and complete input cost including tools, media, settings, and output
+contract. Output reserve remains a separate context-window allocation: `effective_input_limit =
+min(configured_input_limit, model_context_window - envelope_reserve)`, and admission requires both `input_total <=
+effective_input_limit` and `input_total + envelope_reserve <= model_context_window`. The 8k soft target is likewise an
+input target and never subtracts reserve again. If workspace fitting changes a public input, the sole binder creates a new envelope and Admission validates
 that replacement; sidecar `component_payloads` cannot stand in for physical messages/tools. `AdmittedModelRequest` is
 replaced or narrowed to an admitted wrapper around the exact `CanonicalProviderEnvelope`. The PydanticAI adapter may
 construct SDK objects as a mechanical wire codec, but it must pass the envelope-owned instructions, prompt parts,
@@ -1054,6 +1060,11 @@ RequestAdmission profile/estimator
 → freeze ModelTurnDelivery + PerTurnToolCatalog + component breakdown
 → RequestAdmission final verification, or typed context_capacity
 ```
+
+`TurnPacker` compares tentative request input cost with the 8k input soft target. `RequestAdmission` separately records
+`estimated_total_tokens` as complete input cost, `output_reserve_tokens` as the one reserve, and
+`complete_request_tokens` as their sum. The default profile therefore admits up to 62,904 input tokens with a separate
+4,096-token reserve inside the 67,000-token context window; it does not reduce either 62,904 or 8,000 by 4,096 again.
 
 The algorithm is deterministic greedy plus bounded backoff. It has no learned objective, mutable episode state,
 knapsack search, cross-turn cache authority, or independent byte limit. “Fixed cost” includes actual tool schema and
