@@ -6,9 +6,9 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B full acceptance rerun pending after W1b projection repair**. C8 causal post-action
-transition, C11 benchmark finalization, and C12 TaskGoal public-input projection remain separate reopened gates; the
-combined current-tree provider-free acceptance is blocked. Prior
+authorized / Stage-B current-tree provider-free acceptance passed / final fresh-context review pending**. C8 causal
+post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection pass their current-tree
+provider-free gates but remain subject to the final independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run.
 
@@ -302,6 +302,16 @@ diagnostics. The former 1.5k history, 2k Tool Schema, and redundant/mislabeled T
 one consumer migration. Catalog operation/scope bounds, schema↔unique-resolver equivalence, sparse adjacency, and
 continuation properties remain unchanged. Stage B remains non-admitted until the full rerun and new revision-bound
 artifacts pass.
+
+Stage-B current-tree acceptance then passed from clean revision
+`4a7e5d35be120853509640cf4fdeed2accfcfe88`. The revision-bound evidence directory is
+`evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-4a7e5d35-py312/`: all six cases are `status=ok`, the
+summary is `ready=true`, every acceptance-error list is empty, and provider attempts are zero. Input tokens are
+`7,761/7,981/7,982/7,983/7,988/7,999`, median `7,982.5`, and maximum complete-request cost is `12,095`.
+Owner-focused C8–C12 properties pass `997 passed, 13 skipped`; fixed BrowserGym causal gates pass `54 passed, 13
+skipped`; finalization fault gates pass `123 passed`; full pytest passes `1620 passed, 24 skipped`; Ruff, compileall,
+diff check, and production negative searches pass. This admits Stage-B provider-free acceptance only. Overall remains
+reopened/non-closed, final fresh-context review is pending, and live remains unauthorized.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and

@@ -6,8 +6,8 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B full acceptance rerun pending after W1b projection repair**. Causal post-action transition,
-TaskGoal public-input projection, and benchmark finalization remain
+authorized / Stage-B current-tree provider-free acceptance passed / final fresh-context review pending**. Causal
+post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
 scoped evidence for the implementations they exercised; they are not whole-runtime closure and do not authorize
@@ -300,6 +300,16 @@ RequestAdmission. The historical `history_tokens <= 1,500`, `tool_schema_tokens 
 branches are removed together. Component tokens remain diagnostic breakdowns for regression analysis; they cannot
 independently reject an admitted complete request. The six-page summary retains its 8,000-token median gate. No
 Catalog, Packer, Envelope, GUI, route, or dispatch code changed. Stage-B rerun remains required before admission.
+
+Stage-B current-tree acceptance evidence (2026-08-23): from clean revision
+`4a7e5d35be120853509640cf4fdeed2accfcfe88`, all six W1b-World pages are `status=ok`, summary `ready=true`, every
+acceptance-error list is empty, and provider attempts remain zero. Input tokens are
+`7,761/7,981/7,982/7,983/7,988/7,999`, median `7,982.5`; complete requests are at most `12,095`. Tool Schema
+breakdowns, including `2,062` and `2,103`, remain present as diagnostics. Current-revision verification is C8–C12
+owner-focused `997 passed, 13 skipped`, fixed BrowserGym causal gates `54 passed, 13 skipped`, finalization fault gates
+`123 passed`, full pytest `1620 passed, 24 skipped`, plus green Ruff, compileall, diff check, and production negative
+searches. This is implementation/provider-free acceptance, not verified overall closure; final independent
+fresh-context review and separately authorized live evidence remain pending.
 
 ## Normative single production chain
 

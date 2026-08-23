@@ -1,0 +1,27 @@
+{
+  "acceptance": {
+    "browsergym_causal_gates": "54 passed, 13 skipped",
+    "c8_c12_owner_focused": "997 passed, 13 skipped",
+    "compileall": "passed",
+    "finalization_fault_gates": "123 passed",
+    "full_pytest": "1620 passed, 24 skipped",
+    "negative_searches": "passed",
+    "ruff": "passed"
+  },
+  "artifact_kind": "w1b-world-provider-free-acceptance",
+  "command": "PYTHONPATH=src:tests /home/yang/.venvs/affordance-browsergym-py312/bin/python -m affordance_runtime.benchmarks.target_loop.cli --w1b-world --seed 7 --output-dir evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-4a7e5d35-py312",
+  "files_sha256": {
+    "w1b-world-summary.json": "bd32524e71643b0569e01b4623f4ba81eb5cadd2a5bed6488f25438a5f4b8d15",
+    "w1b-world-task-0.json": "382b10e40156b16d2b41b8bff7bdbb00885eb14a1ca964d2c3de3f2462c21003",
+    "w1b-world-task-21.json": "64f9a2fecb89ca2bf466f265c383d4fcc98c02454b1dc6dfba5146199013993c",
+    "w1b-world-task-266.json": "69ad7c4711d2d8916a31b813dcde81bc903cac82116aaec1f5efe47999175b64",
+    "w1b-world-task-27.json": "0ceedf7bce5c7f9329c7ae8843e9d3e94b70f590f65a51d33b0c1c311f348026",
+    "w1b-world-task-44.json": "b43654b96b481c6b81a16c45ae906b4d545e1581e9eb7377dcb3dc2d8982eb1c",
+    "w1b-world-task-7.json": "14fa52e3fe598e9f9db984139e1662814d02210c21a944c06128b9b62fd21ed6"
+  },
+  "live_run": false,
+  "provider_attempts": 0,
+  "selection_seed": 7,
+  "tracked_tree_clean_before_run": true,
+  "tracked_tree_revision": "4a7e5d35be120853509640cf4fdeed2accfcfe88"
+}
