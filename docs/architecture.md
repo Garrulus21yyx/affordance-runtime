@@ -3,8 +3,8 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 media route / operand-role repair implemented and provider-free verified; exit review pending /
-Gate 3 breakdown diagnostic coordinate repair implemented and provider-free verified; exit review pending /
+Gate 2 complete / re-admitted after fresh provider-free exit review /
+Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
@@ -192,6 +192,16 @@ can attribute those former component-payload subtotals without creating a second
 The breakdown field formerly named `admission_limit` is now `effective_input_limit`, distinguishing the derived
 reserve-aware input ceiling from `ModelRequestBudget.admission_limit`, which remains the configured input ceiling.
 
+Fresh Gate 2/3 exit review checkpoint (2026-08-23): review restarted after every correction and passes from
+`e5acb47c`. Gate 2's media fragment is now the sole producer of actual marks, exact public route deltas, typed operand
+roles, and private resolver lineage; delivery and Envelope preserve its public relation, while serialization excludes
+the private fields. Gate 3 exposes only physical input components, `estimated_input_tokens`,
+`output_reserve_tokens`, `complete_request_tokens`, and the derived `effective_input_limit`; all producerless candidate
+and component-payload subtotals are absent from production and consumers. Gate 2 and Gate 3 are re-admitted. This does
+not resume Gate 4 or close C10/benchmark/overall status.
+Final re-admission verification is `176 passed, 2 skipped` focused and `1608 passed, 24 skipped` full; Ruff,
+compileall, diff check, and production negative searches pass. No provider, live benchmark, or Task7 replay ran.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -283,14 +293,13 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (media repair implemented/provider-free verified; exit review pending).** Store capabilities
+3. **Delivery cutover (complete/re-admitted after fresh provider-free review).** Store capabilities
    remain the only cursor/continuation meaning, while final attached media now carries actual marks, exact route
-   deltas, and typed operand roles. Earlier Store/two-turn evidence plus the new production media gate await joint
-   fresh exit review.
-4. **Envelope cutover (core verified; diagnostics reopened).** Messages/tools/media/settings/output are bound once and
-   transported unchanged, and the diagnostic repair now exposes one input total plus separate reserve/complete totals;
-   joint fresh exit review remains pending.
-5. **Vertical conservation gate (stopped).** Only after the reopened owners are repaired may this prove private-identity permutations leave the final
+   deltas, and typed operand roles; private resolver lineage is non-serializable.
+4. **Envelope cutover (complete/re-admitted after fresh provider-free review).** Messages/tools/media/settings/output
+   are bound once and transported unchanged; diagnostics expose one input total, separate reserve/complete totals, and
+   the effective input ceiling, with no component-payload subtotals.
+5. **Vertical conservation gate (stopped/not admitted).** A separately admitted Gate 4 may prove private-identity permutations leave the final
    recorded envelope digest/cost unchanged and every visible/callable route remains closed from World to Binder.
 
 No failing example authorizes a local production patch. A stage may begin only after the previous stage's owner-local

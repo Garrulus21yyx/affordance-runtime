@@ -3,8 +3,8 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 media route / operand-role repair implemented and provider-free verified; exit review pending /
-Gate 3 breakdown diagnostic coordinate repair implemented and provider-free verified; exit review pending /
+Gate 2 complete / re-admitted after fresh provider-free exit review /
+Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
 remain separate reopened gates; C10 cannot close before Gate 4. Prior
@@ -186,6 +186,15 @@ The zero-only `task_plan_tokens`, `working_set_tokens`, and `evidence_tokens` co
 consumers are also removed; WebArena does not reconstruct them from the canonical user text.
 Breakdown and benchmark diagnostics now publish `effective_input_limit` for the derived reserve-aware ceiling; the
 budget's `admission_limit` continues to mean the configured input ceiling.
+
+Fresh Gate 2/3 exit review passes from `e5acb47c` after restarting at each falsification. Gate 2 conserves the
+annotation-owned media route/role relation through Manifest, Envelope, Recording FunctionModel, resolver, and Binder,
+without serializing private resolver lineage. Gate 3 has one input total, a separate reserve, their complete-request
+sum, and an explicitly named effective input ceiling; all old candidate/component ghost metrics and consumers are
+absent. Gate 2 and Gate 3 are re-admitted. Gate 4 remains aborted/not admitted, so C10, benchmark, and overall status
+remain reopened/non-closed; held-out Gate 4 evidence, fresh-context Gate 4 review, and live authorization remain.
+Final provider-free evidence is `176 passed, 2 skipped` focused and `1608 passed, 24 skipped` full, with Ruff,
+compileall, diff check, and production negative searches green. No provider, live benchmark, or Task7 replay ran.
 
 Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
 required both operands to be marked in one image. The final-media owner now retains a route when at least one exact
@@ -1054,17 +1063,17 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery media repair implemented/provider-free verified; exit review pending:** `ObservationDeliveryStore`
+4. **Delivery complete/re-admitted after fresh provider-free review:** `ObservationDeliveryStore`
    remains the inventory/cursor transition owner; final attached media now carries actual marks, typed operand roles,
    and exact route deltas, with Manifest union limited to text/media deltas.
-5. **Envelope diagnostic repair implemented/provider-free verified; exit review pending:** one `CanonicalProviderEnvelopeBinder`
+5. **Envelope complete/re-admitted after fresh provider-free review:** one `CanonicalProviderEnvelopeBinder`
    closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
    exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Breakdown
    diagnostics expose one input total and separate reserve/complete totals; producerless candidate metrics are absent.
-6. **Stopped — vertical conservation:** the first real annotated request falsified Gate 2 media route/operand-role
-   conservation, and the capacity audit reopened Gate 3 diagnostics. Resume only after those owners are repaired and
-   re-admitted; no Gate 4 completion evidence or commit exists.
+6. **Stopped/not admitted — vertical conservation:** the first attempt falsified Gate 2/3; those owners are now
+   re-admitted, but that historical Gate 4 attempt remains aborted and no new Gate 4 admission or completion evidence
+   exists.
 7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
    pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free diagnostic.
 8. Run an independent fresh-context read-only review. Reconcile implementation, docs, schema version, evidence, and

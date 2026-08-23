@@ -1,6 +1,6 @@
 # Gate 4 vertical conservation execution
 
-Status: aborted_not_admitted; gate_2_reopened; gate_3_reopened; overall_reopened_non_closed
+Status: aborted_not_admitted; gate_2_readmitted; gate_3_readmitted; overall_reopened_non_closed
 
 ## Goal
 
@@ -28,7 +28,10 @@ evidence by default; an owner contract falsification stops the gate rather than 
 5. [pending] Add generated private-permutation, sparse-route/schema, label/variant, and capacity-coordinate properties.
 6. [pending] Run focused, C8–C12/architecture, full, Ruff, compileall, diff, and production negative searches.
 7. [completed] Record the Gate 2/Gate 3 diagnostic contract falsifications in architecture, benchmark, and plans.
-8. [pending] No Gate 4 completion commit is permitted while the falsified owners remain reopened.
+8. [completed] Preserve the aborted Gate 4 record; later Gate 2/3 re-admission does not create a Gate 4 completion commit.
+
+Gate 2 and Gate 3 were later repaired and re-admitted by a fresh provider-free exit review from `e5acb47c`. This
+historical Gate 4 execution remains aborted and is not automatically resumed or admitted by that result.
 
 ## Files produced or modified
 

@@ -1,7 +1,7 @@
 # Gate 2 / Gate 3 recovery after vertical falsification
 
-Status: gate_2_implemented_provider_free_verified_exit_review_pending;
-gate_3_implemented_provider_free_verified_exit_review_pending;
+Status: gate_2_complete_readmitted_after_fresh_review;
+gate_3_complete_readmitted_after_fresh_review;
 gate_4_aborted_not_admitted;
 overall_reopened_non_closed
 
@@ -41,10 +41,9 @@ Every active request-breakdown field names its coordinate explicitly:
 
 ```text
 estimated_input_tokens
-full_candidate_input_tokens
-lens_candidate_input_tokens
 output_reserve_tokens
 complete_request_tokens = estimated_input_tokens + output_reserve_tokens
+effective_input_limit = min(configured_input_limit, model_context_window - output_reserve_tokens)
 ```
 
 Delete ambiguous/producerless prefit metrics. Every consumer compares like coordinates; the WebArena probe receives
@@ -58,7 +57,7 @@ owner-produced input coordinates and performs no conversion.
 4. [completed] Rename/delete Gate 3 breakdown fields at the owner and migrate every active consumer.
 5. [completed] Add coordinate properties for default, soft target, exact fit, one-over, consumer comparisons, and zero attempts.
 6. [completed] Run Gate 3 focused/full/static/negative verification; update docs; commit Gate 3 independently.
-7. [in_progress] Perform a fresh read-only Gate 2/3 exit review and record admitted/reopened status without starting Gate 4.
+7. [completed] Perform a fresh read-only Gate 2/3 exit review and record admitted/reopened status without starting Gate 4.
 
 ## Files produced or modified
 
@@ -106,3 +105,11 @@ owner-produced input coordinates and performs no conversion.
 - Breakdown `admission_limit` was also semantically the derived, reserve-aware input ceiling, while the budget field
   with that name is the configured ceiling. Breakdown and diagnostic consumers now call it `effective_input_limit`;
   the budget configuration name remains unchanged.
+- Fresh read-only review from `e5acb47c` found no remaining media route derivation, private-lineage serialization,
+  mixed-coordinate comparison, candidate subtotal, component-payload subtotal, or effective-limit naming gap. Gate 2
+  and Gate 3 are re-admitted; Gate 4 remains aborted/not admitted and overall remains reopened/non-closed.
+- Final full-suite collection found and migrated one stale PydanticAI spike fixture constructor from breakdown
+  `admission_limit` to `effective_input_limit`; this was a test consumer only and introduced no production branch.
+- Final re-admission verification: focused owner/Recording/Admission/WebArena/architecture suite `176 passed, 2
+  skipped`; full provider-free suite `1608 passed, 24 skipped`; Ruff, compileall, diff check, and production negative
+  searches pass. No provider, live benchmark, or Task7 replay ran.

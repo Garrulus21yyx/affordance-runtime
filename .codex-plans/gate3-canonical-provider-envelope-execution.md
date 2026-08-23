@@ -1,7 +1,7 @@
 # Gate 3 Canonical Provider Envelope execution
 
-Status: breakdown_diagnostic_coordinate_repair_implemented_and_provider_free_verified;
-joint_exit_review_pending; Gate_4_aborted_not_admitted
+Status: complete_readmitted_after_fresh_provider_free_exit_review;
+Gate_4_aborted_not_admitted; overall_reopened_non_closed
 
 ## Goal
 
