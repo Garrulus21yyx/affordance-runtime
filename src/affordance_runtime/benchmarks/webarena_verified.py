@@ -1849,7 +1849,6 @@ def _evidence_retention_diagnostic(
         "view_changed": view_changed,
         "exact_value_retained": exact_value_retained,
         "working_set_visible": working_set_visible,
-        "working_set_tokens": admitted.token_breakdown.working_set_tokens,
         "acceptance_errors": tuple(errors),
     }
 

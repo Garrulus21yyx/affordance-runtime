@@ -100,3 +100,6 @@ owner-produced input coordinates and performs no conversion.
 - Fresh Gate 3 review found one remaining producer-only ambiguous field, `fixed_request_tokens`. It was neither an
   Admission input nor consumed diagnostic and duplicated a partial input subtotal, so the breakdown owner deletes it
   and the old-name property now covers it. Gate 3 review restarts from that correction.
+- The next consumer audit found three zero-only component-payload ghosts (`task_plan_tokens`, `working_set_tokens`,
+  `evidence_tokens`) still projected through instrumentation and WebArena despite having no Envelope estimator
+  producer. They are deleted with every consumer; no probe-side reconstruction replaces them.

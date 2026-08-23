@@ -186,6 +186,9 @@ searches pass. This is Gate 3 implementation evidence only; joint Gate 2/3 exit 
 Fresh Gate 3 review also removed `fixed_request_tokens`: it was an unconsumed partial input subtotal whose name did
 not identify a stable coordinate. No consumer or Admission decision used it. The breakdown now retains physical input
 components, the single `estimated_input_tokens` total, the separate output reserve, and the complete-request sum.
+The same review deletes zero-only `task_plan_tokens`, `working_set_tokens`, and `evidence_tokens` from the breakdown,
+instrumentation, metrics, and WebArena. Once sections are canonically bound into one user text, no physical estimator
+can attribute those former component-payload subtotals without creating a second request authority.
 
 ## Normative single production chain
 

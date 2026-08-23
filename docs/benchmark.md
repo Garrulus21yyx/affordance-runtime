@@ -182,6 +182,8 @@ Gate 3 still awaits joint fresh exit review with Gate 2; Gate 4 remains aborted/
 
 Fresh Gate 3 review removed the last ambiguous producer-only subtotal, `fixed_request_tokens`. It had no consumer and
 did not participate in Admission; the explicit input total, reserve, and complete-request total remain authoritative.
+The zero-only `task_plan_tokens`, `working_set_tokens`, and `evidence_tokens` component-payload metrics and all their
+consumers are also removed; WebArena does not reconstruct them from the canonical user text.
 
 Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
 required both operands to be marked in one image. The final-media owner now retains a route when at least one exact

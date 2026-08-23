@@ -29,11 +29,8 @@ class ModelRequestBreakdown:
     phase: str
     counting_method: str = DETERMINISTIC_COUNTING_METHOD
     system_tokens: int = 0
-    task_plan_tokens: int = 0
     actor_world_tokens: int = 0
     history_tokens: int = 0
-    working_set_tokens: int = 0
-    evidence_tokens: int = 0
     tool_schema_tokens: int = 0
     image_estimated_tokens: int = 0
     repair_tokens: int = 0

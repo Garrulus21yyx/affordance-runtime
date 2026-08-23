@@ -77,11 +77,8 @@ class BenchmarkInstrumentation:
     completion_tokens: int = 0
     total_tokens: int = 0
     system_tokens: int = 0
-    task_plan_tokens: int = 0
     actor_world_tokens: int = 0
     history_tokens: int = 0
-    working_set_tokens: int = 0
-    evidence_tokens: int = 0
     tool_schema_tokens: int = 0
     image_estimated_tokens: int = 0
     repair_tokens: int = 0
@@ -573,11 +570,8 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
     instrumentation.tool_catalog_bytes += int(diagnostics.get("tool_catalog_bytes", 0))
     for name in (
         "system_tokens",
-        "task_plan_tokens",
         "actor_world_tokens",
         "history_tokens",
-        "working_set_tokens",
-        "evidence_tokens",
         "tool_schema_tokens",
         "image_estimated_tokens",
         "repair_tokens",
