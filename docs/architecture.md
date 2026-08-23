@@ -7,7 +7,8 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-owner repair provider-free verified / fresh-context review pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+owner repair provider-free verified / fresh-context review passed / held-out witness rerun authorization pending /
+bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -22,7 +23,12 @@ Provider-free repair checkpoint (implementation revision `d30432aa`, 2026-08-23)
 compileall, diff/static checks, and task-phrase/semantic-reselection negative searches pass. No provider or live call was
 made. The revision-bound attestation is
 [`search-follow-up-provider-free-20260823.json`](../evidence/acceptance/search-follow-up-provider-free-20260823.json).
-This is implementation acceptance, not permission to rerun the witness; fresh-context review remains required.
+This implementation acceptance did not itself authorize a witness rerun.
+The independent read-only review of `f9cd1c9e` passed with no falsification and `67` independent focused tests; its
+attestation is
+[`search-follow-up-fresh-review-20260823.json`](../evidence/acceptance/search-follow-up-fresh-review-20260823.json).
+Overall remains non-closed. The only permitted next step is to request explicit authorization to rerun the single
+held-out Task 21 witness; the bounded cohort remains stopped.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the

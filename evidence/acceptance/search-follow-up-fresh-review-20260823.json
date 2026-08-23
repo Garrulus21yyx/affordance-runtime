@@ -1,0 +1,21 @@
+{
+  "kind": "fresh_context_review",
+  "reviewed_revision": "f9cd1c9e40ec2d99fbb9edc33d629cdd6cb566b5",
+  "result": "pass",
+  "falsification_found": false,
+  "live": false,
+  "provider_attempts": 0,
+  "tracked_tree_clean": true,
+  "independent_checks": {
+    "store_manifest_catalog_follow_up": "passed",
+    "multi_region_pagination_bound": "passed:32",
+    "fresh_world_staleness": "passed",
+    "multiple_call_canonicalization": "passed",
+    "repair_semantic_preservation": "passed",
+    "unchanged_causal_surfaces": "passed",
+    "docs_tests_artifacts_consistency": "passed",
+    "focused_tests": "67 passed"
+  },
+  "status": "overall_non_closed",
+  "next_step": "request explicit authorization to rerun the single held-out Task 21 witness; bounded cohort remains stopped"
+}
