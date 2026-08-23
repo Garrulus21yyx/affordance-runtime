@@ -66,6 +66,60 @@ This is the third reopening of the same bounded public-recovery subsystem. No lo
 run is authorized before a repository-wide architecture-first convergence review of result retention, Workspace
 fitting, structured projection, physical request packing, Monitor inputs, properties, and acceptance gates.
 
+### Local-result delivery convergence review (2026-08-24)
+
+The three held-out reopenings share one cause rather than three independent defects: local observation results did not
+have one end-to-end delivery owner. The Store retained replay digests and a private read cursor, while Workspace copied
+task evidence into `SemanticEvent.exact_public_values` and `recent_trajectory.semantic_summary`; generic history
+projection then became an unacknowledged result-shape and capacity authority. Consequently the same incomplete
+lifecycle appeared first as a missing result-to-follow-up capability, then as cardinality-first result paging, and
+finally as a successful result whose nested record relationship disappeared before the physical provider request.
+
+The bounded target contract is now:
+
+```text
+read-only local result owner
+→ typed PublicResultRecord atoms
+→ ObservationDeliveryStore current PublicResultInventory
+→ existing ActionDeliveryPlan PUBLIC_RESULT obligation
+→ existing TurnPacker complete-record prefix selection
+→ ModelTurnDelivery.public_results
+→ GroundedPolicyContextBinder.latest_public_results
+→ CanonicalProviderEnvelope / RequestAdmission / provider / Recording FunctionModel
+```
+
+A `complete_item` is one indivisible semantic record. The Store owns canonical public JSON, digest, operation, public
+source scope, current-World lineage, stable order, page append/dedup, private offset, and the admitted/suffix partition.
+Packing may admit fewer records but may not edit a record. An individually unrepresentable record must already have
+been split at a typed owner-defined internal boundary or fail as `context_capacity`; no generic `[TRUNCATED]` value may
+enter exact task evidence. Fresh World invalidates the current result inventory. `find_controls` remains exclusively
+under the existing `EXPLICIT_QUERY` action-route obligation and never becomes public-result action authority.
+
+Workspace retains only bounded event kind, operation, summary, and delivery/result lineage. It no longer owns or fits
+exact result payloads. `project_step_result` likewise omits evidence-producing local-result bodies from recent
+trajectory; generic `project_public_value` remains valid only for diagnostics, historical parameters, and other
+explicitly lossy non-authoritative views. WorkingFact remains the one user/task-directed scalar retention mechanism.
+
+`InformationDelta.NEW_INFORMATION` means that a current Store inventory has a new deliverable atom and grants one
+delivery opportunity. Model-visible novelty is separately derived from the records actually admitted into the frozen
+`ModelTurnDelivery`; undisclosed suffix records do not enter the Monitor's visible-result digest. The existing result
+continuation advances the Store offset by exactly the prior admitted prefix. Thus the remaining inventory equals the
+current admitted prefix plus its exact suffix, without duplicate, skip, or hidden prompt cursor.
+
+This design matches current mature boundaries without importing a provider-specific state machine. The 2026-07-28
+[MCP tool-result specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools) treats validated
+`structuredContent` as server-produced result data distinct from model-generated structured output. Anthropic's
+[context editing contract](https://platform.claude.com/docs/en/build-with-claude/context-editing) removes old tool
+results explicitly by lifecycle policy rather than silently rewriting the current result. OpenAI's
+[compaction contract](https://developers.openai.com/api/docs/guides/compaction) similarly declares compacted output to
+be the canonical next context and says to pass it forward as produced. The project-level inference is that exact
+current tool evidence needs a typed owner-produced projection and explicit retention/admission transition; arbitrary
+nested history truncation cannot stand in for either.
+
+Rejected alternatives are raising generic depth/string/item limits, retaining full results in Workspace, adding a
+second Memory/result packer, or extracting Task21/site-specific reviewer fields. The selected migration reuses one
+Store, one ActionDeliveryPlan/TurnPacker, one ModelTurnDelivery, one Envelope, and one CoreAgentLoop.
+
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
 removed mission path, not as a second current status document. Milestone-path sections below are historical analysis,

@@ -56,6 +56,30 @@ was recovered and is secondary. This third reopening triggers the mandatory arch
 No production patch, held-out rerun, or bounded cohort is authorized until that review defines and falsifiably verifies
 the whole local-result-to-model retention algebra.
 
+The architecture-first convergence review is now complete and freezes the provider-free acceptance algebra before
+implementation. Required properties are:
+
+1. A production `read_region` complete record preserves all canonical fields and intra-record relationships through
+   Store, packer, Delivery, physical Envelope, provider input, and Recording FunctionModel.
+2. Tightening request budget changes only the admitted complete-record prefix; every admitted record is byte-for-byte
+   canonical-public equal to its Store record.
+3. For the current offset, `remaining inventory = admitted prefix + continuation suffix`; the partition is ordered,
+   exact, duplicate-free, and cursor-private.
+4. Direct and paged read-only results append by stable digest; fresh World removes their current delivery authority.
+5. Store-only suffix records do not enter the model-visible novelty digest; `NEW_INFORMATION` grants one guaranteed
+   foreground delivery opportunity and does not claim that all suffix records were seen.
+6. The next policy turn can submit a final response using only physically delivered result records; no semantic judge,
+   VLM, second planner, or extra search is required.
+7. Generated deep mappings, long strings, Unicode, 1/2/16/32 records, exact fit, and one-unit-over capacity exercise the
+   real Store → plan → TurnPacker → Delivery → Envelope path.
+8. Negative searches find no Task21, R9, reviewer-name, review-text, site, `_MAX_DEPTH`, or threshold-pursuit production
+   specialization and no surviving exact-result Workspace/provider path.
+
+The implementation must physically delete `SemanticEvent.exact_public_values`, Workspace exact-result fitting, and
+evidence-producing local-result bodies in recent trajectory. Provider-free implementation evidence, full/static
+checks, and an independent fresh-context review are required before asking for one held-out rerun. The bounded cohort
+remains stopped.
+
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
 The target runtime, owner map, deletion plan, and bounded recovery protocol are in
