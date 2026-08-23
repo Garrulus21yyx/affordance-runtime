@@ -86,7 +86,7 @@ class BenchmarkInstrumentation:
     output_reserve_tokens: int = 0
     complete_request_tokens: int = 0
     provider_reported_prompt_tokens: int = 0
-    admission_limit: int = 0
+    effective_input_limit: int = 0
     context_capacity_rejections: int = 0
     model_latency_ms: float = 0.0
     failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
@@ -581,9 +581,9 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
         "provider_reported_prompt_tokens",
     ):
         setattr(instrumentation, name, getattr(instrumentation, name) + int(diagnostics.get(name, 0)))
-    instrumentation.admission_limit = max(
-        instrumentation.admission_limit,
-        int(diagnostics.get("admission_limit", 0)),
+    instrumentation.effective_input_limit = max(
+        instrumentation.effective_input_limit,
+        int(diagnostics.get("effective_input_limit", 0)),
     )
     instrumentation.context_capacity_rejections += int(diagnostics.get("admission_action", "") == "context_capacity")
 

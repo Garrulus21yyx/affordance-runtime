@@ -272,7 +272,7 @@ def _metric_values(state, sent_unknown, snapshot) -> dict[str, int | float | Non
         "output_reserve_tokens": state.output_reserve_tokens,
         "complete_request_tokens": state.complete_request_tokens,
         "provider_reported_prompt_tokens": state.provider_reported_prompt_tokens,
-        "admission_limit": state.admission_limit,
+        "effective_input_limit": state.effective_input_limit,
         "context_capacity_rejections": state.context_capacity_rejections,
         "model_latency_ms": state.model_latency_ms,
         "cleanup_failures": state.cleanup_failures,

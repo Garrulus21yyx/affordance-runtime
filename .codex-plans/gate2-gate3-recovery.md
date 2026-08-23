@@ -103,3 +103,6 @@ owner-produced input coordinates and performs no conversion.
 - The next consumer audit found three zero-only component-payload ghosts (`task_plan_tokens`, `working_set_tokens`,
   `evidence_tokens`) still projected through instrumentation and WebArena despite having no Envelope estimator
   producer. They are deleted with every consumer; no probe-side reconstruction replaces them.
+- Breakdown `admission_limit` was also semantically the derived, reserve-aware input ceiling, while the budget field
+  with that name is the configured ceiling. Breakdown and diagnostic consumers now call it `effective_input_limit`;
+  the budget configuration name remains unchanged.

@@ -50,7 +50,7 @@ CANONICAL_METRICS = frozenset(
         "output_reserve_tokens",
         "complete_request_tokens",
         "provider_reported_prompt_tokens",
-        "admission_limit",
+        "effective_input_limit",
         "context_capacity_rejections",
         "model_latency_ms",
         "ask_user_count",

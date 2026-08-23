@@ -39,7 +39,7 @@ class ModelRequestBreakdown:
     output_contract_tokens: int = 0
     estimated_input_tokens: int = 0
     provider_reported_prompt_tokens: int = 0
-    admission_limit: int = DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+    effective_input_limit: int = DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
     admission_action: str = "admitted"
     delivery_projection: str = "full"
     expanded_region_count: int = 0
@@ -218,7 +218,7 @@ def estimate_canonical_envelope(
         model_settings_tokens=settings_tokens,
         output_contract_tokens=output_contract_tokens,
         estimated_input_tokens=input_total,
-        admission_limit=effective_input_limit,
+        effective_input_limit=effective_input_limit,
         admission_action=action,
         delivery_projection=envelope.delivery_projection,
         expanded_region_count=envelope.expanded_region_count,

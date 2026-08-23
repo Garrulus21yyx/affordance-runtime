@@ -189,6 +189,8 @@ components, the single `estimated_input_tokens` total, the separate output reser
 The same review deletes zero-only `task_plan_tokens`, `working_set_tokens`, and `evidence_tokens` from the breakdown,
 instrumentation, metrics, and WebArena. Once sections are canonically bound into one user text, no physical estimator
 can attribute those former component-payload subtotals without creating a second request authority.
+The breakdown field formerly named `admission_limit` is now `effective_input_limit`, distinguishing the derived
+reserve-aware input ceiling from `ModelRequestBudget.admission_limit`, which remains the configured input ceiling.
 
 ## Normative single production chain
 

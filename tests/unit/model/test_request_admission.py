@@ -190,7 +190,7 @@ def test_default_budget_deducts_envelope_reserve_exactly_once() -> None:
         assert envelope.output_token_reserve == 4_096
         assert isinstance(outcome, AdmittedProviderEnvelope)
         assert outcome.token_breakdown.estimated_input_tokens == target_input
-        assert outcome.token_breakdown.admission_limit == 62_904
+        assert outcome.token_breakdown.effective_input_limit == 62_904
         assert outcome.token_breakdown.complete_request_tokens == 64_096
         assert outcome.token_breakdown.complete_request_tokens <= default_budget.model_context_window
 
@@ -211,7 +211,7 @@ def test_soft_target_is_an_input_limit_and_does_not_subtract_reserve_again() -> 
 
         assert isinstance(outcome, AdmittedProviderEnvelope)
         assert outcome.token_breakdown.estimated_input_tokens == 7_000
-        assert outcome.token_breakdown.admission_limit == 8_000
+        assert outcome.token_breakdown.effective_input_limit == 8_000
         assert outcome.token_breakdown.complete_request_tokens == 11_096
 
     asyncio.run(scenario())
@@ -230,7 +230,7 @@ def test_complete_request_must_also_fit_context_window_with_envelope_reserve() -
 
         assert isinstance(outcome, RejectedProviderEnvelope)
         assert outcome.token_breakdown.estimated_input_tokens == target_input
-        assert outcome.token_breakdown.admission_limit == 62_000
+        assert outcome.token_breakdown.effective_input_limit == 62_000
         assert outcome.token_breakdown.complete_request_tokens == 67_500
         assert outcome.token_breakdown.complete_request_tokens > budget.model_context_window
 
