@@ -333,7 +333,7 @@ def test_pre_provider_ordinary_faults_are_total_and_never_attempt_provider(monke
                 ModelRequestBreakdown(
                     "initial",
                     admission_action="context_capacity",
-                    admission_limit=1,
+                    effective_input_limit=1,
                 )
             ),
             ModelFailureKind.CONTEXT_CAPACITY,
