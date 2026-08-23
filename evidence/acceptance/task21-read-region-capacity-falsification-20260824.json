@@ -1,0 +1,36 @@
+{
+  "kind": "falsification",
+  "revision": "0b8cb57349f25e8dd93a358242345f4034fbadaa",
+  "live": true,
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "case": "webarena-verified-w1b-task-21",
+  "status": "blocked",
+  "bounded_cohort_authorized": false,
+  "source_evidence": {
+    "trace_sha256": "876d790e1e3b12673dd9fe2a9299adc77b585eab93b6ed7ff3ce8c44015f4d2d",
+    "case_sha256": "c75e770547bfbe2008b7f9fd286931d2b413e60d2ece1ce918ff13437bf276b4",
+    "run_sha256": "f51ce73d650ccd1edb30b566477c10c7db7445604b898bcd7d3d7b6e9d2050e9"
+  },
+  "confirmed_repairs": [
+    "search results exposed typed R9 follow-up",
+    "next-turn physical read_region enum contained R9",
+    "DeepSeek selected read_region(R9) without representation repair"
+  ],
+  "falsified_contract": "read_region pagination is bounded by the physical result byte limit and always supplies a consumable page or continuation",
+  "mechanism": {
+    "region_ref": "R9",
+    "page_item_limit": 20,
+    "required_bytes": 75670,
+    "hard_limit_bytes": 65536,
+    "outcome": "CapacityExceeded",
+    "continuation_cursor_available": false,
+    "occurrences": 2
+  },
+  "secondary_environment_failure": {
+    "kind": "provider_timeout",
+    "attempts": 2,
+    "latency_ms": [42752.255104482174, 42690.13790413737]
+  },
+  "next_scope": "inspect_actor_world read_region byte-bounded atomic pagination only"
+}

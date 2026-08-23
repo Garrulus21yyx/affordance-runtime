@@ -7,7 +7,7 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-owner repair provider-free verified / fresh-context review passed / held-out witness rerun authorization pending /
+owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -27,8 +27,16 @@ This implementation acceptance did not itself authorize a witness rerun.
 The independent read-only review of `f9cd1c9e` passed with no falsification and `67` independent focused tests; its
 attestation is
 [`search-follow-up-fresh-review-20260823.json`](../evidence/acceptance/search-follow-up-fresh-review-20260823.json).
-Overall remains non-closed. The only permitted next step is to request explicit authorization to rerun the single
-held-out Task 21 witness; the bounded cohort remains stopped.
+At that checkpoint Overall remained non-closed and the only permitted next step was to request explicit authorization
+to rerun the single held-out Task 21 witness; the bounded cohort remained stopped.
+
+Held-out rerun falsification (2026-08-24, revision `0b8cb573`): the prior result-to-follow-up repair worked vertically—
+the search result exposed `R9`, the next physical `read_region` schema admitted `R9`, and DeepSeek selected it. The
+newly exposed failure is inside `inspect_actor_world`: `read_region` paged by 20 logical items before checking its
+64 KiB result limit, so R9 produced `75,670` bytes and returned `CapacityExceeded` twice without a continuation cursor.
+A later deliberate provider call also timed out twice, but that secondary environment failure does not explain the
+already deterministic unreadable-region outcome. The cohort remains stopped; no production repair is authorized by
+this status record.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the

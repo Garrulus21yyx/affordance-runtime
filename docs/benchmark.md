@@ -7,7 +7,7 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-owner repair provider-free verified / fresh-context review passed / held-out witness rerun authorization pending /
+owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -25,6 +25,13 @@ and even a passing fresh-context review may only lead to a request for explicit 
 The independent read-only review of `f9cd1c9e` passed with no falsification; see
 [`search-follow-up-fresh-review-20260823.json`](../evidence/acceptance/search-follow-up-fresh-review-20260823.json).
 It did not run a provider or live benchmark. Overall remains non-closed and the cohort remains stopped.
+
+The authorized rerun is recorded in
+[`task21-read-region-capacity-falsification-20260824.json`](../evidence/acceptance/task21-read-region-capacity-falsification-20260824.json).
+It confirms that R9 follow-up conservation and multiple-call canonicalization were not re-falsified. It instead exposes
+one new local-read owner gap: cardinality-first `read_region` paging can exceed the 64 KiB physical result bound and
+return `CapacityExceeded` without a continuation cursor. The later two-attempt provider timeout is recorded separately
+as an environment failure. Overall remains non-closed; bounded cohort execution is not authorized.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
