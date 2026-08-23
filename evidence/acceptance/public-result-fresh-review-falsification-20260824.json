@@ -1,0 +1,32 @@
+{
+  "kind": "fresh_context_review_falsification",
+  "reviewed_revision": "b2079df1f0d8ba59c2d55562650cd763052b6d6e",
+  "result": "fail",
+  "falsification_found": true,
+  "live": false,
+  "provider_attempts": 0,
+  "falsified_contract": "Every supported read-only local public result enters the single ObservationDeliveryStore PublicResultInventory and never falls back through recent trajectory projection.",
+  "observed_chain": [
+    "GroundedToolCatalog view_all resolves the supported list_regions operation and returns a ReadRegionResult with public items",
+    "ObservationDeliveryStore.reduce admits read_region, search_page_content, read_next_page, and find_controls but omits list_regions",
+    "the Store therefore produces no PublicResultInventory and no InformationDelta for list_regions",
+    "project_step_result sees information_delta=None and projects the complete tool_result through project_public_value",
+    "Workspace renders that semantic_summary result through project_public_value again",
+    "GroundedPolicyContextBinder includes the surviving recent_steps payload in the physical provider context"
+  ],
+  "classification": {
+    "architecture_defect": "supported read-only producer omitted from the Store ingestion algebra",
+    "verification_defect": "provider-free properties did not enumerate or generate across all supported read-only result producers",
+    "acceptance_status": "prior provider-free acceptance falsified",
+    "overall": "reopened_non_closed",
+    "bounded_cohort": "stopped"
+  },
+  "independent_checks_before_stop": {
+    "focused_owner_vertical": "154 passed",
+    "full_pytest": "1635 passed, 24 skipped",
+    "collected": 1659,
+    "tracked_tree_clean": true
+  },
+  "owner_return": "ObservationDeliveryStore supported read-only result ingestion and the step_projection consumer boundary",
+  "next_step": "repair the complete supported read-only producer algebra at the Store owner, migrate the list_regions consumer path, add generated producer-completeness properties, then repeat provider-free acceptance and independent fresh review; no live rerun"
+}

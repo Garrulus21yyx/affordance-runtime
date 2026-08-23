@@ -9,8 +9,7 @@ Gate 4 admitted after joint fresh provider-free exit review / Overall reopened /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free verified /
-fresh-context review pending /
+held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -89,6 +88,14 @@ collected tests, plus Ruff, compileall, diff checks, and negative searches. It p
 novelty, generated nested/Unicode inventories, and direct final response. Provider attempts are zero. This acceptance
 does not authorize a live rerun; independent fresh-context review is still pending and the bounded cohort remains
 stopped.
+
+The independent fresh-context review falsified that acceptance at revision `b2079df1`; see
+[`public-result-fresh-review-falsification-20260824.json`](../evidence/acceptance/public-result-fresh-review-falsification-20260824.json).
+`list_regions` is a supported item-bearing read-only result producer, but the Store ingestion operation set omitted it.
+The result therefore re-entered provider-visible recent trajectory through the generic projection path. The review
+stopped after the finding; no production/live action followed. The next provider-free work is restricted to completing
+the Store's supported read-only producer algebra, migrating that consumer, and adding producer-completeness properties.
+The bounded cohort remains stopped and no held-out rerun is authorized.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

@@ -4,7 +4,8 @@ Goal: replace the lossy `local result -> Workspace exact values -> generic proje
 `ObservationDeliveryStore -> TurnPacker -> ModelTurnDelivery -> physical provider request` path, while keeping one
 Store, one packer, one Delivery, one Envelope, and one CoreAgentLoop.
 
-Status: active; the owner migration is implemented and provider-free invariant verification is in progress.
+Status: active and non-closed; independent review falsified the migration because supported `list_regions` results
+bypass Store ingestion. Work is returned to that owner boundary; live and cohort execution remain stopped.
 
 ## Steps
 
@@ -38,10 +39,10 @@ Status: active; the owner migration is implemented and provider-free invariant v
 6. **done — Commit provider-free evidence/status**
    - Separate implementation and evidence/status commits; Overall remains non-closed and no live is run.
 
-7. **pending — Independent fresh-context review**
+7. **done — Independent fresh-context review: falsified**
    - Read-only review of the full causal surface and evidence. Any falsification gets its own commit and stops work.
 
-8. **pending — Request authorization for one held-out witness**
+8. **pending — Request authorization for one held-out witness (not eligible)**
    - Only after steps 1-7 pass. Bounded cohort remains stopped.
 
 ## Explicit non-goals
@@ -61,3 +62,4 @@ Status: active; the owner migration is implemented and provider-free invariant v
 - `src/affordance_runtime/agent/context/step_projection.py` — evidence bodies removed from recent trajectory.
 - `src/affordance_runtime/agent/monitor.py` — model-visible admitted-prefix novelty identity.
 - `evidence/acceptance/public-result-turn-packing-provider-free-20260824.json` — revision-bound provider-free acceptance.
+- `evidence/acceptance/public-result-fresh-review-falsification-20260824.json` — independent `list_regions` ingestion falsification; returns work to the Store owner.

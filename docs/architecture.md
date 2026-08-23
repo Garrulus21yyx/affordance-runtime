@@ -9,8 +9,7 @@ Gate 4 admitted after joint fresh provider-free exit review / Overall reopened /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free verified /
-fresh-context review pending /
+held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -130,6 +129,18 @@ provider, BrowserGym, or live case ran. Evidence:
 [`public-result-turn-packing-provider-free-20260824.json`](../evidence/acceptance/public-result-turn-packing-provider-free-20260824.json).
 This is implementation acceptance only. Overall remains non-closed, the bounded cohort remains stopped, and the next
 step is an independent fresh-context review of this revision.
+
+Fresh-context falsification (2026-08-24, reviewed revision `b2079df1`): the supported `list_regions` read-only producer
+was omitted from `ObservationDeliveryStore.reduce`'s operation algebra. Its item-bearing `ReadRegionResult` therefore
+creates neither a `PublicResultInventory` nor an `InformationDelta`; `project_step_result` consequently treats the body
+as an ordinary diagnostic result, passes it through `project_public_value`, and Workspace projects it again into
+provider-visible `recent_steps`. This falsifies the prior checkpoint's Store-ownership, Workspace-summary-only, and
+negative-path claims even though the independent focused subset (`154 passed`) and full suite (`1635 passed / 24
+skipped`) passed. Evidence:
+[`public-result-fresh-review-falsification-20260824.json`](../evidence/acceptance/public-result-fresh-review-falsification-20260824.json).
+Review stopped immediately. No production code, provider, BrowserGym, or live case changed or ran. Work returns only to
+the `ObservationDeliveryStore` supported read-only ingestion owner and the paired `step_projection` consumer boundary;
+Overall remains reopened/non-closed and the bounded cohort remains stopped.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
