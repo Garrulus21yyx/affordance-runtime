@@ -30,12 +30,12 @@ Status: active; the owner migration is implemented and provider-free invariant v
    - Binder/Envelope/Recording consume that same Delivery projection.
    - Monitor novelty derives from admitted records.
 
-5. **in_progress — Verify invariant properties and vertical production paths**
+5. **done — Verify invariant properties and vertical production paths**
    - Deep mappings, long text, Unicode, 1/2/16/32 records, exact-fit/one-unit-over, pagination append/dedup,
      currentness, suffix conservation, provider physical equality, direct final response.
    - Focused, full pytest, Ruff, compileall, negative searches.
 
-6. **pending — Commit provider-free evidence/status**
+6. **done — Commit provider-free evidence/status**
    - Separate implementation and evidence/status commits; Overall remains non-closed and no live is run.
 
 7. **pending — Independent fresh-context review**
@@ -60,3 +60,4 @@ Status: active; the owner migration is implemented and provider-free invariant v
 - `src/affordance_runtime/agent/workspace.py` — summary/lineage-only event history.
 - `src/affordance_runtime/agent/context/step_projection.py` — evidence bodies removed from recent trajectory.
 - `src/affordance_runtime/agent/monitor.py` — model-visible admitted-prefix novelty identity.
+- `evidence/acceptance/public-result-turn-packing-provider-free-20260824.json` — revision-bound provider-free acceptance.

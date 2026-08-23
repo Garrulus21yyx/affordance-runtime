@@ -9,7 +9,8 @@ Gate 4 admitted after joint fresh provider-free exit review / Overall reopened /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out rerun falsified structured-result Workspace projection / convergence review required /
+held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free verified /
+fresh-context review pending /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -119,6 +120,16 @@ nested history truncation cannot stand in for either.
 Rejected alternatives are raising generic depth/string/item limits, retaining full results in Workspace, adding a
 second Memory/result packer, or extracting Task21/site-specific reviewer fields. The selected migration reuses one
 Store, one ActionDeliveryPlan/TurnPacker, one ModelTurnDelivery, one Envelope, and one CoreAgentLoop.
+
+Provider-free public-result checkpoint (implementation revision `2456c900`, 2026-08-24): the focused owner/vertical
+set passes `174 passed`; the complete suite passes `1635 passed / 24 skipped` from `1659` collected tests. Ruff,
+compileall, diff checks, exact-result path deletion searches, and task/site/content specialization searches pass.
+Generated tests cover deep mappings, long Unicode content, 1/2/16/32 records, and the exact-fit/one-token-short boundary;
+the Recording FunctionModel consumes the same physical records and submits a final response on the next turn. No
+provider, BrowserGym, or live case ran. Evidence:
+[`public-result-turn-packing-provider-free-20260824.json`](../evidence/acceptance/public-result-turn-packing-provider-free-20260824.json).
+This is implementation acceptance only. Overall remains non-closed, the bounded cohort remains stopped, and the next
+step is an independent fresh-context review of this revision.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the

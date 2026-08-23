@@ -9,7 +9,8 @@ Gate 4 admitted after joint fresh provider-free exit review / Overall reopened /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out rerun falsified structured-result Workspace projection / convergence review required /
+held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free verified /
+fresh-context review pending /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -79,6 +80,15 @@ The implementation must physically delete `SemanticEvent.exact_public_values`, W
 evidence-producing local-result bodies in recent trajectory. Provider-free implementation evidence, full/static
 checks, and an independent fresh-context review are required before asking for one held-out rerun. The bounded cohort
 remains stopped.
+
+The owner migration's provider-free acceptance is
+[`public-result-turn-packing-provider-free-20260824.json`](../evidence/acceptance/public-result-turn-packing-provider-free-20260824.json),
+bound to implementation revision `2456c900`: focused `174 passed`, full `1635 passed / 24 skipped` from `1659`
+collected tests, plus Ruff, compileall, diff checks, and negative searches. It proves the real Store → plan → TurnPacker
+→ Delivery → physical FunctionModel path over complete records, bounded prefixes, pagination, currentness, admitted-only
+novelty, generated nested/Unicode inventories, and direct final response. Provider attempts are zero. This acceptance
+does not authorize a live rerun; independent fresh-context review is still pending and the bounded cohort remains
+stopped.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

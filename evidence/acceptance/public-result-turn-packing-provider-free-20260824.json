@@ -1,0 +1,31 @@
+{
+  "kind": "provider_free_acceptance",
+  "implementation_revision": "2456c900b863ee24c05ad9f51afffffc042669a7",
+  "live": false,
+  "provider_attempts": 0,
+  "contracts": {
+    "store_owned_complete_public_records": "passed",
+    "workspace_summary_lineage_only": "passed",
+    "turn_packer_complete_record_prefix": "passed",
+    "physical_provider_record_equality": "passed",
+    "ordered_admitted_prefix_and_suffix": "passed",
+    "paged_append_digest_deduplication": "passed",
+    "fresh_world_staleness": "passed",
+    "model_visible_novelty_from_admitted_records": "passed",
+    "recording_function_model_direct_final_response": "passed",
+    "generated_deep_long_unicode_1_2_16_32": "passed",
+    "exact_fit_and_one_token_short": "passed",
+    "no_second_store_packer_delivery_envelope_or_loop": true
+  },
+  "verification": {
+    "focused": "174 passed",
+    "full_pytest": "1635 passed, 24 skipped",
+    "collected": 1659,
+    "ruff": "passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "negative_searches": "passed"
+  },
+  "environment_note": "A diagnostic full run under the fixed BrowserGym py312 interpreter exposed one stale architecture assertion, which was migrated, and one missing pytest-asyncio plugin. The project pytest environment then passed the complete suite; no BrowserGym, provider, or live case was run.",
+  "status": "provider_free_passed_fresh_review_pending"
+}
