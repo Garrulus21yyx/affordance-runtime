@@ -1,11 +1,13 @@
 # Public Result Delivery Convergence Plan
 
-Goal: replace the lossy `local result -> Workspace exact values -> generic projection` path with one owner-preserving
-`ObservationDeliveryStore -> TurnPacker -> ModelTurnDelivery -> physical provider request` path, while keeping one
-Store, one packer, one Delivery, one Envelope, and one CoreAgentLoop.
+Goal: replace both lossy result paths with one standard call-correlated tool-result lifecycle:
+`typed external tool call -> Runtime execution -> ObservationDeliveryStore inventory -> TurnPacker atomic selection ->
+PydanticAI ToolReturn/DeferredToolResults under the original tool_call_id -> physical provider request`, while keeping
+one Store, one packer, one Envelope, and one CoreAgentLoop. Workspace retains receipts only.
 
-Status: active and non-closed; independent review falsified the migration because supported `list_regions` results
-bypass Store ingestion. Work is returned to that owner boundary; live and cohort execution remain stopped.
+Status: active and non-closed; the prior ordinary-context `ModelTurnDelivery.public_results` design is superseded.
+Architecture/API verification for standard call-correlated tool-result transport is in progress. Live and cohort
+execution remain stopped.
 
 ## Steps
 
@@ -44,6 +46,30 @@ bypass Store ingestion. Work is returned to that owner boundary; live and cohort
 
 8. **pending — Request authorization for one held-out witness (not eligible)**
    - Only after steps 1-7 pass. Bounded cohort remains stopped.
+
+## Revised standard tool-result migration
+
+9. **done — Verify standard transport APIs and current bridge lifecycle**
+   - Confirm installed PydanticAI DeferredToolRequests/DeferredToolResults/ToolReturn contracts and physical message
+     behavior; compare official PydanticAI, MCP, OpenAI computer-use, and browser-use primary sources.
+   - Trace every supported local tool result producer by return type and original tool_call_id.
+
+10. **done — Freeze type-driven result algebra and deletion map**
+   - Define `PublicEvidenceResult | ExecutionReceipt | ToolFailed | FinalResponse` ownership and unsupported outcomes.
+   - Delete tool-name classification and ordinary `latest_public_results` user-context injection from the target design.
+
+11. **in_progress — Implement standard call-correlated result return**
+   - Store/Packer retain project-specific inventory/currentness/atomic selection.
+   - Bridge returns admitted public records as ToolReturn/DeferredToolResults paired to the original call ID; private
+     cursor/lineage/digests remain metadata.
+   - Workspace and recent trajectory retain only receipt/summary lineage.
+
+12. **pending — Reverify all producer types and physical requests**
+   - Generated producer-completeness properties, call-ID conservation, typed failures, pagination/currentness,
+     exact records/capacity, Recording FunctionModel, full/static/negative checks.
+
+13. **pending — Separate evidence/status and independent fresh review**
+   - No live before both pass; any falsification stops and returns to its owner.
 
 ## Explicit non-goals
 

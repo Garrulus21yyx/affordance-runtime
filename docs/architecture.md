@@ -142,6 +142,64 @@ Review stopped immediately. No production code, provider, BrowserGym, or live ca
 the `ObservationDeliveryStore` supported read-only ingestion owner and the paired `step_projection` consumer boundary;
 Overall remains reopened/non-closed and the bounded cohort remains stopped.
 
+### Standard call-correlated tool-result revision (2026-08-24)
+
+The preceding migration correctly moved complete records out of Workspace, but its
+`ModelTurnDelivery.public_results -> latest_public_results` ordinary user-context segment was still a project-specific
+transport. The fresh-review `list_regions` omission exposed the deeper defect: production classified tool results by an
+open set of operation names instead of closing the result algebra by typed return value, and the provider never received
+a standard result paired to the original external-tool call.
+
+The installed PydanticAI `2.21.0` already provides the protocol owner needed here. An `ExternalToolset` call ends as a
+`DeferredToolRequests.calls` entry containing validated arguments and `tool_call_id`; a later run accepts the original
+message history plus `DeferredToolResults.calls[tool_call_id]`. `ToolReturn.return_value` becomes the model-visible tool
+result, while `ToolReturn.metadata` remains application-only. See the official
+[deferred-tool contract](https://ai.pydantic.dev/deferred-tools/) and
+[advanced ToolReturn contract](https://ai.pydantic.dev/tools-advanced/). MCP's 2026-07-28
+[tool specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools) likewise makes typed
+`structuredContent` conform to an `outputSchema`, with client validation, rather than inferring result semantics from a
+tool name. OpenAI's current
+[computer-use contract](https://developers.openai.com/api/docs/guides/tools-computer-use) returns each
+`computer_call_output` under the original `call_id`. These are primary-source protocol facts; the project-level design
+inference is that a supported external tool has one call-correlated typed outcome path, while inventory paging remains a
+Runtime concern.
+
+The revised bounded chain is:
+
+```text
+PydanticAI ExternalToolset call(tool_call_id, offered schema-valid arguments)
+→ CoreLoop/Runtime executes one typed decision
+→ typed PublicEvidenceResult | ExecutionReceiptResult | ToolFailureResult
+→ ObservationDeliveryStore owns complete evidence inventory and private continuation
+→ existing TurnPacker selects a complete-record prefix
+→ ToolReturn(return_value=admitted public outcome, metadata=private lineage/currentness)
+→ DeferredToolResults.calls[original tool_call_id]
+→ CanonicalProviderEnvelope counts prior paired call + tool result + fresh current prompt
+→ PydanticAI/provider
+```
+
+`Workspace` retains only a bounded receipt/summary. `PublicEvidenceResult` is the type-driven evidence intake contract:
+`read_region`, `search_page_content`, `list_regions`, later read-only producers, and generated fixtures enter the same
+path because they return that type, not because their names appear in a Store allowlist. `find_controls` retains its
+separate `EXPLICIT_QUERY` route authority, but its external call still receives one standard paired receipt. GUI
+execution, observation acquisition, continuation, remembered facts, waits, and typed failures likewise close their
+external call with a paired typed result; terminal output remains the output contract rather than a fabricated tool
+history record.
+
+PydanticAI history is not allowed to become an uncounted second request. The transport retains only the immediately
+pending call's originating request/response pair; the Canonical Envelope projects that pair, the admitted ToolReturn,
+and the fresh prompt before RequestAdmission. PydanticAI receives exactly those already-counted values as
+`message_history` and `deferred_tool_results`. Older completed exchanges remain only as bounded Workspace receipts and
+Trace. This is a bounded protocol-preserving compaction: no orphan tool result, no hidden SDK-added history, and no
+second capacity authority.
+
+The project-specific Store and TurnPacker remain necessary for exact GUI evidence inventory, currentness, private
+continuation, and complete-record joint request packing. Call/result correlation, public/private result separation, and
+typed tool output reuse PydanticAI. The prior ordinary `latest_public_results` injection, tool-name ingestion set,
+exact-result recent-trajectory fallback, and any Envelope-blind deferred history are deletion targets. browser-use's
+current message manager also makes extraction results visible in the next `read_state`, but its simple character
+truncation is not an atomic-evidence guarantee and is not adopted here.
+
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
 removed mission path, not as a second current status document. Milestone-path sections below are historical analysis,

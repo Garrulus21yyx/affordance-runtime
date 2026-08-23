@@ -97,6 +97,28 @@ stopped after the finding; no production/live action followed. The next provider
 the Store's supported read-only producer algebra, migrating that consumer, and adding producer-completeness properties.
 The bounded cohort remains stopped and no held-out rerun is authorized.
 
+The post-falsification target is revised from an ordinary `latest_public_results` context segment to PydanticAI's
+standard deferred tool-result lifecycle. Provider-free acceptance must now prove, over every supported external result
+type rather than a list of tool names:
+
+1. the original schema-valid `tool_call_id`, tool name, and arguments appear in one prior assistant call and exactly one
+   following tool-result part;
+2. admitted `PublicEvidenceResult` records are canonical-equal to the Store prefix, with private cursor/lineage absent
+   from the physical model value;
+3. CanonicalProviderEnvelope and RequestAdmission count the prior call, deferred ToolReturn, current prompt, tools,
+   media, settings, and output reserve before provider dispatch;
+4. `read_region`, `search_page_content`, `list_regions`, generated future read-only producers, continuation, GUI
+   execution, action discovery, observation acquisition, remembered facts, waits, and typed failures each produce one
+   member of the closed result algebra without operation-name dispatch in Store;
+5. Workspace/recent trajectory contains receipts only, and the ordinary `latest_public_results` injection is absent;
+6. PydanticAI Recording FunctionModel observes the standard paired ToolReturn before the fresh prompt and can answer or
+   choose the next offered tool directly;
+7. pagination, fresh-World currentness, generated nested/Unicode records, exact-fit/one-unit-over, admitted-only novelty,
+   full/static checks, and independent fresh review all pass.
+
+Implementation completion will remain provider-free evidence only. No held-out witness or cohort run is authorized
+until the revised acceptance and an independent fresh-context review both pass.
+
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
 The target runtime, owner map, deletion plan, and bounded recovery protocol are in
