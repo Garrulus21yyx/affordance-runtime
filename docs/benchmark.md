@@ -5,12 +5,16 @@
 Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B current-tree provider-free acceptance passed / final provider-free fresh-context review
-passed / live authorization pending**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
+Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
+held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
+bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
-current end-to-end invariants or authorize another live run.
+current end-to-end invariants or authorize another live run. The falsification attestation is
+[`task21-follow-up-falsification-20260823.json`](../evidence/acceptance/task21-follow-up-falsification-20260823.json).
+It reopens only `Local observation result -> Store -> Manifest -> ToolCatalog follow-up` and multiple-call
+canonicalization before representation repair. It does not reopen World, route, TurnPacker, Envelope,
+Binder/Executor, BrowserGym transition, finalization, or the information-increment Monitor.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

@@ -1,0 +1,25 @@
+{
+  "kind": "falsification",
+  "revision": "593351747c0ae8d091604a7f9a348c55e32df4e3",
+  "live": true,
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "case": "webarena-verified-w1b-task-21",
+  "status": "blocked",
+  "bounded_cohort_authorized": false,
+  "source_evidence": {
+    "trace_sha256": "3732b83c9ad6c679a13b52c1534f3e2972da260deae4ababb9f2e7e185e9e0bd",
+    "case_sha256": "59730f41400652e7cbb03ca2a1021f7cde78f3794dd263793258601885c70d5c",
+    "run_sha256": "cff2d08013ad2ced164c819517e5d62159d43985310d2aea1fdaa23cbb0c9a61"
+  },
+  "falsified_contracts": [
+    "current local search result region refs are conserved into next-turn read_region capability",
+    "representation repair cannot select between semantically distinct calls"
+  ],
+  "preserved_contracts": [
+    "single-action execution",
+    "information-increment monitor",
+    "canonical World and action-route delivery chain",
+    "BrowserGym causal transition and finalization"
+  ]
+}

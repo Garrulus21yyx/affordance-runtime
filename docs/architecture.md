@@ -5,14 +5,17 @@
 Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B current-tree provider-free acceptance passed / final provider-free fresh-context review
-passed / live authorization pending**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
+held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
+bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
 scoped evidence for the implementations they exercised; they are not whole-runtime closure and do not authorize
-another live run.
+another live run. The authorized DeepSeek Task 21 witness reached the page and provider successfully, but reopened only
+two local policy-boundary contracts: a search result exposed `R9` without conserving it into the next Manifest's
+`read_region` capability, and representation repair could choose among distinct rejected calls. The Monitor correctly
+classified the already-distorted executed information sequence and remains unchanged.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
