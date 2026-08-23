@@ -12,6 +12,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
+from affordance_runtime.agent.context.action_candidate_projection import DeliveryObligationKind
 from affordance_runtime.agent.context.compact_world_renderer import (
     CapacityExceeded,
     Empty,
@@ -1102,12 +1103,26 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         ).encode()
     ) <= 64 * 1024
 
+    opened_step = StepResult(
+        opened.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+        next_delivery_store=opened.next_delivery_store,
+    )
+    opened_transition = context.delivery_store.reduce(
+        opened_step,
+        step_index=1,
+    )
+    assert opened_transition.next_store.public_result_inventory is not None
+
     continued_context = builder.build(
         task,
         world,
         ActionSpace(world.observation_id, ()),
         _evaluation(task, world.observation_id),
-        delivery_store=opened.next_delivery_store,
+        delivery_store=opened_transition.next_store,
     )
     _, continued_catalog = catalog_for(continued_context)
     continuation = next(item for item in continued_catalog.specs if item.name == "read_next_page")
@@ -1125,9 +1140,37 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         feedback="local_tool_result",
         next_delivery_store=continued.next_delivery_store,
     )
-    transition = continued_context.delivery_store.reduce(continued_step, step_index=2)
+    transition = continued_context.delivery_store.reduce(
+        continued_step,
+        step_index=2,
+    )
     assert transition.information_delta is not None
     assert transition.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    inventory = transition.next_store.public_result_inventory
+    assert inventory is not None
+    opened_values = tuple(opened.decision.result["items"])
+    continued_values = tuple(continued.decision.result["items"])
+    expected_values = tuple(
+        value
+        for index, value in enumerate((*opened_values, *continued_values))
+        if value not in (*opened_values, *continued_values)[:index]
+    )
+    assert tuple(item.public_value for item in inventory.records) == expected_values
+    assert len({item.digest for item in inventory.records}) == len(inventory.records)
+    assert inventory.offset == 0
+
+    packed_context = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+        delivery_store=transition.next_store,
+    )
+    result_obligation = packed_context.action_delivery_plan.obligation(
+        DeliveryObligationKind.PUBLIC_RESULT
+    )
+    assert result_obligation is not None
+    assert result_obligation.records == inventory.records
 
     fresh_world = _long_record_world((4000,) * 25, suffix="catalog-fresh")
     fresh_context = builder.build(
@@ -1135,9 +1178,10 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         fresh_world,
         ActionSpace(fresh_world.observation_id, ()),
         _evaluation(task, fresh_world.observation_id),
-        delivery_store=opened.next_delivery_store,
+        delivery_store=transition.next_store,
     )
     assert fresh_context.delivery_store.active_read is None
+    assert fresh_context.delivery_store.public_result_inventory is None
     _, fresh_catalog = catalog_for(fresh_context)
     fresh_continuation = next(
         (item for item in fresh_catalog.specs if item.name == "read_next_page"),

@@ -136,7 +136,8 @@ class InformationDelta:
     world_digest: str
     arguments_digest: str
     result_digest: str
-    new_items: tuple[Mapping[str, object], ...] = ()
+    inventory_digest: str = ""
+    new_record_digests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, InformationDeltaKind):
@@ -146,18 +147,105 @@ class InformationDelta:
             for value in (self.world_digest, self.arguments_digest, self.result_digest)
         ):
             raise ValueError("information delta requires stable public identities")
-        items = tuple(freeze_json(dict(item)) for item in self.new_items)
-        if len(items) > _MAX_LOCAL_INFORMATION_ITEMS:
-            raise ValueError("information delta exceeds its public item bound")
-        if self.kind is InformationDeltaKind.NEW_INFORMATION and not items:
-            raise ValueError("new information requires public items")
-        if self.kind is not InformationDeltaKind.NEW_INFORMATION and items:
-            raise ValueError("non-new delivery cannot carry public items")
-        object.__setattr__(self, "new_items", items)
+        digests = tuple(self.new_record_digests)
+        if len(digests) > _MAX_LOCAL_INFORMATION_ITEMS or any(
+            not item.startswith("sha256:") for item in digests
+        ):
+            raise ValueError("information delta record identities are invalid")
+        if self.kind is InformationDeltaKind.NEW_INFORMATION and (
+            not digests or not self.inventory_digest.startswith("sha256:")
+        ):
+            raise ValueError("new information requires a typed result inventory")
+        if self.kind is not InformationDeltaKind.NEW_INFORMATION and digests:
+            raise ValueError("non-new delivery cannot carry record identities")
+        if self.inventory_digest and not self.inventory_digest.startswith("sha256:"):
+            raise ValueError("information delta inventory identity is invalid")
+        object.__setattr__(self, "new_record_digests", digests)
 
     @property
     def new_information_count(self) -> int:
-        return len(self.new_items)
+        return len(self.new_record_digests)
+
+
+@dataclass(frozen=True)
+class PublicResultRecord:
+    """One canonical model-readable result atom owned by ObservationDelivery."""
+
+    operation: str
+    source_scope: str
+    public_value: Mapping[str, object]
+    digest: str = field(default="", repr=False, compare=False, metadata={"serialize": False})
+    rendered_cost_bytes: int = field(default=0, repr=False, compare=False, metadata={"serialize": False})
+
+    def __post_init__(self) -> None:
+        if not self.operation.strip() or not self.source_scope.strip():
+            raise ValueError("public result record requires operation and source scope")
+        value = freeze_json(dict(self.public_value))
+        public = {
+            "operation": self.operation,
+            "source": self.source_scope,
+            "value": to_json_compatible(value),
+        }
+        expected = _public_digest(public)
+        if self.digest and self.digest != expected:
+            raise ValueError("public result record digest does not bind its canonical value")
+        cost = len(
+            json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        )
+        if self.rendered_cost_bytes not in {0, cost}:
+            raise ValueError("public result record cost does not bind its canonical value")
+        object.__setattr__(self, "public_value", value)
+        object.__setattr__(self, "digest", expected)
+        object.__setattr__(self, "rendered_cost_bytes", cost)
+
+    def to_public_value(self) -> Mapping[str, object]:
+        return {
+            "operation": self.operation,
+            "source": self.source_scope,
+            "value": to_json_compatible(self.public_value),
+        }
+
+
+@dataclass(frozen=True)
+class PublicResultInventory:
+    """Current ordered local-result inventory; records remain private until packed."""
+
+    world_observation_id: str = field(repr=False, compare=False, metadata={"serialize": False})
+    result_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
+    records: tuple[PublicResultRecord, ...] = field(default=(), repr=False, compare=False, metadata={"serialize": False})
+    offset: int = field(default=0, repr=False, compare=False, metadata={"serialize": False})
+    visible_record_digests: tuple[str, ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
+    )
+
+    def __post_init__(self) -> None:
+        records = tuple(self.records)
+        visible = tuple(self.visible_record_digests)
+        record_digests = tuple(item.digest for item in records)
+        if (
+            not self.world_observation_id.strip()
+            or not self.result_lineage.startswith("sha256:")
+            or any(not isinstance(item, PublicResultRecord) for item in records)
+            or len(set(record_digests)) != len(record_digests)
+            or not 0 <= self.offset <= len(records)
+            or any(item not in record_digests for item in visible)
+            or len(set(visible)) != len(visible)
+        ):
+            raise ValueError("public result inventory is invalid")
+        object.__setattr__(self, "records", records)
+        object.__setattr__(self, "visible_record_digests", visible)
+
+    @property
+    def remaining(self) -> tuple[PublicResultRecord, ...]:
+        return self.records[self.offset :]
+
+    @property
+    def order_digest(self) -> str:
+        return _public_digest(tuple(item.digest for item in self.records))
+
+    @property
+    def visible_digest(self) -> str:
+        return _public_digest(self.visible_record_digests)
 
 
 @dataclass(frozen=True)
@@ -166,7 +254,20 @@ class LocalDeliveryRecord:
     world_digest: str
     arguments_digest: str
     result_digest: str
-    item_digests: tuple[str, ...]
+    records: tuple[PublicResultRecord, ...]
+
+    def __post_init__(self) -> None:
+        records = tuple(self.records)
+        if (
+            not self.operation.strip()
+            or not all(
+                value.startswith("sha256:")
+                for value in (self.world_digest, self.arguments_digest, self.result_digest)
+            )
+            or any(not isinstance(item, PublicResultRecord) for item in records)
+        ):
+            raise ValueError("local delivery record is invalid")
+        object.__setattr__(self, "records", records)
 
 
 @dataclass(frozen=True)
@@ -565,6 +666,9 @@ class ObservationDeliveryStore:
 
     latest_effect: LatestEffect | None = None
     local_deliveries: tuple[LocalDeliveryRecord, ...] = ()
+    public_result_inventory: PublicResultInventory | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
     active_read: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
     inventories: tuple[DeliveryInventorySnapshot, ...] = field(
         default=(), repr=False, compare=False, metadata={"serialize": False}
@@ -584,6 +688,10 @@ class ObservationDeliveryStore:
         ):
             raise ValueError("local delivery lifecycle exceeds its fixed bound")
         object.__setattr__(self, "local_deliveries", records)
+        if self.public_result_inventory is not None and not isinstance(
+            self.public_result_inventory, PublicResultInventory
+        ):
+            raise TypeError("observation delivery public results must be a typed inventory")
         if self.active_read is not None and not isinstance(self.active_read, WorldDeliveryLens):
             raise TypeError("observation delivery active read must be a private typed cursor")
         inventories = tuple(self.inventories)
@@ -614,12 +722,52 @@ class ObservationDeliveryStore:
         return ObservationDeliveryStore(
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
+            public_result_inventory=self.public_result_inventory,
             active_read=lens,
             inventories=self.inventories,
             action_query=self.action_query,
             search_follow_ups=self.search_follow_ups,
             requested_continuation_scope=self.requested_continuation_scope,
         )
+
+    def with_visible_public_results(
+        self,
+        records: tuple[PublicResultRecord, ...],
+    ) -> "ObservationDeliveryStore":
+        """Record exactly the result prefix admitted into one physical model turn."""
+
+        selected = tuple(records)
+        inventory = self.public_result_inventory
+        if inventory is None:
+            if selected:
+                raise ValueError("visible public results require a current Store inventory")
+            return self
+        if any(not isinstance(item, PublicResultRecord) for item in selected):
+            raise TypeError("visible public results must be typed Store records")
+        current_prefix = inventory.remaining[: len(selected)]
+        preceding_prefix = inventory.records[
+            max(0, inventory.offset - len(selected)) : inventory.offset
+        ]
+        if selected != current_prefix and selected != preceding_prefix:
+            raise ValueError("visible public results must be the current inventory prefix")
+        return ObservationDeliveryStore(
+            latest_effect=self.latest_effect,
+            local_deliveries=self.local_deliveries,
+            public_result_inventory=replace(
+                inventory,
+                visible_record_digests=tuple(item.digest for item in selected),
+            ),
+            active_read=self.active_read,
+            inventories=self.inventories,
+            action_query=self.action_query,
+            search_follow_ups=self.search_follow_ups,
+            requested_continuation_scope=self.requested_continuation_scope,
+        )
+
+    @property
+    def visible_public_result_digest(self) -> str:
+        inventory = self.public_result_inventory
+        return inventory.visible_digest if inventory is not None else _public_digest(())
 
     def for_world(self, world_observation_id: str) -> "ObservationDeliveryStore":
         """Invalidate private local-read capabilities that do not belong to this World."""
@@ -632,16 +780,31 @@ class ObservationDeliveryStore:
         search_follow_ups = tuple(
             item for item in self.search_follow_ups if item.world_observation_id == world_observation_id
         )
-        if active_read is self.active_read and search_follow_ups == self.search_follow_ups:
+        public_results = self.public_result_inventory
+        if public_results is not None and public_results.world_observation_id != world_observation_id:
+            public_results = None
+        if (
+            active_read is self.active_read
+            and search_follow_ups == self.search_follow_ups
+            and public_results is self.public_result_inventory
+        ):
             return self
+        inventories = tuple(
+            item for item in self.inventories if public_results is not None or item.scope != "public_result"
+        )
         return ObservationDeliveryStore(
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
+            public_result_inventory=public_results,
             active_read=active_read,
-            inventories=self.inventories,
+            inventories=inventories,
             action_query=self.action_query,
             search_follow_ups=search_follow_ups,
-            requested_continuation_scope=self.requested_continuation_scope,
+            requested_continuation_scope=(
+                None
+                if public_results is None and self.requested_continuation_scope == "public_result"
+                else self.requested_continuation_scope
+            ),
         )
 
     def install_inventories(
@@ -674,12 +837,13 @@ class ObservationDeliveryStore:
                     incoming.result_lineage,
                     incoming.order_digest,
                     incoming.records,
-                    min(prior.offset, len(incoming.records)) if same_inventory else 0,
+                    min(prior.offset, len(incoming.records)) if same_inventory else incoming.offset,
                 )
             )
         return ObservationDeliveryStore(
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
+            public_result_inventory=self.public_result_inventory,
             active_read=self.active_read,
             inventories=tuple(installed),
             action_query=self.action_query,
@@ -778,6 +942,11 @@ class ObservationDeliveryStore:
             ObservationDeliveryStore(
                 latest_effect=self.latest_effect,
                 local_deliveries=self.local_deliveries,
+                public_result_inventory=(
+                    replace(self.public_result_inventory, offset=next_offset)
+                    if self.public_result_inventory is not None and capability.scope == "public_result"
+                    else self.public_result_inventory
+                ),
                 active_read=self.active_read,
                 inventories=next_inventories,
                 action_query=self.action_query,
@@ -813,7 +982,9 @@ class ObservationDeliveryStore:
         arguments_digest = _public_digest(arguments or {})
         result_digest = _public_digest(result)
         items = _public_result_items(result)
-        item_digests = tuple(_public_digest(item) for item in items)
+        effective_operation = _public_result_operation(operation, external)
+        source_scope = _public_result_source_scope(operation, arguments, items, external)
+        result_records = tuple(PublicResultRecord(effective_operation, source_scope, item) for item in items)
         exact = next(
             (
                 item for item in reversed(external.local_deliveries)
@@ -832,28 +1003,67 @@ class ObservationDeliveryStore:
             )
             return DeliveryTransition(external, delta)
 
+        current_inventory = external.public_result_inventory
         delivered = {
             digest
             for record in external.local_deliveries
             if record.world_digest == world_digest
-            for digest in record.item_digests
+            for item in record.records
+            for digest in (item.digest,)
         }
-        new_items = tuple(item for item, digest in zip(items, item_digests, strict=True) if digest not in delivered)
-        if new_items:
+        if current_inventory is not None and current_inventory.world_observation_id == str(
+            getattr(getattr(step, "after_world", None), "observation_id", "")
+        ):
+            delivered.update(item.digest for item in current_inventory.records)
+        new_records = tuple(item for item in result_records if item.digest not in delivered)
+        if new_records:
             kind = InformationDeltaKind.NEW_INFORMATION
         elif not items:
             kind = InformationDeltaKind.NO_MATCHES
         else:
             kind = InformationDeltaKind.NO_NEW_INFORMATION
+        append_page = (
+            operation == "read_next_page"
+            and current_inventory is not None
+            and current_inventory.world_observation_id == str(getattr(getattr(step, "after_world", None), "observation_id", ""))
+            and current_inventory.records
+            and current_inventory.records[0].operation == effective_operation
+            and current_inventory.records[0].source_scope == source_scope
+        )
+        inventory_records = (
+            _unique_public_result_records((*current_inventory.records, *result_records))
+            if append_page and current_inventory is not None
+            else result_records
+        )
+        public_inventory = (
+            PublicResultInventory(
+                str(getattr(getattr(step, "after_world", None), "observation_id", "")),
+                _public_digest(tuple(item.digest for item in inventory_records)),
+                inventory_records,
+                current_inventory.offset
+                if append_page and current_inventory is not None
+                else 0,
+                current_inventory.visible_record_digests
+                if append_page and current_inventory is not None
+                else (),
+            )
+            if inventory_records
+            else current_inventory
+            if operation == "read_next_page"
+            else None
+        )
+        if operation == "find_controls":
+            public_inventory = current_inventory
         delta = InformationDelta(
             kind,
             operation,
             world_digest,
             arguments_digest,
             result_digest,
-            new_items if kind is InformationDeltaKind.NEW_INFORMATION else (),
+            public_inventory.order_digest if public_inventory is not None else result_digest,
+            tuple(item.digest for item in new_records) if kind is InformationDeltaKind.NEW_INFORMATION else (),
         )
-        record = LocalDeliveryRecord(operation, world_digest, arguments_digest, result_digest, item_digests)
+        record = LocalDeliveryRecord(operation, world_digest, arguments_digest, result_digest, result_records)
         query_inventory = external.action_query
         discovery = getattr(step, "action_page_result", None)
         if operation == "find_controls" and discovery is not None and discovery.query:
@@ -879,6 +1089,7 @@ class ObservationDeliveryStore:
         next_store = ObservationDeliveryStore(
             latest_effect=external.latest_effect,
             local_deliveries=(*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
+            public_result_inventory=public_inventory,
             active_read=external.active_read,
             inventories=external.inventories,
             action_query=query_inventory,
@@ -924,6 +1135,7 @@ class ObservationDeliveryStore:
         return ObservationDeliveryStore(
             latest_effect=LatestEffect(step_index, cause[:240], dispatch, delta, inventory),
             local_deliveries=self.local_deliveries,
+            public_result_inventory=self.public_result_inventory,
         )
 
 
@@ -931,10 +1143,72 @@ def _public_result_items(result: Mapping[str, object]) -> tuple[Mapping[str, obj
     raw = result.get("items", result.get("matches", ()))
     if not isinstance(raw, (tuple, list)):
         return ()
+    if len(raw) > _MAX_LOCAL_INFORMATION_ITEMS:
+        raise ValueError("local result owner exceeded its complete-record page bound")
     items: list[Mapping[str, object]] = []
-    for value in raw[:_MAX_LOCAL_INFORMATION_ITEMS]:
+    for value in raw:
         items.append(dict(value) if isinstance(value, Mapping) else {"value": value})
     return tuple(items)
+
+
+def _public_result_operation(operation: str, store: ObservationDeliveryStore) -> str:
+    if operation != "read_next_page":
+        return operation
+    current_inventory = store.public_result_inventory
+    if current_inventory is not None and current_inventory.records:
+        return current_inventory.records[0].operation
+    lens = store.active_read
+    return {
+        "region": "read_region",
+        "find": "search_page_content",
+        "view_all": "list_regions",
+    }.get(lens.kind if lens is not None else "", operation)
+
+
+def _public_result_source_scope(
+    operation: str,
+    arguments: object,
+    items: tuple[Mapping[str, object], ...],
+    store: ObservationDeliveryStore,
+) -> str:
+    public_arguments = arguments if isinstance(arguments, Mapping) else {}
+    current_inventory = store.public_result_inventory
+    if operation == "read_next_page" and current_inventory is not None and current_inventory.records:
+        return current_inventory.records[0].source_scope
+    if operation == "read_region":
+        region_ref = str(public_arguments.get("region_ref", "")).strip()
+        if region_ref:
+            return region_ref
+    region_refs = tuple(
+        dict.fromkeys(
+            str(item.get("region_ref", "")).strip()
+            for item in items
+            if str(item.get("region_ref", "")).strip()
+        )
+    )
+    if len(region_refs) == 1:
+        return region_refs[0]
+    if operation == "search_page_content":
+        return "query"
+    if operation == "find_controls":
+        return "action_query"
+    lens = store.active_read
+    if operation == "read_next_page" and lens is not None:
+        return "active_read"
+    return operation
+
+
+def _unique_public_result_records(
+    records: tuple[PublicResultRecord, ...],
+) -> tuple[PublicResultRecord, ...]:
+    unique = []
+    seen: set[str] = set()
+    for record in records:
+        if record.digest in seen:
+            continue
+        seen.add(record.digest)
+        unique.append(record)
+    return tuple(unique)
 
 
 def _public_digest(value: object) -> str:

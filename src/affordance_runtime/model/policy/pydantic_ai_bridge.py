@@ -478,6 +478,10 @@ class PydanticAIGroundedDecisionPort:
             perception_profile=self.perception_profile.value,
             endpoint_host=self.endpoint_host,
         )
+        delivery_store = next_delivery_store or request.agent_context.delivery_store
+        next_delivery_store = delivery_store.with_visible_public_results(
+            delivery.public_results if delivery is not None else ()
+        )
         invocation = ModelInvocationResult(
             output=ResolvedModelDecision(decision, metadata, next_delivery_store),
             metadata=metadata,

@@ -397,6 +397,7 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "world_digest",
         "current_findings_digest",
         "working_facts_digest",
+        "visible_public_result_digest",
         "observation_only_streak",
         "recovery_count",
         "latest_attempt_signature",

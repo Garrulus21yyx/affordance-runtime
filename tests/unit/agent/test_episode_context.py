@@ -109,7 +109,7 @@ def test_workspace_reducer_folds_generated_observation_activity_sequences(
     assert workspace.semantic_events == ()
 
 
-def test_exact_gui_result_survives_after_it_leaves_latest_four_steps() -> None:
+def test_workspace_keeps_gui_effect_summary_without_copying_exact_values() -> None:
     before = shared_world("observation:before", False)
     after = shared_world("observation:after", True)
     delta = WorldTransitionProjector().project(before, after)
@@ -154,10 +154,10 @@ def test_exact_gui_result_survives_after_it_leaves_latest_four_steps() -> None:
         )
 
     assert all(item.semantic_action != "activate" for item in workspace.recent_steps)
-    event = next(item for item in workspace.semantic_events if item.kind is SemanticEventKind.PUBLIC_RESULT)
-    assert any(item["predicate"] == "enabled" and item["value"] is True for item in event.exact_public_values)
     rendered = json.dumps(to_json_compatible(render_agent_workspace(workspace, total_step_count=9)))
-    assert '"value": true' in rendered
+    assert tuple(item.kind for item in workspace.semantic_events) == (SemanticEventKind.GUI_EFFECT,)
+    assert workspace.semantic_events[0].summary == "activate"
+    assert '"value": true' not in rendered
 
 
 def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> None:
@@ -227,7 +227,7 @@ def test_working_fact_moves_into_workspace_without_gui_execution() -> None:
     assert workspace.semantic_events[-1].kind is SemanticEventKind.WORKING_FACT
 
 
-def test_local_delivery_new_items_enter_workspace_and_replay_is_compact() -> None:
+def test_local_delivery_records_stay_in_store_and_workspace_keeps_only_lineage() -> None:
     world = shared_world("observation:local-delivery", False)
     decision = SearchPageContentResult(
         "context:test",
@@ -255,7 +255,14 @@ def test_local_delivery_new_items_enter_workspace_and_replay_is_compact() -> Non
     replay_view = project_step_result(step, information_delta=replay.information_delta)
 
     assert workspace.semantic_events[-1].kind is SemanticEventKind.PUBLIC_RESULT
-    assert len(workspace.semantic_events[-1].exact_public_values) == 2
+    assert workspace.semantic_events[-1].operation == "search_page_content"
+    assert workspace.semantic_events[-1].result_lineage == first.information_delta.inventory_digest
+    assert first.next_store.public_result_inventory is not None
+    assert tuple(
+        item.to_public_value()["value"]
+        for item in first.next_store.public_result_inventory.records
+    ) == decision.result["items"]
+    assert "exact_public_values" not in vars(workspace.semantic_events[-1])
     assert workspace.activities[-1].new_finding_count == 2
     assert workspace.activities[-1].last_outcome == "new_information"
     assert replay_view.semantic_summary["information_delta"] == "exact_replay"

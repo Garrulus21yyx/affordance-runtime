@@ -27,6 +27,7 @@ from affordance_runtime.agent.context.observation_delivery import (
     ObservationDelivery,
     ObservationDeliveryStore,
     PublicEffectInventory,
+    PublicResultRecord,
 )
 from affordance_runtime.agent.context.world_region_index import (
     FunctionalContainerKind,
@@ -224,6 +225,7 @@ class ActionRouteIssueFragment:
 
 
 class DeliveryObligationKind(StrEnum):
+    PUBLIC_RESULT = "public_result"
     EXPLICIT_QUERY = "query"
     PUBLIC_EFFECT = "effect_actions"
     INTERACTION = "interaction"
@@ -253,7 +255,9 @@ class WorldDeliveryRecord:
         object.__setattr__(self, "route_fragments", tuple(self.route_fragments))
 
 
-DeliveryAtomicRecord = ActionRouteFragment | ActionRouteIssueFragment | WorldDeliveryRecord
+DeliveryAtomicRecord = (
+    ActionRouteFragment | ActionRouteIssueFragment | WorldDeliveryRecord | PublicResultRecord
+)
 
 
 @dataclass(frozen=True)
@@ -387,7 +391,14 @@ class ActionDeliveryPlan:
         return {
             item.kind.value: min(
                 len(item.remaining),
-                1 if item.kind in {DeliveryObligationKind.PUBLIC_EFFECT, DeliveryObligationKind.PAGE_DIRECTORY} else 5,
+                1
+                if item.kind
+                in {
+                    DeliveryObligationKind.PUBLIC_RESULT,
+                    DeliveryObligationKind.PUBLIC_EFFECT,
+                    DeliveryObligationKind.PAGE_DIRECTORY,
+                }
+                else 5,
             )
             for item in self.obligations
         }
@@ -426,6 +437,9 @@ def build_action_delivery_plan(
 
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
     groups: dict[DeliveryObligationKind, list[DeliveryAtomicRecord]] = defaultdict(list)
+    result_inventory = getattr(cursor_store, "public_result_inventory", None)
+    if result_inventory is not None:
+        groups[DeliveryObligationKind.PUBLIC_RESULT].extend(result_inventory.records)
     def append(option: AgentActionOptionView, *, kind: DeliveryObligationKind, reason: str) -> None:
         candidate = _candidate_from_option(
             option, region_index, region_refs, rank=1, reasons=(reason,)
@@ -607,15 +621,17 @@ def build_action_delivery_plan(
         )
 
     priorities = {
-        DeliveryObligationKind.EXPLICIT_QUERY: 0 if discovery is not None else 6,
-        DeliveryObligationKind.PUBLIC_EFFECT: 1,
-        DeliveryObligationKind.INTERACTION: 2,
-        DeliveryObligationKind.BASE_ACTIONS: 3,
-        DeliveryObligationKind.PAGE_DIRECTORY: 4,
-        DeliveryObligationKind.DESTINATION_ROUTES: 5,
-        DeliveryObligationKind.ROUTE_ISSUES: 6,
+        DeliveryObligationKind.PUBLIC_RESULT: 0,
+        DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 7,
+        DeliveryObligationKind.PUBLIC_EFFECT: 2,
+        DeliveryObligationKind.INTERACTION: 3,
+        DeliveryObligationKind.BASE_ACTIONS: 4,
+        DeliveryObligationKind.PAGE_DIRECTORY: 5,
+        DeliveryObligationKind.DESTINATION_ROUTES: 6,
+        DeliveryObligationKind.ROUTE_ISSUES: 7,
     }
     scope_by_kind = {
+        DeliveryObligationKind.PUBLIC_RESULT: "public_result",
         DeliveryObligationKind.EXPLICIT_QUERY: "query",
         DeliveryObligationKind.PUBLIC_EFFECT: "effect",
         DeliveryObligationKind.INTERACTION: "interaction",
@@ -636,7 +652,9 @@ def build_action_delivery_plan(
             ).encode()
         ).hexdigest()
         result_lineage = (
-            latest_effect.raw_delta_lineage
+            result_inventory.result_lineage
+            if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
+            else latest_effect.raw_delta_lineage
             if kind is DeliveryObligationKind.PUBLIC_EFFECT and latest_effect is not None
             else discovery.query
             if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
@@ -647,10 +665,13 @@ def build_action_delivery_plan(
                 scope_by_kind[kind],
                 kind.value,
                 world_observation_id,
-                action_space_id,
+                "local_result" if kind is DeliveryObligationKind.PUBLIC_RESULT else action_space_id,
                 result_lineage or "current",
                 order_digest,
                 tuple(records),
+                result_inventory.offset
+                if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
+                else 0,
             )
         )
     owner_store = (
@@ -811,6 +832,8 @@ def _public_fragment_value(fragment: ActionRouteFragment) -> dict[str, object]:
 
 
 def _public_record_value(record: DeliveryAtomicRecord) -> Mapping[str, object]:
+    if isinstance(record, PublicResultRecord):
+        return freeze_json(record.to_public_value())
     if isinstance(record, ActionRouteFragment):
         return _public_fragment_value(record)
     if isinstance(record, ActionRouteIssueFragment):

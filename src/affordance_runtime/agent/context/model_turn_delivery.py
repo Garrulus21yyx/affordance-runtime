@@ -23,7 +23,10 @@ from affordance_runtime.agent.context.context import (
     AgentContext,
     VisualEvidenceFragment,
 )
-from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
+from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryContinuationCapability,
+    PublicResultRecord,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -96,6 +99,7 @@ class ModelTurnDelivery:
     )
     action_delivery_plan_id: str
     media: tuple[DeliveredMedia, ...] = ()
+    public_results: tuple[PublicResultRecord, ...] = ()
     admitted_record_counts: tuple[tuple[str, int], ...] = ()
     packing_backoff_count: int = 0
     continuation_capabilities: tuple[DeliveryContinuationCapability, ...] = field(
@@ -138,6 +142,9 @@ class ModelTurnDelivery:
         media = tuple(self.media)
         if any(not isinstance(item, DeliveredMedia) for item in media):
             raise TypeError("model turn media must contain exact admitted image records")
+        public_results = tuple(self.public_results)
+        if any(not isinstance(item, PublicResultRecord) for item in public_results):
+            raise TypeError("model turn public results must be exact Store-owned records")
         route_refs = {
             ref
             for route in self.manifest.action_routes
@@ -158,6 +165,7 @@ class ModelTurnDelivery:
         if not manifest_refs.issubset(visible_refs):
             raise ValueError("delivery Manifest contains a ref absent from admitted text/media")
         object.__setattr__(self, "media", media)
+        object.__setattr__(self, "public_results", public_results)
 
 
 def build_model_turn_delivery(
@@ -178,6 +186,7 @@ def build_model_turn_delivery(
     )
     selected_candidates = context.action_delivery_plan.projection(selected_counts)
     selected_records = _selected_records(context.action_delivery_plan, selected_counts)
+    public_results = tuple(item for item in selected_records if isinstance(item, PublicResultRecord))
     continuation_capabilities = context.delivery_store.continuation_capabilities(selected_counts)
     effect_indices = {
         item.record_index
@@ -276,21 +285,23 @@ def build_model_turn_delivery(
         "admitted_record_counts": tuple(sorted(selected_counts.items())),
         "packing_backoff_count": packing_backoff_count,
         "public_effect": tuple(to_json_compatible(item) for item in selected_observation_delivery.latest_effect_values),
+        "public_results": tuple(item.to_public_value() for item in public_results),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     ).hexdigest()
     return ModelTurnDelivery(
-        view,
-        manifest,
-        f"delivery:{digest}",
-        context.context_id,
-        selected_candidates,
-        context.action_delivery_plan.plan_id,
-        media,
-        tuple(sorted(selected_counts.items())),
-        packing_backoff_count,
-        continuation_capabilities,
+        view=view,
+        manifest=manifest,
+        delivery_id=f"delivery:{digest}",
+        context_id=context.context_id,
+        action_candidates=selected_candidates,
+        action_delivery_plan_id=context.action_delivery_plan.plan_id,
+        media=media,
+        public_results=public_results,
+        admitted_record_counts=tuple(sorted(selected_counts.items())),
+        packing_backoff_count=packing_backoff_count,
+        continuation_capabilities=continuation_capabilities,
     )
 
 

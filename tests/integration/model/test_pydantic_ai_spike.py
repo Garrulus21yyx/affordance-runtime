@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -21,7 +22,12 @@ from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
-from affordance_runtime.agent.decisions import ReadRegionResult, SearchPageContentResult, SelectAction
+from affordance_runtime.agent.decisions import (
+    FinalResponse,
+    ReadRegionResult,
+    SearchPageContentResult,
+    SelectAction,
+)
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
@@ -56,7 +62,10 @@ from tests.support.agent.core_loop_support import (
     shared_task,
     shared_world,
 )
-from tests.support.model.recording_pydantic_model import RecordingPydanticModel
+from tests.support.model.recording_pydantic_model import (
+    RecordingPydanticModel,
+    normalize_recorded_provider_input,
+)
 
 ScriptedModel = RecordingPydanticModel
 
@@ -254,6 +263,10 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             [
                 ("search_page_content", {"query": "false"}),
                 ("read_region", {"region_ref": region_ref}),
+                (
+                    "submit_final_response",
+                    {"content": "Observed the complete current result.", "evidence_refs": []},
+                ),
             ]
         )
         policy = _policy(scripted.build())
@@ -285,7 +298,35 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
         assert isinstance(second.output.decision, ReadRegionResult)
         assert second.output.decision.arguments == {"region_ref": region_ref}
         assert second.output.decision.result["kind"] == "Opened"
-        assert scripted.calls == 2
+        second_step = StepResult(
+            second.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+            next_delivery_store=second.output.next_delivery_store,
+        )
+        second_transition = second_context.delivery_store.reduce(second_step, step_index=2)
+        third_context = builder.build(
+            task,
+            world,
+            action_space,
+            evaluation,
+            delivery_store=second_transition.next_store,
+        )
+        third = await policy.port.generate(ModelDecisionRequest("request:answer", third_context))
+
+        assert third.failure is None
+        assert third.output is not None
+        assert isinstance(third.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[2])
+        user_text = recorded["messages"][-1]["parts"][0]["content"][0]["content"]
+        payload = json.loads(user_text)
+        assert payload["latest_public_results"] == [
+            item.to_public_value()
+            for item in third_context.delivery_store.public_result_inventory.records
+        ]
+        assert scripted.calls == 3
 
     asyncio.run(scenario())
 

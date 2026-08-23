@@ -44,6 +44,7 @@ class EpisodeMonitor:
     world_digest: str = ""
     current_findings_digest: str = ""
     working_facts_digest: str = ""
+    visible_public_result_digest: str = ""
     observation_only_streak: int = 0
     recovery_count: int = 0
     latest_attempt_signature: PublicAttemptSignature | None = None
@@ -56,6 +57,7 @@ class EpisodeMonitor:
         self.world_digest = public_world_semantic_digest(world)
         self.current_findings_digest = current_findings_digest(world)
         self.working_facts_digest = working_facts_digest(workspace)
+        self.visible_public_result_digest = ""
         self.observation_only_streak = 0
         self.recovery_count = 0
         self.latest_attempt_signature = None
@@ -68,6 +70,7 @@ class EpisodeMonitor:
         findings_digest: str,
         facts_digest: str,
         information_delta: InformationDelta | None = None,
+        visible_public_result_digest: str = "",
     ) -> EpisodeMonitorTransition:
         """Advance only from owner-produced digests and a typed dispatch receipt."""
 
@@ -85,6 +88,8 @@ class EpisodeMonitor:
                 next_world_digest != self.world_digest,
                 findings_digest != self.current_findings_digest,
                 facts_digest != self.working_facts_digest,
+                bool(visible_public_result_digest)
+                and visible_public_result_digest != self.visible_public_result_digest,
                 information_delta is not None
                 and information_delta.kind is InformationDeltaKind.NEW_INFORMATION,
             )
@@ -94,6 +99,8 @@ class EpisodeMonitor:
         self.world_digest = next_world_digest
         self.current_findings_digest = findings_digest
         self.working_facts_digest = facts_digest
+        if visible_public_result_digest:
+            self.visible_public_result_digest = visible_public_result_digest
 
         if information_changed:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)

@@ -500,6 +500,9 @@ class CoreAgentLoop:
             current_findings_digest(result.after_world),
             working_facts_digest(state.workspace, pending_fact),
             information_delta,
+            (
+                result.next_delivery_store or state.delivery_store
+            ).visible_public_result_digest,
         )
         recommendation = getattr(transition, "recommendation", "")
         if str(recommendation) == "recover":

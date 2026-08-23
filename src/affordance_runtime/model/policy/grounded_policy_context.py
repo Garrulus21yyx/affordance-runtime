@@ -93,6 +93,10 @@ class GroundedPolicyContextBinder:
             "goal_plan": _goal_plan(context),
             "recent_steps": recent_steps,
         }
+        if delivery.public_results:
+            public["latest_public_results"] = tuple(
+                item.to_public_value() for item in delivery.public_results
+            )
         if context.control_feedback:
             public["control_feedback"] = project_public_value(context.control_feedback)
         if working_set:

@@ -1546,7 +1546,8 @@ class SemanticEvent:
         "gui_effect", "public_result", "working_fact", "typed_failure", "recovery"
     ]
     summary: str
-    exact_public_values: tuple[PublicValue, ...]
+    operation: str
+    result_lineage: str
 
 @dataclass(frozen=True)
 class ActivitySummary:
@@ -1575,21 +1576,23 @@ operation/effect/failure; no per-step LLM summarizer is introduced.
 ordinary supported step. Its rules are:
 
 - keep the latest four steps in detailed form;
-- retain an exact bounded `SemanticEvent` subset selected by `WorkspaceReducer` for a real GUI effect, newly exposed public result, working-note change,
-  typed failure, or recovery transition;
+- retain a bounded summary/lineage `SemanticEvent` subset for a real GUI effect, newly exposed public result,
+  working-note change, typed failure, or recovery transition;
 - aggregate ordinary reads/searches/waits with no new finding into `ActivitySummary` instead of appending history;
-- deterministically deduplicate repeated exact public values and fold older low-priority events within the supplied
-  fixed workspace bounds;
+- deterministically deduplicate repeated event lineages and fold older low-priority diagnostic events within the
+  supplied fixed workspace bounds;
 - write every original step to Full Trace regardless of workspace retention.
 
-An effect may exceed the Workspace allocation. The reducer retains only its deterministic bounded exact subset;
-current facts remain available through the current World/effect/region continuations, and private Trace retains the
-full raw delta plus reconciled effect inventory. A `SemanticEvent` is not a second complete effect store.
+Exact current result records never enter Workspace. They remain in `ObservationDeliveryStore.PublicResultInventory`
+and are selected by the existing TurnPacker into `ModelTurnDelivery.public_results`; GUI effects remain in the current
+World/effect delivery. Private Trace retains raw diagnostic lineage. A `SemanticEvent` is not a second result or effect
+store.
 
 Forty searches with no information gain therefore occupy one activity record, not forty model-history entries.
 `WorkspaceReducer` does not throw an episode-history-capacity exception for ordinary growth. Allocation-aware
-`WorkspaceReducer.fit()` and conversion of irreducible overflow to `context_capacity` with `provider_attempts=0` remain
-owned by the next `RequestAdmission` stage.
+`WorkspaceReducer.fit()` may fold diagnostic activity summaries; only the complete request can produce typed
+`context_capacity` with `provider_attempts=0` at the next `RequestAdmission` stage. There is no exact-result Workspace
+sub-budget.
 
 `RequestAdmission` is the sole capacity authority:
 

@@ -97,7 +97,7 @@ def test_inventory_cardinality_never_creates_more_than_one_group_per_protocol_ki
     assert len(plan.obligations) == (len(DeliveryObligationKind) if count else 0)
     assert len({item.kind for item in plan.obligations}) == len(plan.obligations)
     assert all(len(item.records) == count for item in plan.obligations)
-    assert plan.foreground_scope == (DeliveryObligationKind.EXPLICIT_QUERY.value if count else None)
+    assert plan.foreground_scope == (DeliveryObligationKind.PUBLIC_RESULT.value if count else None)
 
 
 @pytest.mark.parametrize("group_count", range(2, len(DeliveryObligationKind) + 1))

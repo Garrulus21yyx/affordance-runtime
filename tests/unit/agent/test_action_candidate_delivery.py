@@ -6,12 +6,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpaceBuilder
+from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import DecisionKind, RequestActionPage
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import (
+    ActionDeliveryPlan,
     ActionRouteFragment,
     DeliveryObligationKind,
 )
@@ -22,7 +25,11 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 )
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
-from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.observation_delivery import (
+    ObservationDeliveryStore,
+    PublicResultInventory,
+    PublicResultRecord,
+)
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.run_state import RunState
@@ -261,6 +268,46 @@ def _context():
             actions,
             evaluation,
         ),
+    )
+
+
+def _context_with_public_results(
+    values: tuple[dict[str, object], ...],
+):
+    task, world, _actions, evaluation, _ = _context()
+    actions = ActionSpace(world.observation_id, ())
+    records = tuple(PublicResultRecord("read_region", "R2", value) for value in values)
+    store = ObservationDeliveryStore(
+        public_result_inventory=PublicResultInventory(
+            world.observation_id,
+            "sha256:" + "1" * 64,
+            records,
+        )
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        actions,
+        evaluation,
+        delivery_store=store,
+    )
+    public_obligation = context.action_delivery_plan.obligation(DeliveryObligationKind.PUBLIC_RESULT)
+    assert public_obligation is not None
+    public_plan = ActionDeliveryPlan(
+        context.action_space_id,
+        world.observation_id,
+        (public_obligation,),
+        "public_result",
+    )
+    isolated_store = ObservationDeliveryStore(
+        public_result_inventory=context.delivery_store.public_result_inventory,
+        inventories=(public_obligation.inventory,),
+    )
+    return replace(
+        context,
+        action_delivery_plan=public_plan,
+        action_candidates=public_plan.projection(),
+        delivery_store=isolated_store,
     )
 
 
@@ -1303,6 +1350,115 @@ def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly
 
     assert physical["task"]["public_inputs"] == public_inputs
     assert physical["task"]["success_criteria"]["items"][0]["definition"] == criterion
+
+
+@pytest.mark.parametrize("count", (1, 2, 16, 32))
+def test_store_public_result_atoms_reach_physical_request_without_field_projection(count: int) -> None:
+    values = tuple(
+        {
+            "identity": {"display": f"Reader {index} 界🙂"},
+            "content": {
+                "text": f"complete entry {index} " + "深" * 80,
+                "metadata": {"nested": {"ordinal": index, "retained": True}},
+            },
+        }
+        for index in range(count)
+    )
+    context = _context_with_public_results(values)
+    packed = _pack(
+        ModelDecisionRequest(f"request:public-results-{count}", context),
+        binder=GroundedPolicyContextBinder(),
+    )
+    physical = json.loads(packed.admitted_envelope.envelope.user_text)
+    delivered = tuple(physical["latest_public_results"])
+    admitted = dict(packed.admitted_record_counts)[DeliveryObligationKind.PUBLIC_RESULT.value]
+
+    assert delivered == tuple(
+        {"operation": "read_region", "source": "R2", "value": value}
+        for value in values[:admitted]
+    )
+    assert tuple(item.public_value for item in packed.delivery.public_results) == values[:admitted]
+    assert "[TRUNCATED]" not in packed.admitted_envelope.envelope.user_text
+
+
+@settings(max_examples=8, deadline=None)
+@given(
+    count=st.sampled_from((1, 2, 16, 32)),
+    depth=st.integers(min_value=0, max_value=6),
+    text_value=st.text(alphabet="abc 界🙂é", min_size=1, max_size=120),
+)
+def test_generated_public_result_shapes_remain_atomic_through_physical_request(
+    count: int,
+    depth: int,
+    text_value: str,
+) -> None:
+    nested: object = {"text": text_value, "ordinal": 0}
+    for level in range(depth):
+        nested = {f"level_{level}": nested, "retained": True}
+    values = tuple(
+        {"record": nested, "ordinal": index, "pair": {"left": f"L{index}", "right": text_value}}
+        for index in range(count)
+    )
+    context = _context_with_public_results(values)
+    packed = _pack(ModelDecisionRequest(f"request:generated-results-{count}-{depth}", context))
+    admitted = len(packed.delivery.public_results)
+    physical = json.loads(packed.admitted_envelope.envelope.user_text)
+
+    assert admitted >= 1
+    assert physical["latest_public_results"] == [
+        {"operation": "read_region", "source": "R2", "value": value}
+        for value in values[:admitted]
+    ]
+
+
+def test_public_result_budget_backoff_removes_only_whole_suffix_records() -> None:
+    values = tuple(
+        {
+            "author": f"Reader {index}",
+            "comment": ("complete unicode evidence 界🙂 " * 60) + str(index),
+        }
+        for index in range(2)
+    )
+    context = _context_with_public_results(values)
+    request = ModelDecisionRequest("request:public-result-boundary", context)
+    plan = context.action_delivery_plan
+    assert plan is not None
+    unconstrained = _pack(request)
+    assert len(unconstrained.delivery.public_results) == 2
+    two_record_tokens = unconstrained.admitted_envelope.token_breakdown.estimated_input_tokens
+    exact_fit = CanonicalProviderEnvelopeBinder(
+        request_budget=ModelRequestBudget(
+            soft_target_tokens=two_record_tokens,
+            model_context_window=two_record_tokens + 5_000,
+            max_output_tokens=0,
+            protocol_reserve_tokens=0,
+            safety_margin_tokens=0,
+            admission_limit=two_record_tokens,
+        )
+    )
+    one_token_short = replace(
+        exact_fit,
+        request_budget=replace(
+            exact_fit.request_budget,
+            soft_target_tokens=two_record_tokens - 1,
+            admission_limit=two_record_tokens - 1,
+        ),
+    )
+    exact = _pack(request, binder=exact_fit)
+    reduced = _pack(request, binder=one_token_short)
+
+    assert exact.delivery.public_results == context.delivery_store.public_result_inventory.records
+    assert reduced.delivery.public_results == exact.delivery.public_results[:1]
+    assert tuple(item.public_value for item in reduced.delivery.public_results) == values[:1]
+    inventory = context.delivery_store.public_result_inventory
+    assert inventory is not None
+    assert inventory.records == (*reduced.delivery.public_results, *inventory.records[1:])
+    visible = context.delivery_store.with_visible_public_results(reduced.delivery.public_results)
+    assert visible.public_result_inventory is not None
+    assert visible.public_result_inventory.visible_record_digests == (
+        reduced.delivery.public_results[0].digest,
+    )
+    assert inventory.records[1].digest not in visible.public_result_inventory.visible_record_digests
 
 
 def test_observation_and_source_id_permutation_preserves_public_page_manifest_catalog_and_cost() -> None:

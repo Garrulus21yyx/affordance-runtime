@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
 MAX_WORKSPACE_RECENT_STEPS = 4
 MAX_WORKSPACE_SEMANTIC_EVENTS = 24
-MAX_WORKSPACE_EVENT_VALUES = 32
 
 
 @dataclass(frozen=True)
@@ -57,7 +56,8 @@ class SemanticEvent:
     step_index: int
     kind: SemanticEventKind
     summary: str
-    exact_public_values: tuple[Mapping[str, object], ...] = ()
+    operation: str = ""
+    result_lineage: str = ""
 
     def __post_init__(self) -> None:
         if type(self.step_index) is not int or self.step_index < 0:
@@ -68,10 +68,8 @@ class SemanticEvent:
             or len(self.summary) > 240
         ):
             raise TypeError("semantic event requires typed kind and summary")
-        values = tuple(freeze_json(dict(item)) for item in self.exact_public_values)
-        if len(values) > MAX_WORKSPACE_EVENT_VALUES:
-            raise ValueError("semantic event exact values exceed the workspace bound")
-        object.__setattr__(self, "exact_public_values", values)
+        if len(self.operation) > 80 or len(self.result_lineage) > 96:
+            raise ValueError("semantic event lineage is not bounded")
 
 
 class ActivityFamily(StrEnum):
@@ -161,7 +159,7 @@ class WorkspaceReducer(Protocol):
 
 
 class WorkspaceCapacityError(ValueError):
-    """The exact irreducible workspace cannot fit its assigned request allocation."""
+    """The bounded diagnostic workspace cannot fit its assigned request allocation."""
 
 
 def working_facts_digest(
@@ -225,29 +223,16 @@ class DefaultWorkspaceReducer:
         events = list(previous.semantic_events)
         receipts = tuple(getattr(getattr(step, "execution_receipts", None), "receipts", ()))
         if receipts:
-            values = _significant_values(public_effect, current_findings)
-            if public_effect is not None and public_effect.atoms:
-                _append_event(
-                    events,
-                    SemanticEvent(
-                        step_index,
-                        SemanticEventKind.GUI_EFFECT,
-                        _event_summary(detailed_step, getattr(step, "feedback", "GUI effect")),
-                    ),
-                )
-            if values:
-                _append_event(
-                    events,
-                    SemanticEvent(
-                        step_index,
-                        SemanticEventKind.PUBLIC_RESULT,
-                        f"exact public values after {_event_summary(detailed_step, 'GUI effect')}"[:240],
-                        values,
-                    ),
-                )
-
-        local_values = tuple(getattr(information_delta, "new_items", ()))
-        if local_values:
+            _append_event(
+                events,
+                SemanticEvent(
+                    step_index,
+                    SemanticEventKind.GUI_EFFECT,
+                    _event_summary(detailed_step, getattr(step, "feedback", "GUI effect")),
+                ),
+            )
+        local_record_digests = tuple(getattr(information_delta, "new_record_digests", ()))
+        if local_record_digests:
             operation = str(getattr(information_delta, "operation", "local observation"))
             _append_event(
                 events,
@@ -255,7 +240,8 @@ class DefaultWorkspaceReducer:
                     step_index,
                     SemanticEventKind.PUBLIC_RESULT,
                     f"new public information from {operation}"[:240],
-                    local_values,
+                    operation,
+                    str(getattr(information_delta, "inventory_digest", ""))[:96],
                 ),
             )
         decision = getattr(step, "decision", None)
@@ -265,19 +251,14 @@ class DefaultWorkspaceReducer:
             working_facts[working_fact.key] = working_fact
             _append_event(
                 events,
-                SemanticEvent(
-                    step_index,
-                    SemanticEventKind.WORKING_FACT,
-                    f"retained exact working fact {working_fact.key}",
-                    (
-                        {
-                            "key": working_fact.key,
-                            "predicate": working_fact.record.predicate,
-                            "value": working_fact.value,
-                        },
+                    SemanticEvent(
+                        step_index,
+                        SemanticEventKind.WORKING_FACT,
+                        f"retained exact working fact {working_fact.key}",
+                        "remember_fact",
+                        working_fact.key,
                     ),
-                ),
-            )
+                )
 
         recovery = getattr(step, "recovery_signal", None)
         if recovery is not None:
@@ -323,16 +304,7 @@ class DefaultWorkspaceReducer:
         )
         if _workspace_bytes(candidate) <= allocation_bytes:
             return candidate
-        significant = tuple(item for item in candidate.semantic_events if item.exact_public_values)
-        candidate = AgentWorkspace(
-            candidate.recent_steps,
-            significant,
-            (),
-            candidate.working_facts,
-        )
-        if _workspace_bytes(candidate) <= allocation_bytes:
-            return candidate
-        raise WorkspaceCapacityError("exact workspace exceeds its request allocation")
+        raise WorkspaceCapacityError("diagnostic workspace exceeds its request allocation")
 
 
 def render_agent_workspace(workspace: AgentWorkspace, *, total_step_count: int) -> dict[str, object]:
@@ -348,7 +320,8 @@ def render_agent_workspace(workspace: AgentWorkspace, *, total_step_count: int) 
                 "step_index": item.step_index,
                 "kind": item.kind.value,
                 "summary": sanitize_history_value(item.summary),
-                "exact_public_values": project_public_value(item.exact_public_values),
+                "operation": sanitize_history_value(item.operation),
+                "result_lineage": sanitize_history_value(item.result_lineage),
             }
             for item in workspace.semantic_events
         ),
@@ -367,35 +340,13 @@ def render_agent_workspace(workspace: AgentWorkspace, *, total_step_count: int) 
     }
 
 
-def _significant_values(
-    effect: PublicEffectInventory | None,
-    findings: tuple[CurrentFinding, ...],
-) -> tuple[Mapping[str, object], ...]:
-    values: list[Mapping[str, object]] = [
-        {
-            "predicate": item.predicate,
-            "value": item.exact_value,
-            "source_context": item.source_context,
-        }
-        for item in findings
-    ]
-    if effect is not None:
-        values.extend(item.public_value for item in effect.atoms)
-    unique: list[Mapping[str, object]] = []
-    seen: set[str] = set()
-    for item in values:
-        frozen = freeze_json(dict(item))
-        key = repr(frozen)
-        if key not in seen:
-            seen.add(key)
-            unique.append(frozen)
-        if len(unique) >= MAX_WORKSPACE_EVENT_VALUES:
-            break
-    return tuple(unique)
-
-
 def _append_event(events: list[SemanticEvent], event: SemanticEvent) -> None:
-    if events and events[-1].kind is event.kind and events[-1].exact_public_values == event.exact_public_values:
+    if (
+        events
+        and events[-1].kind is event.kind
+        and events[-1].operation == event.operation
+        and events[-1].result_lineage == event.result_lineage
+    ):
         events[-1] = event
     else:
         events.append(event)

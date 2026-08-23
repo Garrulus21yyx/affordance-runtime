@@ -4,8 +4,7 @@ Goal: replace the lossy `local result -> Workspace exact values -> generic proje
 `ObservationDeliveryStore -> TurnPacker -> ModelTurnDelivery -> physical provider request` path, while keeping one
 Store, one packer, one Delivery, one Envelope, and one CoreAgentLoop.
 
-Status: active; production changes are blocked until steps 1-3 establish the complete causal surface and bounded
-positive contract.
+Status: active; the owner migration is implemented and provider-free invariant verification is in progress.
 
 ## Steps
 
@@ -24,14 +23,14 @@ positive contract.
      admitted-novelty, failure, and temporal-order contracts.
    - Define physical deletions and affected consumers; no Task21/site/content specialization.
 
-4. **in_progress — Implement owner migration**
+4. **done — Implement owner migration**
    - Store owns canonical records and continuation suffix.
    - Workspace retains lineage/summary only.
    - Existing TurnPacker admits complete public-result records into ModelTurnDelivery.
    - Binder/Envelope/Recording consume that same Delivery projection.
    - Monitor novelty derives from admitted records.
 
-5. **pending — Verify invariant properties and vertical production paths**
+5. **in_progress — Verify invariant properties and vertical production paths**
    - Deep mappings, long text, Unicode, 1/2/16/32 records, exact-fit/one-unit-over, pagination append/dedup,
      currentness, suffix conservation, provider physical equality, direct final response.
    - Focused, full pytest, Ruff, compileall, negative searches.
@@ -54,3 +53,10 @@ positive contract.
 ## Produced files
 
 - `.codex-plans/public-result-delivery-convergence.md` — persistent plan and progress authority for this task.
+- `src/affordance_runtime/agent/context/observation_delivery.py` — typed record/inventory owner and lifecycle.
+- `src/affordance_runtime/agent/context/action_candidate_projection.py` — existing-plan PUBLIC_RESULT obligation.
+- `src/affordance_runtime/agent/context/model_turn_delivery.py` — frozen admitted result projection.
+- `src/affordance_runtime/model/policy/grounded_policy_context.py` — exact physical public-result rendering.
+- `src/affordance_runtime/agent/workspace.py` — summary/lineage-only event history.
+- `src/affordance_runtime/agent/context/step_projection.py` — evidence bodies removed from recent trajectory.
+- `src/affordance_runtime/agent/monitor.py` — model-visible admitted-prefix novelty identity.
