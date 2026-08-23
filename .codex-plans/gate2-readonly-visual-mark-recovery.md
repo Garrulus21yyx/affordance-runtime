@@ -1,6 +1,6 @@
 # Gate 2 read-only visual mark recovery
 
-Status: in_progress; gate_2_reopened; gate_3_admitted; gate_4_stopped_not_admitted;
+Status: complete_readmitted_after_fresh_provider_free_review; gate_3_admitted; gate_4_stopped_not_admitted;
 overall_reopened_non_closed
 
 ## Goal
@@ -41,8 +41,8 @@ Selection order and bound depend only on canonical public facts, not private tar
 3. [completed] Implement E/N mark support and executable-only route binding at Grounding/Media ownership.
 4. [completed] Add N-only, N+E, out-of-frame, bounded/permutation, and real Recording FunctionModel tests.
 5. [completed] Run focused/full/static/negative verification and update Gate 2 evidence.
-6. [in_progress] Commit the Gate 2 repair independently.
-7. [pending] Perform a fresh read-only Gate 2 exit review; update admission status without starting Gate 4.
+6. [completed] Commit the Gate 2 repair independently.
+7. [completed] Perform a fresh read-only Gate 2 exit review; update admission status without starting Gate 4.
 
 ## Files modified
 
@@ -74,3 +74,8 @@ Selection order and bound depend only on canonical public facts, not private tar
   so annotation-unavailable could claim a mark absent from the delivered image. Grounding now derives this flag only
   from annotation-returned actual marks; a fault-injected unavailable annotation proves the candidate remains
   unmarked and carries no media mark.
+- Fresh review from `27e85efe` passes: visual candidates come only from canonical public E/N records and in-frame
+  media regions; actual marks and entity `marked` come only from annotation output; N never becomes an executable
+  operand or interaction schema row; bounded selection and annotated bytes are private-permutation invariant. Final
+  full provider-free suite: `1613 passed, 24 skipped`; static and production negative checks pass. Gate 2 is
+  re-admitted; Gate 4 remains stopped/not admitted.

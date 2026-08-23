@@ -3,7 +3,7 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 reopened by Gate 4 attempt 2 /
+Gate 2 complete / re-admitted after read-only visual-mark fresh review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 attempt 2 stopped / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
@@ -164,7 +164,7 @@ route deltas with private resolver lineage excluded from serialization. The anno
 only after actual in-frame marks and current public action grounding are known. Delivery converts the typed relation
 without inspecting marks, text routes, or complete ActionSpace membership. Focused verification is `175 passed, 2
 skipped`; full provider-free pytest is `1607 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches
-pass. Gate 2 remains pending until a fresh review starts from this owner correction.
+pass. At this historical checkpoint, Gate 2 remained pending until a fresh review started from this owner correction.
 
 A subsequent serialization audit found one more boundary error before admission: the private action ID and resolver
 option on `AgentImageActionRoute` were excluded from comparison and repr but not from the repository's dataclass JSON
@@ -230,11 +230,20 @@ remains stopped/not admitted. No provider, live benchmark, or Task7 replay ran.
 Fresh-review correction: `VisualMarkCandidate` now independently validates non-negative origins and positive bbox
 dimensions rather than relying on `ObservationGroundingRegion`. Recording-boundary assertions additionally prove an
 N-only image publishes no interaction tool, while mixed N+E publishes only the E-owned `activate` schema and that
-schema contains no N1. Gate 2 remains pending while exit review restarts from this correction.
+schema contains no N1. At this historical checkpoint, Gate 2 remained pending while exit review restarted from this
+correction.
 
 The restarted review also moved `AgentGroundingEntityView.marked` from candidate selection to annotation-result
 actuality. If annotation is unavailable, a selected E/N candidate no longer claims `marked=True` while the delivered
 media has no mark. A fault-injected owner test proves that alignment; review restarts again from the correction.
+
+Gate 2 read-only visual-mark fresh exit review (2026-08-23): review restarted after both correction commits and
+passes from `27e85efe`. Candidate membership is canonical, in-frame, bounded, and action-independent; actual marks and
+entity `marked` derive only from annotation output. E/N media metadata survives the exact Recording FunctionModel
+boundary; N has no role, route, executable Manifest ref, or interaction-tool schema row, while E remains callable only
+through an exact Manifest route. Full provider-free pytest is `1613 passed, 24 skipped`; Ruff, compileall, diff check,
+and production negative searches pass. Gate 2 is re-admitted; Gate 3 remains admitted; Gate 4 remains stopped/not
+admitted; overall remains reopened/non-closed.
 
 ## Normative single production chain
 

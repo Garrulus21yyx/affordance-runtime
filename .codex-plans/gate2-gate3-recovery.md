@@ -1,6 +1,6 @@
 # Gate 2 / Gate 3 recovery after vertical falsification
 
-Status: gate_2_complete_readmitted_after_fresh_review;
+Status: gate_2_complete_readmitted_after_readonly_visual_mark_fresh_review;
 gate_3_complete_readmitted_after_fresh_review;
 gate_4_aborted_not_admitted;
 overall_reopened_non_closed
@@ -10,6 +10,9 @@ overall_reopened_non_closed
 Repair and independently re-verify the two owner contracts falsified by the aborted Gate 4 attempt, commit each gate
 separately, then perform a fresh read-only Gate 2/3 exit review. Gate 4 remains out of scope until both gates are
 explicitly re-admitted.
+
+The earlier Gate 2 admission recorded here was later falsified by a real read-only visual target. The superseding
+owner repair and fresh re-admission from `27e85efe` are recorded in `gate2-readonly-visual-mark-recovery.md`.
 
 ## Constraints
 

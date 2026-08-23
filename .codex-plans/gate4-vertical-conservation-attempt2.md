@@ -1,6 +1,6 @@
 # Gate 4 vertical conservation — attempt 2
 
-Status: stopped_not_admitted; gate_2_reopened; gate_3_admitted; overall_reopened_non_closed
+Status: stopped_not_admitted; gate_2_readmitted_after_repair; gate_3_admitted; overall_reopened_non_closed
 
 ## Goal
 
@@ -62,7 +62,7 @@ unless the production contract is falsified, in which case it stops under the us
 ## Files produced or modified
 
 - `.codex-plans/gate4-vertical-conservation-attempt2.md` — this persistent attempt record.
-- `.codex-plans/c10-joint-delivery-packing.md` — Gate 2 reopened and Gate 4 attempt-2 stop status.
+- `.codex-plans/c10-joint-delivery-packing.md` — historical Gate 2 reopening and Gate 4 attempt-2 stop status.
 - `docs/architecture.md` — owner-level causal model and current status.
 - `docs/benchmark.md` — provider-free falsification evidence and execution-order status.
 
@@ -91,3 +91,6 @@ unless the production contract is falsified, in which case it stops under the us
   by exact route deltas.
 - Stop protocol applied immediately. No later Gate 4 assertions, focused/full/static closure runs, production repair,
   test compensation, or completion commit were performed. No real provider, live benchmark, or Task7 replay ran.
+
+Post-stop status: Gate 2 was subsequently repaired and re-admitted by a fresh provider-free review from `27e85efe`.
+This Gate 4 attempt remains stopped/not admitted and was not resumed.

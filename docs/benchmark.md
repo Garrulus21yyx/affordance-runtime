@@ -3,7 +3,7 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 reopened by Gate 4 attempt 2 /
+Gate 2 complete / re-admitted after read-only visual-mark fresh review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 attempt 2 stopped / not admitted / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
@@ -213,8 +213,8 @@ one PNG `N1` mark with empty roles/routes and no executable Manifest route. A mi
 but authorizes only E1. Out-of-frame N disappears, and a 40-read-only-target generated case is deterministically
 bounded under private identity/enumeration permutation. The full provider-free suite is `1612 passed, 24 skipped`,
 and Ruff, compileall, diff check, and negative searches pass.
-Fresh exit review remains pending; Gate 2 stays reopened and Gate 4 stays stopped/not admitted. No provider, live
-benchmark, or Task7 replay ran.
+At this historical checkpoint, fresh exit review remained pending, Gate 2 stayed reopened, and Gate 4 stayed
+stopped/not admitted. No provider, live benchmark, or Task7 replay ran.
 
 Fresh review tightened the candidate's own bbox validation and extended the real recorder assertions: N-only offers
 no interaction tool; mixed N+E offers only `activate`, whose schema excludes N1. This is correction evidence, not
@@ -243,6 +243,13 @@ Before re-admission, serialization review also found that the new media route's 
 needed explicit `serialize=False` metadata. That boundary is now fail-closed and a focused property proves only the
 public route triple survives JSON projection (`122 passed` across owner, Recording, Admission, and architecture
 tests). Exit review restarts from this correction; Gate 4 remains aborted/not admitted.
+
+Fresh Gate 2 read-only visual-mark exit review (2026-08-23) passes from `27e85efe`: canonical in-frame E/N candidate
+selection is bounded and action-independent; actual marks and entity state derive only from annotation output; exact
+Recording FunctionModel requests preserve PNG bytes and E/N media metadata; N has no role, route, executable Manifest
+ref, or interaction tool schema row; and E authorization still requires an exact Manifest route. Full provider-free
+pytest is `1613 passed, 24 skipped`; static and production negative checks pass. Gate 2 is re-admitted, Gate 3 remains
+admitted, Gate 4 remains stopped/not admitted, and overall remains reopened/non-closed.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
