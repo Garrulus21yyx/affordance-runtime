@@ -66,3 +66,7 @@ Selection order and bound depend only on canonical public facts, not private tar
 - Full provider-free suite: `1612 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and negative searches for
   ActionSpace-driven mark selection, production fixture labels, and non-E route operands pass. No provider, live
   benchmark, or Task7 replay ran.
+- Fresh review found `VisualMarkCandidate` relied on the upstream region for bbox positivity instead of closing its
+  own typed boundary. The candidate now independently rejects negative origins/non-positive dimensions. Recorder
+  assertions also prove N-only publishes no interaction tool, while mixed N+E publishes only `activate` and its
+  provider schema contains no N1. Exit review restarts from the correction commit.

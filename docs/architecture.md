@@ -227,6 +227,11 @@ passed, 24 skipped`; Ruff, compileall, diff check, and negative searches pass.
 Gate 2 implementation is verified but still awaits a fresh exit review, so it is not yet re-admitted and Gate 4
 remains stopped/not admitted. No provider, live benchmark, or Task7 replay ran.
 
+Fresh-review correction: `VisualMarkCandidate` now independently validates non-negative origins and positive bbox
+dimensions rather than relying on `ObservationGroundingRegion`. Recording-boundary assertions additionally prove an
+N-only image publishes no interaction tool, while mixed N+E publishes only the E-owned `activate` schema and that
+schema contains no N1. Gate 2 remains pending while exit review restarts from this correction.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure

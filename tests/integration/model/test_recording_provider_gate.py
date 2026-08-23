@@ -17,6 +17,7 @@ from pydantic_ai.models.function import FunctionModel
 
 import affordance_runtime.model.policy.canonical_provider_envelope as canonical_envelope_module
 from affordance_runtime.actions import ActionBinding, ActionSpaceBuilder
+from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
@@ -395,6 +396,16 @@ def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boun
             "N1" not in (route.source_ref, route.destination_ref)
             for route in envelope.catalog.manifest.action_routes
         )
+        action_tool_names = {
+            item.semantic_action for item in INTERACTION_CAPABILITY_REGISTRY.definitions
+        }
+        assert action_tool_names.intersection(recorder.offered_tools[0]) == {"activate"}
+        activate_schema = next(
+            item.parameters_json_schema
+            for item in recorder.records[0].function_tools
+            if item.name == "activate"
+        )
+        assert "N1" not in json.dumps(to_json_compatible(dict(activate_schema)))
         assert len(environment.executed_requests) == 1
         bound = environment.executed_requests[0]
         assert bound.intent.semantic_action == "activate"
@@ -470,6 +481,10 @@ def test_gate_2_readonly_only_actual_mark_reaches_recorder_without_action_author
             for route in envelope.catalog.manifest.action_routes
             for route_ref in (route.source_ref, route.destination_ref)
         )
+        action_tool_names = {
+            item.semantic_action for item in INTERACTION_CAPABILITY_REGISTRY.definitions
+        }
+        assert action_tool_names.isdisjoint(recorder.offered_tools[0])
 
     asyncio.run(scenario())
 

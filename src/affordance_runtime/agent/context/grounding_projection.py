@@ -30,11 +30,16 @@ class VisualMarkCandidate:
     confidence: float
 
     def __post_init__(self) -> None:
+        x, y, width, height = self.bbox if len(self.bbox) == 4 else (0, 0, 0, 0)
         if (
             not PublicRefCodec.accepts(self.ref)
             or self.ref[:1] not in {"E", "N"}
             or len(self.bbox) != 4
             or any(type(value) is not int for value in self.bbox)
+            or x < 0
+            or y < 0
+            or width <= 0
+            or height <= 0
             or not 0 <= self.confidence <= 1
         ):
             raise ValueError("visual mark candidate is invalid")
