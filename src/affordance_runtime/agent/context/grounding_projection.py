@@ -8,7 +8,10 @@ from affordance_runtime.agent.context.canonical_world_projection import Canonica
 from affordance_runtime.agent.context.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
+    AgentImageActionRoute,
     AgentImageInput,
+    AgentImageMark,
+    AgentImageOperandRole,
 )
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
@@ -117,7 +120,10 @@ class GroundingProjection:
                 annotation.data,
                 annotation.sha256,
                 media.coordinate_space_id,
-                tuple((mark.mark_id, mark.bbox.xywh) for mark in annotation.marks),
+                tuple(
+                    AgentImageMark(mark.mark_id, mark.bbox.xywh)
+                    for mark in annotation.marks
+                ),
             ))
             media_refs.append(artifact_ref)
         return GroundingProjectionResult(
@@ -125,6 +131,55 @@ class GroundingProjection:
             tuple(images),
             tuple(media_refs),
         )
+
+
+def bind_image_action_routes(
+    images: tuple[AgentImageInput, ...],
+    actions,
+) -> tuple[AgentImageInput, ...]:
+    """Close actual annotation fragments over exact current public action routes."""
+
+    delivered = []
+    for image in images:
+        actual_refs = frozenset(mark.ref for mark in image.marks)
+        routes = tuple(
+            AgentImageActionRoute(
+                option.operation,
+                option.target_ref,
+                destination.grounding_ref if destination is not None else "",
+                option.action_id,
+                option,
+            )
+            for option in actions
+            for destination in (
+                option.destinations.items if option.destination_required else (None,)
+            )
+            if option.target_ref in actual_refs
+            or (destination is not None and destination.grounding_ref in actual_refs)
+        )
+        marks = tuple(
+            AgentImageMark(
+                mark.ref,
+                mark.bbox,
+                tuple(
+                    role
+                    for role, matched in (
+                        (
+                            AgentImageOperandRole.SOURCE,
+                            any(route.source_ref == mark.ref for route in routes),
+                        ),
+                        (
+                            AgentImageOperandRole.DESTINATION,
+                            any(route.destination_ref == mark.ref for route in routes),
+                        ),
+                    )
+                    if matched
+                ),
+            )
+            for mark in image.marks
+        )
+        delivered.append(replace(image, marks=marks, route_deltas=routes))
+    return tuple(delivered)
 
 
 def _deduplicated_media(candidates):

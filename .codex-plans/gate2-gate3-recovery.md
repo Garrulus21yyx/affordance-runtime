@@ -57,8 +57,8 @@ owner-produced input coordinates and performs no conversion.
 3. [completed] Run Gate 2 focused/full/static/negative verification; update docs; commit Gate 2 independently.
 4. [completed] Rename/delete Gate 3 breakdown fields at the owner and migrate every active consumer.
 5. [completed] Add coordinate properties for default, soft target, exact fit, one-over, consumer comparisons, and zero attempts.
-6. [in_progress] Run Gate 3 focused/full/static/negative verification; update docs; commit Gate 3 independently.
-7. [pending] Perform a fresh read-only Gate 2/3 exit review and record admitted/reopened status without starting Gate 4.
+6. [completed] Run Gate 3 focused/full/static/negative verification; update docs; commit Gate 3 independently.
+7. [in_progress] Perform a fresh read-only Gate 2/3 exit review and record admitted/reopened status without starting Gate 4.
 
 ## Files produced or modified
 
@@ -85,3 +85,11 @@ owner-produced input coordinates and performs no conversion.
   destination-only binary-route cases pass without inventing a unary route.
 - Corrected joint focused suite: `175 passed, 2 skipped`; corrected full provider-free suite: `1607 passed, 24 skipped`;
   Ruff, compileall, diff check, and both media-route and coordinate negative searches pass.
+- The restarted review then falsified that correction again: `AgentImageInput` remained route-free and
+  `_delivered_media` inferred routes from `mark refs ∩ rendered text routes`. The tests proved the resulting value but
+  not its authority. The media-fragment owner now emits typed actual marks plus exact `AgentImageActionRoute` deltas
+  after annotation and current action grounding; `ModelTurnDelivery` only preserves those deltas. A mark with no
+  producer-owned delta cannot authorize a route, and media routes no longer depend on text-route membership.
+- Post-owner-move focused suite: `175 passed, 2 skipped`; full suite: `1607 passed, 24 skipped`; Ruff, compileall,
+  diff check, and negative searches pass. This is correction evidence, not exit-review admission; review restarts from
+  the correction revision.

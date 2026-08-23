@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.contracts import (
@@ -78,6 +79,52 @@ class ContextIdentity:
         return f"context:{digest}"
 
 
+class AgentImageOperandRole(StrEnum):
+    SOURCE = "source"
+    DESTINATION = "destination"
+
+
+@dataclass(frozen=True)
+class AgentImageActionRoute:
+    operation: str
+    source_ref: str
+    destination_ref: str = ""
+    private_action_id: str = field(default="", repr=False, compare=False)
+    private_option: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.operation.strip()
+            or not PublicRefCodec.accepts(self.source_ref, expected=PublicRefKind.EXECUTABLE)
+            or not self.private_action_id.strip()
+            or self.private_option is None
+        ):
+            raise ValueError("agent image route requires exact public and private lineage")
+        if self.destination_ref and not PublicRefCodec.accepts(
+            self.destination_ref, expected=PublicRefKind.EXECUTABLE
+        ):
+            raise ValueError("agent image route destination is invalid")
+
+
+@dataclass(frozen=True)
+class AgentImageMark:
+    ref: str
+    bbox: tuple[int, int, int, int]
+    operand_roles: tuple[AgentImageOperandRole, ...] = ()
+
+    def __post_init__(self) -> None:
+        roles = tuple(AgentImageOperandRole(item) for item in self.operand_roles)
+        if (
+            not PublicRefCodec.accepts(self.ref, expected=PublicRefKind.EXECUTABLE)
+            or len(self.bbox) != 4
+            or any(type(value) is not int for value in self.bbox)
+            or len(roles) != len(set(roles))
+        ):
+            raise ValueError("agent image mark is invalid")
+        object.__setattr__(self, "bbox", tuple(self.bbox))
+        object.__setattr__(self, "operand_roles", roles)
+
+
 @dataclass(frozen=True)
 class AgentImageInput:
     evidence_ref: str
@@ -85,7 +132,10 @@ class AgentImageInput:
     data: bytes = field(repr=False)
     sha256: str = ""
     coordinate_space_id: str = ""
-    marks: tuple[tuple[str, tuple[int, int, int, int]], ...] = ()
+    marks: tuple[AgentImageMark, ...] = ()
+    route_deltas: tuple[AgentImageActionRoute, ...] = field(
+        default=(), repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -107,15 +157,39 @@ class AgentImageInput:
             )
         ):
             raise ValueError("agent image input is invalid")
-        marks = tuple((ref, tuple(bbox)) for ref, bbox in self.marks)
-        if any(
-            not PublicRefCodec.accepts(ref, expected="E")
-            or len(bbox) != 4
-            or any(type(value) is not int for value in bbox)
-            for ref, bbox in marks
+        marks = tuple(self.marks)
+        routes = tuple(self.route_deltas)
+        if any(not isinstance(mark, AgentImageMark) for mark in marks) or any(
+            not isinstance(route, AgentImageActionRoute) for route in routes
         ):
-            raise ValueError("agent image marks are invalid")
+            raise ValueError("agent image relation must be typed")
+        if len({mark.ref for mark in marks}) != len(marks) or len(routes) != len(set(routes)):
+            raise ValueError("agent image relation must be unique")
+        role_map = {mark.ref: frozenset(mark.operand_roles) for mark in marks}
+        for route in routes:
+            if not (
+                AgentImageOperandRole.SOURCE in role_map.get(route.source_ref, frozenset())
+                or (
+                    route.destination_ref
+                    and AgentImageOperandRole.DESTINATION
+                    in role_map.get(route.destination_ref, frozenset())
+                )
+            ):
+                raise ValueError("agent image route lacks an actual typed operand mark")
+        for mark in marks:
+            expected = {
+                role
+                for route in routes
+                for role, operand in (
+                    (AgentImageOperandRole.SOURCE, route.source_ref),
+                    (AgentImageOperandRole.DESTINATION, route.destination_ref),
+                )
+                if operand == mark.ref
+            }
+            if set(mark.operand_roles) != expected:
+                raise ValueError("agent image mark roles differ from exact route deltas")
         object.__setattr__(self, "marks", marks)
+        object.__setattr__(self, "route_deltas", routes)
 
 
 @dataclass(frozen=True)

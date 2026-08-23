@@ -7,7 +7,6 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from enum import StrEnum
 
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionCandidateProjection,
@@ -21,7 +20,11 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     WorldDeliveryView,
     render_compact_actor_world,
 )
-from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
+from affordance_runtime.agent.context.context import (
+    AgentContext,
+    AgentImageInput,
+    AgentImageOperandRole,
+)
 from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
@@ -29,16 +32,11 @@ from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
 
 
-class MediaOperandRole(StrEnum):
-    SOURCE = "source"
-    DESTINATION = "destination"
-
-
 @dataclass(frozen=True)
 class DeliveredMediaMark:
     ref: str
     bbox: tuple[int, int, int, int]
-    operand_roles: tuple[MediaOperandRole, ...] = ()
+    operand_roles: tuple[AgentImageOperandRole, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -47,7 +45,7 @@ class DeliveredMediaMark:
             or any(type(value) is not int for value in self.bbox)
         ):
             raise ValueError("delivered media mark is invalid")
-        roles = tuple(MediaOperandRole(item) for item in self.operand_roles)
+        roles = tuple(AgentImageOperandRole(item) for item in self.operand_roles)
         if len(roles) != len(set(roles)):
             raise ValueError("delivered media operand roles must be unique")
         object.__setattr__(self, "bbox", tuple(self.bbox))
@@ -88,9 +86,9 @@ class DeliveredMedia:
         roles_by_ref = {item.ref: frozenset(item.operand_roles) for item in marks}
         for route in routes:
             marked_operands = (
-                MediaOperandRole.SOURCE in roles_by_ref.get(route.source_ref, frozenset()),
+                AgentImageOperandRole.SOURCE in roles_by_ref.get(route.source_ref, frozenset()),
                 bool(route.destination_ref)
-                and MediaOperandRole.DESTINATION
+                and AgentImageOperandRole.DESTINATION
                 in roles_by_ref.get(route.destination_ref, frozenset()),
             )
             if not any(marked_operands):
@@ -100,8 +98,8 @@ class DeliveredMedia:
                 role
                 for route in routes
                 for role, ref in (
-                    (MediaOperandRole.SOURCE, route.source_ref),
-                    (MediaOperandRole.DESTINATION, route.destination_ref),
+                    (AgentImageOperandRole.SOURCE, route.source_ref),
+                    (AgentImageOperandRole.DESTINATION, route.destination_ref),
                 )
                 if ref == mark.ref
             }
@@ -286,8 +284,7 @@ def build_model_turn_delivery(
             "packing_backoff_count": packing_backoff_count,
         },
     )
-    text_routes = rendered.manifest.action_routes
-    media = _delivered_media(context.image_inputs, text_routes) if include_images else ()
+    media = _delivered_media(context.image_inputs) if include_images else ()
     manifest = _manifest_with_media_routes(rendered.manifest, media)
     payload = {
         "projection": view.projection,
@@ -338,35 +335,28 @@ def build_model_turn_delivery(
 
 def _delivered_media(
     images: tuple[AgentImageInput, ...],
-    admitted_routes: tuple[DeliveredActionRoute, ...],
 ) -> tuple[DeliveredMedia, ...]:
-    """Attach route meaning from admitted fragment deltas, never from marks or ActionSpace."""
+    """Preserve the exact route/role relation carried by each actual media fragment."""
 
     delivered = []
     for image in images:
-        actual_refs = {ref for ref, _bbox in image.marks}
         routes = tuple(
-            route
-            for route in admitted_routes
-            if route.source_ref in actual_refs or route.destination_ref in actual_refs
+            DeliveredActionRoute(
+                route.operation,
+                route.source_ref,
+                route.destination_ref,
+                route.private_action_id,
+                route.private_option,
+            )
+            for route in image.route_deltas
         )
         marks = tuple(
             DeliveredMediaMark(
-                ref,
-                bbox,
-                tuple(
-                    role
-                    for role, matches in (
-                        (MediaOperandRole.SOURCE, any(route.source_ref == ref for route in routes)),
-                        (
-                            MediaOperandRole.DESTINATION,
-                            any(route.destination_ref == ref for route in routes),
-                        ),
-                    )
-                    if matches
-                ),
+                mark.ref,
+                mark.bbox,
+                mark.operand_roles,
             )
-            for ref, bbox in image.marks
+            for mark in image.marks
         )
         delivered.append(
             DeliveredMedia(

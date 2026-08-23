@@ -156,6 +156,16 @@ unary verb. The corrected joint focused suite is `175 passed, 2 skipped`; full p
 24 skipped`; Ruff, compileall, diff check, and negative searches pass. Gate 2/3 exit review must restart from this
 revision before either gate is re-admitted.
 
+The restarted Gate 2 review found a deeper authority defect in that correction: annotation output still carried only
+ref/bbox marks, while `ModelTurnDelivery` intersected those refs with rendered text routes and thereby derived media
+route authority after fragment creation. The owner repair moves this relation to the media-fragment boundary.
+`AgentImageInput` now contains typed actual marks, typed source/destination operand roles, and exact current action
+route deltas with private resolver lineage excluded from serialization. The annotation projection binds the relation
+only after actual in-frame marks and current public action grounding are known. Delivery converts the typed relation
+without inspecting marks, text routes, or complete ActionSpace membership. Focused verification is `175 passed, 2
+skipped`; full provider-free pytest is `1607 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches
+pass. Gate 2 remains pending until a fresh review starts from this owner correction.
+
 Gate 3 diagnostic-coordinate repair checkpoint (2026-08-23): `ModelRequestBreakdown` now names the sole complete
 physical input estimate `estimated_input_tokens`, retains `output_reserve_tokens` as a separate allocation, and closes
 `complete_request_tokens = estimated_input_tokens + output_reserve_tokens`. The producerless

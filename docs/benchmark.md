@@ -187,6 +187,14 @@ cases preserve the binary relation without a unary destination verb. Corrected f
 2 skipped`; full pytest is `1607 passed, 24 skipped`; static and negative checks pass. Exit review restarts from this
 correction revision; Gate 4 remains aborted/not admitted.
 
+The restarted review then rejected that correction as still downstream-derived: `AgentImageInput` had no route delta,
+and delivery used mark refs to select rendered text routes. The media-fragment producer now emits typed actual marks,
+their source/destination roles, and exact current route deltas together; delivery merely preserves them. Thus a mark
+alone cannot authorize a route, a media-only delivered route is not contingent on a text fragment, and private action
+lineage remains Runtime-only. The post-owner-move focused suite is `175 passed, 2 skipped`; full provider-free pytest
+is `1607 passed, 24 skipped`; static and negative checks pass. This correction restarts, but does not itself complete,
+the fresh Gate 2/3 exit review. Gate 4 remains aborted/not admitted.
+
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
 source-unbound artifacts are supporting diagnostics only. After the vertical gate, rerun focused and relevant
