@@ -1,0 +1,26 @@
+{
+  "kind": "provider_free_acceptance",
+  "implementation_revision": "b03249770129b285cb94cb3bb66edb4e4f9f799e",
+  "live": false,
+  "provider_attempts": 0,
+  "contracts": {
+    "final_serialized_payload_at_or_below_64_kib": "passed",
+    "stable_public_record_order": "passed",
+    "atomic_record_no_truncation": "passed",
+    "oversized_record_lossless_typed_fragmentation": "passed",
+    "private_monotonic_continuation": "passed",
+    "fresh_world_staleness": "passed",
+    "complete_inventory_exactly_once": "passed",
+    "active_read_information_delta": "passed",
+    "no_second_pager_or_tool": true
+  },
+  "verification": {
+    "focused": "151 passed",
+    "full_pytest": "1628 passed, 24 skipped",
+    "collected": 1652,
+    "ruff": "passed",
+    "compileall": "passed",
+    "negative_searches": "passed"
+  },
+  "status": "provider_free_passed_fresh_review_pending"
+}

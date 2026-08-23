@@ -8,7 +8,7 @@ Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
-byte-bounded region-read repair implemented / full acceptance pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+byte-bounded region-read repair provider-free verified / fresh-context review pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -37,6 +37,14 @@ newly exposed failure is inside `inspect_actor_world`: `read_region` paged by 20
 A later deliberate provider call also timed out twice, but that secondary environment failure does not explain the
 already deterministic unreadable-region outcome. The cohort remains stopped; no production repair is authorized by
 this status record.
+
+Provider-free region-read checkpoint (implementation revision `b0324977`, 2026-08-24): focused owner/vertical tests
+pass `151 passed`; the complete project suite passes `1628 passed / 24 skipped` from `1652` collected tests; Ruff,
+compileall, diff/static checks, and case/threshold-specialization negative searches pass. The generated properties cover
+ordinary long-record pages, exact inventory reconstruction, individually oversized typed fragments, private cursor
+progress, fresh-World invalidation, and information-delta delivery. No provider or live call was made. Evidence:
+[`region-read-byte-paging-provider-free-20260824.json`](../evidence/acceptance/region-read-byte-paging-provider-free-20260824.json).
+This is implementation acceptance only; fresh-context review remains required before requesting another witness.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
