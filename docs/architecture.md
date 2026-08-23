@@ -3,9 +3,9 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 complete / re-admitted after fresh provider-free exit review /
+Gate 2 reopened by Gate 4 attempt 2 /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
+Gate 4 attempt 2 stopped / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -202,6 +202,19 @@ not resume Gate 4 or close C10/benchmark/overall status.
 Final re-admission verification is `176 passed, 2 skipped` focused and `1608 passed, 24 skipped` full; Ruff,
 compileall, diff check, and production negative searches pass. No provider, live benchmark, or Task7 replay ran.
 
+Gate 4 attempt-2 stop checkpoint (2026-08-23): the first missing annotated case used a real multimodal
+`TargetRuntime/CoreLoop → ModelBackedAgentPolicy → TurnPacker → ModelTurnDelivery/Manifest → CanonicalProviderEnvelope
+→ PydanticAI FunctionModel` turn. The fresh World contained an ordinary executable control plus an in-frame screenshot
+grounding region for a visible read-only target. Canonical World correctly assigned that target `N1`; the recorder
+received the exact admitted physical Envelope and the unrelated action executed. The attached JPEG nevertheless had
+no actual marks, roles, or routes. `GroundingProjection` filters annotation candidates through the set of action
+operands, and `AgentImageMark` accepts only executable `E*` refs, so a real evidence-only mark cannot reach the media
+fragment at all. This falsifies Gate 2's positive media algebra: actual visual evidence and route authorization must be
+separate, allowing an actual mark with zero roles/routes while continuing to require exact route deltas for every
+actionable mark. Gate 2 is reopened at the GroundingProjection/media-fragment owner; Gate 3 remains admitted; Gate 4
+stopped before request/response, sparse-relation, continuation, permutation, or capacity closure assertions. No
+production or test compensation and no Gate-4 completion commit were made.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -293,14 +306,15 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (complete/re-admitted after fresh provider-free review).** Store capabilities
-   remain the only cursor/continuation meaning, while final attached media now carries actual marks, exact route
-   deltas, and typed operand roles; private resolver lineage is non-serializable.
+3. **Delivery cutover (reopened by Gate 4 attempt 2).** Store continuation evidence and route-bearing media remain
+   scoped prior evidence, but the production annotation owner cannot emit an in-frame evidence-only mark because it
+   filters marks to action operands and permits only executable refs.
 4. **Envelope cutover (complete/re-admitted after fresh provider-free review).** Messages/tools/media/settings/output
    are bound once and transported unchanged; diagnostics expose one input total, separate reserve/complete totals, and
    the effective input ceiling, with no component-payload subtotals.
-5. **Vertical conservation gate (stopped/not admitted).** A separately admitted Gate 4 may prove private-identity permutations leave the final
-   recorded envelope digest/cost unchanged and every visible/callable route remains closed from World to Binder.
+5. **Vertical conservation gate (attempt 2 stopped/not admitted).** Attempt 2 falsified the preceding Delivery owner
+   before later vertical assertions; a future separately admitted Gate 4 may proceed only after Gate 2 repair and fresh
+   re-admission.
 
 No failing example authorizes a local production patch. A stage may begin only after the previous stage's owner-local
 production-path gate is green; closure still requires the final vertical gate and fresh held-out review.

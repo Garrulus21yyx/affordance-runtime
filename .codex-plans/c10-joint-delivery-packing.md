@@ -4,9 +4,10 @@ Goal: recover the Run21 C8/C10 migration through serial owner cutovers. Preserve
 
 ## Serial cutover constraints
 
-- Gate 0 and World remain complete. Gate 2 Delivery and Gate 3 Envelope/diagnostic coordinates are re-admitted after
-  fresh provider-free exit review from `e5acb47c`. Gate 4 remains aborted / not admitted and is not resumed by that
-  review.
+- Gate 0 and World remain complete. Gate 3 Envelope/diagnostic coordinates remains admitted. Gate 2 was re-admitted
+  after the fresh provider-free exit review from `e5acb47c`, then reopened by Gate 4 attempt 2: a real attached image
+  cannot retain an in-frame evidence-only mark because GroundingProjection filters marks to action operands and the
+  mark contract accepts only executable refs. Gate 4 remains stopped / not admitted.
 - Preserve `output/` and all unrelated user files; each cutover receives one independent commit.
 - A failing test or auditor counterexample is design evidence only. It does not authorize a local production patch.
 - Run30 predates current production changes and is stale for current-tree verification.
@@ -20,9 +21,9 @@ Goal: recover the Run21 C8/C10 migration through serial owner cutovers. Preserve
 | 5. Review the three designs together for authority uniqueness and establish non-circular serial migration | completed | one normative chain and responsibility table in `docs/architecture.md`; Gate 0 → World → Delivery → Envelope → vertical conservation in both current authority docs |
 | 6. Build test-only Recording Provider Gate 0 through the actual policy/CoreLoop/provider boundary | completed | `tests/support/model/recording_pydantic_model.py`; `tests/integration/model/test_recording_provider_gate.py`; actual TargetRuntime/CoreLoop path: 6 passed; focused 78 passed/3 skipped; full 1558 passed/24 skipped/2 known non-Gate failures; no `src/` diff |
 | 7. Implement World cutover and pass its owner-local production-path gate | completed | sole immutable `CanonicalPublicWorldProjection`; all E/N/F/R consumers migrated; old production allocators/fallbacks deleted; permutation/remount/effect/ambiguity/identity/Gate-0 production-path properties pass; focused `175 passed, 2 skipped`; full `1568 passed, 24 skipped`; Ruff/compileall/diff/negative searches pass; no Delivery/Envelope semantic migration |
-| 8. Implement Delivery cutover and pass its two-turn production-path gate | completed / re-admitted after fresh review | media-fragment owner carries actual typed marks plus exact routes; delivery only preserves them; private resolver lineage is non-serializable; unary/source-only/destination-only/evidence-only/undrawn/Recording gates pass |
+| 8. Implement Delivery cutover and pass its two-turn production-path gate | reopened by Gate 4 attempt 2 | route-bearing media remains conserved, but a real in-frame read-only grounding region is dropped before annotation; the helper-only evidence-only mark was not a production-path proof |
 | 9. Implement Envelope cutover and pass Recording Provider identity/cost gate | completed / re-admitted after fresh review | one `estimated_input_tokens`, separate reserve, complete-request sum, and `effective_input_limit`; all candidate/component ghost metrics and WebArena consumers removed |
-| 10. Run final vertical conservation plus focused/relevant/full static and provider-free verification | historical attempt stopped; Gate 4 remains not admitted | first attempt falsified Gate 2/3; both are now repaired/re-admitted, but no new Gate 4 admission or completion commit exists |
+| 10. Run final vertical conservation plus focused/relevant/full static and provider-free verification | attempt 2 stopped; Gate 4 remains not admitted | attempt 2 reached the Recording FunctionModel but falsified Gate 2 evidence-only mark reachability; no later assertions or completion commit exist |
 | 11. Run one fresh-context read-only audit and report non-closed status honestly | pending | no closure without fresh evidence and separately authorized live benchmark |
 
 ## Known design evidence to absorb, not patch locally
