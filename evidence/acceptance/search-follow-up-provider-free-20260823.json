@@ -1,0 +1,26 @@
+{
+  "kind": "provider_free_acceptance",
+  "implementation_revision": "d30432aac0551ebfffbaae04d5438669440e6516",
+  "live": false,
+  "provider_attempts": 0,
+  "contracts": {
+    "search_result_follow_up_conservation": "passed",
+    "bounded_multi_region_deduplication": "passed:32",
+    "search_pagination_follow_up": "passed",
+    "fresh_world_staleness": "passed",
+    "first_schema_valid_call_canonicalization": "passed",
+    "representation_repair_semantic_preservation": "passed",
+    "recording_function_model_two_turn_path": "passed",
+    "monitor_unchanged": true
+  },
+  "verification": {
+    "focused": "90 passed",
+    "full_pytest": "1624 passed, 24 skipped",
+    "collected": 1648,
+    "ruff": "passed",
+    "compileall": "passed",
+    "negative_searches": "passed"
+  },
+  "environment_note": "The fixed BrowserGym py312 environment ran 1627 passed and 19 skipped but lacks pytest-asyncio; after one in-scope continuation regression was corrected, the project pytest environment completed the full suite. The missing py312 plugin is an environment failure, not acceptance evidence.",
+  "status": "provider_free_passed_fresh_review_pending"
+}

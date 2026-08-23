@@ -7,7 +7,7 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-owner repair implemented / provider-free acceptance pending / bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
+owner repair provider-free verified / fresh-context review pending / bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run. The falsification attestation is
@@ -15,6 +15,12 @@ current end-to-end invariants or authorize another live run. The falsification a
 It reopens only `Local observation result -> Store -> Manifest -> ToolCatalog follow-up` and multiple-call
 canonicalization before representation repair. It does not reopen World, route, TurnPacker, Envelope,
 Binder/Executor, BrowserGym transition, finalization, or the information-increment Monitor.
+
+The repair's provider-free attestation is
+[`search-follow-up-provider-free-20260823.json`](../evidence/acceptance/search-follow-up-provider-free-20260823.json),
+bound to implementation revision `d30432aa`: focused `90 passed`, full `1624 passed / 24 skipped` from `1648`
+collected, plus Ruff, compileall, and negative searches. Provider attempts are zero. The bounded cohort remains stopped,
+and even a passing fresh-context review may only lead to a request for explicit held-out-witness rerun authorization.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

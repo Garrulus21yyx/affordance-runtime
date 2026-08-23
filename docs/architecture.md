@@ -7,7 +7,7 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-owner repair implemented / provider-free acceptance pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+owner repair provider-free verified / fresh-context review pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -16,6 +16,13 @@ another live run. The authorized DeepSeek Task 21 witness reached the page and p
 two local policy-boundary contracts: a search result exposed `R9` without conserving it into the next Manifest's
 `read_region` capability, and representation repair could choose among distinct rejected calls. The Monitor correctly
 classified the already-distorted executed information sequence and remains unchanged.
+
+Provider-free repair checkpoint (implementation revision `d30432aa`, 2026-08-23): focused owner/vertical tests pass
+`90 passed`; the complete project suite passes `1624 passed / 24 skipped` from `1648` collected tests; Ruff,
+compileall, diff/static checks, and task-phrase/semantic-reselection negative searches pass. No provider or live call was
+made. The revision-bound attestation is
+[`search-follow-up-provider-free-20260823.json`](../evidence/acceptance/search-follow-up-provider-free-20260823.json).
+This is implementation acceptance, not permission to rerun the witness; fresh-context review remains required.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
