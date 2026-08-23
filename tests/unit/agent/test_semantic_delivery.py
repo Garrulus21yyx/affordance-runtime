@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent.context.compact_world_renderer import (
@@ -19,11 +22,12 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     Page,
     StaleContext,
     inspect_actor_world,
+    inspect_outcome_public,
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
-from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.observation_delivery import InformationDeltaKind, ObservationDeliveryStore
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.run_state import StepResult
@@ -207,6 +211,84 @@ def _many_region_world(*, count: int = 16, suffix: str = "current"):
     result = WorldFusion().fuse((source,))
     assert result.observation is not None
     return result.observation
+
+
+def _long_record_world(lengths: tuple[int, ...], *, suffix: str = "current"):
+    row_ids = tuple(f"comment:{index}" for index in range(len(lengths)))
+    targets = tuple(
+        SemanticTarget(row_id, "StaticText", f"Comment {index} " + "x" * length)
+        for index, (row_id, length) in enumerate(zip(row_ids, lengths, strict=True))
+    )
+    nodes = (
+        ObservationStructureNode("root", "document", "Reviews", child_structure_ids=("reviews",)),
+        ObservationStructureNode(
+            "reviews",
+            "list",
+            "Customer reviews",
+            parent_structure_id="root",
+            child_structure_ids=row_ids,
+        ),
+        *(
+            ObservationStructureNode(
+                row_id,
+                "listitem",
+                f"Review {index}",
+                parent_structure_id="reviews",
+                semantic_target_id=row_id,
+            )
+            for index, row_id in enumerate(row_ids)
+        ),
+    )
+    source = SurfaceObservation(
+        f"source:long-records:{suffix}",
+        "browser",
+        f"revision:long-records:{suffix}",
+        ObservationSourceProfile.dom(),
+        targets,
+        structure=nodes,
+        structure_total_count=len(nodes),
+    )
+    result = WorldFusion().fuse((source,))
+    assert result.observation is not None
+    return result.observation
+
+
+def _serialized_outcome_bytes(outcome) -> int:
+    return len(
+        json.dumps(
+            to_json_compatible(inspect_outcome_public(outcome)),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    )
+
+
+def _read_complete_region(context, region_ref: str, *, hard_limit: int):
+    cursor = ""
+    seen_cursors: set[str] = set()
+    outcomes = []
+    while True:
+        outcome = inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            canonical_world=context.canonical_world,
+            observation=context.current_observation,
+            action="read_region",
+            region_ref=region_ref,
+            cursor=cursor,
+            hard_limit=hard_limit,
+        )
+        assert isinstance(outcome, Opened)
+        assert outcome.items
+        assert _serialized_outcome_bytes(outcome) <= hard_limit
+        outcomes.append(outcome)
+        if not outcome.next_cursor:
+            return tuple(outcomes)
+        assert outcome.next_cursor not in seen_cursors
+        seen_cursors.add(outcome.next_cursor)
+        cursor = outcome.next_cursor
 
 
 def _table_world(*, rows: int = 5, coverage: CoverageState = CoverageState.COMPLETE):
@@ -479,6 +561,126 @@ def test_repeated_collection_inspect_pages_at_twenty_complete_items() -> None:
     assert isinstance(outcome, Opened)
     assert len(outcome.items) == 20
     assert outcome.next_cursor
+
+
+def test_region_read_pages_long_records_by_final_payload_bytes_without_loss() -> None:
+    world = _long_record_world((4000,) * 25)
+    task = TaskGoal("byte-paging", "Inspect all reviews")
+    context = ContextBuilder().build(
+        task, world, ActionSpace(world.observation_id, ()), _evaluation(task, world.observation_id)
+    )
+    region = next(item for item in context.region_index.regions if item.role == "list")
+    region_ref = context.canonical_world.region_refs[region.key]
+    complete = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=region_ref,
+        page_size=1000,
+        hard_limit=10 * 1024 * 1024,
+    )
+    assert isinstance(complete, Opened)
+
+    pages = _read_complete_region(context, region_ref, hard_limit=64 * 1024)
+    delivered = tuple(item for page in pages for item in page.items)
+
+    assert len(pages) >= 2
+    assert delivered == complete.items
+    assert len({json.dumps(to_json_compatible(item), sort_keys=True) for item in delivered}) == len(delivered)
+    assert all(item.get("kind") != "content_fragment" for item in delivered)
+
+
+def test_single_oversized_region_record_uses_lossless_typed_fragments() -> None:
+    world = _long_record_world((100_000, 100), suffix="fragment")
+    task = TaskGoal("fragment-paging", "Inspect all reviews")
+    context = ContextBuilder().build(
+        task, world, ActionSpace(world.observation_id, ()), _evaluation(task, world.observation_id)
+    )
+    region = next(item for item in context.region_index.regions if item.role == "list")
+    region_ref = context.canonical_world.region_refs[region.key]
+    complete = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=region_ref,
+        page_size=1000,
+        hard_limit=10 * 1024 * 1024,
+    )
+    assert isinstance(complete, Opened)
+
+    pages = _read_complete_region(context, region_ref, hard_limit=64 * 1024)
+    fragments = tuple(
+        item for page in pages for item in page.items if item.get("kind") == "content_fragment"
+    )
+    ordinary = tuple(
+        item for page in pages for item in page.items if item.get("kind") != "content_fragment"
+    )
+    reconstructed = json.loads("".join(str(item["content_json"]) for item in fragments))
+
+    assert len(fragments) >= 2
+    assert len({item["record_digest"] for item in fragments}) == 1
+    assert tuple(item["fragment_offset"] for item in fragments) == tuple(
+        sum(len(str(prior["content_json"])) for prior in fragments[:index])
+        for index in range(len(fragments))
+    )
+    assert fragments[-1]["fragment_final"] is True
+    assert reconstructed == to_json_compatible(complete.items[0])
+    assert to_json_compatible(ordinary) == to_json_compatible(complete.items[1:])
+
+
+@settings(max_examples=10, deadline=None)
+@given(
+    lengths=st.lists(
+        st.integers(min_value=0, max_value=6000),
+        min_size=2,
+        max_size=25,
+    ).map(tuple)
+)
+def test_region_read_byte_pages_generated_exactly_cover_public_inventory(lengths) -> None:
+    world = _long_record_world(lengths, suffix=f"generated-{sum(lengths)}-{len(lengths)}")
+    task = TaskGoal("generated-byte-paging", "Inspect all records")
+    context = ContextBuilder().build(
+        task, world, ActionSpace(world.observation_id, ()), _evaluation(task, world.observation_id)
+    )
+    region = next(item for item in context.region_index.regions if item.role == "list")
+    region_ref = context.canonical_world.region_refs[region.key]
+    complete = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=region_ref,
+        page_size=1000,
+        hard_limit=10 * 1024 * 1024,
+    )
+    assert isinstance(complete, Opened)
+
+    pages = _read_complete_region(context, region_ref, hard_limit=4096)
+    reconstructed = []
+    fragments: list[Mapping[str, object]] = []
+    for page in pages:
+        for item in page.items:
+            if item.get("kind") == "content_fragment":
+                fragments.append(item)
+                if item["fragment_final"]:
+                    reconstructed.append(
+                        json.loads("".join(str(part["content_json"]) for part in fragments))
+                    )
+                    fragments = []
+            else:
+                assert not fragments
+                reconstructed.append(item)
+
+    assert not fragments
+    assert to_json_compatible(reconstructed) == to_json_compatible(complete.items)
 
 
 def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
@@ -866,6 +1068,83 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
     assert continued.result["items"]
     assert "cursor" not in continued.arguments
     assert "cursor" not in continued.result
+
+
+def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale() -> None:
+    world = _long_record_world((4000,) * 25, suffix="catalog-continuation")
+    task = TaskGoal("catalog-byte-paging", "Inspect all reviews")
+    builder = ContextBuilder()
+    context = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+    )
+    region = next(item for item in context.region_index.regions if item.role == "list")
+    region_ref = context.canonical_world.region_refs[region.key]
+    _, catalog = catalog_for(context)
+    opened = resolve_catalog_call(
+        catalog,
+        ToolCall("read_region", {"region_ref": region_ref}),
+        expected_context_id=context.context_id,
+    )
+
+    assert opened.decision.result["has_more"] is True
+    assert "cursor" not in opened.decision.arguments
+    assert "cursor" not in opened.decision.result
+    assert opened.next_delivery_store.active_read.next_cursor
+    assert len(
+        json.dumps(
+            to_json_compatible(opened.decision.result),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ) <= 64 * 1024
+
+    continued_context = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+        delivery_store=opened.next_delivery_store,
+    )
+    _, continued_catalog = catalog_for(continued_context)
+    continuation = next(item for item in continued_catalog.specs if item.name == "read_next_page")
+    assert "active_read" in continuation.input_schema["properties"]["scope"]["enum"]
+    continued = resolve_catalog_call(
+        continued_catalog,
+        ToolCall("read_next_page", {"scope": "active_read"}),
+        expected_context_id=continued_context.context_id,
+    )
+    continued_step = StepResult(
+        continued.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+        next_delivery_store=continued.next_delivery_store,
+    )
+    transition = continued_context.delivery_store.reduce(continued_step, step_index=2)
+    assert transition.information_delta is not None
+    assert transition.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+
+    fresh_world = _long_record_world((4000,) * 25, suffix="catalog-fresh")
+    fresh_context = builder.build(
+        task,
+        fresh_world,
+        ActionSpace(fresh_world.observation_id, ()),
+        _evaluation(task, fresh_world.observation_id),
+        delivery_store=opened.next_delivery_store,
+    )
+    assert fresh_context.delivery_store.active_read is None
+    _, fresh_catalog = catalog_for(fresh_context)
+    fresh_continuation = next(
+        (item for item in fresh_catalog.specs if item.name == "read_next_page"),
+        None,
+    )
+    if fresh_continuation is not None and fresh_continuation.input_schema["properties"]:
+        assert "active_read" not in fresh_continuation.input_schema["properties"]["scope"]["enum"]
 
 
 def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action_space() -> None:

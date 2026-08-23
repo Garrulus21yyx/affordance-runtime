@@ -8,7 +8,7 @@ Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
-bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+byte-bounded region-read repair implemented / full acceptance pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -931,6 +931,13 @@ tool arguments. The model sees only `continuation_available` and a bounded publi
   pairs across search pages, the next Manifest exposes exactly those bounded region capabilities, and ToolCatalog
   derives `read_region` only from that Manifest. A new World invalidates the inventory before projection. Neither local
   lens replaces `effect` nor `page_directory`, so either can resume after a local read.
+- `read_region` owns one stable ordered public-record inventory and packs each page against the byte length of the
+  final serialized public result, including outcome wrappers, refs, labels, state/evidence values, and JSON overhead.
+  Twenty records remains only a secondary maximum, never a capacity proof. Adding the next atomic record stops before
+  64 KiB and installs the next private offset in the existing `active_read` lens. A single record that cannot fit is
+  delivered as ordered `content_fragment` records carrying one digest, JSON-UTF-8 encoding, monotonic offsets, and an
+  explicit final marker; concatenation reconstructs the exact original public record. Every nonterminal page advances,
+  and active-read `Opened|Matches|Page` continuations enter the existing information-delta reducer.
 - `action_results_next_page` continues one live action-obligation scope selected from a small dynamic enum such as
   `base | query | interaction | effect_actions | issues`.
 

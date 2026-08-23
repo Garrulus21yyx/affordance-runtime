@@ -806,7 +806,7 @@ class ObservationDeliveryStore:
             result, Mapping
         ):
             return DeliveryTransition(external, None)
-        if operation == "read_next_page" and result.get("kind") != "Matches":
+        if operation == "read_next_page" and result.get("kind") not in {"Opened", "Matches", "Page"}:
             return DeliveryTransition(external, None)
 
         world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest

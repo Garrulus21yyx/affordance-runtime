@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -724,16 +725,13 @@ def inspect_actor_world(
                 public_fact_bindings=public_fact_bindings or {},
                 evidence_index=evidence_index,
             )
-            page, next_cursor, result_page = _page_region_items(items, cursor, page_size)
-            required = len(json.dumps(to_json_compatible(page), ensure_ascii=False).encode())
-            if required > hard_limit:
-                return CapacityExceeded(required, hard_limit)
-            return Opened(
-                page,
-                next_cursor,
-                region.source_coverage,
-                region.region_membership,
-                result_page,
+            return _page_region_items(
+                items,
+                cursor,
+                page_size,
+                hard_limit=hard_limit,
+                source_coverage=region.source_coverage,
+                region_membership=region.region_membership,
             )
         if action == "find":
             if not query.strip():
@@ -787,28 +785,40 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
                     "result_page": outcome.result_page,
                 }
             )
-        return result
+        return _with_world_read_metadata(result)
     if isinstance(outcome, Matches):
-        return {
+        return _with_world_read_metadata({
             "kind": kind,
             "items": tuple(_search_match_with_follow_up(item) for item in outcome.items),
             "coverage": outcome.coverage,
             "has_more": bool(outcome.next_cursor),
-        }
+        })
     if isinstance(outcome, Empty):
-        return {
+        return _with_world_read_metadata({
             "kind": kind,
             "query": outcome.query,
             "coverage": outcome.coverage,
             "safe_relaxations": outcome.safe_relaxations,
-        }
+        })
     if isinstance(outcome, InvalidRegion):
-        return {"kind": kind, "region_ref": outcome.region_ref}
+        return _with_world_read_metadata({"kind": kind, "region_ref": outcome.region_ref})
     if isinstance(outcome, InvalidCursor):
-        return {"kind": kind}
+        return _with_world_read_metadata({"kind": kind})
     if isinstance(outcome, StaleContext):
-        return {"kind": kind, "expected": outcome.expected, "actual": outcome.actual}
-    return {"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit}
+        return _with_world_read_metadata({"kind": kind, "expected": outcome.expected, "actual": outcome.actual})
+    return _with_world_read_metadata(
+        {"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit}
+    )
+
+
+def _with_world_read_metadata(result: Mapping[str, object]) -> Mapping[str, object]:
+    return {
+        **result,
+        "searched_domain": "readable_content",
+        "read_only": True,
+        "zero_browser_dispatch": True,
+        "does_not_search": "executable_controls",
+    }
 
 
 def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, object]:
@@ -1670,18 +1680,158 @@ def _walk_structure_ids(root_id, nodes):
             yield from _walk_structure_ids(child_id, nodes)
 
 
-def _page_region_items(items, cursor: str, page_size: int):
-    repeated = tuple(item for item in items if item.get("kind") == "complete_item")
-    if not repeated:
-        offset = _decode_simple_cursor(cursor, len(items))
-        page, next_cursor = _page_items(items, offset, page_size)
-        total_pages = max(1, (len(items) + page_size - 1) // page_size)
-        return page, next_cursor, f"{offset // page_size + 1}/{total_pages}"
-    schema = tuple(item for item in items if item.get("kind") != "complete_item")
-    offset = _decode_simple_cursor(cursor, len(repeated))
-    page, next_cursor = _page_items(repeated, offset, page_size)
-    total_pages = max(1, (len(repeated) + page_size - 1) // page_size)
-    return (*schema, *page), next_cursor, f"{offset // page_size + 1}/{total_pages}"
+def _page_region_items(
+    items,
+    cursor: str,
+    page_size: int,
+    *,
+    hard_limit: int,
+    source_coverage: str,
+    region_membership: str,
+) -> Opened | CapacityExceeded:
+    """Pack stable public records against the final serialized result size."""
+
+    offset, fragment_offset = _decode_region_cursor(cursor, len(items))
+    if fragment_offset:
+        return _fragment_region_item(
+            items,
+            offset,
+            fragment_offset,
+            hard_limit=hard_limit,
+            source_coverage=source_coverage,
+            region_membership=region_membership,
+        )
+    page: list[Mapping[str, object]] = []
+    index = offset
+    while index < len(items) and len(page) < page_size:
+        candidate = (*page, items[index])
+        candidate_end = index + 1
+        candidate_cursor = str(candidate_end) if candidate_end < len(items) else ""
+        outcome = Opened(
+            candidate,
+            candidate_cursor,
+            source_coverage,
+            region_membership,
+            _region_result_page(offset, candidate_end, len(items)),
+        )
+        if _inspect_outcome_bytes(outcome) <= hard_limit:
+            page.append(items[index])
+            index = candidate_end
+            continue
+        if page:
+            next_cursor = str(index)
+            admitted = Opened(
+                tuple(page),
+                next_cursor,
+                source_coverage,
+                region_membership,
+                _region_result_page(offset, index, len(items)),
+            )
+            if _inspect_outcome_bytes(admitted) <= hard_limit:
+                return admitted
+            return CapacityExceeded(_inspect_outcome_bytes(admitted), hard_limit)
+        return _fragment_region_item(
+            items,
+            index,
+            0,
+            hard_limit=hard_limit,
+            source_coverage=source_coverage,
+            region_membership=region_membership,
+        )
+    next_cursor = str(index) if index < len(items) else ""
+    return Opened(
+        tuple(page),
+        next_cursor,
+        source_coverage,
+        region_membership,
+        _region_result_page(offset, index, len(items)),
+    )
+
+
+def _fragment_region_item(
+    items,
+    record_index: int,
+    fragment_offset: int,
+    *,
+    hard_limit: int,
+    source_coverage: str,
+    region_membership: str,
+) -> Opened | CapacityExceeded:
+    record_json = json.dumps(
+        to_json_compatible(items[record_index]),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if not 0 <= fragment_offset < len(record_json):
+        raise ValueError("region fragment cursor outside record")
+    record_digest = "sha256:" + hashlib.sha256(record_json.encode()).hexdigest()
+
+    def outcome(end: int) -> Opened:
+        final = end == len(record_json)
+        next_cursor = (
+            (str(record_index + 1) if record_index + 1 < len(items) else "")
+            if final
+            else f"fragment:{record_index}:{end}"
+        )
+        fragment = {
+            "kind": "content_fragment",
+            "encoding": "json-utf8",
+            "record_digest": record_digest,
+            "fragment_offset": fragment_offset,
+            "fragment_final": final,
+            "content_json": record_json[fragment_offset:end],
+        }
+        return Opened(
+            (fragment,),
+            next_cursor,
+            source_coverage,
+            region_membership,
+            f"record:{record_index + 1}/{len(items)}:fragment:{fragment_offset}-{end}",
+        )
+
+    low = fragment_offset + 1
+    high = len(record_json)
+    best: Opened | None = None
+    while low <= high:
+        middle = (low + high) // 2
+        candidate = outcome(middle)
+        if _inspect_outcome_bytes(candidate) <= hard_limit:
+            best = candidate
+            low = middle + 1
+        else:
+            high = middle - 1
+    if best is not None:
+        return best
+    minimum = outcome(min(fragment_offset + 1, len(record_json)))
+    return CapacityExceeded(_inspect_outcome_bytes(minimum), hard_limit)
+
+
+def _decode_region_cursor(cursor: str, total: int) -> tuple[int, int]:
+    if cursor.startswith("fragment:"):
+        parts = cursor.split(":")
+        if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+            raise ValueError("invalid region fragment cursor")
+        record_index, fragment_offset = int(parts[1]), int(parts[2])
+        if not 0 <= record_index < total or fragment_offset < 1:
+            raise ValueError("region fragment cursor outside result")
+        return record_index, fragment_offset
+    return _decode_simple_cursor(cursor, total), 0
+
+
+def _region_result_page(start: int, end: int, total: int) -> str:
+    return "1/1" if start == 0 and end == total else f"records:{start + 1}-{end}/{total}"
+
+
+def _inspect_outcome_bytes(outcome: InspectWorldOutcome) -> int:
+    return len(
+        json.dumps(
+            to_json_compatible(inspect_outcome_public(outcome)),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    )
 
 
 def _region_item(region, region_ref: str) -> Mapping[str, object]:

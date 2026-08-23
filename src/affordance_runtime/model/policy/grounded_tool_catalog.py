@@ -393,14 +393,6 @@ class _WorldReadBinding:
         else:
             public_arguments = {}
         public_result = dict(inspect_outcome_public(result))
-        public_result.update(
-            {
-                "searched_domain": "readable_content",
-                "read_only": True,
-                "zero_browser_dispatch": True,
-                "does_not_search": "executable_controls",
-            }
-        )
         result_type = (
             SearchPageContentResult
             if tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value

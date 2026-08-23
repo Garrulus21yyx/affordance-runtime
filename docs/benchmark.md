@@ -8,7 +8,7 @@ Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
-bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
+byte-bounded region-read repair implemented / full acceptance pending / bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run. The falsification attestation is
@@ -730,6 +730,11 @@ Generated typed Worlds and held-out real-page transitions must prove:
   fresh World invalidates all prior follow-ups;
 - a multi-call provider response adopts the first schema-valid offered call in wire order, records later calls as
   discarded protocol extras, and never lets representation repair select another operation or target;
+- region-read pages are greedily packed in stable public order against the exact final serialized result bytes, never
+  by record count alone; ordinary pages remain at or below 64 KiB, private Store cursors advance monotonically, and
+  all pages reconstruct the complete inventory exactly once. An individually oversized record uses lossless typed
+  JSON-UTF-8 fragments with a stable digest and monotonic offsets. Fresh World invalidates the cursor, and every typed
+  active-read continuation contributes its actual new page to information-delta monitoring;
 - World effect rendering and effect-derived action recall read the same `ObservationDeliveryStore.latest_effect`
   `PublicEffectInventory`. The projector produces target/fact atoms and current changed-target public structural-slot
   keys, not action operations/routes. Action recall joins those keys to the complete current `ActionSpace`, never raw
