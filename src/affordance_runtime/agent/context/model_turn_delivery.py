@@ -87,12 +87,14 @@ class DeliveredMedia:
             raise ValueError("delivered media relation is invalid")
         roles_by_ref = {item.ref: frozenset(item.operand_roles) for item in marks}
         for route in routes:
-            if MediaOperandRole.SOURCE not in roles_by_ref.get(route.source_ref, frozenset()):
-                raise ValueError("media route source lacks a typed source mark")
-            if route.destination_ref and MediaOperandRole.DESTINATION not in roles_by_ref.get(
-                route.destination_ref, frozenset()
-            ):
-                raise ValueError("media route destination lacks a typed destination mark")
+            marked_operands = (
+                MediaOperandRole.SOURCE in roles_by_ref.get(route.source_ref, frozenset()),
+                bool(route.destination_ref)
+                and MediaOperandRole.DESTINATION
+                in roles_by_ref.get(route.destination_ref, frozenset()),
+            )
+            if not any(marked_operands):
+                raise ValueError("media route lacks an actual typed operand mark")
         for mark in marks:
             expected_roles = {
                 role
@@ -346,8 +348,7 @@ def _delivered_media(
         routes = tuple(
             route
             for route in admitted_routes
-            if route.source_ref in actual_refs
-            and (not route.destination_ref or route.destination_ref in actual_refs)
+            if route.source_ref in actual_refs or route.destination_ref in actual_refs
         )
         marks = tuple(
             DeliveredMediaMark(

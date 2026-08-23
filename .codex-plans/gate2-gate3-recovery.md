@@ -79,3 +79,9 @@ owner-produced input coordinates and performs no conversion.
 - Gate 3 full provider-free suite: `1605 passed, 24 skipped`.
 - Ruff, compileall, diff check, and production negative searches prove the old total/prefit/full/lens metric names and
   cross-coordinate comparisons are absent. No real provider, live benchmark, or Task7 replay ran.
+- Fresh Gate 2 exit review held out a destination-only media mark and falsified the first repair's requirement that
+  both operands be drawn in the same image. The owner now admits a media route when at least one of its exact operands
+  is actually marked, while every marked operand retains its exact source/destination role. Source-only and
+  destination-only binary-route cases pass without inventing a unary route.
+- Corrected joint focused suite: `175 passed, 2 skipped`; corrected full provider-free suite: `1607 passed, 24 skipped`;
+  Ruff, compileall, diff check, and both media-route and coordinate negative searches pass.

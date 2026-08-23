@@ -147,6 +147,15 @@ request equality, exact Manifest relation, execution, and private binding exclus
 passed`; full provider-free pytest is `1604 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches
 pass. This is Gate 2 implementation evidence only; joint Gate 2/3 exit review and Gate 4 remain blocked.
 
+Gate 2 held-out correction checkpoint (2026-08-23): fresh exit review generated a binary route whose source remained
+in admitted text while only its destination operand was actually marked. The first repair incorrectly required both
+operands in the same image and downgraded that mark to evidence-only. Final media now carries an admitted route when
+at least one exact route operand is actually marked; each actual mark still carries exactly its own typed role.
+Source-only and destination-only marks therefore preserve the binary route, and a destination mark never fabricates a
+unary verb. The corrected joint focused suite is `175 passed, 2 skipped`; full provider-free pytest is `1607 passed,
+24 skipped`; Ruff, compileall, diff check, and negative searches pass. Gate 2/3 exit review must restart from this
+revision before either gate is re-admitted.
+
 Gate 3 diagnostic-coordinate repair checkpoint (2026-08-23): `ModelRequestBreakdown` now names the sole complete
 physical input estimate `estimated_input_tokens`, retains `output_reserve_tokens` as a separate allocation, and closes
 `complete_request_tokens = estimated_input_tokens + output_reserve_tokens`. The producerless

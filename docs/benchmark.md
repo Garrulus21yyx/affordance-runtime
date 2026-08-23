@@ -180,6 +180,13 @@ coordinates. Focused verification is `167 passed, 2 skipped`; full pytest is `16
 compileall, diff check, and old-name/cross-coordinate negative searches pass. No provider/live/Task7 run occurred.
 Gate 3 still awaits joint fresh exit review with Gate 2; Gate 4 remains aborted/not admitted.
 
+Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
+required both operands to be marked in one image. The final-media owner now retains a route when at least one exact
+operand is actually marked and assigns only the role belonging to each actual mark. Source-only and destination-only
+cases preserve the binary relation without a unary destination verb. Corrected focused verification is `175 passed,
+2 skipped`; full pytest is `1607 passed, 24 skipped`; static and negative checks pass. Exit review restarts from this
+correction revision; Gate 4 remains aborted/not admitted.
+
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
 source-unbound artifacts are supporting diagnostics only. After the vertical gate, rerun focused and relevant

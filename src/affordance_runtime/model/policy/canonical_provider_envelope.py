@@ -90,11 +90,13 @@ class CanonicalMediaRecord:
             if set(values) != expected:
                 raise ValueError("canonical media operand roles differ from route deltas")
         if any(
-            "source" not in role_map.get(source, frozenset())
-            or (destination and "destination" not in role_map.get(destination, frozenset()))
+            not (
+                "source" in role_map.get(source, frozenset())
+                or (destination and "destination" in role_map.get(destination, frozenset()))
+            )
             for _operation, source, destination in routes
         ):
-            raise ValueError("canonical media route lacks its actual operand marks")
+            raise ValueError("canonical media route lacks an actual typed operand mark")
         object.__setattr__(self, "operand_roles", roles)
         object.__setattr__(self, "route_deltas", routes)
 
