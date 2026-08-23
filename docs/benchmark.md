@@ -47,10 +47,9 @@ set is superseded by Run21. Atomic conflicts remain model-visible, cursor-pageab
 than internal-only issues.
 
 The formerly reported **1,551 tests with 24 skips**, **136 focused tests with 2 skips**, and **240 expanded tests with
-5 skips** are revision-scoped historical checkpoints, not results for the current dirty tree. Later changes to Store,
-Grounding, RequestAdmission, diagnostics, and tests invalidate that current-tree claim; the current relevant gate has
-a failing inventory-enumeration permutation property. No model provider, live ActionPolicy, live benchmark, or Task-7
-replay was run.
+5 skips** are revision-scoped historical checkpoints, not results for the current tree. Gate 1 replaces the formerly
+failing inventory-enumeration witness with owner-level generative/permutation properties and full provider-free
+verification. No model provider, live ActionPolicy, live benchmark, or Task-7 replay was run.
 
 `evidence/w1b-world-c8-c10-provider-free-20260823-run30/` is now classified as stale for current-tree verification. It
 was written before those later source changes and carries no source revision/digest binding. Its internal facts remain
@@ -60,13 +59,13 @@ not prove the final production Store transition, zero-prefix continuation recove
 or identity equality between the admitted envelope and the object consumed by the provider adapter. Runs 22, 24, 25,
 28, and 29 remain superseded diagnostic-migration artifacts.
 
-Production and test code are frozen until the single normative chain in `architecture.md` is approved. Migration and
-acceptance are serial and non-circular:
+Migration and acceptance follow the approved single normative chain in `architecture.md` serially and
+non-circularly. World is complete at its provider-free gate; later-owner semantics remain frozen until their turn:
 
 0. **Recording boundary (implemented; not closure).** A test-only local Recording Provider observes the actual current
    `ModelBackedAgentPolicy → CoreLoop → provider adapter` boundary. It records the physical request but owns no
    production semantics and calls no model provider.
-1. **World.** One `CanonicalPublicWorldProjection` allocates every public ref/order exactly once. Private-ID value,
+1. **World (implemented and provider-free verified; not closure).** One `CanonicalPublicWorldProjection` allocates every public ref/order exactly once. Private-ID value,
    private inventory enumeration, and identity-only remount cannot change canonical public records/page-membership
    inputs; remount retains a lossless raw delta while producing no public effect atom or `new_document`. All former
    public ref/order allocators must be physically removed before this stage is green.
@@ -95,10 +94,24 @@ is empty. Provider-free evidence on this worktree:
   private-inventory permutation/World cutover witness and a pre-existing exact architecture-text assertion; neither is
   repaired or reclassified by Gate 0.
 
-This evidence proves only that the test recorder observes the current physical PydanticAI boundary and can return a
+This Gate 0 evidence proves only that the test recorder observes the current physical PydanticAI boundary and can return a
 current single tool call, text/no-call output, or local exception through the existing typed Runtime behavior. It does
 not establish canonical request identity/digest, Envelope closure, C10 closure, benchmark closure, or live
-generalization. World is pending and status remains reopened/non-closed.
+generalization.
+
+World Gate 1 provider-free evidence on the current tree proves the owner-local contract: public target/fact/region
+records, `E/N/F/R`, public document signature and page membership survive private observation/source/target/fact/
+action/binding ID value and length changes, input permutations and hash-seed changes; duplicate multiplicity is
+retained; identity-only remount preserves the public signature and produces zero model-visible semantic effects while
+raw private delta lineage remains; real semantic add/remove/modify and multiplicity changes reconcile exactly; and
+indistinguishable executable targets fail closed as typed `public_grounding_ambiguous` before policy/provider entry.
+The real `TargetRuntime → CoreLoop → ModelBackedAgentPolicy → PydanticAI FunctionModel` recorder observes only refs from
+the step's one before-projection. Production negative searches confine `PublicRefCodec.encode(E/N/F/R)` to
+`canonical_world_projection.py` and find none of `_assign_public_refs`, `_public_fact_refs`, or consumer ref fallbacks.
+Verification on this tree is `175 passed, 2 skipped` for the combined World/C8/C10/Gate-0 owner-focused set and
+`1568 passed, 24 skipped` for full pytest; Ruff, compileall, `git diff --check`, and production negative searches pass.
+Delivery and Envelope remain pending;
+overall status remains reopened/non-closed, and old Run30/live artifacts are not evidence for this tree.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -939,15 +952,14 @@ authorize parallel owner changes. Every production stage must follow the six-ste
 delete the displaced path, pass owner + CoreLoop gates, and stop before the next owner. A local regression or compile
 failure cannot authorize a caller-side fallback, threshold adjustment, compatibility alias, or case branch.
 
-1. Keep production/tests frozen. Preserve the dirty worktree, keep all earlier artifacts revision-scoped, and do not
-   call a model provider or live benchmark.
+1. Preserve all earlier artifacts as revision-scoped and do not call a model provider or live benchmark.
 2. Gate 0 is implemented as test-only Recording Provider instrumentation around the actual production
    policy/CoreLoop/provider boundary. It is not a second request builder, evaluator, loop, or Runtime state; this
    implementation status is not closure.
-3. Cut over **World only**: create one `CanonicalPublicWorldProjection` value from fresh World + the existing
+3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. Cut over **Delivery only**: make `ObservationDeliveryStore` the sole inventory/cursor transition owner; make
+4. **Next/pending — Delivery only:** make `ObservationDeliveryStore` the sole inventory/cursor transition owner; make
    `ActionRecallSet`, `ActionDeliveryPlan`, and `TurnPacker` immutable consumers; compile Manifest routes and Catalog
    continuation tools from one frozen page; remove competing base/query/effect/candidate state and continuation
    inequalities; pass the two-turn production gate.

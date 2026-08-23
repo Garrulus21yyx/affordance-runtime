@@ -18,7 +18,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentActionPageView
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.execution import (
     ActionDispatchCancelled,
     ActionError,
@@ -63,7 +63,14 @@ from affordance_runtime.world import (
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from tests.support.agent.core_loop_support import _world
+from tests.support.canonical_world import canonical_world
 from tests.support.observation_acquisition import acquired_acquisition
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def _task() -> TaskGoal:
@@ -1382,7 +1389,11 @@ def test_marked_truth_depends_only_on_media_selected_for_this_model_call() -> No
     source = _source("dom", media=(marked_media, plain_media))
     world = WorldFusion().fuse((source,)).observation
     assert world is not None
-    model_world = project_model_world(world, ContextProjectionBudget())
+    action_space = ActionSpaceBuilder().build(_task(), world)
+    projection = canonical_world(world, action_space)
+    model_world = _project_model_world(
+        world, ContextProjectionBudget(), canonical_projection=projection
+    )
     canonical_target_id = world.targets[0].target_id
     option = AgentActionOptionView(
         "action",
@@ -1401,19 +1412,31 @@ def test_marked_truth_depends_only_on_media_selected_for_this_model_call() -> No
 
     dropped = GroundingProjection().project(
         world,
+        projection,
         model_world,
         actions,
         selected_media_ids=("plain",),
     )
     emitted = GroundingProjection().project(
         world,
+        projection,
         model_world,
         actions,
         selected_media_ids=("marked",),
     )
+    not_delivered = GroundingProjection().project(
+        world,
+        projection,
+        model_world,
+        actions,
+        selected_media_ids=("marked",),
+        selected_target_ids=("another-current-target",),
+    )
 
     assert dropped.index.entities[0].marked is False
     assert emitted.index.entities[0].marked is True
+    assert not_delivered.index.entities[0].marked is False
+    assert not_delivered.images[0].marks == ()
     assert len(dropped.images) == len(emitted.images) == 1
 
 

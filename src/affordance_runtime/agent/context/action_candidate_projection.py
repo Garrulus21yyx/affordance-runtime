@@ -25,7 +25,6 @@ from affordance_runtime.agent.context.contracts import (
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDelivery,
     PublicEffectInventory,
-    public_structural_slot,
 )
 from affordance_runtime.agent.context.world_region_index import (
     FunctionalContainerKind,
@@ -423,6 +422,8 @@ def build_action_delivery_plan(
     complete_actions: tuple[AgentActionOptionView, ...],
     automatic: ActionCandidateProjection,
     region_index: WorldDeliveryIndex,
+    region_refs: Mapping[str, str],
+    target_structural_slots: Mapping[str, tuple[str, ...]],
     discovery: ActionDiscoveryResult | None = None,
     action_space_issues: tuple[ActionSpaceIssue, ...] = (),
     target_refs: Mapping[str, str] | None = None,
@@ -435,7 +436,9 @@ def build_action_delivery_plan(
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
     groups: dict[DeliveryObligationKind, list[DeliveryAtomicRecord]] = defaultdict(list)
     def append(option: AgentActionOptionView, *, kind: DeliveryObligationKind, reason: str) -> None:
-        candidate = _candidate_from_option(option, region_index, rank=1, reasons=(reason,))
+        candidate = _candidate_from_option(
+            option, region_index, region_refs, rank=1, reasons=(reason,)
+        )
         atomic_candidates = (
             tuple(replace(candidate, destinations=(destination,)) for destination in candidate.destinations)
             if candidate.destination_required
@@ -502,7 +505,7 @@ def build_action_delivery_plan(
 
     effect_slots = set(latest_effect.changed_target_slot_keys if latest_effect is not None else ())
     for option in sorted(complete_actions, key=_public_option_view_order):
-        if public_structural_slot(region_index, option.target_id) in effect_slots:
+        if target_structural_slots.get(option.target_id, ()) in effect_slots:
             append(option, kind=DeliveryObligationKind.PUBLIC_EFFECT, reason="public_effect")
 
     options_by_target = {item.target_id: item for item in complete_actions}
@@ -684,6 +687,7 @@ def project_action_candidates(
     action_space_id: str,
     world_observation_id: str,
     region_index: WorldDeliveryIndex,
+    region_refs: Mapping[str, str],
     query: str = "",
     instruction: str = "",
     objectives: tuple[str, ...] = (),
@@ -718,7 +722,9 @@ def project_action_candidates(
         region = region_index.region_for_action(option.action_id) or region_index.region_for_target(option.target_id)
         if region is None or option.target_ref in emitted_refs:
             continue
-        destinations = tuple(_project_destination(item, region_index) for item in option.destinations.items)
+        destinations = tuple(
+            _project_destination(item, region_index, region_refs) for item in option.destinations.items
+        )
         candidates.append(
             ActionCandidate(
                 option.action_id,
@@ -727,7 +733,7 @@ def project_action_candidates(
                 option.target_label,
                 option.target_role,
                 region_index.functional_path_for_target(option.target_id),
-                region.public_ref,
+                region_refs[region.key],
                 option.target_state,
                 len(candidates) + 1,
                 ranked_item.reasons,
@@ -749,6 +755,7 @@ def project_action_candidates(
 def _candidate_from_option(
     option: AgentActionOptionView,
     region_index: WorldDeliveryIndex,
+    region_refs: Mapping[str, str],
     *,
     rank: int,
     reasons: tuple[str, ...],
@@ -763,12 +770,12 @@ def _candidate_from_option(
         option.target_label,
         option.target_role,
         region_index.functional_path_for_target(option.target_id),
-        region.public_ref,
+        region_refs[region.key],
         option.target_state,
         rank,
         reasons,
         option.destination_required,
-        tuple(_project_destination(item, region_index) for item in option.destinations.items),
+        tuple(_project_destination(item, region_index, region_refs) for item in option.destinations.items),
     )
 
 
@@ -851,6 +858,7 @@ def merge_action_candidate_projections(
 def _project_destination(
     destination: AgentDestinationView,
     region_index: WorldDeliveryIndex,
+    region_refs: Mapping[str, str],
 ) -> ActionCandidateDestination:
     region = region_index.region_for_target(destination.destination_id)
     if region is None:
@@ -861,7 +869,7 @@ def _project_destination(
         destination.label,
         str(destination.semantics.get("role", "")),
         region_index.functional_path_for_target(destination.destination_id),
-        region.public_ref,
+        region_refs[region.key],
         state if isinstance(state, Mapping) else {},
     )
 

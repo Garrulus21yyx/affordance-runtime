@@ -1,6 +1,6 @@
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.world import (
     AcquisitionCost,
     CoverageState,
@@ -14,6 +14,13 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from affordance_runtime.world.source_profile import assurance_satisfies
+from tests.support.canonical_world import canonical_world
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def test_dom_visual_wot_source_profiles_are_truthful_and_distinct() -> None:

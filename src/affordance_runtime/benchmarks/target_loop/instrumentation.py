@@ -495,6 +495,24 @@ class CountingTaskEvaluator:
             raise
         return evaluation
 
+    async def evaluate_with_projection(self, task, observation, projection):
+        self.instrumentation.task_evaluator_calls += 1
+        try:
+            projected = getattr(self.wrapped, "evaluate_with_projection", None)
+            evaluation = (
+                await projected(task, observation, projection)
+                if callable(projected)
+                else await self.wrapped.evaluate(task, observation)
+            )
+        except Exception as exc:
+            self.instrumentation.record_failure(
+                CaseFailureOrigin.TASK_EVALUATION,
+                "task_evaluator_exception",
+                exc,
+            )
+            raise
+        return evaluation
+
 
 @dataclass
 class CountingDecisionPort:

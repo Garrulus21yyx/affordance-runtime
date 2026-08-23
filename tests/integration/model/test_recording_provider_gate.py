@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
+import re
 from dataclasses import replace
 
 import pytest
@@ -20,6 +22,7 @@ from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.pydantic_ai_bridge import PydanticAIGroundedDecisionPort
@@ -122,6 +125,14 @@ def test_gate_0_records_text_request_and_executes_one_current_tool_call_through_
         assert policy.port.last_model_call_count == 1
         assert len(policy.port.last_generation_attempts) == 1
         assert policy.port.last_generation_attempts[0].final_tool_call_present is True
+        projection = state.last_step.before_public_world
+        assert projection is not None
+        provider_payload = _actual_public_text(record) + json.dumps(
+            to_json_compatible(policy.port.last_catalog_specs), ensure_ascii=False
+        )
+        provider_refs = set(re.findall(r"\b[ENFR][1-9][0-9]*\b", provider_payload))
+        assert provider_refs
+        assert provider_refs <= projection.public_refs
 
     asyncio.run(scenario())
 

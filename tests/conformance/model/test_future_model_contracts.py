@@ -9,6 +9,7 @@ from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionError, ActionIntent, ActionResult, DispatchStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import SemanticTarget, StateFact, WorldObservation
+from tests.support.canonical_world import canonical_world
 from tests.support.world import fused_world
 
 
@@ -58,14 +59,16 @@ def test_model_evaluator_views_exclude_bound_route_backend_and_adapter_evidence(
         ActionIntent("activate", "target:1", {"mode": "on"}),
         result,
         WorldEvidenceIndex.from_observation(world),
+        canonical_world(world),
+        canonical_world(world),
     )
 
     assert view.intent.semantic_action == "activate"
     assert view.result.dispatch_status == DispatchStatus.NOT_SENT
     assert view.result.public_error_category == ActionError.STALE_BINDING
-    assert view.available_evidence_refs == ("fact:1",)
-    assert view.before.facts.items[0].fact_ref == "fact:1"
-    assert view.after.facts.items[0].fact_ref == "fact:1"
+    assert view.available_evidence_refs == ("F1",)
+    assert view.before.facts.items[0].fact_ref == "F1"
+    assert view.after.facts.items[0].fact_ref == "F1"
     representation = repr(view)
     for private in ("request:private", "dom-private-backend", "#private", "raw-secret", "adapter_evidence"):
         assert private not in representation
@@ -77,9 +80,10 @@ def test_model_task_evaluation_view_contains_public_criteria_outputs_and_evidenc
         _task(),
         world,
         WorldEvidenceIndex.from_observation(world),
+        canonical_world(world),
     )
 
     assert view.task.success_criteria[0].criterion_id == "enabled"
     assert view.requested_output_ids == ("receipt",)
-    assert view.available_evidence_refs == ("fact:1",)
+    assert view.available_evidence_refs == ("F1",)
     assert "required_output_integrity" not in repr(view)

@@ -427,11 +427,14 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
 
 
 def test_query_owner_stores_complete_inventory_and_plan_pages_the_lossless_suffix() -> None:
-    task, world, actions, evaluation, _context_value = _context()
+    task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     page = builder.page(actions, world, query="Zulu control")
-    discovery = builder.discovery_result(actions, world, page)
+    discovery = builder.discovery_result(
+        actions, world, page, canonical_world=context_value.canonical_world
+    )
     state = RunState(world, evaluation, 2, action_page=builder.page(actions, world))
+    state.install_canonical_world(context_value.canonical_world)
     request = RequestActionPage("context:test", "Zulu control")
     step = CoreAgentLoop(None, None, None, context_builder=builder)._action_page(
         task, state, actions, request
@@ -494,6 +497,7 @@ def test_find_controls_adds_protected_exact_result_without_replacing_base_invent
     ).decision
     base_page = ContextBuilder().page(actions, world)
     state = RunState(world, evaluation, 1, action_page=base_page)
+    state.install_canonical_world(context.canonical_world)
     step = CoreAgentLoop(None, None, None)._action_page(task, state, actions, request)
     found = ContextBuilder().build(
         task,
@@ -598,6 +602,7 @@ def test_read_region_and_search_page_content_results_never_publish_action_invent
             context.actor_world,
             context.grounding,
             region_index=context.region_index,
+            canonical_world=context.canonical_world,
             observation=world,
             action="read_region",
             region_ref=candidate.region_ref,
@@ -608,6 +613,7 @@ def test_read_region_and_search_page_content_results_never_publish_action_invent
             context.actor_world,
             context.grounding,
             region_index=context.region_index,
+            canonical_world=context.canonical_world,
             observation=world,
             action="find",
             query="Settings",
@@ -637,9 +643,10 @@ def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -
         context.actor_world,
         context.grounding,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action="read_region",
-        region_ref=region.public_ref,
+        region_ref=context.canonical_world.region_refs[region.key],
     )
     assert initial.view.coverage["candidate_region_expansion_reason"] == "none"
     assert opened.items
@@ -648,7 +655,7 @@ def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -
 
 
 def test_only_admitted_fragment_route_deltas_enter_manifest_and_rank_cannot_expand_region() -> None:
-    task, world, actions, evaluation, _context_value = _context()
+    task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     context = builder.build(task, world, actions, evaluation)
     plan = context.action_delivery_plan
@@ -700,7 +707,7 @@ def test_recent_action_target_does_not_implicitly_expand_its_current_region() ->
 
 
 def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragment() -> None:
-    task, world, actions, evaluation, _context_value = _context()
+    task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     context = builder.build(task, world, actions, evaluation)
     plan = context.action_delivery_plan
@@ -770,15 +777,18 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
 def test_foreground_required_atom_does_not_receive_second_attempt_before_other_groups(
     monkeypatch,
 ) -> None:
-    task, world, actions, evaluation, _context_value = _context()
+    task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder()
     query_page = builder.page(actions, world, query="Settings")
-    discovery = builder.discovery_result(actions, world, query_page)
+    discovery = builder.discovery_result(
+        actions, world, query_page, canonical_world=context_value.canonical_world
+    )
     context = builder.build(
         task,
         world,
         actions,
         evaluation,
+        canonical_world=context_value.canonical_world,
         action_discovery=discovery,
     )
     attempts = []

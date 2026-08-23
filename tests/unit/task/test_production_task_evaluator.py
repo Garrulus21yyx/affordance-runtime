@@ -6,7 +6,7 @@ import pytest
 
 from affordance_runtime.agent.context import ModelFailure, ModelFailureKind
 from affordance_runtime.evaluation import CriterionEvaluationStatus, TaskEvaluationStatus
-from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.evaluation.composition import ProductionTaskEvaluator as _ProductionTaskEvaluator
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.evaluation.validation import validate_task_evaluation
@@ -20,7 +20,15 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+from tests.support.canonical_world import canonical_world
 from tests.support.world import fused_world
+
+
+class ProductionTaskEvaluator(_ProductionTaskEvaluator):
+    async def evaluate(self, task, observation):
+        return await self.evaluate_with_projection(
+            task, observation, canonical_world(observation)
+        )
 
 
 def _world(
@@ -109,9 +117,9 @@ def test_semantic_proposal_requires_exact_ids_current_refs_and_scope() -> None:
     async def evaluate(outcome) -> object:
         return await ProductionTaskEvaluator(ScriptedJudge(outcome)).evaluate(_semantic_task(), world)
 
-    accepted = (SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:current",), "meets rubric"),)
-    invented = (SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:invented",), "invented"),)
-    wrong_id = (SemanticCriterionProposal("other", CriterionEvaluationStatus.SATISFIED, ("fact:current",), "wrong"),)
+    accepted = (SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("F1",), "meets rubric"),)
+    invented = (SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("F999",), "invented"),)
+    wrong_id = (SemanticCriterionProposal("other", CriterionEvaluationStatus.SATISFIED, ("F1",), "wrong"),)
 
     assert asyncio.run(evaluate(accepted)).status == TaskEvaluationStatus.COMPLETE
     assert asyncio.run(evaluate(invented)).status == TaskEvaluationStatus.UNKNOWN
@@ -165,7 +173,7 @@ def test_user_acceptance_requires_explicit_authoritative_user_source() -> None:
 
 
 def test_hybrid_requires_both_mechanical_and_semantic_components() -> None:
-    satisfied = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("fact:semantic",), "quality ok")
+    satisfied = SemanticCriterionProposal("quality", CriterionEvaluationStatus.SATISFIED, ("F1",), "quality ok")
     unknown = SemanticCriterionProposal("quality", CriterionEvaluationStatus.UNKNOWN, (), "cannot judge")
     task = _semantic_task("hybrid")
 
@@ -188,7 +196,7 @@ def test_hybrid_requires_both_mechanical_and_semantic_components() -> None:
 def test_hybrid_mechanical_fact_cannot_be_reused_as_semantic_evidence() -> None:
     task = _semantic_task("hybrid")
     proposal = SemanticCriterionProposal(
-        "quality", CriterionEvaluationStatus.SATISFIED, ("fact:current",), "borrowed mechanical fact"
+        "quality", CriterionEvaluationStatus.SATISFIED, ("F1",), "borrowed mechanical fact"
     )
 
     result = asyncio.run(

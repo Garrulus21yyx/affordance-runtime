@@ -1405,6 +1405,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
         context.actor_world,
         context.grounding,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action="find",
         query="Settings",
@@ -1441,6 +1442,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
 
     base_page = ContextBuilder().page(action_space, world)
     state = RunState(world, evaluation, 4, action_page=base_page)
+    state.install_canonical_world(context.canonical_world)
     search_step = CoreAgentLoop(None, None, None)._action_page(task, state, action_space, request)
     assert search_step.feedback == "action_page_ready"
     assert search_step.action_page == base_page
@@ -1531,11 +1533,14 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     group_target_id = next(
         target_id for target_id, public_ref in context.grounding.target_refs.items() if public_ref == group_ref
     )
-    region_ref = context.region_index.region_for_target(group_target_id).public_ref
+    region = context.region_index.region_for_target(group_target_id)
+    assert region is not None
+    region_ref = context.canonical_world.region_refs[region.key]
     opened = inspect_actor_world(
         context.actor_world,
         context.grounding,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=context.current_observation,
         action="read_region",
         region_ref=region_ref,

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.evaluator_views import build_semantic_judge_request
 from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.evaluation.contracts import (
@@ -34,6 +35,17 @@ class ProductionTaskEvaluator:
     user_acceptance: UserAcceptanceCriterionEvaluator = UserAcceptanceCriterionEvaluator()
 
     async def evaluate(self, task: TaskGoal, observation: WorldObservation) -> TaskEvaluation:
+        return await self._evaluate(task, observation, None)
+
+    async def evaluate_with_projection(
+        self,
+        task: TaskGoal,
+        observation: WorldObservation,
+        projection: CanonicalPublicWorldProjection,
+    ) -> TaskEvaluation:
+        return await self._evaluate(task, observation, projection)
+
+    async def _evaluate(self, task, observation, projection):
         try:
             specs = normalize_task_criteria(task)
         except ValueError:
@@ -44,7 +56,7 @@ class ProductionTaskEvaluator:
             for spec in specs
             if spec.adjudicator in {CriterionAdjudicator.MECHANICAL, CriterionAdjudicator.HYBRID}
         }
-        semantic = await self._semantic(task, observation, index, specs, mechanical)
+        semantic = await self._semantic(task, observation, index, specs, mechanical, projection)
         evaluations = tuple(
             self._criterion(spec, observation, index, mechanical, semantic) for spec in specs
         )
@@ -72,15 +84,19 @@ class ProductionTaskEvaluator:
         except ValueError:
             return _task(task, observation, TaskEvaluationStatus.BLOCKED, evaluations, outputs, "evaluation contract is unsupported or violated")
 
-    async def _semantic(self, task, observation, index, specs, mechanical):
+    async def _semantic(self, task, observation, index, specs, mechanical, projection):
         candidates = tuple(
             spec for spec in specs
             if spec.adjudicator == CriterionAdjudicator.SEMANTIC
             or spec.adjudicator == CriterionAdjudicator.HYBRID
             and mechanical[spec.criterion_id].status == CriterionEvaluationStatus.SATISFIED
         )
+        if projection is None:
+            return _SemanticBatch({}, {
+                item.criterion_id: SemanticReadiness.INCONCLUSIVE for item in candidates
+            }, ())
         try:
-            initial = build_semantic_judge_request(task, candidates, observation, index)
+            initial = build_semantic_judge_request(task, candidates, observation, index, projection)
         except (TypeError, ValueError):
             return _SemanticBatch({}, {
                 item.criterion_id: SemanticReadiness.INCONCLUSIVE for item in candidates
@@ -91,25 +107,46 @@ class ProductionTaskEvaluator:
         }
         ready = tuple(spec for spec in candidates if readiness[spec.criterion_id] == SemanticReadiness.READY)
         try:
-            request = build_semantic_judge_request(task, ready, observation, index)
+            request = build_semantic_judge_request(task, ready, observation, index, projection)
         except (TypeError, ValueError):
             return _SemanticBatch({}, {
                 **readiness, **{item.criterion_id: SemanticReadiness.INCONCLUSIVE for item in ready}
             }, ())
+        available = tuple(
+            request.private_evidence_resolver.get(ref, ref)
+            for ref in request.visible_evidence_refs
+        )
         if not ready or self.semantic_judge is None:
-            return _SemanticBatch({}, readiness, request.visible_evidence_refs)
+            return _SemanticBatch({}, readiness, available)
         try:
             outcome = await self.semantic_judge.evaluate(request)
         except Exception:
-            return _SemanticBatch({}, readiness, request.visible_evidence_refs)
+            return _SemanticBatch({}, readiness, available)
         if isinstance(outcome, ModelFailure):
-            return _SemanticBatch({}, readiness, request.visible_evidence_refs)
+            return _SemanticBatch({}, readiness, available)
+        visible = set(request.visible_evidence_refs)
+        if any(ref not in visible for item in outcome for ref in item.evidence_refs):
+            return _SemanticBatch({}, readiness, available)
+        outcome = tuple(
+            replace(
+                item,
+                evidence_refs=tuple(
+                    request.private_evidence_resolver.get(ref, ref)
+                    for ref in item.evidence_refs
+                ),
+            )
+            for item in outcome
+        )
         identities = tuple(item.criterion_id for item in outcome)
         expected = tuple(item.criterion_id for item in ready)
         if len(set(identities)) != len(identities) or set(identities) != set(expected):
             return _SemanticBatch({}, readiness, request.visible_evidence_refs)
         return _SemanticBatch(
-            {item.criterion_id: item for item in outcome}, readiness, request.visible_evidence_refs
+            {item.criterion_id: item for item in outcome},
+            readiness,
+            tuple(
+                request.private_evidence_resolver.get(ref, ref) for ref in request.visible_evidence_refs
+            ),
         )
 
     def _criterion(self, spec, observation, index, mechanical, semantic):

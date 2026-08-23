@@ -17,6 +17,7 @@ from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.actions.paging import delivery_descriptor_matches
 from affordance_runtime.agent.context.budgets import serialized_size
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery, build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore, current_findings_digest
@@ -1076,6 +1077,15 @@ def _transition_delivery_diagnostic(
         public_world_delta=delta,
         previous_index=before_index,
     )
+    transition_step = replace(
+        transition_step,
+        before_public_world=before_context.canonical_world,
+        after_public_world=CanonicalPublicWorldProjection.build(
+            after,
+            after_index,
+            after_action_space,
+        ),
+    )
     store = ObservationDeliveryStore().advance(transition_step, step_index=1)
     bootstrap_context = ContextBuilder().build(
         task,
@@ -1084,6 +1094,7 @@ def _transition_delivery_diagnostic(
         evaluation,
         current_step_index=1,
         region_index=after_index,
+        canonical_world=transition_step.after_public_world,
         delivery_store=store,
     )
     reducer = DefaultWorkspaceReducer()
@@ -1102,6 +1113,7 @@ def _transition_delivery_diagnostic(
         workspace=workspace,
         current_step_index=1,
         region_index=after_index,
+        canonical_world=transition_step.after_public_world,
         delivery_store=store,
     )
     monitor = EpisodeMonitor()
@@ -1409,6 +1421,7 @@ def _delivery_probe_diagnostic(
             observation,
             first_query_page,
             region_index=context.region_index,
+            canonical_world=context.canonical_world,
         )
         discovery_step = StepResult(
             request,
@@ -1940,12 +1953,13 @@ def _recoverability_diagnostic(
         "",
     )
     sample_target = target_by_id.get(sample_target_id)
+    sample_region_ref = context.canonical_world.region_refs[sample_region.key]
     query = _recoverability_query(sample_region, sample_target, observation)
     working_context = context
     working_catalog = catalog
     directory_pages = 1
     try:
-        while sample_region.public_ref not in working_catalog.manifest.region_refs:
+        while sample_region_ref not in working_catalog.manifest.region_refs:
             continuation = next(item for item in working_catalog.specs if item.name == "read_next_page")
             arguments = {"scope": "page_directory"} if continuation.input_schema["properties"] else {}
             resolve_grounded_tool_call(
@@ -1986,7 +2000,7 @@ def _recoverability_diagnostic(
             working_catalog,
             ToolCall(
                 "read_region",
-                {"region_ref": sample_region.public_ref},
+                {"region_ref": sample_region_ref},
                 "recoverability:open",
             ),
             expected_context_id=working_context.context_id,
@@ -2021,7 +2035,7 @@ def _recoverability_diagnostic(
             if not matches:
                 errors.append("recoverability:find_no_match")
             elif not any(
-                item.get("region_ref") == sample_region.public_ref for item in matches if isinstance(item, Mapping)
+                item.get("region_ref") == sample_region_ref for item in matches if isinstance(item, Mapping)
             ):
                 errors.append("recoverability:find_wrong_region")
         except Exception as exc:
@@ -2039,7 +2053,7 @@ def _recoverability_diagnostic(
         viewed_lens = viewed_resolution.next_delivery_store.active_read
         next_cursor = getattr(viewed_lens, "next_cursor", "")
         checks["view_all"] = any(
-            isinstance(item, Mapping) and item.get("region_ref") == sample_region.public_ref for item in regions
+            isinstance(item, Mapping) and item.get("region_ref") == sample_region_ref for item in regions
         ) or bool(next_cursor)
         if not checks["view_all"]:
             errors.append("recoverability:view_all_missing_regions")
@@ -2109,7 +2123,7 @@ def _recoverability_diagnostic(
             catalog,
             ToolCall(
                 "read_region",
-                {"region_ref": sample_region.public_ref},
+                {"region_ref": sample_region_ref},
                 "recoverability:stale",
             ),
             expected_context_id="context:" + "0" * 64,
@@ -2131,7 +2145,7 @@ def _recoverability_diagnostic(
         "status": "ok" if not errors else "failed",
         "acceptance_errors": tuple(errors),
         "sample": {
-            "region_ref": sample_region.public_ref,
+            "region_ref": sample_region_ref,
             "target_id_digest": _digest_public_id(sample_target_id),
             "query": query,
         },

@@ -10,7 +10,7 @@ from affordance_runtime.agent.context.budgets import BoundedSection, ContextProj
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import (
@@ -33,8 +33,15 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.support.action_contracts import verification_kwargs
+from tests.support.canonical_world import canonical_world
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
 from tests.support.world import fused_world
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 _EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -184,7 +191,9 @@ def test_task_view_contains_only_evaluator_supported_facts() -> None:
     )
 
     verified_facts = context.task.evaluation.verified_public_facts
-    assert tuple(item.fact_ref for item in verified_facts) == ("F1",)
+    assert tuple(item.fact_ref for item in verified_facts) == (
+        context.canonical_world.fact_refs["fact:verified"],
+    )
     assert tuple(item.subject_id for item in verified_facts) == ("N1",)
     verified = verified_facts[0]
     matching = tuple(
@@ -362,6 +371,7 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=context.current_observation,
     )
 
@@ -599,6 +609,7 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
         second.grounding,
         include_images=False,
         region_index=second.region_index,
+        canonical_world=second.canonical_world,
         observation=second.current_observation,
         selected_region_keys=frozenset(),
     )
@@ -680,6 +691,7 @@ def test_expanded_region_projects_source_structure_sibling_and_current_refs() ->
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=context.current_observation,
         selected_region_keys=frozenset({region.key}),
     )
@@ -777,6 +789,7 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=context.current_observation,
         selected_region_keys=frozenset({main_region.key}),
         action_candidates=context.action_candidates,
@@ -786,9 +799,10 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
     filter_ref = context.grounding.target_refs["target:filter"]
     assert home_ref in rendered.manifest.executable_refs
     assert filter_ref in rendered.manifest.executable_refs
-    assert navigation_region.public_ref in rendered.manifest.region_refs
+    navigation_ref = context.canonical_world.region_refs[navigation_region.key]
+    assert navigation_ref in rendered.manifest.region_refs
     assert rendered.coverage["folded_regions"] >= 1
-    assert f"region [{navigation_region.public_ref}]" not in rendered.text
+    assert f"region [{navigation_ref}]" not in rendered.text
 
 
 def test_context_delivers_only_the_workspace_latest_four_detailed_steps() -> None:

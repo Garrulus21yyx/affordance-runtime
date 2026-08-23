@@ -13,7 +13,6 @@ from types import MappingProxyType
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
-from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 
 @dataclass(frozen=True)
@@ -97,7 +96,6 @@ class TargetFunctionalContext:
 @dataclass(frozen=True)
 class WorldRegion:
     key: str
-    public_ref: str
     source_id: str
     root_structure_id: str
     member_target_ids: tuple[str, ...] = ()
@@ -118,7 +116,6 @@ class WorldRegion:
     def __post_init__(self) -> None:
         if (
             not self.key.startswith("region:")
-            or not PublicRefCodec.accepts(self.public_ref, expected=PublicRefKind.REGION)
             or not self.source_id.strip()
             or not self.root_structure_id.strip()
         ):
@@ -202,8 +199,6 @@ class WorldDeliveryIndex:
         regions = tuple(self.regions)
         if len({item.key for item in regions}) != len(regions):
             raise ValueError("delivery region keys must be unique")
-        if len({item.public_ref for item in regions}) != len(regions):
-            raise ValueError("delivery region public refs must be unique")
         keys = {item.key for item in regions}
         for name in ("target_region_keys", "fact_region_keys", "action_region_keys"):
             mapping = dict(getattr(self, name))
@@ -280,7 +275,7 @@ class WorldDeliveryIndex:
         previous_index: "WorldDeliveryIndex | None" = None,
     ) -> "WorldDeliveryIndex":
         seeds = _functional_partition(observation, action_options, limits)
-        regions = _assign_public_refs(observation, seeds)
+        regions = _materialize_regions(observation, seeds)
         target_keys = {target_id: region.key for region in regions for target_id in region.member_target_ids}
         fact_keys = {fact_id: region.key for region in regions for fact_id in region.member_fact_ids}
         action_keys = {action_id: region.key for region in regions for action_id in region.member_action_ids}
@@ -310,16 +305,6 @@ class WorldDeliveryIndex:
             versions,
             contexts,
         )
-
-    @property
-    def public_refs(self) -> tuple[str, ...]:
-        return tuple(region.public_ref for region in self.regions)
-
-    def resolve_public_ref(self, public_ref: str) -> WorldRegion:
-        for region in self.regions:
-            if region.public_ref == public_ref:
-                return region
-        raise KeyError(public_ref)
 
     def get(self, key: str) -> WorldRegion | None:
         return next((region for region in self.regions if region.key == key), None)
@@ -910,12 +895,17 @@ def _target_functional_contexts(
 ) -> dict[str, TargetFunctionalContext]:
     targets = {item.target_id: item for item in observation.targets}
     regions_by_key = {item.key: item for item in regions}
-    ordered_target_ids = tuple(
-        target_id
-        for region in regions
-        for target_id in region.member_target_ids
-    )
-    order = {target_id: index for index, target_id in enumerate(ordered_target_ids)}
+    structural_orders = _public_structural_target_orders(observation)
+    order: dict[str, int] = {}
+    for region in regions:
+        keys = {
+            target_id: _public_target_order_key(
+                targets[target_id], structural_orders.get(target_id)
+            )
+            for target_id in region.member_target_ids
+        }
+        ranks = {key: rank for rank, key in enumerate(sorted(set(keys.values())))}
+        order.update({target_id: ranks[key] for target_id, key in keys.items()})
     source_families: dict[str, set[str]] = defaultdict(set)
     for link in observation.entity_source_links:
         source_families[link.canonical_target_id].add(
@@ -956,11 +946,81 @@ def _target_functional_contexts(
     return result
 
 
-def _assign_public_refs(observation: WorldObservation, seeds: tuple[_RegionSeed, ...]) -> tuple[WorldRegion, ...]:
+def _public_structural_target_orders(
+    observation: WorldObservation,
+) -> dict[str, tuple[object, ...]]:
+    canonical = {
+        (item.source_observation_id, item.source_target_id): item.canonical_target_id
+        for item in observation.entity_source_links
+    }
+    manifests = {
+        item.source_observation_id: (item.surface, item.modality, item.profile)
+        for item in observation.source_manifest
+    }
+    result: dict[str, tuple[object, ...]] = {}
+    for source in observation.sources:
+        nodes = {item.structure_id: item for item in source.structure}
+        parents = _parents(nodes)
+        roots = sorted(
+            (item for item in nodes if not parents.get(item)),
+            key=lambda item: _structure_public_key(nodes[item]),
+        )
+        source_key = manifests.get(
+            source.observation_id,
+            (
+                source.surface,
+                source.source_profile.modality.value,
+                source.source_profile.debug_source,
+            ),
+        )
+
+        def visit(structure_id: str, path: tuple[int, ...]) -> None:
+            node = nodes[structure_id]
+            target_id = canonical.get(
+                (source.observation_id, node.semantic_target_id),
+                node.semantic_target_id,
+            )
+            if target_id:
+                candidate = (*source_key, path)
+                previous = result.get(target_id)
+                if previous is None or candidate < previous:
+                    result[target_id] = candidate
+            for ordinal, child_id in enumerate(node.child_structure_ids):
+                if child_id in nodes:
+                    visit(child_id, (*path, ordinal))
+
+        for ordinal, root_id in enumerate(roots):
+            visit(root_id, (ordinal,))
+    return result
+
+
+def _structure_public_key(node: object) -> tuple[str, str, str]:
+    return (
+        str(getattr(node, "role", "")).casefold(),
+        str(getattr(node, "label", "")).casefold(),
+        str(getattr(node, "label", "")),
+    )
+
+
+def _public_target_order_key(target: object, structural_order: tuple[object, ...] | None) -> str:
+    return json.dumps(
+        (
+            0 if structural_order is not None else 1,
+            structural_order or (),
+            str(getattr(target, "role", "")).casefold(),
+            str(getattr(target, "label", "")).casefold(),
+        ),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _materialize_regions(observation: WorldObservation, seeds: tuple[_RegionSeed, ...]) -> tuple[WorldRegion, ...]:
     regions: list[WorldRegion] = []
     public_occurrences: dict[str, int] = defaultdict(int)
     manifests = {item.source_observation_id: item for item in observation.source_manifest}
-    for index, seed in enumerate(seeds, 1):
+    for seed in seeds:
         manifest = manifests.get(seed.source_id)
         source_family = (
             f"{manifest.surface}\0{manifest.modality}\0{manifest.profile}" if manifest is not None else "world"
@@ -981,7 +1041,6 @@ def _assign_public_refs(observation: WorldObservation, seeds: tuple[_RegionSeed,
         regions.append(
             WorldRegion(
                 key=f"region:{digest}",
-                public_ref=PublicRefCodec.encode(PublicRefKind.REGION, index),
                 source_id=seed.source_id,
                 root_structure_id=seed.root_structure_id,
                 member_target_ids=seed.member_target_ids,
@@ -1011,20 +1070,13 @@ def _document_lineage(observation: WorldObservation) -> str:
             if str(target.state.get("page.route", "")).strip()
         )
     )
-    viewport_ids = tuple(
-        sorted(
-            target.target_id
-            for target in observation.targets
-            if target.role.casefold() == "viewport"
-        )
-    )
     sources = tuple(
         sorted(
             (item.surface, item.modality, item.profile)
             for item in observation.source_manifest
         )
     )
-    digest = _json_digest((routes, viewport_ids, sources))
+    digest = _json_digest((routes, sources))
     return f"document:{digest[:32]}"
 
 

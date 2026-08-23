@@ -55,7 +55,8 @@ viewport identity. Production code and tests are therefore frozen while the Worl
 provider envelope receive explicit owner cutover designs and deletion maps.
 
 The previously reported 1,551/full, 136/focused, and 240/expanded passing-test checkpoints describe an earlier tree.
-The current relevant gate is red on the inventory-enumeration permutation property. Likewise,
+The pre-Gate-1 tree was red on the inventory-enumeration permutation property; the current World checkpoint replaces
+that witness with the owner-level properties recorded below. Likewise,
 `evidence/w1b-world-c8-c10-provider-free-20260823-run30/` was written before later Store, Grounding, RequestAdmission,
 diagnostic, and test changes and has no source-revision binding. Its six internally consistent provider-free case
 records remain historical scoped evidence only; Run30 cannot verify the current tree or any production-chain
@@ -70,8 +71,20 @@ strictness, model settings, and the public `ModelRequestParameters` output contr
 `BinaryContent` MIME and bytes without rebuilding, sorting, filtering, or interpreting the request. The callback API
 does not expose the Agent name or Runtime phase, so call ordinal is observed and phase is explicitly a scripted test
 label rather than a claimed provider-boundary field. The recorder calls no network/provider and owns no production
-state or semantics. No `src/` file was modified for Gate 0. This is acceptance instrumentation only: World remains the
-next pending cutover, and overall status remains reopened/non-closed.
+state or semantics. No `src/` file was modified for Gate 0. This is acceptance instrumentation only.
+
+World Gate 1 implementation checkpoint (2026-08-23): `CanonicalPublicWorldProjection` is now the sole production
+allocator and ordering owner for public `E/N/F/R` records. It consumes one fresh `WorldObservation`, the unnumbered
+`WorldDeliveryIndex`, and the complete current `ActionSpace`; retains private resolution lineage; and exposes immutable
+ordered target/fact/region records, stable public structural slots and provenance, public document signature, and
+private resolver maps. `ContextBuilder` installs the same value in `AgentContext`, and World projection, grounding,
+actor rendering, observation paging/delivery, effects, action candidates, discovery, evaluator views, Manifest/Catalog
+type flow, workspace and benchmark diagnostics consume supplied refs. The former `WorldDeliveryIndex` R allocator,
+Grounding E/N allocator, `ContextBuilder._public_fact_refs`, and consumer-side public fact/ref fallbacks are physically
+removed. Provider-free properties cover private ID value/length, target/fact/binding/structure/source enumeration,
+hash seed, multiplicity, identity-only remount, precise semantic add/remove/modify effects, typed ambiguous grounding,
+shared projection identity, and the real Gate 0 recorder path. Delivery and Envelope cutovers remain pending; overall
+status remains reopened/non-closed, and no live evidence is claimed for this tree.
 
 ## Normative single production chain
 
@@ -80,8 +93,9 @@ evidence, but they may not define another ordering, ref allocator, cursor transi
 provider request, or acceptance sequence. If a later diagram disagrees with this section, this section wins and the
 later diagram must be corrected or moved to history.
 
-The current implementation is frozen because it layered new projections over old owners instead of cutting the old
-owners over. The target is one small data pipeline, not another Agent framework:
+The pre-cutover implementation was frozen because it layered new projections over old owners instead of cutting the
+old owners over. Gate 1 has now cut over World only; the remaining target is one small data pipeline, not another Agent
+framework:
 
 ```text
 BrowserGym observation
@@ -160,9 +174,9 @@ prerequisite for an earlier cutover gate:
 1. **Gate 0 — test-only recorder (implemented; not closure).** A local Recording Provider/harness observes the actual current
    `ModelBackedAgentPolicy → CoreAgentLoop → provider adapter` boundary. It records but does not reinterpret the current
    physical request. It is acceptance instrumentation, not a production owner.
-2. **World cutover.** Produce one canonical public projection, migrate every public-ref/order consumer, physically
-   remove the old allocators, and prove canonical records/page membership are invariant under private identity and
-   enumeration changes.
+2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
+   to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
+   signature and page membership are invariant under supported private identity/enumeration changes.
 3. **Delivery cutover.** Make Store capabilities the only cursor/continuation meaning, make Plan/Packer pure consumers,
    make Manifest/Catalog consume the same frozen page, and prove a committed two-turn zero-prefix continuation through
    the real CoreLoop.
@@ -254,7 +268,7 @@ The projection has these invariants:
 
 Current producers and consumers cut over as follows:
 
-| Current path | Cutover |
+| Displaced path | Implemented cutover |
 |---|---|
 | `ContextBuilder` independently calls `project_model_world`, `GroundingProjection`, `_public_fact_refs`, and evidence projection | one projection-owner call; store the returned value in `AgentContext`; all later builders receive it |
 | `GroundingProjection` sorts targets and allocates E/N refs | consume ordered targets and refs; retain only media mark construction against admitted refs |

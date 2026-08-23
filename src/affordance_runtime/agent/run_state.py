@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import ActionDiscoveryResult, InternalActionPage
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
@@ -94,6 +95,12 @@ class StepResult:
     recovery_signal: RecoverySignal | None = None
     finalization: FinalizationProtocolResult | None = None
     public_world_delta: PublicWorldDelta | None = field(default=None, repr=False)
+    before_public_world: CanonicalPublicWorldProjection | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
+    after_public_world: CanonicalPublicWorldProjection | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
     control_termination: ControlTermination | None = None
     next_delivery_store: ObservationDeliveryStore | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
@@ -128,6 +135,8 @@ class StepResult:
             self.next_delivery_store, ObservationDeliveryStore
         ):
             raise TypeError("step delivery transition must come from the delivery owner")
+        if (self.before_public_world is None) != (self.after_public_world is None):
+            raise ValueError("step canonical World projections must be supplied as a pair")
         if self.waited_ms < 0:
             raise ValueError("step wait duration cannot be negative")
         if self.task_evaluation is not None and self.task_evaluation.observation_id != self.after_world.observation_id:
@@ -267,6 +276,7 @@ class RunState:
     finalization: FinalizationProtocolResult | None = None
     delivery_store: ObservationDeliveryStore = field(default_factory=ObservationDeliveryStore)
     delivery_index: WorldDeliveryIndex | None = None
+    canonical_world: CanonicalPublicWorldProjection | None = field(default=None, repr=False)
     prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
     control_termination: ControlTermination | None = None
     action_discovery: ActionDiscoveryResult | None = None
@@ -320,6 +330,10 @@ class RunState:
                 raise TypeError("run delivery index must be typed")
             if self.delivery_index.world_observation_id != self.current_world.observation_id:
                 raise ValueError("run delivery index must belong to the current World")
+        if self.canonical_world is not None and not isinstance(
+            self.canonical_world, CanonicalPublicWorldProjection
+        ):
+            raise TypeError("run canonical public World must be typed")
         if self.prior_delivery_index is not None and not isinstance(
             self.prior_delivery_index,
             WorldDeliveryIndex,
@@ -396,6 +410,9 @@ class RunState:
         self.delivery_index = index
         self.prior_delivery_index = None
 
+    def install_canonical_world(self, projection: CanonicalPublicWorldProjection) -> None:
+        self.canonical_world = projection
+
     def resume(self, expected: RunStatus) -> None:
         """Perform the sole non-StepResult transition back into the running loop."""
 
@@ -426,6 +443,8 @@ class RunState:
             raise TypeError("run state requires the delivery owner's next store")
         self.delivery_store = next_delivery_store
         self.current_world = result.after_world
+        if result.after_public_world is not None:
+            self.canonical_world = result.after_public_world
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result
         self.status = result.status_after

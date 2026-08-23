@@ -13,8 +13,10 @@ from affordance_runtime.agent.context.action_candidate_projection import (
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldNodeView,
     ActorWorldSnapshot,
+    actor_source_refs,
     actor_world_for_delivery,
 )
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
 from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 from affordance_runtime.agent.context.world_region_index import (
@@ -27,7 +29,6 @@ from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.evidence_refs import canonical_fact_ref, canonical_public_text_ref
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _DROPPED_STATE_PREFIXES = ("appearance.",)
@@ -280,6 +281,7 @@ def render_compact_actor_world(
     *,
     include_images: bool,
     region_index: WorldDeliveryIndex | None = None,
+    canonical_world: CanonicalPublicWorldProjection | None = None,
     observation: WorldObservation | None = None,
     expanded_refs: frozenset[str] | None = None,
     selected_region_keys: frozenset[str] | None = None,
@@ -310,11 +312,14 @@ def render_compact_actor_world(
         )
     if region_index.world_observation_id != observation.observation_id:
         raise ValueError("delivery index belongs to a previous observation")
+    if canonical_world is None:
+        raise ValueError("indexed rendering requires the canonical public World projection")
     return _render_page_map(
         delivered,
         grounding,
         verbs,
         region_index,
+        canonical_world,
         observation,
         selected_region_keys=selected_region_keys or frozenset(),
         expanded_refs=expanded_refs or frozenset(),
@@ -378,6 +383,7 @@ def _render_page_map(
     grounding,
     verbs,
     index: WorldDeliveryIndex,
+    canonical_world: CanonicalPublicWorldProjection,
     observation: WorldObservation,
     *,
     selected_region_keys: frozenset[str],
@@ -442,8 +448,9 @@ def _render_page_map(
     else:
         lines.append(f"PageMap regions={len(index.regions)}")
         for region in index.regions:
-            manifest.region(region.public_ref)
-            lines.append("  " + _region_descriptor_text(region, limits))
+            region_ref = canonical_world.region_refs[region.key]
+            manifest.region(region_ref)
+            lines.append("  " + _region_descriptor_text(region, region_ref, limits))
 
     lines.append("ActiveView exact=true")
     rendered_any = False
@@ -465,6 +472,7 @@ def _render_page_map(
         candidate_manifest = manifest.clone()
         region_lines = _render_world_region(
             regions_by_key[region_key],
+            canonical_world.region_refs[region_key],
             delivered,
             grounding,
             verbs,
@@ -484,7 +492,8 @@ def _render_page_map(
         region = regions_by_key[region_key]
         candidate_manifest = manifest.clone()
         region_lines = _render_world_region(
-            region, delivered, grounding, verbs, candidate_manifest, observation=observation
+            region, canonical_world.region_refs[region_key], delivered, grounding, verbs,
+            candidate_manifest, observation=observation
         )
         if not region_lines:
             continue
@@ -496,6 +505,7 @@ def _render_page_map(
         candidate_manifest = manifest.clone()
         fallback_lines = _render_world_region(
             regions_by_key[ordered_region_keys[0]],
+            canonical_world.region_refs[ordered_region_keys[0]],
             delivered,
             grounding,
             verbs,
@@ -640,6 +650,7 @@ def inspect_actor_world(
     grounding: AgentGroundingIndexView,
     *,
     region_index: WorldDeliveryIndex,
+    canonical_world: CanonicalPublicWorldProjection,
     observation: WorldObservation,
     action: str,
     region_ref: str = "",
@@ -657,11 +668,14 @@ def inspect_actor_world(
     try:
         if action == "read_region":
             try:
-                region = region_index.resolve_public_ref(region_ref)
+                region = region_index.get(canonical_world.resolve_region_ref(region_ref))
+                if region is None:
+                    raise KeyError(region_ref)
             except KeyError:
                 return InvalidRegion(region_ref)
             items = _region_items(
                 region,
+                canonical_world,
                 observation,
                 grounding,
                 public_fact_bindings=public_fact_bindings or {},
@@ -683,6 +697,7 @@ def inspect_actor_world(
                 return Empty("", _index_coverage(region_index), ("provide non-empty public text",))
             matches = _find_matches(
                 region_index,
+                canonical_world,
                 query,
                 observation,
                 grounding,
@@ -702,7 +717,10 @@ def inspect_actor_world(
                 return CapacityExceeded(required, hard_limit)
             return Matches(page, _index_coverage(region_index), next_cursor)
         if action == "view_all":
-            items = tuple(_region_item(region) for region in region_index.regions)
+            items = tuple(
+                _region_item(region, canonical_world.region_refs[region.key])
+                for region in region_index.regions
+            )
             offset = _decode_simple_cursor(cursor, len(items))
             page, next_cursor = _page_items(items, offset, page_size)
             required = len(json.dumps(to_json_compatible(page), ensure_ascii=False).encode())
@@ -811,11 +829,11 @@ def _render_node(node, verbs, manifest, *, depth: int, parent_label: str) -> lis
 
 
 def _render_world_region(
-    region, delivered, grounding, verbs, manifest, *, observation: WorldObservation | None = None
+    region, region_ref, delivered, grounding, verbs, manifest, *, observation: WorldObservation | None = None
 ) -> list[str]:
     if region.repeated_item_roots and observation is not None and not _region_has_current_salience(region, observation):
         return [
-            f"  region [{region.public_ref}] kind={_value(region.role)} exact=true",
+            f"  region [{region_ref}] kind={_value(region.role)} exact=true",
             "    repeated_siblings compacted=true continuation_available=true "
             "next_scope=active_read recovery=read_region",
         ]
@@ -824,7 +842,7 @@ def _render_world_region(
         if observation is not None
         else _region_public_refs(region, grounding)
     )
-    lines = [f"  region [{region.public_ref}] kind={_value(region.role)} exact=true"]
+    lines = [f"  region [{region_ref}] kind={_value(region.role)} exact=true"]
     before = len(lines)
     for document in delivered.documents:
         for root in document.roots:
@@ -844,16 +862,17 @@ def _region_has_current_salience(region: WorldRegion, observation: WorldObservat
 
 
 def _region_actor_refs(region, delivered, observation) -> frozenset[str]:
+    source_refs = actor_source_refs(observation)
     try:
-        source_index, source = next(
-            (index, item)
-            for index, item in enumerate(observation.sources, 1)
+        source = next(
+            item
+            for item in observation.sources
             if item.observation_id == region.source_id
         )
     except StopIteration:
         return frozenset()
     document = next(
-        (item for item in delivered.documents if item.source_ref == f"S{source_index}"),
+        (item for item in delivered.documents if item.source_ref == source_refs[source.observation_id]),
         None,
     )
     if document is None:
@@ -1136,16 +1155,17 @@ def _region_root_actor_node(region, delivered, observation):
 
 
 def _region_structure_actor_pairs(region, delivered, observation) -> Mapping[str, ActorWorldNodeView]:
+    source_refs = actor_source_refs(observation)
     try:
-        source_index, source = next(
-            (source_index, item)
-            for source_index, item in enumerate(observation.sources, 1)
+        source = next(
+            item
+            for item in observation.sources
             if item.observation_id == region.source_id
         )
     except StopIteration:
         return {}
     document = next(
-        (item for item in delivered.documents if item.source_ref == f"S{source_index}"),
+        (item for item in delivered.documents if item.source_ref == source_refs[source.observation_id]),
         None,
     )
     if document is None:
@@ -1257,11 +1277,11 @@ def _bounded_region(region: WorldRegion, limits: DeliveryLimits) -> bool:
     return region.counts.get("estimated_tokens", 0) <= token_limit
 
 
-def _region_descriptor_text(region: WorldRegion, limits: DeliveryLimits) -> str:
+def _region_descriptor_text(region: WorldRegion, region_ref: str, limits: DeliveryLimits) -> str:
     labels = tuple(item for item in (region.heading, *region.direct_labels) if item)
     if region.role == "generic" and not labels:
         return ""
-    parts = [f"[{region.public_ref}]", f"kind={_value(region.role or 'region')}"]
+    parts = [f"[{region_ref}]", f"kind={_value(region.role or 'region')}"]
     if region.heading:
         parts.append(f"heading={_value(region.heading)}")
     if region.direct_labels:
@@ -1322,6 +1342,7 @@ def _region_public_refs(region, grounding) -> frozenset[str]:
 
 def _find_matches(
     index,
+    canonical_world,
     query,
     observation,
     grounding,
@@ -1333,7 +1354,7 @@ def _find_matches(
     public_by_canonical = {canonical: public for public, canonical in (public_fact_bindings or {}).items()}
     sources = {item.observation_id: item for item in observation.sources}
     locations = {
-        target_id: (region.public_ref, grounding.target_refs.get(target_id, ""))
+        target_id: (canonical_world.region_refs[region.key], grounding.target_refs.get(target_id, ""))
         for region in index.regions
         for target_id in region.member_target_ids
     }
@@ -1382,13 +1403,15 @@ def _find_matches(
         if needle not in " ".join(values).casefold():
             continue
         region = index.region_for_fact(fact.fact_id)
-        region_ref = region.public_ref if region else ""
+        region_ref = canonical_world.region_refs.get(region.key, "") if region else ""
+        public_ref = canonical_world.private_fact_id_refs.get(fact.fact_id, "")
         canonical_record = (
-            evidence_index.resolve_record(canonical_fact_ref(fact.fact_id)) if evidence_index is not None else None
+            evidence_index.resolve_record(canonical_world.private_fact_resolver[public_ref])
+            if evidence_index is not None and public_ref
+            else None
         )
-        public_ref = public_by_canonical.get(canonical_fact_ref(fact.fact_id), "")
         match = {
-            "region_ref": region.public_ref if region else "",
+            "region_ref": region_ref,
             "node_ref": (
                 ref
                 if PublicRefCodec.accepts(
@@ -1428,7 +1451,11 @@ def _target_match_record(target, needle, observation, evidence_index):
     if evidence_index is None:
         return None
     if needle in target.label.casefold():
-        return evidence_index.resolve_record(canonical_public_text_ref(observation.observation_id, target.target_id))
+        return next((
+            item for item in evidence_index.records
+            if item.kind == "fact" and item.subject_id == target.target_id
+            and item.predicate == "public.label" and item.value == target.label
+        ), None)
     for predicate, value in target.state.items():
         if needle not in str(value).casefold():
             continue
@@ -1450,6 +1477,7 @@ def _target_match_record(target, needle, observation, evidence_index):
 
 def _region_items(
     region,
+    canonical_world,
     observation,
     grounding,
     *,
@@ -1491,6 +1519,7 @@ def _region_items(
                         "targets": tuple(
                             _target_item(
                                 region,
+                                canonical_world.region_refs[region.key],
                                 targets[target_id],
                                 grounding,
                                 public_fact_bindings,
@@ -1506,6 +1535,7 @@ def _region_items(
                         "kind": "schema_member",
                         **_target_item(
                             region,
+                            canonical_world.region_refs[region.key],
                             targets[target_id],
                             grounding,
                             public_fact_bindings,
@@ -1524,6 +1554,7 @@ def _region_items(
         items.append(
             _target_item(
                 region,
+                canonical_world.region_refs[region.key],
                 target,
                 grounding,
                 public_fact_bindings,
@@ -1533,9 +1564,11 @@ def _region_items(
     return tuple(items)
 
 
-def _target_item(region, target, grounding, public_fact_bindings, evidence_index) -> Mapping[str, object]:
+def _target_item(
+    region, region_ref, target, grounding, public_fact_bindings, evidence_index
+) -> Mapping[str, object]:
     item: dict[str, object] = {
-        "region_ref": region.public_ref,
+        "region_ref": region_ref,
         "role": target.role,
         "label": target.label,
         "state": target.state,
@@ -1583,9 +1616,9 @@ def _page_region_items(items, cursor: str, page_size: int):
     return (*schema, *page), next_cursor, f"{offset // page_size + 1}/{total_pages}"
 
 
-def _region_item(region) -> Mapping[str, object]:
+def _region_item(region, region_ref: str) -> Mapping[str, object]:
     return {
-        "region_ref": region.public_ref,
+        "region_ref": region_ref,
         "kind": region.role,
         "heading": region.heading,
         "labels": region.direct_labels,

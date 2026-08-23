@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.contracts import AgentTaskView
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.context.task_projection import project_task
@@ -101,6 +102,9 @@ class SemanticJudgeRequest:
     world: ModelWorldView
     evidence_catalog: BoundedSection[ModelEvidenceRecordView]
     evidence_windows: tuple[ModelCriterionEvidenceWindow, ...] = ()
+    private_evidence_resolver: Mapping[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     @property
     def visible_evidence_refs(self) -> tuple[str, ...]:
@@ -114,12 +118,14 @@ def build_model_action_outcome_view(
     intent: ActionIntent,
     result: ActionResult,
     evidence_index: WorldEvidenceIndex,
+    before_projection: CanonicalPublicWorldProjection,
+    after_projection: CanonicalPublicWorldProjection,
     budget: ContextProjectionBudget = ContextProjectionBudget(),
 ) -> ModelActionOutcomeView:
     return ModelActionOutcomeView(
         project_task(task),
-        project_model_world(before, budget),
-        project_model_world(after, budget),
+        project_model_world(before, budget, canonical_projection=before_projection),
+        project_model_world(after, budget, canonical_projection=after_projection),
         ModelActionIntentView(
             intent.semantic_action,
             intent.target_id,
@@ -127,7 +133,11 @@ def build_model_action_outcome_view(
             project_public_value(intent.parameters),
         ),
         ModelActionResultView(result.dispatch_status, result.error),
-        evidence_index.refs,
+        tuple(
+            after_projection.fact_refs[ref]
+            for ref in evidence_index.refs
+            if ref in after_projection.fact_refs
+        ),
     )
 
 
@@ -135,13 +145,18 @@ def build_model_task_evaluation_view(
     task: TaskGoal,
     world: WorldObservation,
     evidence_index: WorldEvidenceIndex,
+    projection: CanonicalPublicWorldProjection,
     budget: ContextProjectionBudget = ContextProjectionBudget(),
 ) -> ModelTaskEvaluationView:
     return ModelTaskEvaluationView(
         project_task(task),
-        project_model_world(world, budget),
+        project_model_world(world, budget, canonical_projection=projection),
         task.requested_outputs,
-        evidence_index.refs,
+        tuple(
+            projection.fact_refs[ref]
+            for ref in evidence_index.refs
+            if ref in projection.fact_refs
+        ),
     )
 
 
@@ -150,21 +165,35 @@ def build_semantic_judge_request(
     criteria: tuple[NormalizedCriterionSpec, ...],
     world: WorldObservation,
     evidence_index: WorldEvidenceIndex,
+    projection: CanonicalPublicWorldProjection,
     budget: ContextProjectionBudget = ContextProjectionBudget(),
 ) -> SemanticJudgeRequest:
     target_scope = tuple(dict.fromkeys(item for criterion in criteria for item in criterion.evidence_scope_target_ids))
     output_scope = tuple(dict.fromkeys(item for criterion in criteria for item in criterion.evidence_scope_output_ids))
-    projected_world = project_model_world(world, budget, target_scope, output_scope)
-    visible_refs = {
+    projected_world = project_model_world(
+        world,
+        budget,
+        target_scope,
+        output_scope,
+        canonical_projection=projection,
+    )
+    visible_public_refs = {
         *(item.fact_ref for item in projected_world.facts.items),
         *(item.evidence_ref for item in projected_world.artifact_summaries.items),
+    }
+    visible_canonical_refs = {
+        projection.private_fact_resolver.get(ref, ref) for ref in visible_public_refs
     }
     eligible = tuple(
         record for record in evidence_index.records
         if _semantic_record_in_scope(record, target_scope, output_scope)
         and record.has_typed_source
     )
-    shown = tuple(_model_evidence(record) for record in eligible if record.evidence_ref in visible_refs)
+    shown = tuple(
+        _model_evidence(record, projection.fact_refs.get(record.evidence_ref, record.evidence_ref))
+        for record in eligible
+        if record.evidence_ref in visible_canonical_refs
+    )
     task_view = replace(project_task(task), success_criteria=BoundedSection((), 0, False))
     windows = tuple(_evidence_window(item, eligible, shown) for item in criteria)
     return SemanticJudgeRequest(
@@ -178,7 +207,13 @@ def build_semantic_judge_request(
             for item in criteria
         ),
         projected_world,
-        BoundedSection(shown, len(eligible), len(eligible) > len(shown)), windows,
+        BoundedSection(shown, len(eligible), len(eligible) > len(shown)),
+        windows,
+        {
+            public: canonical
+            for public, canonical in projection.private_fact_resolver.items()
+            if public in {item.evidence_ref for item in shown}
+        },
     )
 
 
@@ -189,8 +224,16 @@ def _evidence_window(criterion, eligible, shown) -> ModelCriterionEvidenceWindow
             item, criterion.evidence_scope_target_ids, criterion.evidence_scope_output_ids
         )
     )
-    shown_refs = {item.evidence_ref for item in shown}
-    visible = sum(item.evidence_ref in shown_refs for item in scoped)
+    visible = sum(
+        any(
+            current.kind == item.kind
+            and current.subject_id == item.subject_id
+            and current.predicate == item.predicate
+            and current.public_value == project_public_value(item.value)
+            for current in shown
+        )
+        for item in scoped
+    )
     return ModelCriterionEvidenceWindow(
         criterion.criterion_id, len(scoped), visible, len(scoped) > visible
     )
@@ -203,12 +246,12 @@ def _semantic_record_in_scope(record, targets: tuple[str, ...], outputs: tuple[s
     )
 
 
-def _model_evidence(record) -> ModelEvidenceRecordView:
+def _model_evidence(record, public_ref: str) -> ModelEvidenceRecordView:
     value = project_public_value(record.value) if record.kind == "fact" else None
     summary = record.public_summary or (
         f"{record.subject_id} {record.predicate} evidence" if record.kind == "fact" else f"{record.output_id} artifact available"
     )
     return ModelEvidenceRecordView(
-        record.evidence_ref, record.kind, record.subject_id, record.predicate, value,
+        public_ref, record.kind, record.subject_id, record.predicate, value,
         record.output_id, record.source_modality, record.source_assurance, summary[:500],
     )

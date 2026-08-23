@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from affordance_runtime.evaluation import TaskEvaluationStatus
-from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
+from affordance_runtime.evaluation.composition import ProductionTaskEvaluator as _ProductionTaskEvaluator
 from affordance_runtime.model.evaluator import ModelPortSemanticCriterionJudge
 from affordance_runtime.model.providers.port import ModelConfig, OpenAICompatibleModelPort
 from affordance_runtime.task import TaskGoal
@@ -21,6 +21,14 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+from tests.support.canonical_world import canonical_world
+
+
+class ProductionTaskEvaluator(_ProductionTaskEvaluator):
+    async def evaluate(self, task, observation):
+        return await self.evaluate_with_projection(
+            task, observation, canonical_world(observation)
+        )
 
 
 @dataclass

@@ -61,11 +61,10 @@ def project_task(
     verified_facts = tuple(
         replace(
             item,
-            fact_ref=fact_refs[item.fact_ref],
             subject_id=target_refs.get(item.subject_id, "task"),
         )
         for item in facts
-        if item.fact_ref in evidence_refs and item.fact_ref in fact_refs
+        if item.fact_ref in fact_refs and fact_refs[item.fact_ref] in evidence_refs
     )
     return AgentTaskView(
         task.task_id,

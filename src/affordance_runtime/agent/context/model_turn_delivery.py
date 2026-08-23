@@ -146,6 +146,7 @@ def build_model_turn_delivery(
         context.grounding,
         include_images=include_images,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=context.current_observation,
         selected_region_keys=frozenset(),
         action_candidates=selected_candidates,

@@ -9,12 +9,19 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.surfaces.visual import VisualFrame, VisualSurfaceAdapter, VisualViewport
 from affordance_runtime.surfaces.visual.grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from tests.support.canonical_world import canonical_world
 from tests.support.observation_acquisition import acquire_observation
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def _png(width: int = 100, height: int = 80, suffix: bytes = b"") -> bytes:

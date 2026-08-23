@@ -3,7 +3,9 @@ from dataclasses import asdict, replace
 from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
 from affordance_runtime.agent.context.evaluator_views import (
     ModelCriterionEvidenceWindow,
-    build_semantic_judge_request,
+)
+from affordance_runtime.agent.context.evaluator_views import (
+    build_semantic_judge_request as _build_semantic_judge_request,
 )
 from affordance_runtime.evaluation import CriterionEvaluation, CriterionEvaluationStatus
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
@@ -19,7 +21,14 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from tests.support.canonical_world import canonical_world
 from tests.support.world import fused_world
+
+
+def build_semantic_judge_request(task, criteria, world, index, budget=ContextProjectionBudget()):
+    return _build_semantic_judge_request(
+        task, criteria, world, index, canonical_world(world), budget
+    )
 
 
 def _task(*, hybrid=False, outputs=(), required_assurance=""):
@@ -76,7 +85,8 @@ def test_only_presented_catalog_refs_can_support_semantic_proposal() -> None:
     index = WorldEvidenceIndex.from_observation(world)
     budget = ContextProjectionBudget(max_facts_per_target=1)
     request = build_semantic_judge_request(task, (criterion,), world, index, budget)
-    visible = request.visible_evidence_refs
+    visible_public = request.visible_evidence_refs
+    visible = tuple(request.private_evidence_resolver[ref] for ref in visible_public)
     hidden = next(ref for ref in index.refs if ref not in visible)
 
     accepted = CriterionEvaluation("quality", CriterionEvaluationStatus.SATISFIED, (visible[0],), "visible")

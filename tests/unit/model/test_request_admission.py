@@ -47,6 +47,7 @@ from affordance_runtime.model.providers.port import (
     StructuredOutputViolation,
 )
 from tests.support.agent.core_loop_support import SharedTaskEvaluator, _task, _world
+from tests.support.canonical_world import canonical_world_with_regions
 from tests.support.legacy_compact_json_decision_port import CompactJsonDecisionPort
 
 
@@ -217,6 +218,28 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
             ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
             for index in range(1, 240)
         )
+        region_index = WorldDeliveryIndex(
+            request.agent_context.current_observation.observation_id,
+            tuple(
+                WorldRegion(
+                    key=f"region:test:{index + 1}-{min(index + 32, 239)}",
+                    source_id="S1",
+                    root_structure_id=f"targets:{index + 1}-{min(index + 32, 239)}",
+                    member_target_ids=tuple(
+                        f"target:{target}" for target in range(index + 1, min(index + 33, 240))
+                    ),
+                    heading=f"button items {index + 1}-{min(index + 32, 239)}",
+                    role="button",
+                    counts={
+                        "targets": min(32, 239 - index),
+                        "facts": 0,
+                        "actions": min(32, 239 - index),
+                    },
+                    coverage="complete",
+                )
+                for index in range(0, 239, 32)
+            ),
+        )
         large_context = replace(
             request.agent_context,
             actor_world=ActorWorldSnapshot(
@@ -246,23 +269,11 @@ def test_soft_target_uses_recoverable_region_projection_without_mutating_context
                 ),
                 {f"target:{index}": f"E{index}" for index in range(1, 240)},
             ),
-            region_index=WorldDeliveryIndex(
-                request.agent_context.current_observation.observation_id,
-                tuple(
-                    WorldRegion(
-                        f"region:test:{index + 1}-{min(index + 32, 239)}",
-                        f"R{index // 32 + 1}",
-                        "S1",
-                        f"targets:{index + 1}-{min(index + 32, 239)}",
-                        tuple(f"target:{target}" for target in range(index + 1, min(index + 33, 240))),
-                        (),
-                        f"button items {index + 1}-{min(index + 32, 239)}",
-                        "button",
-                        {"targets": min(32, 239 - index), "facts": 0, "actions": min(32, 239 - index)},
-                        "complete",
-                    )
-                    for index in range(0, 239, 32)
-                ),
+            region_index=region_index,
+            canonical_world=canonical_world_with_regions(
+                request.agent_context.canonical_world,
+                request.agent_context.current_observation,
+                region_index,
             ),
         )
         request = ModelDecisionRequest(request.request_id, large_context)
@@ -321,6 +332,24 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
             ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
             for index in range(1, total + 1)
         )
+        region_index = WorldDeliveryIndex(
+            request.agent_context.current_observation.observation_id,
+            tuple(
+                WorldRegion(
+                    key=f"region:many:{index + 1}-{index + 12}",
+                    source_id="S1",
+                    root_structure_id=f"targets:{index + 1}-{index + 12}",
+                    member_target_ids=tuple(
+                        f"target:{target}" for target in range(index + 1, index + 13)
+                    ),
+                    heading=f"button items {index + 1}-{index + 12}",
+                    role="region",
+                    counts={"targets": 12, "facts": 0, "actions": 12},
+                    coverage="complete",
+                )
+                for index in range(0, total, 12)
+            ),
+        )
         large_context = replace(
             request.agent_context,
             actor_world=ActorWorldSnapshot(
@@ -350,23 +379,11 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
                 ),
                 {f"target:{index}": f"E{index}" for index in range(1, total + 1)},
             ),
-            region_index=WorldDeliveryIndex(
-                request.agent_context.current_observation.observation_id,
-                tuple(
-                    WorldRegion(
-                        f"region:many:{index + 1}-{index + 12}",
-                        f"R{index // 12 + 1}",
-                        "S1",
-                        f"targets:{index + 1}-{index + 12}",
-                        tuple(f"target:{target}" for target in range(index + 1, index + 13)),
-                        (),
-                        f"button items {index + 1}-{index + 12}",
-                        "region",
-                        {"targets": 12, "facts": 0, "actions": 12},
-                        "complete",
-                    )
-                    for index in range(0, total, 12)
-                ),
+            region_index=region_index,
+            canonical_world=canonical_world_with_regions(
+                request.agent_context.canonical_world,
+                request.agent_context.current_observation,
+                region_index,
             ),
         )
         request = ModelDecisionRequest(request.request_id, large_context)
@@ -416,25 +433,33 @@ def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_deliv
 def test_full_projection_is_only_a_cost_baseline_and_cannot_replace_scoped_page_map() -> None:
     async def scenario() -> None:
         request, _catalog, _delivery = await _request()
+        region_index = WorldDeliveryIndex(
+            request.agent_context.current_observation.observation_id,
+            tuple(
+                WorldRegion(
+                    key=f"region:oversized:{index}",
+                    source_id="S1",
+                    root_structure_id=f"synthetic:{index}",
+                    member_target_ids=("shared-toggle",) if index == 1 else (),
+                    heading="oversized directory entry " + ("x" * 240),
+                    role="region",
+                    counts={
+                        "targets": 1 if index == 1 else 0,
+                        "facts": 0,
+                        "actions": 1 if index == 1 else 0,
+                    },
+                    coverage="complete",
+                )
+                for index in range(1, 90)
+            ),
+        )
         context = replace(
             request.agent_context,
-            region_index=WorldDeliveryIndex(
-                request.agent_context.current_observation.observation_id,
-                tuple(
-                    WorldRegion(
-                        f"region:oversized:{index}",
-                        f"R{index}",
-                        "S1",
-                        f"synthetic:{index}",
-                        ("shared-toggle",) if index == 1 else (),
-                        (),
-                        "oversized directory entry " + ("x" * 240),
-                        "region",
-                        {"targets": 1 if index == 1 else 0, "facts": 0, "actions": 1 if index == 1 else 0},
-                        "complete",
-                    )
-                    for index in range(1, 90)
-                ),
+            region_index=region_index,
+            canonical_world=canonical_world_with_regions(
+                request.agent_context.canonical_world,
+                request.agent_context.current_observation,
+                region_index,
             ),
         )
         request = ModelDecisionRequest(request.request_id, context)

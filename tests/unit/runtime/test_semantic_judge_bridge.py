@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 import pytest
 
 from affordance_runtime.agent.context import ModelFailure
-from affordance_runtime.agent.context.evaluator_views import build_semantic_judge_request
+from affordance_runtime.agent.context.evaluator_views import (
+    build_semantic_judge_request as _build_semantic_judge_request,
+)
 from affordance_runtime.evaluation.criterion_normalization import normalize_task_criteria
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
@@ -12,7 +14,14 @@ from affordance_runtime.model.evaluator.bridge import ModelPortSemanticCriterion
 from affordance_runtime.model.evaluator.spec import SemanticProposalResponse
 from affordance_runtime.model.policy.strict_json import StrictJsonError
 from affordance_runtime.model.providers.port import ModelCallRecord, ModelConfig, ModelMessage
+from tests.support.canonical_world import canonical_world
 from tests.unit.task.test_production_task_evaluator import _semantic_task, _world
+
+
+def build_semantic_judge_request(task, criteria, world, index):
+    return _build_semantic_judge_request(
+        task, criteria, world, index, canonical_world(world)
+    )
 
 
 @dataclass
@@ -41,7 +50,7 @@ class RecordingPort:
 def test_semantic_judge_bridge_uses_existing_model_port_once_and_cannot_return_task_status() -> None:
     world = _world("clear conclusion", subject="report:1", predicate="content")
     payload = {
-        "proposals": [{"criterion_id": "quality", "status": "satisfied", "evidence_refs": ["fact:current"], "reason": "meets rubric"}]
+        "proposals": [{"criterion_id": "quality", "status": "satisfied", "evidence_refs": ["F1"], "reason": "meets rubric"}]
     }
     port = RecordingPort(payload)
     judge = ModelPortSemanticCriterionJudge(

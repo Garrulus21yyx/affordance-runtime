@@ -354,7 +354,7 @@ class _WorldReadBinding:
                 region = region_index.get(lens.selected_region_key)
                 if region is None:
                     raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-                region_ref = region.public_ref
+                region_ref = self.context.canonical_world.region_refs[region.key]
             elif lens.kind == "find":
                 action = "find"
                 query = lens.query
@@ -369,6 +369,7 @@ class _WorldReadBinding:
             self.context.actor_world,
             self.context.grounding,
             region_index=region_index,
+            canonical_world=self.context.canonical_world,
             observation=observation,
             action=action,
             region_ref=region_ref,
@@ -380,6 +381,7 @@ class _WorldReadBinding:
         lens = _next_world_delivery_lens(
             observation.observation_id,
             region_index,
+            self.context.canonical_world,
             action,
             region_ref,
             query,
@@ -481,6 +483,7 @@ def _current_world_read_authority(context: AgentContext):
 def _next_world_delivery_lens(
     observation_id,
     region_index,
+    canonical_world,
     action,
     region_ref,
     query,
@@ -488,7 +491,9 @@ def _next_world_delivery_lens(
     result,
 ):
     if isinstance(result, Opened):
-        region = region_index.resolve_public_ref(region_ref)
+        region = region_index.get(canonical_world.resolve_region_ref(region_ref))
+        if region is None:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
         return WorldDeliveryLens(
             observation_id,
             "region",

@@ -51,6 +51,7 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.support.agent.core_loop_support import _task, _world
+from tests.support.canonical_world import canonical_world
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
 
 
@@ -331,7 +332,8 @@ def test_actor_normalization_conserves_supported_public_state_relation_and_fact(
     assert "selected" in encoded
     assert "placeholder" in encoded
     assert "owns" in encoded
-    assert '"value": "F1"' in encoded
+    public_fact_ref = context.canonical_world.private_fact_id_refs["fact:value"]
+    assert f'"value": "{public_fact_ref}"' in encoded
     assert all(not item.truncated for item in context.actor_world.documents)
 
 
@@ -354,6 +356,8 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
     external_step = SimpleNamespace(
         before_world=before,
         after_world=after,
+        before_public_world=canonical_world(before),
+        after_public_world=canonical_world(after),
         public_world_delta=delta,
         execution_receipts=SimpleNamespace(
             receipts=(
@@ -421,9 +425,10 @@ def test_repeated_collection_inspect_pages_at_twenty_complete_items() -> None:
         context.actor_world,
         context.grounding,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action="read_region",
-        region_ref=region.public_ref,
+        region_ref=context.canonical_world.region_refs[region.key],
     )
 
     assert isinstance(outcome, Opened)
@@ -456,9 +461,10 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
         context.actor_world,
         context.grounding,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action="read_region",
-        region_ref=table.public_ref,
+        region_ref=context.canonical_world.region_refs[table.key],
     )
 
     assert isinstance(outcome, Opened)
@@ -476,9 +482,11 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
     )
-    descriptor = next(line for line in view.text.splitlines() if f"[{table.public_ref}]" in line)
+    table_ref = context.canonical_world.region_refs[table.key]
+    descriptor = next(line for line in view.text.splitlines() if f"[{table_ref}]" in line)
     assert 'context=["Dashboard","Bestsellers summary"]' in descriptor
     assert "available_filter_controls=0" in descriptor
 
@@ -508,15 +516,17 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
         context.actor_world,
         context.grounding,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action="read_region",
-        region_ref=table.public_ref,
+        region_ref=context.canonical_world.region_refs[table.key],
     )
     view = render_compact_actor_world(
         context.actor_world,
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action_candidates=context.action_candidates,
     )
@@ -529,7 +539,9 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
     # R refs are current-partition handles, not cross-version identities. The
     # old capture called this table R14; removing preceding orphan rowgroup
     # regions may legitimately renumber it while preserving exact resolution.
-    assert context.region_index.resolve_public_ref(table.public_ref) is table
+    assert context.region_index.get(
+        context.canonical_world.resolve_region_ref(context.canonical_world.region_refs[table.key])
+    ) is table
     assert table.scope_path[-2:] == ("Dashboard / Magento Admin", "Bestsellers")
     assert table.counts["filter_controls"] == 0
     assert not any(item.role == "rowgroup" for item in context.region_index.regions)
@@ -552,13 +564,14 @@ def test_page_map_manifest_is_atomic_and_folded_descriptors_contain_no_exact_ref
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=world,
         action_candidates=context.action_candidates,
     )
     page_map = view.text.split("ActiveView exact=true", 1)[0]
 
     assert view.projection == "page_map"
-    assert set(view.manifest.region_refs) == set(context.region_index.public_refs)
+    assert set(view.manifest.region_refs) == set(context.canonical_world.region_refs.values())
     assert not any(f"[{prefix}" in page_map for prefix in ("E", "N", "F"))
     for ref in view.manifest.exact_refs:
         assert view.text.count(f"[{ref}]") == 1
@@ -574,9 +587,10 @@ def test_inspect_world_closed_outcome_algebra_and_currentness() -> None:
         "snapshot": context.actor_world,
         "grounding": context.grounding,
         "region_index": context.region_index,
+        "canonical_world": context.canonical_world,
         "observation": world,
     }
-    region_ref = context.region_index.regions[0].public_ref
+    region_ref = context.canonical_world.region_refs[context.region_index.regions[0].key]
 
     assert isinstance(inspect_actor_world(**kwargs, action="read_region", region_ref=region_ref), Opened)
     assert isinstance(inspect_actor_world(**kwargs, action="find", query="Item 1"), Matches)
@@ -603,7 +617,8 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
         _evaluation(task, world.observation_id),
     )
     _, first_catalog = catalog_for(first)
-    desired_region_ref = max(first.region_index.regions, key=lambda region: len(region.member_target_ids)).public_ref
+    desired_region = max(first.region_index.regions, key=lambda region: len(region.member_target_ids))
+    desired_region_ref = first.canonical_world.region_refs[desired_region.key]
     available = next(item for item in first_catalog.specs if item.name == "read_region").input_schema[
         "properties"
     ]["region_ref"]["enum"]
@@ -675,6 +690,7 @@ def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action
         context.grounding,
         include_images=False,
         region_index=context.region_index,
+        canonical_world=context.canonical_world,
         observation=small_world,
     )
     schemas = json.dumps([to_json_compatible(item.input_schema) for item in catalog.specs])

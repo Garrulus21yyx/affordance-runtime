@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.world_transition import (
     PublicWorldDelta,
     WorldTransitionProjector,
@@ -44,12 +45,18 @@ async def validated_task_evaluation_attempt(
     evaluator: TaskEvaluator,
     task: TaskGoal,
     observation: WorldObservation,
+    canonical_world: CanonicalPublicWorldProjection | None = None,
 ) -> TaskEvaluationAttempt:
     """Return evaluator truth or a typed boundary failure without fabricating UNKNOWN."""
 
     observation_id = str(getattr(observation, "observation_id", ""))
     try:
-        proposal = await evaluator.evaluate(task, observation)
+        projected = getattr(evaluator, "evaluate_with_projection", None)
+        proposal = (
+            await projected(task, observation, canonical_world)
+            if canonical_world is not None and callable(projected)
+            else await evaluator.evaluate(task, observation)
+        )
     except TaskEvaluationUnavailableError as exc:
         return exc.outcome
     except TaskEvaluationInternalError as exc:

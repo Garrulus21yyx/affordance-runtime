@@ -25,6 +25,7 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from tests.support.canonical_world import canonical_world
 
 
 def _world(
@@ -33,15 +34,24 @@ def _world(
     target_id: str = "target:item",
     fact_values: tuple[str, ...] = ("one",),
     state_value: str = "ready",
+    extra_target: bool = False,
 ):
     source_id = f"browsergym-observation:{observation_id}:987654"
     target = SemanticTarget(target_id, "button", "Go", {"status": state_value})
+    targets = (
+        target,
+        *( (SemanticTarget(f"extra:{observation_id}", "button", "Extra"),) if extra_target else () ),
+    )
+    child_ids = (
+        f"button:{observation_id}",
+        *((f"extra:{observation_id}",) if extra_target else ()),
+    )
     source = SurfaceObservation(
         source_id,
         "browser",
         f"revision:{observation_id}",
         ObservationSourceProfile.dom(),
-        (target,),
+        targets,
         tuple(
             StateFact(f"fact:{observation_id}:{index}", target_id, "value", value, source_id)
             for index, value in enumerate(fact_values)
@@ -51,7 +61,7 @@ def _world(
                 f"root:{observation_id}",
                 "document",
                 "Page",
-                child_structure_ids=(f"button:{observation_id}",),
+                child_structure_ids=child_ids,
             ),
             ObservationStructureNode(
                 f"button:{observation_id}",
@@ -60,8 +70,19 @@ def _world(
                 parent_structure_id=f"root:{observation_id}",
                 semantic_target_id=target_id,
             ),
+            *(
+                (ObservationStructureNode(
+                    f"extra:{observation_id}",
+                    "button",
+                    "Extra",
+                    parent_structure_id=f"root:{observation_id}",
+                    semantic_target_id=f"extra:{observation_id}",
+                ),)
+                if extra_target
+                else ()
+            ),
         ),
-        structure_total_count=2,
+        structure_total_count=2 + int(extra_target),
     )
     result = WorldFusion().fuse((source,))
     assert result.observation is not None
@@ -72,10 +93,8 @@ def _project(before, after):
     delta = WorldTransitionProjector().project(before, after)
     inventory = PublicEffectProjector().project(
         delta,
-        before,
-        after,
-        WorldDeliveryIndex.from_observation(before),
-        WorldDeliveryIndex.from_observation(after),
+        canonical_world(before),
+        canonical_world(after),
     )
     return delta, inventory
 
@@ -84,6 +103,8 @@ def _external_step(before, after):
     return SimpleNamespace(
         before_world=before,
         after_world=after,
+        before_public_world=canonical_world(before),
+        after_public_world=canonical_world(after),
         public_world_delta=WorldTransitionProjector().project(before, after),
         execution_receipts=SimpleNamespace(
             receipts=(
@@ -141,8 +162,12 @@ def test_full_identity_remount_with_equal_public_semantics_has_no_effect_atoms()
 
     delta, inventory = _project(before, after)
 
+    assert canonical_world(before).public_document_signature == (
+        canonical_world(after).public_document_signature
+    )
     assert delta.target_changes or delta.fact_changes
     assert inventory.atoms == ()
+    assert inventory.transition != "new_document"
     assert inventory.changed_target_slot_keys == ()
     assert inventory.raw_delta_lineage
 
@@ -181,16 +206,30 @@ def test_stable_slot_single_value_change_is_one_modified_atom() -> None:
     ]
 
 
+def test_one_public_target_add_and_remove_produce_exact_target_atom_and_tombstone() -> None:
+    before = _world("world:before")
+    after = _world("world:after", extra_target=True)
+
+    _delta, added = _project(before, after)
+    _delta, removed = _project(after, before)
+    added_targets = tuple(item for item in added.atoms if item.atom_kind == "target")
+    removed_targets = tuple(item for item in removed.atoms if item.atom_kind == "target")
+
+    assert len(added_targets) == 1
+    assert added_targets[0].change is PublicChangeKind.ADDED
+    assert len(removed_targets) == 1
+    assert removed_targets[0].change is PublicChangeKind.REMOVED
+    assert not removed_targets[0].subject_id
+
+
 def test_ambiguous_same_slot_pairing_remains_adds_and_removed_tombstones() -> None:
     before = _two_fact_world("world:before", ("old-a", "old-b"))
     after = _two_fact_world("world:after", ("new-a", "new-b"))
     delta = WorldTransitionProjector().project(before, after)
     inventory = PublicEffectProjector().project(
         delta,
-        before,
-        after,
-        _ambiguous_index(before),
-        _ambiguous_index(after),
+        canonical_world(before, index=_ambiguous_index(before)),
+        canonical_world(after, index=_ambiguous_index(after)),
     )
 
     fact_atoms = tuple(item for item in inventory.atoms if item.atom_kind == "fact")

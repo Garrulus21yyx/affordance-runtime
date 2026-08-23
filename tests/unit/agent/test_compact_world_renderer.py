@@ -23,6 +23,7 @@ from affordance_runtime.agent.context.context import (
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import SemanticTarget
+from tests.support.canonical_world import canonical_world_with_regions
 from tests.support.world import fused_world
 
 
@@ -111,12 +112,17 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
     snapshot = _snapshot(tuple(_post(index) for index in range(1, 16)))
     grounding = _grounding(post_count=15, include_submit=False)
     observation = _observation(15)
+    region_index = _region_index(15, observation.observation_id)
+    projection = canonical_world_with_regions(
+        _canonical_world(observation), observation, region_index
+    )
 
     rendered = render_compact_actor_world(
         snapshot,
         grounding,
         include_images=False,
-        region_index=_region_index(15, observation.observation_id),
+        region_index=region_index,
+        canonical_world=projection,
         observation=observation,
         expanded_refs=frozenset({"E3"}),
     )
@@ -135,11 +141,15 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
     grounding = _grounding(post_count=5)
     observation = _observation(5)
     region_index = _region_index(5, observation.observation_id)
+    projection = canonical_world_with_regions(
+        _canonical_world(observation), observation, region_index
+    )
 
     opened = inspect_actor_world(
         snapshot,
         grounding,
         region_index=region_index,
+        canonical_world=projection,
         observation=observation,
         action="read_region",
         region_ref="R5",
@@ -148,6 +158,7 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
         snapshot,
         grounding,
         region_index=region_index,
+        canonical_world=projection,
         observation=observation,
         action="find",
         query="Post 5",
@@ -156,6 +167,7 @@ def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() ->
         snapshot,
         grounding,
         region_index=region_index,
+        canonical_world=projection,
         observation=observation,
         action="view_all",
     )
@@ -190,20 +202,26 @@ def _region_index(post_count: int, observation_id: str = "world:test") -> WorldD
         observation_id,
         tuple(
             WorldRegion(
-                f"region:test:{index}",
-                f"R{index}",
-                "S1",
-                f"post:{index}",
-                tuple(f"entity:{(index - 1) * 3 + offset}" for offset in (1, 2, 3)),
-                (),
-                f"Post {index}",
-                "generic",
-                {"targets": 3, "facts": 0, "actions": 1},
-                "complete",
+                key=f"region:test:{index}",
+                source_id="S1",
+                root_structure_id=f"post:{index}",
+                member_target_ids=tuple(
+                    f"entity:{(index - 1) * 3 + offset}" for offset in (1, 2, 3)
+                ),
+                heading=f"Post {index}",
+                role="generic",
+                counts={"targets": 3, "facts": 0, "actions": 1},
+                coverage="complete",
             )
             for index in range(1, post_count + 1)
         ),
     )
+
+
+def _canonical_world(observation):
+    from tests.support.canonical_world import canonical_world
+
+    return canonical_world(observation)
 
 
 def _post(index: int) -> ActorWorldNodeView:

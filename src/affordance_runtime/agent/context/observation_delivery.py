@@ -11,7 +11,10 @@ from enum import StrEnum
 from types import MappingProxyType
 
 from affordance_runtime.actions.paging import ActionDiscoveryMatch
-from affordance_runtime.agent.context.context import AgentGroundingIndexView
+from affordance_runtime.agent.context.canonical_world_projection import (
+    CanonicalPublicWorldProjection,
+    PublicProvenance,
+)
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
@@ -84,24 +87,6 @@ class LocalDeliveryRecord:
 class DeliveryTransition:
     next_store: "ObservationDeliveryStore"
     information_delta: InformationDelta | None
-
-
-@dataclass(frozen=True)
-class PublicProvenance:
-    """Bounded semantic provenance; source-instance identity is deliberately absent."""
-
-    surface_kind: str
-    modality: str
-    source_coverage: str
-    structural_context: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if not all(value.strip() for value in (self.surface_kind, self.modality, self.source_coverage)):
-            raise ValueError("public provenance requires bounded source semantics")
-        if self.source_coverage not in {"complete", "partial", "stale", "unavailable"}:
-            raise ValueError("public provenance coverage is invalid")
-        context = tuple(item[:240] for item in self.structural_context if item.strip())[:8]
-        object.__setattr__(self, "structural_context", context)
 
 
 @dataclass(frozen=True)
@@ -199,20 +184,11 @@ class PublicEffectProjector:
     def project(
         self,
         delta: PublicWorldDelta,
-        before: WorldObservation,
-        after: WorldObservation,
-        before_index: WorldDeliveryIndex,
-        after_index: WorldDeliveryIndex,
+        before: CanonicalPublicWorldProjection,
+        after: CanonicalPublicWorldProjection,
     ) -> PublicEffectInventory:
-        if (
-            delta.before_observation_id != before.observation_id
-            or delta.after_observation_id != after.observation_id
-            or before_index.world_observation_id != before.observation_id
-            or after_index.world_observation_id != after.observation_id
-        ):
-            raise ValueError("effect projection lineage is stale")
-        prior = list(_public_semantic_atoms(before, before_index))
-        current = list(_public_semantic_atoms(after, after_index))
+        prior = list(_public_semantic_atoms(before))
+        current = list(_public_semantic_atoms(after))
         prior, current = _cancel_exact_public_multiset(prior, current)
         removed: list[PublicEffectAtom] = []
         admitted: list[PublicEffectAtom] = []
@@ -302,7 +278,7 @@ class PublicEffectProjector:
         )
         return PublicEffectInventory(
             "new_document"
-            if before_index.document_lineage != after_index.document_lineage
+            if before.public_document_signature != after.public_document_signature
             else "world_changed",
             atoms,
             changed_slots,
@@ -687,16 +663,16 @@ class ObservationDeliveryStore:
         )
         label = target.label if target is not None and target.label.strip() else target.role if target is not None else "target"
         cause = f'{intent.semantic_action} {label!r}'
-        before_world = getattr(step, "before_world", None)
-        after_world = getattr(step, "after_world", None)
-        if not isinstance(before_world, WorldObservation) or not isinstance(after_world, WorldObservation):
-            raise TypeError("external GUI effect requires exact before/after Worlds")
+        before_projection = getattr(step, "before_public_world", None)
+        after_projection = getattr(step, "after_public_world", None)
+        if not isinstance(before_projection, CanonicalPublicWorldProjection) or not isinstance(
+            after_projection, CanonicalPublicWorldProjection
+        ):
+            raise TypeError("external GUI effect requires exact before/after canonical Worlds")
         inventory = PublicEffectProjector().project(
             delta,
-            before_world,
-            after_world,
-            WorldDeliveryIndex.from_observation(before_world),
-            WorldDeliveryIndex.from_observation(after_world),
+            before_projection,
+            after_projection,
         )
         return ObservationDeliveryStore(
             latest_effect=LatestEffect(step_index, cause[:240], dispatch, delta, inventory),
@@ -760,9 +736,8 @@ def current_findings_digest(observation: WorldObservation) -> str:
 def project_observation_delivery(
     observation: WorldObservation,
     region_index: WorldDeliveryIndex,
+    projection: CanonicalPublicWorldProjection,
     evidence_index: WorldEvidenceIndex,
-    canonical_to_public: Mapping[str, str],
-    grounding: AgentGroundingIndexView,
     store: ObservationDeliveryStore,
     *,
     max_findings: int = 12,
@@ -774,17 +749,16 @@ def project_observation_delivery(
     findings = _current_findings(
         observation,
         region_index,
+        projection,
         evidence_index,
-        canonical_to_public,
         changed_fact_keys,
         max_findings=max_findings,
     )
     effect_values = _latest_effect_values(
         observation,
         region_index,
+        projection,
         evidence_index,
-        canonical_to_public,
-        grounding,
         latest,
     )
     changed_keys = tuple(
@@ -792,15 +766,15 @@ def project_observation_delivery(
         for key in (latest.public_world_delta.changed_region_keys if latest is not None else ())
         if region_index.get(key) is not None
     )
-    changed_regions = tuple(_changed_region(region_index, key) for key in changed_keys)
+    changed_regions = tuple(_changed_region(region_index, projection, key) for key in changed_keys)
     page_outline = tuple(
-        PageOutlineEntry(region.public_ref, version.version, version.cached_outline)
+        PageOutlineEntry(projection.region_refs[region.key], version.version, version.cached_outline)
         for region in region_index.regions
         if (version := region_index.version_for(region.key)) is not None
     )
     recovery = tuple(
         RecoveryDirectoryEntry(
-            region.public_ref,
+            projection.region_refs[region.key],
             version.version,
         )
         for region in region_index.regions
@@ -829,16 +803,19 @@ def project_observation_delivery(
 def _current_findings(
     observation,
     region_index,
+    projection,
     evidence_index,
-    canonical_to_public,
     changed_fact_keys,
     *,
     max_findings,
 ) -> tuple[CurrentFinding, ...]:
     sources = {item.observation_id: item for item in observation.sources}
     candidates: list[tuple[tuple[int, int, str], CurrentFinding]] = []
-    for record in evidence_index.records:
-        public_ref = canonical_to_public.get(record.evidence_ref, "")
+    for public_record in projection.ordered_fact_records:
+        public_ref = public_record.ref
+        record = evidence_index.resolve_record(public_record.canonical_ref)
+        if record is None:
+            continue
         source = sources.get(record.source_observation_id)
         if (
             not public_ref
@@ -876,14 +853,12 @@ def _current_findings(
 def _latest_effect_values(
     observation,
     region_index,
+    projection,
     evidence_index,
-    canonical_to_public,
-    grounding,
     latest,
 ) -> tuple[LatestEffectValue, ...]:
     if latest is None:
         return ()
-    target_refs = grounding.target_refs
     values: list[LatestEffectValue] = []
     evidence_by_subject = {
         (item.subject_id, item.predicate, _stable_value(item.value)): item
@@ -894,17 +869,17 @@ def _latest_effect_values(
         region = region_index.region_for_target(atom.subject_id) if atom.current else None
         public_ref = ""
         if atom.current and atom.atom_kind == "target":
-            public_ref = target_refs.get(atom.subject_id, "")
+            public_ref = projection.target_refs.get(atom.subject_id, "")
         elif atom.current:
             record = evidence_by_subject.get((atom.subject_id, atom.predicate, _stable_value(atom.exact_value)))
-            public_ref = canonical_to_public.get(record.evidence_ref, "") if record is not None else ""
+            public_ref = projection.fact_refs.get(record.evidence_ref, "") if record is not None else ""
         values.append(
             LatestEffectValue(
                 atom.change,
                 atom.predicate,
                 atom.exact_value,
                 public_ref,
-                region.public_ref if region is not None else "",
+                projection.region_refs.get(region.key, "") if region is not None else "",
                 atom.provenance,
                 atom.current,
             )
@@ -912,13 +887,17 @@ def _latest_effect_values(
     return tuple(values)
 
 
-def _changed_region(index: WorldDeliveryIndex, key: str) -> ChangedRegion:
+def _changed_region(
+    index: WorldDeliveryIndex,
+    projection: CanonicalPublicWorldProjection,
+    key: str,
+) -> ChangedRegion:
     region = index.get(key)
     version = index.version_for(key)
     assert region is not None and version is not None
     return ChangedRegion(
         key,
-        region.public_ref,
+        projection.region_refs[region.key],
         version.version,
         version.cached_outline,
         bool(region.member_structure_ids or region.member_target_ids or region.member_fact_ids),
@@ -939,71 +918,14 @@ def _stable_value(value: object) -> str:
     return repr(freeze_json(value))
 
 
-def public_structural_slot(index: WorldDeliveryIndex, target_id: str) -> tuple[str, ...]:
-    """Stable public slot used by effect reconciliation and ActionSpace recall join."""
-
-    context = index.functional_context_for_target(target_id)
-    region = index.region_for_target(target_id)
-    if context is None or region is None:
-        return ()
-    return (
-        context.container_kind.value,
-        *(index.functional_path_for_target(target_id)[:8]),
-        region.heading,
-        region.role,
-        str(context.public_order),
-    )
-
-
 def _public_semantic_atoms(
-    observation: WorldObservation,
-    index: WorldDeliveryIndex,
+    projection: CanonicalPublicWorldProjection,
 ) -> tuple[PublicEffectAtom, ...]:
-    manifests = {item.source_observation_id: item for item in observation.source_manifest}
-    sources = {item.observation_id: item for item in observation.sources}
-    source_links: dict[str, list[str]] = defaultdict(list)
-    for link in observation.entity_source_links:
-        source_links[link.canonical_target_id].append(link.source_observation_id)
-
-    def provenance(subject_id: str, source_id: str = "") -> PublicProvenance:
-        candidates = [source_id] if source_id else source_links.get(subject_id, [])
-        public_sources = []
-        for candidate in candidates:
-            manifest = manifests.get(candidate)
-            source = sources.get(candidate)
-            if manifest is None:
-                continue
-            public_sources.append(
-                (
-                    manifest.surface,
-                    manifest.modality,
-                    _public_source_coverage(manifest.coverage),
-                    str(getattr(source, "surface", manifest.surface)),
-                )
-            )
-        surface, modality, coverage, _ = min(public_sources) if public_sources else (
-            "unified_world",
-            "semantic",
-            "complete",
-            "unified_world",
-        )
-        region = index.region_for_target(subject_id)
-        structural = tuple(
-            item
-            for item in (
-                *(index.functional_path_for_target(subject_id)[:8]),
-                region.heading if region is not None else "",
-                region.role if region is not None else "",
-            )
-            if item
-        )
-        return PublicProvenance(surface, modality, coverage, structural)
-
-    targets = {item.target_id: item for item in observation.targets}
     atoms: list[PublicEffectAtom] = []
-    for target in observation.targets:
-        context = index.functional_context_for_target(target.target_id)
-        region = index.region_for_target(target.target_id)
+    for order, target in enumerate(projection.ordered_target_records):
+        if "\0" in target.target_id:
+            continue
+        region_label, region_role = _slot_region(target.structural_slot)
         atoms.append(
             PublicEffectAtom(
                 PublicChangeKind.ADDED,
@@ -1015,39 +937,44 @@ def _public_semantic_atoms(
                     "state": target.state,
                     "relations": target.relations,
                 },
-                public_structural_slot(index, target.target_id),
+                target.structural_slot,
                 target.label,
                 target.role,
-                region.heading if region is not None else "",
-                region.role if region is not None else "",
-                context.public_order if context is not None else 0,
+                region_label,
+                region_role,
+                order,
                 True,
-                provenance(target.target_id),
+                target.provenance,
                 target.target_id,
             )
         )
-    for position, fact in enumerate(observation.facts):
+    targets = {item.target_id: item for item in projection.ordered_target_records}
+    for order, fact in enumerate(projection.ordered_fact_records, len(atoms)):
         target = targets.get(fact.subject_id)
-        context = index.functional_context_for_target(fact.subject_id)
-        region = index.region_for_fact(fact.fact_id) or index.region_for_target(fact.subject_id)
+        region_label, region_role = _slot_region(fact.structural_slot)
         atoms.append(
             PublicEffectAtom(
                 PublicChangeKind.ADDED,
                 "fact",
                 fact.predicate,
                 fact.value,
-                public_structural_slot(index, fact.subject_id),
+                fact.structural_slot,
                 target.label if target is not None else "",
                 target.role if target is not None else "fact",
-                region.heading if region is not None else "",
-                region.role if region is not None else "",
-                (context.public_order if context is not None else len(observation.targets)) + position,
+                region_label,
+                region_role,
+                order,
                 True,
-                provenance(fact.subject_id, fact.source_id),
+                fact.provenance,
                 fact.subject_id,
             )
         )
     return tuple(atoms)
+
+
+def _slot_region(slot: tuple[str, ...]) -> tuple[str, str]:
+    public_slot = slot[:-1] if slot and slot[-1].startswith("geometry:") else slot
+    return (public_slot[-3], public_slot[-2]) if len(public_slot) >= 3 else ("", "")
 
 
 def _public_atom_token(atom: PublicEffectAtom) -> str:
@@ -1069,16 +996,6 @@ def _public_atom_token(atom: PublicEffectAtom) -> str:
         separators=(",", ":"),
         ensure_ascii=False,
     )
-
-
-def _public_source_coverage(coverage: CoverageState) -> str:
-    if coverage is CoverageState.COMPLETE:
-        return "complete"
-    if coverage is CoverageState.TRUNCATED:
-        return "partial"
-    if coverage is CoverageState.STALE:
-        return "stale"
-    return "unavailable"
 
 
 def _cancel_exact_public_multiset(

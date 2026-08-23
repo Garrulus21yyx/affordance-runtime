@@ -226,8 +226,33 @@ def test_normative_architecture_contains_the_single_authority_map() -> None:
 
     assert "## Authority" in architecture
     assert "| current GUI truth | fresh `WorldObservation` |" in architecture
-    assert "| model-visible action contract | `PerTurnToolCatalog` |" in architecture
+    assert (
+        "| public records, `E/N/F/R` refs, and public order | one immutable "
+        "`CanonicalPublicWorldProjection` |"
+    ) in architecture
+    assert "World Gate 1 implementation checkpoint" in architecture
+    assert "Delivery and Envelope cutovers remain pending" in architecture
     convergence = (ROOT / "docs" / "single-action-policy-convergence.md").read_text(encoding="utf-8")
     assert "| official completion | native evaluator after one STOP |" in convergence
     assert "one `CoreAgentLoop`" in convergence
     assert not (ROOT / "docs" / "task-execution-authority-map.md").exists()
+
+
+def test_displaced_public_ref_allocators_are_absent_from_production_consumers() -> None:
+    owner = RUNTIME / "agent" / "context" / "canonical_world_projection.py"
+    owner_text = owner.read_text(encoding="utf-8")
+    consumers = {
+        name: (RUNTIME / "agent" / "context" / name).read_text(encoding="utf-8")
+        for name in (
+            "context_builder.py",
+            "grounding_projection.py",
+            "observation_paging.py",
+            "world_projection.py",
+            "world_region_index.py",
+        )
+    }
+
+    assert "PublicRefCodec.encode" in owner_text
+    assert all("PublicRefCodec.encode" not in text for text in consumers.values())
+    assert "_public_fact_refs" not in consumers["context_builder.py"]
+    assert "_assign_public_refs" not in consumers["world_region_index.py"]

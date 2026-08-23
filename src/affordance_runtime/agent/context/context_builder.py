@@ -22,6 +22,7 @@ from affordance_runtime.agent.context.action_candidate_projection import (
 )
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
 from affordance_runtime.agent.context.contracts import AgentActionPageView
 from affordance_runtime.agent.context.grounding_projection import (
@@ -39,7 +40,6 @@ from affordance_runtime.agent.context.world_projection import (
     project_model_world,
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
-from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
@@ -72,6 +72,7 @@ class ContextBuilder:
         goal_resolution: GoalPlanResolution | None = None,
         runtime_controls: tuple[str, ...] = (),
         region_index: WorldDeliveryIndex | None = None,
+        canonical_world: CanonicalPublicWorldProjection | None = None,
         delivery_store: ObservationDeliveryStore = ObservationDeliveryStore(),
         control_feedback: dict[str, object] | None = None,
         action_discovery: ActionDiscoveryResult | None = None,
@@ -86,6 +87,10 @@ class ContextBuilder:
             observation,
             action_space.options,
         )
+        canonical_world = canonical_world or CanonicalPublicWorldProjection.build(
+            observation, current_region_index, action_space
+        )
+        canonical_world.assert_current(observation, current_region_index, action_space)
         page = action_page or self.page(
             action_space,
             observation,
@@ -120,6 +125,7 @@ class ContextBuilder:
             observation_capabilities=project_acquisition_offers(observation_capabilities),
             observation_cursor="",
             lossless_public=True,
+            canonical_projection=canonical_world,
         )
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
@@ -145,8 +151,17 @@ class ContextBuilder:
         )
         grounding = self.grounding_projection.project(
             observation,
+            canonical_world,
             world,
             complete_page,
+            selected_target_ids=tuple(dict.fromkeys(
+                target_id
+                for item in shown_actions
+                for target_id in (
+                    item.target_id,
+                    *(destination.destination_id for destination in item.destinations.items),
+                )
+            )),
         )
         goal_plan = _current_goal_plan(
             task,
@@ -178,18 +193,11 @@ class ContextBuilder:
             observation,
             include_public_text=self.include_public_text_evidence,
         )
-        delivery_fact_refs = _public_fact_refs(
-            world.facts.items,
-            task_evaluation,
-            delivery_evidence_index,
-            observation,
-        )
         observation_delivery = project_observation_delivery(
             observation,
             current_region_index,
+            canonical_world,
             delivery_evidence_index,
-            delivery_fact_refs,
-            grounding.index,
             delivery_store,
         )
         base_candidate_projection = project_action_candidates(
@@ -197,6 +205,7 @@ class ContextBuilder:
             action_space_id=action_space.action_space_id,
             world_observation_id=observation.observation_id,
             region_index=current_region_index,
+            region_refs=canonical_world.region_refs,
             instruction=task.instruction,
             objectives=tuple(item.objective for item in goal_plan.items),
             done_when=tuple(item.done_when for item in goal_plan.items),
@@ -210,6 +219,8 @@ class ContextBuilder:
             complete_actions=complete_page.options,
             automatic=base_candidate_projection,
             region_index=current_region_index,
+            region_refs=canonical_world.region_refs,
+            target_structural_slots=canonical_world.target_structural_slots,
             discovery=action_discovery,
             action_space_issues=action_space.issues,
             target_refs=grounding.index.target_refs,
@@ -228,6 +239,7 @@ class ContextBuilder:
             task_evaluation,
             goal_plan,
             observation,
+            canonical_world,
             world,
             actions,
             workspace,
@@ -290,12 +302,14 @@ class ContextBuilder:
         page: InternalActionPage,
         *,
         region_index: WorldDeliveryIndex | None = None,
+        canonical_world: CanonicalPublicWorldProjection,
     ) -> ActionDiscoveryResult:
         """Close a page into its public typed result at the discovery owner."""
 
         current_index = region_index or WorldDeliveryIndex.from_observation(observation, action_space.options)
         if current_index.world_observation_id != observation.observation_id:
             raise ValueError("delivery index belongs to a previous observation")
+        canonical_world.assert_current(observation, current_index, action_space)
         targets = {item.target_id: item for item in observation.targets}
         labels = {target_id: item.label for target_id, item in targets.items()}
         projected = project_action_page(action_space, page, labels)
@@ -310,6 +324,7 @@ class ContextBuilder:
             self.budget,
             pinned,
             lossless_public=True,
+            canonical_projection=canonical_world,
         )
         complete_view = AgentActionPageView(
             complete.options,
@@ -318,7 +333,7 @@ class ContextBuilder:
             False,
             False,
         )
-        grounding = self.grounding_projection.project(observation, model_world, complete_view)
+        grounding = self.grounding_projection.project(observation, canonical_world, model_world, complete_view)
         query = canonical_action_query(page.query)
         def page_matches(current_page: InternalActionPage) -> tuple[ActionDiscoveryMatch, ...]:
             current_projected = project_action_page(action_space, current_page, labels)
@@ -471,6 +486,7 @@ def _fit_context(
     task_evaluation: TaskEvaluation,
     goal_plan,
     observation: WorldObservation,
+    canonical_world: CanonicalPublicWorldProjection,
     world: ModelWorldView,
     actions: AgentActionPageView,
     workspace: AgentWorkspace,
@@ -492,24 +508,14 @@ def _fit_context(
         observation,
         include_public_text=include_public_text_evidence,
     )
-    fact_refs = _public_fact_refs(
-        world.facts.items,
-        task_evaluation,
-        evidence_index,
-        observation,
-    )
     task_view = project_task(
         task,
         task_evaluation,
         world.facts.items,
-        fact_refs,
+        canonical_world.private_fact_resolver,
         grounding.index.target_refs,
     )
-    private_fact_bindings = _current_public_fact_bindings(
-        observation,
-        evidence_index,
-        fact_refs,
-    )
+    private_fact_bindings = dict(canonical_world.private_fact_resolver)
     return AgentContext(
         context_id,
         task_view,
@@ -518,6 +524,7 @@ def _fit_context(
         workspace,
         project_actor_world_snapshot(
             observation,
+            canonical_world,
             world,
             grounding.index,
             grounding.images,
@@ -525,7 +532,6 @@ def _fit_context(
             # delivery fitting belongs only to WorldDeliveryView.
             max_structure_nodes=None,
             max_structure_bytes=None,
-            fact_refs=fact_refs,
         ),
         grounding.images,
         grounding.index,
@@ -533,6 +539,7 @@ def _fit_context(
         evidence_index,
         observation,
         region_index,
+        canonical_world,
         current_step_index,
         runtime_controls,
         control_feedback,
@@ -581,75 +588,3 @@ def _discovery_match_kinds(
     if not kinds:
         kinds.append("semantic")
     return tuple(kinds)
-
-
-def _current_public_fact_bindings(
-    observation: WorldObservation,
-    evidence_index: WorldEvidenceIndex,
-    canonical_to_public: dict[str, str],
-) -> dict[str, str]:
-    sources = {item.observation_id: item for item in observation.sources}
-    result: dict[str, str] = {}
-    for canonical, public in canonical_to_public.items():
-        record = evidence_index.resolve_record(canonical)
-        source = sources.get(record.source_observation_id) if record is not None else None
-        if (
-            record is not None
-            and record.kind == "fact"
-            and record.observation_id == observation.observation_id
-            and source is not None
-            and source.coverage is not CoverageState.STALE
-        ):
-            result[public] = canonical
-    return result
-
-
-def _public_fact_refs(
-    facts,
-    task_evaluation: TaskEvaluation,
-    evidence_index: WorldEvidenceIndex,
-    observation: WorldObservation,
-) -> dict[str, str]:
-    sources = {item.observation_id: item for item in observation.sources}
-    current_refs = {
-        record.evidence_ref
-        for record in evidence_index.records
-        if (
-            record.kind == "fact"
-            and record.observation_id == observation.observation_id
-            and (
-                (source := sources.get(record.source_observation_id)) is None
-                or source.coverage is not CoverageState.STALE
-            )
-        )
-    }
-    present = {item.fact_ref for item in facts if item.fact_ref in current_refs}
-    prioritized: list[str] = []
-
-    def add(ref: str) -> None:
-        if ref in present and ref not in prioritized:
-            prioritized.append(ref)
-
-    for ref in task_evaluation.completion_evidence_refs:
-        add(ref)
-    for criterion in task_evaluation.criteria:
-        for ref in criterion.evidence_refs:
-            add(ref)
-    for output in task_evaluation.outputs:
-        for ref in output.evidence_refs:
-            add(ref)
-    ordered = [
-        *prioritized,
-        *(item.fact_ref for item in facts if item.fact_ref in current_refs and item.fact_ref not in prioritized),
-    ]
-    ordered.extend(
-        record.evidence_ref
-        for record in evidence_index.records
-        if (
-            record.kind == "fact"
-            and record.evidence_ref in current_refs
-            and is_public_scalar(record.value)
-            and record.evidence_ref not in ordered
-        )
-    )
-    return {ref: f"F{index}" for index, ref in enumerate(ordered, 1)}

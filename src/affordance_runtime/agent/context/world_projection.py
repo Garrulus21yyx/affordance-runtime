@@ -8,6 +8,7 @@ from typing import Any
 
 from affordance_runtime.agent.context.acquisition_projection import ObservationCapabilityView
 from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget, serialized_size
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.observation_paging import (
     ObservationPager,
     ObservationTraversalStatus,
@@ -19,7 +20,7 @@ from affordance_runtime.agent.context.source_projection import (
 )
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref, canonical_public_text_ref
+from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
 _MAX_STRING = 240
 _MAX_STATE_FIELDS = 8
@@ -146,6 +147,7 @@ def project_model_world(
     observation_pager: ObservationPager = ObservationPager(),
     *,
     lossless_public: bool = False,
+    canonical_projection: CanonicalPublicWorldProjection,
 ) -> ModelWorldView:
     # The normal product path has no target-count cap.  In that path this
     # projection is the lossless supported public normalization consumed by
@@ -158,7 +160,7 @@ def project_model_world(
         else budget.observation_target_capacity(len(observation.targets))
     )
     basis = observation_pager.begin(
-        observation,
+        canonical_projection,
         pinned_target_ids=pinned_target_ids,
         cursor=observation_cursor,
         page_size=target_capacity,
@@ -183,39 +185,25 @@ def project_model_world(
     fact_counts: dict[str, int] = {}
     projected_facts: list[PublicFactView] = []
     ordered_facts = tuple(
-        fact for fact in observation.facts if fact.subject_id in pinned_targets
-    ) + tuple(
-        fact for fact in observation.facts if fact.subject_id not in pinned_targets
+        item for item in canonical_projection.ordered_fact_records
+        if item.subject_id in target_ids
     )
-    fact_candidates: list[tuple[tuple[int, int, int, str], PublicFactView]] = []
-    for ordinal, fact in enumerate(ordered_facts):
-        if fact.subject_id not in target_ids:
-            continue
-        fact_candidates.append((
-            _state_fact_priority(fact.subject_id, fact.predicate, pinned_targets, ordinal),
-            PublicFactView(
-                canonical_fact_ref(fact.fact_id),
-                fact.subject_id,
-                fact.predicate if lossless_public else _text(fact.predicate),
-                _public_value_lossless(fact.value) if lossless_public else _public_value(fact.value),
-            ),
-        ))
-    fact_candidates.extend(
-        _public_text_fact_candidates(
-            observation,
-            ordered_targets,
-            pinned_targets,
-            lossless_public=lossless_public,
-        )
+    ordered_facts = tuple(item for item in ordered_facts if item.subject_id in pinned_targets) + tuple(
+        item for item in ordered_facts if item.subject_id not in pinned_targets
     )
-    for _priority, fact in sorted(fact_candidates, key=lambda item: item[0]):
+    for record in ordered_facts:
         if not lossless_public and len(projected_facts) >= budget.max_facts:
             break
-        count = fact_counts.get(fact.subject_id, 0)
+        count = fact_counts.get(record.subject_id, 0)
         if not lossless_public and count >= budget.max_facts_per_target:
             continue
-        projected_facts.append(fact)
-        fact_counts[fact.subject_id] = count + 1
+        projected_facts.append(PublicFactView(
+            record.ref,
+            record.subject_id,
+            record.predicate if lossless_public else _text(record.predicate),
+            record.value if lossless_public else _public_value(record.value),
+        ))
+        fact_counts[record.subject_id] = count + 1
     conflicts = tuple(
         ConflictSummary(item.subject_id, _text(item.predicate), _text(item.summary))
         for item in observation.conflicts[: budget.max_conflicts]
@@ -251,7 +239,7 @@ def project_model_world(
     )
     view = ModelWorldView(
         _section(targets, len(observation.targets)),
-        _section(tuple(projected_facts), len(fact_candidates)),
+        _section(tuple(projected_facts), len(ordered_facts)),
         _section(conflicts, len(observation.conflicts)),
         _section(shown_artifacts, len(artifacts)),
         sources=source_summaries,
@@ -418,83 +406,6 @@ def _artifact_summary(key: str, value: object) -> str:
 
 def _resize(section: BoundedSection[Any], items: tuple[Any, ...]) -> BoundedSection[Any]:
     return BoundedSection(items, section.total_count, section.total_count > len(items))
-
-
-def _state_fact_priority(
-    subject_id: str,
-    predicate: str,
-    pinned_targets: set[str],
-    ordinal: int,
-) -> tuple[int, int, int, str]:
-    pinned_rank = 0 if subject_id in pinned_targets else 1
-    state_rank = _ACTION_DECISION_STATE_PRIORITY.get(predicate.casefold(), len(_ACTION_DECISION_STATE_PRIORITY))
-    return (pinned_rank, 0, state_rank, f"{ordinal:08d}")
-
-
-def _public_text_fact_candidates(
-    observation: WorldObservation,
-    ordered_targets,
-    pinned_targets: set[str],
-    *,
-    lossless_public: bool = False,
-) -> list[tuple[tuple[int, int, int, str], PublicFactView]]:
-    candidates: list[tuple[tuple[int, int, int, str], PublicFactView]] = []
-    seen: set[str] = set()
-    for ordinal, target in enumerate(ordered_targets):
-        label = str(target.label).strip()
-        if not label:
-            continue
-        ref = canonical_public_text_ref(observation.observation_id, target.target_id)
-        seen.add(ref)
-        candidates.append((
-            _text_fact_priority(target.target_id, target.role, pinned_targets, ordinal, source_rank=0),
-            PublicFactView(
-                ref,
-                target.target_id,
-                "public.label",
-                _public_value_lossless(label) if lossless_public else _public_value(label),
-            ),
-        ))
-    linked_targets = {
-        (link.source_observation_id, link.source_target_id)
-        for link in observation.entity_source_links
-    }
-    ordinal = 0
-    for source_rank, source in enumerate(observation.sources, 1):
-        for node in source.structure:
-            if node.semantic_target_id and (source.observation_id, node.semantic_target_id) in linked_targets:
-                continue
-            label = str(node.label).strip()
-            if not label:
-                continue
-            ref = canonical_public_text_ref(observation.observation_id, node.structure_id)
-            if ref in seen:
-                continue
-            seen.add(ref)
-            candidates.append((
-                _text_fact_priority(node.structure_id, node.role, pinned_targets, ordinal, source_rank=source_rank),
-                PublicFactView(
-                    ref,
-                    node.structure_id,
-                    "public.label",
-                    _public_value_lossless(label) if lossless_public else _public_value(label),
-                ),
-            ))
-            ordinal += 1
-    return candidates
-
-
-def _text_fact_priority(
-    subject_id: str,
-    role: str,
-    pinned_targets: set[str],
-    ordinal: int,
-    *,
-    source_rank: int,
-) -> tuple[int, int, int, str]:
-    pinned_rank = 0 if subject_id in pinned_targets else 1
-    role_rank = _TEXT_EVIDENCE_ROLE_PRIORITY.get(role.casefold(), 6)
-    return (pinned_rank, 1, role_rank, f"{source_rank:02d}:{ordinal:08d}:{subject_id}")
 
 
 def _project_target(

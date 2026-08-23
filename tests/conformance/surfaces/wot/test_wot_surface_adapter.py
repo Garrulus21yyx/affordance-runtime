@@ -9,14 +9,21 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from tests.support.canonical_world import canonical_world
 from tests.support.observation_acquisition import acquire_observation
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def shared_td(*, security: str = "public", min_interval_ms: int = 0) -> dict:

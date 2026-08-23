@@ -10,7 +10,7 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 )
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.world import (
     EntityAlignmentBasis,
     EntityAlignmentProposal,
@@ -22,6 +22,13 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from tests.support.canonical_world import canonical_world
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def _source(
@@ -82,12 +89,16 @@ def _snapshot(sources: tuple[SurfaceObservation, ...], *, bound: int = 128):
     fused = WorldFusion().fuse(sources)
     assert fused.observation is not None
     world = fused.observation
-    model_world = project_model_world(world, ContextProjectionBudget())
+    projection = canonical_world(world)
+    model_world = _project_model_world(
+        world, ContextProjectionBudget(), canonical_projection=projection
+    )
     grounding = GroundingProjection().project(
-        world, model_world, ActionSpace(world.observation_id, ())
+        world, projection, model_world, ActionSpace(world.observation_id, ())
     )
     return world, project_actor_world_snapshot(
-        world, model_world, grounding.index, grounding.images, max_structure_nodes=bound
+        world, projection, model_world, grounding.index, grounding.images,
+        max_structure_nodes=bound
     )
 
 

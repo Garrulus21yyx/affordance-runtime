@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         ActionDeliveryPlan,
     )
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
     from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -191,6 +192,12 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    canonical_world: CanonicalPublicWorldProjection | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
     current_step_index: int = field(default=0, repr=False, compare=False)
     runtime_controls: tuple[str, ...] = ()
     control_feedback: Mapping[str, object] = field(default_factory=dict)
@@ -236,6 +243,8 @@ class AgentContext:
             raise TypeError("AgentContext grounding index must be typed")
         if not isinstance(self.workspace, AgentWorkspace):
             raise TypeError("AgentContext workspace must be typed")
+        if self.canonical_world is None:
+            raise TypeError("AgentContext requires the current canonical public World projection")
         bindings = dict(self.private_fact_bindings)
         if any(
             not PublicRefCodec.accepts(ref, expected=PublicRefKind.FACT)

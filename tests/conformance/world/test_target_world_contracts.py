@@ -13,7 +13,7 @@ from affordance_runtime.actions.classification import classify_dom_action
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution.contracts import (
     ActionIntent,
@@ -34,6 +34,13 @@ from affordance_runtime.world import (
     WorldObservation,
 )
 from tests.support.action_contracts import verification_kwargs
+from tests.support.canonical_world import canonical_world
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def _world() -> WorldObservation:

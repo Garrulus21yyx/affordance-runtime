@@ -10,7 +10,7 @@ from PIL import Image
 from affordance_runtime.actions import ActionSpace
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.world import (
     AcquisitionCost,
@@ -36,7 +36,14 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+from tests.support.canonical_world import canonical_world
 from tests.support.world import manifest_for_sources
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 def _source(
@@ -268,7 +275,7 @@ def test_media_capture_variant_selection_is_deterministic_and_coordinate_scoped(
     world = _fused(source)
     model_world = project_model_world(world, ContextProjectionBudget())
     grounded = GroundingProjection().project(
-        world, model_world, ActionSpace(world.observation_id, ())
+        world, canonical_world(world), model_world, ActionSpace(world.observation_id, ())
     )
     assert len(grounded.images) == 1
     assert grounded.images[0].sha256 == raw.sha256

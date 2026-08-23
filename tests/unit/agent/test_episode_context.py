@@ -15,7 +15,6 @@ from affordance_runtime.agent.context.observation_delivery import (
     PublicEffectProjector,
 )
 from affordance_runtime.agent.context.step_projection import project_step_result
-from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.decisions import (
     ReadRegionResult,
@@ -36,6 +35,7 @@ from affordance_runtime.agent.workspace import (
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus, WorldEvidenceIndex
 from affordance_runtime.immutable import to_json_compatible
 from tests.support.agent.core_loop_support import shared_world
+from tests.support.canonical_world import canonical_world
 
 
 def _evaluation(observation_id: str) -> TaskEvaluation:
@@ -131,10 +131,8 @@ def test_exact_gui_result_survives_after_it_leaves_latest_four_steps() -> None:
         1,
         public_effect=PublicEffectProjector().project(
             delta,
-            before,
-            after,
-            WorldDeliveryIndex.from_observation(before),
-            WorldDeliveryIndex.from_observation(after),
+            canonical_world(before),
+            canonical_world(after),
         ),
     )
     ordinary = SimpleNamespace(

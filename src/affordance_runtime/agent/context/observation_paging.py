@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 
-from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.world.page_cursor import decode_cursor, encode_cursor
 
 
@@ -63,7 +63,7 @@ class ObservationPager:
 
     def begin(
         self,
-        observation: WorldObservation,
+        projection: CanonicalPublicWorldProjection,
         *,
         pinned_target_ids: tuple[str, ...] = (),
         cursor: str = "",
@@ -72,36 +72,39 @@ class ObservationPager:
     ) -> ObservationPageBasis:
         if page_size <= 0 or min_exploration_slots <= 0 or min_exploration_slots > page_size:
             raise ValueError("observation paging bounds are invalid")
-        current = {target.target_id for target in observation.targets}
+        ordered_target_ids = tuple(
+            item.target_id for item in projection.ordered_target_records if "\0" not in item.target_id
+        )
+        current = set(ordered_target_ids)
         pinned_capacity = page_size if page_size == 1 else page_size - min_exploration_slots
         pinned = tuple(target_id for target_id in dict.fromkeys(pinned_target_ids) if target_id in current)[
             : min(self.max_pinned_targets, pinned_capacity)
         ]
-        fingerprint = _fingerprint(observation, page_size, min_exploration_slots)
+        fingerprint = _fingerprint(projection, page_size, min_exploration_slots)
         offset = decode_cursor(cursor, fingerprint) if cursor else 0
-        if offset > len(observation.targets):
+        if offset > len(ordered_target_ids):
             raise ValueError("observation cursor is outside the frozen snapshot")
         pinned_set = set(pinned)
         exploration_limit = page_size - len(pinned)
         exploration: list[str] = []
         next_offsets: list[int] = []
         scan = offset
-        while scan < len(observation.targets) and len(exploration) < exploration_limit:
-            candidate = observation.targets[scan].target_id
+        while scan < len(ordered_target_ids) and len(exploration) < exploration_limit:
+            candidate = ordered_target_ids[scan]
             scan += 1
             if candidate in pinned_set:
                 continue
             exploration.append(candidate)
             next_offsets.append(scan)
         return ObservationPageBasis(
-            observation.observation_id,
+            projection.public_document_signature,
             cursor,
             offset,
             pinned,
             tuple(exploration),
             tuple(next_offsets),
             scan,
-            len(observation.targets),
+            len(ordered_target_ids),
             fingerprint,
         )
 
@@ -155,18 +158,18 @@ class ObservationPager:
 
 
 def _fingerprint(
-    observation: WorldObservation,
+    projection: CanonicalPublicWorldProjection,
     page_size: int,
     min_exploration_slots: int,
 ) -> str:
     payload = (
-        observation.observation_id,
-        tuple(target.target_id for target in observation.targets),
+        projection.projection_lineage,
+        tuple(item.ref for item in projection.ordered_target_records),
         page_size,
         min_exploration_slots,
     )
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
-def _public_snapshot_id(observation_id: str) -> str:
-    return "snapshot:" + hashlib.sha256(observation_id.encode()).hexdigest()[:24]
+def _public_snapshot_id(public_document_signature: str) -> str:
+    return "snapshot:" + hashlib.sha256(public_document_signature.encode()).hexdigest()[:24]

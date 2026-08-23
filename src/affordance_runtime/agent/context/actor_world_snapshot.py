@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.budgets import BoundedSection, serialized_size
+from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
+from affordance_runtime.agent.context.source_projection import project_observation_source
 from affordance_runtime.agent.context.world_projection import ModelTargetView, ModelWorldView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import (
@@ -16,7 +18,6 @@ from affordance_runtime.world.contracts import (
     WorldObservation,
 )
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
-from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.context import AgentGroundingIndexView, AgentImageInput
@@ -271,22 +272,20 @@ def actor_world_for_delivery(
 
 def project_actor_world_snapshot(
     observation: WorldObservation,
+    projection: CanonicalPublicWorldProjection,
     world: ModelWorldView,
     grounding: AgentGroundingIndexView,
     image_inputs: tuple[AgentImageInput, ...],
     max_structure_nodes: int | None = None,
     max_structure_bytes: int | None = None,
-    fact_refs: Mapping[str, str] | None = None,
 ) -> ActorWorldSnapshot:
     """Close one Actor view without consulting ActionSpace or ToolSpec."""
 
     refs = dict(grounding.target_refs)
     visible = {item.target_id: item for item in world.targets.items}
     entity_by_ref = {item.ref: item for item in grounding.entities}
-    source_refs = {
-        source.observation_id: f"S{index}"
-        for index, source in enumerate(observation.sources, 1)
-    }
+    ordered_sources = _ordered_actor_sources(observation)
+    source_refs = actor_source_refs(observation)
     memberships = _source_memberships(observation, visible, source_refs)
     primary_source = {
         target_id: memberships[target_id][0]
@@ -302,18 +301,8 @@ def project_actor_world_snapshot(
     facts_by_subject: dict[str, list[ActorWorldFactView]] = defaultdict(list)
     evidence_by_subject: dict[str, dict[str, str]] = defaultdict(dict)
     global_facts: list[ActorWorldGlobalFactView] = []
-    stable_fact_refs = (
-        dict(fact_refs)
-        if fact_refs is not None
-        else {
-            fact.fact_ref: f"F{index}"
-            for index, fact in enumerate(world.facts.items, 1)
-        }
-    )
     for fact in world.facts.items:
-        evidence = stable_fact_refs.get(fact.fact_ref)
-        if evidence is None:
-            continue
+        evidence = fact.fact_ref
         target = visible.get(fact.subject_id)
         if target is not None and target.state.get(fact.predicate) == fact.value:
             evidence_by_subject[fact.subject_id].setdefault(fact.predicate, evidence)
@@ -378,7 +367,7 @@ def project_actor_world_snapshot(
             target.state_truncated,
         )
 
-    summaries = tuple(world.sources)
+    manifests = {item.source_observation_id: item for item in observation.source_manifest}
     sources = tuple(
         ActorWorldSourceView(
             f"S{index}",
@@ -387,9 +376,16 @@ def project_actor_world_snapshot(
             summary.freshness,
             summary.entity_inventory.status,
             summary.projection_coverage,
-            _rendering_coverage(observation.sources[index - 1]),
+            _rendering_coverage(source),
         )
-        for index, summary in enumerate(summaries, 1)
+        for index, source in enumerate(ordered_sources, 1)
+        for summary in (
+            project_observation_source(
+                source,
+                manifests[source.observation_id].coverage,
+                conflicted=bool(observation.conflicts),
+            ),
+        )
     )
     if not sources:
         coverage = "truncated" if world.targets.truncated else "complete"
@@ -404,7 +400,10 @@ def project_actor_world_snapshot(
         ),)
     documents = _structure_documents(
         observation,
+        projection,
         sources,
+        ordered_sources,
+        source_refs,
         visible,
         refs,
         entity_by_ref,
@@ -632,12 +631,34 @@ def _source_memberships(observation, visible, source_refs) -> dict[str, tuple[st
         source_ref = source_refs[link.source_observation_id]
         if link.canonical_target_id in canonical_ids and source_ref not in memberships[link.canonical_target_id]:
             memberships[link.canonical_target_id].append(source_ref)
-    return {key: tuple(value) for key, value in memberships.items()}
+    return {key: tuple(sorted(value, key=lambda item: int(item[1:]))) for key, value in memberships.items()}
+
+
+def _ordered_actor_sources(observation: WorldObservation) -> tuple[object, ...]:
+    return tuple(sorted(
+        observation.sources,
+        key=lambda source: (
+            source.surface,
+            str(source.source_profile.modality),
+            source.source_profile.debug_source,
+            tuple((item.role, item.label) for item in source.structure),
+        ),
+    ))
+
+
+def actor_source_refs(observation: WorldObservation) -> Mapping[str, str]:
+    return {
+        source.observation_id: f"S{index}"
+        for index, source in enumerate(_ordered_actor_sources(observation), 1)
+    }
 
 
 def _structure_documents(
     observation,
+    projection,
     sources,
+    ordered_sources,
+    source_refs,
     visible,
     refs,
     entity_by_ref,
@@ -658,34 +679,18 @@ def _structure_documents(
         SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.allocation
         for item in observation.entity_source_links
     }
-    next_context_ref = 1 + max(
-        (
-            PublicRefCodec.decode(ref, expected=PublicRefKind.NODE).index
-            for ref in refs.values()
-            if isinstance(ref, str) and PublicRefCodec.accepts(ref, expected=PublicRefKind.NODE)
-        ),
-        default=0,
-    )
     documents: list[ActorWorldDocumentView] = []
     emitted_entities: set[str] = set()
-    structural_sources = sorted(
-        (
-            (index, source)
-            for index, source in enumerate(observation.sources)
-            if source.structure
-        ),
-        key=lambda item: (
-            0 if str(item[1].source_profile.assurance) == "structural" else 1,
-            0 if str(item[1].coverage) == "complete" else 1,
-            item[1].observation_id,
-        ),
+    structural_sources = tuple(
+        source for source in ordered_sources if source.structure
     )
-    remaining = max_structure_nodes or sum(len(source.structure) for _, source in structural_sources)
+    remaining = max_structure_nodes or sum(len(source.structure) for source in structural_sources)
     remaining_bytes = max_structure_bytes
-    for lens_index, (index, source) in enumerate(structural_sources):
+    source_views = {item.source_ref: item for item in sources}
+    for lens_index, source in enumerate(structural_sources):
         if not source.structure or remaining <= 0:
             continue
-        source_ref = f"S{index + 1}"
+        source_ref = source_refs[source.observation_id]
         by_id = {item.structure_id: item for item in source.structure}
         canonical_for_structure = {
             item.structure_id: canonical_by_endpoint.get(
@@ -747,8 +752,9 @@ def _structure_documents(
                 actor_refs[item.structure_id] = semantic_ref
                 emitted_entities.add(canonical_id)
             else:
-                actor_refs[item.structure_id] = f"N{next_context_ref}"
-                next_context_ref += 1
+                actor_refs[item.structure_id] = projection.private_structure_refs[
+                    (source.observation_id, item.structure_id)
+                ]
 
         def node(structure_id: str, active: frozenset[str] = frozenset()) -> ActorWorldNodeView:
             if structure_id in active:
@@ -774,8 +780,8 @@ def _structure_documents(
                 _non_tree_relations(target, refs) if target is not None else {},
                 (
                     tuple(
-                        f"S{source_index + 1}"
-                        for source_index, candidate_source in enumerate(observation.sources)
+                        source_refs[candidate_source.observation_id]
+                        for candidate_source in ordered_sources
                         if any(
                             link.source_observation_id == candidate_source.observation_id
                             and link.canonical_target_id == canonical_id
@@ -800,7 +806,7 @@ def _structure_documents(
         )
         documents.append(ActorWorldDocumentView(
             source_ref,
-            sources[index].modality,
+            source_views[source_ref].modality,
             roots,
             len(retained),
             source.structure_total_count if lens_index == 0 else len(ordered),

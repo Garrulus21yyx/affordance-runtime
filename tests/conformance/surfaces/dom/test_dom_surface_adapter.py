@@ -6,11 +6,18 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
-from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from tests.support.canonical_world import canonical_world
+
+
+def project_model_world(observation, budget, *args, **kwargs):
+    return _project_model_world(
+        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
+    )
 
 
 class InteractivePage:
