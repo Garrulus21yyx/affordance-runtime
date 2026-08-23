@@ -3,9 +3,9 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 complete / re-admitted after read-only visual-mark fresh review /
+Gate 2 reopened by Gate 4 attempt 3 /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 attempt 2 stopped / not admitted / Overall reopened / non-closed / no live run
+Gate 4 attempt 3 stopped / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -245,6 +245,19 @@ through an exact Manifest route. Full provider-free pytest is `1613 passed, 24 s
 and production negative searches pass. Gate 2 is re-admitted; Gate 3 remains admitted; Gate 4 remains stopped/not
 admitted; overall remains reopened/non-closed.
 
+Gate 4 attempt-3 stop checkpoint (2026-08-23): the unary real production path and private-identity permutation
+witnesses passed, but the first binary single-mark cases falsified Delivery before provider entry. A fresh World with
+one destination-required `drag_to` route and exactly one actual marked operand was run in both source-only and
+destination-only orientations. The annotation-owned media fragment carried the complete binary route, while final
+TurnPacker text did not guarantee delivery of the complementary unmarked operand. `ModelTurnDelivery` correctly failed
+closed with `delivery Manifest contains a ref absent from admitted text/media`; recorder calls, provider attempts, and
+GUI dispatches were all zero. Expected joint visibility is `source text ∪ destination mark` or `source mark ∪
+destination text` before the route enters Manifest. This is a Gate 2 delivery vertical-composition defect between the
+media route producer and final text-fragment selection, observed at the ModelTurnDelivery invariant boundary; it is
+not a recorder, Catalog, CoreLoop, or Binder defect. Gate 2 is reopened, Gate 3 remains admitted, and Gate 4 stopped
+before sparse-relation, continuation, capacity-rejection, full, or static closure checks. No production compensation
+or Gate-4 completion commit was made.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -336,15 +349,15 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (reopened by Gate 4 attempt 2).** Store continuation evidence and route-bearing media remain
-   scoped prior evidence, but the production annotation owner cannot emit an in-frame evidence-only mark because it
-   filters marks to action operands and permits only executable refs.
+3. **Delivery cutover (reopened by Gate 4 attempt 3).** E/N mark selection and route-bearing media retain scoped prior
+   evidence, but a binary route with only one actually marked operand is not atomically composed with final text that
+   exposes the complementary operand.
 4. **Envelope cutover (complete/re-admitted after fresh provider-free review).** Messages/tools/media/settings/output
    are bound once and transported unchanged; diagnostics expose one input total, separate reserve/complete totals, and
    the effective input ceiling, with no component-payload subtotals.
-5. **Vertical conservation gate (attempt 2 stopped/not admitted).** Attempt 2 falsified the preceding Delivery owner
-   before later vertical assertions; a future separately admitted Gate 4 may proceed only after Gate 2 repair and fresh
-   re-admission.
+5. **Vertical conservation gate (attempt 3 stopped/not admitted).** Attempt 3 falsified the preceding Delivery
+   composition before later vertical assertions; a future separately admitted Gate 4 may proceed only after Gate 2
+   repair and fresh re-admission.
 
 No failing example authorizes a local production patch. A stage may begin only after the previous stage's owner-local
 production-path gate is green; closure still requires the final vertical gate and fresh held-out review.

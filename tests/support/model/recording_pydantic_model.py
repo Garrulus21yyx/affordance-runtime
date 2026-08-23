@@ -204,6 +204,9 @@ class RecordingPydanticModel:
                 self.last_gui_call = (name, dict(arguments))
                 if scripted == "first_gui_action_invalid_extra":
                     arguments["unexpected"] = "remove-me"
+            elif scripted == "first_schema_action":
+                name, arguments = _select_schema_action(info)
+                self.last_gui_call = (name, dict(arguments))
             elif scripted == "repeat_last_gui_call":
                 assert self.last_gui_call is not None
                 name, remembered_arguments = self.last_gui_call
@@ -313,6 +316,70 @@ def _select_current_tool_call(
         if match is not None:
             return tool.name, {"target": match.group(1)}
     raise AssertionError("actual PydanticAI request offered no current target-bearing route")
+
+
+def _select_schema_action(info: AgentInfo) -> tuple[str, dict[str, object]]:
+    """Choose one action solely from the actual provider-visible schema."""
+
+    for tool in info.function_tools:
+        schema = tool.parameters_json_schema
+        if not _schema_has_action_operand(schema):
+            continue
+        value = _schema_example(schema)
+        if isinstance(value, dict):
+            return tool.name, value
+    raise AssertionError("actual PydanticAI request offered no schema-described action route")
+
+
+def _schema_has_action_operand(schema: Mapping[str, object]) -> bool:
+    properties = schema.get("properties", {})
+    if isinstance(properties, Mapping) and ({"target", "source"} & set(properties)):
+        return True
+    return any(
+        isinstance(branch, Mapping) and _schema_has_action_operand(branch)
+        for keyword in ("oneOf", "anyOf")
+        for branch in schema.get(keyword, ())
+        if isinstance(schema.get(keyword), Sequence)
+    )
+
+
+def _schema_example(schema: Mapping[str, object]) -> object:
+    for keyword in ("oneOf", "anyOf"):
+        branches = schema.get(keyword)
+        if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes, bytearray)):
+            branch = next((item for item in branches if isinstance(item, Mapping)), None)
+            if branch is not None:
+                return _schema_example(branch)
+    if "const" in schema:
+        return copy.deepcopy(schema["const"])
+    enum = schema.get("enum")
+    if isinstance(enum, Sequence) and not isinstance(enum, (str, bytes, bytearray)) and enum:
+        return copy.deepcopy(enum[0])
+    kind = schema.get("type")
+    if kind == "object":
+        properties = schema.get("properties", {})
+        required = schema.get("required", ())
+        assert isinstance(properties, Mapping)
+        assert isinstance(required, Sequence)
+        return {
+            str(name): _schema_example(properties[str(name)])
+            for name in required
+            if isinstance(properties.get(str(name)), Mapping)
+        }
+    if kind == "array":
+        items = schema.get("items", {})
+        count = int(schema.get("minItems", 0))
+        return [_schema_example(items) for _ in range(count)] if isinstance(items, Mapping) else []
+    if kind == "integer":
+        return int(schema.get("minimum", 0))
+    if kind == "number":
+        return float(schema.get("minimum", 0.0))
+    if kind == "boolean":
+        return False
+    if kind == "string":
+        minimum = int(schema.get("minLength", 0))
+        return "x" * max(1, minimum)
+    raise AssertionError(f"cannot sample provider-visible schema kind: {kind!r}")
 
 
 def _latest_public_text(messages: list[ModelMessage]) -> str:

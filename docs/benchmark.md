@@ -3,9 +3,9 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 complete / re-admitted after read-only visual-mark fresh review /
+Gate 2 reopened by Gate 4 attempt 3 /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 attempt 2 stopped / not admitted / Overall reopened / non-closed / no live run
+Gate 4 attempt 3 stopped / not admitted / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
 remain separate reopened gates; C10 cannot close before Gate 4. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -250,6 +250,17 @@ Recording FunctionModel requests preserve PNG bytes and E/N media metadata; N ha
 ref, or interaction tool schema row; and E authorization still requires an exact Manifest route. Full provider-free
 pytest is `1613 passed, 24 skipped`; static and production negative checks pass. Gate 2 is re-admitted, Gate 3 remains
 admitted, Gate 4 remains stopped/not admitted, and overall remains reopened/non-closed.
+
+Gate 4 attempt 3 stopped on the first binary single-mark production cases. The unary request/response chain and a
+private observation/binding identity-length permutation passed through the actual Runtime, packed turn, Envelope,
+Recording FunctionModel, schema-selected call, resolver, ActionSpace, and Binder. The next generated World exposed one
+destination-required `drag_to` route with Unicode/punctuation labels and exactly one actual source or destination mark.
+Both orientations failed locally before recorder/provider/GUI dispatch with
+`delivery Manifest contains a ref absent from admitted text/media`: the media fragment carried the complete binary
+route, but final text omitted its complementary unmarked operand. The expected `source text ∪ destination mark` or
+`source mark ∪ destination text` relation was therefore incomplete. Gate 2 is reopened at the media-route/final-text
+composition owner; Gate 3 remains admitted; Gate 4 is stopped/not admitted. Sparse, continuation, capacity-rejection,
+full, and static closure checks were not continued, and no completion commit was made.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -1098,17 +1109,16 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery reopened by Gate 4 attempt 2:** `ObservationDeliveryStore` continuation evidence remains scoped, and
-   route-bearing media still carries exact roles/routes, but the production annotation owner cannot retain a real
-   evidence-only mark; helper construction was insufficient production-path evidence.
+4. **Delivery reopened by Gate 4 attempt 3:** E/N actual-mark ownership remains scoped prior evidence, but a binary
+   single-mark route is not atomically composed with final text containing the complementary operand.
 5. **Envelope complete/re-admitted after fresh provider-free review:** one `CanonicalProviderEnvelopeBinder`
    closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
    exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Breakdown
    diagnostics expose one input total and separate reserve/complete totals; producerless candidate metrics are absent.
-6. **Stopped/not admitted — vertical conservation:** attempt 2 falsified Gate 2 evidence-only mark reachability before
-   later vertical assertions. Gate 3 remains admitted; Gate 2 requires owner repair and fresh re-admission before a
-   future Gate 4 attempt.
+6. **Stopped/not admitted — vertical conservation:** attempt 3 falsified Gate 2 binary joint visibility before later
+   vertical assertions. Gate 3 remains admitted; Gate 2 requires owner repair and fresh re-admission before a future
+   Gate 4 attempt.
 7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
    pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free diagnostic.
 8. Run an independent fresh-context read-only review. Reconcile implementation, docs, schema version, evidence, and
