@@ -22,6 +22,10 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 )
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
+from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryContinuationCapability,
+    DeliveryContinuationOutcomeKind,
+)
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -90,49 +94,35 @@ class _FindControlsBinding:
 @dataclass(frozen=True)
 class _ActionResultsNextPageBinding:
     context: AgentContext
-    delivery: ModelTurnDelivery
-    scopes: tuple[str, ...]
+    capabilities: tuple[DeliveryContinuationCapability, ...]
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> GroundedActionResolution:
         scope = str(arguments.get("scope", "")) if arguments else ""
-        if not scope and len(self.scopes) == 1:
-            scope = self.scopes[0]
-        if scope not in self.scopes or set(arguments).difference({"scope"}):
+        scopes = tuple(item.scope for item in self.capabilities)
+        if not scope and len(scopes) == 1:
+            scope = scopes[0]
+        if scope not in scopes or set(arguments).difference({"scope"}):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        plan = self.context.action_delivery_plan
-        obligation = next(
-            (item for item in plan.obligations if item.continuation_scope == scope),
-            None,
-        ) if plan is not None else None
-        admitted = dict(self.delivery.admitted_record_counts).get(obligation.kind.value, 0) if obligation else 0
-        if obligation is None or admitted <= 0 or admitted >= len(obligation.remaining):
+        capability = next(item for item in self.capabilities if item.scope == scope)
+        outcome = self.context.delivery_store.continue_delivery(capability)
+        if outcome.kind is DeliveryContinuationOutcomeKind.STALE:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
+        if outcome.kind is not DeliveryContinuationOutcomeKind.READY or outcome.next_store is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        new_offset = obligation.cursor.offset + admitted
-        advance_cursor = getattr(self.context.delivery_store, "with_advanced_cursor", None)
-        if not callable(advance_cursor):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        next_store = advance_cursor(
-            scope,
-            world_lineage=obligation.cursor.world_lineage,
-            action_lineage=obligation.cursor.action_space_lineage,
-            result_lineage=obligation.cursor.effect_or_result_lineage,
-            order_digest=obligation.cursor.order_digest,
-            offset=new_offset,
-        )
         return GroundedActionResolution(
             ContinueDeliveryResult(
                 context_id,
                 GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
                 {"scope": scope},
                 {
-                    "continuation_available": new_offset < len(obligation.records),
+                    "continuation_available": outcome.next_store.inventory(scope) is not None,
                     "continuation_scope": scope,
                     "read_only": True,
                     "zero_browser_dispatch": True,
                 },
                 tool_call_id,
             ),
-            next_store,
+            outcome.next_store,
         )
 
 
@@ -434,26 +424,17 @@ class _WorldReadBinding:
         delivery = self.delivery
         if plan is None or delivery is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        obligation = next(
-            (item for item in plan.obligations if item.continuation_scope == scope),
+        capability = next(
+            (item for item in delivery.continuation_capabilities if item.scope == scope),
             None,
         )
-        admitted = dict(delivery.admitted_record_counts).get(obligation.kind.value, 0) if obligation else 0
-        if obligation is None or admitted <= 0 or admitted >= len(obligation.remaining):
+        if capability is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        new_offset = obligation.cursor.offset + admitted
-        store = self.context.delivery_store
-        advance_cursor = getattr(store, "with_advanced_cursor", None)
-        if not callable(advance_cursor):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        next_store = advance_cursor(
-            scope,
-            world_lineage=obligation.cursor.world_lineage,
-            action_lineage=obligation.cursor.action_space_lineage,
-            result_lineage=obligation.cursor.effect_or_result_lineage,
-            order_digest=obligation.cursor.order_digest,
-            offset=new_offset,
-        )
+        outcome = self.context.delivery_store.continue_delivery(capability)
+        if outcome.kind is DeliveryContinuationOutcomeKind.STALE:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
+        if outcome.kind is not DeliveryContinuationOutcomeKind.READY or outcome.next_store is None:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return GroundedActionResolution(
             ReadRegionResult(
                 context_id,
@@ -462,12 +443,12 @@ class _WorldReadBinding:
                 {
                     "read_only": True,
                     "zero_browser_dispatch": True,
-                    "continuation_available": new_offset < len(obligation.records),
+                    "continuation_available": True,
                     "continuation_scope": scope,
                 },
                 tool_call_id,
             ),
-            next_store,
+            outcome.next_store,
         )
 
 
@@ -575,7 +556,7 @@ def compile_grounded_tool_catalog(
             _ManifestBoundAction(item, delivery.manifest),
         )
         for item in GroundedToolCompiler().compile(
-            _delivered_action_options(context, delivery.manifest),
+            _delivered_action_options(delivery.manifest),
             context_id=context.context_id,
         )
     )
@@ -726,17 +707,11 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
-    plan = context.action_delivery_plan
-    read_scopes: list[str] = []
-    active_read = getattr(context.delivery_store, "active_read", None)
-    if active_read is not None and active_read.next_cursor:
-        read_scopes.append("active_read")
-    admitted_counts = dict(delivery.admitted_record_counts)
-    if plan is not None:
-        for scope in ("effect", "page_directory"):
-            obligation = next((item for item in plan.obligations if item.continuation_scope == scope), None)
-            if obligation is not None and 0 < admitted_counts.get(obligation.kind.value, 0) < len(obligation.remaining):
-                read_scopes.append(scope)
+    capabilities = delivery.continuation_capabilities
+    read_capabilities = tuple(
+        item for item in capabilities if item.scope in {"effect", "page_directory", "active_read"}
+    )
+    read_scopes = [item.scope for item in read_capabilities]
     if read_scopes:
         properties = (
             {
@@ -759,12 +734,10 @@ def compile_grounded_tool_catalog(
                 _WorldReadBinding(context, "continue", tuple(read_scopes), delivery),
             )
         )
-    continuation_scopes = tuple(
-        item.continuation_scope
-        for item in (plan.obligations if plan is not None else ())
-        if item.continuation_scope not in {"effect", "page_directory"}
-        and 0 < admitted_counts.get(item.kind.value, 0) < len(item.remaining)
+    action_capabilities = tuple(
+        item for item in capabilities if item.scope not in {"effect", "page_directory", "active_read"}
     )
+    continuation_scopes = tuple(item.scope for item in action_capabilities)
     if continuation_scopes:
         properties = (
             {
@@ -784,7 +757,7 @@ def compile_grounded_tool_catalog(
                     "Continue current action results; Runtime owns paging.",
                     _object_schema(properties, ("scope",) if properties else ()),
                 ),
-                _ActionResultsNextPageBinding(context, delivery, continuation_scopes),
+                _ActionResultsNextPageBinding(context, action_capabilities),
             )
         )
 
@@ -936,31 +909,35 @@ def _catalog_from_registrations(
     )
 
 
-def _delivered_action_options(
-    context: AgentContext,
-    manifest: DeliveryManifest,
-):
-    routes = {
-        (item.operation, item.source_ref, item.destination_ref)
-        for item in manifest.action_routes
-    }
+def _delivered_action_options(manifest: DeliveryManifest):
     delivered = []
-    for option in context.complete_actions:
+    for route in manifest.action_routes:
+        option = route.private_option
+        if (
+            option is None
+            or getattr(option, "action_id", "") != route.private_action_id
+            or (getattr(option, "operation", ""), getattr(option, "target_ref", ""))
+            != (route.operation, route.source_ref)
+        ):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
         if option.destination_required:
             destinations = tuple(
                 item
                 for item in option.destinations.items
-                if (option.operation, option.target_ref, item.grounding_ref) in routes
+                if item.grounding_ref == route.destination_ref
             )
-            if destinations:
-                delivered.append(
-                    replace(
-                        option,
-                        destinations=BoundedSection(destinations, len(destinations), False),
-                    )
+            if len(destinations) != 1:
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
+            delivered.append(
+                replace(
+                    option,
+                    destinations=BoundedSection(destinations, 1, False),
                 )
-        elif (option.operation, option.target_ref, "") in routes:
+            )
+        elif not route.destination_ref:
             delivered.append(option)
+        else:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
     return tuple(delivered)
 
 

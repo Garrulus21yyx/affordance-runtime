@@ -6,9 +6,8 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from types import MappingProxyType
 
 from affordance_runtime.actions.paging import ActionDiscoveryMatch
 from affordance_runtime.agent.context.canonical_world_projection import (
@@ -34,6 +33,92 @@ _MAX_LOCAL_DELIVERY_RECORDS = 64
 _MAX_LOCAL_INFORMATION_ITEMS = 32
 _EFFECT_PAGE_SIZE = 8
 _DIRECTORY_PAGE_SIZE = 12
+
+
+class DeliveryContinuationOutcomeKind(StrEnum):
+    READY = "ready"
+    STALE = "stale"
+    EXHAUSTED = "exhausted"
+    UNSUPPORTED = "unsupported"
+
+
+@dataclass(frozen=True)
+class DeliveryInventorySnapshot:
+    """One immutable current inventory owned by the delivery Store."""
+
+    scope: str
+    kind: str
+    world_lineage: str = field(repr=False, compare=False)
+    action_lineage: str = field(repr=False, compare=False)
+    result_lineage: str = field(repr=False, compare=False)
+    order_digest: str = field(repr=False, compare=False)
+    records: tuple[object, ...] = field(repr=False, compare=False)
+    offset: int = field(default=0, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not all(
+                value.strip()
+                for value in (
+                    self.scope,
+                    self.kind,
+                    self.world_lineage,
+                    self.action_lineage,
+                    self.result_lineage,
+                    self.order_digest,
+                )
+            )
+            or type(self.offset) is not int
+            or not 0 <= self.offset <= len(self.records)
+        ):
+            raise ValueError("delivery inventory snapshot is invalid")
+        object.__setattr__(self, "records", tuple(self.records))
+
+    @property
+    def remaining(self) -> tuple[object, ...]:
+        return self.records[self.offset :]
+
+
+@dataclass(frozen=True)
+class DeliveryContinuationCapability:
+    """Public bounded scope plus its Store-private exact transition binding."""
+
+    scope: str
+    continuation_available: bool
+    admitted_count: int
+    inventory_size: int
+    world_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
+    action_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
+    result_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
+    order_digest: str = field(repr=False, compare=False, metadata={"serialize": False})
+    offset: int = field(repr=False, compare=False, metadata={"serialize": False})
+    kind: str = field(repr=False, compare=False, metadata={"serialize": False})
+
+    def __post_init__(self) -> None:
+        if (
+            not self.scope.strip()
+            or not self.kind.strip()
+            or type(self.admitted_count) is not int
+            or type(self.inventory_size) is not int
+            or type(self.offset) is not int
+            or min(self.admitted_count, self.inventory_size, self.offset) < 0
+            or self.offset + self.admitted_count > self.inventory_size
+            or self.continuation_available
+            != (self.offset + self.admitted_count < self.inventory_size)
+        ):
+            raise ValueError("delivery continuation capability is invalid")
+
+
+@dataclass(frozen=True)
+class DeliveryContinuationOutcome:
+    kind: DeliveryContinuationOutcomeKind
+    next_store: "ObservationDeliveryStore | None" = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, DeliveryContinuationOutcomeKind):
+            raise TypeError("delivery continuation outcome must be typed")
+        if (self.kind is DeliveryContinuationOutcomeKind.READY) != (self.next_store is not None):
+            raise ValueError("delivery continuation outcome/store mismatch")
 
 
 class InformationDeltaKind(StrEnum):
@@ -460,10 +545,8 @@ class ObservationDeliveryStore:
     latest_effect: LatestEffect | None = None
     local_deliveries: tuple[LocalDeliveryRecord, ...] = ()
     active_read: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
-    private_cursor_offsets: Mapping[str, tuple[str, str, str, str, int]] = field(
-        default_factory=dict,
-        repr=False,
-        compare=False,
+    inventories: tuple[DeliveryInventorySnapshot, ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
     )
     action_query: StoredActionQuery | None = field(default=None, repr=False, compare=False)
     requested_continuation_scope: str | None = field(
@@ -479,20 +562,13 @@ class ObservationDeliveryStore:
         object.__setattr__(self, "local_deliveries", records)
         if self.active_read is not None and not isinstance(self.active_read, WorldDeliveryLens):
             raise TypeError("observation delivery active read must be a private typed cursor")
-        if any(
-            not isinstance(scope, str)
-            or not scope
-            or len(value) != 5
-            or type(value[-1]) is not int
-            or value[-1] < 0
-            for scope, value in self.private_cursor_offsets.items()
+        inventories = tuple(self.inventories)
+        if (
+            any(not isinstance(item, DeliveryInventorySnapshot) for item in inventories)
+            or len({item.scope for item in inventories}) != len(inventories)
         ):
-            raise ValueError("observation delivery private cursor store is invalid")
-        object.__setattr__(
-            self,
-            "private_cursor_offsets",
-            MappingProxyType(dict(self.private_cursor_offsets)),
-        )
+            raise ValueError("observation delivery inventories are invalid")
+        object.__setattr__(self, "inventories", inventories)
         if self.action_query is not None and not isinstance(self.action_query, StoredActionQuery):
             raise TypeError("observation delivery action query must be private typed inventory")
         if self.requested_continuation_scope is not None and not self.requested_continuation_scope.strip():
@@ -507,52 +583,149 @@ class ObservationDeliveryStore:
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             active_read=lens,
-            private_cursor_offsets=self.private_cursor_offsets,
+            inventories=self.inventories,
             action_query=self.action_query,
             requested_continuation_scope=self.requested_continuation_scope,
         )
 
-    def cursor_offset(
+    def install_inventories(
         self,
-        scope: str,
-        *,
-        world_lineage: str,
-        action_lineage: str,
-        result_lineage: str,
-        order_digest: str,
-    ) -> int:
-        value = self.private_cursor_offsets.get(scope)
-        if value is None or value[:4] != (world_lineage, action_lineage, result_lineage, order_digest):
-            return 0
-        return value[-1]
-
-    def with_advanced_cursor(
-        self,
-        scope: str,
-        *,
-        world_lineage: str,
-        action_lineage: str,
-        result_lineage: str,
-        order_digest: str,
-        offset: int,
+        inventories: tuple[DeliveryInventorySnapshot, ...],
     ) -> "ObservationDeliveryStore":
-        if type(offset) is not int or offset < 0:
-            raise ValueError("private continuation offset is invalid")
-        offsets = dict(self.private_cursor_offsets)
-        offsets[scope] = (
-            world_lineage,
-            action_lineage,
-            result_lineage,
-            order_digest,
-            offset,
-        )
+        """Install fresh immutable inventories while conserving current exact offsets."""
+
+        current = {item.scope: item for item in self.inventories}
+        installed = []
+        for incoming in inventories:
+            prior = current.get(incoming.scope)
+            same_inventory = prior is not None and (
+                prior.world_lineage,
+                prior.action_lineage,
+                prior.result_lineage,
+                prior.order_digest,
+            ) == (
+                incoming.world_lineage,
+                incoming.action_lineage,
+                incoming.result_lineage,
+                incoming.order_digest,
+            )
+            installed.append(
+                DeliveryInventorySnapshot(
+                    incoming.scope,
+                    incoming.kind,
+                    incoming.world_lineage,
+                    incoming.action_lineage,
+                    incoming.result_lineage,
+                    incoming.order_digest,
+                    incoming.records,
+                    min(prior.offset, len(incoming.records)) if same_inventory else 0,
+                )
+            )
         return ObservationDeliveryStore(
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             active_read=self.active_read,
-            private_cursor_offsets=offsets,
+            inventories=tuple(installed),
             action_query=self.action_query,
-            requested_continuation_scope=scope,
+            requested_continuation_scope=(
+                self.requested_continuation_scope
+                if any(item.scope == self.requested_continuation_scope for item in installed)
+                else None
+            ),
+        )
+
+    def inventory(self, scope: str) -> DeliveryInventorySnapshot | None:
+        return next((item for item in self.inventories if item.scope == scope), None)
+
+    def continuation_capabilities(
+        self,
+        admitted_counts: Mapping[str, int],
+    ) -> tuple[DeliveryContinuationCapability, ...]:
+        capabilities = []
+        for inventory in self.inventories:
+            admitted = admitted_counts.get(inventory.kind, 0)
+            capability = DeliveryContinuationCapability(
+                inventory.scope,
+                inventory.offset + admitted < len(inventory.records),
+                admitted,
+                len(inventory.records),
+                inventory.world_lineage,
+                inventory.action_lineage,
+                inventory.result_lineage,
+                inventory.order_digest,
+                inventory.offset,
+                inventory.kind,
+            )
+            if capability.continuation_available:
+                capabilities.append(capability)
+        if self.active_read is not None and self.active_read.next_cursor:
+            lens_digest = _public_digest(
+                (
+                    self.active_read.world_observation_id,
+                    self.active_read.kind,
+                    self.active_read.selected_region_key,
+                    self.active_read.query,
+                    self.active_read.next_cursor,
+                )
+            )
+            capabilities.append(
+                DeliveryContinuationCapability(
+                    "active_read",
+                    True,
+                    0,
+                    1,
+                    self.active_read.world_observation_id,
+                    "local_read",
+                    lens_digest,
+                    lens_digest,
+                    0,
+                    "active_read",
+                )
+            )
+        return tuple(capabilities)
+
+    def continue_delivery(
+        self,
+        capability: DeliveryContinuationCapability,
+    ) -> DeliveryContinuationOutcome:
+        if capability.scope == "active_read":
+            if self.active_read is None or not self.active_read.next_cursor:
+                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
+            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.READY, self)
+        inventory = self.inventory(capability.scope)
+        if inventory is None:
+            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.UNSUPPORTED)
+        if (
+            inventory.world_lineage,
+            inventory.action_lineage,
+            inventory.result_lineage,
+            inventory.order_digest,
+            inventory.offset,
+        ) != (
+            capability.world_lineage,
+            capability.action_lineage,
+            capability.result_lineage,
+            capability.order_digest,
+            capability.offset,
+        ):
+            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
+        next_offset = inventory.offset + capability.admitted_count
+        if next_offset >= len(inventory.records):
+            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.EXHAUSTED)
+        next_inventories = tuple(
+            replace(item, offset=next_offset) if item.scope == inventory.scope else item
+            for item in self.inventories
+        )
+        return DeliveryContinuationOutcome(
+            DeliveryContinuationOutcomeKind.READY,
+            ObservationDeliveryStore(
+                latest_effect=self.latest_effect,
+                local_deliveries=self.local_deliveries,
+                active_read=self.active_read,
+                inventories=next_inventories,
+                action_query=self.action_query,
+                requested_continuation_scope=capability.scope,
+            ),
         )
 
     def reduce(self, step: object, *, step_index: int) -> DeliveryTransition:
@@ -634,7 +807,7 @@ class ObservationDeliveryStore:
             latest_effect=external.latest_effect,
             local_deliveries=(*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
             active_read=external.active_read,
-            private_cursor_offsets=external.private_cursor_offsets,
+            inventories=external.inventories,
             action_query=query_inventory,
             requested_continuation_scope=(
                 None if operation == "find_controls" else external.requested_continuation_scope

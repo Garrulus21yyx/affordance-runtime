@@ -212,7 +212,7 @@ class ContextBuilder:
             recent_outcomes=history_items,
             top_k=5,
         )
-        action_delivery_plan = build_action_delivery_plan(
+        delivery_planning = build_action_delivery_plan(
             action_space_id=action_space.action_space_id,
             world_observation_id=observation.observation_id,
             base_actions=actions.options,
@@ -232,6 +232,8 @@ class ContextBuilder:
             ),
             cursor_store=delivery_store,
         )
+        action_delivery_plan = delivery_planning.plan
+        delivery_store = delivery_planning.store
         candidate_projection = action_delivery_plan.projection(action_delivery_plan.bounded_preview_counts())
         return _fit_context(
             identity.context_id,

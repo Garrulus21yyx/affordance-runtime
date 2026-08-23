@@ -23,7 +23,9 @@ from affordance_runtime.agent.context.contracts import (
     AgentDestinationView,
 )
 from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryInventorySnapshot,
     ObservationDelivery,
+    ObservationDeliveryStore,
     PublicEffectInventory,
 )
 from affordance_runtime.agent.context.world_region_index import (
@@ -85,6 +87,9 @@ class ActionCandidate:
     reasons: tuple[str, ...] = ()
     destination_required: bool = False
     destinations: tuple[ActionCandidateDestination, ...] = ()
+    private_option: object | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -104,6 +109,8 @@ class ActionCandidate:
             raise ValueError("destination-required candidate must close current destinations")
         if len({item.target_ref for item in self.destinations}) != len(self.destinations):
             raise ValueError("candidate destination refs must be unique")
+        if self.private_option is None:
+            raise ValueError("action candidate requires its private resolver row")
 
 
 @dataclass(frozen=True)
@@ -225,41 +232,13 @@ class DeliveryObligationKind(StrEnum):
 
 
 @dataclass(frozen=True)
-class PrivateDeliveryCursor:
-    """Runtime-only continuation bound to one owner lineage and exact order."""
-
-    world_lineage: str
-    action_space_lineage: str
-    effect_or_result_lineage: str
-    obligation_kind: DeliveryObligationKind
-    order_digest: str
-    offset: int = 0
-
-    def __post_init__(self) -> None:
-        if (
-            not all(
-                item.strip()
-                for item in (
-                    self.world_lineage,
-                    self.action_space_lineage,
-                    self.effect_or_result_lineage,
-                    self.order_digest,
-                )
-            )
-            or not isinstance(self.obligation_kind, DeliveryObligationKind)
-            or type(self.offset) is not int
-            or self.offset < 0
-        ):
-            raise ValueError("private delivery cursor is invalid")
-
-
-@dataclass(frozen=True)
 class WorldDeliveryRecord:
     """One atomic record already owned by ObservationDelivery."""
 
     record_kind: str
     record_index: int
     rendered_cost_bytes: int
+    route_fragments: tuple[ActionDeliveryFragment, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -269,6 +248,7 @@ class WorldDeliveryRecord:
             or self.rendered_cost_bytes < 0
         ):
             raise ValueError("World delivery record is invalid")
+        object.__setattr__(self, "route_fragments", tuple(self.route_fragments))
 
 
 DeliveryAtomicRecord = ActionDeliveryFragment | ActionRouteIssueFragment | WorldDeliveryRecord
@@ -281,7 +261,7 @@ class DeliveryObligation:
     kind: DeliveryObligationKind
     records: tuple[DeliveryAtomicRecord, ...]
     priority: int
-    cursor: PrivateDeliveryCursor = field(
+    inventory: DeliveryInventorySnapshot = field(
         repr=False,
         compare=False,
         metadata={"serialize": False},
@@ -296,9 +276,9 @@ class DeliveryObligation:
         if (
             not isinstance(self.kind, DeliveryObligationKind)
             or self.priority < 0
-            or not isinstance(self.cursor, PrivateDeliveryCursor)
-            or self.cursor.obligation_kind is not self.kind
-            or self.cursor.offset > len(records)
+            or not isinstance(self.inventory, DeliveryInventorySnapshot)
+            or self.inventory.kind != self.kind.value
+            or self.inventory.records != records
             or self.source_coverage not in {"complete", "partial", "unavailable"}
             or self.result_coverage not in {"complete", "partial", "empty"}
         ):
@@ -308,7 +288,7 @@ class DeliveryObligation:
 
     @property
     def remaining(self) -> tuple[DeliveryAtomicRecord, ...]:
-        return self.records[self.cursor.offset :]
+        return self.records[self.inventory.offset :]
 
 
 @dataclass(frozen=True)
@@ -376,13 +356,19 @@ class ActionDeliveryPlan:
             if not 0 <= count <= len(obligation.remaining):
                 raise ValueError("admitted obligation prefix is invalid")
             for record in obligation.remaining[:count]:
-                if not isinstance(record, ActionDeliveryFragment):
-                    continue
-                new_routes = tuple(route for route in record.route_deltas if route not in seen_routes)
-                if not new_routes:
-                    continue
-                seen_routes.update(new_routes)
-                fragments.append(record)
+                route_fragments = (
+                    (record,)
+                    if isinstance(record, ActionDeliveryFragment)
+                    else record.route_fragments
+                    if isinstance(record, WorldDeliveryRecord)
+                    else ()
+                )
+                for fragment in route_fragments:
+                    new_routes = tuple(route for route in fragment.route_deltas if route not in seen_routes)
+                    if not new_routes:
+                        continue
+                    seen_routes.update(new_routes)
+                    fragments.append(fragment)
         candidates = tuple(replace(item.candidate, rank=index) for index, item in enumerate(fragments, 1))
         return ActionCandidateProjection(
             self.action_space_id,
@@ -394,14 +380,6 @@ class ActionDeliveryPlan:
     def obligation(self, kind: DeliveryObligationKind) -> DeliveryObligation | None:
         return next((item for item in self.obligations if item.kind is kind), None)
 
-    @property
-    def continuation_scopes(self) -> tuple[str, ...]:
-        return tuple(
-            item.continuation_scope or item.kind.value
-            for item in self.obligations
-            if item.remaining
-        )
-
     def bounded_preview_counts(self) -> dict[str, int]:
         """Bounded non-authoritative preview for non-provider diagnostics."""
 
@@ -412,6 +390,18 @@ class ActionDeliveryPlan:
             )
             for item in self.obligations
         }
+
+
+@dataclass(frozen=True)
+class ActionDeliveryPlanningResult:
+    plan: ActionDeliveryPlan
+    store: ObservationDeliveryStore
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.plan, ActionDeliveryPlan) or not isinstance(
+            self.store, ObservationDeliveryStore
+        ):
+            raise TypeError("delivery planning result requires its typed owner values")
 
 
 def build_action_delivery_plan(
@@ -430,7 +420,7 @@ def build_action_delivery_plan(
     observation_delivery: ObservationDelivery | None = None,
     latest_effect: PublicEffectInventory | None = None,
     cursor_store: object | None = None,
-) -> ActionDeliveryPlan:
+) -> ActionDeliveryPlanningResult:
     """Build one bounded-family plan over complete current owner inventories."""
 
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
@@ -579,14 +569,33 @@ def build_action_delivery_plan(
         )
     groups[DeliveryObligationKind.ROUTE_ISSUES].extend(issue_fragments)
     if observation_delivery is not None:
-        groups[DeliveryObligationKind.PUBLIC_EFFECT][0:0] = [
+        effect_routes = tuple(
+            item
+            for item in groups[DeliveryObligationKind.PUBLIC_EFFECT]
+            if isinstance(item, ActionDeliveryFragment)
+        )
+        groups[DeliveryObligationKind.PUBLIC_EFFECT] = [
             WorldDeliveryRecord(
                 "effect",
                 index,
                 len(json.dumps(to_json_compatible(item), ensure_ascii=False).encode()),
+                tuple(
+                    route
+                    for route in effect_routes
+                    if route.candidate.target_ref == item.public_ref
+                ),
             )
             for index, item in enumerate(observation_delivery.latest_effect_values)
         ]
+        routed_effect_refs = {
+            route.candidate.target_ref
+            for record in groups[DeliveryObligationKind.PUBLIC_EFFECT]
+            if isinstance(record, WorldDeliveryRecord)
+            for route in record.route_fragments
+        }
+        groups[DeliveryObligationKind.PUBLIC_EFFECT].extend(
+            route for route in effect_routes if route.candidate.target_ref not in routed_effect_refs
+        )
         groups[DeliveryObligationKind.PAGE_DIRECTORY].extend(
             WorldDeliveryRecord(
                 "page_directory",
@@ -614,7 +623,7 @@ def build_action_delivery_plan(
         DeliveryObligationKind.DESTINATION_ROUTES: "destinations",
         DeliveryObligationKind.ROUTE_ISSUES: "issues",
     }
-    obligations = []
+    inventory_specs = []
     for kind, records in groups.items():
         if not records:
             continue
@@ -632,38 +641,37 @@ def build_action_delivery_plan(
             if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
             else "current"
         )
-        offset = 0
-        cursor_offset = getattr(cursor_store, "cursor_offset", None)
-        if callable(cursor_offset):
-            offset = cursor_offset(
+        inventory_specs.append(
+            DeliveryInventorySnapshot(
                 scope_by_kind[kind],
-                world_lineage=world_observation_id,
-                action_lineage=action_space_id,
-                result_lineage=result_lineage or "current",
-                order_digest=order_digest,
+                kind.value,
+                world_observation_id,
+                action_space_id,
+                result_lineage or "current",
+                order_digest,
+                tuple(records),
             )
-            offset = min(offset, len(records))
+        )
+    owner_store = (
+        cursor_store if isinstance(cursor_store, ObservationDeliveryStore) else ObservationDeliveryStore()
+    ).install_inventories(tuple(inventory_specs))
+    obligations = []
+    for inventory in owner_store.inventories:
+        kind = DeliveryObligationKind(inventory.kind)
         obligations.append(
             DeliveryObligation(
                 kind,
-                tuple(records),
+                inventory.records,
                 priorities[kind],
-                PrivateDeliveryCursor(
-                    world_observation_id,
-                    action_space_id,
-                    result_lineage or "current",
-                    kind,
-                    order_digest,
-                    offset,
-                ),
+                inventory,
                 scope_by_kind[kind],
                 discovery.source_coverage if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery else "complete",
-                "empty" if not records else "complete",
+                "empty" if not inventory.records else "complete",
                 ("current_world", kind.value),
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
-    requested_scope = getattr(cursor_store, "requested_continuation_scope", None)
+    requested_scope = owner_store.requested_continuation_scope
     foreground = next(
         (
             item.continuation_scope
@@ -672,12 +680,15 @@ def build_action_delivery_plan(
         ),
         None,
     ) or next((item.continuation_scope for item in ordered if item.remaining), None)
-    return ActionDeliveryPlan(
-        action_space_id,
-        world_observation_id,
-        ordered,
-        foreground,
-        requested_scope=requested_scope,
+    return ActionDeliveryPlanningResult(
+        ActionDeliveryPlan(
+            action_space_id,
+            world_observation_id,
+            ordered,
+            foreground,
+            requested_scope=requested_scope,
+        ),
+        owner_store,
     )
 
 
@@ -739,6 +750,7 @@ def project_action_candidates(
                 ranked_item.reasons,
                 option.destination_required,
                 destinations,
+                option,
             )
         )
         emitted_refs.add(option.target_ref)
@@ -776,11 +788,16 @@ def _candidate_from_option(
         reasons,
         option.destination_required,
         tuple(_project_destination(item, region_index, region_refs) for item in option.destinations.items),
+        option,
     )
 
 
 def _public_candidate_value(candidate: ActionCandidate) -> dict[str, object]:
-    return {key: value for key, value in to_json_compatible(candidate).items() if key not in {"action_id", "rank"}}
+    return {
+        key: value
+        for key, value in to_json_compatible(candidate).items()
+        if key not in {"action_id", "rank", "private_option"}
+    }
 
 
 def _public_fragment_value(fragment: ActionDeliveryFragment) -> dict[str, object]:
@@ -797,7 +814,14 @@ def _public_record_value(record: DeliveryAtomicRecord) -> Mapping[str, object]:
         return _public_fragment_value(record)
     if isinstance(record, ActionRouteIssueFragment):
         return freeze_json(to_json_compatible(record))
-    return freeze_json(to_json_compatible(record))
+    return freeze_json(
+        {
+            "record_kind": record.record_kind,
+            "record_index": record.record_index,
+            "rendered_cost_bytes": record.rendered_cost_bytes,
+            "route_fragments": tuple(_public_fragment_value(item) for item in record.route_fragments),
+        }
+    )
 
 
 def _public_obligation_value(obligation: DeliveryObligation) -> Mapping[str, object]:

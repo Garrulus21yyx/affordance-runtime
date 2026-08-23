@@ -15,6 +15,7 @@ from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
+from affordance_runtime.actions import ActionBinding, ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
@@ -26,7 +27,14 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.pydantic_ai_bridge import PydanticAIGroundedDecisionPort
-from affordance_runtime.world import ObservationMedia, ObservationMediaVariant, WorldFusion
+from affordance_runtime.world import (
+    ObservationMedia,
+    ObservationMediaVariant,
+    SemanticTarget,
+    StateFact,
+    SurfaceObservation,
+    WorldFusion,
+)
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
     SharedTaskEvaluator,
@@ -75,6 +83,63 @@ def _one_action_environment(*, before=None) -> ScriptedEnvironment:
         post_observations=(shared_world("gate-0-after", True),),
         results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
     )
+
+
+def _fanout_world(observation_id: str, enabled: bool, *, count: int = 84):
+    base = shared_world(observation_id, enabled)
+    source = base.sources[0]
+    extras = tuple(
+        SemanticTarget(
+            f"zz-fanout-target-{index}",
+            "button",
+            f"Generated control {index:03d}",
+            {"enabled": True},
+        )
+        for index in range(count - 1)
+    )
+    extra_bindings = tuple(
+        ActionBinding(
+            f"binding:{observation_id}:fanout:{index}",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            f"fingerprint:{observation_id}:fanout:{index}",
+            target.target_id,
+            target.target_id,
+            "dom",
+            "dom",
+            "activate",
+            "click",
+            "local_reversible",
+            ("shared_state_enabled",),
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            {"selector": f"#private-fanout-{index}"},
+        )
+        for index, target in enumerate(extras)
+    )
+    extra_facts = tuple(
+        StateFact(
+            f"fact:{observation_id}:zz-fanout:{index}",
+            target.target_id,
+            "enabled",
+            True,
+            observation_id,
+        )
+        for index, target in enumerate(extras)
+    )
+    fused = WorldFusion().fuse((
+        SurfaceObservation(
+            source.observation_id,
+            source.surface,
+            source.revision,
+            source.source_profile,
+            (*source.targets, *extras),
+            (*source.facts, *extra_facts),
+            (*source.bindings, *extra_bindings),
+        ),
+    ))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _actual_public_text(record) -> str:
@@ -231,5 +296,55 @@ def test_gate_0_records_actual_media_part_mime_and_bytes_identity() -> None:
         assert media_parts[0].media_type == "image/png"
         assert media_parts[0].data == png
         assert media_parts[0].data is png
+
+    asyncio.run(scenario())
+
+
+def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_routes() -> None:
+    async def scenario() -> None:
+        before = _fanout_world("gate-2-fanout-before", False)
+        after = _fanout_world("gate-2-fanout-after", True)
+        recorder = RecordingPydanticModel(
+            [("action_results_next_page", {}), "first_gui_action"],
+            scripted_phases=["continuation", "ordinary"],
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=before,
+            post_observations=(after,),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await _runtime(_policy(recorder)).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE
+        assert state.execution_count == 1
+        assert recorder.calls == 2
+        assert "action_results_next_page" in recorder.offered_tools[0]
+        first = json.loads(_actual_public_text(recorder.records[0]))["observation"]
+        second = json.loads(_actual_public_text(recorder.records[1]))["observation"]
+        first_routes = set(re.findall(r"rank=\d+ \[(E\d+)\]", first))
+        second_routes = set(re.findall(r"rank=\d+ \[(E\d+)\]", second))
+        assert first_routes
+        assert second_routes
+        assert second_routes - first_routes
+        assert "continuation_available" in first
+        assert recorder.records[0].scripted_phase == "continuation"
+        assert recorder.records[1].scripted_phase == "ordinary"
+        recorded_public = "\n".join(
+            _actual_public_text(record)
+            + json.dumps(
+                [tool.parameters_json_schema for tool in record.function_tools],
+                default=str,
+                ensure_ascii=False,
+            )
+            for record in recorder.records
+        )
+        assert before.observation_id not in recorded_public
+        assert after.observation_id not in recorded_public
+        action_ids = {
+            item.action_id
+            for item in ActionSpaceBuilder().build(shared_task(), before).options
+        }
+        assert all(item not in recorded_public for item in action_ids)
 
     asyncio.run(scenario())

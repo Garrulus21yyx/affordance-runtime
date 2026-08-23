@@ -11,9 +11,9 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteIssueFragment,
     DeliveryObligation,
     DeliveryObligationKind,
-    PrivateDeliveryCursor,
 )
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
+from affordance_runtime.agent.context.observation_delivery import DeliveryInventorySnapshot
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.request_admission import ModelRequestCapacityError
 from affordance_runtime.model.policy.turn_packer import TurnPacker
@@ -42,7 +42,15 @@ def _obligation(kind: DeliveryObligationKind, count: int, priority: int) -> Deli
         kind,
         records,
         priority,
-        PrivateDeliveryCursor("world:test", "actions:test", "result:test", kind, digest, 0),
+        DeliveryInventorySnapshot(
+            kind.value,
+            kind.value,
+            "world:test",
+            "actions:test",
+            "result:test",
+            digest,
+            records,
+        ),
         kind.value,
     )
 
@@ -201,3 +209,52 @@ def test_oversized_optional_head_blocks_only_its_group(
     assert admitted[foreground_kind.value] == 1
     assert admitted[oversized_kind.value] == 0
     assert admitted[small_kind.value] == 1
+
+
+@pytest.mark.parametrize("count", (1, 2, 16, 84, 167, 500))
+@pytest.mark.parametrize("capacity", (1, 5))
+def test_run21_fanout_shape_keeps_one_foreground_minimum_and_bounded_cost(
+    monkeypatch: pytest.MonkeyPatch,
+    count: int,
+    capacity: int,
+) -> None:
+    kind = DeliveryObligationKind.PUBLIC_EFFECT
+    plan = ActionDeliveryPlan(
+        "actions:test",
+        "world:test",
+        (_obligation(kind, count, 0),),
+        kind.value,
+    )
+
+    def attempt(_request, **kwargs):
+        counts = dict(kwargs["admitted_records"])
+        if sum(counts.values()) > capacity:
+            raise ModelRequestCapacityError(SimpleNamespace())
+        admitted_counts = tuple(sorted(counts.items()))
+        return (
+            SimpleNamespace(
+                delivery_id="delivery:test",
+                admitted_record_counts=admitted_counts,
+                packing_backoff_count=kwargs["backoff_count"],
+            ),
+            SimpleNamespace(delivery_id="delivery:test"),
+            SimpleNamespace(),
+        )
+
+    monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(attempt))
+    packed = TurnPacker().pack(
+        SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
+        binder=SimpleNamespace(
+            request_budget=ModelRequestBudget(),
+            _include_images=lambda *_args: False,
+        ),
+        supports_multimodal=False,
+        perception_profile=SimpleNamespace(),
+    )
+
+    admitted = dict(packed.admitted_record_counts)[kind.value]
+    assert admitted == min(count, capacity)
+    assert 1 <= admitted <= capacity
+    assert (*plan.obligations[0].records[:admitted], *plan.obligations[0].records[admitted:]) == (
+        plan.obligations[0].records
+    )

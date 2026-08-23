@@ -1413,19 +1413,17 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             assert (
                 previous[0].transition.items()
                 >= {
-                    "role": "button",
-                    "label": "Enable shared state",
-                    "before_world": "before",
-                    "after_world": "after",
-                    "before_state": {"enabled": False},
-                    "after_state": {"enabled": False},
-                    "observed_change": "unchanged",
+                        "role": "button",
+                        "label": "Enable shared state",
+                        "before_state": {"enabled": False},
+                        "after_state": {"enabled": False},
+                        "semantic_change": "unchanged",
+                        "observed_change": "unchanged",
                     "evidence_method": "structural",
                 }.items()
             )
-            assert (
-                previous[0].transition["before_world_fingerprint"] == previous[0].transition["after_world_fingerprint"]
-            )
+            assert "before_world_fingerprint" not in previous[0].transition
+            assert "after_world_fingerprint" not in previous[0].transition
             return Abort(context.context_id, "feedback projection verified", AbortCategory.USER_REQUEST)
 
     class NoEffectActionOutcomeProjector:

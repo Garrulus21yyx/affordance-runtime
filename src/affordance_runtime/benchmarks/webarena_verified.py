@@ -1450,9 +1450,9 @@ def _delivery_probe_diagnostic(
         while True:
             query_offset = next(
                 (
-                    value[-1]
-                    for scope, value in delivery_store.private_cursor_offsets.items()
-                    if scope == "query"
+                    inventory.offset
+                    for inventory in delivery_store.inventories
+                    if inventory.scope == "query"
                 ),
                 0,
             )

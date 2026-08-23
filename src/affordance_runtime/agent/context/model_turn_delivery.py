@@ -20,6 +20,7 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
+from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
 from affordance_runtime.immutable import to_json_compatible
 
 _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
@@ -47,6 +48,9 @@ class ModelTurnDelivery:
     media: tuple[AgentImageInput, ...] = ()
     admitted_record_counts: tuple[tuple[str, int], ...] = ()
     packing_backoff_count: int = 0
+    continuation_capabilities: tuple[DeliveryContinuationCapability, ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.view, WorldDeliveryView):
@@ -66,6 +70,13 @@ class ModelTurnDelivery:
             raise ValueError("model turn admitted obligation prefix is invalid")
         if self.packing_backoff_count < 0:
             raise ValueError("model turn packing backoff count is invalid")
+        capabilities = tuple(self.continuation_capabilities)
+        if (
+            any(not isinstance(item, DeliveryContinuationCapability) for item in capabilities)
+            or len({item.scope for item in capabilities}) != len(capabilities)
+        ):
+            raise ValueError("model turn continuation capabilities are invalid")
+        object.__setattr__(self, "continuation_capabilities", capabilities)
         if any(item.target_ref not in self.manifest.executable_refs for item in self.action_candidates.candidates):
             raise ValueError("every action candidate must enter the same DeliveryManifest")
         if any(
@@ -79,6 +90,25 @@ class ModelTurnDelivery:
             raise TypeError("model turn media must contain exact admitted image records")
         if any(ref not in self.manifest.executable_refs for item in media for ref, _ in item.marks):
             raise ValueError("attached actionable marks must belong to delivered action routes")
+        route_refs = {
+            ref
+            for route in self.manifest.action_routes
+            for ref in (route.source_ref, route.destination_ref)
+            if ref
+        }
+        if set(self.manifest.executable_refs) != route_refs:
+            raise ValueError("every delivered executable must participate in an exact action route")
+        visible_refs = set(re.findall(r"\b[ENFR][1-9][0-9]*\b", self.view.text)) | {
+            ref for item in media for ref, _role in item.marks
+        }
+        manifest_refs = {
+            *self.manifest.executable_refs,
+            *self.manifest.readonly_refs,
+            *self.manifest.fact_refs,
+            *self.manifest.region_refs,
+        }
+        if not manifest_refs.issubset(visible_refs):
+            raise ValueError("delivery Manifest contains a ref absent from admitted text/media")
         object.__setattr__(self, "media", media)
 
 
@@ -100,6 +130,7 @@ def build_model_turn_delivery(
     )
     selected_candidates = context.action_delivery_plan.projection(selected_counts)
     selected_records = _selected_records(context.action_delivery_plan, selected_counts)
+    continuation_capabilities = context.delivery_store.continuation_capabilities(selected_counts)
     effect_indices = {
         item.record_index
         for item in selected_records
@@ -110,23 +141,27 @@ def build_model_turn_delivery(
         for item in selected_records
         if isinstance(item, WorldDeliveryRecord) and item.record_kind == "page_directory"
     }
-    effect_record_total = sum(
-        1
-        for obligation in context.action_delivery_plan.obligations
-        for item in obligation.records
-        if isinstance(item, WorldDeliveryRecord) and item.record_kind == "effect"
-    )
     selected_effect_header = context.observation_delivery.effect_header
     if selected_effect_header is not None:
         selected_effect_header = replace(
             selected_effect_header,
-            continuation_available=len(effect_indices) < effect_record_total,
+            continuation_available=any(item.scope == "effect" for item in continuation_capabilities),
         )
+    delivered_action_refs = {
+        ref
+        for candidate in selected_candidates.candidates
+        for ref in (
+            candidate.target_ref,
+            *(item.target_ref for item in candidate.destinations),
+        )
+    }
     selected_observation_delivery = replace(
         context.observation_delivery,
         effect_header=selected_effect_header,
         latest_effect_values=tuple(
-            item
+            replace(item, public_ref="")
+            if item.public_ref.startswith("E") and item.public_ref not in delivered_action_refs
+            else item
             for index, item in enumerate(context.observation_delivery.latest_effect_values)
             if index in effect_indices
         ),
@@ -161,15 +196,8 @@ def build_model_turn_delivery(
             **dict(rendered.view.coverage),
             "candidate_region_expansion_reason": "none",
             "admitted_obligations": tuple(sorted(selected_counts.items())),
-            "continuation_available": any(
-                selected_counts.get(item.kind.value, 0) < len(item.remaining)
-                for item in context.action_delivery_plan.obligations
-            ),
-            "continuation_scopes": tuple(
-                item.continuation_scope
-                for item in context.action_delivery_plan.obligations
-                if selected_counts.get(item.kind.value, 0) < len(item.remaining)
-            ),
+            "continuation_available": bool(continuation_capabilities),
+            "continuation_scopes": tuple(item.scope for item in continuation_capabilities),
             "packing_backoff_count": packing_backoff_count,
         },
     )
@@ -225,6 +253,7 @@ def build_model_turn_delivery(
         media,
         tuple(sorted(selected_counts.items())),
         packing_backoff_count,
+        continuation_capabilities,
     )
 
 

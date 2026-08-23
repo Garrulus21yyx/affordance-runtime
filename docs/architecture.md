@@ -2,9 +2,10 @@
 
 ## Status
 
-Current status: **single-ActionPolicy retained / causal post-action transition, action discoverability/joint delivery
-packing, TaskGoal public-input projection, and benchmark finalization reopened and non-closed / no live run
-authorized**. The mandatory
+Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery implemented and provider-free verified /
+Gate 3 Envelope pending / Gate 4 vertical conservation pending / overall reopened and non-closed / no live run
+authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
+separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
 scoped evidence for the implementations they exercised; they are not whole-runtime closure and do not authorize
 another live run.
@@ -85,6 +86,21 @@ removed. Provider-free properties cover private ID value/length, target/fact/bin
 hash seed, multiplicity, identity-only remount, precise semantic add/remove/modify effects, typed ambiguous grounding,
 shared projection identity, and the real Gate 0 recorder path. Delivery and Envelope cutovers remain pending; overall
 status remains reopened/non-closed, and no live evidence is claimed for this tree.
+
+Delivery Gate 2 implementation checkpoint (2026-08-23): `ObservationDeliveryStore` now owns immutable current
+effect/page-directory/base/query/interaction/destination/issue inventories, exact private offsets, requested foreground,
+currentness, and typed continuation capabilities. `ActionDeliveryPlan` consumes those snapshots as a pure per-turn
+priority value; `TurnPacker` requires only the foreground zero/one minimum, performs deterministic depth-round greedy
+admission with bounded backoff, and freezes the exact admitted prefixes. `ModelTurnDelivery` freezes Store capabilities
+with its text/media/Manifest, including zero-admitted suffixes. `PerTurnToolCatalog` consumes those capabilities and
+Manifest-owned exact resolver rows; it no longer derives cursor inequalities or scans complete ActionSpace to infer a
+route. Text action refs, route deltas, Manifest rows, and private resolver lineage commit atomically, while issue-only
+fragments cannot publish an unrouted executable ref. Public history no longer carries observation IDs, World digests,
+or raw delta records. Provider-free verification covers fanout `1/2/16/84/167/500`, added/removed/modified effects,
+multi-scope finite recovery and staleness, exact short/Unicode/punctuation/boundary labels, zero-prefix continuation,
+and a two-request real `TargetRuntime/CoreLoop → PydanticAI FunctionModel` sequence. Full pytest is `1594 passed, 24
+skipped`; Ruff, compileall, diff check, and Delivery negative searches pass. Gate 3 physical Envelope identity/cost and
+Gate 4 vertical conservation remain pending; this is not C10, benchmark, provider, or live closure.
 
 ## Normative single production chain
 
@@ -177,7 +193,7 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover.** Make Store capabilities the only cursor/continuation meaning, make Plan/Packer pure consumers,
+3. **Delivery cutover (implemented and provider-free verified; not closure).** Store capabilities are the only cursor/continuation meaning, Plan/Packer are pure consumers,
    make Manifest/Catalog consume the same frozen page, and prove a committed two-turn zero-prefix continuation through
    the real CoreLoop.
 4. **Envelope cutover.** Bind messages/tools/media/settings/output once, admit and price that object, and make the

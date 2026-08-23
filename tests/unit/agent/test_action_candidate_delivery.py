@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,10 +21,13 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 )
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
@@ -44,9 +48,11 @@ from affordance_runtime.world import (
     ObservationSourceProfile,
     ObservationStructureNode,
     SemanticTarget,
+    StateFact,
     SurfaceObservation,
     WorldFusion,
 )
+from tests.support.canonical_world import canonical_world
 
 
 def _binding(observation_id: str, target_id: str) -> ActionBinding:
@@ -219,6 +225,69 @@ def _context():
             evaluation,
         ),
     )
+
+
+def _changed_action_world(observation_id: str, count: int, phase: str):
+    targets = tuple(
+        SemanticTarget(
+            f"target:generated:{index}",
+            "button",
+            f"Generated control {index:03d}",
+            {"phase": phase, "enabled": True},
+        )
+        for index in range(count)
+    )
+    structure_ids = tuple(f"generated:{index}" for index in range(count))
+    facts = [
+        StateFact(
+            f"fact:{observation_id}:status:{index}",
+            target.target_id,
+            "status",
+            phase,
+            observation_id,
+        )
+        for index, target in enumerate(targets)
+    ]
+    facts.append(
+        StateFact(
+            f"fact:{observation_id}:{'removed' if phase == 'before' else 'added'}",
+            targets[0].target_id,
+            "removed_marker" if phase == "before" else "added_marker",
+            True,
+            observation_id,
+        )
+    )
+    source = SurfaceObservation(
+        observation_id,
+        "browser",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        targets,
+        tuple(facts),
+        tuple(_binding(observation_id, item.target_id) for item in targets),
+        structure=(
+            ObservationStructureNode(
+                "generated-root",
+                "document",
+                "Generated page",
+                child_structure_ids=structure_ids,
+            ),
+            *(
+                ObservationStructureNode(
+                    structure_id,
+                    "button",
+                    target.label,
+                    parent_structure_id="generated-root",
+                    semantic_target_id=target.target_id,
+                )
+                for structure_id, target in zip(structure_ids, targets, strict=True)
+            ),
+        ),
+        structure_total_count=count + 1,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
 
 
 def _drag_context():
@@ -483,7 +552,7 @@ def test_duplicate_label_path_match_survives_base_page_packing() -> None:
     assert desired.functional_path != unrelated.functional_path
 
 
-def test_find_controls_adds_protected_exact_result_without_replacing_base_inventory() -> None:
+def test_find_controls_prioritizes_exact_result_without_replacing_base_inventory() -> None:
     task, world, actions, evaluation, context = _context()
     omitted = next(item for item in context.complete_actions if item.target_label == "Zulu control")
 
@@ -522,7 +591,7 @@ def test_find_controls_adds_protected_exact_result_without_replacing_base_invent
     )
 
 
-def test_focused_field_protects_same_container_sibling_routes() -> None:
+def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_fanout() -> None:
     task, world, _actions, evaluation, _context_value = _context()
     focused_world = replace(
         world,
@@ -556,6 +625,69 @@ def test_focused_field_protects_same_container_sibling_routes() -> None:
 
     assert "Alpha control" in reasons
     assert reasons["Zulu control"] == "focus_container"
+
+
+@pytest.mark.parametrize(
+    ("label", "query"),
+    (("A", "A"), ("!", "please use ! now"), ("保存", "请立即 保存 then continue"), ("界" * 240, "界" * 240)),
+)
+def test_exact_label_route_reaches_delivery_manifest_catalog_and_unique_resolver(
+    label: str,
+    query: str,
+) -> None:
+    task, world, _actions, evaluation, _context_value = _context()
+    world = replace(
+        world,
+        targets=tuple(
+            replace(item, label=label) if item.target_id == "target:zulu" else item
+            for item in world.targets
+        ),
+        sources=tuple(
+            replace(
+                source,
+                targets=tuple(
+                    replace(item, label=label) if item.target_id == "target:zulu" else item
+                    for item in source.targets
+                ),
+                structure=tuple(
+                    replace(item, label=label) if item.semantic_target_id == "target:zulu" else item
+                    for item in source.structure
+                ),
+            )
+            for source in world.sources
+        ),
+    )
+    actions = ActionSpaceBuilder().build(task, world)
+    builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
+    base = builder.build(task, world, actions, evaluation)
+    page = builder.page(actions, world, query=query)
+    discovery = builder.discovery_result(
+        actions, world, page, canonical_world=base.canonical_world
+    )
+    found = builder.build(
+        task,
+        world,
+        actions,
+        evaluation,
+        canonical_world=base.canonical_world,
+        action_discovery=discovery,
+    )
+    delivery, catalog = _catalog(found)
+    option = next(item for item in found.complete_actions if item.target_label == label)
+    route = next(
+        item
+        for item in delivery.manifest.action_routes
+        if item.source_ref == option.target_ref and item.operation == option.operation
+    )
+
+    resolution = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(route.operation, {"target": route.source_ref}, "call:generated-exact"),
+        expected_context_id=found.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+
+    assert resolution.decision.action_id == option.action_id
 
 
 def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_actions() -> None:
@@ -774,6 +906,77 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
     assert breakdown.complete_request_tokens == (breakdown.estimated_total_tokens + breakdown.output_reserve_tokens)
 
 
+@pytest.mark.parametrize("count", (1, 2, 16, 84, 167, 500))
+def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(count: int) -> None:
+    task = TaskGoal(
+        "generated-fanout",
+        "Activate a generated control",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    before = _changed_action_world(f"fanout-before-{count}", count, "before")
+    after = _changed_action_world(f"fanout-after-{count}", count, "after")
+    before_actions = ActionSpaceBuilder().build(task, before)
+    after_actions = ActionSpaceBuilder().build(task, after)
+    delta = WorldTransitionProjector().project(before, after)
+    store = ObservationDeliveryStore().advance(
+        SimpleNamespace(
+            before_world=before,
+            after_world=after,
+            before_public_world=canonical_world(before, before_actions),
+            after_public_world=canonical_world(after, after_actions),
+            public_world_delta=delta,
+            execution_receipts=SimpleNamespace(
+                receipts=(
+                    SimpleNamespace(
+                        request=SimpleNamespace(
+                            intent=SimpleNamespace(
+                                semantic_action="activate",
+                                target_id=before.targets[0].target_id,
+                            )
+                        ),
+                        result=SimpleNamespace(dispatch_status=DispatchStatus.SENT),
+                    ),
+                )
+            ),
+        ),
+        step_index=1,
+    )
+    context = ContextBuilder().build(
+        task,
+        after,
+        after_actions,
+        TaskEvaluation(
+            task.task_id,
+            after.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "generated fanout",
+        ),
+        delivery_store=store,
+    )
+    effect = context.action_delivery_plan.obligation(DeliveryObligationKind.PUBLIC_EFFECT)
+    assert effect is not None
+    assert len(effect.records) >= count
+
+    packed = TurnPacker().pack(
+        ModelDecisionRequest(f"request:fanout:{count}", context),
+        binder=GroundedPolicyContextBinder(),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+
+    admitted = dict(packed.admitted_record_counts)[DeliveryObligationKind.PUBLIC_EFFECT.value]
+    assert admitted >= 1
+    assert admitted <= len(effect.records)
+    if count >= 84:
+        assert admitted < len(effect.records)
+        assert any(item.scope == "effect" for item in packed.delivery.continuation_capabilities)
+    assert packed.admitted_request.breakdown.estimated_total_tokens <= ModelRequestBudget().soft_target_tokens
+    assert (*effect.records[:admitted], *effect.records[admitted:]) == effect.records
+    changes = {item.change.value for item in store.latest_effect.inventory.atoms}
+    assert {"added", "removed", "modified"} <= changes
+
+
 def test_foreground_required_atom_does_not_receive_second_attempt_before_other_groups(
     monkeypatch,
 ) -> None:
@@ -874,6 +1077,38 @@ def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventor
     assert all(value not in physical for value in private_values)
     assert all(value not in physical for value in forbidden_fields)
     assert "browsergym-observation:" not in physical
+
+
+def test_zero_admitted_suffix_still_registers_unique_store_bound_continuation() -> None:
+    _task_value, _world_value, _actions, _evaluation, context = _context()
+    plan = context.action_delivery_plan
+    assert plan is not None
+    empty = {item.kind.value: 0 for item in plan.obligations}
+    delivery = build_model_turn_delivery(context, include_images=False, admitted_records=empty)
+    catalog = compile_grounded_action_catalog(context, delivery)
+    continuation = next(
+        spec for spec in catalog.specs if spec.name == "action_results_next_page"
+    )
+    scopes = tuple(
+        item.scope
+        for item in delivery.continuation_capabilities
+        if item.scope not in {"effect", "page_directory", "active_read"}
+    )
+    arguments = {} if len(scopes) == 1 else {"scope": scopes[0]}
+
+    resolution = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("action_results_next_page", arguments, "call:zero-prefix"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+
+    assert continuation.input_schema["properties"] == (
+        {} if len(scopes) == 1 else continuation.input_schema["properties"]
+    )
+    assert resolution.next_delivery_store is not None
+    assert resolution.next_delivery_store.requested_continuation_scope == scopes[0]
+    assert resolution.next_delivery_store.inventory(scopes[0]).offset == 0
 
 
 def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly() -> None:

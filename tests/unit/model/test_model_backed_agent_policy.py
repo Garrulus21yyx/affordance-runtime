@@ -11,7 +11,10 @@ from affordance_runtime.agent import (
     SelectAction,
 )
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryInventorySnapshot,
+    ObservationDeliveryStore,
+)
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -93,14 +96,17 @@ def test_private_continuation_store_commits_only_after_policy_core_step() -> Non
     async def scenario() -> None:
         task = _task()
         world = _world("continuation-commit", False)
-        next_store = ObservationDeliveryStore().with_advanced_cursor(
-            "effect",
-            world_lineage="world-lineage",
-            action_lineage="action-lineage",
-            result_lineage="effect-lineage",
-            order_digest="order-digest",
-            offset=1,
+        owner = ObservationDeliveryStore().install_inventories((
+            DeliveryInventorySnapshot(
+                "effect", "effect_actions", "world-lineage", "action-lineage",
+                "effect-lineage", "order-digest", ("first", "second"),
+            ),
+        ))
+        outcome = owner.continue_delivery(
+            owner.continuation_capabilities({"effect_actions": 1})[0]
         )
+        assert outcome.next_store is not None
+        next_store = outcome.next_store
         policy = ModelBackedAgentPolicy(ContinuationPort(next_store))
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),

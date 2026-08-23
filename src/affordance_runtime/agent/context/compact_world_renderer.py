@@ -55,9 +55,20 @@ class DeliveredActionRoute:
     operation: str
     source_ref: str
     destination_ref: str = ""
+    private_action_id: str = field(
+        default="", repr=False, compare=False, metadata={"serialize": False}
+    )
+    private_option: object | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
-        if not self.operation.strip() or not PublicRefCodec.accepts(self.source_ref, expected=PublicRefKind.EXECUTABLE):
+        if (
+            not self.operation.strip()
+            or not self.private_action_id.strip()
+            or self.private_option is None
+            or not PublicRefCodec.accepts(self.source_ref, expected=PublicRefKind.EXECUTABLE)
+        ):
             raise ValueError("delivered action route requires a public source and operation")
         if self.destination_ref and not PublicRefCodec.accepts(self.destination_ref, expected=PublicRefKind.EXECUTABLE):
             raise ValueError("delivered action route destination is invalid")
@@ -250,9 +261,23 @@ class _ManifestBuilder:
         if PublicRefCodec.accepts(value, expected=PublicRefKind.FACT) and value not in self.facts:
             self.facts.append(value)
 
-    def route(self, operation: str, source_ref: str, destination_ref: str = "") -> None:
-        route = DeliveredActionRoute(operation, source_ref, destination_ref)
-        if route not in self.routes:
+    def route(
+        self,
+        operation: str,
+        source_ref: str,
+        destination_ref: str = "",
+        *,
+        private_action_id: str,
+        private_option: object,
+    ) -> None:
+        route = DeliveredActionRoute(
+            operation, source_ref, destination_ref, private_action_id, private_option
+        )
+        if not any(
+            (item.operation, item.source_ref, item.destination_ref)
+            == (route.operation, route.source_ref, route.destination_ref)
+            for item in self.routes
+        ):
             self.routes.append(route)
 
     def build(self) -> DeliveryManifest:
@@ -1050,13 +1075,26 @@ def _render_action_candidates(
         if region is None:
             continue
         manifest.node(candidate.target_ref, executable=True)
+        manifest.region(candidate.region_ref)
         for destination in candidate.destinations:
             manifest.node(destination.target_ref, executable=True)
+            manifest.region(destination.region_ref)
         if candidate.destination_required:
             for destination in candidate.destinations:
-                manifest.route(candidate.operation, candidate.target_ref, destination.target_ref)
+                manifest.route(
+                    candidate.operation,
+                    candidate.target_ref,
+                    destination.target_ref,
+                    private_action_id=candidate.action_id,
+                    private_option=candidate.private_option,
+                )
         else:
-            manifest.route(candidate.operation, candidate.target_ref)
+            manifest.route(
+                candidate.operation,
+                candidate.target_ref,
+                private_action_id=candidate.action_id,
+                private_option=candidate.private_option,
+            )
         context, headers = _action_structural_context(target_id, region, observation)
         descriptor = (
             f"  rank={candidate.rank} [{candidate.target_ref}] {candidate.operation} "
@@ -1109,24 +1147,19 @@ def _render_action_route_issues(
         return []
     lines = ["ActionRouteIssues"]
     for issue in issues:
-        manifest.node(
-            issue.source_ref,
-            executable=PublicRefCodec.accepts(
-                issue.source_ref,
-                expected=PublicRefKind.EXECUTABLE,
-            ),
+        routed_refs = {
+            ref
+            for route in manifest.routes
+            for ref in (route.source_ref, route.destination_ref)
+            if ref
+        }
+        visible_source = issue.source_ref if issue.source_ref in routed_refs else "unavailable"
+        visible_destinations = tuple(
+            item for item in issue.destination_refs if item in routed_refs
         )
-        for destination_ref in issue.destination_refs:
-            manifest.node(
-                destination_ref,
-                executable=PublicRefCodec.accepts(
-                    destination_ref,
-                    expected=PublicRefKind.EXECUTABLE,
-                ),
-            )
         lines.append(
-            f"  code={issue.code} operation={issue.operation} source=[{issue.source_ref}] "
-            f"destinations={_value(issue.destination_refs)} "
+            f"  code={issue.code} operation={issue.operation} source={_value(visible_source)} "
+            f"destinations={_value(visible_destinations)} "
             f"conflicting_contract_fields={_value(issue.conflicting_contract_fields)} "
             f"provenance={issue.provenance}"
         )

@@ -31,7 +31,6 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import ActionOutcome
-from affordance_runtime.immutable import to_json_compatible
 
 _MAX_STRING = 240
 
@@ -246,11 +245,7 @@ def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str
     transition = dict(_target_snapshot(result, receipt.request.intent.target_id if receipt else ""))
     delta = result.public_world_delta
     assert delta is not None
-    transition["before_world"] = delta.before_observation_id
-    transition["after_world"] = delta.after_observation_id
-    transition["before_world_fingerprint"] = delta.before_world_digest
-    transition["after_world_fingerprint"] = delta.after_world_digest
-    transition["public_world_delta"] = _historical_value(to_json_compatible(delta))
+    transition["semantic_change"] = "changed" if delta.changed else "unchanged"
     if action is not None:
         transition["observed_change"] = action.observed_change.value
         transition["evidence_method"] = action.evidence_method.value

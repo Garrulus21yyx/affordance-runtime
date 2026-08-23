@@ -2,10 +2,10 @@
 
 ## Status
 
-Current status: **single-ActionPolicy retained / C8 causal post-action transition rerun, C10 action
-discoverability/joint delivery packing, C11 benchmark finalization, and C12 TaskGoal public-input projection reopened
-and non-closed / C8–C9 prior
-implementation evidence scoped / no live run authorized**. Prior
+Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery implemented and provider-free verified /
+Gate 3 Envelope pending / Gate 4 vertical conservation pending / overall reopened and non-closed / no live run
+authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
+remain separate reopened gates; C10 cannot close before Gate 3 and Gate 4. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run.
 
@@ -112,6 +112,22 @@ Verification on this tree is `175 passed, 2 skipped` for the combined World/C8/C
 `1568 passed, 24 skipped` for full pytest; Ruff, compileall, `git diff --check`, and production negative searches pass.
 Delivery and Envelope remain pending;
 overall status remains reopened/non-closed, and old Run30/live artifacts are not evidence for this tree.
+
+Delivery Gate 2 provider-free evidence on the current tree proves the owner-local contract: Store-owned immutable
+inventories and typed capabilities conserve independent effect/page-directory/base/query/interaction/destination/issue
+suffixes; zero-admitted suffixes remain callable; a committed continuation changes only the requested Store scope and
+makes it next-turn foreground; fresh lineage makes old capabilities typed stale. Generated fanout at
+`1/2/16/84/167/500` current changed action targets, with simultaneous added/removed/modified facts and varied packing
+capacity, retains a zero/one foreground minimum and bounded admitted request while conserving the exact suffix. Exact
+short, Unicode, punctuation, duplicate/path-distinguished, and 240-character label routes pass through delivery,
+Manifest, dynamic Catalog, and the unique resolver. Manifest executable refs equal the exact delivered route operand
+relation; backed-off and issue-only fragments add no ghost route/ref. The real
+`TargetRuntime → CoreLoop → ModelBackedAgentPolicy → PydanticAIGroundedDecisionPort → PydanticAI FunctionModel`
+two-request gate records a continuation tool in request one, commits the Store transition through CoreLoop, and records
+new suffix routes in request two without exposing observation/action IDs. The expanded Delivery/C8/C10 focused suite is
+`231 passed`; full pytest is `1594 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative
+searches pass. No real provider, live benchmark, or Task-7 replay ran. Gate 3 exact physical-envelope identity/cost and
+Gate 4 vertical conservation remain pending, so C10 and overall status remain reopened/non-closed.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -959,11 +975,10 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Next/pending — Delivery only:** make `ObservationDeliveryStore` the sole inventory/cursor transition owner; make
-   `ActionRecallSet`, `ActionDeliveryPlan`, and `TurnPacker` immutable consumers; compile Manifest routes and Catalog
-   continuation tools from one frozen page; remove competing base/query/effect/candidate state and continuation
-   inequalities; pass the two-turn production gate.
-5. Cut over **Envelope only**: add one `ProviderEnvelopeBinder`; make RequestAdmission accept/return its exact
+4. **Delivery implemented and provider-free verified:** `ObservationDeliveryStore` is the sole inventory/cursor
+   transition owner; immutable Plan/Packer consumers, atomic Manifest rows, Store capabilities, dynamic Catalog, and
+   the two-request production gate agree. This is owner-local Gate 2 evidence, not C10 closure.
+5. **Next/pending — Envelope only:** add one `ProviderEnvelopeBinder`; make RequestAdmission accept/return its exact
    `CanonicalProviderEnvelope`; reduce PydanticAI integration to a lossless wire codec; remove sidecar privacy/cost
    substitutes and post-admission message/tool/media reconstruction; pass the Recording Provider identity gate.
 6. Run the vertical World → Delivery → Manifest/Catalog → Envelope → provider-recording and tool-call → Resolver →
