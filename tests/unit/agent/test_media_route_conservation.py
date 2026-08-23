@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 
+import pytest
 from PIL import Image
 
 from affordance_runtime.agent.context.compact_world_renderer import (
@@ -152,13 +153,27 @@ def test_source_only_mark_preserves_destination_route_with_source_role() -> None
 
 
 def test_evidence_only_mark_carries_no_role_and_cannot_authorize_a_route() -> None:
-    media = _delivered_media((_image(AgentImageMark("E3", (2, 2, 5, 5))),))[0]
+    media = _delivered_media((_image(AgentImageMark("N1", (2, 2, 5, 5))),))[0]
     manifest = _manifest_with_media_routes(DeliveryManifest(), (media,))
 
-    assert media.actual_marks == (DeliveredMediaMark("E3", (2, 2, 5, 5)),)
+    assert media.actual_marks == (DeliveredMediaMark("N1", (2, 2, 5, 5)),)
     assert media.route_deltas == ()
     assert manifest.action_routes == ()
     assert manifest.executable_refs == ()
+    assert manifest.readonly_refs == ("N1",)
+
+
+def test_readonly_mark_cannot_carry_an_action_operand_role() -> None:
+    with pytest.raises(ValueError, match="read-only"):
+        AgentImageMark("N1", (2, 2, 5, 5), (AgentImageOperandRole.SOURCE,))
+
+    with pytest.raises(ValueError, match="exact public and private lineage"):
+        AgentImageActionRoute(
+            "activate",
+            "N1",
+            private_action_id="private:readonly",
+            private_option=object(),
+        )
 
 
 def test_unavailable_or_undrawn_mark_cannot_copy_an_admitted_text_route() -> None:

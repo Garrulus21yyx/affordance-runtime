@@ -215,6 +215,18 @@ actionable mark. Gate 2 is reopened at the GroundingProjection/media-fragment ow
 stopped before request/response, sparse-relation, continuation, permutation, or capacity closure assertions. No
 production or test compensation and no Gate-4 completion commit were made.
 
+Gate 2 read-only visual-mark repair checkpoint (2026-08-23): visual evidence selection and action authorization are
+now separate owner relations. `VisualMarkCandidateSet` consumes canonical public target records plus actual screenshot
+grounding regions, accepts both E/N refs, rejects out-of-frame regions before bounding, and selects at most 32 marks
+per image in canonical public order. `GroundingProjection` no longer accepts ActionSpace or a selected action-target
+set. After annotation, the existing route binder may attach roles/routes only to E operands from closed current
+actions. `AgentImageMark`, `DeliveredMediaMark`, and `CanonicalMediaRecord` accept E/N marks while independently
+rejecting N roles and non-E route operands. Actual N marks enter Manifest as read-only evidence, never as executable
+refs or action routes. Focused provider-free verification is `154 passed`, and the full provider-free suite is `1612
+passed, 24 skipped`; Ruff, compileall, diff check, and negative searches pass.
+Gate 2 implementation is verified but still awaits a fresh exit review, so it is not yet re-admitted and Gate 4
+remains stopped/not admitted. No provider, live benchmark, or Task7 replay ran.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure

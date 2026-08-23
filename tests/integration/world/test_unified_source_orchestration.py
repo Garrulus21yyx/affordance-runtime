@@ -15,8 +15,7 @@ from affordance_runtime.actions import (
     RouteSelectionCode,
     RouteSelector,
 )
-from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
-from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentActionPageView
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.execution import (
@@ -1394,49 +1393,29 @@ def test_marked_truth_depends_only_on_media_selected_for_this_model_call() -> No
     model_world = _project_model_world(
         world, ContextProjectionBudget(), canonical_projection=projection
     )
-    canonical_target_id = world.targets[0].target_id
-    option = AgentActionOptionView(
-        "action",
-        "activate",
-        canonical_target_id,
-        "Enable",
-        False,
-        BoundedSection((), 0, False),
-        {"type": "object", "properties": {}, "additionalProperties": False},
-        "activate target",
-        ("enabled",),
-        ActionRisk.LOW,
-        True,
-    )
-    actions = AgentActionPageView((option,), 1, 1, False, False)
-
     dropped = GroundingProjection().project(
         world,
         projection,
         model_world,
-        actions,
         selected_media_ids=("plain",),
     )
     emitted = GroundingProjection().project(
         world,
         projection,
         model_world,
-        actions,
         selected_media_ids=("marked",),
     )
     not_delivered = GroundingProjection().project(
         world,
         projection,
         model_world,
-        actions,
         selected_media_ids=("marked",),
-        selected_target_ids=("another-current-target",),
     )
 
     assert dropped.index.entities[0].marked is False
     assert emitted.index.entities[0].marked is True
-    assert not_delivered.index.entities[0].marked is False
-    assert not_delivered.images[0].marks == ()
+    assert not_delivered.index.entities[0].marked is True
+    assert not_delivered.images[0].marks == emitted.images[0].marks
     assert len(dropped.images) == len(emitted.images) == 1
 
 

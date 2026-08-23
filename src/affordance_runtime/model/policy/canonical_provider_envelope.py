@@ -14,6 +14,7 @@ from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
 from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 CANONICAL_ENVELOPE_VERSION = "pydantic-ai-model-boundary.v1"
 DETERMINISTIC_COUNTING_METHOD = "deterministic-conservative-v1"
@@ -75,10 +76,26 @@ class CanonicalMediaRecord:
         routes = tuple(tuple(item) for item in self.route_deltas)
         if (
             tuple(ref for ref, _bbox in self.marks) != tuple(ref for ref, _values in roles)
+            or any(
+                not PublicRefCodec.accepts(ref)
+                or ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
+                for ref, _bbox in self.marks
+            )
             or any(set(values).difference({"source", "destination"}) for _ref, values in roles)
-            or any(len(item) != 3 or not item[0] or not item[1] for item in routes)
+            or any(
+                len(item) != 3
+                or not item[0]
+                or not PublicRefCodec.accepts(item[1], expected=PublicRefKind.EXECUTABLE)
+                or (
+                    item[2]
+                    and not PublicRefCodec.accepts(item[2], expected=PublicRefKind.EXECUTABLE)
+                )
+                for item in routes
+            )
         ):
             raise ValueError("canonical media route/operand-role relation is invalid")
+        if any(ref.startswith("N") and values for ref, values in roles):
+            raise ValueError("canonical read-only media mark cannot carry an operand role")
         role_map = {ref: frozenset(values) for ref, values in roles}
         for ref, values in roles:
             expected = {

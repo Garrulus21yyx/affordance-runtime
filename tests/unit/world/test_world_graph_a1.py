@@ -7,7 +7,6 @@ from itertools import permutations
 import pytest
 from PIL import Image
 
-from affordance_runtime.actions import ActionSpace
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
@@ -275,10 +274,14 @@ def test_media_capture_variant_selection_is_deterministic_and_coordinate_scoped(
     world = _fused(source)
     model_world = project_model_world(world, ContextProjectionBudget())
     grounded = GroundingProjection().project(
-        world, canonical_world(world), model_world, ActionSpace(world.observation_id, ())
+        world, canonical_world(world), model_world
     )
     assert len(grounded.images) == 1
-    assert grounded.images[0].sha256 == raw.sha256
+    assert grounded.images[0].sha256 != raw.sha256
+    assert tuple((mark.ref, mark.operand_roles) for mark in grounded.images[0].marks) == (
+        ("N1", ()),
+    )
+    assert grounded.images[0].route_deltas == ()
 
     with pytest.raises(ValueError, match="coordinate space"):
         ObservationMedia(

@@ -39,13 +39,16 @@ class DeliveredMediaMark:
     operand_roles: tuple[AgentImageOperandRole, ...] = ()
 
     def __post_init__(self) -> None:
+        roles = tuple(AgentImageOperandRole(item) for item in self.operand_roles)
         if (
-            not PublicRefCodec.accepts(self.ref, expected=PublicRefKind.EXECUTABLE)
+            not PublicRefCodec.accepts(self.ref)
+            or self.ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
             or len(self.bbox) != 4
             or any(type(value) is not int for value in self.bbox)
         ):
             raise ValueError("delivered media mark is invalid")
-        roles = tuple(AgentImageOperandRole(item) for item in self.operand_roles)
+        if self.ref.startswith(PublicRefKind.NODE.value) and roles:
+            raise ValueError("read-only delivered mark cannot carry an operand role")
         if len(roles) != len(set(roles)):
             raise ValueError("delivered media operand roles must be unique")
         object.__setattr__(self, "bbox", tuple(self.bbox))
@@ -380,7 +383,11 @@ def _manifest_with_media_routes(
 
     routes = list(text_manifest.action_routes)
     executable = list(text_manifest.executable_refs)
+    readonly = list(text_manifest.readonly_refs)
     for item in media:
+        for mark in item.actual_marks:
+            if mark.ref.startswith("N") and mark.ref not in readonly:
+                readonly.append(mark.ref)
         for route in item.route_deltas:
             if route not in routes:
                 routes.append(route)
@@ -389,7 +396,7 @@ def _manifest_with_media_routes(
                     executable.append(ref)
     return DeliveryManifest(
         tuple(executable),
-        text_manifest.readonly_refs,
+        tuple(readonly),
         text_manifest.fact_refs,
         text_manifest.region_refs,
         tuple(routes),

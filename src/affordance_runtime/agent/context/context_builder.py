@@ -154,15 +154,6 @@ class ContextBuilder:
             observation,
             canonical_world,
             world,
-            complete_page,
-            selected_target_ids=tuple(dict.fromkeys(
-                target_id
-                for item in shown_actions
-                for target_id in (
-                    item.target_id,
-                    *(destination.destination_id for destination in item.destinations.items),
-                )
-            )),
         )
         goal_plan = _current_goal_plan(
             task,
@@ -320,7 +311,6 @@ class ContextBuilder:
         targets = {item.target_id: item for item in observation.targets}
         labels = {target_id: item.label for target_id, item in targets.items()}
         projected = project_action_page(action_space, page, labels)
-        complete = project_action_space(action_space, labels)
         pinned = _pinned_targets(
             projected.options,
             observation,
@@ -333,14 +323,7 @@ class ContextBuilder:
             lossless_public=True,
             canonical_projection=canonical_world,
         )
-        complete_view = AgentActionPageView(
-            complete.options,
-            len(complete.options),
-            len(complete.options),
-            False,
-            False,
-        )
-        grounding = self.grounding_projection.project(observation, canonical_world, model_world, complete_view)
+        grounding = self.grounding_projection.project(observation, canonical_world, model_world)
         query = canonical_action_query(page.query)
         def page_matches(current_page: InternalActionPage) -> tuple[ActionDiscoveryMatch, ...]:
             current_projected = project_action_page(action_space, current_page, labels)

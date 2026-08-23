@@ -1,4 +1,4 @@
-"""Route-free E-ref, media-selection, and screenshot-mark projection."""
+"""Bounded public visual evidence selection and executable route binding."""
 
 from __future__ import annotations
 
@@ -15,11 +15,53 @@ from affordance_runtime.agent.context.context import (
 )
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
+from affordance_runtime.world.public_refs import PublicRefCodec
 from affordance_runtime.world.visual_annotation import (
     BoundingBox,
     VisualMark,
     annotate_screenshot_result,
 )
+
+
+@dataclass(frozen=True)
+class VisualMarkCandidate:
+    ref: str
+    bbox: tuple[int, int, int, int]
+    confidence: float
+
+    def __post_init__(self) -> None:
+        if (
+            not PublicRefCodec.accepts(self.ref)
+            or self.ref[:1] not in {"E", "N"}
+            or len(self.bbox) != 4
+            or any(type(value) is not int for value in self.bbox)
+            or not 0 <= self.confidence <= 1
+        ):
+            raise ValueError("visual mark candidate is invalid")
+        object.__setattr__(self, "bbox", tuple(self.bbox))
+
+
+@dataclass(frozen=True)
+class VisualMarkCandidateSet:
+    items: tuple[VisualMarkCandidate, ...]
+    total_count: int
+    limit: int
+
+    def __post_init__(self) -> None:
+        items = tuple(self.items)
+        if (
+            self.limit < 1
+            or self.total_count < len(items)
+            or len(items) > self.limit
+            or len({item.ref for item in items}) != len(items)
+            or any(not isinstance(item, VisualMarkCandidate) for item in items)
+        ):
+            raise ValueError("visual mark candidate set is invalid")
+        object.__setattr__(self, "items", items)
+
+    @property
+    def truncated(self) -> bool:
+        return len(self.items) < self.total_count
 
 
 @dataclass(frozen=True)
@@ -32,25 +74,20 @@ class GroundingProjectionResult:
 @dataclass(frozen=True)
 class GroundingProjection:
     max_images: int = 2
+    max_marks_per_image: int = 32
+
+    def __post_init__(self) -> None:
+        if self.max_images < 1 or self.max_marks_per_image < 1:
+            raise ValueError("grounding projection bounds must be positive")
 
     def project(
         self,
         observation: WorldObservation,
         projection: CanonicalPublicWorldProjection,
         world,
-        actions,
         *,
         selected_media_ids: tuple[str, ...] = (),
-        selected_target_ids: tuple[str, ...] = (),
     ) -> GroundingProjectionResult:
-        offered = {
-            target_id
-            for option in actions.options
-            for target_id in (
-                option.target_id,
-                *(item.destination_id for item in option.destinations.items),
-            )
-        }
         raw_candidates = tuple(
             (item.source_observation_id, item.media)
             for item in observation.media
@@ -64,11 +101,23 @@ class GroundingProjection:
             item for item in projection.ordered_target_records if item.target_id in visible
         )
         target_refs = {item.target_id: item.ref for item in ordered_records}
-        selected_regions = {
-            region.target_id for _, media in candidates for region in media.grounding_regions
+        candidate_sets = tuple(
+            (
+                source_observation_id,
+                media,
+                visual_mark_candidate_set(
+                    projection,
+                    media,
+                    limit=self.max_marks_per_image,
+                ),
+            )
+            for source_observation_id, media in candidates
+        )
+        marked_refs = {
+            item.ref
+            for _source_observation_id, _media, mark_candidates in candidate_sets
+            for item in mark_candidates.items
         }
-        selected = set(selected_target_ids) if selected_target_ids else offered
-        marked_targets = offered.intersection(selected).intersection(target_refs).intersection(selected_regions)
         entities = []
         for record in ordered_records:
             target = visible[record.target_id]
@@ -92,26 +141,25 @@ class GroundingProjection:
                 target.state,
                 tuple(hints),
                 record.verbs,
-                target.target_id in marked_targets,
+                record.ref in marked_refs,
             ))
         images = []
         media_refs = []
         source_by_id = {item.observation_id: item for item in observation.sources}
-        for source_observation_id, media in candidates:
+        for source_observation_id, media, mark_candidates in candidate_sets:
             artifact_ref = canonical_artifact_ref(source_observation_id, media.media_id)
             marks = tuple(
                 VisualMark(
-                    target_refs[region.target_id],
-                    target_refs[region.target_id],
-                    BoundingBox(*region.bbox),
-                    region.confidence,
+                    candidate.ref,
+                    candidate.ref,
+                    BoundingBox(*candidate.bbox),
+                    candidate.confidence,
                     artifact_ref,
                     observation.observation_id,
                     source_by_id[source_observation_id].revision,
-                    f"grounding:{region.target_id}",
+                    f"grounding:{candidate.ref}",
                 )
-                for region in media.grounding_regions
-                if region.target_id in marked_targets
+                for candidate in mark_candidates.items
             )
             annotation = annotate_screenshot_result(media.data, media.mime_type, marks)
             images.append(AgentImageInput(
@@ -131,6 +179,35 @@ class GroundingProjection:
             tuple(images),
             tuple(media_refs),
         )
+
+
+def visual_mark_candidate_set(
+    projection: CanonicalPublicWorldProjection,
+    media,
+    *,
+    limit: int,
+) -> VisualMarkCandidateSet:
+    """Select E/N visual evidence in canonical public order, independent of ActionSpace operands."""
+
+    if limit < 1:
+        raise ValueError("visual mark candidate limit must be positive")
+    regions = {item.target_id: item for item in media.grounding_regions}
+    available = tuple(
+        VisualMarkCandidate(record.ref, region.bbox, region.confidence)
+        for record in projection.ordered_target_records
+        if (region := regions.get(record.target_id)) is not None
+        and _intersects_media(region.bbox, media.dimensions)
+    )
+    return VisualMarkCandidateSet(available[:limit], len(available), limit)
+
+
+def _intersects_media(
+    bbox: tuple[int, int, int, int],
+    dimensions: tuple[int, int],
+) -> bool:
+    x, y, width, height = bbox
+    media_width, media_height = dimensions
+    return x < media_width and y < media_height and x + width > 0 and y + height > 0
 
 
 def bind_image_action_routes(

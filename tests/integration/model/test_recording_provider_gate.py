@@ -22,16 +22,19 @@ from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.pydantic_ai_bridge import PydanticAIGroundedDecisionPort
+from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationGroundingRegion,
     ObservationMedia,
     ObservationMediaVariant,
+    ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -71,11 +74,21 @@ def _policy(recorder: RecordingPydanticModel, *, supports_multimodal: bool = Fal
     )
 
 
-def _runtime(policy: ModelBackedAgentPolicy) -> TargetRuntime:
+class _IncompleteTaskEvaluator:
+    async def evaluate(self, task, observation):
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "read-only evidence remains under inspection",
+        )
+
+
+def _runtime(policy: ModelBackedAgentPolicy, *, evaluator=None) -> TargetRuntime:
     return TargetRuntime(
         AgentDecisionPorts(policy),
         SharedActionOutcomeProjector(),
-        SharedTaskEvaluator(),
+        evaluator or SharedTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("gate_0_recording_provider"),
     )
 
@@ -327,6 +340,12 @@ def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boun
                     1.0,
                     "viewport:gate-2",
                 ),
+                ObservationGroundingRegion(
+                    "read-only-note",
+                    (10, 1, 5, 5),
+                    1.0,
+                    "viewport:gate-2",
+                ),
             ),
             capture_group_id="capture:gate-2",
             variant=ObservationMediaVariant.RAW,
@@ -334,7 +353,14 @@ def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boun
             coordinate_space_id="viewport:gate-2",
         )
         base = shared_world("gate-2-media-before", False)
-        before = WorldFusion().fuse((replace(base.sources[0], media=(media,)),)).observation
+        before = WorldFusion().fuse((replace(
+            base.sources[0],
+            targets=(
+                *base.sources[0].targets,
+                SemanticTarget("read-only-note", "note", "Visible read-only evidence"),
+            ),
+            media=(media,),
+        ),)).observation
         assert before is not None
         recorder = RecordingPydanticModel(["first_gui_action"], scripted_phases=["ordinary"])
         policy = _policy(recorder, supports_multimodal=True)
@@ -351,13 +377,24 @@ def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boun
         assert recorded_media.mime_type == "image/png"
         assert recorded_media.data.startswith(b"\x89PNG\r\n\x1a\n")
         assert recorded_media.dimensions == (20, 20)
-        assert recorded_media.marks == (("E1", (1, 1, 5, 5)),)
-        assert recorded_media.operand_roles == (("E1", ("source",)),)
+        assert recorded_media.marks == (
+            ("E1", (1, 1, 5, 5)),
+            ("N1", (10, 1, 5, 5)),
+        )
+        assert recorded_media.operand_roles == (
+            ("E1", ("source",)),
+            ("N1", ()),
+        )
         assert recorded_media.route_deltas == (("activate", "E1", ""),)
         assert tuple(
             (route.operation, route.source_ref, route.destination_ref)
             for route in envelope.catalog.manifest.action_routes
         ) == recorded_media.route_deltas
+        assert envelope.catalog.manifest.readonly_refs == ("N1",)
+        assert all(
+            "N1" not in (route.source_ref, route.destination_ref)
+            for route in envelope.catalog.manifest.action_routes
+        )
         assert len(environment.executed_requests) == 1
         bound = environment.executed_requests[0]
         assert bound.intent.semantic_action == "activate"
@@ -366,6 +403,73 @@ def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boun
         provider_payload = json.dumps(envelope.model_boundary_projection(), default=str)
         assert bound.binding.binding_id not in provider_payload
         assert bound.binding.payload["selector"] not in provider_payload
+
+    asyncio.run(scenario())
+
+
+def test_gate_2_readonly_only_actual_mark_reaches_recorder_without_action_authority() -> None:
+    async def scenario() -> None:
+        output = io.BytesIO()
+        Image.new("RGB", (20, 20), "white").save(output, format="JPEG")
+        media = ObservationMedia(
+            "gate-2-readonly-only-screenshot",
+            "screenshot",
+            "image/jpeg",
+            output.getvalue(),
+            (
+                ObservationGroundingRegion(
+                    "read-only-note",
+                    (2, 2, 6, 6),
+                    1.0,
+                    "viewport:gate-2-readonly",
+                ),
+            ),
+            capture_group_id="capture:gate-2-readonly",
+            variant=ObservationMediaVariant.RAW,
+            dimensions=(20, 20),
+            coordinate_space_id="viewport:gate-2-readonly",
+        )
+        fused = WorldFusion().fuse((
+            SurfaceObservation(
+                "gate-2-readonly-only",
+                "dom",
+                "revision:gate-2-readonly-only",
+                ObservationSourceProfile.dom(),
+                (SemanticTarget("read-only-note", "note", "Visible read-only evidence"),),
+                media=(media,),
+            ),
+        ))
+        assert fused.observation is not None
+        recorder = RecordingPydanticModel(["zero_calls"], scripted_phases=["ordinary"])
+        policy = _policy(recorder, supports_multimodal=True)
+
+        state = await _runtime(policy, evaluator=_IncompleteTaskEvaluator()).run_task(
+            ScriptedEnvironment(initial_observation=fused.observation),
+            TaskGoal(
+                "inspect-readonly",
+                "Inspect the visible read-only evidence",
+                    risk_profile=RiskProfile.READ_ONLY,
+            ),
+        )
+
+        assert state.status is RunStatus.FAILED
+        assert recorder.calls == 1
+        envelope = policy.port.last_admitted_envelopes[0]
+        assert normalize_recorded_provider_input(recorder.records[0]) == envelope.model_boundary_projection()
+        assert envelope.media[0].mime_type == "image/png"
+        assert envelope.media[0].data.startswith(b"\x89PNG\r\n\x1a\n")
+        assert envelope.media[0].dimensions == (20, 20)
+        assert envelope.media[0].marks == (("N1", (2, 2, 6, 6)),)
+        assert envelope.media[0].operand_roles == (("N1", ()),)
+        assert envelope.media[0].route_deltas == ()
+        assert envelope.catalog.manifest.readonly_refs == ("N1",)
+        assert envelope.catalog.manifest.executable_refs == ()
+        assert envelope.catalog.manifest.action_routes == ()
+        assert not any(
+            route_ref == "N1"
+            for route in envelope.catalog.manifest.action_routes
+            for route_ref in (route.source_ref, route.destination_ref)
+        )
 
     asyncio.run(scenario())
 

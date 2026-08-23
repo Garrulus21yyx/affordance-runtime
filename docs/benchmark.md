@@ -206,6 +206,16 @@ accepts only `E*`. Thus the prior helper-only evidence-only test did not prove t
 reopened at the media-fragment/GroundingProjection owner, Gate 3 remains admitted, and Gate 4 is stopped/not admitted.
 No later Gate 4 assertions, production repair, provider/live/Task7 run, or completion commit occurred.
 
+Gate 2 read-only visual-mark repair is implemented and focused provider-free verified (`154 passed`). A bounded
+`VisualMarkCandidateSet` now selects actual in-frame E/N screenshot evidence in canonical public order, independent of
+ActionSpace operands; route binding remains a later E-only relation. A real N-only Runtime/Recording turn preserves
+one PNG `N1` mark with empty roles/routes and no executable Manifest route. A mixed N1+E1 turn preserves both marks
+but authorizes only E1. Out-of-frame N disappears, and a 40-read-only-target generated case is deterministically
+bounded under private identity/enumeration permutation. The full provider-free suite is `1612 passed, 24 skipped`,
+and Ruff, compileall, diff check, and negative searches pass.
+Fresh exit review remains pending; Gate 2 stays reopened and Gate 4 stays stopped/not admitted. No provider, live
+benchmark, or Task7 replay ran.
+
 Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
 required both operands to be marked in one image. The final-media owner now retains a route when at least one exact
 operand is actually marked and assigns only the role belonging to each actual mark. Source-only and destination-only

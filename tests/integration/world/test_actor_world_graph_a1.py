@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from itertools import permutations
 
-from affordance_runtime.actions import ActionSpace
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldNodeView,
     project_actor_world_snapshot,
@@ -94,7 +93,7 @@ def _snapshot(sources: tuple[SurfaceObservation, ...], *, bound: int = 128):
         world, ContextProjectionBudget(), canonical_projection=projection
     )
     grounding = GroundingProjection().project(
-        world, projection, model_world, ActionSpace(world.observation_id, ())
+        world, projection, model_world
     )
     return world, project_actor_world_snapshot(
         world, projection, model_world, grounding.index, grounding.images,

@@ -259,7 +259,7 @@ def test_insufficient_viewport_candidates_do_not_call_or_blame_provider() -> Non
     asyncio.run(scenario())
 
 
-def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() -> None:
+def test_visual_only_evidence_mark_does_not_create_action_authority() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
         proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
@@ -302,7 +302,12 @@ def test_empty_structural_bindings_do_not_trigger_visual_without_typed_need() ->
                 observation_capabilities=environment.observation_capabilities,
             )
             assert len(context.image_inputs) == 1
-            assert sum(item.marked for item in context.grounding.entities) == 0
+            assert sum(item.marked for item in context.grounding.entities) == 1
+            assert tuple(
+                (mark.ref, mark.operand_roles)
+                for mark in context.image_inputs[0].marks
+            ) == (("N1", ()),)
+            assert context.image_inputs[0].route_deltas == ()
         finally:
             await environment.close()
 
