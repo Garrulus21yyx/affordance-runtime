@@ -21,6 +21,7 @@ from affordance_runtime.agent.context.model_turn_delivery import (
     _delivered_media,
     _manifest_with_media_routes,
 )
+from affordance_runtime.immutable import to_json_compatible
 
 
 def _png() -> bytes:
@@ -190,3 +191,19 @@ def test_delivered_media_rejects_role_without_its_exact_route_delta() -> None:
         assert "operand roles differ" in str(error)
     else:
         raise AssertionError("a media mark role without an exact route delta must fail closed")
+
+
+def test_media_fragment_serialization_excludes_private_resolver_lineage() -> None:
+    route = _route("activate", "E1")
+    image = _image(
+        AgentImageMark("E1", (1, 2, 3, 4), (AgentImageOperandRole.SOURCE,)),
+        routes=(route,),
+    )
+
+    serialized = to_json_compatible(image)
+
+    assert serialized["route_deltas"] == [
+        {"operation": "activate", "source_ref": "E1", "destination_ref": ""}
+    ]
+    assert "private_action_id" not in serialized["route_deltas"][0]
+    assert "private_option" not in serialized["route_deltas"][0]

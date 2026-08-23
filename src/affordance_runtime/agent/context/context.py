@@ -89,8 +89,12 @@ class AgentImageActionRoute:
     operation: str
     source_ref: str
     destination_ref: str = ""
-    private_action_id: str = field(default="", repr=False, compare=False)
-    private_option: object | None = field(default=None, repr=False, compare=False)
+    private_action_id: str = field(
+        default="", repr=False, compare=False, metadata={"serialize": False}
+    )
+    private_option: object | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         if (

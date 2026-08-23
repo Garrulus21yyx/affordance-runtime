@@ -195,6 +195,11 @@ lineage remains Runtime-only. The post-owner-move focused suite is `175 passed, 
 is `1607 passed, 24 skipped`; static and negative checks pass. This correction restarts, but does not itself complete,
 the fresh Gate 2/3 exit review. Gate 4 remains aborted/not admitted.
 
+Before re-admission, serialization review also found that the new media route's private action ID and resolver option
+needed explicit `serialize=False` metadata. That boundary is now fail-closed and a focused property proves only the
+public route triple survives JSON projection (`122 passed` across owner, Recording, Admission, and architecture
+tests). Exit review restarts from this correction; Gate 4 remains aborted/not admitted.
+
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
 source-unbound artifacts are supporting diagnostics only. After the vertical gate, rerun focused and relevant

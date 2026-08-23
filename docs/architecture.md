@@ -166,6 +166,12 @@ without inspecting marks, text routes, or complete ActionSpace membership. Focus
 skipped`; full provider-free pytest is `1607 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches
 pass. Gate 2 remains pending until a fresh review starts from this owner correction.
 
+A subsequent serialization audit found one more boundary error before admission: the private action ID and resolver
+option on `AgentImageActionRoute` were excluded from comparison and repr but not from the repository's dataclass JSON
+projection. Both fields are now explicitly non-serializable. A focused property proves the media fragment projects
+only operation/source/destination, and the owner/Recording/Admission/architecture suite passes (`122 passed`). This
+is another correction checkpoint; fresh exit review restarts from its revision.
+
 Gate 3 diagnostic-coordinate repair checkpoint (2026-08-23): `ModelRequestBreakdown` now names the sole complete
 physical input estimate `estimated_input_tokens`, retains `output_reserve_tokens` as a separate allocation, and closes
 `complete_request_tokens = estimated_input_tokens + output_reserve_tokens`. The producerless

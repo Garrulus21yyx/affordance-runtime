@@ -93,3 +93,7 @@ owner-produced input coordinates and performs no conversion.
 - Post-owner-move focused suite: `175 passed, 2 skipped`; full suite: `1607 passed, 24 skipped`; Ruff, compileall,
   diff check, and negative searches pass. This is correction evidence, not exit-review admission; review restarts from
   the correction revision.
+- The next serialization audit found that the new route's private resolver fields were `repr=False/compare=False` but
+  not excluded by the repository's dataclass JSON projection. They are now explicitly `serialize=False`, with a
+  property test proving only operation/source/destination survive. Focused owner/Recording/Admission/architecture
+  verification is `122 passed`; review restarts again from this correction.
