@@ -2,9 +2,10 @@
 
 ## Status
 
-Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery complete /
-Gate 3 Envelope correction implemented and provider-free verified / Gate 3 exit review pending /
-Gate 4 not admitted / Overall reopened / non-closed / no live run
+Current status: **Gate 0 complete / Gate 1 World complete /
+Gate 2 reopened: media route / operand-role conservation /
+Gate 3 reopened: breakdown diagnostic coordinate conservation /
+Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
 remain separate reopened gates; C10 cannot close before Gate 4. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -114,7 +115,7 @@ Verification on this tree is `175 passed, 2 skipped` for the combined World/C8/C
 Delivery and Envelope remain pending;
 overall status remains reopened/non-closed, and old Run30/live artifacts are not evidence for this tree.
 
-Delivery Gate 2 provider-free evidence on the current tree proves the owner-local contract: Store-owned immutable
+Historical Delivery Gate 2 provider-free evidence on the then-current tree proved the narrower owner-local contract: Store-owned immutable
 inventories and typed capabilities conserve independent effect/page-directory/base/query/interaction/destination/issue
 suffixes; zero-admitted suffixes remain callable; a committed continuation changes only the requested Store scope and
 makes it next-turn foreground; fresh lineage makes old capabilities typed stale. Generated fanout at
@@ -127,8 +128,8 @@ relation; backed-off and issue-only fragments add no ghost route/ref. The real
 two-request gate records a continuation tool in request one, commits the Store transition through CoreLoop, and records
 new suffix routes in request two without exposing observation/action IDs. The expanded Delivery/C8/C10 focused suite is
 `231 passed`; full pytest is `1594 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative
-searches pass. No real provider, live benchmark, or Task-7 replay ran. Gate 4 vertical conservation remains pending,
-so C10 and overall status remain reopened/non-closed.
+searches pass. No real provider, live benchmark, or Task-7 replay ran. Gate 4 later falsified the untested annotated
+media route/operand-role part of this owner contract, so Gate 2, C10, and overall status are reopened/non-closed.
 
 Envelope Gate 3 provider-free evidence proves that one immutable `CanonicalProviderEnvelope` is bound for each
 semantic model request, admitted without replacement, and projected mechanically to PydanticAI's ordered
@@ -150,7 +151,17 @@ have directly recorded envelope lineage, and the real two-turn CoreLoop/Function
 different current envelope on each turn. The corrected C8-C12 owner-focused suite is `587 passed, 3 skipped`; full
 pytest is `1598 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative searches pass. No provider,
 live benchmark, Task-7 replay, external token counter, raw HTTP normalization, or billing-token equivalence is claimed.
-Gate 4 remains not admitted/pending and C10/overall status remains reopened/non-closed.
+At this checkpoint Gate 4 had not started. Its later annotated-media and capacity-consumer audit stopped the gate and
+reopened Gate 2 plus Gate 3 breakdown diagnostics; C10/overall status remains reopened/non-closed.
+
+Gate 4 stopped on its first provider-free vertical audit. A real annotated production turn reached the Recording
+FunctionModel with correct PNG bytes/MIME/digest/dimensions and one actual in-frame `E1` mark, but the media record had
+no route delta and represented `operand_roles` as `("E1",)` while the Manifest route was `(activate,E1,"")`.
+Destination-only operand role cannot be represented by that contract. Gate 2 Delivery is therefore reopened; no
+CoreLoop/Catalog/bridge/recorder compensation and no Gate 4 completion commit was made. The capacity-consumer audit
+also reopened Gate 3 breakdown diagnostics: the old prefit/full/lens candidate fields have no distinct producers, are
+all complete-request totals, and the active WebArena probe compares one with input-only `estimated_total_tokens`.
+The core input/reserve admission equations and exact physical Envelope transport were not falsified.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -999,17 +1010,17 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery implemented and provider-free verified:** `ObservationDeliveryStore` is the sole inventory/cursor
-   transition owner; immutable Plan/Packer consumers, atomic Manifest rows, Store capabilities, dynamic Catalog, and
-   the two-request production gate agree. This is owner-local Gate 2 evidence, not C10 closure.
-5. **Envelope correction implemented and provider-free verified; exit review pending:** one `CanonicalProviderEnvelopeBinder`
+4. **Delivery reopened by Gate 4 vertical evidence:** `ObservationDeliveryStore` remains the inventory/cursor
+   transition owner and earlier two-request continuation evidence remains scoped, but actual annotated media lacks a
+   generation-time route delta and source/destination operand role.
+5. **Envelope core transport/admission verified; breakdown diagnostics reopened:** one `CanonicalProviderEnvelopeBinder`
    closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
-   exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Gate 3 remains
-   in exit review and does not itself admit Gate 4.
-6. **Blocked/not admitted — vertical conservation:** only after an explicit Gate 3 exit review may the World → Delivery → Manifest/Catalog → Envelope → provider-recording and tool-call → Resolver →
-   Binder conservation gate. This is the first point where final envelope digest/cost and end-to-end route equivalence
-   count as evidence.
+   exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates passed. The active
+   mixed-coordinate ghost breakdown fields and WebArena consumer reopen only that diagnostic owner.
+6. **Stopped — vertical conservation:** the first real annotated request falsified Gate 2 media route/operand-role
+   conservation, and the capacity audit reopened Gate 3 diagnostics. Resume only after those owners are repaired and
+   re-admitted; no Gate 4 completion evidence or commit exists.
 7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
    pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free diagnostic.
 8. Run an independent fresh-context read-only review. Reconcile implementation, docs, schema version, evidence, and

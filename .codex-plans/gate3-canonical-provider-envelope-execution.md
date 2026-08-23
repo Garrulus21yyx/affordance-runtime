@@ -1,6 +1,7 @@
 # Gate 3 Canonical Provider Envelope execution
 
-Status: correction_implemented_and_provider_free_verified; exit_review_pending; Gate_4_not_admitted
+Status: reopened_breakdown_diagnostic_coordinate_conservation; core_transport_and_admission_scoped_evidence_only;
+Gate_4_aborted_not_admitted
 
 ## Goal
 
@@ -51,3 +52,8 @@ Cut over the production model boundary to one immutable `CanonicalProviderEnvelo
   admitted until a separate Gate 3 exit review grants entry.
 - Corrected Gate 3 owner-focused C8-C12 suite: `587 passed, 3 skipped`.
 - Corrected full provider-free pytest: `1598 passed, 24 skipped` using `/dev/shm` basetemp.
+- Gate 4 read-only consumer audit found that `prefit_estimated_total_tokens`, `full_candidate_tokens`, and
+  `lens_candidate_tokens` have no distinct candidate producers and are all written as complete-request totals, while
+  the active WebArena diagnostic compares `full_candidate_tokens` with input-only `estimated_total_tokens`. The core
+  Envelope/admission algebra was not falsified; the breakdown diagnostic owner is reopened for deletion of the ghost
+  fields and consumer rather than probe-side conversion.

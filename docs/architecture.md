@@ -2,9 +2,10 @@
 
 ## Status
 
-Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery complete /
-Gate 3 Envelope correction implemented and provider-free verified / Gate 3 exit review pending /
-Gate 4 not admitted / Overall reopened / non-closed / no live run
+Current status: **Gate 0 complete / Gate 1 World complete /
+Gate 2 reopened: media route / operand-role conservation /
+Gate 3 reopened: breakdown diagnostic coordinate conservation /
+Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -88,7 +89,7 @@ hash seed, multiplicity, identity-only remount, precise semantic add/remove/modi
 shared projection identity, and the real Gate 0 recorder path. Delivery and Envelope cutovers remain pending; overall
 status remains reopened/non-closed, and no live evidence is claimed for this tree.
 
-Delivery Gate 2 implementation checkpoint (2026-08-23): `ObservationDeliveryStore` now owns immutable current
+Historical Delivery Gate 2 owner-local checkpoint (2026-08-23; later reopened by Gate 4): `ObservationDeliveryStore` now owns immutable current
 effect/page-directory/base/query/interaction/destination/issue inventories, exact private offsets, requested foreground,
 currentness, and typed continuation capabilities. `ActionDeliveryPlan` consumes those snapshots as a pure per-turn
 priority value; `TurnPacker` requires only the foreground zero/one minimum, performs deterministic depth-round greedy
@@ -118,7 +119,20 @@ contract after admission. Every physical initial or repair call records its enve
 Provider-free exact-boundary, identity/cost, media/tool, pre-provider totality, repair, and two-turn production-path
 properties pass. Full pytest is `1598 passed, 24 skipped`; Ruff, compileall, diff check, and production negative
 searches pass. No real provider, live benchmark, Task-7 replay, external token-count request, or raw HTTP payload
-builder was used. Gate 4 vertical conservation is not admitted and remains pending; overall status is reopened/non-closed.
+builder was used. At this checkpoint Gate 4 had not started; the later Gate 4 stop checkpoint below supersedes that
+pending-stage status without invalidating the core Envelope transport evidence.
+
+Gate 4 stop checkpoint (2026-08-23): a provider-free real annotated production turn crossed the existing
+`TargetRuntime/CoreLoop → ModelBackedAgentPolicy → TurnPacker → ModelTurnDelivery/Manifest → CanonicalProviderEnvelope
+→ PydanticAI FunctionModel` path. Annotation correctly converted the input JPEG to PNG and retained one actual in-frame
+`E1` mark, while the sibling Manifest carried `(activate,E1,"")`. The media record carried only `(E1,bbox)` and its
+Envelope `operand_roles` was `("E1",)`, not a source/destination role; no media route delta exists at mark generation.
+This falsifies the Gate 2 atomic media-route/operand-role owner contract, especially for destination-only operands, so
+Gate 4 stopped without a production repair or completion commit. The same read-only audit found Gate 3 breakdown
+diagnostic fields `prefit_estimated_total_tokens`, `full_candidate_tokens`, and `lens_candidate_tokens` all populated
+with complete-request cost although the active WebArena diagnostic compares `full_candidate_tokens` with input-only
+`estimated_total_tokens`. Core Envelope transport/admission remains verified, but its diagnostic owner is reopened for
+deleting those ghost fields and consumer at the owner rather than adding a probe conversion.
 
 ## Normative single production chain
 
@@ -211,12 +225,13 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (implemented and provider-free verified; not closure).** Store capabilities are the only cursor/continuation meaning, Plan/Packer are pure consumers,
-   make Manifest/Catalog consume the same frozen page, and prove a committed two-turn zero-prefix continuation through
-   the real CoreLoop.
-4. **Envelope cutover.** Bind messages/tools/media/settings/output once, admit and price that object, and make the
-   PydanticAI adapter consume it unchanged.
-5. **Vertical conservation gate.** Only after all three cutovers, prove private-identity permutations leave the final
+3. **Delivery cutover (reopened by the Gate 4 media witness).** Store capabilities remain the only cursor/continuation meaning and Plan/Packer remain pure consumers,
+   but actual annotated media does not carry its route delta or source/destination operand role at generation. The
+   former two-turn zero-prefix evidence remains scoped and is insufficient for re-closure.
+4. **Envelope cutover (core verified; diagnostics reopened).** Messages/tools/media/settings/output are bound once and
+   transported unchanged, but mixed-coordinate ghost breakdown fields and their active consumer must be removed by
+   the diagnostic owner before re-admission.
+5. **Vertical conservation gate (stopped).** Only after the reopened owners are repaired may this prove private-identity permutations leave the final
    recorded envelope digest/cost unchanged and every visible/callable route remains closed from World to Binder.
 
 No failing example authorizes a local production patch. A stage may begin only after the previous stage's owner-local
