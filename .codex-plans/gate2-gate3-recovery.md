@@ -1,6 +1,7 @@
 # Gate 2 / Gate 3 recovery after vertical falsification
 
-Status: gate_2_implemented_provider_free_verified_exit_review_pending; gate_3_pending;
+Status: gate_2_implemented_provider_free_verified_exit_review_pending;
+gate_3_implemented_provider_free_verified_exit_review_pending;
 gate_4_aborted_not_admitted;
 overall_reopened_non_closed
 
@@ -53,10 +54,10 @@ owner-produced input coordinates and performs no conversion.
 
 1. [completed] Implement the Gate 2 final-media route/role owner and migrate Manifest/Envelope consumers.
 2. [completed] Add unary, destination, evidence-only, undrawn/unavailable, and real Recording FunctionModel production gates.
-3. [in_progress] Run Gate 2 focused/full/static/negative verification; update docs; commit Gate 2 independently.
-4. [pending] Rename/delete Gate 3 breakdown fields at the owner and migrate every active consumer.
-5. [pending] Add coordinate properties for default, soft target, exact fit, one-over, candidate comparisons, and zero attempts.
-6. [pending] Run Gate 3 focused/full/static/negative verification; update docs; commit Gate 3 independently.
+3. [completed] Run Gate 2 focused/full/static/negative verification; update docs; commit Gate 2 independently.
+4. [completed] Rename/delete Gate 3 breakdown fields at the owner and migrate every active consumer.
+5. [completed] Add coordinate properties for default, soft target, exact fit, one-over, consumer comparisons, and zero attempts.
+6. [in_progress] Run Gate 3 focused/full/static/negative verification; update docs; commit Gate 3 independently.
 7. [pending] Perform a fresh read-only Gate 2/3 exit review and record admitted/reopened status without starting Gate 4.
 
 ## Files produced or modified
@@ -73,3 +74,8 @@ owner-produced input coordinates and performs no conversion.
   binding exclusion from provider input.
 - Generated owner cases cover unary, source+destination roles, destination-not-unary, evidence-only marks, and
   unavailable/undrawn marks. No real provider, live benchmark, or Task7 replay ran.
+- Gate 2 independent commit: `28f3b5af` (`fix: conserve annotated media action routes`).
+- Gate 3 focused request/delivery/Recording/WebArena/architecture suite: `167 passed, 2 skipped`.
+- Gate 3 full provider-free suite: `1605 passed, 24 skipped`.
+- Ruff, compileall, diff check, and production negative searches prove the old total/prefit/full/lens metric names and
+  cross-coordinate comparisons are absent. No real provider, live benchmark, or Task7 replay ran.

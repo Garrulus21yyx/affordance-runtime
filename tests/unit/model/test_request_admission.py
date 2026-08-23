@@ -130,8 +130,19 @@ def test_complete_envelope_count_is_deterministic_and_covers_every_physical_comp
         assert first.output_contract_tokens > 0
         assert first.image_estimated_tokens == 0
         assert first.output_reserve_tokens == envelope.output_token_reserve
-        assert first.complete_request_tokens == first.estimated_total_tokens + first.output_reserve_tokens
+        assert first.complete_request_tokens == first.estimated_input_tokens + first.output_reserve_tokens
         assert first.counting_method == envelope.counting_method
+        diagnostics = first.as_diagnostics()
+        assert diagnostics["estimated_input_tokens"] == first.estimated_input_tokens
+        assert diagnostics["complete_request_tokens"] == (
+            diagnostics["estimated_input_tokens"] + diagnostics["output_reserve_tokens"]
+        )
+        assert {
+            "estimated_total_tokens",
+            "prefit_estimated_total_tokens",
+            "full_candidate_tokens",
+            "lens_candidate_tokens",
+        }.isdisjoint(diagnostics)
 
     asyncio.run(scenario())
 
@@ -140,7 +151,7 @@ def test_admission_exact_input_fit_with_nonzero_reserve_returns_same_envelope_an
     async def scenario() -> None:
         envelope = await _bound_envelope()
         counted = estimate_canonical_envelope(envelope, budget=_budget(1_000_000))
-        input_total = counted.estimated_total_tokens
+        input_total = counted.estimated_input_tokens
         complete_total = counted.complete_request_tokens
 
         admitted = RequestAdmission().admit(envelope, budget=_budget(input_total))
@@ -148,11 +159,11 @@ def test_admission_exact_input_fit_with_nonzero_reserve_returns_same_envelope_an
 
         assert isinstance(admitted, AdmittedProviderEnvelope)
         assert admitted.envelope is envelope
-        assert admitted.token_breakdown.estimated_total_tokens == input_total
+        assert admitted.token_breakdown.estimated_input_tokens == input_total
         assert admitted.token_breakdown.complete_request_tokens == complete_total
         assert isinstance(rejected, RejectedProviderEnvelope)
         assert rejected.reason == "context_capacity"
-        assert rejected.token_breakdown.estimated_total_tokens == input_total
+        assert rejected.token_breakdown.estimated_input_tokens == input_total
         assert rejected.token_breakdown.complete_request_tokens == complete_total
         assert rejected.counting_method == envelope.counting_method
 
@@ -164,7 +175,7 @@ def test_default_budget_deducts_envelope_reserve_exactly_once() -> None:
         base = await _bound_envelope()
         default_budget = ModelRequestBudget()
         base_count = estimate_canonical_envelope(base, budget=default_budget)
-        fixed_input = base_count.estimated_total_tokens - base_count.actor_world_tokens
+        fixed_input = base_count.estimated_input_tokens - base_count.actor_world_tokens
         target_input = 60_000
         actor_tokens = target_input - fixed_input
         envelope = _replace_physical(base, user_text="x" * (actor_tokens * 3))
@@ -174,7 +185,7 @@ def test_default_budget_deducts_envelope_reserve_exactly_once() -> None:
         assert default_budget.admission_limit == 62_904
         assert envelope.output_token_reserve == 4_096
         assert isinstance(outcome, AdmittedProviderEnvelope)
-        assert outcome.token_breakdown.estimated_total_tokens == target_input
+        assert outcome.token_breakdown.estimated_input_tokens == target_input
         assert outcome.token_breakdown.admission_limit == 62_904
         assert outcome.token_breakdown.complete_request_tokens == 64_096
         assert outcome.token_breakdown.complete_request_tokens <= default_budget.model_context_window
@@ -186,7 +197,7 @@ def test_soft_target_is_an_input_limit_and_does_not_subtract_reserve_again() -> 
     async def scenario() -> None:
         base = await _bound_envelope()
         base_count = estimate_canonical_envelope(base)
-        fixed_input = base_count.estimated_total_tokens - base_count.actor_world_tokens
+        fixed_input = base_count.estimated_input_tokens - base_count.actor_world_tokens
         target_input = 7_000
         actor_tokens = target_input - fixed_input
         envelope = _replace_physical(base, user_text="x" * (actor_tokens * 3))
@@ -195,7 +206,7 @@ def test_soft_target_is_an_input_limit_and_does_not_subtract_reserve_again() -> 
         outcome = RequestAdmission().admit(envelope, budget=soft_budget)
 
         assert isinstance(outcome, AdmittedProviderEnvelope)
-        assert outcome.token_breakdown.estimated_total_tokens == 7_000
+        assert outcome.token_breakdown.estimated_input_tokens == 7_000
         assert outcome.token_breakdown.admission_limit == 8_000
         assert outcome.token_breakdown.complete_request_tokens == 11_096
 
@@ -207,14 +218,14 @@ def test_complete_request_must_also_fit_context_window_with_envelope_reserve() -
         base = _replace_physical(await _bound_envelope(), output_token_reserve=5_000)
         budget = ModelRequestBudget()
         base_count = estimate_canonical_envelope(base, budget=budget)
-        fixed_input = base_count.estimated_total_tokens - base_count.actor_world_tokens
+        fixed_input = base_count.estimated_input_tokens - base_count.actor_world_tokens
         target_input = 62_500
         envelope = _replace_physical(base, user_text="x" * ((target_input - fixed_input) * 3))
 
         outcome = RequestAdmission().admit(envelope, budget=budget)
 
         assert isinstance(outcome, RejectedProviderEnvelope)
-        assert outcome.token_breakdown.estimated_total_tokens == target_input
+        assert outcome.token_breakdown.estimated_input_tokens == target_input
         assert outcome.token_breakdown.admission_limit == 62_000
         assert outcome.token_breakdown.complete_request_tokens == 67_500
         assert outcome.token_breakdown.complete_request_tokens > budget.model_context_window

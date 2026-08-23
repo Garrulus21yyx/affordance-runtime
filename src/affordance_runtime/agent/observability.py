@@ -1366,7 +1366,9 @@ def model_turn_payload(
             "model_call_count": int(diagnostics.get("policy_model_call_count", 0)),
             "request_breakdowns": _json_value(diagnostics.get("request_breakdowns", ()), None),
             "admission_action": str(diagnostics.get("admission_action", "")),
-            "estimated_total_tokens": int(diagnostics.get("estimated_total_tokens", 0)),
+            "estimated_input_tokens": int(diagnostics.get("estimated_input_tokens", 0)),
+            "output_reserve_tokens": int(diagnostics.get("output_reserve_tokens", 0)),
+            "complete_request_tokens": int(diagnostics.get("complete_request_tokens", 0)),
         }
     return payload
 

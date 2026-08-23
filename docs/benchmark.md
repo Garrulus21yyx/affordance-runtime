@@ -4,7 +4,7 @@
 
 Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 media route / operand-role repair implemented and provider-free verified; exit review pending /
-Gate 3 reopened: breakdown diagnostic coordinate conservation /
+Gate 3 breakdown diagnostic coordinate repair implemented and provider-free verified; exit review pending /
 Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
 remain separate reopened gates; C10 cannot close before Gate 4. Prior
@@ -171,6 +171,14 @@ bytes/MIME/digest/dimensions, mark/role/route relation, provider input equality,
 binding exclusion. Focused verification is `150 passed`; full pytest is `1604 passed, 24 skipped`; Ruff, compileall,
 diff check, and negative searches pass. No provider/live/Task7 run occurred. Gate 2 still awaits joint fresh exit
 review with the Gate 3 diagnostic repair; Gate 4 remains aborted/not admitted.
+
+Gate 3 diagnostic-coordinate repair is implemented and provider-free verified. The one physical input total is now
+`estimated_input_tokens`; `output_reserve_tokens` stays separate; `complete_request_tokens` is their exact sum.
+Producerless prefit/full/lens fields and the WebArena cross-coordinate reduction comparison are deleted. Trace,
+observability, benchmark instrumentation, case metrics, WebArena diagnostics, and tests all consume the explicit
+coordinates. Focused verification is `167 passed, 2 skipped`; full pytest is `1605 passed, 24 skipped`; Ruff,
+compileall, diff check, and old-name/cross-coordinate negative searches pass. No provider/live/Task7 run occurred.
+Gate 3 still awaits joint fresh exit review with Gate 2; Gate 4 remains aborted/not admitted.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -1022,11 +1030,11 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 4. **Delivery media repair implemented/provider-free verified; exit review pending:** `ObservationDeliveryStore`
    remains the inventory/cursor transition owner; final attached media now carries actual marks, typed operand roles,
    and exact route deltas, with Manifest union limited to text/media deltas.
-5. **Envelope core transport/admission verified; breakdown diagnostics reopened:** one `CanonicalProviderEnvelopeBinder`
+5. **Envelope diagnostic repair implemented/provider-free verified; exit review pending:** one `CanonicalProviderEnvelopeBinder`
    closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
-   exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates passed. The active
-   mixed-coordinate ghost breakdown fields and WebArena consumer reopen only that diagnostic owner.
+   exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Breakdown
+   diagnostics expose one input total and separate reserve/complete totals; producerless candidate metrics are absent.
 6. **Stopped — vertical conservation:** the first real annotated request falsified Gate 2 media route/operand-role
    conservation, and the capacity audit reopened Gate 3 diagnostics. Resume only after those owners are repaired and
    re-admitted; no Gate 4 completion evidence or commit exists.

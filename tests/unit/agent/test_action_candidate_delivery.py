@@ -901,7 +901,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
             call_profile=_PROFILE,
             output_token_reserve=_PROFILE.max_output_tokens,
         )
-        return estimate_canonical_envelope(envelope).estimated_total_tokens
+        return estimate_canonical_envelope(envelope).estimated_input_tokens
 
     mandatory_total = total(0)
     first_optional_total = total(1)
@@ -939,7 +939,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
     assert breakdown.manifest_route_count == len(packed.delivery.manifest.action_routes)
     assert breakdown.packing_backoff_count == packed.packing_backoff_count
     assert breakdown.tool_schema_bytes > 0
-    assert breakdown.complete_request_tokens == (breakdown.estimated_total_tokens + breakdown.output_reserve_tokens)
+    assert breakdown.complete_request_tokens == (breakdown.estimated_input_tokens + breakdown.output_reserve_tokens)
 
 
 @pytest.mark.parametrize("count", (1, 2, 16, 84, 167, 500))
@@ -1008,10 +1008,10 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
         assert admitted < len(effect.records)
         assert any(item.scope == "effect" for item in packed.delivery.continuation_capabilities)
     assert (
-        packed.admitted_envelope.token_breakdown.estimated_total_tokens
+        packed.admitted_envelope.token_breakdown.estimated_input_tokens
         <= ModelRequestBudget().soft_target_tokens
     )
-    assert packed.admitted_envelope.token_breakdown.estimated_total_tokens <= ModelRequestBudget().admission_limit
+    assert packed.admitted_envelope.token_breakdown.estimated_input_tokens <= ModelRequestBudget().admission_limit
     assert (
         packed.admitted_envelope.token_breakdown.complete_request_tokens
         <= ModelRequestBudget().model_context_window

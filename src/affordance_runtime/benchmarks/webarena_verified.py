@@ -731,7 +731,7 @@ async def inspect_webarena_verified_w1b_world(
         case_path = output_dir / f"w1b-world-task-{case_ref.task_id}.json"
         case_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     delivered_tokens = sorted(
-        int(item.get("request_budget", {}).get("estimated_total_tokens", 0))
+        int(item.get("request_budget", {}).get("estimated_input_tokens", 0))
         for item in cases
         if item.get("status") == "ok"
     )
@@ -1265,8 +1265,8 @@ def _transition_delivery_diagnostic(
     if local_monitor.recommendation is not EpisodeMonitorRecommendation.CONTINUE:
         errors.append("transition:monitor_rejected_bounded_local_search")
     if (
-        admitted.token_breakdown.estimated_total_tokens <= 0
-        or local_admitted.token_breakdown.estimated_total_tokens <= 0
+        admitted.token_breakdown.estimated_input_tokens <= 0
+        or local_admitted.token_breakdown.estimated_input_tokens <= 0
     ):
         errors.append("transition:post_transition_request_not_admitted")
     if "LatestEffect" not in delivery.view.text or "CurrentFindings" not in delivery.view.text:
@@ -1298,16 +1298,16 @@ def _transition_delivery_diagnostic(
         "monitor_recommendation": transition_monitor.recommendation.value,
         "local_operation": "search_page_content",
         "local_monitor_recommendation": local_monitor.recommendation.value,
-        "post_transition_request_admitted": admitted.token_breakdown.estimated_total_tokens > 0,
-        "post_transition_request_tokens": admitted.token_breakdown.estimated_total_tokens,
+        "post_transition_request_admitted": admitted.token_breakdown.estimated_input_tokens > 0,
+        "post_transition_request_tokens": admitted.token_breakdown.estimated_input_tokens,
         "post_transition_request_budget": admitted.token_breakdown.as_diagnostics(),
         "post_transition_manifest_route_count": len(delivery.manifest.action_routes),
         "post_transition_obligation_group_count": len(after_context.action_delivery_plan.obligations),
         "post_transition_admitted_record_count": sum(dict(delivery.admitted_record_counts).values()),
         "post_transition_packing_backoff_count": delivery.packing_backoff_count,
         "post_transition_privacy_checked": not transition_leaks,
-        "post_local_request_admitted": local_admitted.token_breakdown.estimated_total_tokens > 0,
-        "post_local_request_tokens": local_admitted.token_breakdown.estimated_total_tokens,
+        "post_local_request_admitted": local_admitted.token_breakdown.estimated_input_tokens > 0,
+        "post_local_request_tokens": local_admitted.token_breakdown.estimated_input_tokens,
         "post_local_request_budget": local_admitted.token_breakdown.as_diagnostics(),
         "post_local_manifest_route_count": len(local_delivery.manifest.action_routes),
         "post_local_obligation_group_count": len(local_context.action_delivery_plan.obligations),
@@ -1360,8 +1360,7 @@ def _serialized_public_snapshot_diff(before, after) -> tuple[tuple[str, str, str
 
 def _w1b_cost_errors(request_budget: Mapping[str, object]) -> tuple[str, ...]:
     errors: list[str] = []
-    delivered = int(request_budget.get("estimated_total_tokens", 0))
-    full = int(request_budget.get("full_candidate_tokens", 0))
+    delivered = int(request_budget.get("estimated_input_tokens", 0))
     history = int(request_budget.get("history_tokens", 0))
     tool_schemas = int(request_budget.get("tool_schema_tokens", 0))
     if delivered > 12_000:
@@ -1370,12 +1369,6 @@ def _w1b_cost_errors(request_budget: Mapping[str, object]) -> tuple[str, ...]:
         errors.append("cost:history_over_1_5k")
     if tool_schemas > 2_000:
         errors.append("cost:tool_schema_over_2k")
-    if full <= 0:
-        errors.append("cost:full_delivery_baseline_missing")
-    if full > 12_000 and delivered > math.floor(full * 0.70):
-        errors.append("cost:large_full_reduction_under_30_percent")
-    if 0 < full <= 12_000 and delivered > math.ceil(full * 1.05):
-        errors.append("cost:delivery_over_valid_full_by_more_than_5_percent")
     if delivered > math.floor(90_368 * 0.60):
         errors.append("cost:task0_baseline_reduction_under_40_percent")
     return tuple(errors)
@@ -1717,7 +1710,7 @@ def _candidate_diagnostic(
         "observation_only_calls_before_candidate_execution": 0 if target_recall else None,
         "repeated_region_version_reads": 0,
         "tool_schema_tokens": int(request_budget.get("tool_schema_tokens", 0)),
-        "full_request_tokens": int(request_budget.get("estimated_total_tokens", 0)),
+        "input_request_tokens": int(request_budget.get("estimated_input_tokens", 0)),
         "discovery_gui_dispatch_count": 0 if zero_dispatch else None,
         "provider_attempts": 0,
         "acceptance_errors": tuple(errors),

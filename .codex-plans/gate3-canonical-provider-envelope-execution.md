@@ -1,7 +1,7 @@
 # Gate 3 Canonical Provider Envelope execution
 
-Status: reopened_breakdown_diagnostic_coordinate_conservation; core_transport_and_admission_scoped_evidence_only;
-Gate_4_aborted_not_admitted
+Status: breakdown_diagnostic_coordinate_repair_implemented_and_provider_free_verified;
+joint_exit_review_pending; Gate_4_aborted_not_admitted
 
 ## Goal
 
@@ -57,3 +57,10 @@ Cut over the production model boundary to one immutable `CanonicalProviderEnvelo
   the active WebArena diagnostic compares `full_candidate_tokens` with input-only `estimated_total_tokens`. The core
   Envelope/admission algebra was not falsified; the breakdown diagnostic owner is reopened for deletion of the ghost
   fields and consumer rather than probe-side conversion.
+- Gate 3 diagnostic repair removes producerless prefit/full/lens fields, renames the sole input total to
+  `estimated_input_tokens`, retains `output_reserve_tokens` separately, and requires
+  `complete_request_tokens = estimated_input_tokens + output_reserve_tokens`. Instrumentation, trace, case metrics,
+  WebArena diagnostics, observability, and tests consume those explicit coordinates. WebArena no longer performs an
+  unowned full/lens reduction comparison.
+- Repair-focused suite: `167 passed, 2 skipped`; full provider-free suite: `1605 passed, 24 skipped`; Ruff, compileall,
+  diff check, and old-name/cross-coordinate negative searches pass.

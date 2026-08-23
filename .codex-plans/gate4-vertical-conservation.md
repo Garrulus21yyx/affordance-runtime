@@ -59,13 +59,14 @@ evidence by default; an owner contract falsification stops the gate rather than 
 
 ### Capacity consumer audit
 
-`estimated_total_tokens` is active input cost; `output_reserve_tokens` is the separate reserve;
-`complete_request_tokens` is their sum; `admission_limit` is the effective input limit. The fields
+At the stop revision, `estimated_total_tokens` was active input cost; `output_reserve_tokens` was the separate reserve;
+`complete_request_tokens` was their sum; `admission_limit` was the effective input limit. The fields
 `prefit_estimated_total_tokens`, `full_candidate_tokens`, and `lens_candidate_tokens` have no candidate producer: all
 three are assigned the same complete-request total. The only production consumer compares `full_candidate_tokens`
 against input-only `estimated_total_tokens` in the WebArena diagnostic. They are old-chain ghost metrics and will be
 deleted at `ModelRequestBreakdown` plus that consumer, with no probe-side conversion, during the reopened Gate 3
-diagnostic-owner repair rather than as a Gate 4 compensation.
+diagnostic-owner repair rather than as a Gate 4 compensation. Gate 3 now names the live value
+`estimated_input_tokens`; the old names remain in this historical falsification record only.
 
 ### Stop evidence
 

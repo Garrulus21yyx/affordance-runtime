@@ -85,7 +85,9 @@ class BenchmarkInstrumentation:
     tool_schema_tokens: int = 0
     image_estimated_tokens: int = 0
     repair_tokens: int = 0
-    estimated_total_tokens: int = 0
+    estimated_input_tokens: int = 0
+    output_reserve_tokens: int = 0
+    complete_request_tokens: int = 0
     provider_reported_prompt_tokens: int = 0
     admission_limit: int = 0
     context_capacity_rejections: int = 0
@@ -313,7 +315,9 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
         event["generation_attempts"] = to_json_compatible(generation_attempts)
         event["request_breakdowns"] = to_json_compatible(diagnostics.get("request_breakdowns", ()))
         event["admission_action"] = str(diagnostics.get("admission_action", ""))
-        event["estimated_total_tokens"] = int(diagnostics.get("estimated_total_tokens", 0))
+        event["estimated_input_tokens"] = int(diagnostics.get("estimated_input_tokens", 0))
+        event["output_reserve_tokens"] = int(diagnostics.get("output_reserve_tokens", 0))
+        event["complete_request_tokens"] = int(diagnostics.get("complete_request_tokens", 0))
         event["structured_output_validation_stage"] = str(diagnostics.get("structured_output_validation_stage", ""))
         event["structured_output_violations"] = tuple(
             {"field_path": item.field_path, "code": item.code}
@@ -577,7 +581,9 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
         "tool_schema_tokens",
         "image_estimated_tokens",
         "repair_tokens",
-        "estimated_total_tokens",
+        "estimated_input_tokens",
+        "output_reserve_tokens",
+        "complete_request_tokens",
         "provider_reported_prompt_tokens",
     ):
         setattr(instrumentation, name, getattr(instrumentation, name) + int(diagnostics.get(name, 0)))

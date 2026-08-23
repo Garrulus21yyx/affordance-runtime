@@ -4,7 +4,7 @@
 
 Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 media route / operand-role repair implemented and provider-free verified; exit review pending /
-Gate 3 reopened: breakdown diagnostic coordinate conservation /
+Gate 3 breakdown diagnostic coordinate repair implemented and provider-free verified; exit review pending /
 Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
@@ -147,6 +147,17 @@ request equality, exact Manifest relation, execution, and private binding exclus
 passed`; full provider-free pytest is `1604 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches
 pass. This is Gate 2 implementation evidence only; joint Gate 2/3 exit review and Gate 4 remain blocked.
 
+Gate 3 diagnostic-coordinate repair checkpoint (2026-08-23): `ModelRequestBreakdown` now names the sole complete
+physical input estimate `estimated_input_tokens`, retains `output_reserve_tokens` as a separate allocation, and closes
+`complete_request_tokens = estimated_input_tokens + output_reserve_tokens`. The producerless
+`prefit_estimated_total_tokens`, `full_candidate_tokens`, and `lens_candidate_tokens` fields are deleted rather than
+renamed into fictitious candidates. Trace, observability, benchmark instrumentation, case metrics, WebArena
+diagnostics, and tests consume the same explicit coordinates. WebArena no longer performs a full/lens reduction ratio
+because no current TurnPacker producer owns either candidate. Default 62,904-input + 4,096-reserve, 8k input soft
+target, exact fit, one-over, and zero-provider-attempt rejection properties remain green. Focused verification is `167
+passed, 2 skipped`; full provider-free pytest is `1605 passed, 24 skipped`; Ruff, compileall, diff check, and negative
+searches pass. This is Gate 3 implementation evidence only; joint Gate 2/3 exit review and Gate 4 remain blocked.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -243,8 +254,8 @@ prerequisite for an earlier cutover gate:
    deltas, and typed operand roles. Earlier Store/two-turn evidence plus the new production media gate await joint
    fresh exit review.
 4. **Envelope cutover (core verified; diagnostics reopened).** Messages/tools/media/settings/output are bound once and
-   transported unchanged, but mixed-coordinate ghost breakdown fields and their active consumer must be removed by
-   the diagnostic owner before re-admission.
+   transported unchanged, and the diagnostic repair now exposes one input total plus separate reserve/complete totals;
+   joint fresh exit review remains pending.
 5. **Vertical conservation gate (stopped).** Only after the reopened owners are repaired may this prove private-identity permutations leave the final
    recorded envelope digest/cost unchanged and every visible/callable route remains closed from World to Binder.
 
@@ -1091,7 +1102,7 @@ RequestAdmission profile/estimator
 ```
 
 `TurnPacker` compares tentative request input cost with the 8k input soft target. `RequestAdmission` separately records
-`estimated_total_tokens` as complete input cost, `output_reserve_tokens` as the one reserve, and
+`estimated_input_tokens` as complete input cost, `output_reserve_tokens` as the one reserve, and
 `complete_request_tokens` as their sum. The default profile therefore admits up to 62,904 input tokens with a separate
 4,096-token reserve inside the 67,000-token context window; it does not reduce either 62,904 or 8,000 by 4,096 again.
 

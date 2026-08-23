@@ -15,6 +15,7 @@ from affordance_runtime.benchmarks.webarena_verified import (
     _private_leak_markers,
     _private_runtime_strings,
     _transition_delivery_diagnostic,
+    _w1b_cost_errors,
     evaluate_webarena_verified_manifest,
     inspect_webarena_verified_w0_readiness,
     load_webarena_verified_tasks,
@@ -70,6 +71,34 @@ def test_w1b_world_capability_census_reports_t1_browsergym_support() -> None:
     assert census["hover"]["registry_defined"] is True
     assert census["hover"]["adapter_supported"] is False
     assert census["hover"]["absence_reason"] == "adapter_not_supported"
+
+
+def test_w1b_cost_gate_consumes_only_owner_produced_input_coordinates() -> None:
+    within_target = _w1b_cost_errors(
+        {
+            "estimated_input_tokens": 11_000,
+            "output_reserve_tokens": 4_096,
+            "complete_request_tokens": 15_096,
+            "history_tokens": 1_000,
+            "tool_schema_tokens": 1_000,
+            # Removed ghost fields cannot restore a cross-coordinate comparison.
+            "full_candidate_tokens": 1,
+            "lens_candidate_tokens": 99_999,
+            "prefit_estimated_total_tokens": 99_999,
+        }
+    )
+    over_target = _w1b_cost_errors(
+        {
+            "estimated_input_tokens": 12_001,
+            "output_reserve_tokens": 4_096,
+            "complete_request_tokens": 16_097,
+            "history_tokens": 1_000,
+            "tool_schema_tokens": 1_000,
+        }
+    )
+
+    assert within_target == ()
+    assert over_target == ("cost:new_page_over_12k",)
 
 
 def test_webarena_final_response_codec_delegates_to_pinned_upstream_model() -> None:
