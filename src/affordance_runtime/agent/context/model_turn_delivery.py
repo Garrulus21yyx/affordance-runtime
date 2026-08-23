@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionCandidateProjection,
@@ -15,6 +16,7 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     WorldDeliveryRecord,
 )
 from affordance_runtime.agent.context.compact_world_renderer import (
+    DeliveredActionRoute,
     DeliveryManifest,
     WorldDeliveryView,
     render_compact_actor_world,
@@ -22,8 +24,89 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
 from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
+
+
+class MediaOperandRole(StrEnum):
+    SOURCE = "source"
+    DESTINATION = "destination"
+
+
+@dataclass(frozen=True)
+class DeliveredMediaMark:
+    ref: str
+    bbox: tuple[int, int, int, int]
+    operand_roles: tuple[MediaOperandRole, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (
+            not PublicRefCodec.accepts(self.ref, expected=PublicRefKind.EXECUTABLE)
+            or len(self.bbox) != 4
+            or any(type(value) is not int for value in self.bbox)
+        ):
+            raise ValueError("delivered media mark is invalid")
+        roles = tuple(MediaOperandRole(item) for item in self.operand_roles)
+        if len(roles) != len(set(roles)):
+            raise ValueError("delivered media operand roles must be unique")
+        object.__setattr__(self, "bbox", tuple(self.bbox))
+        object.__setattr__(self, "operand_roles", roles)
+
+
+@dataclass(frozen=True)
+class DeliveredMedia:
+    """Exact attached bytes, actual marks, and their admitted route relation."""
+
+    evidence_ref: str
+    mime_type: str
+    data: bytes = field(repr=False)
+    sha256: str
+    coordinate_space_id: str = field(repr=False, compare=False)
+    actual_marks: tuple[DeliveredMediaMark, ...] = ()
+    route_deltas: tuple[DeliveredActionRoute, ...] = field(default=(), repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not self.evidence_ref.startswith("artifact:")
+            or self.mime_type not in {"image/png", "image/jpeg"}
+            or not isinstance(self.data, bytes)
+            or not self.data
+            or hashlib.sha256(self.data).hexdigest() != self.sha256
+            or not self.coordinate_space_id.strip()
+        ):
+            raise ValueError("delivered media payload is invalid")
+        marks = tuple(self.actual_marks)
+        routes = tuple(self.route_deltas)
+        if (
+            any(not isinstance(item, DeliveredMediaMark) for item in marks)
+            or len({item.ref for item in marks}) != len(marks)
+            or any(not isinstance(item, DeliveredActionRoute) for item in routes)
+            or len(routes) != len(set(routes))
+        ):
+            raise ValueError("delivered media relation is invalid")
+        roles_by_ref = {item.ref: frozenset(item.operand_roles) for item in marks}
+        for route in routes:
+            if MediaOperandRole.SOURCE not in roles_by_ref.get(route.source_ref, frozenset()):
+                raise ValueError("media route source lacks a typed source mark")
+            if route.destination_ref and MediaOperandRole.DESTINATION not in roles_by_ref.get(
+                route.destination_ref, frozenset()
+            ):
+                raise ValueError("media route destination lacks a typed destination mark")
+        for mark in marks:
+            expected_roles = {
+                role
+                for route in routes
+                for role, ref in (
+                    (MediaOperandRole.SOURCE, route.source_ref),
+                    (MediaOperandRole.DESTINATION, route.destination_ref),
+                )
+                if ref == mark.ref
+            }
+            if set(mark.operand_roles) != expected_roles:
+                raise ValueError("media mark operand roles differ from its exact route deltas")
+        object.__setattr__(self, "actual_marks", marks)
+        object.__setattr__(self, "route_deltas", routes)
 
 
 @dataclass(frozen=True)
@@ -45,7 +128,7 @@ class ModelTurnDelivery:
         metadata={"serialize": False},
     )
     action_delivery_plan_id: str
-    media: tuple[AgentImageInput, ...] = ()
+    media: tuple[DeliveredMedia, ...] = ()
     admitted_record_counts: tuple[tuple[str, int], ...] = ()
     packing_backoff_count: int = 0
     continuation_capabilities: tuple[DeliveryContinuationCapability, ...] = field(
@@ -86,10 +169,10 @@ class ModelTurnDelivery:
         ):
             raise ValueError("every candidate destination must enter the same DeliveryManifest")
         media = tuple(self.media)
-        if any(not isinstance(item, AgentImageInput) for item in media):
+        if any(not isinstance(item, DeliveredMedia) for item in media):
             raise TypeError("model turn media must contain exact admitted image records")
-        if any(ref not in self.manifest.executable_refs for item in media for ref, _ in item.marks):
-            raise ValueError("attached actionable marks must belong to delivered action routes")
+        if any(route not in self.manifest.action_routes for item in media for route in item.route_deltas):
+            raise ValueError("attached media routes must belong to the delivered Manifest")
         route_refs = {
             ref
             for route in self.manifest.action_routes
@@ -99,7 +182,7 @@ class ModelTurnDelivery:
         if set(self.manifest.executable_refs) != route_refs:
             raise ValueError("every delivered executable must participate in an exact action route")
         visible_refs = set(re.findall(r"\b[ENFR][1-9][0-9]*\b", self.view.text)) | {
-            ref for item in media for ref, _role in item.marks
+            mark.ref for item in media for mark in item.actual_marks
         }
         manifest_refs = {
             *self.manifest.executable_refs,
@@ -201,19 +284,9 @@ def build_model_turn_delivery(
             "packing_backoff_count": packing_backoff_count,
         },
     )
-    manifest = rendered.manifest
-    routed_refs = {ref for route in manifest.action_routes for ref in (route.source_ref, route.destination_ref) if ref}
-    media = (
-        tuple(
-            replace(
-                item,
-                marks=tuple(mark for mark in item.marks if mark[0] in routed_refs),
-            )
-            for item in context.image_inputs
-        )
-        if include_images
-        else ()
-    )
+    text_routes = rendered.manifest.action_routes
+    media = _delivered_media(context.image_inputs, text_routes) if include_images else ()
+    manifest = _manifest_with_media_routes(rendered.manifest, media)
     payload = {
         "projection": view.projection,
         "text": view.text,
@@ -230,7 +303,11 @@ def build_model_turn_delivery(
                 "mime": item.mime_type,
                 "digest": item.sha256,
                 "coordinate_space": item.coordinate_space_id,
-                "marks": item.marks,
+                "marks": tuple((mark.ref, mark.bbox, mark.operand_roles) for mark in item.actual_marks),
+                "route_deltas": tuple(
+                    (route.operation, route.source_ref, route.destination_ref)
+                    for route in item.route_deltas
+                ),
             }
             for item in media
         ),
@@ -254,6 +331,77 @@ def build_model_turn_delivery(
         tuple(sorted(selected_counts.items())),
         packing_backoff_count,
         continuation_capabilities,
+    )
+
+
+def _delivered_media(
+    images: tuple[AgentImageInput, ...],
+    admitted_routes: tuple[DeliveredActionRoute, ...],
+) -> tuple[DeliveredMedia, ...]:
+    """Attach route meaning from admitted fragment deltas, never from marks or ActionSpace."""
+
+    delivered = []
+    for image in images:
+        actual_refs = {ref for ref, _bbox in image.marks}
+        routes = tuple(
+            route
+            for route in admitted_routes
+            if route.source_ref in actual_refs
+            and (not route.destination_ref or route.destination_ref in actual_refs)
+        )
+        marks = tuple(
+            DeliveredMediaMark(
+                ref,
+                bbox,
+                tuple(
+                    role
+                    for role, matches in (
+                        (MediaOperandRole.SOURCE, any(route.source_ref == ref for route in routes)),
+                        (
+                            MediaOperandRole.DESTINATION,
+                            any(route.destination_ref == ref for route in routes),
+                        ),
+                    )
+                    if matches
+                ),
+            )
+            for ref, bbox in image.marks
+        )
+        delivered.append(
+            DeliveredMedia(
+                image.evidence_ref,
+                image.mime_type,
+                image.data,
+                image.sha256,
+                image.coordinate_space_id,
+                marks,
+                routes,
+            )
+        )
+    return tuple(delivered)
+
+
+def _manifest_with_media_routes(
+    text_manifest: DeliveryManifest,
+    media: tuple[DeliveredMedia, ...],
+) -> DeliveryManifest:
+    """Union only typed route deltas carried by admitted text and attached media."""
+
+    routes = list(text_manifest.action_routes)
+    executable = list(text_manifest.executable_refs)
+    for item in media:
+        for route in item.route_deltas:
+            if route not in routes:
+                routes.append(route)
+            for ref in (route.source_ref, route.destination_ref):
+                if ref and ref not in executable:
+                    executable.append(ref)
+    return DeliveryManifest(
+        tuple(executable),
+        text_manifest.readonly_refs,
+        text_manifest.fact_refs,
+        text_manifest.region_refs,
+        tuple(routes),
     )
 
 

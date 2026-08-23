@@ -29,6 +29,7 @@ from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.pydantic_ai_bridge import PydanticAIGroundedDecisionPort
 from affordance_runtime.world import (
+    ObservationGroundingRegion,
     ObservationMedia,
     ObservationMediaVariant,
     SemanticTarget,
@@ -306,6 +307,65 @@ def test_gate_0_records_actual_media_part_mime_and_bytes_identity() -> None:
         assert envelope.media[0].data == png
         assert envelope.media[0].mime_type == "image/png"
         assert envelope.media[0].dimensions == (20, 20)
+
+    asyncio.run(scenario())
+
+
+def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boundary() -> None:
+    async def scenario() -> None:
+        output = io.BytesIO()
+        Image.new("RGB", (20, 20), "white").save(output, format="JPEG")
+        media = ObservationMedia(
+            "gate-2-annotated-screenshot",
+            "screenshot",
+            "image/jpeg",
+            output.getvalue(),
+            (
+                ObservationGroundingRegion(
+                    "shared-toggle",
+                    (1, 1, 5, 5),
+                    1.0,
+                    "viewport:gate-2",
+                ),
+            ),
+            capture_group_id="capture:gate-2",
+            variant=ObservationMediaVariant.RAW,
+            dimensions=(20, 20),
+            coordinate_space_id="viewport:gate-2",
+        )
+        base = shared_world("gate-2-media-before", False)
+        before = WorldFusion().fuse((replace(base.sources[0], media=(media,)),)).observation
+        assert before is not None
+        recorder = RecordingPydanticModel(["first_gui_action"], scripted_phases=["ordinary"])
+        policy = _policy(recorder, supports_multimodal=True)
+        environment = _one_action_environment(before=before)
+
+        state = await _runtime(policy).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE
+        assert recorder.calls == 1
+        envelope = policy.port.last_admitted_envelopes[0]
+        assert normalize_recorded_provider_input(recorder.records[0]) == envelope.model_boundary_projection()
+        assert len(envelope.media) == 1
+        recorded_media = envelope.media[0]
+        assert recorded_media.mime_type == "image/png"
+        assert recorded_media.data.startswith(b"\x89PNG\r\n\x1a\n")
+        assert recorded_media.dimensions == (20, 20)
+        assert recorded_media.marks == (("E1", (1, 1, 5, 5)),)
+        assert recorded_media.operand_roles == (("E1", ("source",)),)
+        assert recorded_media.route_deltas == (("activate", "E1", ""),)
+        assert tuple(
+            (route.operation, route.source_ref, route.destination_ref)
+            for route in envelope.catalog.manifest.action_routes
+        ) == recorded_media.route_deltas
+        assert len(environment.executed_requests) == 1
+        bound = environment.executed_requests[0]
+        assert bound.intent.semantic_action == "activate"
+        assert bound.selection.target_id == "shared-toggle"
+        assert bound.binding.binding_id.startswith("binding:")
+        provider_payload = json.dumps(envelope.model_boundary_projection(), default=str)
+        assert bound.binding.binding_id not in provider_payload
+        assert bound.binding.payload["selector"] not in provider_payload
 
     asyncio.run(scenario())
 

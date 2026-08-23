@@ -111,6 +111,7 @@ def _media(data: bytes) -> CanonicalMediaRecord:
         "raw",
         (),
         (),
+        (),
         "viewport:private",
     )
 

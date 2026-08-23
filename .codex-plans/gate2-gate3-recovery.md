@@ -1,0 +1,75 @@
+# Gate 2 / Gate 3 recovery after vertical falsification
+
+Status: gate_2_implemented_provider_free_verified_exit_review_pending; gate_3_pending;
+gate_4_aborted_not_admitted;
+overall_reopened_non_closed
+
+## Goal
+
+Repair and independently re-verify the two owner contracts falsified by the aborted Gate 4 attempt, commit each gate
+separately, then perform a fresh read-only Gate 2/3 exit review. Gate 4 remains out of scope until both gates are
+explicitly re-admitted.
+
+## Constraints
+
+- Baseline evidence commit: `6c6384b346a6124879a36fe0e7be6547343a7a51`.
+- Preserve untracked `output/`; never modify, stage, or commit it.
+- Provider-free only; no live benchmark, Task7 replay, external token counter, or external GUI side effect.
+- Fix meaning at the owning boundary; no CoreLoop, Catalog, bridge, recorder, WebArena-probe, or test compensation.
+- Gate 2 and Gate 3 receive independent implementation commits and independent verification evidence.
+- Do not resume or claim Gate 4 until a fresh Gate 2/3 exit review passes.
+
+## Gate 2 positive contract
+
+The final attached-media value owns exact annotation and route meaning atomically:
+
+```text
+actual attached media
+├── actual marks: public ref + in-frame bbox
+├── exact route deltas: operation + source ref + optional destination ref
+└── typed per-mark operand roles: source | destination
+```
+
+`DeliveryManifest.action_routes` is the ordered union of admitted text-fragment route deltas and actual attached-media
+route deltas. A mark carries no authority by itself. Evidence-only, unavailable, out-of-frame, or unattached marks add
+no route. Destination-only marks retain destination role and never create a unary route.
+
+## Gate 3 positive contract
+
+Every active request-breakdown field names its coordinate explicitly:
+
+```text
+estimated_input_tokens
+full_candidate_input_tokens
+lens_candidate_input_tokens
+output_reserve_tokens
+complete_request_tokens = estimated_input_tokens + output_reserve_tokens
+```
+
+Delete ambiguous/producerless prefit metrics. Every consumer compares like coordinates; the WebArena probe receives
+owner-produced input coordinates and performs no conversion.
+
+## Steps
+
+1. [completed] Implement the Gate 2 final-media route/role owner and migrate Manifest/Envelope consumers.
+2. [completed] Add unary, destination, evidence-only, undrawn/unavailable, and real Recording FunctionModel production gates.
+3. [in_progress] Run Gate 2 focused/full/static/negative verification; update docs; commit Gate 2 independently.
+4. [pending] Rename/delete Gate 3 breakdown fields at the owner and migrate every active consumer.
+5. [pending] Add coordinate properties for default, soft target, exact fit, one-over, candidate comparisons, and zero attempts.
+6. [pending] Run Gate 3 focused/full/static/negative verification; update docs; commit Gate 3 independently.
+7. [pending] Perform a fresh read-only Gate 2/3 exit review and record admitted/reopened status without starting Gate 4.
+
+## Files produced or modified
+
+- `.codex-plans/gate2-gate3-recovery.md` — this persistent recovery record.
+
+## Evidence log
+
+- Gate 2 focused owner/production/architecture suite: `150 passed`.
+- Full provider-free suite: `1604 passed, 24 skipped`.
+- Ruff, compileall, `git diff --check`, and negative searches for mark-derived/post-hoc Manifest routes pass.
+- Real annotated production turn proves JPEG→PNG bytes/MIME/digest/dimensions, actual mark, typed source role, exact
+  media route delta, Manifest equality, Recording FunctionModel equality, resolver/Binder execution, and private
+  binding exclusion from provider input.
+- Generated owner cases cover unary, source+destination roles, destination-not-unary, evidence-only marks, and
+  unavailable/undrawn marks. No real provider, live benchmark, or Task7 replay ran.

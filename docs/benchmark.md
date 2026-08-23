@@ -3,7 +3,7 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 reopened: media route / operand-role conservation /
+Gate 2 media route / operand-role repair implemented and provider-free verified; exit review pending /
 Gate 3 reopened: breakdown diagnostic coordinate conservation /
 Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
@@ -162,6 +162,15 @@ CoreLoop/Catalog/bridge/recorder compensation and no Gate 4 completion commit wa
 also reopened Gate 3 breakdown diagnostics: the old prefit/full/lens candidate fields have no distinct producers, are
 all complete-request totals, and the active WebArena probe compares one with input-only `estimated_total_tokens`.
 The core input/reserve admission equations and exact physical Envelope transport were not falsified.
+
+Gate 2 media repair is now implemented and provider-free verified. Final attached media carries annotation-owned
+actual marks plus exact admitted route deltas and typed source/destination roles; evidence-only and undrawn marks carry
+no route, and destination operands cannot fabricate unary verbs. Manifest routes are the ordered union of admitted
+text and attached-media route deltas only. The real Recording FunctionModel production gate preserves annotated PNG
+bytes/MIME/digest/dimensions, mark/role/route relation, provider input equality, resolver/Binder execution, and private
+binding exclusion. Focused verification is `150 passed`; full pytest is `1604 passed, 24 skipped`; Ruff, compileall,
+diff check, and negative searches pass. No provider/live/Task7 run occurred. Gate 2 still awaits joint fresh exit
+review with the Gate 3 diagnostic repair; Gate 4 remains aborted/not admitted.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -1010,9 +1019,9 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery reopened by Gate 4 vertical evidence:** `ObservationDeliveryStore` remains the inventory/cursor
-   transition owner and earlier two-request continuation evidence remains scoped, but actual annotated media lacks a
-   generation-time route delta and source/destination operand role.
+4. **Delivery media repair implemented/provider-free verified; exit review pending:** `ObservationDeliveryStore`
+   remains the inventory/cursor transition owner; final attached media now carries actual marks, typed operand roles,
+   and exact route deltas, with Manifest union limited to text/media deltas.
 5. **Envelope core transport/admission verified; breakdown diagnostics reopened:** one `CanonicalProviderEnvelopeBinder`
    closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the

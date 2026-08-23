@@ -3,7 +3,7 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 reopened: media route / operand-role conservation /
+Gate 2 media route / operand-role repair implemented and provider-free verified; exit review pending /
 Gate 3 reopened: breakdown diagnostic coordinate conservation /
 Gate 4 aborted / not admitted / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
@@ -134,6 +134,19 @@ with complete-request cost although the active WebArena diagnostic compares `ful
 `estimated_total_tokens`. Core Envelope transport/admission remains verified, but its diagnostic owner is reopened for
 deleting those ghost fields and consumer at the owner rather than adding a probe conversion.
 
+Gate 2 media repair checkpoint (2026-08-23): `ModelTurnDelivery` now creates one immutable final attached-media value
+from annotation-owned actual marks and route deltas already carried by admitted action fragments. Each actual mark
+records typed `source|destination` operand roles exactly equal to its attached routes; evidence-only marks have neither
+role nor route. A destination-only operand remains `destination` within its binary route and cannot become a unary
+verb. `DeliveryManifest.action_routes` is the ordered union of admitted text-fragment routes and attached-media
+routes; marks, complete ActionSpace, Catalog, and Envelope never infer or add a route. `CanonicalMediaRecord` preserves
+the exact public route/role relation with bytes, MIME, digest, dimensions, and actual marks. Owner tests cover unary,
+destination, evidence-only, unavailable/undrawn, and inconsistent-role fail-closed cases. A real annotated
+`TargetRuntime/CoreLoop → Recording FunctionModel → resolver → Binder` turn proves JPEG→PNG annotation, physical
+request equality, exact Manifest relation, execution, and private binding exclusion. Focused verification is `150
+passed`; full provider-free pytest is `1604 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches
+pass. This is Gate 2 implementation evidence only; joint Gate 2/3 exit review and Gate 4 remain blocked.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -225,9 +238,10 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (reopened by the Gate 4 media witness).** Store capabilities remain the only cursor/continuation meaning and Plan/Packer remain pure consumers,
-   but actual annotated media does not carry its route delta or source/destination operand role at generation. The
-   former two-turn zero-prefix evidence remains scoped and is insufficient for re-closure.
+3. **Delivery cutover (media repair implemented/provider-free verified; exit review pending).** Store capabilities
+   remain the only cursor/continuation meaning, while final attached media now carries actual marks, exact route
+   deltas, and typed operand roles. Earlier Store/two-turn evidence plus the new production media gate await joint
+   fresh exit review.
 4. **Envelope cutover (core verified; diagnostics reopened).** Messages/tools/media/settings/output are bound once and
    transported unchanged, but mixed-coordinate ghost breakdown fields and their active consumer must be removed by
    the diagnostic owner before re-admission.

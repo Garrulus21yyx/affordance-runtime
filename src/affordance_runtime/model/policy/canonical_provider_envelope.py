@@ -8,8 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
-from affordance_runtime.agent.context.context import AgentImageInput
-from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
+from affordance_runtime.agent.context.model_turn_delivery import DeliveredMedia, ModelTurnDelivery
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
@@ -54,7 +53,8 @@ class CanonicalMediaRecord:
     dimensions: tuple[int, int]
     variant: str
     marks: tuple[tuple[str, tuple[int, int, int, int]], ...]
-    operand_roles: tuple[str, ...]
+    operand_roles: tuple[tuple[str, tuple[str, ...]], ...]
+    route_deltas: tuple[tuple[str, str, str], ...]
     coordinate_space_lineage: str = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -71,7 +71,32 @@ class CanonicalMediaRecord:
         if len(self.dimensions) != 2 or any(type(item) is not int or item <= 0 for item in self.dimensions):
             raise ValueError("canonical media dimensions are invalid")
         object.__setattr__(self, "marks", tuple((ref, tuple(box)) for ref, box in self.marks))
-        object.__setattr__(self, "operand_roles", tuple(self.operand_roles))
+        roles = tuple((ref, tuple(values)) for ref, values in self.operand_roles)
+        routes = tuple(tuple(item) for item in self.route_deltas)
+        if (
+            tuple(ref for ref, _bbox in self.marks) != tuple(ref for ref, _values in roles)
+            or any(set(values).difference({"source", "destination"}) for _ref, values in roles)
+            or any(len(item) != 3 or not item[0] or not item[1] for item in routes)
+        ):
+            raise ValueError("canonical media route/operand-role relation is invalid")
+        role_map = {ref: frozenset(values) for ref, values in roles}
+        for ref, values in roles:
+            expected = {
+                role
+                for _operation, source, destination in routes
+                for role, operand in (("source", source), ("destination", destination))
+                if operand == ref
+            }
+            if set(values) != expected:
+                raise ValueError("canonical media operand roles differ from route deltas")
+        if any(
+            "source" not in role_map.get(source, frozenset())
+            or (destination and "destination" not in role_map.get(destination, frozenset()))
+            for _operation, source, destination in routes
+        ):
+            raise ValueError("canonical media route lacks its actual operand marks")
+        object.__setattr__(self, "operand_roles", roles)
+        object.__setattr__(self, "route_deltas", routes)
 
 
 @dataclass(frozen=True)
@@ -190,6 +215,7 @@ class CanonicalProviderEnvelope:
                                 "variant": item.variant,
                                 "marks": item.marks,
                                 "operand_roles": item.operand_roles,
+                                "route_deltas": item.route_deltas,
                             }
                             for item in self.media
                         ),
@@ -436,15 +462,22 @@ class CanonicalProviderEnvelopeBinder:
         return CanonicalProviderEnvelope(envelope_id=envelope_id, **values)
 
 
-def _media_record(item: AgentImageInput) -> CanonicalMediaRecord:
+def _media_record(item: DeliveredMedia) -> CanonicalMediaRecord:
     return CanonicalMediaRecord(
         data=item.data,
         mime_type=item.mime_type,
         digest=item.sha256,
         dimensions=_image_dimensions(item.data),
-        variant="marked" if item.marks else "raw",
-        marks=item.marks,
-        operand_roles=tuple(ref for ref, _box in item.marks),
+        variant="marked" if item.actual_marks else "raw",
+        marks=tuple((mark.ref, mark.bbox) for mark in item.actual_marks),
+        operand_roles=tuple(
+            (mark.ref, tuple(role.value for role in mark.operand_roles))
+            for mark in item.actual_marks
+        ),
+        route_deltas=tuple(
+            (route.operation, route.source_ref, route.destination_ref)
+            for route in item.route_deltas
+        ),
         coordinate_space_lineage=item.coordinate_space_id,
     )
 
