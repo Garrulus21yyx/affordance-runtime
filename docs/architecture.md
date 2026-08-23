@@ -232,6 +232,10 @@ dimensions rather than relying on `ObservationGroundingRegion`. Recording-bounda
 N-only image publishes no interaction tool, while mixed N+E publishes only the E-owned `activate` schema and that
 schema contains no N1. Gate 2 remains pending while exit review restarts from this correction.
 
+The restarted review also moved `AgentGroundingEntityView.marked` from candidate selection to annotation-result
+actuality. If annotation is unavailable, a selected E/N candidate no longer claims `marked=True` while the delivered
+media has no mark. A fault-injected owner test proves that alignment; review restarts again from the correction.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure

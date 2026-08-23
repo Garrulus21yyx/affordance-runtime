@@ -70,3 +70,7 @@ Selection order and bound depend only on canonical public facts, not private tar
   own typed boundary. The candidate now independently rejects negative origins/non-positive dimensions. Recorder
   assertions also prove N-only publishes no interaction tool, while mixed N+E publishes only `activate` and its
   provider schema contains no N1. Exit review restarts from the correction commit.
+- The restarted review found `AgentGroundingEntityView.marked` was derived from selected candidates before annotation,
+  so annotation-unavailable could claim a mark absent from the delivered image. Grounding now derives this flag only
+  from annotation-returned actual marks; a fault-injected unavailable annotation proves the candidate remains
+  unmarked and carries no media mark.

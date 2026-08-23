@@ -220,6 +220,10 @@ Fresh review tightened the candidate's own bbox validation and extended the real
 no interaction tool; mixed N+E offers only `activate`, whose schema excludes N1. This is correction evidence, not
 re-admission; Gate 2 review restarts and Gate 4 remains stopped/not admitted.
 
+The next review found the grounding entity's `marked` flag still reflected pre-annotation candidates. It now reflects
+only annotation-returned actual marks; an unavailable-annotation test proves no candidate-only mark is claimed. This
+correction again restarts Gate 2 exit review without starting Gate 4.
+
 Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
 required both operands to be marked in one image. The final-media owner now retains a route when at least one exact
 operand is actually marked and assigns only the role belonging to each actual mark. Source-only and destination-only

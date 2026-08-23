@@ -118,36 +118,6 @@ class GroundingProjection:
             )
             for source_observation_id, media in candidates
         )
-        marked_refs = {
-            item.ref
-            for _source_observation_id, _media, mark_candidates in candidate_sets
-            for item in mark_candidates.items
-        }
-        entities = []
-        for record in ordered_records:
-            target = visible[record.target_id]
-            hints: list[str] = []
-            parent = target.relations.get("parent_id")
-            if isinstance(parent, str) and parent in target_refs:
-                hints.append(f"parent:{target_refs[parent]}")
-            children = target.relations.get("child_ids")
-            if isinstance(children, tuple | list):
-                refs = tuple(
-                    target_refs[item]
-                    for item in children
-                    if isinstance(item, str) and item in target_refs
-                )
-                if refs:
-                    hints.append("children:" + ",".join(refs[:8]))
-            entities.append(AgentGroundingEntityView(
-                record.ref,
-                target.role,
-                target.label,
-                target.state,
-                tuple(hints),
-                record.verbs,
-                record.ref in marked_refs,
-            ))
         images = []
         media_refs = []
         source_by_id = {item.observation_id: item for item in observation.sources}
@@ -179,6 +149,32 @@ class GroundingProjection:
                 ),
             ))
             media_refs.append(artifact_ref)
+        actual_marked_refs = {mark.ref for image in images for mark in image.marks}
+        entities = []
+        for record in ordered_records:
+            target = visible[record.target_id]
+            hints: list[str] = []
+            parent = target.relations.get("parent_id")
+            if isinstance(parent, str) and parent in target_refs:
+                hints.append(f"parent:{target_refs[parent]}")
+            children = target.relations.get("child_ids")
+            if isinstance(children, tuple | list):
+                refs = tuple(
+                    target_refs[item]
+                    for item in children
+                    if isinstance(item, str) and item in target_refs
+                )
+                if refs:
+                    hints.append("children:" + ",".join(refs[:8]))
+            entities.append(AgentGroundingEntityView(
+                record.ref,
+                target.role,
+                target.label,
+                target.state,
+                tuple(hints),
+                record.verbs,
+                record.ref in actual_marked_refs,
+            ))
         return GroundingProjectionResult(
             AgentGroundingIndexView(tuple(entities), target_refs),
             tuple(images),

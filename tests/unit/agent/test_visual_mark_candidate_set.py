@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import io
 
+import pytest
 from PIL import Image
 
+import affordance_runtime.agent.context.grounding_projection as grounding_projection_module
 from affordance_runtime.actions import ActionSpace
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
@@ -22,6 +25,7 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world.visual_annotation import VisualAnnotationResult
 
 
 def _png() -> bytes:
@@ -135,3 +139,32 @@ def test_out_of_frame_readonly_candidate_is_not_an_actual_mark() -> None:
     assert grounded.images[0].marks == ()
     assert grounded.images[0].route_deltas == ()
     assert grounded.images[0].sha256 == media.sha256
+
+
+def test_annotation_unavailable_does_not_claim_candidate_was_actually_marked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world, projection, media = _readonly_world("annotation-unavailable", count=1)
+    model_world = project_model_world(
+        world,
+        ContextProjectionBudget(),
+        lossless_public=True,
+        canonical_projection=projection,
+    )
+
+    monkeypatch.setattr(
+        grounding_projection_module,
+        "annotate_screenshot_result",
+        lambda data, mime_type, marks: VisualAnnotationResult(
+            data,
+            mime_type,
+            hashlib.sha256(data).hexdigest(),
+            (),
+            False,
+        ),
+    )
+    grounded = GroundingProjection().project(world, projection, model_world)
+
+    assert visual_mark_candidate_set(projection, media, limit=4).items[0].ref == "N1"
+    assert grounded.images[0].marks == ()
+    assert grounded.index.entities[0].marked is False
