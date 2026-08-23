@@ -383,6 +383,7 @@ def _render_full(
     if observation_delivery is not None:
         lines.extend(_render_latest_effect(observation_delivery, manifest))
         lines.extend(_render_current_findings(observation_delivery, manifest))
+        lines.extend(_render_search_follow_ups(observation_delivery, manifest))
         lines.extend(_render_changed_regions(observation_delivery, manifest))
     if action_candidates is not None and action_candidates.candidates:
         lines.append("ActionCandidates")
@@ -433,6 +434,7 @@ def _render_page_map(
     if observation_delivery is not None:
         lines.extend(_render_latest_effect(observation_delivery, manifest))
         lines.extend(_render_current_findings(observation_delivery, manifest))
+        lines.extend(_render_search_follow_ups(observation_delivery, manifest))
 
     search_lines: list[str] = []
     exact_region_keys = set(selected_region_keys)
@@ -617,6 +619,22 @@ def _render_changed_regions(
     return lines
 
 
+def _render_search_follow_ups(
+    delivery: ObservationDelivery,
+    manifest: _ManifestBuilder,
+) -> list[str]:
+    if not delivery.search_follow_ups:
+        return []
+    lines = ["SearchFollowUps current=true bounded=true"]
+    for item in delivery.search_follow_ups:
+        manifest.region(item.region_ref)
+        lines.append(
+            f"  match=[{item.match_ref}] region=[{item.region_ref}] "
+            f"follow_up=read_region({item.region_ref})"
+        )
+    return lines
+
+
 def _render_page_outline(
     delivery: ObservationDelivery,
     manifest: _ManifestBuilder,
@@ -773,7 +791,7 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
     if isinstance(outcome, Matches):
         return {
             "kind": kind,
-            "items": outcome.items,
+            "items": tuple(_search_match_with_follow_up(item) for item in outcome.items),
             "coverage": outcome.coverage,
             "has_more": bool(outcome.next_cursor),
         }
@@ -791,6 +809,23 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
     if isinstance(outcome, StaleContext):
         return {"kind": kind, "expected": outcome.expected, "actual": outcome.actual}
     return {"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit}
+
+
+def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, object]:
+    projected = dict(item)
+    region_ref = str(item.get("region_ref", ""))
+    match_ref = str(item.get("node_ref") or item.get("evidence_ref") or "")
+    if (
+        PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION)
+        and PublicRefCodec.accepts(match_ref)
+        and PublicRefCodec.decode(match_ref).kind is not PublicRefKind.REGION
+    ):
+        projected["match_ref"] = match_ref
+        projected["follow_up"] = {
+            "operation": "read_region",
+            "region_ref": region_ref,
+        }
+    return projected
 
 
 def _render_node(node, verbs, manifest, *, depth: int, parent_label: str) -> list[str]:

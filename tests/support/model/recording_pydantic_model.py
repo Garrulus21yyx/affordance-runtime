@@ -199,6 +199,7 @@ class RecordingPydanticModel:
                 "first_gui_action",
                 "first_gui_action_invalid_extra",
                 "multiple_gui_actions",
+                "multiple_distinct_gui_actions",
             }:
                 name, arguments = _select_current_tool_call(messages, info)
                 self.last_gui_call = (name, dict(arguments))
@@ -249,6 +250,15 @@ class RecordingPydanticModel:
             if scripted == "multiple_gui_actions":
                 parts.append(
                     ToolCallPart(name, arguments, tool_call_id=f"recording-call:{ordinal}:second")
+                )
+            elif scripted == "multiple_distinct_gui_actions":
+                alternate = next(item for item in info.function_tools if item.name != name)
+                parts.append(
+                    ToolCallPart(
+                        alternate.name,
+                        _schema_example(alternate.parameters_json_schema),
+                        tool_call_id=f"recording-call:{ordinal}:discarded",
+                    )
                 )
             return ModelResponse(
                 parts=parts,

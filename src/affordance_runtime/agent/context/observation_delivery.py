@@ -31,6 +31,7 @@ from affordance_runtime.world.public_semantic_digest import public_subject_seman
 
 _MAX_LOCAL_DELIVERY_RECORDS = 64
 _MAX_LOCAL_INFORMATION_ITEMS = 32
+_MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS = _MAX_LOCAL_INFORMATION_ITEMS
 _EFFECT_PAGE_SIZE = 8
 _DIRECTORY_PAGE_SIZE = 12
 
@@ -493,6 +494,24 @@ class RecoveryDirectoryEntry:
 
 
 @dataclass(frozen=True)
+class LocalSearchHit:
+    """One current public search match and its directly consumable region."""
+
+    world_observation_id: str = field(repr=False, compare=False, metadata={"serialize": False})
+    match_ref: str
+    region_ref: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.world_observation_id.strip()
+            or not PublicRefCodec.accepts(self.match_ref)
+            or PublicRefCodec.decode(self.match_ref).kind is PublicRefKind.REGION
+            or not PublicRefCodec.accepts(self.region_ref, expected=PublicRefKind.REGION)
+        ):
+            raise ValueError("local search follow-up requires one current match and region")
+
+
+@dataclass(frozen=True)
 class ObservationDelivery:
     world_observation_id: str
     effect_header: PublicEffectHeader | None
@@ -501,6 +520,7 @@ class ObservationDelivery:
     changed_regions: tuple[ChangedRegion, ...]
     page_outline: tuple[PageOutlineEntry, ...]
     recovery_directory: tuple[RecoveryDirectoryEntry, ...]
+    search_follow_ups: tuple[LocalSearchHit, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.world_observation_id.strip():
@@ -511,6 +531,7 @@ class ObservationDelivery:
             ("changed_regions", ChangedRegion),
             ("page_outline", PageOutlineEntry),
             ("recovery_directory", RecoveryDirectoryEntry),
+            ("search_follow_ups", LocalSearchHit),
         ):
             values = tuple(getattr(self, name))
             if any(not isinstance(item, expected) for item in values):
@@ -549,6 +570,9 @@ class ObservationDeliveryStore:
         default=(), repr=False, compare=False, metadata={"serialize": False}
     )
     action_query: StoredActionQuery | None = field(default=None, repr=False, compare=False)
+    search_follow_ups: tuple[LocalSearchHit, ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
+    )
     requested_continuation_scope: str | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
@@ -571,6 +595,14 @@ class ObservationDeliveryStore:
         object.__setattr__(self, "inventories", inventories)
         if self.action_query is not None and not isinstance(self.action_query, StoredActionQuery):
             raise TypeError("observation delivery action query must be private typed inventory")
+        search_follow_ups = tuple(self.search_follow_ups)
+        if (
+            len(search_follow_ups) > _MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS
+            or any(not isinstance(item, LocalSearchHit) for item in search_follow_ups)
+            or len({item.region_ref for item in search_follow_ups}) != len(search_follow_ups)
+        ):
+            raise ValueError("local search follow-up inventory is invalid")
+        object.__setattr__(self, "search_follow_ups", search_follow_ups)
         if self.requested_continuation_scope is not None and not self.requested_continuation_scope.strip():
             raise ValueError("requested continuation scope must be private and nonblank")
 
@@ -585,6 +617,30 @@ class ObservationDeliveryStore:
             active_read=lens,
             inventories=self.inventories,
             action_query=self.action_query,
+            search_follow_ups=self.search_follow_ups,
+            requested_continuation_scope=self.requested_continuation_scope,
+        )
+
+    def for_world(self, world_observation_id: str) -> "ObservationDeliveryStore":
+        """Invalidate private local-read capabilities that do not belong to this World."""
+
+        if not world_observation_id.strip():
+            raise ValueError("current World identity is required")
+        active_read = self.active_read
+        if active_read is not None and active_read.world_observation_id != world_observation_id:
+            active_read = None
+        search_follow_ups = tuple(
+            item for item in self.search_follow_ups if item.world_observation_id == world_observation_id
+        )
+        if active_read is self.active_read and search_follow_ups == self.search_follow_ups:
+            return self
+        return ObservationDeliveryStore(
+            latest_effect=self.latest_effect,
+            local_deliveries=self.local_deliveries,
+            active_read=active_read,
+            inventories=self.inventories,
+            action_query=self.action_query,
+            search_follow_ups=search_follow_ups,
             requested_continuation_scope=self.requested_continuation_scope,
         )
 
@@ -627,6 +683,7 @@ class ObservationDeliveryStore:
             active_read=self.active_read,
             inventories=tuple(installed),
             action_query=self.action_query,
+            search_follow_ups=self.search_follow_ups,
             requested_continuation_scope=(
                 self.requested_continuation_scope
                 if any(item.scope == self.requested_continuation_scope for item in installed)
@@ -724,6 +781,7 @@ class ObservationDeliveryStore:
                 active_read=self.active_read,
                 inventories=next_inventories,
                 action_query=self.action_query,
+                search_follow_ups=self.search_follow_ups,
                 requested_continuation_scope=capability.scope,
             ),
         )
@@ -744,9 +802,11 @@ class ObservationDeliveryStore:
                 "continuation_scope": getattr(decision, "continuation_scope", ""),
             }
             result = getattr(step, "action_page_result").to_public_value()
-        if operation not in {"read_region", "search_page_content", "find_controls"} or not isinstance(
+        if operation not in {"read_region", "search_page_content", "read_next_page", "find_controls"} or not isinstance(
             result, Mapping
         ):
+            return DeliveryTransition(external, None)
+        if operation == "read_next_page" and result.get("kind") != "Matches":
             return DeliveryTransition(external, None)
 
         world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
@@ -803,12 +863,26 @@ class ObservationDeliveryStore:
                 discovery.private_action_lineage,
                 discovery.private_inventory,
             )
+        search_follow_ups = external.search_follow_ups
+        if operation in {"search_page_content", "read_next_page"} and result.get("kind") == "Matches":
+            world_observation_id = (
+                external.active_read.world_observation_id
+                if external.active_read is not None
+                else str(getattr(getattr(step, "after_world", None), "observation_id", ""))
+            )
+            incoming = _local_search_hits(items, world_observation_id)
+            by_region = {item.region_ref: item for item in search_follow_ups}
+            for item in incoming:
+                by_region.pop(item.region_ref, None)
+                by_region[item.region_ref] = item
+            search_follow_ups = tuple(by_region.values())[-_MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS:]
         next_store = ObservationDeliveryStore(
             latest_effect=external.latest_effect,
             local_deliveries=(*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
             active_read=external.active_read,
             inventories=external.inventories,
             action_query=query_inventory,
+            search_follow_ups=search_follow_ups,
             requested_continuation_scope=(
                 None if operation == "find_controls" else external.requested_continuation_scope
             ),
@@ -970,7 +1044,38 @@ def project_observation_delivery(
         changed_regions,
         page_outline,
         recovery,
+        tuple(
+            item for item in store.search_follow_ups
+            if (
+                item.world_observation_id == observation.observation_id
+                and item.region_ref in projection.region_refs.values()
+                and item.match_ref in projection.public_refs
+            )
+        ),
     )
+
+
+def _local_search_hits(
+    items: tuple[Mapping[str, object], ...],
+    world_observation_id: str,
+) -> tuple[LocalSearchHit, ...]:
+    if not world_observation_id.strip():
+        return ()
+    hits: list[LocalSearchHit] = []
+    seen_regions: set[str] = set()
+    for item in items:
+        region_ref = str(item.get("region_ref", ""))
+        match_ref = str(item.get("match_ref") or item.get("node_ref") or item.get("evidence_ref") or "")
+        if (
+            region_ref in seen_regions
+            or not PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION)
+            or not PublicRefCodec.accepts(match_ref)
+            or PublicRefCodec.decode(match_ref).kind is PublicRefKind.REGION
+        ):
+            continue
+        seen_regions.add(region_ref)
+        hits.append(LocalSearchHit(world_observation_id, match_ref, region_ref))
+    return tuple(hits[:_MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS])
 
 
 def _current_findings(

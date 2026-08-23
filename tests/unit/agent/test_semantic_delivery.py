@@ -26,6 +26,7 @@ from affordance_runtime.agent.context.model_turn_delivery import build_model_tur
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.benchmarks.webarena_verified import (
     DeliveryRetrievalProbe,
     _delivery_probe_item_diagnostic,
@@ -154,6 +155,50 @@ def _functional_world(*, rows: int = 3):
         "source:catalog",
         "browser",
         "revision:catalog",
+        ObservationSourceProfile.dom(),
+        targets,
+        structure=nodes,
+        structure_total_count=len(nodes),
+    )
+    result = WorldFusion().fuse((source,))
+    assert result.observation is not None
+    return result.observation
+
+
+def _many_region_world(*, count: int = 16, suffix: str = "current"):
+    region_ids = tuple(f"region:{index}" for index in range(count))
+    target_ids = tuple(f"content:{index}" for index in range(count))
+    targets = tuple(
+        SemanticTarget(target_id, "StaticText", f"Needle {index}")
+        for index, target_id in enumerate(target_ids)
+    )
+    nodes = (
+        ObservationStructureNode("root", "generic", "Catalog", child_structure_ids=region_ids),
+        *(
+            ObservationStructureNode(
+                region_id,
+                "region",
+                f"Section {index}",
+                parent_structure_id="root",
+                child_structure_ids=(target_ids[index],),
+            )
+            for index, region_id in enumerate(region_ids)
+        ),
+        *(
+            ObservationStructureNode(
+                target_id,
+                "StaticText",
+                f"Needle {index}",
+                parent_structure_id=region_ids[index],
+                semantic_target_id=target_id,
+            )
+            for index, target_id in enumerate(target_ids)
+        ),
+    )
+    source = SurfaceObservation(
+        f"source:many-regions:{suffix}",
+        "browser",
+        f"revision:many-regions:{suffix}",
         ObservationSourceProfile.dom(),
         targets,
         structure=nodes,
@@ -604,6 +649,154 @@ def test_inspect_world_closed_outcome_algebra_and_currentness() -> None:
         inspect_actor_world(**{**kwargs, "region_index": stale}, action="view_all"),
         StaleContext,
     )
+
+
+def test_search_results_conserve_bounded_regions_into_next_turn_read_capability() -> None:
+    world = _many_region_world(count=16)
+    task = TaskGoal("search-follow-up", "Inspect matching content")
+    builder = ContextBuilder()
+    first = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+    )
+    first_delivery, first_catalog = catalog_for(first)
+    target_region = first.region_index.region_for_target("content:15")
+    assert target_region is not None
+    target_region_ref = first.canonical_world.region_refs[target_region.key]
+    initial_regions = next(
+        item for item in first_catalog.specs if item.name == "read_region"
+    ).input_schema["properties"]["region_ref"]["enum"]
+    assert target_region_ref not in initial_regions
+
+    search_resolution = resolve_catalog_call(
+        first_catalog,
+        ToolCall("search_page_content", {"query": "Needle"}),
+        expected_context_id=first.context_id,
+    )
+    matching_item = next(
+        item for item in search_resolution.decision.result["items"]
+        if item["region_ref"] == target_region_ref
+    )
+    assert matching_item["follow_up"] == {
+        "operation": "read_region",
+        "region_ref": target_region_ref,
+    }
+    step = StepResult(
+        search_resolution.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+        next_delivery_store=search_resolution.next_delivery_store,
+    )
+    transition = first.delivery_store.reduce(step, step_index=1)
+    second = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+        delivery_store=transition.next_store,
+    )
+    second_delivery, second_catalog = catalog_for(second)
+    available_regions = next(
+        item for item in second_catalog.specs if item.name == "read_region"
+    ).input_schema["properties"]["region_ref"]["enum"]
+
+    assert target_region_ref in available_regions
+    assert len(second.delivery_store.search_follow_ups) == 16
+    assert len({item.region_ref for item in second.delivery_store.search_follow_ups}) == 16
+    assert f"follow_up=read_region({target_region_ref})" in second_delivery.view.text
+    opened = resolve_catalog_call(
+        second_catalog,
+        ToolCall("read_region", {"region_ref": target_region_ref}),
+        expected_context_id=second.context_id,
+    )
+    assert opened.decision.result["kind"] == "Opened"
+
+    fresh_world = _many_region_world(count=16, suffix="fresh")
+    fresh = builder.build(
+        task,
+        fresh_world,
+        ActionSpace(fresh_world.observation_id, ()),
+        _evaluation(task, fresh_world.observation_id),
+        delivery_store=transition.next_store,
+    )
+    fresh_delivery, fresh_catalog = catalog_for(fresh)
+    fresh_regions = next(
+        item for item in fresh_catalog.specs if item.name == "read_region"
+    ).input_schema["properties"]["region_ref"]["enum"]
+    assert fresh.delivery_store.search_follow_ups == ()
+    assert "SearchFollowUps" not in fresh_delivery.view.text
+    assert target_region_ref not in fresh_regions
+
+
+def test_paginated_search_keeps_every_latest_page_region_within_bounded_follow_ups() -> None:
+    world = _many_region_world(count=40, suffix="paged")
+    task = TaskGoal("search-follow-up-pages", "Inspect matching content")
+    builder = ContextBuilder()
+    context = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+    )
+    _, catalog = catalog_for(context)
+    first = resolve_catalog_call(
+        catalog,
+        ToolCall("search_page_content", {"query": "Needle"}),
+        expected_context_id=context.context_id,
+    )
+    first_step = StepResult(
+        first.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+        next_delivery_store=first.next_delivery_store,
+    )
+    first_store = context.delivery_store.reduce(first_step, step_index=1).next_store
+    context = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+        delivery_store=first_store,
+    )
+    _, catalog = catalog_for(context)
+    second = resolve_catalog_call(
+        catalog,
+        ToolCall("read_next_page", {"scope": "active_read"}),
+        expected_context_id=context.context_id,
+    )
+    latest_page_regions = {
+        item["region_ref"] for item in second.decision.result["items"]
+    }
+    second_step = StepResult(
+        second.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+        next_delivery_store=second.next_delivery_store,
+    )
+    second_store = context.delivery_store.reduce(second_step, step_index=2).next_store
+    final = builder.build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+        delivery_store=second_store,
+    )
+    _, final_catalog = catalog_for(final)
+    available_regions = set(next(
+        item for item in final_catalog.specs if item.name == "read_region"
+    ).input_schema["properties"]["region_ref"]["enum"])
+
+    assert latest_page_regions <= available_regions
+    assert len(second_store.search_follow_ups) == 32
+    assert len({item.region_ref for item in second_store.search_follow_ups}) == 32
 
 
 def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument() -> None:

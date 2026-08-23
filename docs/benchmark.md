@@ -7,7 +7,7 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
+owner repair implemented / provider-free acceptance pending / bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run. The falsification attestation is
@@ -708,6 +708,11 @@ Generated typed Worlds and held-out real-page transitions must prove:
   Trace/diagnostics. Model delivery contains only a typed effect header derived from existing public facts, current
   exact/tombstone page records, `continuation_available`, and bounded continuation scopes;
 - local `read_region`, `search_page_content`, and `find_controls` do not clear the latest external effect;
+- every current search result `region_ref`, including a later search page, is projected as a bounded next-turn
+  `read_region` capability; duplicates are collapsed, the 32-entry Store bound keeps the latest returned page, and a
+  fresh World invalidates all prior follow-ups;
+- a multi-call provider response adopts the first schema-valid offered call in wire order, records later calls as
+  discarded protocol extras, and never lets representation repair select another operation or target;
 - World effect rendering and effect-derived action recall read the same `ObservationDeliveryStore.latest_effect`
   `PublicEffectInventory`. The projector produces target/fact atoms and current changed-target public structural-slot
   keys, not action operations/routes. Action recall joins those keys to the complete current `ActionSpace`, never raw

@@ -21,8 +21,9 @@ from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
-from affordance_runtime.agent.decisions import SelectAction
+from affordance_runtime.agent.decisions import ReadRegionResult, SearchPageContentResult, SelectAction
 from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import EvaluatedOutput
@@ -156,7 +157,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
     asyncio.run(scenario())
 
 
-def test_multiple_provider_tool_calls_execute_neither_and_use_one_same_turn_repair() -> None:
+def test_multiple_provider_tool_calls_keep_first_schema_valid_call_without_repair() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["multiple_gui_actions", "repeat_last_gui_call"])
         policy = _policy(scripted.build())
@@ -176,8 +177,9 @@ def test_multiple_provider_tool_calls_execute_neither_and_use_one_same_turn_repa
         assert result.output is not None
         decision = result.output.decision
         assert isinstance(decision, SelectAction)
-        assert scripted.calls == 2
-        assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
+        assert scripted.calls == 1
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary"]
+        assert result.diagnostics["discarded_protocol_call_count"] == 1
 
     asyncio.run(scenario())
 
@@ -210,11 +212,9 @@ def test_zero_or_wholly_unparseable_output_fails_without_representation_repair(
     asyncio.run(scenario())
 
 
-def test_multiple_call_repair_cannot_reselect_operation_or_target() -> None:
+def test_semantically_distinct_extra_call_is_discarded_after_first_valid_call() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(
-            ["multiple_gui_actions", ("ask_user", {"question": "Which value should be used?"})]
-        )
+        scripted = ScriptedModel(["multiple_distinct_gui_actions"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("multiple-call-reselection", False)
@@ -228,11 +228,64 @@ def test_multiple_call_repair_cannot_reselect_operation_or_target() -> None:
 
         result = await policy.port.generate(ModelDecisionRequest("request:multiple-reselection", context))
 
-        assert result.output is None
-        assert result.failure is not None
-        assert result.failure.kind is ModelFailureKind.INVALID_TOOL_ARGUMENTS
+        assert result.failure is None
+        assert result.output is not None
+        assert isinstance(result.output.decision, SelectAction)
+        assert result.output.decision.tool_call_id == "recording-call:1"
+        assert scripted.calls == 1
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary"]
+        assert result.diagnostics["discarded_protocol_call_count"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("search-follow-up-recording", False)
+        action_space = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, action_space, evaluation)
+        region = first_context.region_index.region_for_target("shared-toggle")
+        assert region is not None
+        region_ref = first_context.canonical_world.region_refs[region.key]
+        scripted = ScriptedModel(
+            [
+                ("search_page_content", {"query": "false"}),
+                ("read_region", {"region_ref": region_ref}),
+            ]
+        )
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(ModelDecisionRequest("request:search", first_context))
+        assert first.failure is None
+        assert first.output is not None
+        assert isinstance(first.output.decision, SearchPageContentResult)
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+            next_delivery_store=first.output.next_delivery_store,
+        )
+        transition = first_context.delivery_store.reduce(step, step_index=1)
+        second_context = builder.build(
+            task,
+            world,
+            action_space,
+            evaluation,
+            delivery_store=transition.next_store,
+        )
+        second = await policy.port.generate(ModelDecisionRequest("request:read", second_context))
+
+        assert second.failure is None
+        assert second.output is not None
+        assert isinstance(second.output.decision, ReadRegionResult)
+        assert second.output.decision.arguments == {"region_ref": region_ref}
+        assert second.output.decision.result["kind"] == "Opened"
         assert scripted.calls == 2
-        assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
 
     asyncio.run(scenario())
 
@@ -597,6 +650,40 @@ def test_representation_repair_cannot_change_effect_bearing_leaf_values() -> Non
         (ToolCall("type_text", {"target": "E1", "text": "same", "unexpected": True}),),
         ToolCall("type_text", {"target": "E1", "text": "same"}),
         (type_text,),
+    )
+
+
+def test_representation_repair_cannot_select_among_multiple_semantic_calls() -> None:
+    first = ToolCall("read_region", {"region_ref": "R1"})
+    second = ToolCall("search_page_content", {"query": "different operation"})
+    specs = (
+        ToolSpec(
+            "read_region",
+            "fixture",
+            {
+                "type": "object",
+                "properties": {"region_ref": {"type": "string"}},
+                "required": ["region_ref"],
+                "additionalProperties": False,
+            },
+        ),
+        ToolSpec(
+            "search_page_content",
+            "fixture",
+            {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        ),
+    )
+
+    assert not pydantic_bridge._repair_preserves_rejected_semantics(
+        GroundedToolResolutionError(GroundedToolResolutionCode.MULTIPLE_CALLS),
+        (first, second),
+        second,
+        specs,
     )
 
 

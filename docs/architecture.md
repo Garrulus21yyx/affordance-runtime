@@ -7,7 +7,7 @@ Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+owner repair implemented / provider-free acceptance pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -905,7 +905,11 @@ tool arguments. The model sees only `continuation_available` and a bounded publi
   PageOutline/RecoveryDirectory so a region ref omitted from the first directory page can become known; `active_read`
   resumes the current `read_region`/`search_page_content` lens.
 - `read_region(R*)` selects a current region and starts/replaces `active_read`; `search_page_content` does the same for
-  its result inventory. Neither replaces `effect` nor `page_directory`, so either can resume after a local read.
+  its result inventory. Every returned current public match carries its `region_ref` and a typed
+  `read_region(region_ref)` follow-up. `ObservationDeliveryStore` retains at most 32 unique most-recent match/region
+  pairs across search pages, the next Manifest exposes exactly those bounded region capabilities, and ToolCatalog
+  derives `read_region` only from that Manifest. A new World invalidates the inventory before projection. Neither local
+  lens replaces `effect` nor `page_directory`, so either can resume after a local read.
 - `action_results_next_page` continues one live action-obligation scope selected from a small dynamic enum such as
   `base | query | interaction | effect_actions | issues`.
 
@@ -1731,11 +1735,12 @@ The hard cap is a safety boundary, not a second planning authority.
 ## Provider, schema, and reasoning boundary
 
 PydanticAI owns supported provider message/tool transport and Pydantic validation. The current ToolCatalog closes the
-available output schemas. One parseable invalid call admits at most one same-turn representation-pruning repair that
-may delete invalid fields but cannot add or change any effect-bearing leaf. A multiple-call envelope may repair only
-to one exactly unchanged parseable member of the rejected set. Zero-call and wholly unparseable envelopes fail typed without
-repair because no semantic identity exists to preserve. Unsupported or still-invalid output becomes a typed policy
-failure.
+available output schemas. Calls in one provider response are inspected in wire order and the first schema-valid offered
+call is the sole semantic call; later calls are recorded as discarded protocol extras and are never candidates for
+repair or execution. If no call is schema-valid, only the first parseable offered call is the repair anchor. Its one
+same-turn representation-pruning repair may delete invalid fields but cannot change operation, target, or any
+effect-bearing leaf. Zero-call and wholly unparseable envelopes fail typed without repair because no semantic identity
+exists to preserve. Unsupported or still-invalid output becomes a typed policy failure.
 
 Role reasoning is explicit rather than globally disabled:
 

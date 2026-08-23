@@ -79,10 +79,8 @@ class ContextBuilder:
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
+        delivery_store = delivery_store.for_world(observation.observation_id)
         active_read = delivery_store.active_read
-        if active_read is not None and active_read.world_observation_id != observation.observation_id:
-            delivery_store = delivery_store.with_active_read(None)
-            active_read = None
         current_region_index = region_index or WorldDeliveryIndex.from_observation(
             observation,
             action_space.options,

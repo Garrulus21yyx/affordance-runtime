@@ -131,6 +131,7 @@ class PydanticAIGroundedDecisionPort:
     last_local_failure: Mapping[str, object] = field(default_factory=dict, init=False, compare=False)
     last_tool_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_tool_resolution_detail: str = field(default="", init=False, compare=False)
+    last_discarded_protocol_call_count: int = field(default=0, init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
@@ -223,6 +224,7 @@ class PydanticAIGroundedDecisionPort:
         agent: Any | None = None
         object.__setattr__(self, "last_tool_resolution_code", None)
         object.__setattr__(self, "last_tool_resolution_detail", "")
+        object.__setattr__(self, "last_discarded_protocol_call_count", 0)
         try:
             packed = TurnPacker().pack(
                 request,
@@ -282,10 +284,15 @@ class PydanticAIGroundedDecisionPort:
                 catalog,
                 request.context_id,
             )
+            object.__setattr__(
+                self,
+                "last_discarded_protocol_call_count",
+                max(0, len(getattr(result.output, "calls", ())) - (1 if initial_calls else 0)),
+            )
             self._set_tool_resolution(resolution_error, accepted=decision is not None)
             if decision is None and initial_calls:
                 repair_profile = self.reasoning_policy.repair()
-                repair_prompt = _representation_repair_prompt(result.output, resolution_error, catalog.specs)
+                repair_prompt = _representation_repair_prompt(initial_calls, resolution_error, catalog.specs)
                 repair_envelope = self.envelope_binder.bind_representation_repair(
                     envelope,
                     user_text=repair_prompt,
@@ -530,6 +537,7 @@ class PydanticAIGroundedDecisionPort:
                 self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
             ),
             "tool_resolution_detail": self.last_tool_resolution_detail,
+            "discarded_protocol_call_count": self.last_discarded_protocol_call_count,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -1000,55 +1008,48 @@ def _resolve_deferred(output, catalog, context_id: str):
 
     if not isinstance(output, DeferredToolRequests) or output.approvals:
         return None, None, None, ()
-    parsed_calls = _parse_deferred_calls(output.calls)
-    if len(output.calls) != 1:
-        code = GroundedToolResolutionCode.ZERO_CALLS if not output.calls else GroundedToolResolutionCode.MULTIPLE_CALLS
-        return None, None, GroundedToolResolutionError(code), parsed_calls
-    call = output.calls[0]
-    parsed_call = None
-    try:
-        arguments = call.args_as_dict(raise_if_invalid=True)
-        parsed_call = ToolCall(call.tool_name, arguments, call.tool_call_id)
+    if not output.calls:
+        return None, None, GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS), ()
+    repair_anchor: tuple[ToolCall, GroundedToolResolutionError] | None = None
+    for call in tuple(output.calls)[:32]:
+        try:
+            arguments = call.args_as_dict(raise_if_invalid=True)
+            parsed_call = ToolCall(call.tool_name, arguments, call.tool_call_id)
+        except (ValueError, TypeError):
+            continue
         reconciliation = ProviderCallNormalizer().normalize(
             parsed_call,
             catalog,
         )
         if reconciliation.status is not ToolCallReconciliationStatus.EXACT:
-            return None, None, _reconciliation_error(reconciliation), (parsed_call,)
-        assert reconciliation.exact_call is not None
-        resolution = resolve_grounded_action_call(
-            catalog,
-            reconciliation.exact_call,
-            expected_context_id=context_id,
-            expected_delivery_id=catalog.delivery_id,
-            expected_catalog_id=catalog.catalog_id,
-        )
-        return (
-            resolution.decision,
-            getattr(resolution, "next_delivery_store", None),
-            None,
-            (reconciliation.exact_call,),
-        )
-    except GroundedToolResolutionError as exc:
-        return None, None, exc, (parsed_call,) if parsed_call is not None else ()
-    except (ValueError, TypeError):
-        return (
-            None,
-            None,
-            GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS),
-            (parsed_call,) if parsed_call is not None else (),
-        )
-
-
-def _parse_deferred_calls(calls) -> tuple[ToolCall, ...]:
-    parsed = []
-    for call in tuple(calls)[:32]:
-        try:
-            arguments = call.args_as_dict(raise_if_invalid=True)
-            parsed.append(ToolCall(call.tool_name, arguments, call.tool_call_id))
-        except (ValueError, TypeError):
+            error = _reconciliation_error(reconciliation)
+            if error.code is not GroundedToolResolutionCode.UNKNOWN_OPERATION and repair_anchor is None:
+                repair_anchor = (parsed_call, error)
             continue
-    return tuple(parsed)
+        assert reconciliation.exact_call is not None
+        try:
+            resolution = resolve_grounded_action_call(
+                catalog,
+                reconciliation.exact_call,
+                expected_context_id=context_id,
+                expected_delivery_id=catalog.delivery_id,
+                expected_catalog_id=catalog.catalog_id,
+            )
+        except GroundedToolResolutionError as exc:
+            return None, None, exc, (reconciliation.exact_call,)
+        except (ValueError, TypeError):
+            return (
+                None,
+                None,
+                GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS),
+                (reconciliation.exact_call,),
+            )
+        return resolution.decision, getattr(resolution, "next_delivery_store", None), None, (
+            reconciliation.exact_call,
+        )
+    if repair_anchor is not None:
+        return None, None, repair_anchor[1], (repair_anchor[0],)
+    return None, None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), ()
 
 
 def _repair_preserves_rejected_semantics(
@@ -1061,9 +1062,6 @@ def _repair_preserves_rejected_semantics(
 
     if not rejected_calls:
         return False
-    if error is not None and error.code is GroundedToolResolutionCode.MULTIPLE_CALLS:
-        repaired = _call_representation_key(repaired_call)
-        return any(_call_representation_key(candidate) == repaired for candidate in rejected_calls)
     if len(rejected_calls) != 1:
         return False
     rejected = rejected_calls[0]
@@ -1076,15 +1074,6 @@ def _repair_preserves_rejected_semantics(
         rejected.arguments,
         repaired_call.arguments,
         getattr(spec, "input_schema", {}),
-    )
-
-
-def _call_representation_key(call: ToolCall) -> str:
-    return json.dumps(
-        {"name": call.name, "arguments": to_json_compatible(call.arguments)},
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
     )
 
 
@@ -1115,19 +1104,11 @@ def _is_representation_pruning(
     return type(rejected) is type(repaired) and rejected == repaired
 
 
-def _representation_repair_prompt(output, error, specs) -> str:
-    calls = []
-    for call in tuple(getattr(output, "calls", ()))[:4]:
-        try:
-            arguments = call.args_as_dict(raise_if_invalid=False)
-        except Exception:
-            arguments = "<invalid-arguments>"
-        calls.append(
-            {
-                "name": str(getattr(call, "tool_name", ""))[:120],
-                "arguments": to_json_compatible(arguments),
-            }
-        )
+def _representation_repair_prompt(rejected_calls, error, specs) -> str:
+    calls = tuple(
+        {"name": call.name, "arguments": to_json_compatible(call.arguments)}
+        for call in tuple(rejected_calls)[:1]
+    )
     schema = tuple(
         {
             "name": spec.name,
