@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-import json
-import math
-from collections.abc import Mapping
 from dataclasses import dataclass
 
-from affordance_runtime.actions.schema_validation import validate_value
-from affordance_runtime.agent.context.task_projection import PUBLIC_FINAL_RESPONSE_CONTRACT_KEY
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.execution.contracts import DispatchStatus
-from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.contracts import WorldObservation
 
 
@@ -78,12 +71,11 @@ class FinalizationProtocolResult:
 
 
 def admit_final_response(
-    task: TaskGoal,
     world: WorldObservation,
     working_facts: tuple[WorkingFact, ...],
     response: FinalResponse,
 ) -> FinalResponseAdmission:
-    """Validate only representation and optional current lineage, never semantics."""
+    """Validate optional current lineage; representation belongs to the environment codec."""
 
     current_refs = {
         item.evidence_ref
@@ -92,38 +84,4 @@ def admit_final_response(
     retained_refs = {item.record.evidence_ref for item in working_facts}
     if any(ref not in current_refs | retained_refs for ref in response.evidence_refs):
         return FinalResponseAdmission(False, "final_response_evidence_not_current")
-    schema = _public_schema(task)
-    try:
-        value = json.loads(response.content, parse_constant=_reject_non_json_constant)
-        _validate_finite(value)
-    except (json.JSONDecodeError, ValueError):
-        value = response.content
-    try:
-        validate_value(to_json_compatible(value), schema, path="final_response")
-    except (TypeError, ValueError):
-        return FinalResponseAdmission(False, "final_response_invalid")
     return FinalResponseAdmission(True)
-
-
-def _public_schema(task: TaskGoal) -> Mapping[str, object]:
-    contract = task.inputs.get(PUBLIC_FINAL_RESPONSE_CONTRACT_KEY)
-    if isinstance(contract, Mapping):
-        schema = contract.get("json_schema")
-        if isinstance(schema, Mapping):
-            return schema
-    return {"type": "string", "minLength": 1, "maxLength": 8_000}
-
-
-def _reject_non_json_constant(value: str) -> None:
-    raise ValueError(f"non-JSON numeric constant is unsupported: {value}")
-
-
-def _validate_finite(value: object) -> None:
-    if isinstance(value, float) and not math.isfinite(value):
-        raise ValueError("non-finite JSON number")
-    if isinstance(value, Mapping):
-        for item in value.values():
-            _validate_finite(item)
-    elif isinstance(value, list):
-        for item in value:
-            _validate_finite(item)

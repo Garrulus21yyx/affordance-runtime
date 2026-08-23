@@ -34,6 +34,14 @@ def _result(**changes) -> BenchmarkCaseResult:
         },
     }
     values.update(changes)
+    for name in {
+        "case_failure_code", "runtime_reason_code", "agent_failure_code",
+        "last_policy_failure_code", "termination_origin", "failure_origin",
+        "failure_code", "exception_class", "cleanup_failure_code",
+        "cleanup_exception_class", "cleanup_failures", "watchdog_triggered",
+        "harness_integrity_code", "harness_integrity_failures",
+    }:
+        values.pop(name, None)
     return BenchmarkCaseResult(**values)
 
 
@@ -268,11 +276,10 @@ def test_timeout_and_runtime_rejection_do_not_use_free_text() -> None:
 
 
 def test_integrity_watchdog_cleanup_and_success_precedence() -> None:
-    with pytest.raises(ValueError, match="inconsistent"):
+    with pytest.raises(ValueError, match="cannot carry failure facts"):
         _result(
             status="done",
-            harness_integrity_code="metric_name_collision",
-            harness_integrity_failures=1,
+            failure_facts=FailureFacts(harness_integrity_code="metric_name_collision"),
             measurements={
                 "official_success_count": MetricMeasurement(1, True),
                 "cleanup_failures": MetricMeasurement(0, True),

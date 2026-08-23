@@ -17,12 +17,15 @@ from affordance_runtime.agent.context.contracts import (
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
+    from affordance_runtime.agent.context.action_candidate_projection import (
+        ActionCandidateProjection,
+        ActionDeliveryPlan,
+    )
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
     from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
-    from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
     from affordance_runtime.world.contracts import WorldObservation
@@ -80,6 +83,8 @@ class AgentImageInput:
     mime_type: str
     data: bytes = field(repr=False)
     sha256: str = ""
+    coordinate_space_id: str = ""
+    marks: tuple[tuple[str, tuple[int, int, int, int]], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -89,8 +94,27 @@ class AgentImageInput:
             or not self.data
             or len(self.data) > 5 * 1024 * 1024
             or len(self.sha256) != 64
+            or hashlib.sha256(self.data).hexdigest() != self.sha256
+            or not self.coordinate_space_id.strip()
+            or (
+                self.mime_type == "image/png"
+                and not self.data.startswith(b"\x89PNG\r\n\x1a\n")
+            )
+            or (
+                self.mime_type == "image/jpeg"
+                and not self.data.startswith(b"\xff\xd8\xff")
+            )
         ):
             raise ValueError("agent image input is invalid")
+        marks = tuple((ref, tuple(bbox)) for ref, bbox in self.marks)
+        if any(
+            not PublicRefCodec.accepts(ref, expected="E")
+            or len(bbox) != 4
+            or any(type(value) is not int for value in bbox)
+            for ref, bbox in marks
+        ):
+            raise ValueError("agent image marks are invalid")
+        object.__setattr__(self, "marks", marks)
 
 
 @dataclass(frozen=True)
@@ -104,7 +128,7 @@ class AgentGroundingEntityView:
     marked: bool = False
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[EN][1-9][0-9]{0,2}", self.ref):
+        if not PublicRefCodec.accepts(self.ref):
             raise ValueError("grounding entity requires a bounded call-local ref")
         object.__setattr__(self, "state", freeze_json(self.state))
         object.__setattr__(self, "relation_hints", tuple(self.relation_hints))
@@ -161,12 +185,6 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
-    delivery_lens: WorldDeliveryLens | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-        metadata={"serialize": False},
-    )
     region_index: WorldDeliveryIndex | None = field(
         default=None,
         repr=False,
@@ -195,6 +213,18 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    action_delivery_plan: ActionDeliveryPlan | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    delivery_store: object | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -208,7 +238,7 @@ class AgentContext:
             raise TypeError("AgentContext workspace must be typed")
         bindings = dict(self.private_fact_bindings)
         if any(
-            re.fullmatch(r"F[1-9][0-9]{0,3}", ref) is None
+            not PublicRefCodec.accepts(ref, expected=PublicRefKind.FACT)
             or not isinstance(canonical, str)
             or not canonical.startswith("fact:")
             for ref, canonical in bindings.items()
@@ -231,7 +261,10 @@ class AgentContext:
         object.__setattr__(self, "complete_actions", complete_actions)
         if not self.action_space_id.strip():
             raise ValueError("AgentContext requires current ActionSpace identity")
-        from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
+        from affordance_runtime.agent.context.action_candidate_projection import (
+            ActionCandidateProjection,
+            ActionDeliveryPlan,
+        )
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
 
@@ -244,7 +277,6 @@ class AgentContext:
                 != self.current_observation.observation_id
             ):
                 raise ValueError("AgentContext observation delivery belongs to another World")
-        from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
         from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
         from affordance_runtime.world.contracts import WorldObservation
@@ -277,24 +309,29 @@ class AgentContext:
                 raise ValueError("AgentContext candidates are outside the complete current actions")
             current_by_action = {item.action_id: item for item in complete_actions}
             if any(
-                tuple(destination.target_ref for destination in item.destinations)
-                != tuple(
-                    destination.grounding_ref
-                    for destination in current_by_action[item.action_id].destinations.items
+                not set(destination.target_ref for destination in item.destinations).issubset(
+                    {
+                        destination.grounding_ref
+                        for destination in current_by_action[item.action_id].destinations.items
+                    }
                 )
+                or (item.destination_required and not item.destinations)
                 or item.destination_required
                 != current_by_action[item.action_id].destination_required
                 for item in self.action_candidates.candidates
             ):
                 raise ValueError("AgentContext candidate destinations are outside current actions")
-        if self.delivery_lens is not None:
-            if not isinstance(self.delivery_lens, WorldDeliveryLens):
-                raise TypeError("AgentContext delivery lens must be typed")
+        if self.action_delivery_plan is not None:
+            if not isinstance(self.action_delivery_plan, ActionDeliveryPlan):
+                raise TypeError("AgentContext action delivery plan must be typed")
+            if self.action_delivery_plan.action_space_id != self.action_space_id:
+                raise ValueError("AgentContext action delivery plan belongs to another ActionSpace")
             if (
                 self.current_observation is not None
-                and self.delivery_lens.world_observation_id != self.current_observation.observation_id
+                and self.action_delivery_plan.world_observation_id
+                != self.current_observation.observation_id
             ):
-                raise ValueError("AgentContext delivery lens must belong to current observation")
+                raise ValueError("AgentContext action delivery plan belongs to another World")
         if self.region_index is not None:
             if not isinstance(self.region_index, WorldDeliveryIndex):
                 raise TypeError("AgentContext region index must be typed")
@@ -303,9 +340,6 @@ class AgentContext:
                 and self.region_index.world_observation_id != self.current_observation.observation_id
             ):
                 raise ValueError("AgentContext region index must belong to current observation")
-            if self.delivery_lens is not None and self.delivery_lens.selected_region_key:
-                if self.region_index.get(self.delivery_lens.selected_region_key) is None:
-                    raise ValueError("AgentContext delivery lens selects an unknown region")
         if self.evidence_index is not None and any(
             self.evidence_index.resolve(canonical) is False for canonical in bindings.values()
         ):

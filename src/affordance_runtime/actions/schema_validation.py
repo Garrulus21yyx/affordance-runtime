@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -14,24 +16,30 @@ _PRIVATE_PARAMETER_PARTS = frozenset(
 _ADMISSION_PRIVATE_PATH_PARTS = _PRIVATE_PARAMETER_PARTS | frozenset(
     {"password", "secret", "token", "authorization", "api", "key"}
 )
-_SCHEMA_TYPES = frozenset({"object", "string", "boolean", "integer", "number"})
-_SCHEMA_KEYS = frozenset(
-    {"type", "properties", "required", "additionalProperties", "enum", "minimum", "maximum", "description"}
-)
+_SCHEMA_TYPES = frozenset({"object", "array", "null", "string", "boolean", "integer", "number"})
+_SCHEMA_KEYS = frozenset({
+    "type", "properties", "required", "additionalProperties", "items", "minItems", "maxItems",
+    "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "description",
+    "oneOf", "anyOf",
+})
 _MAX_DESCRIPTION = 240
-_MAX_ENUM_ITEMS = 12
+MAX_OPTION_DOMAIN_ITEMS = 512
+_MAX_SCHEMA_DEPTH = 8
+_MAX_PROPERTIES = 128
+_MAX_UNION_BRANCHES = 128
+_MAX_PATTERN_LENGTH = 240
 
 
 def validate_parameter_schema_contract(schema: Mapping[str, Any]) -> None:
     """Validate the exact finite schema subset accepted at the action boundary."""
 
-    _validate_schema_node(schema, path="parameters", root=True)
+    _validate_schema_node(schema, path="parameters", root=True, depth=0)
 
 
 def validate_parameter_schema_names(schema: Mapping[str, Any], *, path: str = "parameters") -> None:
     """Compatibility alias for the now-complete schema contract validation."""
 
-    _validate_schema_node(schema, path=path, root=path == "parameters")
+    _validate_schema_node(schema, path=path, root=path == "parameters", depth=0)
 
 
 def reject_private_parameter_values(value: Any, *, path: str = "parameters") -> None:
@@ -45,9 +53,17 @@ def reject_private_parameter_values(value: Any, *, path: str = "parameters") -> 
             reject_private_parameter_values(child, path=f"{path}[{index}]")
 
 
-def _validate_schema_node(schema: Mapping[str, Any], *, path: str, root: bool) -> None:
+def _validate_schema_node(schema: Mapping[str, Any], *, path: str, root: bool, depth: int) -> None:
+    if depth > _MAX_SCHEMA_DEPTH:
+        raise ValueError(f"{path} exceeds the schema nesting bound")
     if not isinstance(schema, Mapping) or set(schema) - _SCHEMA_KEYS:
         raise ValueError(f"{path} uses an unsupported schema shape")
+    union_key = "oneOf" if "oneOf" in schema else "anyOf" if "anyOf" in schema else ""
+    if "oneOf" in schema and "anyOf" in schema:
+        raise ValueError(f"{path} cannot combine oneOf and anyOf")
+    if union_key:
+        _validate_union_schema(schema, path=path, root=root, depth=depth, union_key=union_key)
+        return
     schema_type = schema.get("type")
     if schema_type not in _SCHEMA_TYPES or (root and schema_type != "object"):
         raise ValueError(f"{path} uses unsupported schema type: {schema_type}")
@@ -55,17 +71,68 @@ def _validate_schema_node(schema: Mapping[str, Any], *, path: str, root: bool) -
     if description is not None and (not isinstance(description, str) or len(description) > _MAX_DESCRIPTION):
         raise ValueError(f"{path} description must be a bounded string")
     if schema_type == "object":
-        _validate_object_schema(schema, path)
+        _validate_object_schema(schema, path, depth)
+    elif schema_type == "array":
+        _validate_array_schema(schema, path, depth)
     else:
         _validate_primitive_schema(schema, path)
 
 
-def _validate_object_schema(schema: Mapping[str, Any], path: str) -> None:
+def _validate_union_schema(
+    schema: Mapping[str, Any], *, path: str, root: bool, depth: int, union_key: str
+) -> None:
+    if set(schema) - {union_key, "description"}:
+        raise ValueError(f"{path} union cannot combine sibling validation keywords")
+    variants = schema[union_key]
+    if (
+        not isinstance(variants, Sequence)
+        or isinstance(variants, str | bytes)
+        or not 1 <= len(variants) <= _MAX_UNION_BRANCHES
+    ):
+        raise ValueError(f"{path} union must contain bounded schema branches")
+    for index, variant in enumerate(variants):
+        _validate_schema_node(variant, path=f"{path}.{union_key}[{index}]", root=root, depth=depth + 1)
+    if union_key == "oneOf" and len(variants) > 1:
+        discriminants = tuple(_finite_discriminants(variant) for variant in variants)
+        if any(not item for item in discriminants) or any(
+            not _finite_branches_are_disjoint(left, right)
+            for index, left in enumerate(discriminants)
+            for right in discriminants[index + 1 :]
+        ):
+            raise ValueError(f"{path} oneOf branches require a unique finite discriminant")
+
+
+def _finite_branches_are_disjoint(
+    left: Mapping[str, frozenset[str]],
+    right: Mapping[str, frozenset[str]],
+) -> bool:
+    """Two branches are exclusive when one shared finite field is disjoint."""
+
+    return any(left[name].isdisjoint(right[name]) for name in set(left).intersection(right))
+
+
+def _finite_discriminants(schema: Mapping[str, Any]) -> dict[str, frozenset[str]]:
+    if schema.get("type") != "object" or not isinstance(schema.get("properties"), Mapping):
+        return {}
+    required = set(schema.get("required", ()))
+    result: dict[str, frozenset[str]] = {}
+    for name, child in schema["properties"].items():
+        if name not in required or not isinstance(child, Mapping):
+            continue
+        values = (child["const"],) if "const" in child else child.get("enum", ())
+        if isinstance(values, Sequence) and not isinstance(values, str | bytes) and values:
+            result[str(name)] = frozenset(_scalar_identity(value) for value in values)
+    return result
+
+
+def _validate_object_schema(schema: Mapping[str, Any], path: str, depth: int) -> None:
     properties = schema.get("properties", {})
     required = schema.get("required", ())
     additional = schema.get("additionalProperties", False)
     if not isinstance(properties, Mapping):
         raise ValueError(f"{path} properties must be an object")
+    if len(properties) > _MAX_PROPERTIES:
+        raise ValueError(f"{path} exceeds the property-count bound")
     if not isinstance(required, Sequence) or isinstance(required, str | bytes):
         raise ValueError(f"{path} required must be a string array")
     if any(not isinstance(item, str) for item in required) or len(set(required)) != len(required):
@@ -77,26 +144,89 @@ def _validate_object_schema(schema: Mapping[str, Any], path: str) -> None:
     for name, child in properties.items():
         if not isinstance(name, str) or not name or _private_name(name):
             raise ValueError(f"{path} contains a runtime-private parameter name: {name}")
-        _validate_schema_node(child, path=f"{path}.{name}", root=False)
+        _validate_schema_node(child, path=f"{path}.{name}", root=False, depth=depth + 1)
+
+
+def _validate_array_schema(schema: Mapping[str, Any], path: str, depth: int) -> None:
+    if any(key in schema for key in ("properties", "required", "additionalProperties")):
+        raise ValueError(f"{path} array schema contains object fields")
+    items = schema.get("items")
+    minimum = schema.get("minItems", 0)
+    maximum = schema.get("maxItems")
+    if not isinstance(items, Mapping):
+        raise ValueError(f"{path} array requires an item schema")
+    if type(minimum) is not int or minimum < 0:
+        raise ValueError(f"{path} minItems must be a non-negative integer")
+    if type(maximum) is not int or not minimum <= maximum <= MAX_OPTION_DOMAIN_ITEMS:
+        raise ValueError(f"{path} maxItems must close the bounded array domain")
+    _validate_schema_node(items, path=f"{path}.items", root=False, depth=depth + 1)
 
 
 def _validate_primitive_schema(schema: Mapping[str, Any], path: str) -> None:
-    if any(key in schema for key in ("properties", "required", "additionalProperties")):
-        raise ValueError(f"{path} primitive schema contains object fields")
+    if any(key in schema for key in ("properties", "required", "additionalProperties", "items", "minItems", "maxItems")):
+        raise ValueError(f"{path} scalar schema contains container fields")
     enum = schema.get("enum")
     if enum is not None:
         if (
             not isinstance(enum, Sequence)
             or isinstance(enum, str | bytes)
-            or not 1 <= len(enum) <= _MAX_ENUM_ITEMS
-            or any(not isinstance(item, str | bool | int | float) for item in enum)
+            or not 1 <= len(enum) <= MAX_OPTION_DOMAIN_ITEMS
+            or any(not _scalar_matches_type(item, str(schema["type"])) for item in enum)
+            or len({_scalar_identity(item) for item in enum}) != len(enum)
         ):
             raise ValueError(f"{path} enum must be a bounded scalar array")
+    if "const" in schema and not _scalar_matches_type(schema["const"], str(schema["type"])):
+        raise ValueError(f"{path} const does not match the declared type")
+    if enum is not None and "const" in schema and schema["const"] not in enum:
+        raise ValueError(f"{path} const must belong to enum")
     for key in ("minimum", "maximum"):
-        if key in schema and (not isinstance(schema[key], int | float) or isinstance(schema[key], bool)):
+        if key in schema and (
+            not isinstance(schema[key], int | float)
+            or isinstance(schema[key], bool)
+            or not _finite_number(schema[key])
+        ):
             raise ValueError(f"{path} {key} must be numeric")
     if "minimum" in schema and "maximum" in schema and schema["minimum"] > schema["maximum"]:
         raise ValueError(f"{path} numeric bounds are inconsistent")
+    if any(key in schema for key in ("minimum", "maximum")) and schema["type"] not in {"integer", "number"}:
+        raise ValueError(f"{path} numeric bounds require a numeric type")
+    for key in ("minLength", "maxLength"):
+        if key in schema and (type(schema[key]) is not int or schema[key] < 0):
+            raise ValueError(f"{path} {key} must be a non-negative integer")
+    if "minLength" in schema and "maxLength" in schema and schema["minLength"] > schema["maxLength"]:
+        raise ValueError(f"{path} string bounds are inconsistent")
+    if any(key in schema for key in ("minLength", "maxLength", "pattern")) and schema["type"] != "string":
+        raise ValueError(f"{path} string constraints require a string type")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str) or len(pattern) > _MAX_PATTERN_LENGTH:
+            raise ValueError(f"{path} pattern must be bounded text")
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"{path} pattern is invalid") from exc
+
+
+def _scalar_matches_type(value: Any, schema_type: str) -> bool:
+    return {
+        "null": value is None,
+        "string": isinstance(value, str),
+        "boolean": isinstance(value, bool),
+        "integer": isinstance(value, int) and not isinstance(value, bool),
+        "number": (
+            isinstance(value, int | float)
+            and not isinstance(value, bool)
+            and _finite_number(value)
+        ),
+    }.get(schema_type, False)
+
+
+def _scalar_identity(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _finite_number(value: int | float) -> bool:
+    return not isinstance(value, float) or math.isfinite(value)
 
 
 def _private_name(name: str) -> bool:
@@ -163,7 +293,11 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
         raise ValueError(f"{path} must be a boolean")
     if expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
         raise ValueError(f"{path} must be an integer")
-    if expected == "number" and (not isinstance(value, int | float) or isinstance(value, bool)):
+    if expected == "number" and (
+        not isinstance(value, int | float)
+        or isinstance(value, bool)
+        or not _finite_number(value)
+    ):
         raise ValueError(f"{path} must be a number")
     if "const" in schema and value != schema["const"]:
         raise ValueError(f"{path} does not match the required constant")
@@ -177,6 +311,8 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
         if "maxLength" in schema and len(value) > schema["maxLength"]:
             raise ValueError(f"{path} exceeds maximum length")
     if isinstance(value, int | float) and not isinstance(value, bool):
+        if not _finite_number(value):
+            raise ValueError(f"{path} must be finite")
         if "minimum" in schema and value < schema["minimum"]:
             raise ValueError(f"{path} is below minimum")
         if "maximum" in schema and value > schema["maximum"]:
@@ -213,7 +349,8 @@ def _value_violation(
             return path, {"private_fields_allowed": False}, {"contains_private_field": True}
     variants = schema.get("oneOf") or schema.get("anyOf")
     if isinstance(variants, Sequence) and not isinstance(variants, str | bytes):
-        if any(_value_violation(value, item, path) is None for item in variants):
+        matches = sum(_value_violation(value, item, path) is None for item in variants)
+        if matches and ("oneOf" not in schema or matches == 1):
             return None
         return path, {"union_match": True}, {"union_match": False}
     expected_type = schema.get("type")
@@ -258,6 +395,8 @@ def _value_violation(
     if "enum" in schema and value not in schema["enum"]:
         return path, {"enum": tuple(schema["enum"])}, {"type": actual_type, "enum_member": False}
     if isinstance(value, int | float) and not isinstance(value, bool):
+        if not _finite_number(value):
+            return path, {"finite": True}, {"finite": False}
         if "minimum" in schema and value < schema["minimum"]:
             return path, {"minimum": schema["minimum"]}, {"below_minimum": True}
         if "maximum" in schema and value > schema["maximum"]:

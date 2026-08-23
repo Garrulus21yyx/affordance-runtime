@@ -18,6 +18,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _RESERVED_NAMES = frozenset({"target", "source", "destination"})
 
@@ -137,7 +138,7 @@ class GroundedToolCompiler:
             )
         if option.destination_mode != "required":
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        if option.destinations.truncated or not option.destinations.items:
+        if not option.destinations.items:
             raise GroundedToolResolutionError(
                 GroundedToolResolutionCode.DESTINATION_UNAVAILABLE
             )
@@ -159,24 +160,8 @@ class GroundedToolCompiler:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         self._validate_current_refs(rows, context_id)
         fields, selector_values, mode = _current_reference_selectors(rows)
-        business_schema = _merge_business_schemas(
-            tuple(row.option.parameter_schema for row in rows)
-        )
-        business_properties, business_required = _business_schema(business_schema)
-        if set(business_properties).intersection(_RESERVED_NAMES):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        selector_properties = {
-            field.public_name: to_json_compatible(field.input_schema) for field in fields
-        }
-        schema = {
-            "type": "object",
-            "properties": {
-                **selector_properties,
-                **business_properties,
-            },
-            "required": [*(field.public_name for field in fields), *business_required],
-            "additionalProperties": False,
-        }
+        branches = _factorized_route_schemas(rows, selector_values)
+        schema = branches[0] if len(branches) == 1 else {"oneOf": list(branches)}
         resolutions = tuple(
             PrivateResolutionEntry(
                 selector,
@@ -230,7 +215,7 @@ def _current_reference_selectors(
             {
                 "type": "string",
                 "description": "current executable E-ref",
-                "pattern": "^E[1-9][0-9]{0,2}$",
+                "pattern": PublicRefCodec.pattern(PublicRefKind.EXECUTABLE),
             },
         )
         return (
@@ -245,7 +230,7 @@ def _current_reference_selectors(
             {
                 "type": "string",
                 "description": "current executable source E-ref",
-                "pattern": "^E[1-9][0-9]{0,2}$",
+                "pattern": PublicRefCodec.pattern(PublicRefKind.EXECUTABLE),
             },
         ),
         CompiledSelectorField(
@@ -254,7 +239,7 @@ def _current_reference_selectors(
             {
                 "type": "string",
                 "description": "current executable destination E-ref",
-                "pattern": "^E[1-9][0-9]{0,2}$",
+                "pattern": PublicRefCodec.pattern(PublicRefKind.EXECUTABLE),
             },
         ),
     )
@@ -272,54 +257,74 @@ def _current_reference_selectors(
     )
 
 
-def _merge_business_schemas(
-    schemas: tuple[Mapping[str, object], ...],
-) -> Mapping[str, object]:
-    if not schemas:
+def _factorized_route_schemas(
+    rows: tuple[ConcreteActionCandidateRow, ...],
+    selector_values: tuple[Mapping[str, object], ...],
+) -> tuple[dict[str, object], ...]:
+    """Factor only rows with identical business schema and exact adjacency."""
+
+    grouped: dict[str, list[tuple[ConcreteActionCandidateRow, Mapping[str, object]]]] = defaultdict(list)
+    for row, selector in zip(rows, selector_values, strict=True):
+        key = json.dumps(
+            to_json_compatible(row.option.parameter_schema),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        grouped[key].append((row, selector))
+
+    branches: list[dict[str, object]] = []
+    for schema_key in sorted(grouped):
+        members = grouped[schema_key]
+        if members[0][0].destination is None:
+            targets = tuple(sorted(str(selector["target"]) for _, selector in members))
+            branches.append(_factorized_branch(members[0][0], {"target": targets}))
+            continue
+
+        destinations_by_source: dict[str, set[str]] = defaultdict(set)
+        for _, selector in members:
+            destinations_by_source[str(selector["source"])].add(str(selector["destination"]))
+        sources_by_adjacency: dict[tuple[str, ...], list[str]] = defaultdict(list)
+        for source, destinations in destinations_by_source.items():
+            sources_by_adjacency[tuple(sorted(destinations))].append(source)
+        for destinations in sorted(sources_by_adjacency):
+            branches.append(
+                _factorized_branch(
+                    members[0][0],
+                    {
+                        "source": tuple(sorted(sources_by_adjacency[destinations])),
+                        "destination": destinations,
+                    },
+                )
+            )
+    return tuple(branches)
+
+
+def _factorized_branch(
+    row: ConcreteActionCandidateRow,
+    selectors: Mapping[str, tuple[str, ...]],
+) -> dict[str, object]:
+    properties, required = _business_schema(row.option.parameter_schema)
+    if set(properties).intersection(_RESERVED_NAMES):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    parsed = tuple(_business_schema(schema) for schema in schemas)
-    property_names = tuple(parsed[0][0])
-    required = tuple(parsed[0][1])
-    if any(tuple(properties) != property_names or tuple(required_names) != required for properties, required_names in parsed[1:]):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    merged = {
-        name: _merge_property_schemas(tuple(properties[name] for properties, _ in parsed))
-        for name in property_names
-    }
+    selector_properties: dict[str, object] = {}
+    for name, values in selectors.items():
+        if not values or any(
+            not PublicRefCodec.accepts(value, expected=PublicRefKind.EXECUTABLE)
+            for value in values
+        ):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        selector_properties[name] = {
+            "type": "string",
+            "description": "current executable E-ref",
+            "enum": list(values),
+        }
     return {
         "type": "object",
-        "properties": merged,
-        "required": list(required),
+        "properties": {**selector_properties, **properties},
+        "required": [*selectors, *required],
         "additionalProperties": False,
     }
-
-
-def _merge_property_schemas(schemas: tuple[object, ...]) -> dict[str, object]:
-    if not all(isinstance(schema, Mapping) for schema in schemas):
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    mappings = tuple(schema for schema in schemas if isinstance(schema, Mapping))
-    types = {schema.get("type") for schema in mappings}
-    if len(types) != 1:
-        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    result: dict[str, object] = {"type": next(iter(types))}
-    descriptions = {schema.get("description") for schema in mappings}
-    if len(descriptions) == 1 and None not in descriptions:
-        result["description"] = next(iter(descriptions))
-    if all("enum" in schema for schema in mappings):
-        result["enum"] = list(
-            dict.fromkeys(
-                value
-                for schema in mappings
-                for value in schema.get("enum", ())
-            )
-        )
-    minimums = tuple(schema["minimum"] for schema in mappings if "minimum" in schema)
-    maximums = tuple(schema["maximum"] for schema in mappings if "maximum" in schema)
-    if minimums:
-        result["minimum"] = min(minimums)
-    if maximums:
-        result["maximum"] = max(maximums)
-    return result
 
 
 def _business_schema(schema: Mapping[str, object]) -> tuple[dict[str, object], list[str]]:

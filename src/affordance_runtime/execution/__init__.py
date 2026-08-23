@@ -1,4 +1,4 @@
-"""Target execution contracts, including bounded current-form execution receipts."""
+"""Atomic target execution contracts and receipt conservation."""
 
 from affordance_runtime.execution.contracts import (
     ActionDispatchCancelled,
@@ -6,7 +6,6 @@ from affordance_runtime.execution.contracts import (
     ActionIntent,
     ActionResult,
     BoundActionRequest,
-    BoundFormFieldsRequest,
     DispatchStatus,
     ExecutionAttempt,
     ExecutionCancellationPhase,
@@ -18,8 +17,6 @@ from affordance_runtime.execution.contracts import (
     ExecutionOutcome,
     ExecutionReceipt,
     ExecutionReceiptBatch,
-    FormFieldsExecutionCancelled,
-    FormFieldsExecutionOutcome,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -31,7 +28,6 @@ __all__ = [
     "ActionIntent",
     "ActionResult",
     "BoundActionRequest",
-    "BoundFormFieldsRequest",
     "DispatchStatus",
     "ExecutionAttempt",
     "ExecutionCancelled",
@@ -43,8 +39,6 @@ __all__ = [
     "ExecutionObservationRecovery",
     "ExecutionReceipt",
     "ExecutionReceiptBatch",
-    "FormFieldsExecutionOutcome",
-    "FormFieldsExecutionCancelled",
     "SessionHealth",
     "SessionHealthStatus",
     "execution_diagnostic_from_exception",

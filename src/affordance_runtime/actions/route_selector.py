@@ -40,9 +40,9 @@ class RouteSelector:
         excluded_binding_ids: frozenset[str] = frozenset(),
     ) -> RouteSelectionResult:
         candidates = tuple(
-            binding for binding in observation.bindings
-            if binding.binding_id not in excluded_binding_ids
-            and _equivalent_current(binding, selection, observation)
+            binding
+            for binding in observation.bindings
+            if binding.binding_id not in excluded_binding_ids and _equivalent_current(binding, selection, observation)
         )
         ids = tuple(item.binding_id for item in candidates)
         if len(ids) != len(set(ids)):
@@ -68,7 +68,11 @@ def _equivalent_current(
         and _risk_rank(binding.risk) <= _risk_rank(selection.risk)
         and binding.observation_barrier == selection.observation_barrier
         and binding.destination_required == selection.destination_required
-        and binding.eligible_destination_ids == selection.eligible_destination_ids
+        and (
+            selection.destination_id in binding.eligible_destination_ids
+            if selection.destination_id
+            else binding.eligible_destination_ids == selection.eligible_destination_ids
+        )
         and binding.verification_contract_digest == selection.verification_contract_digest
         and _binding_current(binding, observation)
     )
@@ -91,8 +95,4 @@ def _binding_current(binding: ActionBinding, observation: WorldObservation) -> b
         (item for item in observation.sources if item.observation_id == binding.source_observation_id),
         None,
     )
-    return bool(
-        source
-        and binding.surface == source.surface
-        and binding.source_revision == source.revision
-    )
+    return bool(source and binding.surface == source.surface and binding.source_revision == source.revision)

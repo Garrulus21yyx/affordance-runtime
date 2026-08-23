@@ -269,7 +269,9 @@ class CompactJsonDecisionPort:
         object.__setattr__(
             self,
             "last_image_input_count",
-            len(request.image_inputs) if perception_uses_images(request, self.perception_profile) else 0,
+            len(request.agent_context.image_inputs)
+            if perception_uses_images(request, self.perception_profile)
+            else 0,
         )
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
         return catalog
@@ -773,7 +775,7 @@ class CompactJsonDecisionPort:
             lineage.update(
                 {
                     "delivery_id": delivery.delivery_id,
-                    "world_observation_id": delivery.world_observation_id,
+                    "world_observation_id": request.agent_context.current_observation.observation_id,
                 }
             )
         return lineage

@@ -132,7 +132,7 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
         ),
     )
     candidate = next(
-        option for option in context.actions.options if option.target_id == target.target_id
+        option for option in context.complete_actions if option.target_id == target.target_id
     )
     assert candidate.target_ref == dict(context.grounding.target_refs)[target.target_id]
     assert candidate.target_state["grid_coordinate"] == {"x": 1, "y": -2}
@@ -149,7 +149,14 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     assert "grid_coordinate_confidence=" not in observation
 
     activate = next(spec for spec in action_catalog.specs if spec.name == "activate")
-    assert activate.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    branches = activate.input_schema.get("oneOf", (activate.input_schema,))
+    delivered_refs = {
+        ref
+        for branch in branches
+        for ref in branch["properties"]["target"]["enum"]
+    }
+    assert delivered_refs
+    assert delivered_refs <= {item.target_ref for item in context.complete_actions}
     assert any(
         item.ref == candidate.target_ref and "activate" in item.verbs
         for item in context.grounding.entities

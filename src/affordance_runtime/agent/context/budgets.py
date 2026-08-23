@@ -3,13 +3,61 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
 DEFAULT_MAX_TOTAL_WAIT_MS = 120_000
+DEFAULT_MODEL_REQUEST_TOKEN_LIMIT = 64_000
+DEFAULT_MODEL_REQUEST_SOFT_TARGET = 8_000
+
+
+def _environment_admission_limit() -> int:
+    raw = os.environ.get("AFFORDANCE_MODEL_REQUEST_TOKEN_LIMIT", "").strip()
+    if not raw:
+        return DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+    return value if value > 0 else DEFAULT_MODEL_REQUEST_TOKEN_LIMIT
+
+
+@dataclass(frozen=True)
+class ModelRequestBudget:
+    """One request profile shared by disposable delivery and final admission."""
+
+    soft_target_tokens: int = DEFAULT_MODEL_REQUEST_SOFT_TARGET
+    model_context_window: int = 67_000
+    max_output_tokens: int = 1_024
+    protocol_reserve_tokens: int = 2_048
+    safety_margin_tokens: int = 1_024
+    admission_limit: int = field(default_factory=_environment_admission_limit)
+
+    def __post_init__(self) -> None:
+        counters = (
+            self.soft_target_tokens,
+            self.model_context_window,
+            self.max_output_tokens,
+            self.protocol_reserve_tokens,
+            self.safety_margin_tokens,
+            self.admission_limit,
+        )
+        if any(isinstance(value, bool) or value < 0 for value in counters):
+            raise ValueError("model request budget counters must be non-negative")
+        if self.soft_target_tokens < 1 or self.model_context_window < 1:
+            raise ValueError("model request admission limit must be positive")
+        derived = (
+            self.model_context_window
+            - self.max_output_tokens
+            - self.protocol_reserve_tokens
+            - self.safety_margin_tokens
+        )
+        limit = min(self.admission_limit or derived, derived)
+        object.__setattr__(self, "admission_limit", max(1, limit))
 
 
 @dataclass(frozen=True)
@@ -50,7 +98,6 @@ class ContextProjectionBudget:
     max_relations_per_target: int = 8
     max_conflicts: int = 16
     max_action_options: int = 128
-    max_destinations_per_option: int = 16
     max_transition_progress_changes: int = 32
     max_transition_evidence_refs: int = 16
     max_artifact_summaries: int = 16

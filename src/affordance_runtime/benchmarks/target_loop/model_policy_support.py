@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.support import shared_environment
 from affordance_runtime.model.policy import ModelBackedAgentPolicy, model_policy_from_environment
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 
 @dataclass
@@ -38,13 +39,21 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                         str(message.get("content", ""))
                         for message in body["messages"]
                     )
-                    match = re.search(
-                        rf"\[(E[1-9][0-9]{{0,2}})\][^\n]*verbs=[^\n]*\b{operation}\b",
+                    matches = re.findall(
+                        rf"\[([^\]\n]+)\][^\n]*verbs=[^\n]*\b{operation}\b",
                         context_text,
                     )
-                    if match is None:
+                    target_ref = next(
+                        (
+                            value
+                            for value in matches
+                            if PublicRefCodec.accepts(value, expected=PublicRefKind.EXECUTABLE)
+                        ),
+                        "",
+                    )
+                    if not target_ref:
                         raise ValueError("fixture model could not find a delivered executable target")
-                    arguments["target"] = match.group(1)
+                    arguments["target"] = target_ref
                 payload = json.dumps(
                     {
                         "id": "response:m3-http-policy",

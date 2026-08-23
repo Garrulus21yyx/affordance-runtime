@@ -19,6 +19,8 @@ from affordance_runtime.actions.space_contracts import (
     ActionOption,
     ActionRisk,
     ActionSpace,
+    ActionSpaceIssue,
+    ActionSpaceIssueCode,
     AdmittedActionSelection,
     validate_selected_destination,
 )
@@ -89,8 +91,68 @@ class ActionSpaceBuilder:
                 binding.verification_contract_digest,
             )
             grouped.setdefault(group_key, []).append(binding)
+        selectors: dict[tuple[str, str], list[_GroupKey]] = {}
+        for group_key in grouped:
+            selectors.setdefault((group_key[0], group_key[1]), []).append(group_key)
+        conflicted_routes_by_group: dict[_GroupKey, set[str]] = {}
+        atomic_conflicts: dict[tuple[str, str, tuple[str, ...]], set[str]] = {}
+        for selector, group_keys in sorted(selectors.items()):
+            for index, left in enumerate(group_keys):
+                left_routes = set(left[7]) or {""}
+                for right in group_keys[index + 1 :]:
+                    overlapping_routes = left_routes.intersection(set(right[7]) or {""})
+                    if not overlapping_routes:
+                        continue
+                    conflict_fields = _conflicting_contract_fields([left, right])
+                    if not conflict_fields:
+                        continue
+                    conflicted_routes_by_group.setdefault(left, set()).update(overlapping_routes)
+                    conflicted_routes_by_group.setdefault(right, set()).update(overlapping_routes)
+                    destinations = tuple(sorted(item for item in overlapping_routes if item))
+                    atomic_conflicts.setdefault((selector[0], selector[1], destinations), set()).update(conflict_fields)
+        issues = [
+            ActionSpaceIssue(
+                ActionSpaceIssueCode.ACTION_ROUTE_CONFLICT,
+                operation,
+                target_id,
+                destinations,
+                tuple(fields),
+            )
+            for (target_id, operation, destinations), fields in sorted(atomic_conflicts.items())
+        ]
+        publishable: dict[tuple[object, ...], tuple[_GroupKey, list[ActionBinding]]] = {}
+        for group_key, bindings in grouped.items():
+            conflicted_routes = conflicted_routes_by_group.get(group_key, set())
+            if not group_key[7] and "" in conflicted_routes:
+                continue
+            destinations = tuple(item for item in group_key[7] if item not in conflicted_routes)
+            if group_key[6] and not destinations:
+                continue
+            group_key = (*group_key[:7], destinations, *group_key[8:])
+            contract_key = (*group_key[:7], *group_key[8:])
+            existing = publishable.get(contract_key)
+            if existing is None:
+                publishable[contract_key] = (group_key, list(bindings))
+                continue
+            representative, merged_bindings = existing
+            merged_destinations = tuple(sorted(set(representative[7]).union(group_key[7])))
+            publishable[contract_key] = (
+                (*representative[:7], merged_destinations, *representative[8:]),
+                [*merged_bindings, *bindings],
+            )
+        target_order = {target.target_id: index for index, target in enumerate(observation.targets)}
         options = []
-        for group_key, bindings in sorted(grouped.items()):
+        ordered_groups = sorted(
+            (value for value in publishable.values()),
+            key=lambda item: (
+                target_order.get(item[0][0], len(target_order)),
+                item[0][1],
+                tuple(target_order.get(target_id, len(target_order)) for target_id in item[0][7]),
+                item[0][2:7],
+                item[0][8:],
+            ),
+        )
+        for group_key, bindings in ordered_groups:
             (
                 target_id,
                 action,
@@ -145,7 +207,7 @@ class ActionSpaceBuilder:
                     verification_contract_digest=verification_digest,
                 )
             )
-        return ActionSpace(observation.observation_id, tuple(options))
+        return ActionSpace(observation.observation_id, tuple(options), tuple(issues))
 
     def validate_parameters(self, option: ActionOption, parameters: dict[str, Any]) -> None:
         if _FORBIDDEN_PARAMETER_KEYS.intersection(parameters):
@@ -252,11 +314,7 @@ def _binding_is_current(binding: ActionBinding, observation: WorldObservation) -
         (item for item in observation.sources if item.observation_id == binding.source_observation_id),
         None,
     )
-    return bool(
-        source
-        and binding.surface == source.surface
-        and binding.source_revision == source.revision
-    )
+    return bool(source and binding.surface == source.surface and binding.source_revision == source.revision)
 
 
 def _expected_outcome(value: object) -> str:
@@ -292,6 +350,24 @@ def _effects_allowed(task: TaskGoal, binding: ActionBinding) -> bool:
 
 def _risk_rank(risk: ActionRisk) -> int:
     return (ActionRisk.LOW, ActionRisk.MEDIUM, ActionRisk.HIGH, ActionRisk.IRREVERSIBLE).index(risk)
+
+
+def _conflicting_contract_fields(group_keys: list[_GroupKey]) -> tuple[str, ...]:
+    names = (
+        "effect_category",
+        "semantic_effects",
+        "parameter_schema",
+        "observation_barrier",
+        "destination_required",
+        "verification_family",
+        "verification_contract",
+    )
+    indexes = (2, 3, 4, 5, 6, 8, 9)
+    return tuple(
+        name
+        for name, index in zip(names, indexes, strict=True)
+        if len({group_key[index] for group_key in group_keys}) > 1
+    )
 
 
 def _validate_destination(option: ActionOption, destination_id: str) -> None:

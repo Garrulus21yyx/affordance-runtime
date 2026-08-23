@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
 from hypothesis import given
@@ -50,20 +50,7 @@ def test_failure_facts_are_orthogonal_and_round_trip(watchdog, cleanup, integrit
         True,
         "",
         1.0,
-        runtime_reason_code=facts.runtime_reason_code,
-        agent_failure_code=facts.agent_failure_code,
-        last_policy_failure_code=facts.policy_failure_code,
-        cleanup_failure_code=facts.cleanup_code,
-        cleanup_exception_class=facts.cleanup_exception_class,
-        cleanup_failures=int(cleanup),
-        harness_integrity_code=facts.harness_integrity_code,
-        harness_integrity_failures=int(integrity),
-        watchdog_triggered=watchdog,
-        case_failure_code=("case_timeout" if watchdog else "runtime_exception"),
-        failure_origin=facts.component_origin,
-        failure_code=facts.component_code,
-        exception_class=facts.component_exception_class,
-        termination_origin="harness_watchdog" if watchdog else "component",
+        cleanup_status="failed" if cleanup else "not_run",
         failure_facts=facts,
     )
     decoded = decode_public_case_evidence(public_case_evidence(result))
@@ -100,8 +87,6 @@ def test_runtime_failure_stage_is_frozen_and_codec_round_trip_preserves_authorit
         True,
         "display only",
         1.0,
-        runtime_reason_code=failure.code,
-        case_failure_code=failure.code,
         failure_facts=facts,
     )
 
@@ -124,23 +109,9 @@ def test_public_decoder_rejects_malformed_metrics_and_unknown_schema() -> None:
         decode_public_case_evidence(future)
 
     legacy = public_case_evidence(BenchmarkCaseResult("case:legacy", "failed", True, "", 1.0))
-    legacy["schema_version"] = legacy["case_schema_version"] = "target-loop-case.v6"
-    legacy["failure_facts"].pop("runtime_failure")
-    legacy["failure_facts"].pop("task_outcome_kind")
-    legacy["failure_facts"].pop("task_outcome_code")
-    decoded_legacy = decode_public_case_evidence(legacy)
-    assert decoded_legacy.case_schema_version == "target-loop-case.v6"
-    with pytest.raises(ValueError, match="read-only"):
-        public_case_evidence(decoded_legacy)
-
-    v7 = public_case_evidence(BenchmarkCaseResult("case:v7", "failed", True, "", 1.0))
-    v7["schema_version"] = v7["case_schema_version"] = "target-loop-case.v7"
-    v7["failure_facts"].pop("task_outcome_kind")
-    v7["failure_facts"].pop("task_outcome_code")
-    decoded_v7 = decode_public_case_evidence(v7)
-    assert decoded_v7.failure_facts.task_outcome_kind == ""
-    with pytest.raises(ValueError, match="read-only"):
-        public_case_evidence(decoded_v7)
+    legacy["schema_version"] = legacy["case_schema_version"] = "target-loop-case.v11"
+    with pytest.raises(ValueError, match="unsupported"):
+        decode_public_case_evidence(legacy)
 
     wrong_scalars = public_case_evidence(
         BenchmarkCaseResult(
@@ -213,25 +184,9 @@ def test_official_success_cannot_coexist_with_canonical_runtime_failure() -> Non
         )
 
 
-@pytest.mark.parametrize(
-    "changes",
-    (
-        {"failure_code": "execution_exception"},
-        {"case_failure_code": "bogus"},
-        {"exception_class": "RuntimeError"},
-    ),
-)
-def test_success_cannot_carry_unbound_legacy_failure_truth(changes) -> None:
-    with pytest.raises(ValueError, match="failure|source fact"):
-        BenchmarkCaseResult(
-            "case:one",
-            "done",
-            True,
-            "",
-            1.0,
-            {"official_success_count": MetricMeasurement(1, True)},
-            **changes,
-        )
+def test_current_schema_has_no_unbound_legacy_failure_fields() -> None:
+    names = {item.name for item in fields(BenchmarkCaseResult)}
+    assert not names.intersection({"failure_code", "case_failure_code", "exception_class"})
 
 
 @pytest.mark.parametrize(
@@ -243,7 +198,6 @@ def test_success_cannot_carry_unbound_legacy_failure_truth(changes) -> None:
         {"latest_action_observed_change": "invented_action_status"},
         {"latest_action_local_postcondition": "invented_local_postcondition"},
         {"latest_action_evidence_method": "invented_method"},
-        {"last_progress_event_type": "invented_progress"},
         {"last_world_coverage": "private coverage marker"},
         {"latest_semantic_attempt_key_digest": "sha256:not-a-digest"},
     ),
@@ -306,24 +260,13 @@ def test_abort_decision_requires_canonical_runtime_fact() -> None:
         )
 
 
-def test_component_fact_requires_exact_component_termination_projection() -> None:
+def test_component_termination_origin_is_derived_from_the_typed_fact() -> None:
     facts = FailureFacts(
         component_origin=CaseFailureOrigin.EXECUTION,
         component_code="execute_failed",
     )
-    with pytest.raises(ValueError, match="termination origin"):
-        BenchmarkCaseResult(
-            "case:one",
-            "failed",
-            True,
-            "",
-            1.0,
-            failure_origin=CaseFailureOrigin.EXECUTION,
-            failure_code="execute_failed",
-            case_failure_code="execute_failed",
-            failure_facts=facts,
-            termination_origin="runtime",
-        )
+    result = BenchmarkCaseResult("case:one", "failed", True, "", 1.0, failure_facts=facts)
+    assert result.termination_origin == "component"
 
 
 def test_public_evidence_omits_unrestricted_human_failure_reason() -> None:
@@ -358,11 +301,6 @@ def test_mechanical_success_cannot_coexist_with_component_failure() -> None:
             "",
             1.0,
             {"official_success_count": MetricMeasurement(1, True)},
-            failure_origin=CaseFailureOrigin.EXECUTION,
-            failure_code="execution_exception",
-            exception_class="RuntimeError",
-            case_failure_code="execution_exception",
-            termination_origin="component",
             failure_facts=facts,
         )
 

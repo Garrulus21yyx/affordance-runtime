@@ -11,6 +11,7 @@ from affordance_runtime.actions import ActionSpace
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
 from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.world import (
     AcquisitionCost,
     CoverageState,
@@ -103,12 +104,15 @@ def test_source_permutation_preserves_links_conflicts_and_canonical_claims() -> 
     signatures = []
     for ordered in permutations((dom, visual)):
         world = _fused(*ordered)
+        delivery_index = WorldDeliveryIndex.from_observation(world)
         signatures.append((
             world.targets,
             world.facts,
             world.conflicts,
             world.entity_alignment_decisions,
             world.entity_source_links,
+            delivery_index.regions,
+            delivery_index.target_contexts,
         ))
         assert "enabled" not in world.targets[0].state
         assert not world.facts

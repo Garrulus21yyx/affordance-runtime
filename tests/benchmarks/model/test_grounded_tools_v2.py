@@ -23,7 +23,6 @@ from affordance_runtime.agent import (
     RequestActionPage,
     SearchPageContentResult,
     SelectAction,
-    SetFormFields,
     Wait,
 )
 from affordance_runtime.agent.context import ContextBuilder
@@ -226,35 +225,6 @@ def _form_context():
     )
 
 
-def test_set_form_fields_is_one_grounded_call_for_two_current_fields() -> None:
-    context = _form_context()
-    catalog = _compile_catalog(context)
-    spec = next(item.spec for item in catalog.tools if item.spec.name == "set_form_fields")
-    form_key = spec.input_schema["properties"]["form"]["enum"][0]
-    target_refs = spec.input_schema["properties"]["fields"]["items"]["properties"]["target"]["enum"]
-
-    resolution = _resolve_catalog_call(
-        catalog,
-        ToolCall(
-            "set_form_fields",
-            {
-                "form": form_key,
-                "fields": [
-                    {"target": target_refs[0], "operation": "type_text", "value": "CMU"},
-                    {"target": target_refs[1], "operation": "type_text", "value": "PIT"},
-                ],
-            },
-            "call:form-fields",
-        ),
-        expected_context_id=context.context_id,
-    )
-
-    assert isinstance(resolution.decision, SetFormFields)
-    assert len(resolution.decision.fields) == 2
-    assert tuple(item.operation for item in resolution.decision.fields) == ("type_text", "type_text")
-    assert all(item.parameters.keys() == {"text"} for item in resolution.decision.fields)
-
-
 def _nested_context():
     raw = raw_observation(
         ax_node("group", "generic", "Choices", child_ids=("one", "two")),
@@ -332,7 +302,7 @@ def _selector_context(*, operation: str, schema: dict[str, object]):
     context = _context()
     selected = []
     seen_refs = set()
-    for option in context.actions.options:
+    for option in context.complete_actions:
         if option.target_role not in {"button", "textbox"} or option.target_ref in seen_refs:
             continue
         selected.append(option)
@@ -390,7 +360,7 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert all(item.marked for item in context.grounding.entities if item.role in {"button", "textbox"})
     subject_kinds = {
         (item.semantic_action, item.target_role, item.target_label): item.subject_kind
-        for item in context.actions.options
+        for item in context.complete_actions
     }
     assert subject_kinds[("scroll", "viewport", "Current page viewport")] == "viewport"
     assert subject_kinds[("press_key", "focused_context", "Current keyboard focus")] == "focused_context"
@@ -510,8 +480,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "remember_fact",
         "read_region",
         "search_page_content",
-        "list_regions",
+            "list_regions",
+            "read_next_page",
             "find_controls",
+            "action_results_next_page",
             "submit_final_response",
             "ask_user",
         "wait",
@@ -802,8 +774,9 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
             "remember",
         "read",
         "search",
-        "find",
-        "list",
+            "find",
+                "list",
+            "action",
         "ask",
         "wait",
             "abort",
@@ -820,7 +793,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         for item in public["tools"]
         if item["name"] in {"type_text", "activate"}
     )
-    assert all("memory" not in item["input_schema"]["properties"] for item in public["tools"])
+    assert all('"memory"' not in json.dumps(item["input_schema"]) for item in public["tools"])
     assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
 
 
@@ -921,7 +894,7 @@ def test_remember_fact_resolves_the_value_from_current_public_evidence() -> None
     context = _context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "remember_fact")
-    assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
+    assert spec.input_schema["properties"]["evidence_ref"]["enum"]
     evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
 
     assert "value" not in spec.input_schema["properties"]
@@ -1012,7 +985,7 @@ def test_read_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> N
     assert any(item["evidence_ref"].startswith("F") for item in evidence)
     assert opened.result["searched_domain"] == "readable_content"
     assert opened.result["zero_browser_dispatch"] is True
-    opened_view = replace(context, delivery_lens=opened.delivery_lens)
+    opened_view = context
     offered_refs = set(_delivery(opened_view).manifest.fact_refs)
     assert any(item["evidence_ref"] in offered_refs for item in evidence)
     assert "remember_fact" in {item.name for item in _compile_catalog(opened_view).specs}
@@ -1027,7 +1000,7 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     ).decision
     assert isinstance(first_search, LocalToolResult)
     alpha_ref = first_search.result["items"][0]["evidence_ref"]
-    alpha_view = replace(context, delivery_lens=first_search.delivery_lens)
+    alpha_view = context
     assert alpha_ref in _delivery(alpha_view).manifest.fact_refs
 
     pinned = _resolve_catalog_call(
@@ -1048,12 +1021,12 @@ def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> Non
     assert pinned.working_fact.record.observation_id == (context.current_observation.observation_id)
 
     with_fact = replace(alpha_view, workspace=replace(alpha_view.workspace, working_facts=(pinned.working_fact,)))
-    second_search = _resolve_catalog_call(
+    _resolve_catalog_call(
         _compile_catalog(with_fact),
         ToolCall("search_page_content", {"query": "48 units"}, "provider-call:find-beta"),
         expected_context_id=with_fact.context_id,
     ).decision
-    beta_view = replace(with_fact, delivery_lens=second_search.delivery_lens)
+    beta_view = with_fact
 
     assert beta_view.workspace.working_facts == (pinned.working_fact,)
     assert _bound_public_context(beta_view)["working_set"] == [
@@ -1070,7 +1043,7 @@ def test_remember_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict(
     context = _context()
     first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in first_catalog.specs if item.name == "remember_fact")
-    assert spec.input_schema["properties"]["evidence_ref"]["pattern"] == r"^F[1-9][0-9]{0,3}$"
+    assert spec.input_schema["properties"]["evidence_ref"]["enum"]
     refs = tuple(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
     assert len(refs) >= 2
     first = _resolve_catalog_call(
@@ -1273,7 +1246,7 @@ def test_stale_source_scalar_is_not_offered_as_pinnable_evidence() -> None:
     assert found.result["items"]
     assert all("evidence_ref" not in item for item in found.result["items"])
     assert "remember_fact" not in {item.name for item in _compile_catalog(context).specs}
-    stale_view = replace(context, delivery_lens=found.delivery_lens)
+    stale_view = context
     assert _delivery(stale_view).manifest.fact_refs == ()
 
 
@@ -1323,7 +1296,7 @@ def test_remember_fact_rejects_a_current_non_scalar_evidence_record() -> None:
             expected_context_id=context.context_id,
         )
 
-    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> None:
@@ -1342,26 +1315,13 @@ def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> Non
     assert invalid_failure.reason.startswith("invalid_tool_arguments")
 
 
-def test_find_controls_has_one_natural_language_input_and_runtime_owned_continuation() -> None:
+def test_find_controls_has_one_natural_language_input_and_only_truthful_continuation() -> None:
     context = _context()
-    context = replace(
-        context,
-        actions=replace(
-            context.actions,
-            options=context.actions.options[:1],
-            total_count=len(context.actions.options),
-            page_size=1,
-            truncated=True,
-            has_more=True,
-            next_cursor="cursor:test",
-        ),
-    )
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "find_controls")
-    continuation = next(item for item in catalog.specs if item.name == "action_results_next_page")
 
     assert set(spec.input_schema["properties"]) == {"query"}
-    assert continuation.input_schema["properties"] == {}
+    assert "action_results_next_page" in {item.name for item in catalog.specs}
     resolution = _resolve_catalog_call(
         catalog,
         ToolCall("find_controls", {"query": "like"}),
@@ -1369,14 +1329,7 @@ def test_find_controls_has_one_natural_language_input_and_runtime_owned_continua
     )
     assert isinstance(resolution.decision, RequestActionPage)
     assert resolution.decision.query == "like"
-    assert resolution.decision.cursor == ""
-    next_page = _resolve_catalog_call(
-        catalog,
-        ToolCall("action_results_next_page", {}),
-        expected_context_id=context.context_id,
-    ).decision
-    assert isinstance(next_page, RequestActionPage)
-    assert next_page.cursor == "cursor:test"
+    assert resolution.decision.continuation_scope == ""
 
 
 def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> None:
@@ -1440,7 +1393,13 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert all(ref.startswith("E") for ref in actionable_refs)
 
     activate_spec = next(item for item in catalog.specs if item.name == "activate")
-    assert activate_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    branches = activate_spec.input_schema.get("oneOf", (activate_spec.input_schema,))
+    admitted_refs = {
+        ref
+        for branch in branches
+        for ref in branch["properties"]["target"]["enum"]
+    }
+    assert admitted_refs == {close_ref, *actionable_refs}
 
     inspected = inspect_actor_world(
         context.actor_world,
@@ -1458,7 +1417,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     initial = ToolCall("activate", {"target": "E114"}, "call:initial")
     with pytest.raises(GroundedToolResolutionError) as captured:
         _resolve_catalog_call(catalog, initial, expected_context_id=context.context_id)
-    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
     feedback = grounded_tool_rejection_decision(
         captured.value,
@@ -1467,7 +1426,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
         context,
     )
     assert isinstance(feedback, LocalToolResult)
-    assert feedback.result["failure_kind"] == "tool_grounding_gap"
+    assert feedback.result["failure_kind"] == "invalid_tool_arguments"
     assert feedback.result["dispatch"] == "not_sent"
     assert feedback.result["world_changed"] is False
     assert feedback.result["supported_operations"] == ()
@@ -1482,12 +1441,14 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
 
     base_page = ContextBuilder().page(action_space, world)
     state = RunState(world, evaluation, 4, action_page=base_page)
-    empty_step = CoreAgentLoop(None, None, None)._action_page(task, state, action_space, request)
-    assert empty_step.feedback == "action_page_empty"
-    assert empty_step.action_page == base_page
-    assert empty_step.action_page_result["total_count"] == 0
-    assert empty_step.action_page_result["authority_changed"] is False
-    assert "shorten_query" in empty_step.action_page_result["safe_relaxations"]
+    search_step = CoreAgentLoop(None, None, None)._action_page(task, state, action_space, request)
+    assert search_step.feedback == "action_page_ready"
+    assert search_step.action_page == base_page
+    assert search_step.action_page_result.result_coverage == "complete"
+    assert search_step.action_page_result.continuation_available is False
+    assert readonly_ref not in {
+        item.target_ref for item in search_step.action_page_result.matches
+    }
 
     monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
     local = SearchPageContentResult(
@@ -1496,7 +1457,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
         {"query": "definitely-not-present"},
         {"action": "find", "matches": (), "total_count": 0},
     )
-    local_step = replace(empty_step, decision=local, feedback="local_tool_result", action_page_result={})
+    local_step = replace(search_step, decision=local, feedback="local_tool_result", action_page_result=None)
     monitor.start_episode(world, evaluation)
     findings_digest = current_findings_digest(world)
     facts_digest = working_facts_digest(AgentWorkspace())
@@ -1564,37 +1525,25 @@ def test_grounded_catalog_does_not_expose_propose_done() -> None:
 def test_grounded_catalog_counts_complete_current_children_without_mutating_world() -> None:
     context = _nested_context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    opened = _resolve_catalog_call(
-        catalog,
-        ToolCall("read_region", {"region_ref": "R1"}, "provider-call:read"),
-        expected_context_id=context.context_id,
-    ).decision
-    assert isinstance(opened, LocalToolResult)
-    assert opened.delivery_lens is not None
-    context = replace(context, delivery_lens=opened.delivery_lens)
-    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in catalog.specs if item.name == "count_children")
-    container_schema = spec.input_schema["properties"]["containers"]["items"]
     group_ref = next(
         item.ref for item in context.grounding.entities if item.role == "generic" and item.label == "Choices"
     )
-    assert container_schema["pattern"] == r"^[EN][1-9][0-9]{0,2}$"
+    group_target_id = next(
+        target_id for target_id, public_ref in context.grounding.target_refs.items() if public_ref == group_ref
+    )
+    region_ref = context.region_index.region_for_target(group_target_id).public_ref
+    opened = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        observation=context.current_observation,
+        action="read_region",
+        region_ref=region_ref,
+    )
+    assert opened.items
+    assert "count_children" not in {item.name for item in catalog.specs}
     root = context.actor_world.documents[0].roots[0]
     assert "member_count" not in root.state
-
-    outcome = _resolve_catalog_call(
-        catalog,
-        ToolCall("count_children", {"containers": [group_ref]}, "provider-call:count"),
-        expected_context_id=context.context_id,
-    )
-
-    assert outcome.decision == ReadRegionResult(
-        context.context_id,
-        "count_children",
-        {"containers": (group_ref,)},
-        {"counts": {group_ref: 2}, "total": 2},
-        "provider-call:count",
-    )
 
 
 def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
@@ -1729,7 +1678,7 @@ def test_shared_target_semantics_are_hoisted_and_inconsistent_actor_refs_fail_cl
     context = _context()
     selected = []
     seen_refs = set()
-    for option in context.actions.options:
+    for option in context.complete_actions:
         if option.target_role not in {"button", "textbox"} or option.target_ref in seen_refs:
             continue
         selected.append(option)
@@ -2137,7 +2086,7 @@ def test_single_target_action_still_requires_the_current_public_reference() -> N
     activate = next(item for item in catalog.specs if item.name == "activate")
 
     assert to_json_compatible(activate.input_schema)["required"] == ["target"]
-    assert to_json_compatible(activate.input_schema)["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert to_json_compatible(activate.input_schema)["properties"]["target"]["enum"] == ["E3"]
     outcome = _resolve_catalog_call(
         catalog,
         ToolCall("activate", {"target": "E3"}),

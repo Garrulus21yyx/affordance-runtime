@@ -310,7 +310,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
         "grounded-catalog:schema",
         "context:schema",
         "delivery:" + "d" * 64,
-        DeliveryManifest("world:schema", ("E1",)),
+        DeliveryManifest(("E1",)),
         WorldDeliveryIndex("world:schema"),
         (RegisteredGroundedTool(compiled.public_spec, compiled),),
         1,
@@ -340,7 +340,7 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
 
     assert binding.parameter_schema == option.parameter_schema == projected.parameter_schema
     assert compiled.public_spec.input_schema["properties"]["text"] == binding.parameter_schema["properties"]["text"]
-    assert compiled.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert compiled.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
     assert compiled.public_spec.input_schema["required"] == ("target", "text")
     assert admitted is not None
     assert admitted.parameters == {"text": "beta"}
@@ -423,7 +423,7 @@ def test_unknown_tool_returns_bounded_current_names_without_guessing_arguments()
         "grounded-catalog:owner",
         "context:owner",
         "delivery:" + "e" * 64,
-        DeliveryManifest("world:owner", ("E1",)),
+        DeliveryManifest(("E1",)),
         WorldDeliveryIndex("world:owner"),
         (RegisteredGroundedTool(canonical.public_spec, canonical),),
         1,

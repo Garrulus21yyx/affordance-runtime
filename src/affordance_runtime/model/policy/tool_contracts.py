@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
+from affordance_runtime.actions.schema_validation import validate_parameter_schema_contract
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy.strict_json import validate_json_tree
 
@@ -25,6 +26,7 @@ class ToolSpec:
         if not self.description.strip() or len(self.description) > 500:
             raise ValueError("tool description must be bounded public text")
         validate_json_tree(self.input_schema)
+        validate_parameter_schema_contract(self.input_schema)
         object.__setattr__(self, "input_schema", freeze_json(self.input_schema))
 
 

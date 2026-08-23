@@ -49,7 +49,6 @@ class EpisodeMonitor:
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
-    last_progress_event_type: str = ""
 
     def start_episode(self, world, task_evaluation, working_facts=()) -> None:
         del task_evaluation
@@ -62,7 +61,6 @@ class EpisodeMonitor:
         self.latest_attempt_signature = None
         self.same_attempt_streak = 0
         self.no_progress_count = 0
-        self.last_progress_event_type = ""
 
     def evaluate(
         self,
@@ -99,7 +97,6 @@ class EpisodeMonitor:
 
         if information_changed:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)
-            self.last_progress_event_type = EpisodeMonitorEvent.STATE_CHANGED.value
         else:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
 
@@ -136,7 +133,6 @@ class EpisodeMonitor:
                 else 1
             )
             self.latest_attempt_signature = signature
-            self.last_progress_event_type = "no_operational_progress"
             if self.recovery_count:
                 signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
                 return EpisodeMonitorTransition(
@@ -160,7 +156,6 @@ class EpisodeMonitor:
             self.observation_only_streak = 0
             self.no_progress_count += 1
             self.same_attempt_streak += 1
-            self.last_progress_event_type = InformationDeltaKind.EXACT_REPLAY.value
             signal = _control_stall_signal(result, self, recovery_attempt=max(1, self.recovery_count + 1))
             if self.recovery_count:
                 return EpisodeMonitorTransition(
@@ -310,7 +305,7 @@ def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:
             "operation": "find_controls",
             "arguments": {
                 "query": result.decision.query[:160],
-                "region": result.decision.exact_target_ref[:160],
+                "continuation_scope": result.decision.continuation_scope,
             },
         }
     return {"operation": getattr(getattr(result.decision, "kind", None), "value", "policy_failure")[:80]}

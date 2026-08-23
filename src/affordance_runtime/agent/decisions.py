@@ -8,9 +8,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, ClassVar, TypeAlias
 
-from affordance_runtime.actions.relevance import ActionRelevanceRole
+from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
-from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.observation_needs import ObservationPurpose
@@ -44,10 +43,10 @@ class DecisionKind(StrEnum):
     """The sole formal vocabulary for policy and Runtime-local decisions."""
 
     SELECT_ACTION = "select_action"
-    SET_FORM_FIELDS = "set_form_fields"
     READ_REGION = "read_region"
     FIND_CONTROLS = "find_controls"
     SEARCH_PAGE_CONTENT = "search_page_content"
+    CONTINUE_DELIVERY = "continue_delivery"
     REMEMBER_FACT = "remember_fact"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
@@ -99,45 +98,6 @@ class SelectAction:
 
 
 @dataclass(frozen=True)
-class FormFieldUpdate:
-    """One privately resolved field update inside a bounded current-form command."""
-
-    action_id: str
-    operation: str
-    target_ref: str
-    parameters: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.operation not in {"type_text", "select_option"}:
-            raise ValueError("form field update operation is unsupported")
-        if not self.action_id.strip() or re.fullmatch(r"E[1-9][0-9]{0,2}", self.target_ref) is None:
-            raise ValueError("form field update requires current private action and public target ref")
-        object.__setattr__(self, "parameters", freeze_json(self.parameters))
-
-
-@dataclass(frozen=True)
-class SetFormFields:
-    """One model call authorizing 2-4 non-submitting updates in one current form."""
-
-    kind: ClassVar[DecisionKind] = DecisionKind.SET_FORM_FIELDS
-
-    context_id: str
-    form_key: str
-    fields: tuple[FormFieldUpdate, ...]
-    tool_call_id: str = ""
-
-    def __post_init__(self) -> None:
-        _require_context(self.context_id)
-        _require_tool_call_id(self.tool_call_id)
-        fields = tuple(self.fields)
-        if not self.form_key.startswith("form:") or not 2 <= len(fields) <= 4:
-            raise ValueError("set_form_fields requires one current form and two to four fields")
-        if len({item.target_ref for item in fields}) != len(fields):
-            raise ValueError("set_form_fields cannot update one field twice")
-        object.__setattr__(self, "fields", fields)
-
-
-@dataclass(frozen=True)
 class RequestObservation:
     kind: ClassVar[DecisionKind] = DecisionKind.REQUEST_OBSERVATION
     context_id: str
@@ -172,21 +132,18 @@ class RequestActionPage:
     kind: ClassVar[DecisionKind] = DecisionKind.FIND_CONTROLS
     context_id: str
     query: str = ""
-    target_id: str = ""
-    relevance_role: str = ""
-    cursor: str = ""
+    continuation_scope: str = ""
     tool_call_id: str = ""
-    exact_target_ref: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_tool_call_id(self.tool_call_id)
-        if len(self.query) > 120 or len(self.target_id) > 240 or len(self.cursor) > 512:
+        if len(self.query) > PUBLIC_ACTION_LABEL_MAX_CHARS:
             raise ValueError("action page request exceeds bounded fields")
-        if self.exact_target_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.exact_target_ref) is None:
-            raise ValueError("action page exact target ref is invalid")
-        if self.relevance_role:
-            ActionRelevanceRole(self.relevance_role)
+        if self.continuation_scope not in {"", "base", "query", "effect", "interaction", "destinations", "issues"}:
+            raise ValueError("action page continuation scope is invalid")
+        if self.query and self.continuation_scope:
+            raise ValueError("action page request selects query or continuation scope")
 
 
 @dataclass(frozen=True)
@@ -215,7 +172,6 @@ class LocalToolResult:
     result: Mapping[str, object]
     tool_call_id: str = ""
     working_fact: WorkingFact | None = field(default=None, repr=False, compare=False)
-    delivery_lens: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
     rejected_attempt_signature: PublicAttemptSignature | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -231,8 +187,6 @@ class LocalToolResult:
         object.__setattr__(self, "result", freeze_json(self.result))
         if self.working_fact is not None and not isinstance(self.working_fact, WorkingFact):
             raise TypeError("local tool state effect must be a typed working fact")
-        if self.delivery_lens is not None and not isinstance(self.delivery_lens, WorldDeliveryLens):
-            raise TypeError("local tool state effect must be a typed delivery lens")
         if self.rejected_attempt_signature is not None and not isinstance(
             self.rejected_attempt_signature, PublicAttemptSignature
         ):
@@ -247,6 +201,11 @@ class ReadRegionResult(LocalToolResult):
 @dataclass(frozen=True)
 class SearchPageContentResult(LocalToolResult):
     kind: ClassVar[DecisionKind] = DecisionKind.SEARCH_PAGE_CONTENT
+
+
+@dataclass(frozen=True)
+class ContinueDeliveryResult(LocalToolResult):
+    kind: ClassVar[DecisionKind] = DecisionKind.CONTINUE_DELIVERY
 
 
 @dataclass(frozen=True)
@@ -313,12 +272,12 @@ class Abort:
 
 AgentDecision: TypeAlias = (
     SelectAction
-    | SetFormFields
     | RequestObservation
     | RequestActionPage
     | AskUser
     | ReadRegionResult
     | SearchPageContentResult
+    | ContinueDeliveryResult
     | RememberFactResult
     | ToolRejectedResult
     | FinalResponse

@@ -34,7 +34,7 @@ class PricingPolicy:
         assert "selector" not in repr(context)
         desired_label = "Show Pro limits" if self.calls == 1 else "Show Enterprise limits"
         option = next(
-            item for item in context.actions.options
+            item for item in context.complete_actions
             if item.target_label == desired_label
         )
         return SelectAction(context.context_id, option.action_id)

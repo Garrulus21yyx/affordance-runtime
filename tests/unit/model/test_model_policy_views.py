@@ -71,21 +71,21 @@ def _space() -> ActionSpace:
     )
 
 
-def test_task_projection_is_bounded_and_secret_safe() -> None:
+def test_task_projection_conserves_all_admitted_public_inputs() -> None:
     view = project_task(_task())
 
     assert view.task_id == "task-1"
     assert view.public_inputs["text"] == "Quarterly report"
-    assert "api_token" not in view.public_inputs
-    assert "local_path" not in view.public_inputs
+    assert view.public_inputs["api_token"] == "raw-secret"
+    assert view.public_inputs["local_path"] == "/private/report"
     assert view.success_criteria.items[0].criterion_id == "sent"
     assert view.requested_output_ids.items == ("receipt",)
     assert view.material_bindings.items[0].public_reference == "report-input"
-    assert "raw-secret" not in repr(view)
-    assert "/private/report" not in repr(view)
+    assert "raw-secret" in repr(view)
+    assert "/private/report" in repr(view)
 
 
-def test_final_response_contract_is_only_projected_when_requested() -> None:
+def test_public_inputs_have_no_reserved_final_response_contract_bypass() -> None:
     task = TaskGoal(
         "task-final",
         "Answer using the public format.",
@@ -105,12 +105,12 @@ def test_final_response_contract_is_only_projected_when_requested() -> None:
         requested_outputs=("final",),
     )
 
-    ordinary = project_task(task)
-    finalizing = project_task(task, include_final_response_contract=True)
+    projected = project_task(task)
 
-    assert ordinary.final_response_contract == {}
-    assert "public_final_response_contract" not in ordinary.public_inputs
-    assert finalizing.final_response_contract["json_schema"]["properties"]["retrieved_data"]["items"]["type"] == "string"
+    assert projected.public_inputs["public_final_response_contract"]["json_schema"]["properties"][
+        "retrieved_data"
+    ]["items"]["type"] == "string"
+    assert not hasattr(projected, "final_response_contract")
 
 
 def test_action_space_projection_excludes_runtime_route_identity() -> None:
@@ -140,7 +140,7 @@ def test_action_space_projection_excludes_runtime_route_identity() -> None:
         assert private not in representation
 
 
-def test_task_criteria_projection_retains_semantics_but_excludes_private_fields() -> None:
+def test_task_projection_is_lossless_after_typed_intake_admission() -> None:
     task = TaskGoal(
         "inspect",
         "x" * 2_000,
@@ -163,16 +163,16 @@ def test_task_criteria_projection_retains_semantics_but_excludes_private_fields(
 
     view = project_task(task)
 
-    assert len(view.instruction) <= 1_024
-    assert len(view.constraints.items) == 12
-    assert view.constraints.total_count == 30 and view.constraints.truncated
-    assert all(len(item) <= 240 for item in view.constraints.items)
+    assert len(view.instruction) == 2_000
+    assert len(view.constraints.items) == 30
+    assert view.constraints.total_count == 30 and not view.constraints.truncated
+    assert all(len(item) == len(f"constraint-{index}-") + 500 for index, item in enumerate(view.constraints.items))
     definition = view.success_criteria.items[0].definition
     assert definition["predicate"] == "api-token-enabled"
     assert definition["value"] is True
-    assert "selector" not in definition
-    assert "credential" not in definition
-    assert "local_path" not in definition
+    assert definition["selector"] == "#private"
+    assert definition["credential"] == "raw-secret"
+    assert definition["local_path"] == "/private/path"
     assert tuple(item.name for item in view.material_bindings.items) == ("sha",)
     assert view.material_bindings.total_count == 2 and view.material_bindings.truncated
     assert view.material_bindings.items[0].public_reference == "sha256:" + "a" * 64
@@ -198,8 +198,8 @@ def test_all_task_collections_have_truthful_truncation_metadata() -> None:
         view.success_criteria,
         view.requested_output_ids,
     ):
-        assert len(section.items) == 12
-        assert section.total_count == 15 and section.truncated
+        assert len(section.items) == 15
+        assert section.total_count == 15 and not section.truncated
 
 
 def test_material_public_reference_rejects_private_path_or_url() -> None:
@@ -282,7 +282,12 @@ def test_internal_action_contract_rejects_private_parameter_names(contract: str)
         {"type": "array", "items": {"type": "string"}},
         {"type": "object", "properties": [], "additionalProperties": False},
         {"type": "object", "properties": {}, "additionalProperties": {"type": "string"}},
-        {"type": "object", "properties": {"value": {"oneOf": [{"type": "string"}]}}},
+        {
+            "oneOf": [
+                {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+                {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+            ]
+        },
     ],
 )
 def test_parameter_schema_projection_rejects_unsupported_or_malformed_shapes(schema) -> None:

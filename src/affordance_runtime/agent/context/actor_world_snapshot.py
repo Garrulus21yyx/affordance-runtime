@@ -16,6 +16,7 @@ from affordance_runtime.world.contracts import (
     WorldObservation,
 )
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.context import AgentGroundingIndexView, AgentImageInput
@@ -659,9 +660,9 @@ def _structure_documents(
     }
     next_context_ref = 1 + max(
         (
-            int(ref[1:])
+            PublicRefCodec.decode(ref, expected=PublicRefKind.NODE).index
             for ref in refs.values()
-            if isinstance(ref, str) and ref.startswith("N") and ref[1:].isdigit()
+            if isinstance(ref, str) and PublicRefCodec.accepts(ref, expected=PublicRefKind.NODE)
         ),
         default=0,
     )

@@ -31,7 +31,6 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    SetFormFields,
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import (
@@ -52,7 +51,13 @@ from affordance_runtime.agent.policy import (
     TaskEvaluator,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
+from affordance_runtime.agent.run_state import (
+    ControlTermination,
+    ControlTerminationKind,
+    RunState,
+    RunStatus,
+    StepResult,
+)
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitController, WaitController
 from affordance_runtime.agent.workspace import (
@@ -82,7 +87,6 @@ from affordance_runtime.execution.contracts import (
     ExecutionCompletion,
     ExecutionOutcome,
     ExecutionReceiptBatch,
-    FormFieldsExecutionCancelled,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -366,6 +370,15 @@ class CoreAgentLoop:
         trace_step: bool = True,
         delivery_transition: DeliveryTransition | None = None,
     ) -> StepResult:
+        if consume_step and state.remaining_steps == 1 and result.status_after is RunStatus.RUNNING:
+            result = replace(
+                result,
+                status_after=RunStatus.BLOCKED,
+                feedback="turn_budget_exhausted",
+                control_termination=ControlTermination(
+                    ControlTerminationKind.TURN_BUDGET_EXHAUSTED
+                ),
+            )
         if delivery_transition is None:
             delivery_transition = state.delivery_store.reduce(
                 result,
@@ -383,6 +396,12 @@ class CoreAgentLoop:
             projected,
             max(1, state.step_count + int(consume_step)),
             information_delta=information_delta,
+            public_effect=(
+                delivery_transition.next_store.latest_effect.inventory
+                if result.execution_receipts is not None
+                and delivery_transition.next_store.latest_effect is not None
+                else None
+            ),
         )
         state.apply(
             result,
@@ -454,6 +473,10 @@ class CoreAgentLoop:
             status_after=RunStatus.BLOCKED,
             feedback=f"episode_monitor_blocked:{getattr(transition, 'reason', 'stalled')}",
             recovery_signal=getattr(transition, "recovery_signal", None),
+            control_termination=ControlTermination(
+                ControlTerminationKind.CONTROL_STALLED,
+                "episode_monitor",
+            ),
         )
 
     async def resume_confirmation(
@@ -520,16 +543,6 @@ class CoreAgentLoop:
             previous_index=state.delivery_index or state.prior_delivery_index,
         )
         state.install_delivery_index(region_index)
-        lens = (
-            state.delivery_lens
-            if state.delivery_lens is not None
-            and state.delivery_lens.world_observation_id == state.current_world.observation_id
-            and (
-                not state.delivery_lens.selected_region_key
-                or region_index.get(state.delivery_lens.selected_region_key) is not None
-            )
-            else None
-        )
         action_page = (
             state.action_page
             if state.action_page is not None and state.action_page.action_space_id == action_space.action_space_id
@@ -551,10 +564,10 @@ class CoreAgentLoop:
             observation_capabilities=environment.observation_capabilities,
             goal_resolution=state.goal_resolution,
             runtime_controls=self.runtime_controls,
-            delivery_lens=lens,
             region_index=region_index,
             delivery_store=state.delivery_store,
             control_feedback=_recovery_feedback(state.recovery_signal),
+            action_discovery=state.action_discovery,
         )
         try:
             decision = await self.decision_ports.action_policy.decide(context)
@@ -620,7 +633,6 @@ class CoreAgentLoop:
             decision,
             (
                 SelectAction,
-                SetFormFields,
                 RequestObservation,
                 RequestActionPage,
                 AskUser,
@@ -645,16 +657,6 @@ class CoreAgentLoop:
                     action_page,
                     decision,
                 )
-            case DecisionKind.SET_FORM_FIELDS:
-                assert isinstance(decision, SetFormFields)
-                result = await self._set_form_fields(
-                    environment,
-                    task,
-                    state,
-                    context.context_id,
-                    action_space,
-                    decision,
-                )
             case DecisionKind.REQUEST_OBSERVATION:
                 assert isinstance(decision, RequestObservation)
                 result = await self._observe(environment, task, state, decision)
@@ -664,6 +666,7 @@ class CoreAgentLoop:
             case (
                 DecisionKind.READ_REGION
                 | DecisionKind.SEARCH_PAGE_CONTENT
+                | DecisionKind.CONTINUE_DELIVERY
                 | DecisionKind.REMEMBER_FACT
                 | DecisionKind.TOOL_REJECTED
             ):
@@ -688,13 +691,24 @@ class CoreAgentLoop:
             case DecisionKind.ABORT:
                 assert isinstance(decision, Abort)
                 status = RunStatus.CANCELLED if decision.category == AbortCategory.USER_REQUEST else RunStatus.BLOCKED
-                result = _same_world_step(state, decision, status, f"agent_aborted:{decision.category}")
+                result = _same_world_step(
+                    state,
+                    decision,
+                    status,
+                    f"agent_aborted:{decision.category}",
+                    control_termination=ControlTermination(
+                        ControlTerminationKind.AGENT_ABORTED
+                    ),
+                )
             case unexpected:
                 assert_never(unexpected)
         return replace(
             result,
             policy_observation=context.actor_world,
             policy_target_refs=context.grounding.target_refs,
+            next_delivery_store=getattr(
+                self.decision_ports.action_policy, "last_delivery_store", None
+            ),
         )
 
     async def _finalize(
@@ -704,7 +718,7 @@ class CoreAgentLoop:
         state: RunState,
         decision: FinalResponse,
     ) -> StepResult:
-        admission = admit_final_response(task, state.current_world, state.workspace.working_facts, decision)
+        admission = admit_final_response(state.current_world, state.workspace.working_facts, decision)
         if not admission.admitted:
             return _same_world_step(
                 state,
@@ -720,7 +734,16 @@ class CoreAgentLoop:
                 "finalization_unsupported",
             )
         try:
-            finalization = await environment.finalize(decision.content)
+            normalized_content = environment.final_response_codec.normalize(decision.content)
+        except (TypeError, ValueError):
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.FAILED,
+                "final_response_invalid",
+            )
+        try:
+            finalization = await environment.finalize(normalized_content)
         except asyncio.CancelledError:
             facts = FinalizationProtocolResult(DispatchStatus.NOT_SENT)
             self._trace_finalization(facts)
@@ -851,20 +874,40 @@ class CoreAgentLoop:
             )
 
     def _action_page(self, task, state, action_space, decision: RequestActionPage) -> StepResult:
+        cursor = ""
+        query = decision.query
+        if decision.continuation_scope:
+            if decision.continuation_scope != "base":
+                return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_scope_stale")
+            current = state.action_page
+            if current is None or not current.next_cursor:
+                return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_scope_stale")
+            cursor = current.next_cursor
+            query = current.query
         try:
             page = self.context_builder.page(
                 action_space,
                 state.current_world,
-                query=decision.query,
-                target_id=decision.target_id,
-                relevance_role=decision.relevance_role,
-                cursor=decision.cursor,
+                query=query,
+                cursor=cursor,
             )
         except ValueError:
             return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_invalid")
-        result_payload = _action_page_result_payload(page, decision)
+        discovery = self.context_builder.discovery_result(
+            action_space,
+            state.current_world,
+            page,
+        )
         retained_page = page
         feedback = "action_page_ready"
+        if query:
+            retained_page = (
+                state.action_page
+                if state.action_page is not None
+                and state.action_page.action_space_id == action_space.action_space_id
+                and not state.action_page.query
+                else self.context_builder.page(action_space, state.current_world)
+            )
         if page.total_count == 0:
             retained_page = (
                 state.action_page
@@ -880,7 +923,7 @@ class CoreAgentLoop:
             RunStatus.RUNNING,
             feedback=feedback,
             action_page=retained_page,
-            action_page_result=result_payload,
+            action_page_result=discovery,
         )
 
     async def _wait(
@@ -891,7 +934,15 @@ class CoreAgentLoop:
         decision: Wait,
     ) -> StepResult:
         if state.waited_ms + decision.max_wait_ms > MAX_TOTAL_WAIT_MS:
-            return _same_world_step(state, decision, RunStatus.BLOCKED, "wait_budget_exhausted")
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.BLOCKED,
+                "wait_budget_exhausted",
+                control_termination=ControlTermination(
+                    ControlTerminationKind.WAIT_BUDGET_EXHAUSTED
+                ),
+            )
         await self.wait_controller.wait(decision.max_wait_ms)
         acquisition = await environment.capture(
             WorldObservationRequest(
@@ -1064,8 +1115,6 @@ class CoreAgentLoop:
                 ),
                 feedback="action_execution_cancelled",
             )
-        except Exception:
-            return _same_world_step(state, decision, RunStatus.FAILED, "execution_failed")
         if execution.result.dispatch_status is DispatchStatus.NOT_SENT:
             return StepResult(
                 decision,
@@ -1177,133 +1226,6 @@ class CoreAgentLoop:
                 action_outcome.local_postcondition,
             ),
             public_world_delta=public_world_delta,
-        )
-
-    async def _set_form_fields(
-        self,
-        environment: WorldEnvironment,
-        task: TaskGoal,
-        state: RunState,
-        context_id: str,
-        action_space,
-        decision: SetFormFields,
-    ) -> StepResult:
-        """Admit and bind the whole safe compound command before any dispatch."""
-
-        requests = []
-        for field_update in decision.fields:
-            admission = self.action_space_builder.try_admit_selection(
-                action_space,
-                field_update.action_id,
-                dict(field_update.parameters),
-                "",
-                "",
-            )
-            if admission.admitted is None:
-                assert admission.issue is not None
-                return _same_world_step(
-                    state,
-                    decision,
-                    RunStatus.BLOCKED,
-                    f"form_fields_admission_rejected:{admission.issue.code}",
-                )
-            selection = admission.admitted
-            if selection.semantic_action != field_update.operation:
-                return _same_world_step(state, decision, RunStatus.BLOCKED, "form_fields_operation_mismatch")
-            risk = self.risk_policy.assess(task, selection)
-            if risk.decision is not RiskDecisionKind.ALLOW:
-                return _same_world_step(state, decision, RunStatus.BLOCKED, "form_fields_not_low_risk")
-            try:
-                request = self.binder.bind_for_execution(
-                    selection,
-                    state.current_world,
-                    context_id,
-                    task,
-                    tool_call_id=decision.tool_call_id,
-                )
-            except BindingError:
-                return _same_world_step(state, decision, RunStatus.BLOCKED, "form_fields_binding_unavailable")
-            requests.append(request)
-        for request in requests:
-            state.currentness_probe_count += 1
-            if not environment.is_current(request):
-                return await self._refresh_stale_binding(environment, task, state, decision)
-        try:
-            command = self.binder.seal_form_fields(
-                decision.form_key,
-                tuple(requests),
-                tool_call_id=decision.tool_call_id,
-            )
-        except BindingError:
-            return _same_world_step(state, decision, RunStatus.BLOCKED, "form_fields_binding_unavailable")
-        try:
-            execution = await environment.execute_form_fields(command)
-        except FormFieldsExecutionCancelled as exc:
-            cancelled_post = exc.outcome.post_acquisition
-            after = (
-                cancelled_post.observation
-                if cancelled_post is not None
-                and cancelled_post.status is AcquisitionStatus.ACQUIRED
-                and cancelled_post.observation is not None
-                else state.current_world
-            )
-            return StepResult(
-                decision,
-                state.current_world,
-                after,
-                None,
-                RunStatus.CANCELLED,
-                execution_receipts=ExecutionReceiptBatch.from_form_fields(
-                    exc.outcome,
-                    after.observation_id,
-                    completion=ExecutionCompletion.CANCELLED,
-                ),
-                feedback="form_fields_execution_cancelled",
-            )
-        except Exception:
-            return _same_world_step(state, decision, RunStatus.FAILED, "form_fields_execution_failed")
-        post = execution.post_acquisition
-        if post is None or post.status is not AcquisitionStatus.ACQUIRED or post.observation is None:
-            return StepResult(
-                decision,
-                state.current_world,
-                state.current_world,
-                state.current_task_evaluation,
-                RunStatus.BLOCKED,
-                feedback="form_fields_not_sent" if post is None else "form_fields_post_capture_failed",
-                execution_receipts=ExecutionReceiptBatch.from_form_fields(
-                    execution,
-                    state.current_world.observation_id,
-                ),
-            )
-        after = post.observation
-        batch = ExecutionReceiptBatch.from_form_fields(execution, after.observation_id)
-        task_evaluation = await self._task_evaluation_after_dispatch(task, state, decision, after, batch)
-        if isinstance(task_evaluation, StepResult):
-            return task_evaluation
-        if any(result.dispatch_status is DispatchStatus.SENT_UNKNOWN for result in execution.results):
-            return StepResult(
-                decision,
-                state.current_world,
-                after,
-                task_evaluation,
-                RunStatus.BLOCKED,
-                feedback="form_fields_dispatch_uncertain",
-                execution_receipts=replace(batch, completion=ExecutionCompletion.UNKNOWN),
-            )
-        feedback = (
-            "form_fields_completed"
-            if execution.failed_field_index is None
-            else f"form_fields_partial_failure:{execution.failed_field_index}"
-        )
-        return StepResult(
-            decision,
-            state.current_world,
-            after,
-            task_evaluation,
-            self._status_for_task(task, task_evaluation),
-            feedback=feedback,
-            execution_receipts=batch,
         )
 
     async def _recover_post_dispatch_observation(
@@ -1434,7 +1356,7 @@ class CoreAgentLoop:
         self,
         task: TaskGoal,
         state: RunState,
-        decision: SelectAction | SetFormFields,
+        decision: SelectAction,
         after: WorldObservation,
         batch: ExecutionReceiptBatch,
     ) -> TaskEvaluation | StepResult:
@@ -1491,7 +1413,7 @@ class CoreAgentLoop:
 
 def _post_dispatch_evaluation_failure(
     state: RunState,
-    decision: SelectAction | SetFormFields,
+    decision: SelectAction,
     after: WorldObservation,
     batch: ExecutionReceiptBatch,
     *,
@@ -1530,6 +1452,7 @@ def _same_world_step(
     feedback: str,
     *,
     finalization: FinalizationProtocolResult | None = None,
+    control_termination: ControlTermination | None = None,
 ) -> StepResult:
     return StepResult(
         decision,
@@ -1539,45 +1462,8 @@ def _same_world_step(
         status,
         feedback=feedback,
         finalization=finalization,
+        control_termination=control_termination,
     )
-
-
-def _action_page_result_payload(page, decision: RequestActionPage) -> dict[str, object]:
-    applied = {
-        "query": decision.query,
-        "exact_target": decision.exact_target_ref,
-        "cursor": decision.cursor,
-    }
-    if decision.relevance_role:
-        applied["relevance_role"] = decision.relevance_role
-    relaxations = []
-    if decision.exact_target_ref:
-        relaxations.append("remove_exact_target")
-    if decision.relevance_role:
-        relaxations.append("remove_relevance_role")
-    if decision.query:
-        relaxations.append("shorten_query")
-    return {
-        "kind": "Empty" if page.total_count == 0 else "Page",
-        "matches": () if page.total_count == 0 else page.visible_action_ids,
-        "searched_domain": "executable_controls",
-        "base_action_page_preserved": page.total_count == 0,
-        "does_not_search": "readable_content",
-        "suggested_next": "search_page_content" if page.total_count == 0 else "",
-        "applied_filters": applied,
-        "coverage": "complete_current_action_space",
-        "total_count": page.total_count,
-        "visible_count": len(page.visible_action_ids),
-        "why_empty": (
-            "filters_matched_no_actions"
-            if page.total_count == 0 and any(value for value in applied.values())
-            else "action_space_empty"
-            if page.total_count == 0
-            else ""
-        ),
-        "safe_relaxations": tuple(relaxations) if page.total_count == 0 else (),
-        "authority_changed": False if page.total_count == 0 else True,
-    }
 
 
 def _recovery_feedback(signal) -> dict[str, object]:

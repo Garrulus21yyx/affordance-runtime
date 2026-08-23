@@ -7,9 +7,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from affordance_runtime.actions.paging import InternalActionPage
+from affordance_runtime.actions.paging import ActionDiscoveryResult, InternalActionPage
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
-from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
     PublicWorldDelta,
@@ -21,7 +20,6 @@ from affordance_runtime.agent.decisions import (
     FinalResponse,
     LocalToolResult,
     SelectAction,
-    SetFormFields,
 )
 from affordance_runtime.agent.finalization import FinalizationProtocolResult
 from affordance_runtime.agent.policy import PolicyFailure
@@ -35,7 +33,6 @@ from affordance_runtime.evaluation.contracts import (
 )
 from affordance_runtime.execution.contracts import ExecutionCompletion, ExecutionReceiptBatch
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
-from affordance_runtime.immutable import freeze_json
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
 
@@ -52,6 +49,26 @@ class RunStatus(StrEnum):
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+class ControlTerminationKind(StrEnum):
+    CONTROL_STALLED = "control_stalled"
+    TURN_BUDGET_EXHAUSTED = "turn_budget_exhausted"
+    WAIT_BUDGET_EXHAUSTED = "wait_budget_exhausted"
+    AGENT_ABORTED = "agent_aborted"
+
+
+@dataclass(frozen=True)
+class ControlTermination:
+    kind: ControlTerminationKind
+    owner: str = "core_transition"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ControlTerminationKind) or self.owner not in {
+            "core_transition",
+            "episode_monitor",
+        }:
+            raise ValueError("control termination must have a typed owner and kind")
 
 
 @dataclass(frozen=True)
@@ -73,10 +90,14 @@ class StepResult:
     runtime_failure: RuntimeFailure | None = None
     policy_observation: ActorWorldSnapshot | None = None
     policy_target_refs: Mapping[str, str] = field(default_factory=dict)
-    action_page_result: Mapping[str, object] = field(default_factory=dict)
+    action_page_result: ActionDiscoveryResult | None = None
     recovery_signal: RecoverySignal | None = None
     finalization: FinalizationProtocolResult | None = None
     public_world_delta: PublicWorldDelta | None = field(default=None, repr=False)
+    control_termination: ControlTermination | None = None
+    next_delivery_store: ObservationDeliveryStore | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         delta = self.public_world_delta
@@ -92,8 +113,21 @@ class StepResult:
             raise ValueError("step public World delta must match its exact Worlds")
         if not isinstance(self.decision, AgentDecision | PolicyFailure):
             raise TypeError("step decision must belong to the closed decision algebra")
+        if self.action_page_result is not None and not isinstance(
+            self.action_page_result, ActionDiscoveryResult
+        ):
+            raise TypeError("action discovery output must be typed")
         if not isinstance(self.status_after, RunStatus):
             raise TypeError("step status must be typed")
+        if self.control_termination is not None:
+            if not isinstance(self.control_termination, ControlTermination):
+                raise TypeError("step control termination must be typed")
+            if self.status_after not in {RunStatus.BLOCKED, RunStatus.CANCELLED, RunStatus.FAILED}:
+                raise ValueError("control termination requires a terminal run status")
+        if self.next_delivery_store is not None and not isinstance(
+            self.next_delivery_store, ObservationDeliveryStore
+        ):
+            raise TypeError("step delivery transition must come from the delivery owner")
         if self.waited_ms < 0:
             raise ValueError("step wait duration cannot be negative")
         if self.task_evaluation is not None and self.task_evaluation.observation_id != self.after_world.observation_id:
@@ -120,7 +154,7 @@ class StepResult:
         if self.confirmation is not None and self.execution_receipts is not None:
             raise ValueError("a pending confirmation cannot already contain execution")
         if self.execution_receipts is not None:
-            if not isinstance(self.decision, SelectAction | SetFormFields):
+            if not isinstance(self.decision, SelectAction):
                 raise ValueError("effectful receipts require an effectful decision")
             if any(
                 self.decision.tool_call_id != item.request.tool_call_id for item in self.execution_receipts.receipts
@@ -194,7 +228,6 @@ class StepResult:
             )
         if not self.feedback.strip():
             raise ValueError("step feedback must be concise and nonblank")
-        object.__setattr__(self, "action_page_result", freeze_json(dict(self.action_page_result)))
 
     @property
     def execution_attempt_count(self) -> int:
@@ -226,7 +259,6 @@ class RunState:
     task_revision: int = 1
     goal_resolution: GoalPlanResolution | None = None
     goal_plan_version_counter: int = 0
-    delivery_lens: WorldDeliveryLens | None = None
     recovery_signal: RecoverySignal | None = None
     committed_sent_unknown_count: int = 0
     decision_counts: dict[DecisionKind, int] = field(default_factory=dict)
@@ -236,6 +268,8 @@ class RunState:
     delivery_store: ObservationDeliveryStore = field(default_factory=ObservationDeliveryStore)
     delivery_index: WorldDeliveryIndex | None = None
     prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
+    control_termination: ControlTermination | None = None
+    action_discovery: ActionDiscoveryResult | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -304,16 +338,19 @@ class RunState:
                 raise ValueError("goal plan counter cannot precede the accepted plan")
         if not isinstance(self.workspace, AgentWorkspace):
             raise TypeError("run workspace must be typed")
-        if self.delivery_lens is not None:
-            if not isinstance(self.delivery_lens, WorldDeliveryLens):
-                raise TypeError("run delivery lens must be typed")
-            if self.delivery_lens.world_observation_id != self.current_world.observation_id:
-                raise ValueError("run delivery lens must belong to current world")
         if self.recovery_signal is not None:
             from affordance_runtime.agent.recovery import RecoverySignal
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("run recovery signal must be typed")
+        if self.control_termination is not None and not isinstance(
+            self.control_termination, ControlTermination
+        ):
+            raise TypeError("run control termination must be typed")
+        if self.action_discovery is not None and not isinstance(
+            self.action_discovery, ActionDiscoveryResult
+        ):
+            raise TypeError("run action discovery must be typed")
 
     @property
     def terminal(self) -> bool:
@@ -405,22 +442,19 @@ class RunState:
             kind = result.decision.kind
             self.decision_counts[kind] = self.decision_counts.get(kind, 0) + 1
         self.action_page = result.action_page
+        if result.action_page_result is not None:
+            self.action_discovery = result.action_page_result
         if acquired_new_world:
             self.prior_delivery_index = self.delivery_index
             self.delivery_index = None
-            self.delivery_lens = None
             self.action_page = None
+            self.action_discovery = None
         self.waited_ms += result.waited_ms
-        if isinstance(result.decision, LocalToolResult) and result.decision.delivery_lens is not None:
-            lens = result.decision.delivery_lens
-            if lens.world_observation_id == self.current_world.observation_id:
-                self.delivery_lens = lens
-                self.action_page = None
         self.recovery_signal = result.recovery_signal
         if result.finalization is not None:
             self.finalization = result.finalization
-        if self.status is RunStatus.RUNNING and self.remaining_steps == 0:
-            self.status = RunStatus.BLOCKED
+        if result.control_termination is not None:
+            self.control_termination = result.control_termination
 
 
 def _validate_finalization_run_status(

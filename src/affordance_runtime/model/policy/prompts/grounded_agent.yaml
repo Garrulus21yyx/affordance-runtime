@@ -38,13 +38,10 @@ actor: |-
   - Treat final=true only as an ordering hint. Runtime confirmation, safety, and task evaluation remain authoritative.
   - Use exactly one offered tool and follow its current schema. Never invent tools, targets, arguments, selectors,
     coordinates, IDs, or backend details.
-  - When set_form_fields is offered and two to four fields in that one current form are known, prefer it over spending
-    separate turns on those field updates. It never activates Go, Filter, Submit, or another navigation control; use
-    the separately offered action afterward.
   - If evidence is insufficient, use an offered observation tool rather than guessing or waiting.
   - Use remember_fact on an offered exact evidence ref only when its value must survive an upcoming page/search replacement.
   - Use ask_user only for missing user-owned information, and abort only when safe progress is impossible.
-  - Local execution feedback reports one action or the ordered field receipts of one bounded form command; only
+  - Local execution feedback reports one atomic action and its fresh post-action World; only
     TaskEvaluator or a native verifier proves task success.
 
   Return exactly one offered tool call without prose. Current fresh evidence can be used directly without remembering

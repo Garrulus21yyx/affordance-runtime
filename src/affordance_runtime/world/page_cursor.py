@@ -6,30 +6,22 @@ import hashlib
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 
-from affordance_runtime.actions.relevance import ActionRelevanceRole
-
 
 def cursor_fingerprint(
     action_space_id: str,
     query: str,
-    target_id: str,
-    role: ActionRelevanceRole | None,
     objective_digest: str,
     limit: int,
-    max_destinations: int,
-    max_targets: int,
     allowed_action_ids: tuple[str, ...] = (),
+    public_route_byte_allocation: int = 0,
 ) -> str:
     payload = (
         action_space_id,
         query,
-        target_id,
-        role.value if role else "",
         objective_digest,
         limit,
-        max_destinations,
-        max_targets,
         allowed_action_ids,
+        public_route_byte_allocation,
     )
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()[:24]
 

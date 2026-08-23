@@ -5,21 +5,24 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 
-from affordance_runtime.agent.context.action_candidate_projection import ActionCandidateProjection
+from affordance_runtime.agent.context.action_candidate_projection import (
+    ActionCandidateProjection,
+    ActionDeliveryPlan,
+    ActionRouteIssueFragment,
+    WorldDeliveryRecord,
+)
 from affordance_runtime.agent.context.compact_world_renderer import (
     DeliveryManifest,
     WorldDeliveryView,
     render_compact_actor_world,
 )
-from affordance_runtime.agent.context.context import AgentContext
-from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
-from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
 from affordance_runtime.immutable import to_json_compatible
 
 _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
-DEFAULT_MODEL_DELIVERY_MAX_RENDERED_BYTES = 10 * 1024
 
 
 @dataclass(frozen=True)
@@ -35,11 +38,15 @@ class ModelTurnDelivery:
     manifest: DeliveryManifest
     delivery_id: str
     context_id: str
-    world_observation_id: str
-    action_candidates: ActionCandidateProjection
-    delivery_index: WorldDeliveryIndex
-    includes_images: bool = False
-    observation_delivery: ObservationDelivery | None = None
+    action_candidates: ActionCandidateProjection = field(
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    action_delivery_plan_id: str
+    media: tuple[AgentImageInput, ...] = ()
+    admitted_record_counts: tuple[tuple[str, int], ...] = ()
+    packing_backoff_count: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.view, WorldDeliveryView):
@@ -48,17 +55,17 @@ class ModelTurnDelivery:
             raise ValueError("model turn delivery identity is invalid")
         if not self.context_id.startswith("context:"):
             raise ValueError("model turn delivery requires current Context identity")
-        if self.manifest.world_observation_id != self.world_observation_id:
-            raise ValueError("model turn delivery manifest belongs to another World")
         if not isinstance(self.action_candidates, ActionCandidateProjection):
             raise TypeError("model turn delivery requires typed action candidates")
-        if self.action_candidates.world_observation_id != self.world_observation_id:
-            raise ValueError("model turn candidates belong to another World")
-        if (
-            not isinstance(self.delivery_index, WorldDeliveryIndex)
-            or self.delivery_index.world_observation_id != self.world_observation_id
-        ):
-            raise ValueError("model turn delivery requires the same current delivery index")
+        if not self.action_delivery_plan_id.startswith("action-delivery-plan:"):
+            raise ValueError("model turn requires the sibling action delivery plan")
+        admitted = dict(self.admitted_record_counts)
+        if len(admitted) != len(self.admitted_record_counts):
+            raise ValueError("model turn admitted obligation kinds must be unique")
+        if any(type(value) is not int or value < 0 for value in admitted.values()):
+            raise ValueError("model turn admitted obligation prefix is invalid")
+        if self.packing_backoff_count < 0:
+            raise ValueError("model turn packing backoff count is invalid")
         if any(item.target_ref not in self.manifest.executable_refs for item in self.action_candidates.candidates):
             raise ValueError("every action candidate must enter the same DeliveryManifest")
         if any(
@@ -67,85 +74,165 @@ class ModelTurnDelivery:
             for destination in item.destinations
         ):
             raise ValueError("every candidate destination must enter the same DeliveryManifest")
-        if type(self.includes_images) is not bool:
-            raise TypeError("model turn delivery image selection must be boolean")
-        if not isinstance(self.observation_delivery, ObservationDelivery):
-            raise TypeError("model turn requires typed change-first observation delivery")
-        if self.observation_delivery.world_observation_id != self.world_observation_id:
-            raise ValueError("change-first delivery belongs to another World")
+        media = tuple(self.media)
+        if any(not isinstance(item, AgentImageInput) for item in media):
+            raise TypeError("model turn media must contain exact admitted image records")
+        if any(ref not in self.manifest.executable_refs for item in media for ref, _ in item.marks):
+            raise ValueError("attached actionable marks must belong to delivered action routes")
+        object.__setattr__(self, "media", media)
 
 
 def build_model_turn_delivery(
     context: AgentContext,
     *,
     include_images: bool,
-    max_rendered_bytes: int | None = DEFAULT_MODEL_DELIVERY_MAX_RENDERED_BYTES,
+    admitted_records: Mapping[str, int] | None = None,
+    packing_backoff_count: int = 0,
 ) -> ModelTurnDelivery:
     """Build the one selected delivery for one current ActionPolicy call."""
 
-    if context.action_candidates is None:
-        raise ValueError("AgentContext requires a candidate projection before model delivery")
+    if context.action_delivery_plan is None:
+        raise ValueError("AgentContext requires an ActionDeliveryPlan before model delivery")
+    selected_counts = (
+        context.action_delivery_plan.bounded_preview_counts()
+        if admitted_records is None
+        else dict(admitted_records)
+    )
+    selected_candidates = context.action_delivery_plan.projection(selected_counts)
+    selected_records = _selected_records(context.action_delivery_plan, selected_counts)
+    effect_indices = {
+        item.record_index
+        for item in selected_records
+        if isinstance(item, WorldDeliveryRecord) and item.record_kind == "effect"
+    }
+    directory_indices = {
+        item.record_index
+        for item in selected_records
+        if isinstance(item, WorldDeliveryRecord) and item.record_kind == "page_directory"
+    }
+    effect_record_total = sum(
+        1
+        for obligation in context.action_delivery_plan.obligations
+        for item in obligation.records
+        if isinstance(item, WorldDeliveryRecord) and item.record_kind == "effect"
+    )
+    selected_effect_header = context.observation_delivery.effect_header
+    if selected_effect_header is not None:
+        selected_effect_header = replace(
+            selected_effect_header,
+            continuation_available=len(effect_indices) < effect_record_total,
+        )
+    selected_observation_delivery = replace(
+        context.observation_delivery,
+        effect_header=selected_effect_header,
+        latest_effect_values=tuple(
+            item
+            for index, item in enumerate(context.observation_delivery.latest_effect_values)
+            if index in effect_indices
+        ),
+        recovery_directory=tuple(
+            item
+            for index, item in enumerate(context.observation_delivery.recovery_directory)
+            if index in directory_indices
+        ),
+        page_outline=(),
+        changed_regions=(),
+    )
+    selected_issues = tuple(
+        item for item in selected_records if isinstance(item, ActionRouteIssueFragment)
+    )
     rendered = render_compact_actor_world(
         context.actor_world,
         context.grounding,
         include_images=include_images,
         region_index=context.region_index,
         observation=context.current_observation,
-        delivery_lens=context.delivery_lens,
-        selected_region_keys=_selected_region_keys(context),
-        selected_cursor=context.delivery_lens.page_cursor if context.delivery_lens is not None else "",
-        action_candidates=context.action_candidates,
+        selected_region_keys=frozenset(),
+        action_candidates=selected_candidates,
+        action_route_issues=selected_issues,
         public_fact_bindings=context.private_fact_bindings,
         evidence_index=context.evidence_index,
-        observation_delivery=context.observation_delivery,
-        max_rendered_bytes=max_rendered_bytes,
+        observation_delivery=selected_observation_delivery,
+    )
+    view = replace(
+        rendered.view,
+        coverage={
+            **dict(rendered.view.coverage),
+            "candidate_region_expansion_reason": "none",
+            "admitted_obligations": tuple(sorted(selected_counts.items())),
+            "continuation_available": any(
+                selected_counts.get(item.kind.value, 0) < len(item.remaining)
+                for item in context.action_delivery_plan.obligations
+            ),
+            "continuation_scopes": tuple(
+                item.continuation_scope
+                for item in context.action_delivery_plan.obligations
+                if selected_counts.get(item.kind.value, 0) < len(item.remaining)
+            ),
+            "packing_backoff_count": packing_backoff_count,
+        },
+    )
+    manifest = rendered.manifest
+    routed_refs = {ref for route in manifest.action_routes for ref in (route.source_ref, route.destination_ref) if ref}
+    media = (
+        tuple(
+            replace(
+                item,
+                marks=tuple(mark for mark in item.marks if mark[0] in routed_refs),
+            )
+            for item in context.image_inputs
+        )
+        if include_images
+        else ()
     )
     payload = {
-        "context_id": context.context_id,
-        "world_observation_id": rendered.manifest.world_observation_id,
-        "projection": rendered.projection,
-        "includes_images": include_images,
-        "text": rendered.text,
+        "projection": view.projection,
+        "text": view.text,
         "manifest": {
-            "executable_refs": rendered.manifest.executable_refs,
-            "readonly_refs": rendered.manifest.readonly_refs,
-            "fact_refs": rendered.manifest.fact_refs,
-            "region_refs": rendered.manifest.region_refs,
+            "executable_refs": manifest.executable_refs,
+            "readonly_refs": manifest.readonly_refs,
+            "fact_refs": manifest.fact_refs,
+            "region_refs": manifest.region_refs,
+            "action_routes": to_json_compatible(manifest.action_routes),
         },
-        "action_candidates": context.action_candidates.projection_id,
-        "observation_delivery": to_json_compatible(context.observation_delivery),
+        "media": tuple(
+            {
+                "ref": item.evidence_ref,
+                "mime": item.mime_type,
+                "digest": item.sha256,
+                "coordinate_space": item.coordinate_space_id,
+                "marks": item.marks,
+            }
+            for item in media
+        ),
+        "action_candidates": selected_candidates.projection_id,
+        "action_delivery_plan": context.action_delivery_plan.plan_id,
+        "admitted_record_counts": tuple(sorted(selected_counts.items())),
+        "packing_backoff_count": packing_backoff_count,
+        "public_effect": tuple(to_json_compatible(item) for item in selected_observation_delivery.latest_effect_values),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     ).hexdigest()
     return ModelTurnDelivery(
-        rendered.view,
-        rendered.manifest,
+        view,
+        manifest,
         f"delivery:{digest}",
         context.context_id,
-        rendered.manifest.world_observation_id,
-        context.action_candidates,
-        context.region_index,
-        include_images,
-        context.observation_delivery,
+        selected_candidates,
+        context.action_delivery_plan.plan_id,
+        media,
+        tuple(sorted(selected_counts.items())),
+        packing_backoff_count,
     )
 
-def _selected_region_keys(context: AgentContext) -> frozenset[str]:
-    selected: list[str] = []
-    lens = context.delivery_lens
-    if lens is not None and lens.selected_region_key:
-        selected.append(lens.selected_region_key)
-    if (
-        context.region_index is not None
-        and context.current_observation is not None
-        and context.workspace.recent_steps
-        and context.workspace.recent_steps[-1].target is not None
-    ):
-        historical = context.workspace.recent_steps[-1].target
-        for target in context.current_observation.targets:
-            if target.role == historical.role and target.label == historical.label:
-                region = context.region_index.region_for_target(target.target_id)
-                if region is not None:
-                    selected.append(region.key)
-                    break
-    return frozenset(selected)
+
+def _selected_records(
+    plan: ActionDeliveryPlan,
+    admitted: Mapping[str, int],
+) -> tuple[object, ...]:
+    return tuple(
+        record
+        for obligation in plan.obligations
+        for record in obligation.remaining[: admitted.get(obligation.kind.value, 0)]
+    )

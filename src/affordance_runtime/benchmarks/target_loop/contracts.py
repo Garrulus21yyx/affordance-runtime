@@ -44,15 +44,11 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
-CASE_SCHEMA_VERSION = "target-loop-case.v11"
+CASE_SCHEMA_VERSION = "target-loop-case.v12"
 # v10 encoded the removed mission control path. Its files remain raw archival
 # JSON rather than a compatibility surface for the current exact-field decoder.
 SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
     {
-        "target-loop-case.v6",
-        "target-loop-case.v7",
-        "target-loop-case.v8",
-        "target-loop-case.v9",
         CASE_SCHEMA_VERSION,
     }
 )
@@ -104,6 +100,9 @@ class TerminalReasonCode(StrEnum):
     OBSERVATION_CAPABILITY_NOT_OFFERED = "observation_capability_not_offered"
     INVALID_ACTION_PAGE_REQUEST = "invalid_action_page_request"
     WAIT_BUDGET_EXHAUSTED = "wait_budget_exhausted"
+    CONTROL_STALLED = "control_stalled"
+    TURN_BUDGET_EXHAUSTED = "turn_budget_exhausted"
+    AGENT_ABORTED = "agent_aborted"
     STALE_BOUND_REQUEST = "stale_bound_request"
     INVALID_CONFIRMATION_DECISION = "invalid_confirmation_decision"
     NO_PROGRESS_REPETITION = "no_progress_repetition"
@@ -162,6 +161,7 @@ class CaseFailureOrigin(StrEnum):
     HARNESS_WATCHDOG = "harness_watchdog"
     HARNESS_EXTERNAL_INTERRUPTION = "harness_external_interruption"
     HARNESS_PERSISTENCE = "harness_persistence"
+    HARNESS_PROJECTION = "harness_projection"
     CLEANUP = "cleanup"
     UNKNOWN = "unknown"
 
@@ -374,8 +374,8 @@ class BenchmarkManifest:
     cases: tuple[BenchmarkCase, ...]
 
     def __post_init__(self) -> None:
-        if not self.schema_version or not self.suite_id or not self.profile_id or not self.cases:
-            raise ValueError("benchmark manifest identity and cases are required")
+        if not self.schema_version or not self.suite_id or not self.profile_id:
+            raise ValueError("benchmark manifest identity is required")
         identities = tuple(item.case_id for item in self.cases)
         if any(not item for item in identities) or len(identities) != len(set(identities)):
             raise ValueError("benchmark manifest case IDs must be nonblank and unique")
@@ -419,8 +419,6 @@ class BenchmarkCaseResult:
     latency_ms: float
     measurements: Mapping[str, MetricMeasurement] = field(default_factory=dict)
     terminal_reason_code: TerminalReasonCode | None = None
-    termination_origin: str = "runtime"
-    case_failure_code: str = ""
     partial_episode_available: bool = False
     latest_task_status: str = ""
     latest_action_observed_change: str = ""
@@ -429,21 +427,11 @@ class BenchmarkCaseResult:
     latest_semantic_attempt_key_digest: str = ""
     same_attempt_streak: int = 0
     no_progress_count: int = 0
-    last_progress_event_type: str = ""
-    failure_origin: CaseFailureOrigin = CaseFailureOrigin.NONE
-    failure_code: str = ""
-    exception_class: str = ""
     last_decision_kind: str = ""
-    last_policy_failure_code: str = ""
     last_action_space_option_count: int = 0
     last_world_target_count: int = 0
     last_world_coverage: str = ""
     pending_kind: str = ""
-    runtime_reason_code: str = ""
-    agent_failure_code: str = ""
-    cleanup_failure_code: str = ""
-    cleanup_exception_class: str = ""
-    cleanup_failures: int = 0
     cleanup_status: str = ""
     primary_failure_code: str = ""
     primary_failure_phase: str = ""
@@ -452,9 +440,6 @@ class BenchmarkCaseResult:
     secondary_failure_codes: tuple[str, ...] = ()
     terminal_failure_code: str = ""
     cleanup_diagnostic: ExecutionDiagnostic | None = None
-    watchdog_triggered: bool = False
-    harness_integrity_code: str = ""
-    harness_integrity_failures: int = 0
     failure_facts: FailureFacts = field(default_factory=FailureFacts)
     case_schema_version: str = CASE_SCHEMA_VERSION
     suite_id: str = ""
@@ -468,36 +453,25 @@ class BenchmarkCaseResult:
             object.__setattr__(
                 self,
                 "cleanup_status",
-                "failed" if self.cleanup_failures else "not_run",
+                "failed" if self.failure_facts.cleanup_code else "not_run",
             )
         text_fields = (
             self.case_id,
             self.status,
             self.failure_reason,
-            self.termination_origin,
-            self.case_failure_code,
             self.latest_task_status,
             self.latest_action_observed_change,
             self.latest_action_local_postcondition,
             self.latest_action_evidence_method,
             self.latest_semantic_attempt_key_digest,
-            self.last_progress_event_type,
-            self.failure_code,
-            self.exception_class,
             self.last_decision_kind,
-            self.last_policy_failure_code,
             self.last_world_coverage,
             self.pending_kind,
-            self.runtime_reason_code,
-            self.agent_failure_code,
-            self.cleanup_failure_code,
-            self.cleanup_exception_class,
             self.cleanup_status,
             self.primary_failure_code,
             self.primary_failure_phase,
             self.primary_diagnostic_ref,
             self.terminal_failure_code,
-            self.harness_integrity_code,
             self.case_schema_version,
             self.suite_id,
             self.profile_id,
@@ -535,15 +509,6 @@ class BenchmarkCaseResult:
         if (
             not self.case_id
             or self.status not in {str(item) for item in RunStatus if item is not RunStatus.RUNNING}
-            or self.termination_origin
-            not in {
-                "",
-                "runtime",
-                "component",
-                "cleanup",
-                "harness_watchdog",
-                "harness_external",
-            }
             or type(self.execution_completed) is not bool
             or isinstance(self.latency_ms, bool)
             or not isinstance(self.latency_ms, int | float)
@@ -561,12 +526,10 @@ class BenchmarkCaseResult:
             self.last_action_space_option_count,
             self.last_world_target_count,
             self.seed,
-            self.cleanup_failures,
-            self.harness_integrity_failures,
         )
         if any(type(value) is not int or value < 0 for value in integer_fields):
             raise ValueError("benchmark case counts must be non-negative integers")
-        if type(self.partial_episode_available) is not bool or type(self.watchdog_triggered) is not bool:
+        if type(self.partial_episode_available) is not bool:
             raise TypeError("benchmark case flags must be boolean")
         if self.partial_episode_available and self.execution_completed:
             raise ValueError("partial episode evidence cannot be execution-complete")
@@ -600,19 +563,6 @@ class BenchmarkCaseResult:
                 DecisionKind(self.last_decision_kind)
             except ValueError as exc:
                 raise ValueError("benchmark decision kind is outside the closed vocabulary") from exc
-        if self.last_progress_event_type not in {
-            "",
-            "already_satisfied_selection",
-            "action_effect_evaluated",
-            "action_postcondition_satisfied",
-            "action_postcondition_unsatisfied_change_strategy",
-            "action_unchanged_change_strategy",
-            "action_outcome_unknown",
-            "repeated_no_progress_selection",
-            "state_changed",
-            "no_operational_progress",
-        }:
-            raise ValueError("benchmark progress event is outside the closed vocabulary")
         if self.last_world_coverage not in {"", *(str(item) for item in CoverageState)}:
             raise ValueError("benchmark coverage is outside the closed vocabulary")
         if (
@@ -641,12 +591,6 @@ class BenchmarkCaseResult:
         }
         if not blocked and not no_progress and self.terminal_reason_code is not None:
             raise ValueError("non-blocked case result cannot carry a terminal reason code")
-        if self.exception_class and _EXCEPTION_CLASS.fullmatch(self.exception_class) is None:
-            raise ValueError("benchmark exception metadata must be a bounded class name")
-        if self.cleanup_exception_class and _EXCEPTION_CLASS.fullmatch(self.cleanup_exception_class) is None:
-            raise ValueError("cleanup exception metadata must be a bounded class name")
-        if self.cleanup_failures not in {0, 1}:
-            raise ValueError("cleanup failure count must be zero or one")
         if self.cleanup_status not in {
             "not_run",
             "succeeded",
@@ -655,18 +599,10 @@ class BenchmarkCaseResult:
             "failed",
         }:
             raise ValueError("cleanup status is outside the closed vocabulary")
-        if (self.cleanup_status in {"timeout", "failed"}) != bool(self.cleanup_failures):
+        if (self.cleanup_status in {"timeout", "failed"}) != bool(self.failure_facts.cleanup_code):
             raise ValueError("cleanup status and failure fact are inconsistent")
-        if self.harness_integrity_failures not in {0, 1}:
-            raise ValueError("harness integrity failure count must be zero or one")
         if self.case_schema_version not in SUPPORTED_CASE_SCHEMA_VERSIONS:
             raise ValueError("benchmark case evidence schema is unsupported")
-        if self.case_schema_version == "target-loop-case.v6" and self.failure_facts.runtime_failure is not None:
-            raise ValueError("legacy case evidence cannot carry canonical RuntimeFailure")
-        if self.case_schema_version in {"target-loop-case.v6", "target-loop-case.v7"} and (
-            self.failure_facts.task_outcome_kind or self.failure_facts.task_outcome_code
-        ):
-            raise ValueError("legacy case evidence cannot carry canonical task outcome")
         if self.harness_schema_version != "target-loop-harness.v6":
             raise ValueError("benchmark harness evidence schema is unsupported")
         identity_values = (self.suite_id, self.profile_id, self.manifest_digest)
@@ -690,44 +626,11 @@ class BenchmarkCaseResult:
             }[task_kind]
             if self.latest_task_status and self.latest_task_status != expected_task_status:
                 raise ValueError("canonical task outcome contradicts task evaluation status")
-        abort_codes = {f"abort_{item.value}" for item in AbortCategory}
+        abort_codes = {f"abort_{item.value}" for item in AbortCategory} | {
+            TerminalReasonCode.AGENT_ABORTED.value
+        }
         if self.last_decision_kind == "abort" and facts.runtime_reason_code not in abort_codes:
             raise ValueError("benchmark abort decision and Runtime fact are inconsistent")
-        if (
-            self.runtime_reason_code != facts.runtime_reason_code
-            or self.agent_failure_code != facts.agent_failure_code
-            or self.last_policy_failure_code != facts.policy_failure_code
-            or self.cleanup_failure_code != facts.cleanup_code
-            or self.cleanup_exception_class != facts.cleanup_exception_class
-            or self.harness_integrity_code != facts.harness_integrity_code
-        ):
-            raise ValueError("benchmark case duplicate failure projections are inconsistent")
-        if (
-            self.failure_origin is not facts.component_origin
-            or self.failure_code != facts.component_code
-            or self.exception_class != facts.component_exception_class
-        ):
-            raise ValueError("benchmark component failure projection is inconsistent")
-        # Projection precedence belongs solely to case_projection.  This value
-        # object validates shape and direct duplicate facts; it must not run a
-        # second failure interpreter with its own compatibility table.
-        if self.watchdog_triggered != bool(facts.watchdog_code):
-            raise ValueError("benchmark watchdog projection is inconsistent")
-        if (
-            facts.component_origin
-            not in {
-                CaseFailureOrigin.NONE,
-                CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION,
-                CaseFailureOrigin.CLEANUP,
-            }
-            and not facts.watchdog_code
-            and self.termination_origin != "component"
-        ):
-            raise ValueError("benchmark termination origin contradicts its direct component fact")
-        if bool(self.cleanup_failures) != bool(facts.cleanup_code):
-            raise ValueError("benchmark cleanup projection is inconsistent")
-        if bool(self.harness_integrity_failures) != bool(facts.harness_integrity_code):
-            raise ValueError("benchmark integrity projection is inconsistent")
         official = self.measurements.get("official_success_count")
         has_primary_failure_fact = any(
             (
@@ -748,8 +651,6 @@ class BenchmarkCaseResult:
             and (
                 has_primary_failure_fact
                 or self.case_failure_code not in {"", *secondary_lifecycle_codes}
-                or self.failure_code
-                or self.exception_class
                 or self.terminal_reason_code is not None
             )
         ):
@@ -763,6 +664,86 @@ class BenchmarkCaseResult:
         ):
             raise ValueError("successful benchmark evidence must be execution-complete")
         object.__setattr__(self, "measurements", FrozenMeasurements(self.measurements))
+
+    @property
+    def runtime_reason_code(self) -> str:
+        return self.failure_facts.runtime_reason_code
+
+    @property
+    def agent_failure_code(self) -> str:
+        return self.failure_facts.agent_failure_code
+
+    @property
+    def last_policy_failure_code(self) -> str:
+        return self.failure_facts.policy_failure_code
+
+    @property
+    def cleanup_failure_code(self) -> str:
+        return self.failure_facts.cleanup_code
+
+    @property
+    def cleanup_exception_class(self) -> str:
+        return self.failure_facts.cleanup_exception_class
+
+    @property
+    def cleanup_failures(self) -> int:
+        return int(bool(self.failure_facts.cleanup_code))
+
+    @property
+    def failure_origin(self) -> CaseFailureOrigin:
+        return self.failure_facts.component_origin
+
+    @property
+    def failure_code(self) -> str:
+        return self.failure_facts.component_code
+
+    @property
+    def exception_class(self) -> str:
+        return self.failure_facts.component_exception_class
+
+    @property
+    def watchdog_triggered(self) -> bool:
+        return bool(self.failure_facts.watchdog_code)
+
+    @property
+    def harness_integrity_code(self) -> str:
+        return self.failure_facts.harness_integrity_code
+
+    @property
+    def harness_integrity_failures(self) -> int:
+        return int(bool(self.failure_facts.harness_integrity_code))
+
+    @property
+    def case_failure_code(self) -> str:
+        facts = self.failure_facts
+        return (
+            facts.watchdog_code
+            or self.primary_failure_code
+            or (f"policy_{facts.policy_failure_code}" if facts.policy_failure_code else "")
+            or facts.agent_failure_code
+            or facts.runtime_reason_code
+            or (facts.task_outcome_code if self.status == RunStatus.BLOCKED.value else "")
+            or facts.component_code
+            or facts.cleanup_code
+            or facts.harness_integrity_code
+        )
+
+    @property
+    def termination_origin(self) -> str:
+        facts = self.failure_facts
+        if facts.watchdog_code:
+            return "harness_watchdog"
+        if facts.component_origin is CaseFailureOrigin.HARNESS_EXTERNAL_INTERRUPTION:
+            return "harness_external"
+        if facts.component_origin is not CaseFailureOrigin.NONE:
+            return "component"
+        if facts.runtime_failure or facts.runtime_reason_code or facts.agent_failure_code or facts.policy_failure_code:
+            return "runtime"
+        if facts.task_outcome_kind == TaskOutcomeKind.TERMINAL_FAILURE.value:
+            return ""
+        if facts.cleanup_code:
+            return "cleanup"
+        return "runtime"
 
 
 class FrozenMeasurements(dict[str, MetricMeasurement]):

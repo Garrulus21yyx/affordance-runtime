@@ -13,6 +13,11 @@ _EXPORTS = {
     "ActionBinder": ("affordance_runtime.actions.binder", "ActionBinder"),
     "BindingError": ("affordance_runtime.actions.binder", "BindingError"),
     "ActionPager": ("affordance_runtime.actions.paging", "ActionPager"),
+    "ActionDiscoveryMatch": ("affordance_runtime.actions.paging", "ActionDiscoveryMatch"),
+    "ActionDiscoveryResult": ("affordance_runtime.actions.paging", "ActionDiscoveryResult"),
+    "ActionRecallSet": ("affordance_runtime.actions.paging", "ActionRecallSet"),
+    "ActionRecallPartition": ("affordance_runtime.actions.paging", "ActionRecallPartition"),
+    "ActionReranker": ("affordance_runtime.actions.paging", "ActionReranker"),
     "InternalActionPage": ("affordance_runtime.actions.paging", "InternalActionPage"),
     "ActionRelevance": ("affordance_runtime.actions.relevance", "ActionRelevance"),
     "ActionRelevancePolicy": ("affordance_runtime.actions.relevance", "ActionRelevancePolicy"),
@@ -47,6 +52,8 @@ for _name in (
     "ActionOption",
     "ActionRisk",
     "ActionSpace",
+    "ActionSpaceIssue",
+    "ActionSpaceIssueCode",
     "AdmittedActionSelection",
 ):
     _EXPORTS[_name] = ("affordance_runtime.actions.space_contracts", _name)

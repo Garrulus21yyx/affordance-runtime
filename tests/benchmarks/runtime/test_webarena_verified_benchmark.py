@@ -10,8 +10,10 @@ from affordance_runtime.benchmarks.webarena_verified import (
     WA_HARD_SUBSET_SHA256,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
+    WebArenaVerifiedFinalResponseCodec,
     _capability_census,
-    _public_final_response_contract,
+    _private_leak_markers,
+    _private_runtime_strings,
     _transition_delivery_diagnostic,
     evaluate_webarena_verified_manifest,
     inspect_webarena_verified_w0_readiness,
@@ -70,22 +72,34 @@ def test_w1b_world_capability_census_reports_t1_browsergym_support() -> None:
     assert census["hover"]["absence_reason"] == "adapter_not_supported"
 
 
-def test_public_final_response_contract_has_one_normalized_representation() -> None:
-    schema = (
-        '{"title":"Answer","type":"object","properties":'
-        '{"answer":{"type":"string","description":"Verbose duplicate prose"}}}'
+def test_webarena_final_response_codec_delegates_to_pinned_upstream_model() -> None:
+    pytest.importorskip("webarena_verified")
+    codec = WebArenaVerifiedFinalResponseCodec()
+
+    canonical = codec.normalize(
+        json.dumps(
+            {
+                "task_type": "retrieve",
+                "status": "success",
+                "retrieved_data": [{"airport": "PIT"}],
+                "error_details": None,
+            }
+        )
     )
 
-    assert _public_final_response_contract(f"Return JSON like this:\n{schema}") == {
-        "json_schema": {
-            "type": "object",
-            "properties": {"answer": {"type": "string"}},
-        },
-        "guidance": "Return JSON like this:",
+    assert json.loads(canonical) == {
+        "task_type": "RETRIEVE",
+        "status": "SUCCESS",
+        "retrieved_data": [{"airport": "PIT"}],
+        "error_details": None,
     }
-    assert _public_final_response_contract("Return one concise sentence") == {
-        "format": "Return one concise sentence"
-    }
+
+
+def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:
+    pytest.importorskip("webarena_verified")
+
+    with pytest.raises(ValueError):
+        WebArenaVerifiedFinalResponseCodec().normalize('{"status":"SUCCESS"}')
 
 
 @pytest.mark.asyncio
@@ -117,7 +131,44 @@ async def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff
     assert diagnostic["local_monitor_recommendation"] == "continue"
     assert diagnostic["post_transition_request_admitted"] is True
     assert diagnostic["post_local_request_admitted"] is True
+    assert diagnostic["post_transition_privacy_checked"] is True
+    assert diagnostic["post_local_privacy_checked"] is True
     assert diagnostic["acceptance_errors"] == ()
+
+
+@pytest.mark.parametrize(
+    "leak",
+    (
+        '"private_cursor":"cursor:17"',
+        '"observation_id":"private"',
+        '"capture_epoch":"private"',
+        '"omitted_count":84',
+        '"raw_delta_lineage":"private"',
+    ),
+)
+def test_w1b_privacy_gate_rejects_prohibited_serialization_fields(leak: str) -> None:
+    catalog = SimpleNamespace(specs=())
+    admitted = SimpleNamespace(
+        messages=(SimpleNamespace(role="user", content=leak),),
+        tools=(),
+    )
+
+    assert _private_leak_markers(leak, catalog, admitted, ())
+
+
+def test_w1b_privacy_gate_rejects_exact_runtime_lineage_values() -> None:
+    world = shared_world("private-lineage-sentinel", False)
+    private_values = _private_runtime_strings(world)
+    leaked = next(value for value in private_values if len(value) >= 4)
+    catalog = SimpleNamespace(specs=())
+    admitted = SimpleNamespace(
+        messages=(SimpleNamespace(role="user", content=leaked),),
+        tools=(),
+    )
+
+    assert _private_leak_markers(leaked, catalog, admitted, private_values) == (
+        "private_binding_value",
+    )
 
 
 def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp_path: Path) -> None:

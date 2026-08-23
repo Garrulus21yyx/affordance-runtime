@@ -47,13 +47,7 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         raise ValueError("public case evidence fields do not match the declared schema")
     if payload["schema_version"] != payload["case_schema_version"]:
         raise ValueError("public case schema identity is inconsistent")
-    if payload["schema_version"] not in {
-        "target-loop-case.v6",
-        "target-loop-case.v7",
-        "target-loop-case.v8",
-        "target-loop-case.v9",
-        CASE_SCHEMA_VERSION,
-    }:
+    if payload["schema_version"] != CASE_SCHEMA_VERSION:
         raise ValueError("public case evidence schema is unsupported")
     measurements = {}
     metric_fields = {item.name for item in fields(MetricMeasurement)}
@@ -63,15 +57,7 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         measurements[name] = MetricMeasurement(**value)
     raw_facts = _dict(payload["failure_facts"])
     fact_fields = {item.name for item in fields(CaseFacts)}
-    v7_fact_fields = fact_fields - {"task_outcome_kind", "task_outcome_code"}
-    v6_fact_fields = v7_fact_fields - {"runtime_failure"}
-    expected_fact_fields = {
-        "target-loop-case.v6": v6_fact_fields,
-        "target-loop-case.v7": v7_fact_fields,
-        "target-loop-case.v8": fact_fields,
-        "target-loop-case.v9": fact_fields,
-        CASE_SCHEMA_VERSION: fact_fields,
-    }[payload["schema_version"]]
+    expected_fact_fields = fact_fields
     if set(raw_facts) != expected_fact_fields:
         raise ValueError("public case facts are incomplete")
     string_fact_names = expected_fact_fields - {"component_origin", "runtime_failure"}
@@ -112,10 +98,6 @@ def decode_public_case_evidence(payload: dict[str, object]) -> BenchmarkCaseResu
         values["cleanup_diagnostic"] = ExecutionDiagnostic(**cleanup_diagnostic)
     values["measurements"] = measurements
     values["failure_facts"] = facts
-    failure_origin = values["failure_origin"]
-    if not isinstance(failure_origin, str):
-        raise ValueError("public failure origin is malformed")
-    values["failure_origin"] = CaseFailureOrigin(failure_origin)
     terminal = values["terminal_reason_code"]
     if terminal is not None and not isinstance(terminal, str):
         raise ValueError("terminal reason code is malformed")

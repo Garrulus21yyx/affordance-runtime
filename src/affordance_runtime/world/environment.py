@@ -4,25 +4,22 @@ from typing import Protocol
 
 from affordance_runtime.execution.contracts import (
     BoundActionRequest,
-    BoundFormFieldsRequest,
     ExecutionObservationRecovery,
     ExecutionOutcome,
-    FormFieldsExecutionOutcome,
     SessionHealth,
 )
-from affordance_runtime.goals.contracts import GoalSemanticContract
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationAcquisition,
     ObservationCapabilities,
     WorldObservationRequest,
 )
-from affordance_runtime.world.finalization import EnvironmentFinalization
+from affordance_runtime.world.finalization import EnvironmentFinalization, FinalResponseCodec
 
 
 class WorldEnvironment(Protocol):
     @property
-    def goal_semantic_contract(self) -> GoalSemanticContract: ...
+    def final_response_codec(self) -> FinalResponseCodec: ...
 
     @property
     def observation_capabilities(self) -> ObservationCapabilities: ...
@@ -36,11 +33,6 @@ class WorldEnvironment(Protocol):
     def is_current(self, request: BoundActionRequest) -> bool: ...
 
     async def execute(self, request: BoundActionRequest) -> ExecutionOutcome: ...
-
-    async def execute_form_fields(
-        self,
-        command: BoundFormFieldsRequest,
-    ) -> FormFieldsExecutionOutcome: ...
 
     async def session_health(self, request: BoundActionRequest) -> SessionHealth: ...
 

@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
@@ -15,10 +15,13 @@ from affordance_runtime.agent.context.contracts import (
     sanitize_history_value,
 )
 from affordance_runtime.agent.context.projection import project_public_value
-from affordance_runtime.agent.context.world_transition import PublicChangeKind, PublicWorldDelta
+from affordance_runtime.agent.context.world_transition import PublicWorldDelta
 from affordance_runtime.agent.working_facts import WorkingFact, validate_working_fact_collection
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.context.observation_delivery import PublicEffectInventory
 
 MAX_WORKSPACE_RECENT_STEPS = 4
 MAX_WORKSPACE_SEMANTIC_EVENTS = 24
@@ -151,6 +154,7 @@ class WorkspaceReducer(Protocol):
         step_index: int,
         current_findings: tuple[CurrentFinding, ...] = (),
         information_delta: object | None = None,
+        public_effect: PublicEffectInventory | None = None,
     ) -> AgentWorkspace: ...
 
     def fit(self, workspace: AgentWorkspace, allocation_bytes: int) -> AgentWorkspace: ...
@@ -202,6 +206,7 @@ class DefaultWorkspaceReducer:
         step_index: int,
         current_findings: tuple[CurrentFinding, ...] = (),
         information_delta: object | None = None,
+        public_effect: PublicEffectInventory | None = None,
     ) -> AgentWorkspace:
         if not isinstance(previous, AgentWorkspace):
             raise TypeError("workspace reducer requires typed previous state")
@@ -220,8 +225,8 @@ class DefaultWorkspaceReducer:
         events = list(previous.semantic_events)
         receipts = tuple(getattr(getattr(step, "execution_receipts", None), "receipts", ()))
         if receipts:
-            values = _significant_values(delta, current_findings)
-            if delta.changed:
+            values = _significant_values(public_effect, current_findings)
+            if public_effect is not None and public_effect.atoms:
                 _append_event(
                     events,
                     SemanticEvent(
@@ -363,7 +368,7 @@ def render_agent_workspace(workspace: AgentWorkspace, *, total_step_count: int) 
 
 
 def _significant_values(
-    delta: PublicWorldDelta,
+    effect: PublicEffectInventory | None,
     findings: tuple[CurrentFinding, ...],
 ) -> tuple[Mapping[str, object], ...]:
     values: list[Mapping[str, object]] = [
@@ -374,25 +379,8 @@ def _significant_values(
         }
         for item in findings
     ]
-    values.extend(
-        {
-            "kind": item.kind.value,
-            "predicate": item.predicate,
-            "value": item.after.value,
-        }
-        for item in delta.fact_changes
-        if item.after is not None and item.kind is not PublicChangeKind.REMOVED
-    )
-    values.extend(
-        {
-            "kind": item.kind.value,
-            "predicate": "public.label",
-            "value": item.after.label,
-            "source_context": item.after.role,
-        }
-        for item in delta.target_changes
-        if item.after is not None and item.kind is not PublicChangeKind.REMOVED
-    )
+    if effect is not None:
+        values.extend(item.public_value for item in effect.atoms)
     unique: list[Mapping[str, object]] = []
     seen: set[str] = set()
     for item in values:

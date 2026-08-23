@@ -43,11 +43,6 @@ from affordance_runtime.model.providers.port import (
 
 _MAX_COMPILER_TEXT_BYTES = 16 * 1024
 _MAX_PROVIDER_RETRY_DELAY_S = 5.0
-_PRIVATE_TASK_KEYS = frozenset({
-    "action_ref", "binding_ref", "coordinates", "dom_id", "entity_ref", "selector", "target_id",
-})
-
-
 def _load_prompt() -> tuple[str, str]:
     resource = files("affordance_runtime.model").joinpath("policy/prompts/goal_compiler.yaml")
     raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
@@ -336,8 +331,8 @@ def _compiler_messages(request: GoalCompilerRequest) -> tuple[ModelMessage, ...]
             "constraints": task.constraints,
             "allowed_effects": task.allowed_effects,
             "forbidden_effects": task.forbidden_effects,
-            "public_inputs": _project_public_task_value(task.inputs),
-            "success_criteria": _project_public_task_value(task.success_criteria),
+            "public_inputs": to_json_compatible(task.inputs),
+            "success_criteria": to_json_compatible(task.success_criteria),
             "requested_outputs": task.requested_outputs,
             "risk_profile": task.risk_profile.value,
         },
@@ -364,19 +359,6 @@ def _schema_repair_messages(
         ),
     }
     return (*messages, ModelMessage(role="user", content=json.dumps(repair, separators=(",", ":"), ensure_ascii=False)))
-
-
-def _project_public_task_value(value: object) -> object:
-    compatible = to_json_compatible(value)
-    if isinstance(compatible, Mapping):
-        return {
-            str(key): _project_public_task_value(item)
-            for key, item in compatible.items()
-            if str(key).casefold() not in _PRIVATE_TASK_KEYS
-        }
-    if isinstance(compatible, list):
-        return tuple(_project_public_task_value(item) for item in compatible)
-    return compatible
 
 
 def _metadata(

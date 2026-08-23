@@ -178,7 +178,11 @@ class BoundActionRequest:
             or _risk_rank(self.binding.risk) > _risk_rank(self.selection.risk)
             or self.binding.observation_barrier != self.selection.observation_barrier
             or self.binding.destination_required != self.selection.destination_required
-            or self.binding.eligible_destination_ids != self.selection.eligible_destination_ids
+            or (
+                self.selection.destination_id not in self.binding.eligible_destination_ids
+                if self.selection.destination_id
+                else self.binding.eligible_destination_ids != self.selection.eligible_destination_ids
+            )
             or self.binding.verification_family != self.selection.verification_family
             or self.binding.verification_contract_digest != self.selection.verification_contract_digest
             or self.binding.verification_contract != self.selection.verification_contract
@@ -200,44 +204,6 @@ class BoundActionRequest:
         """Compatibility read; world identity is canonical."""
 
         return self.world_observation_id
-
-
-@dataclass(frozen=True)
-class BoundFormFieldsRequest:
-    """One fully bound, non-submitting compound command for a single current form."""
-
-    command_id: str
-    form_key: str
-    requests: tuple[BoundActionRequest, ...]
-    tool_call_id: str = ""
-
-    def __post_init__(self) -> None:
-        requests = tuple(self.requests)
-        if not self.command_id.startswith("form-command:") or not self.form_key.startswith("form:"):
-            raise ValueError("bound form command identity is invalid")
-        if not 2 <= len(requests) <= 4:
-            raise ValueError("bound form command requires two to four requests")
-        if (
-            len({item.context_id for item in requests}) != 1
-            or len({item.world_observation_id for item in requests}) != 1
-            or len({item.binding.surface for item in requests}) != 1
-            or len({item.binding.executor_id for item in requests}) != 1
-            or len({item.intent.target_id for item in requests}) != len(requests)
-            or any(item.intent.semantic_action not in {"type_text", "select_option"} for item in requests)
-            or any(item.tool_call_id != self.tool_call_id for item in requests)
-        ):
-            raise ValueError("bound form command members do not share one safe current scope")
-        if self.tool_call_id and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}", self.tool_call_id) is None:
-            raise ValueError("bound form command tool call identity is invalid")
-        object.__setattr__(self, "requests", requests)
-
-    @property
-    def context_id(self) -> str:
-        return self.requests[0].context_id
-
-    @property
-    def world_observation_id(self) -> str:
-        return self.requests[0].world_observation_id
 
 
 def _risk_rank(risk: object) -> int:
@@ -364,51 +330,6 @@ class ExecutionOutcome:
 
 
 @dataclass(frozen=True)
-class FormFieldsExecutionOutcome:
-    """Typed ordered receipts plus the single capture closing a form-field command."""
-
-    command: BoundFormFieldsRequest
-    results: tuple[ActionResult, ...]
-    post_acquisition: ObservationAcquisition | None
-    failed_field_index: int | None = None
-
-    def __post_init__(self) -> None:
-        from affordance_runtime.world.acquisition import AcquisitionOrigin, ObservationAcquisition
-
-        if not isinstance(self.command, BoundFormFieldsRequest):
-            raise TypeError("form fields execution requires one bound command")
-        requests = self.command.requests
-        results = tuple(self.results)
-        if not 2 <= len(requests) <= 4 or not 1 <= len(results) <= len(requests):
-            raise ValueError("form fields execution must retain bounded request and receipt order")
-        if any(result.request_id != requests[index].request_id for index, result in enumerate(results)):
-            raise ValueError("form fields execution receipt lineage mismatch")
-        dispatched = any(item.dispatch_status is not DispatchStatus.NOT_SENT for item in results)
-        if dispatched != (self.post_acquisition is not None):
-            raise ValueError("form fields execution capture must match dispatch truth")
-        if self.post_acquisition is not None and (
-            not isinstance(self.post_acquisition, ObservationAcquisition)
-            or self.post_acquisition.origin is not AcquisitionOrigin.POST_ACTION
-        ):
-            raise ValueError("form fields execution requires one typed final POST_ACTION capture")
-        expected_failure = next(
-            (index for index, item in enumerate(results) if item.dispatch_status is not DispatchStatus.SENT),
-            None,
-        )
-        if self.failed_field_index != expected_failure:
-            raise ValueError("form fields execution partial failure index is inconsistent")
-        object.__setattr__(self, "results", results)
-
-    @property
-    def requests(self) -> tuple[BoundActionRequest, ...]:
-        return self.command.requests
-
-    @property
-    def completed_field_count(self) -> int:
-        return sum(item.dispatch_status is DispatchStatus.SENT for item in self.results)
-
-
-@dataclass(frozen=True)
 class ExecutionReceipt:
     """One dispatch-crossing primitive retained by the single execution algebra."""
 
@@ -462,10 +383,7 @@ class ExecutionReceiptBatch:
             or self.terminal_failure is not None
             or DispatchStatus.SENT_UNKNOWN not in statuses
             or any(item.result.error is ActionError.CANCELLED for item in receipts)
-            or any(
-                status not in {DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN}
-                for status in statuses
-            )
+            or any(status not in {DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN} for status in statuses)
         ):
             raise ValueError("unknown execution requires retained SENT_UNKNOWN dispatch truth")
         if self.completion is ExecutionCompletion.PARTIAL and (
@@ -497,14 +415,8 @@ class ExecutionReceiptBatch:
                     self.cancellation_phase is ExecutionCancellationPhase.EVALUATION
                     and (
                         not receipts
-                        or (
-                            self.terminal_failure is not None
-                            and self.terminal_failure.error is ActionError.CANCELLED
-                        )
-                        or any(
-                            status not in {DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN}
-                            for status in statuses
-                        )
+                        or (self.terminal_failure is not None and self.terminal_failure.error is ActionError.CANCELLED)
+                        or any(status not in {DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN} for status in statuses)
                         or any(item.result.error is ActionError.CANCELLED for item in receipts)
                     )
                 )
@@ -565,50 +477,6 @@ class ExecutionReceiptBatch:
                         *outcome.recovery_acquisitions,
                     )
                 )
-                else None
-            )
-        return cls(receipts, resolved_completion, terminal_failure, resolved_cancellation_phase)
-
-    @classmethod
-    def from_form_fields(
-        cls,
-        outcome: FormFieldsExecutionOutcome,
-        after_observation_id: str,
-        *,
-        completion: ExecutionCompletion | None = None,
-        cancellation_phase: ExecutionCancellationPhase | None = None,
-    ) -> ExecutionReceiptBatch:
-        receipts = tuple(
-            ExecutionReceipt(
-                outcome.command.requests[index],
-                result,
-                outcome.command.world_observation_id,
-                after_observation_id,
-            )
-            for index, result in enumerate(outcome.results)
-            if result.dispatch_status is not DispatchStatus.NOT_SENT
-        )
-        terminal_failure = next(
-            (item for item in outcome.results if item.dispatch_status is DispatchStatus.NOT_SENT),
-            None,
-        )
-        resolved_completion = completion or (
-            ExecutionCompletion.UNKNOWN
-            if receipts and receipts[-1].result.dispatch_status is DispatchStatus.SENT_UNKNOWN
-            else ExecutionCompletion.PARTIAL
-            if terminal_failure is not None
-            else ExecutionCompletion.COMPLETE
-        )
-        resolved_cancellation_phase = cancellation_phase
-        if resolved_completion is ExecutionCompletion.CANCELLED and resolved_cancellation_phase is None:
-            from affordance_runtime.world.acquisition import AcquisitionStatus
-
-            resolved_cancellation_phase = (
-                ExecutionCancellationPhase.DISPATCH
-                if any(item.error is ActionError.CANCELLED for item in outcome.results)
-                else ExecutionCancellationPhase.POST_CAPTURE
-                if outcome.post_acquisition is not None
-                and outcome.post_acquisition.status is AcquisitionStatus.CANCELLED
                 else None
             )
         return cls(receipts, resolved_completion, terminal_failure, resolved_cancellation_phase)
@@ -677,23 +545,4 @@ class ExecutionCancelled(asyncio.CancelledError):
         )
         if not (action_cancelled or post_cancelled):
             raise ValueError("execution cancellation requires exact action or post-acquisition cancellation")
-        self.outcome = outcome
-
-
-class FormFieldsExecutionCancelled(asyncio.CancelledError):
-    """Host cancellation propagated with exact compound dispatch and capture truth."""
-
-    def __init__(self, outcome: FormFieldsExecutionOutcome) -> None:
-        from affordance_runtime.world.acquisition import AcquisitionStatus
-
-        action_cancelled = any(
-            result.error is ActionError.CANCELLED
-            and result.dispatch_status in {DispatchStatus.NOT_SENT, DispatchStatus.SENT_UNKNOWN}
-            for result in outcome.results
-        )
-        post_cancelled = (
-            outcome.post_acquisition is not None and outcome.post_acquisition.status is AcquisitionStatus.CANCELLED
-        )
-        if not (action_cancelled or post_cancelled):
-            raise ValueError("form execution cancellation requires exact action or capture cancellation")
         self.outcome = outcome

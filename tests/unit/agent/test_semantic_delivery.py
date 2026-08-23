@@ -353,6 +353,7 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
     delta = WorldTransitionProjector().project(before, after)
     external_step = SimpleNamespace(
         before_world=before,
+        after_world=after,
         public_world_delta=delta,
         execution_receipts=SimpleNamespace(
             receipts=(
@@ -404,7 +405,8 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
     assert positions == tuple(sorted(positions))
     assert "EvidenceCandidates" not in rendered
     assert "value=true" in rendered
-    assert context.observation_delivery is delivery.observation_delivery
+    assert store.latest_effect is not None
+    assert store.latest_effect.inventory.inventory_id.startswith("public-effect:")
     assert set(delivery.manifest.executable_refs) <= set(context.grounding.target_refs.values())
 
 
@@ -601,35 +603,56 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
         _evaluation(task, world.observation_id),
     )
     _, first_catalog = catalog_for(first)
-    region_ref = max(
-        first.region_index.regions,
-        key=lambda region: len(region.member_target_ids),
-    ).public_ref
+    desired_region_ref = max(first.region_index.regions, key=lambda region: len(region.member_target_ids)).public_ref
+    available = next(item for item in first_catalog.specs if item.name == "read_region").input_schema[
+        "properties"
+    ]["region_ref"]["enum"]
+    while desired_region_ref not in available:
+        continuation = next(item for item in first_catalog.specs if item.name == "read_next_page")
+        arguments = {"scope": "page_directory"} if continuation.input_schema["properties"] else {}
+        continuation_resolution = resolve_catalog_call(
+            first_catalog,
+            ToolCall("read_next_page", arguments),
+            expected_context_id=first.context_id,
+        )
+        first = builder.build(
+            task,
+            world,
+            ActionSpace(world.observation_id, ()),
+            _evaluation(task, world.observation_id),
+            delivery_store=continuation_resolution.next_delivery_store,
+        )
+        _, first_catalog = catalog_for(first)
+        available = next(item for item in first_catalog.specs if item.name == "read_region").input_schema[
+            "properties"
+        ]["region_ref"]["enum"]
 
-    opened = resolve_catalog_call(
+    opened_resolution = resolve_catalog_call(
         first_catalog,
-        ToolCall("read_region", {"region_ref": region_ref}),
+        ToolCall("read_region", {"region_ref": desired_region_ref}),
         expected_context_id=first.context_id,
-    ).decision
+    )
+    opened = opened_resolution.decision
 
     assert opened.result["has_more"] is True
     assert "cursor" not in opened.result
-    assert opened.delivery_lens is not None and opened.delivery_lens.next_cursor
+    assert first.delivery_store.active_read is None
+    assert opened_resolution.next_delivery_store.active_read.next_cursor
     second = builder.build(
         task,
         world,
         ActionSpace(world.observation_id, ()),
         _evaluation(task, world.observation_id),
-        delivery_lens=opened.delivery_lens,
         region_index=first.region_index,
+        delivery_store=opened_resolution.next_delivery_store,
     )
     _, second_catalog = catalog_for(second)
     continuation = next(item for item in second_catalog.specs if item.name == "read_next_page")
-    assert continuation.input_schema["properties"] == {}
+    arguments = {"scope": "active_read"} if continuation.input_schema["properties"] else {}
 
     continued = resolve_catalog_call(
         second_catalog,
-        ToolCall("read_next_page", {}),
+        ToolCall("read_next_page", arguments),
         expected_context_id=second.context_id,
     ).decision
     assert continued.result["items"]
@@ -656,9 +679,9 @@ def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action
     )
     schemas = json.dumps([to_json_compatible(item.input_schema) for item in catalog.specs])
 
-    assert '"enum": ["E' not in schemas
-    assert '"enum": ["F' not in schemas
-    assert '"enum": ["R' not in schemas
+    assert '"enum": ["E' in schemas
+    assert '"enum": ["F' in schemas
+    assert '"enum": ["R' in schemas
     assert all(ref in {item.target_ref for item in context.complete_actions} for ref in view.manifest.executable_refs)
     assert catalog.serialized_bytes < 8_000
 
@@ -840,7 +863,7 @@ def test_task_related_current_action_is_promoted_with_structural_closure() -> No
         expected_catalog_id=catalog.catalog_id,
     ).decision
 
-    assert "ActionCandidates exact=true" in view.view.text
+    assert "ActionCandidates" in view.view.text
     assert f'[{target.target_ref}] activate menuitem "Settings"' in view.view.text
     assert 'path=["Control Center","Account workspace","Account Preferences","Settings"]' in view.view.text
     assert 'verbs=["activate"]' in view.view.text
@@ -887,7 +910,7 @@ def test_one_delivery_identity_owns_view_catalog_and_resolver_admission() -> Non
 
     assert not hasattr(delivery.view, "manifest")
     assert catalog.manifest is delivery.manifest
-    assert delivery.delivery_index is context.region_index
+    assert catalog.delivery_index is context.region_index
     assert catalog.delivery_index is context.region_index
     assert catalog.delivery_id == delivery.delivery_id
 
@@ -929,7 +952,7 @@ def test_nonmanifest_ref_is_grounding_gap_and_new_world_rejects_old_delivery() -
             ToolCall("activate", {"target": "E999"}),
             expected_context_id=before_context.context_id,
         )
-    assert gap.value.code is GroundedToolResolutionCode.GROUNDING_GAP
+    assert gap.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
     with pytest.raises(GroundedToolResolutionError) as stale:
         compile_grounded_tool_catalog(

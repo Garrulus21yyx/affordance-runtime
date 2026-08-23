@@ -8,7 +8,9 @@ import threading
 
 import pytest
 
+from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.surfaces.browsergym.binding import BrowserGymElementBinding
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
     BrowserGymCurrentnessStatus,
@@ -49,14 +51,33 @@ def test_real_unchanged_ax_world_is_current_without_capture_side_effects(slug: s
             initial = await environment.reset(task)
             assert initial.observation is not None
             world = initial.observation
-            action = world.bindings[0].semantic_action
-            parameters = {}
-            if action == "type_text":
-                parameters = {"text": "focused-currentness-witness"}
-            elif action == "select_option":
-                enum = world.bindings[0].parameter_schema["properties"]["value"]["enum"]
-                parameters = {"value": enum[0]}
-            request = request_for(world, task, action, parameters)
+            binding = next(
+                item
+                for item in world.bindings
+                if isinstance(environment.bindings.get(item.binding_id), BrowserGymElementBinding)
+            )
+            schema = binding.parameter_schema
+            properties = schema.get("properties", {})
+            parameters = {
+                name: (
+                    field["enum"][0]
+                    if field.get("enum")
+                    else "focused-currentness-witness"
+                    if field.get("type") == "string"
+                    else field.get("minimum", 0)
+                    if field.get("type") in {"integer", "number"}
+                    else False
+                )
+                for name in schema.get("required", ())
+                if (field := properties[name])
+            }
+            option = next(
+                item
+                for item in ActionSpaceBuilder().build(task, world).options
+                if binding.binding_id in item.eligible_binding_ids
+            )
+            selection = ActionSpaceBuilder().admit(option, parameters)
+            request = ActionBinder().bind(selection, world, "context:test")
             private = environment.bindings.get(request.binding.binding_id)
             assert private is not None
             before = (

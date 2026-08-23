@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import itertools
+import json
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler, SelectorMode
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedActionResolution,
@@ -101,11 +104,16 @@ def _catalog(tool) -> GroundedToolCatalog:
         "grounded-catalog:" + "b" * 32,
         _CONTEXT,
         "delivery:" + "d" * 64,
-        DeliveryManifest("world:test", tuple(f"E{index}" for index in range(1, 65))),
+        DeliveryManifest(tuple(f"E{index}" for index in range(1, 65))),
         WorldDeliveryIndex("world:test"),
         (RegisteredGroundedTool(tool.public_spec, tool),),
         1,
     )
+
+
+def _branches(tool) -> tuple[dict[str, object], ...]:
+    schema = tool.public_spec.input_schema
+    return tuple(schema["oneOf"]) if "oneOf" in schema else (schema,)
 
 
 def test_single_target_uses_stable_operation_and_explicit_target() -> None:
@@ -114,7 +122,7 @@ def test_single_target_uses_stable_operation_and_explicit_target() -> None:
     assert tool.public_spec.name == "activate"
     assert tool.selector_mode is SelectorMode.CURRENT_TARGET
     assert tool.public_spec.input_schema["required"] == ("target",)
-    assert tool.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert tool.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
 
 
 def test_one_stable_tool_contains_all_current_targets() -> None:
@@ -122,7 +130,11 @@ def test_one_stable_tool_contains_all_current_targets() -> None:
 
     assert len(tools) == 1
     assert tools[0].public_spec.name == "activate"
-    assert tools[0].public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert {
+        ref
+        for branch in _branches(tools[0])
+        for ref in branch["properties"]["target"]["enum"]
+    } == {"E1", "E2", "E3"}
     assert len(tools[0].private_resolutions) == 3
 
 
@@ -132,7 +144,11 @@ def test_unary_selector_schema_is_referentially_closed(count: int) -> None:
     catalog = _catalog(tool)
     offered = tuple(item.selector_values["target"] for item in tool.private_resolutions)
 
-    assert tool.public_spec.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    assert {
+        ref
+        for branch in _branches(tool)
+        for ref in branch["properties"]["target"]["enum"]
+    } == set(offered)
     assert len(set(offered)) == len(offered)
     for resolution in tool.private_resolutions:
         target = resolution.selector_values["target"]
@@ -156,12 +172,11 @@ def test_tool_name_and_shape_do_not_depend_on_state_or_candidate_order() -> None
         signatures.add(
             (
                 tool.public_spec.name,
-                tuple(tool.public_spec.input_schema["properties"]),
-                tuple(tool.public_spec.input_schema["required"]),
+                json.dumps(to_json_compatible(tool.public_spec.input_schema), sort_keys=True),
             )
         )
 
-    assert signatures == {("activate", ("target",), ("target",))}
+    assert len(signatures) == 1
 
 
 def test_multiple_operations_are_registry_names_without_suffixes() -> None:
@@ -181,7 +196,11 @@ def test_business_enums_merge_publicly_but_remain_exact_per_target() -> None:
     )[0]
     catalog = _catalog(tool)
 
-    assert tool.public_spec.input_schema["properties"]["value"]["enum"] == ("A", "B", "C")
+    enum_by_target = {
+        branch["properties"]["target"]["enum"][0]: tuple(branch["properties"]["value"]["enum"])
+        for branch in _branches(tool)
+    }
+    assert enum_by_target == {"E1": ("A", "B"), "E2": ("B", "C")}
     accepted = resolve_catalog_call(
         catalog,
         ToolCall("select_option", {"target": "E2", "value": "C"}),
@@ -210,10 +229,15 @@ def test_required_destination_uses_source_and_destination_and_resolves_exact_pai
     catalog = _catalog(tool)
 
     assert tool.selector_mode is SelectorMode.CURRENT_ENDPOINTS
-    assert set(tool.public_spec.input_schema["properties"]) == {"source", "destination"}
-    assert tuple(tool.public_spec.input_schema["required"]) == ("source", "destination")
-    assert tool.public_spec.input_schema["properties"]["source"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
-    assert tool.public_spec.input_schema["properties"]["destination"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
+    pairs = {
+        (
+            branch["properties"]["source"]["enum"][0],
+            branch["properties"]["destination"]["enum"][0],
+        )
+        for branch in _branches(tool)
+    }
+    assert pairs == {("E1", "E8"), ("E2", "E9")}
+    assert all(tuple(branch["required"]) == ("source", "destination") for branch in _branches(tool))
     outcome = resolve_catalog_call(
         catalog,
         ToolCall("drag_to", {"source": "E2", "destination": "E9"}),
@@ -227,6 +251,59 @@ def test_required_destination_uses_source_and_destination_and_resolves_exact_pai
             ToolCall("drag_to", {"source": "E1", "destination": "E9"}),
             expected_context_id=_CONTEXT,
         )
+
+
+@given(
+    st.lists(
+        st.sets(st.integers(min_value=20, max_value=24), min_size=1, max_size=5),
+        min_size=1,
+        max_size=5,
+    )
+)
+def test_factorized_sparse_relation_matches_rows_and_unique_resolver(
+    adjacency: list[set[int]],
+) -> None:
+    options = tuple(
+        _candidate(
+            source,
+            operation="drag_to",
+            mode="required",
+            destinations=tuple(
+                _destination(f"destination:{destination}", f"E{destination}")
+                for destination in sorted(destinations)
+            ),
+        )
+        for source, destinations in enumerate(adjacency, 1)
+    )
+    tool = _compile(*options)[0]
+    catalog = _catalog(tool)
+    expected = {
+        (f"E{source}", f"E{destination}")
+        for source, destinations in enumerate(adjacency, 1)
+        for destination in destinations
+    }
+    accepted: set[tuple[str, str]] = set()
+    for source in range(1, len(adjacency) + 1):
+        for destination in range(20, 25):
+            arguments = {"source": f"E{source}", "destination": f"E{destination}"}
+            schema_accepts = True
+            try:
+                validate_value(arguments, tool.public_spec.input_schema, path="command")
+            except ValueError:
+                schema_accepts = False
+            resolves = True
+            try:
+                resolve_catalog_call(
+                    catalog,
+                    ToolCall("drag_to", arguments),
+                    expected_context_id=_CONTEXT,
+                )
+            except GroundedToolResolutionError:
+                resolves = False
+            assert schema_accepts == resolves == ((f"E{source}", f"E{destination}") in expected)
+            if resolves:
+                accepted.add((f"E{source}", f"E{destination}"))
+    assert accepted == expected
 
 
 def test_invalid_or_stale_reference_never_resolves() -> None:

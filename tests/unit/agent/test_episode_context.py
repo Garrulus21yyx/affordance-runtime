@@ -10,8 +10,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.observation_delivery import (
+    ObservationDeliveryStore,
+    PublicEffectProjector,
+)
 from affordance_runtime.agent.context.step_projection import project_step_result
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.decisions import (
     ReadRegionResult,
@@ -125,6 +129,13 @@ def test_exact_gui_result_survives_after_it_leaves_latest_four_steps() -> None:
         effect,
         AgentTurnView("select_action", "activate", reason="changed"),
         1,
+        public_effect=PublicEffectProjector().project(
+            delta,
+            before,
+            after,
+            WorldDeliveryIndex.from_observation(before),
+            WorldDeliveryIndex.from_observation(after),
+        ),
     )
     ordinary = SimpleNamespace(
         public_world_delta=WorldTransitionProjector().project(after, after),

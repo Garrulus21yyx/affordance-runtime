@@ -11,7 +11,6 @@ from affordance_runtime.execution.contracts import (
     BoundActionRequest,
     DispatchStatus,
 )
-from affordance_runtime.goals import GoalPredicateValueType, GoalSemanticContract
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationCapabilities,
@@ -75,39 +74,6 @@ class ScriptedSurfaceAdapter:
     @property
     def physical_environment_id(self) -> str:
         return f"scripted:{id(self)}"
-
-    @property
-    def goal_semantic_contract(self) -> GoalSemanticContract:
-        worlds = (
-            self.initial_observation,
-            *self.independent_observations,
-            *self.post_observations,
-        )
-        predicates: dict[str, GoalPredicateValueType] = {
-            "label": GoalPredicateValueType.STRING,
-            "kind": GoalPredicateValueType.STRING,
-            "role": GoalPredicateValueType.STRING,
-        }
-        for world in worlds:
-            for target in world.targets:
-                for name, value in target.state.items():
-                    value_type = (
-                        GoalPredicateValueType.BOOLEAN
-                        if type(value) is bool
-                        else GoalPredicateValueType.STRING
-                        if isinstance(value, str)
-                        else None
-                    )
-                    if value_type is not None:
-                        previous = predicates.setdefault(name, value_type)
-                        if previous is not value_type:
-                            raise ValueError(f"scripted goal predicate type conflict: {name}")
-        return GoalSemanticContract(
-            entity_kinds=frozenset(target.role for world in worlds for target in world.targets),
-            predicates=predicates,
-            relations=frozenset(edge for world in worlds for target in world.targets for edge in target.relations),
-            finalizer_capabilities=frozenset(binding.semantic_action for world in worlds for binding in world.bindings),
-        )
 
     @property
     def owns_physical_reset(self) -> bool:
@@ -289,6 +255,10 @@ class ScriptedEnvironment:
     def __getattr__(self, name: str):
         return getattr(self.adapter, name)
 
+    @property
+    def final_response_codec(self):
+        return self.world.final_response_codec
+
     async def reset(self, task):
         self.reset_calls += 1
         self.capture_requests.clear()
@@ -311,13 +281,6 @@ class ScriptedEnvironment:
     async def execute(self, request):
         self.execute_calls += 1
         outcome = await self.world.execute(request)
-        self.executed_requests[:] = self.adapter.executed_requests
-        self.dispatched_requests[:] = self.adapter.dispatched_requests
-        return outcome
-
-    async def execute_form_fields(self, command):
-        self.execute_calls += 1
-        outcome = await self.world.execute_form_fields(command)
         self.executed_requests[:] = self.adapter.executed_requests
         self.dispatched_requests[:] = self.adapter.dispatched_requests
         return outcome

@@ -8,6 +8,10 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from affordance_runtime.agent.context.action_candidate_projection import (
+        ActionDeliveryFragment,
+        ActionDeliveryPlan,
+    )
     from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
     from affordance_runtime.agent.context.context import (
         AgentContext,
@@ -41,6 +45,14 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.task_projection import project_task
 
 _EXPORTS = {
+    "ActionDeliveryFragment": (
+        "affordance_runtime.agent.context.action_candidate_projection",
+        "ActionDeliveryFragment",
+    ),
+    "ActionDeliveryPlan": (
+        "affordance_runtime.agent.context.action_candidate_projection",
+        "ActionDeliveryPlan",
+    ),
     "AgentActionOptionView": ("affordance_runtime.agent.context.contracts", "AgentActionOptionView"),
     "AgentActionPageView": ("affordance_runtime.agent.context.contracts", "AgentActionPageView"),
     "AgentActionSpaceView": ("affordance_runtime.agent.context.contracts", "AgentActionSpaceView"),

@@ -27,7 +27,16 @@ class RunTraceSink(Protocol):
 
     def benchmark_case_started(self, *, case_id: str, description: str, timeout_s: float) -> None: ...
 
-    def benchmark_case_finished(self, *, case_id: str, status: str) -> None: ...
+    def benchmark_case_finished(
+        self,
+        *,
+        case_id: str,
+        status: str,
+        projection_disposition: str = "not_attempted",
+        report_disposition: str = "not_attempted",
+        export_disposition: str = "not_attempted",
+        final_commit_disposition: str = "not_attempted",
+    ) -> None: ...
 
     def run_start_failed(self, task: object, acquisition: object) -> None: ...
 
@@ -222,8 +231,25 @@ class RunTraceRecorder:
             timeout_s=timeout_s,
         )
 
-    def benchmark_case_finished(self, *, case_id: str, status: str) -> None:
-        self._emit("benchmark_case_finished", case_id=case_id, status=status)
+    def benchmark_case_finished(
+        self,
+        *,
+        case_id: str,
+        status: str,
+        projection_disposition: str = "not_attempted",
+        report_disposition: str = "not_attempted",
+        export_disposition: str = "not_attempted",
+        final_commit_disposition: str = "not_attempted",
+    ) -> None:
+        self._emit(
+            "benchmark_case_finished",
+            case_id=case_id,
+            status=status,
+            projection_disposition=projection_disposition,
+            report_disposition=report_disposition,
+            export_disposition=export_disposition,
+            final_commit_disposition=final_commit_disposition,
+        )
 
     def run_start_failed(self, task: object, acquisition: object) -> None:
         self._emit(
@@ -1157,7 +1183,14 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
             "primary_snapshot_available",
         ),
         "benchmark_case_started": ("case_id", "description", "timeout_s"),
-        "benchmark_case_finished": ("case_id", "status"),
+        "benchmark_case_finished": (
+            "case_id",
+            "status",
+            "projection_disposition",
+            "report_disposition",
+            "export_disposition",
+            "final_commit_disposition",
+        ),
         "case_lifecycle_phase": ("phase",),
         "finalization_protocol": (
             "stop_send_count",

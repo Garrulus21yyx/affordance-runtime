@@ -28,7 +28,11 @@ from affordance_runtime.execution import ActionError, ActionResult, DispatchStat
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import AcquisitionOrigin
-from affordance_runtime.world.finalization import EnvironmentFinalization
+from affordance_runtime.world.finalization import (
+    PLAIN_TEXT_FINAL_RESPONSE_CODEC,
+    EnvironmentFinalization,
+    FinalResponseCodec,
+)
 from tests.support.agent.core_loop_support import SharedActionOutcomeProjector, shared_world
 from tests.support.observation_acquisition import acquired_acquisition
 
@@ -94,6 +98,7 @@ class FinalizingEnvironment:
     post_world: object
     dispatch_status: DispatchStatus
     finalize_calls: list[str] = field(default_factory=list)
+    final_response_codec: FinalResponseCodec = PLAIN_TEXT_FINAL_RESPONSE_CODEC
 
     def __getattr__(self, name):
         return getattr(self.wrapped, name)
@@ -148,22 +153,20 @@ def test_final_response_sends_once_then_uses_one_fresh_native_evaluation(dispatc
 
 
 def test_invalid_final_response_representation_never_sends_stop() -> None:
+    class InvalidCodec:
+        def normalize(self, content: str) -> str:
+            del content
+            raise ValueError("invalid native response")
+
     before = shared_world("invalid-final-before", False)
     after = shared_world("invalid-final-after", True)
     environment = FinalizingEnvironment(
         ScriptedEnvironment(before),
         after,
         DispatchStatus.SENT,
+        final_response_codec=InvalidCodec(),
     )
-    task = TaskGoal(
-        "task:invalid-final",
-        "Return a number.",
-        inputs={
-            "public_final_response_contract": {
-                "json_schema": {"type": "number"},
-            }
-        },
-    )
+    task = TaskGoal("task:invalid-final", "Return a number.")
     runtime = TargetRuntime(
         AgentDecisionPorts(FinalResponsePolicy("not-a-number")),
         SharedActionOutcomeProjector(),
@@ -178,6 +181,33 @@ def test_invalid_final_response_representation_never_sends_stop() -> None:
     assert state.last_step.feedback == "final_response_invalid"
     assert environment.finalize_calls == []
     assert state.finalization is None
+
+
+def test_final_response_codec_canonical_content_is_the_only_content_sent() -> None:
+    class CanonicalCodec:
+        def normalize(self, content: str) -> str:
+            assert content == "raw"
+            return '{"canonical":true}'
+
+    before = shared_world("canonical-final-before", False)
+    after = shared_world("canonical-final-after", True)
+    environment = FinalizingEnvironment(
+        ScriptedEnvironment(before),
+        after,
+        DispatchStatus.SENT,
+        final_response_codec=CanonicalCodec(),
+    )
+    runtime = TargetRuntime(
+        AgentDecisionPorts(FinalResponsePolicy("raw")),
+        SharedActionOutcomeProjector(),
+        TerminalEvaluator(after.observation_id),
+        goal_compiler=NotRequiredGoalCompiler("direct_finalization_test"),
+    )
+
+    state = asyncio.run(runtime.run_task(environment, TaskGoal("task:canonical-final", "Answer.")))
+
+    assert state.status is RunStatus.DONE
+    assert environment.finalize_calls == ['{"canonical":true}']
 
 
 def test_native_incomplete_after_stop_is_terminal_failure_and_durable_official_outcome() -> None:

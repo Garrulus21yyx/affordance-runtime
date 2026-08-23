@@ -36,6 +36,28 @@ class ActionRisk(StrEnum):
     IRREVERSIBLE = "irreversible"
 
 
+class ActionSpaceIssueCode(StrEnum):
+    ACTION_ROUTE_CONFLICT = "action_route_conflict"
+
+
+@dataclass(frozen=True)
+class ActionSpaceIssue:
+    code: ActionSpaceIssueCode
+    operation: str
+    source_target_id: str
+    destination_ids: tuple[str, ...] = ()
+    conflicting_contract_fields: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.operation.strip() or not self.source_target_id.strip():
+            raise ValueError("action-space issue requires one public route selector")
+        object.__setattr__(self, "destination_ids", canonical_destination_ids(self.destination_ids))
+        fields = tuple(sorted(set(self.conflicting_contract_fields)))
+        if not fields:
+            raise ValueError("action-space route conflict requires conflicting contract fields")
+        object.__setattr__(self, "conflicting_contract_fields", fields)
+
+
 @dataclass(frozen=True)
 class ActionOption:
     action_id: str
@@ -51,7 +73,6 @@ class ActionOption:
     risk: ActionRisk = ActionRisk.LOW
     destination_required: bool = False
     eligible_destination_ids: tuple[str, ...] = ()
-    batchable: bool = False
     observation_barrier: bool = True
     verification_contract_digest: str = ""
     verification_family: str = ""
@@ -193,6 +214,7 @@ class AdmittedActionSelection:
 class ActionSpace:
     observation_id: str
     options: tuple[ActionOption, ...]
+    issues: tuple[ActionSpaceIssue, ...] = ()
     action_space_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -203,6 +225,9 @@ class ActionSpace:
         if len({option.action_id for option in self.options}) != len(self.options):
             raise ValueError("action ids must be unique within an action space")
         object.__setattr__(self, "options", tuple(self.options))
+        object.__setattr__(self, "issues", tuple(self.issues))
+        if any(not isinstance(issue, ActionSpaceIssue) for issue in self.issues):
+            raise TypeError("action-space issues must be typed")
         semantic_membership = tuple(
             (
                 option.action_id,
@@ -223,7 +248,7 @@ class ActionSpace:
             for option in self.options
         )
         encoded = json.dumps(
-            (self.observation_id, semantic_membership),
+            (self.observation_id, semantic_membership, to_json_compatible(self.issues)),
             sort_keys=True,
             separators=(",", ":"),
         )

@@ -58,38 +58,6 @@ class NeverPolicy:
         raise AssertionError("complete task must not call policy")
 
 
-def test_form_fields_capability_survives_formal_webarena_and_counting_facades() -> None:
-    marker = object()
-
-    class World:
-        observation_capabilities = ObservationCapabilities(True, True)
-
-        def __init__(self):
-            self.commands = []
-
-        async def execute_form_fields(self, command):
-            self.commands.append(command)
-            return marker
-
-    world = World()
-    task = TaskGoal("task:facade", "Fill the current form.")
-    case_environment = WebArenaVerifiedCaseEnvironment(
-        SimpleNamespace(),
-        SimpleNamespace(),
-        world,
-        task,
-    )
-    instrumentation = BenchmarkInstrumentation()
-    counted = CountingEnvironment(case_environment, instrumentation, frozenset())
-    command = SimpleNamespace(requests=())
-
-    outcome = asyncio.run(counted.execute_form_fields(command))
-
-    assert outcome is marker
-    assert world.commands == [command]
-    assert instrumentation.environment_execute_calls == 1
-
-
 def test_webarena_native_evaluator_uses_terminal_post_state_after_sent_unknown_stop() -> None:
     snapshot = BrowserGymTaskStateSnapshot(
         "run:1",
@@ -530,3 +498,22 @@ def test_runner_preserves_typed_agent_failure_without_message_matching() -> None
     assert result.agent_failure_code == "post_action_capability_unavailable"
     assert result.failure_origin is CaseFailureOrigin.NONE
     assert result.failure_facts.runtime_failure is None
+
+
+def test_zero_case_suite_aggregates_without_strict_pairing_assumptions(tmp_path) -> None:
+    from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+
+    suite = asyncio.run(run_suite(
+        BenchmarkManifest(
+            "target-loop-manifest.v1",
+            "empty-suite",
+            "deterministic",
+            7,
+            (),
+        ),
+        trace_dir=tmp_path,
+    ))
+
+    assert suite.cases == ()
+    assert suite.acceptance.accepted
+    assert suite.acceptance.acceptance_errors == ()

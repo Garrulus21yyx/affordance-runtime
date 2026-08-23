@@ -18,6 +18,7 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
+    ContinueDeliveryResult,
     DecisionKind,
     FinalResponse,
     LocalToolResult,
@@ -27,13 +28,18 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     SearchPageContentResult,
     SelectAction,
-    SetFormFields,
     ToolRejectedResult,
     Wait,
 )
 from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.agent.result_code import AgentFailureCode
-from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
+from affordance_runtime.agent.run_state import (
+    ControlTermination,
+    ControlTerminationKind,
+    RunState,
+    RunStatus,
+    StepResult,
+)
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.agent.workspace import (
@@ -57,6 +63,9 @@ __all__ = [
     "RememberFactResult",
     "CoreAgentLoop",
     "CoreLoopStartError",
+    "ControlTermination",
+    "ControlTerminationKind",
+    "ContinueDeliveryResult",
     "CurrentFinding",
     "DefaultWorkspaceReducer",
     "DecisionCapability",
@@ -74,7 +83,6 @@ __all__ = [
     "RuntimeFailure",
     "PublicWorldDelta",
     "SelectAction",
-    "SetFormFields",
     "SearchPageContentResult",
     "SemanticEvent",
     "StepResult",

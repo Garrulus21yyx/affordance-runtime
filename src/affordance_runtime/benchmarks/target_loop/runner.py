@@ -28,6 +28,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkRunIdentity,
     BenchmarkSuiteResult,
     CaseFailureOrigin,
+    FailureFacts,
     MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.instrumentation import (
@@ -38,14 +39,23 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     instrument_task_evaluator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest
+from affordance_runtime.benchmarks.target_loop.metric_registry import CANONICAL_METRICS
 from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
     OfficialOutcomeCheckpointRecorder,
     OfficialOutcomePersistenceError,
 )
 from affordance_runtime.benchmarks.target_loop.result_store import (
     CaseLifecyclePhase,
+    CaseOutcomeRecord,
+    CaseRecordRevision,
+    CleanupDisposition,
+    ExportDisposition,
+    FinalCommitDisposition,
+    ProjectionDisposition,
+    ReportDisposition,
     RunResultStoreError,
     SQLiteRunResultStore,
+    SuiteReportDisposition,
 )
 
 _CLEANUP_TIMEOUT_S = 10.0
@@ -94,6 +104,22 @@ async def run_suite(
             store = SQLiteRunResultStore(trace_dir / "run-results.sqlite3")
         except RunResultStoreError as exc:
             store_initialization_error = type(exc).__name__
+    if store is not None:
+        try:
+            await _bounded_report_store_call(
+                lambda: store.record_suite_report_disposition(
+                    SuiteReportDisposition(
+                        identity.run_id,
+                        len(manifest.cases),
+                        ReportDisposition.NOT_ATTEMPTED,
+                        ExportDisposition.NOT_ATTEMPTED,
+                    )
+                ),
+                "suite-start",
+            )
+        except Exception:
+            # Case BODY/CLEANUP/FINAL remains independently durable.
+            pass
     completed = []
     for index, case in enumerate(manifest.cases, 1):
         if interruption_requested is not None and interruption_requested.is_set():
@@ -121,7 +147,7 @@ async def run_suite(
             case.required_measurements,
             case.metric_expectations,
         )
-        for case, result in zip(manifest.cases, results, strict=True)
+        for case, result in zip(manifest.cases, results)
     )
     accepted = accept_suite(
         results,
@@ -146,7 +172,48 @@ async def run_suite(
             )
         ),
     }
-    return BenchmarkSuiteResult(identity, results, accepted, rates)
+    suite_result = BenchmarkSuiteResult(identity, results, accepted, rates)
+    if store is not None and trace_dir is not None:
+        suite_report_disposition = ReportDisposition.NOT_ATTEMPTED
+        suite_export_disposition = ExportDisposition.NOT_ATTEMPTED
+        suite_failure_code = ""
+        try:
+            await _bounded_report_store_call(
+                lambda: store.commit_run_report(suite_result),
+                "suite-report-commit",
+            )
+        except Exception:
+            suite_report_disposition = ReportDisposition.FAILED
+            suite_failure_code = "suite_report_commit_failed"
+        else:
+            suite_report_disposition = ReportDisposition.COMMITTED
+            try:
+                await _bounded_report_store_call(
+                    lambda: store.export_run_report(identity.run_id, trace_dir),
+                    "suite-report-export",
+                )
+            except Exception:
+                suite_export_disposition = ExportDisposition.FAILED
+                suite_failure_code = "suite_report_export_failed"
+            else:
+                suite_export_disposition = ExportDisposition.EXPORTED
+        try:
+            await _bounded_report_store_call(
+                lambda: store.record_suite_report_disposition(
+                    SuiteReportDisposition(
+                        identity.run_id,
+                        len(manifest.cases),
+                        suite_report_disposition,
+                        suite_export_disposition,
+                        suite_failure_code,
+                    )
+                ),
+                "suite-report-disposition",
+            )
+        except Exception:
+            # The committed case prefix and run report (when present) remain authoritative.
+            pass
+    return suite_result
 
 
 async def _run_case(
@@ -189,6 +256,7 @@ async def _run_case(
     )
     outcome_recorder.persistence_error = store_initialization_error
     environment = None
+    cleanup_owned = False
     runtime = None
     result = None
     partial = None
@@ -196,11 +264,14 @@ async def _run_case(
     state_holder: dict[str, RunState] = {}
     failure = ""
     lifecycle_persistence_error = ""
+    body_record = None
+    cleanup_record = None
     started = time.perf_counter()
     _set_status(status_changed, "running")
     try:
         try:
             environment = case.environment_factory(instrumentation)
+            cleanup_owned = True
             lifecycle.transition(CaseLifecyclePhase.ENVIRONMENT_READY)
         except Exception as exc:
             instrumentation.record_failure(
@@ -303,23 +374,21 @@ async def _run_case(
                 episode_monitor=runtime.episode_monitor if runtime is not None else None,
             )
         lifecycle.transition(CaseLifecyclePhase.CASE_BODY_RETURNED)
+        checkpoint_id, checkpoint_digest = _checkpoint_join(
+            outcome_recorder.durable_checkpoint
+        )
+        body_record = CaseOutcomeRecord(
+            case.case_id,
+            CaseRecordRevision.BODY,
+            str(getattr(result, "status", RunStatus.FAILED)),
+            instrumentation.failure_code,
+            checkpoint_id,
+            checkpoint_digest,
+        )
         if result_store is not None:
-            preliminary = project_case_result(
-                case.case_id,
-                result,
-                instrumentation,
-                (time.perf_counter() - started) * 1000,
-                failure,
-                timeout_snapshot=partial,
-                final_snapshot=snapshot,
-                official_checkpoint=outcome_recorder.durable_checkpoint,
-            )
             try:
-                await asyncio.wait_for(
-                    _call_sync_owner(lambda: result_store.commit_case_report(preliminary), "result-persist"),
-                    timeout=_REPORT_TIMEOUT_S,
-                )
-            except Exception as exc:
+                result_store.commit_case_outcome(body_record)
+            except RunResultStoreError as exc:
                 lifecycle_persistence_error = type(exc).__name__
             else:
                 lifecycle.transition(CaseLifecyclePhase.RESULT_PERSISTED)
@@ -339,7 +408,7 @@ async def _run_case(
                 step_count=int(getattr(state, "step_count", 0)),
             )
         lifecycle.transition(CaseLifecyclePhase.CLEANUP_STARTED)
-        if environment is not None:
+        if cleanup_owned:
             _set_status(status_changed, "cleanup")
             instrumentation.cleanup_status = "running"
             instrumentation.benchmark_lifecycle_phase(
@@ -373,8 +442,17 @@ async def _run_case(
             else:
                 instrumentation.cleanup_status = "succeeded"
         lifecycle.transition(CaseLifecyclePhase.CLEANUP_FINISHED)
+        cleanup_record = replace(
+            body_record,
+            revision=CaseRecordRevision.CLEANUP,
+            cleanup_disposition=_cleanup_disposition(
+                instrumentation.cleanup_status,
+                acquired=cleanup_owned,
+            ),
+        )
         if result_store is not None:
             try:
+                result_store.commit_case_outcome(cleanup_record)
                 result_store.record_cleanup(
                     case.case_id,
                     instrumentation.cleanup_status,
@@ -389,30 +467,9 @@ async def _run_case(
             primary_result_available=result is not None,
             primary_snapshot_available=snapshot is not None or partial is not None,
         )
-    lifecycle.transition(CaseLifecyclePhase.CASE_FINISHED)
-    instrumentation.benchmark_case_finished(
-        case_id=case.case_id,
-        status=str(getattr(result, "status", RunStatus.FAILED)),
-    )
-    flush = getattr(trace_recorder, "flush_viewer", None)
-    if flush is not None:
-        try:
-            await asyncio.wait_for(
-                _call_sync_owner(
-                    # close() may spend its bound joining and then a second,
-                    # bounded terminate/join. Leave enough owner-call margin
-                    # for the local viewer_status event to be persisted.
-                    lambda: flush(timeout_s=max(0.005, _VIEWER_FLUSH_TIMEOUT_S * 0.3)),
-                    "viewer-flush",
-                ),
-                timeout=_VIEWER_FLUSH_TIMEOUT_S,
-            )
-        except Exception:
-            # Viewer failure is already fail-open and never changes case truth.
-            pass
-    # Viewer status is the final local trace write. Snapshot trace integrity
-    # only after every authoritative JSONL event so late failures invalidate
-    # acceptance.
+    lifecycle.transition(CaseLifecyclePhase.FINAL_ATTEMPT)
+    # Snapshot local trace integrity before projection. Remote viewer shutdown
+    # happens only after the terminal local case event below.
     instrumentation.set_custom_metric("trace_recording_failures", len(instrumentation.trace_recorder.errors))
     instrumentation.set_custom_metric(
         "viewer_dropped_event_count",
@@ -439,16 +496,42 @@ async def _run_case(
         )
         failure = _append_failure(failure, persistence_failure_code.replace("_", " "))
     elapsed = (time.perf_counter() - started) * 1000
-    case_result = project_case_result(
-        case.case_id,
-        result,
-        instrumentation,
-        elapsed,
-        failure,
-        timeout_snapshot=partial,
-        final_snapshot=snapshot,
-        official_checkpoint=outcome_recorder.durable_checkpoint,
-    )
+    projection_disposition = ProjectionDisposition.PROJECTED
+    try:
+        case_result = project_case_result(
+            case.case_id,
+            result,
+            instrumentation,
+            elapsed,
+            failure,
+            timeout_snapshot=partial,
+            final_snapshot=snapshot,
+            official_checkpoint=outcome_recorder.durable_checkpoint,
+        )
+    except Exception as exc:
+        projection_disposition = ProjectionDisposition.FAILED
+        instrumentation.record_failure(
+            CaseFailureOrigin.HARNESS_PROJECTION,
+            "case_projection_failed",
+            exc,
+        )
+        failure = _append_failure(failure, "case projection failed")
+        case_result = BenchmarkCaseResult(
+            case.case_id,
+            RunStatus.FAILED.value,
+            False,
+            failure,
+            elapsed,
+            measurements={name: MetricMeasurement(0, True) for name in CANONICAL_METRICS},
+            cleanup_status=instrumentation.cleanup_status,
+            failure_facts=FailureFacts(
+                component_origin=CaseFailureOrigin.HARNESS_PROJECTION,
+                component_code="case_projection_failed",
+                component_exception_class=type(exc).__name__,
+                cleanup_code=instrumentation.cleanup_failure_code,
+                cleanup_exception_class=instrumentation.cleanup_exception_class,
+            ),
+        )
     if run_identity is not None:
         case_result = replace(
             case_result,
@@ -458,6 +541,8 @@ async def _run_case(
             manifest_digest=run_identity.manifest_digest,
             harness_schema_version=run_identity.harness_schema_version,
         )
+    report_disposition = ReportDisposition.NOT_ATTEMPTED
+    export_disposition = ExportDisposition.NOT_ATTEMPTED
     if result_store is not None:
         report_failure_code = ""
         try:
@@ -468,7 +553,9 @@ async def _run_case(
         except Exception as exc:
             report_failure_code = "report_payload_commit_failed"
             report_exception = exc
+            report_disposition = ReportDisposition.FAILED
         else:
+            report_disposition = ReportDisposition.COMMITTED
             try:
                 await asyncio.wait_for(
                     _call_sync_owner(lambda: result_store.export_case_report(case.case_id, trace_dir), "report-export"),
@@ -477,6 +564,9 @@ async def _run_case(
             except Exception as exc:
                 report_failure_code = "json_export_failed"
                 report_exception = exc
+                export_disposition = ExportDisposition.FAILED
+            else:
+                export_disposition = ExportDisposition.EXPORTED
         if report_failure_code:
             try:
                 result_store.record_report_status(
@@ -524,6 +614,48 @@ async def _run_case(
                     # The earlier committed payload remains regenerable; this
                     # projection-update failure cannot erase it.
                     pass
+    final_commit_disposition = FinalCommitDisposition.NOT_ATTEMPTED
+    if result_store is not None and cleanup_record is not None:
+        final_record = replace(
+            cleanup_record,
+            revision=CaseRecordRevision.FINAL,
+            projection_disposition=projection_disposition,
+            report_disposition=report_disposition,
+            export_disposition=export_disposition,
+            finished=True,
+        )
+        try:
+            result_store.commit_case_outcome(final_record)
+        except Exception as exc:
+            final_commit_disposition = FinalCommitDisposition.FAILED
+            instrumentation.record_failure(
+                CaseFailureOrigin.HARNESS_PERSISTENCE,
+                "final_case_commit_failed",
+                exc,
+            )
+        else:
+            final_commit_disposition = FinalCommitDisposition.COMMITTED
+    instrumentation.benchmark_case_finished(
+        case_id=case.case_id,
+        status=body_record.behavior_status,
+        projection_disposition=projection_disposition.value,
+        report_disposition=report_disposition.value,
+        export_disposition=export_disposition.value,
+        final_commit_disposition=final_commit_disposition.value,
+    )
+    flush = getattr(trace_recorder, "flush_viewer", None)
+    if flush is not None:
+        try:
+            await asyncio.wait_for(
+                _call_sync_owner(
+                    lambda: flush(timeout_s=max(0.005, _VIEWER_FLUSH_TIMEOUT_S * 0.3)),
+                    "viewer-flush",
+                ),
+                timeout=_VIEWER_FLUSH_TIMEOUT_S,
+            )
+        except Exception:
+            # Viewer failure is already fail-open and never changes case truth.
+            pass
     return case_result
 
 
@@ -640,6 +772,13 @@ async def _call_sync_owner(method, owner: str):
     return await completed
 
 
+async def _bounded_report_store_call(method, owner: str):
+    return await asyncio.wait_for(
+        _call_sync_owner(method, owner),
+        timeout=_REPORT_TIMEOUT_S,
+    )
+
+
 def _settle_cleanup_future(future, callback, value) -> None:
     if not future.done():
         callback(value)
@@ -749,6 +888,29 @@ class CleanupTimeoutError(TimeoutError):
 
 def _append_failure(current: str, addition: str) -> str:
     return f"{current}; {addition}" if current else addition
+
+
+def _checkpoint_join(checkpoint) -> tuple[str, str]:
+    if checkpoint is None:
+        return "", ""
+    checkpoint_id = checkpoint.checkpoint_id
+    prefix = "checkpoint:"
+    if not checkpoint_id.startswith(prefix):
+        raise ValueError("official checkpoint identity is malformed")
+    return checkpoint_id, checkpoint_id.removeprefix(prefix)
+
+
+def _cleanup_disposition(status: str, *, acquired: bool) -> CleanupDisposition:
+    if not acquired:
+        return CleanupDisposition.NOT_ACQUIRED
+    return {
+        "not_run": CleanupDisposition.NOT_APPLICABLE,
+        "running": CleanupDisposition.NOT_APPLICABLE,
+        "succeeded": CleanupDisposition.SUCCEEDED,
+        "already_closed": CleanupDisposition.ALREADY_CLOSED,
+        "timeout": CleanupDisposition.TIMEOUT,
+        "failed": CleanupDisposition.FAILED,
+    }[status]
 
 
 def _set_status(callback: Callable[[str], None] | None, phase: str) -> None:

@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 
 from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     DestinationMode,
 )
-from affordance_runtime.actions.paging import ActionCandidateRanker
+from affordance_runtime.actions.paging import ActionDiscoveryResult, ActionReranker
+from affordance_runtime.actions.space_contracts import ActionSpaceIssue
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context import AgentGroundingEntityView, AgentGroundingIndexView
 from affordance_runtime.agent.context.contracts import (
@@ -20,8 +22,30 @@ from affordance_runtime.agent.context.contracts import (
     AgentActionPageView,
     AgentDestinationView,
 )
-from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.context.observation_delivery import (
+    ObservationDelivery,
+    PublicEffectInventory,
+    public_structural_slot,
+)
+from affordance_runtime.agent.context.world_region_index import (
+    FunctionalContainerKind,
+    WorldDeliveryIndex,
+)
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
+
+_FOCUS_CONTAINER_SOURCE_ROLES = frozenset(
+    {
+        "checkbox",
+        "combobox",
+        "listbox",
+        "radio",
+        "searchbox",
+        "spinbutton",
+        "switch",
+        "textbox",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -37,9 +61,9 @@ class ActionCandidateDestination:
 
     def __post_init__(self) -> None:
         if (
-            re.fullmatch(r"E[1-9][0-9]{0,3}", self.target_ref) is None
+            not PublicRefCodec.accepts(self.target_ref, expected=PublicRefKind.EXECUTABLE)
             or not self.role
-            or re.fullmatch(r"R[1-9][0-9]{0,3}", self.region_ref) is None
+            or not PublicRefCodec.accepts(self.region_ref, expected=PublicRefKind.REGION)
         ):
             raise ValueError("action candidate destination requires current public identity")
         object.__setattr__(self, "functional_path", tuple(self.functional_path))
@@ -66,10 +90,10 @@ class ActionCandidate:
     def __post_init__(self) -> None:
         if (
             not self.action_id
-            or re.fullmatch(r"E[1-9][0-9]{0,3}", self.target_ref) is None
+            or not PublicRefCodec.accepts(self.target_ref, expected=PublicRefKind.EXECUTABLE)
             or not self.operation
             or not self.role
-            or re.fullmatch(r"R[1-9][0-9]{0,3}", self.region_ref) is None
+            or not PublicRefCodec.accepts(self.region_ref, expected=PublicRefKind.REGION)
             or self.rank < 1
         ):
             raise ValueError("action candidate requires current public identity")
@@ -95,25 +119,563 @@ class ActionCandidateProjection:
         candidates = tuple(self.candidates)
         if not self.action_space_id.strip() or not self.world_observation_id.strip():
             raise ValueError("candidate projection requires current authority identities")
-        if self.scope not in {"automatic", "search"}:
+        if self.scope not in {"automatic", "search", "delivery"}:
             raise ValueError("candidate projection scope is invalid")
         if self.scope == "automatic" and len(candidates) > 5:
             raise ValueError("automatic action candidates are bounded to Top-5")
-        if len({item.target_ref for item in candidates}) != len(candidates):
-            raise ValueError("candidate projection prints each executable target once")
+        identities = tuple(
+            (
+                item.target_ref,
+                item.operation,
+                tuple(destination.target_ref for destination in item.destinations),
+            )
+            for item in candidates
+        )
+        if len(set(identities)) != len(identities):
+            raise ValueError("candidate projection route fragments must be unique")
         payload = {
-            "action_space_id": self.action_space_id,
-            "world_observation_id": self.world_observation_id,
             "scope": self.scope,
-            "candidates": to_json_compatible(candidates),
+            "candidates": tuple(
+                {key: value for key, value in to_json_compatible(item).items() if key != "action_id"}
+                for item in candidates
+            ),
         }
-        expected = "action-candidates:" + hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-        ).hexdigest()
+        expected = (
+            "action-candidates:"
+            + hashlib.sha256(
+                json.dumps(
+                    to_json_compatible(payload),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()
+        )
         if self.projection_id and self.projection_id != expected:
             raise ValueError("candidate projection identity does not bind its ranking")
         object.__setattr__(self, "candidates", candidates)
         object.__setattr__(self, "projection_id", expected)
+
+
+@dataclass(frozen=True)
+class ActionDeliveryFragment:
+    """One atomic public route/context fragment proposed for this turn."""
+
+    candidate: ActionCandidate
+    inclusion_reason: str
+    public_provenance: tuple[str, ...] = ()
+    rendered_cost_bytes: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            not self.inclusion_reason.strip()
+            or self.rendered_cost_bytes < 0
+        ):
+            raise ValueError("action delivery fragment metadata is invalid")
+        object.__setattr__(self, "public_provenance", tuple(self.public_provenance))
+
+    @property
+    def route_deltas(self) -> tuple[tuple[str, str, str], ...]:
+        if self.candidate.destination_required:
+            return tuple(
+                (self.candidate.operation, self.candidate.target_ref, item.target_ref)
+                for item in self.candidate.destinations
+            )
+        return ((self.candidate.operation, self.candidate.target_ref, ""),)
+
+
+@dataclass(frozen=True)
+class ActionRouteIssueFragment:
+    """One model-visible why-not fact for an atomically unavailable route."""
+
+    code: str
+    operation: str
+    source_ref: str
+    destination_refs: tuple[str, ...]
+    conflicting_contract_fields: tuple[str, ...]
+    provenance: str = "action_space"
+    rendered_cost_bytes: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            self.code != "action_route_conflict"
+            or not self.operation.strip()
+            or not PublicRefCodec.accepts(self.source_ref)
+            or any(not PublicRefCodec.accepts(item) for item in self.destination_refs)
+            or not self.conflicting_contract_fields
+            or not self.provenance.strip()
+            or self.rendered_cost_bytes < 0
+        ):
+            raise ValueError("action route issue fragment is invalid")
+        object.__setattr__(self, "destination_refs", tuple(self.destination_refs))
+        object.__setattr__(
+            self,
+            "conflicting_contract_fields",
+            tuple(sorted(set(self.conflicting_contract_fields))),
+        )
+
+
+class DeliveryObligationKind(StrEnum):
+    EXPLICIT_QUERY = "query"
+    PUBLIC_EFFECT = "effect_actions"
+    INTERACTION = "interaction"
+    BASE_ACTIONS = "base"
+    PAGE_DIRECTORY = "page_directory"
+    DESTINATION_ROUTES = "destinations"
+    ROUTE_ISSUES = "issues"
+
+
+@dataclass(frozen=True)
+class PrivateDeliveryCursor:
+    """Runtime-only continuation bound to one owner lineage and exact order."""
+
+    world_lineage: str
+    action_space_lineage: str
+    effect_or_result_lineage: str
+    obligation_kind: DeliveryObligationKind
+    order_digest: str
+    offset: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            not all(
+                item.strip()
+                for item in (
+                    self.world_lineage,
+                    self.action_space_lineage,
+                    self.effect_or_result_lineage,
+                    self.order_digest,
+                )
+            )
+            or not isinstance(self.obligation_kind, DeliveryObligationKind)
+            or type(self.offset) is not int
+            or self.offset < 0
+        ):
+            raise ValueError("private delivery cursor is invalid")
+
+
+@dataclass(frozen=True)
+class WorldDeliveryRecord:
+    """One atomic record already owned by ObservationDelivery."""
+
+    record_kind: str
+    record_index: int
+    rendered_cost_bytes: int
+
+    def __post_init__(self) -> None:
+        if (
+            self.record_kind not in {"effect", "page_directory"}
+            or type(self.record_index) is not int
+            or self.record_index < 0
+            or self.rendered_cost_bytes < 0
+        ):
+            raise ValueError("World delivery record is invalid")
+
+
+DeliveryAtomicRecord = ActionDeliveryFragment | ActionRouteIssueFragment | WorldDeliveryRecord
+
+
+@dataclass(frozen=True)
+class DeliveryObligation:
+    """One bounded protocol group over a complete deterministic inventory."""
+
+    kind: DeliveryObligationKind
+    records: tuple[DeliveryAtomicRecord, ...]
+    priority: int
+    cursor: PrivateDeliveryCursor = field(
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    continuation_scope: str = ""
+    source_coverage: str = "complete"
+    result_coverage: str = "complete"
+    public_provenance: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        records = tuple(self.records)
+        if (
+            not isinstance(self.kind, DeliveryObligationKind)
+            or self.priority < 0
+            or not isinstance(self.cursor, PrivateDeliveryCursor)
+            or self.cursor.obligation_kind is not self.kind
+            or self.cursor.offset > len(records)
+            or self.source_coverage not in {"complete", "partial", "unavailable"}
+            or self.result_coverage not in {"complete", "partial", "empty"}
+        ):
+            raise ValueError("delivery obligation is invalid")
+        object.__setattr__(self, "records", records)
+        object.__setattr__(self, "public_provenance", tuple(self.public_provenance))
+
+    @property
+    def remaining(self) -> tuple[DeliveryAtomicRecord, ...]:
+        return self.records[self.cursor.offset :]
+
+
+@dataclass(frozen=True)
+class ActionDeliveryPlan:
+    """Immutable per-World discoverability result; never episode authority."""
+
+    action_space_id: str
+    world_observation_id: str
+    obligations: tuple[DeliveryObligation, ...]
+    foreground_scope: str | None
+    plan_id: str = ""
+    requested_scope: str | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
+
+    def __post_init__(self) -> None:
+        obligations = tuple(sorted(self.obligations, key=lambda item: (item.priority, item.kind.value)))
+        if (
+            not self.action_space_id.strip()
+            or not self.world_observation_id.strip()
+            or len({item.kind for item in obligations}) != len(obligations)
+            or any(not isinstance(item, DeliveryObligation) for item in obligations)
+        ):
+            raise ValueError("action delivery plan is invalid")
+        requested = next(
+            (
+                item.continuation_scope or item.kind.value
+                for item in obligations
+                if item.remaining
+                and (item.continuation_scope or item.kind.value) == self.requested_scope
+            ),
+            None,
+        )
+        expected_foreground = requested or next(
+            (item.continuation_scope or item.kind.value for item in obligations if item.remaining), None
+        )
+        if self.foreground_scope != expected_foreground:
+            raise ValueError("delivery foreground must be mechanically derived")
+        payload = {
+            "obligations": tuple(_public_obligation_value(item) for item in obligations),
+            "foreground_scope": self.foreground_scope,
+        }
+        expected = (
+            "action-delivery-plan:"
+            + hashlib.sha256(
+                json.dumps(
+                    to_json_compatible(payload),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()
+        )
+        if self.plan_id and self.plan_id != expected:
+            raise ValueError("action delivery plan identity does not bind its public contents")
+        object.__setattr__(self, "obligations", obligations)
+        object.__setattr__(self, "plan_id", expected)
+
+    def projection(self, admitted: Mapping[str, int] | None = None) -> ActionCandidateProjection:
+        counts = dict(admitted or {})
+        fragments: list[ActionDeliveryFragment] = []
+        seen_routes: set[tuple[str, str, str]] = set()
+        for obligation in self.obligations:
+            count = counts.get(obligation.kind.value, len(obligation.remaining) if admitted is None else 0)
+            if not 0 <= count <= len(obligation.remaining):
+                raise ValueError("admitted obligation prefix is invalid")
+            for record in obligation.remaining[:count]:
+                if not isinstance(record, ActionDeliveryFragment):
+                    continue
+                new_routes = tuple(route for route in record.route_deltas if route not in seen_routes)
+                if not new_routes:
+                    continue
+                seen_routes.update(new_routes)
+                fragments.append(record)
+        candidates = tuple(replace(item.candidate, rank=index) for index, item in enumerate(fragments, 1))
+        return ActionCandidateProjection(
+            self.action_space_id,
+            self.world_observation_id,
+            candidates,
+            "delivery",
+        )
+
+    def obligation(self, kind: DeliveryObligationKind) -> DeliveryObligation | None:
+        return next((item for item in self.obligations if item.kind is kind), None)
+
+    @property
+    def continuation_scopes(self) -> tuple[str, ...]:
+        return tuple(
+            item.continuation_scope or item.kind.value
+            for item in self.obligations
+            if item.remaining
+        )
+
+    def bounded_preview_counts(self) -> dict[str, int]:
+        """Bounded non-authoritative preview for non-provider diagnostics."""
+
+        return {
+            item.kind.value: min(
+                len(item.remaining),
+                1 if item.kind in {DeliveryObligationKind.PUBLIC_EFFECT, DeliveryObligationKind.PAGE_DIRECTORY} else 5,
+            )
+            for item in self.obligations
+        }
+
+
+def build_action_delivery_plan(
+    *,
+    action_space_id: str,
+    world_observation_id: str,
+    base_actions: tuple[AgentActionOptionView, ...],
+    complete_actions: tuple[AgentActionOptionView, ...],
+    automatic: ActionCandidateProjection,
+    region_index: WorldDeliveryIndex,
+    discovery: ActionDiscoveryResult | None = None,
+    action_space_issues: tuple[ActionSpaceIssue, ...] = (),
+    target_refs: Mapping[str, str] | None = None,
+    observation_delivery: ObservationDelivery | None = None,
+    latest_effect: PublicEffectInventory | None = None,
+    cursor_store: object | None = None,
+) -> ActionDeliveryPlan:
+    """Build one bounded-family plan over complete current owner inventories."""
+
+    complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
+    groups: dict[DeliveryObligationKind, list[DeliveryAtomicRecord]] = defaultdict(list)
+    def append(option: AgentActionOptionView, *, kind: DeliveryObligationKind, reason: str) -> None:
+        candidate = _candidate_from_option(option, region_index, rank=1, reasons=(reason,))
+        atomic_candidates = (
+            tuple(replace(candidate, destinations=(destination,)) for destination in candidate.destinations)
+            if candidate.destination_required
+            else (candidate,)
+        )
+        for atomic_candidate in atomic_candidates:
+            fragment = ActionDeliveryFragment(
+                atomic_candidate,
+                reason,
+                ("current_action_space", reason),
+                len(json.dumps(_public_candidate_value(atomic_candidate), ensure_ascii=False).encode()),
+            )
+            assigned_routes = {
+                route
+                for current in groups[kind]
+                if isinstance(current, ActionDeliveryFragment)
+                for route in current.route_deltas
+            }
+            if fragment.route_deltas[0] not in assigned_routes:
+                groups[kind].append(fragment)
+
+    query_options: list[tuple[AgentActionOptionView, bool]] = []
+    stored_query = getattr(cursor_store, "action_query", None)
+    query_matches = (
+        stored_query.matches
+        if discovery is not None
+        and stored_query is not None
+        and stored_query.query == discovery.query
+        and stored_query.world_lineage == world_observation_id
+        and stored_query.action_space_lineage == action_space_id
+        else discovery.matches
+        if discovery is not None
+        else ()
+    )
+    if discovery is not None and discovery.query:
+        for match in query_matches:
+            option = complete_by_public.get((match.target_ref, match.operation))
+            if option is None:
+                continue
+            option = replace(
+                option,
+                target_label=match.label,
+                target_role=match.role,
+            )
+            if match.destination_refs:
+                option = replace(
+                    option,
+                    destinations=replace(
+                        option.destinations,
+                        items=tuple(
+                            item for item in option.destinations.items if item.grounding_ref in match.destination_refs
+                        ),
+                    ),
+                )
+            exact = bool(set(match.match_kinds) & {"exact_label", "role", "operation"})
+            query_options.append((option, exact))
+
+    for option, exact in query_options:
+        if exact:
+            append(option, kind=DeliveryObligationKind.EXPLICIT_QUERY, reason="query_exact")
+    for option, exact in query_options:
+        if not exact:
+            append(option, kind=DeliveryObligationKind.EXPLICIT_QUERY, reason="query_semantic")
+
+    effect_slots = set(latest_effect.changed_target_slot_keys if latest_effect is not None else ())
+    for option in sorted(complete_actions, key=_public_option_view_order):
+        if public_structural_slot(region_index, option.target_id) in effect_slots:
+            append(option, kind=DeliveryObligationKind.PUBLIC_EFFECT, reason="public_effect")
+
+    options_by_target = {item.target_id: item for item in complete_actions}
+    focused_containers = {
+        target_context.primary_region_key
+        for target_id, target_context in region_index.target_contexts.items()
+        if target_context.focused
+        and target_context.container_kind in {FunctionalContainerKind.FORM, FunctionalContainerKind.SEARCH}
+        and target_id in options_by_target
+        and options_by_target[target_id].target_role in _FOCUS_CONTAINER_SOURCE_ROLES
+    }
+    for option in sorted(complete_actions, key=_public_option_view_order):
+        target_context = region_index.target_contexts.get(option.target_id)
+        direct = bool(target_context is not None and target_context.focused)
+        same_focus_container = bool(
+            target_context is not None and target_context.primary_region_key in focused_containers
+        )
+        if direct or same_focus_container:
+            append(
+                option,
+                kind=DeliveryObligationKind.INTERACTION,
+                reason="focused" if direct else "focus_container",
+            )
+
+    option_by_id = {item.action_id: item for item in complete_actions}
+    for ranked in automatic.candidates:
+        option = option_by_id.get(ranked.action_id)
+        if option is None:
+            continue
+        target_context = region_index.target_contexts.get(option.target_id)
+        reason = (
+            "viewport_relevance"
+            if target_context is not None and target_context.viewport == "visible"
+            else "automatic_relevance"
+        )
+        append(option, kind=DeliveryObligationKind.BASE_ACTIONS, reason=reason)
+    for option in sorted(complete_actions, key=_public_option_view_order):
+        append(
+            option,
+            kind=(
+                DeliveryObligationKind.DESTINATION_ROUTES
+                if option.destination_required
+                else DeliveryObligationKind.BASE_ACTIONS
+            ),
+            reason="base_inventory",
+        )
+
+    issue_fragments: list[ActionRouteIssueFragment] = []
+    public_refs = target_refs or {}
+    for issue in action_space_issues:
+        source_ref = public_refs.get(issue.source_target_id, "")
+        destination_refs = tuple(public_refs[item] for item in issue.destination_ids if item in public_refs)
+        if not source_ref or len(destination_refs) != len(issue.destination_ids):
+            raise ValueError("action-space why-not route is absent from current public grounding")
+        public_value = {
+            "code": issue.code.value,
+            "operation": issue.operation,
+            "source_ref": source_ref,
+            "destination_refs": destination_refs,
+            "conflicting_contract_fields": issue.conflicting_contract_fields,
+        }
+        issue_fragments.append(
+            ActionRouteIssueFragment(
+                issue.code.value,
+                issue.operation,
+                source_ref,
+                destination_refs,
+                issue.conflicting_contract_fields,
+                rendered_cost_bytes=len(json.dumps(public_value, sort_keys=True, ensure_ascii=False).encode()),
+            )
+        )
+    groups[DeliveryObligationKind.ROUTE_ISSUES].extend(issue_fragments)
+    if observation_delivery is not None:
+        groups[DeliveryObligationKind.PUBLIC_EFFECT][0:0] = [
+            WorldDeliveryRecord(
+                "effect",
+                index,
+                len(json.dumps(to_json_compatible(item), ensure_ascii=False).encode()),
+            )
+            for index, item in enumerate(observation_delivery.latest_effect_values)
+        ]
+        groups[DeliveryObligationKind.PAGE_DIRECTORY].extend(
+            WorldDeliveryRecord(
+                "page_directory",
+                index,
+                len(json.dumps(to_json_compatible(item), ensure_ascii=False).encode()),
+            )
+            for index, item in enumerate(observation_delivery.recovery_directory)
+        )
+
+    priorities = {
+        DeliveryObligationKind.EXPLICIT_QUERY: 0 if discovery is not None else 6,
+        DeliveryObligationKind.PUBLIC_EFFECT: 1,
+        DeliveryObligationKind.INTERACTION: 2,
+        DeliveryObligationKind.BASE_ACTIONS: 3,
+        DeliveryObligationKind.PAGE_DIRECTORY: 4,
+        DeliveryObligationKind.DESTINATION_ROUTES: 5,
+        DeliveryObligationKind.ROUTE_ISSUES: 6,
+    }
+    scope_by_kind = {
+        DeliveryObligationKind.EXPLICIT_QUERY: "query",
+        DeliveryObligationKind.PUBLIC_EFFECT: "effect",
+        DeliveryObligationKind.INTERACTION: "interaction",
+        DeliveryObligationKind.BASE_ACTIONS: "base",
+        DeliveryObligationKind.PAGE_DIRECTORY: "page_directory",
+        DeliveryObligationKind.DESTINATION_ROUTES: "destinations",
+        DeliveryObligationKind.ROUTE_ISSUES: "issues",
+    }
+    obligations = []
+    for kind, records in groups.items():
+        if not records:
+            continue
+        order_digest = "sha256:" + hashlib.sha256(
+            json.dumps(
+                to_json_compatible(tuple(_public_record_value(item) for item in records)),
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        result_lineage = (
+            latest_effect.raw_delta_lineage
+            if kind is DeliveryObligationKind.PUBLIC_EFFECT and latest_effect is not None
+            else discovery.query
+            if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
+            else "current"
+        )
+        offset = 0
+        cursor_offset = getattr(cursor_store, "cursor_offset", None)
+        if callable(cursor_offset):
+            offset = cursor_offset(
+                scope_by_kind[kind],
+                world_lineage=world_observation_id,
+                action_lineage=action_space_id,
+                result_lineage=result_lineage or "current",
+                order_digest=order_digest,
+            )
+            offset = min(offset, len(records))
+        obligations.append(
+            DeliveryObligation(
+                kind,
+                tuple(records),
+                priorities[kind],
+                PrivateDeliveryCursor(
+                    world_observation_id,
+                    action_space_id,
+                    result_lineage or "current",
+                    kind,
+                    order_digest,
+                    offset,
+                ),
+                scope_by_kind[kind],
+                discovery.source_coverage if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery else "complete",
+                "empty" if not records else "complete",
+                ("current_world", kind.value),
+            )
+        )
+    ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
+    requested_scope = getattr(cursor_store, "requested_continuation_scope", None)
+    foreground = next(
+        (
+            item.continuation_scope
+            for item in ordered
+            if item.remaining and item.continuation_scope == requested_scope
+        ),
+        None,
+    ) or next((item.continuation_scope for item in ordered if item.remaining), None)
+    return ActionDeliveryPlan(
+        action_space_id,
+        world_observation_id,
+        ordered,
+        foreground,
+        requested_scope=requested_scope,
+    )
 
 
 def project_action_candidates(
@@ -128,26 +690,24 @@ def project_action_candidates(
     done_when: tuple[str, ...] = (),
     recent_outcomes: tuple[object, ...] = (),
     allowed_action_ids: frozenset[str] | None = None,
-    top_k: int | None = 5,
+    top_k: int = 5,
 ) -> ActionCandidateProjection:
     """Project the shared ranker without changing World or action authority."""
 
+    if not 1 <= top_k <= 32:
+        raise ValueError("candidate preview bound is invalid")
     by_action = {item.action_id: item for item in actions}
-    ranked = ActionCandidateRanker().rank(
+    ranked = ActionReranker().rank(
         actions,
         labels={item.target_id: item.target_label for item in actions},
         roles={item.target_id: item.target_role for item in actions},
         states={item.target_id: item.target_state for item in actions},
-        functional_paths={
-            item.target_id: region_index.functional_path_for_target(item.target_id)
-            for item in actions
-        },
+        functional_paths={item.target_id: region_index.functional_path_for_target(item.target_id) for item in actions},
         query=query,
         instruction=instruction,
         objectives=objectives,
         done_when=done_when,
         recent_outcomes=recent_outcomes,
-        require_match=bool(query),
     )
     candidates: list[ActionCandidate] = []
     emitted_refs: set[str] = set()
@@ -155,37 +715,136 @@ def project_action_candidates(
         if allowed_action_ids is not None and ranked_item.action_id not in allowed_action_ids:
             continue
         option = by_action[ranked_item.action_id]
-        region = region_index.region_for_action(option.action_id) or region_index.region_for_target(
-            option.target_id
-        )
+        region = region_index.region_for_action(option.action_id) or region_index.region_for_target(option.target_id)
         if region is None or option.target_ref in emitted_refs:
             continue
-        destinations = tuple(
-            _project_destination(item, region_index)
-            for item in option.destinations.items
+        destinations = tuple(_project_destination(item, region_index) for item in option.destinations.items)
+        candidates.append(
+            ActionCandidate(
+                option.action_id,
+                option.target_ref,
+                option.operation,
+                option.target_label,
+                option.target_role,
+                region_index.functional_path_for_target(option.target_id),
+                region.public_ref,
+                option.target_state,
+                len(candidates) + 1,
+                ranked_item.reasons,
+                option.destination_required,
+                destinations,
+            )
         )
-        candidates.append(ActionCandidate(
-            option.action_id,
-            option.target_ref,
-            option.operation,
-            option.target_label,
-            option.target_role,
-            region_index.functional_path_for_target(option.target_id),
-            region.public_ref,
-            option.target_state,
-            len(candidates) + 1,
-            ranked_item.reasons,
-            option.destination_required,
-            destinations,
-        ))
         emitted_refs.add(option.target_ref)
-        if top_k is not None and len(candidates) == top_k:
+        if len(candidates) == top_k:
             break
     return ActionCandidateProjection(
         action_space_id,
         world_observation_id,
         tuple(candidates),
         "search" if query else "automatic",
+    )
+
+
+def _candidate_from_option(
+    option: AgentActionOptionView,
+    region_index: WorldDeliveryIndex,
+    *,
+    rank: int,
+    reasons: tuple[str, ...],
+) -> ActionCandidate:
+    region = region_index.region_for_action(option.action_id) or region_index.region_for_target(option.target_id)
+    if region is None:
+        raise ValueError("current action is absent from the World delivery index")
+    return ActionCandidate(
+        option.action_id,
+        option.target_ref,
+        option.operation,
+        option.target_label,
+        option.target_role,
+        region_index.functional_path_for_target(option.target_id),
+        region.public_ref,
+        option.target_state,
+        rank,
+        reasons,
+        option.destination_required,
+        tuple(_project_destination(item, region_index) for item in option.destinations.items),
+    )
+
+
+def _public_candidate_value(candidate: ActionCandidate) -> dict[str, object]:
+    return {key: value for key, value in to_json_compatible(candidate).items() if key not in {"action_id", "rank"}}
+
+
+def _public_fragment_value(fragment: ActionDeliveryFragment) -> dict[str, object]:
+    return {
+        "candidate": _public_candidate_value(fragment.candidate),
+        "inclusion_reason": fragment.inclusion_reason,
+        "public_provenance": fragment.public_provenance,
+        "rendered_cost_bytes": fragment.rendered_cost_bytes,
+    }
+
+
+def _public_record_value(record: DeliveryAtomicRecord) -> Mapping[str, object]:
+    if isinstance(record, ActionDeliveryFragment):
+        return _public_fragment_value(record)
+    if isinstance(record, ActionRouteIssueFragment):
+        return freeze_json(to_json_compatible(record))
+    return freeze_json(to_json_compatible(record))
+
+
+def _public_obligation_value(obligation: DeliveryObligation) -> Mapping[str, object]:
+    return freeze_json(
+        {
+            "kind": obligation.kind.value,
+            "records": tuple(_public_record_value(item) for item in obligation.records),
+            "priority": obligation.priority,
+            "continuation_scope": obligation.continuation_scope,
+            "source_coverage": obligation.source_coverage,
+            "result_coverage": obligation.result_coverage,
+            "public_provenance": obligation.public_provenance,
+        }
+    )
+
+
+def _public_option_view_order(option: AgentActionOptionView) -> tuple[object, ...]:
+    return (
+        option.target_ref,
+        option.operation,
+        tuple(item.grounding_ref for item in option.destinations.items),
+        json.dumps(to_json_compatible(option.parameter_schema), sort_keys=True, ensure_ascii=False),
+    )
+
+
+def merge_action_candidate_projections(
+    base: ActionCandidateProjection,
+    query: ActionCandidateProjection,
+) -> ActionCandidateProjection:
+    """Build one additive view without changing either source projection."""
+
+    if (
+        base.action_space_id != query.action_space_id
+        or base.world_observation_id != query.world_observation_id
+        or base.scope != "automatic"
+        or query.scope != "search"
+    ):
+        raise ValueError("additive candidate projections require one current authority")
+    ordered: list[ActionCandidate] = []
+    positions: dict[str, int] = {}
+    for item in (*query.candidates, *base.candidates):
+        if item.target_ref in positions:
+            position = positions[item.target_ref]
+            current = ordered[position]
+            destinations = tuple(dict.fromkeys((*current.destinations, *item.destinations)))
+            ordered[position] = replace(current, destinations=destinations)
+            continue
+        positions[item.target_ref] = len(ordered)
+        ordered.append(replace(item, rank=len(ordered) + 1))
+    return ActionCandidateProjection(
+        base.action_space_id,
+        base.world_observation_id,
+        tuple(ordered),
+        "search",
     )
 
 
@@ -308,7 +967,12 @@ def _candidate_state(state: Mapping[str, object]) -> dict[str, object]:
     if isinstance(coordinate, Mapping):
         x = coordinate.get("x")
         y = coordinate.get("y")
-        if isinstance(x, int | float) and not isinstance(x, bool) and isinstance(y, int | float) and not isinstance(y, bool):
+        if (
+            isinstance(x, int | float)
+            and not isinstance(x, bool)
+            and isinstance(y, int | float)
+            and not isinstance(y, bool)
+        ):
             result["grid_coordinate"] = {"x": x, "y": y}
             result.pop("grid_membership", None)
             result.pop("grid_coordinate_confidence", None)
@@ -344,17 +1008,12 @@ def _target_semantics(
     if "within" not in semantics and isinstance(scope_label, str) and scope_label.strip():
         scope_role = state.get("semantic_scope_role")
         semantics["within"] = {
-            **(
-                {"role": scope_role.strip()}
-                if isinstance(scope_role, str) and scope_role.strip()
-                else {}
-            ),
+            **({"role": scope_role.strip()} if isinstance(scope_role, str) and scope_role.strip() else {}),
             "label": scope_label.strip(),
         }
     relations = tuple(
         sorted(
-            hint for hint in entity.relation_hints
-            if not hint.startswith(("parent:", "children:")) and len(hint) <= 160
+            hint for hint in entity.relation_hints if not hint.startswith(("parent:", "children:")) and len(hint) <= 160
         )
     )
     if relations:
@@ -365,7 +1024,8 @@ def _target_semantics(
 def _is_public_facet_value(value: object) -> bool:
     return (
         value is None
-        or isinstance(value, str) and len(value) <= 160
+        or isinstance(value, str)
+        and len(value) <= 160
         or isinstance(value, int | float | bool)
         or isinstance(value, tuple | list)
         and len(value) <= 4

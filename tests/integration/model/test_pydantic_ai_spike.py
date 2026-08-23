@@ -17,10 +17,11 @@ from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
+import affordance_runtime.model.policy.turn_packer as turn_packer_module
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
-from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
 from affordance_runtime.agent.decisions import SelectAction
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
@@ -43,6 +44,10 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
     zhipu_pydantic_ai_policy_from_environment,
+)
+from affordance_runtime.model.policy.request_admission import (
+    ModelRequestBreakdown,
+    ModelRequestCapacityError,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from tests.support.agent.core_loop_support import (
@@ -314,6 +319,105 @@ def test_unexpected_value_error_is_internal_not_invalid_tool_arguments() -> None
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("fault_stage", ("delivery", "catalog", "admission", "provider_bind"))
+def test_pre_provider_ordinary_faults_are_total_and_never_attempt_provider(monkeypatch, fault_stage) -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world(f"pre-provider-{fault_stage}", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        def fail(*_args, **_kwargs):
+            raise RuntimeError(f"synthetic {fault_stage} fault")
+
+        if fault_stage == "delivery":
+            monkeypatch.setattr(turn_packer_module, "build_model_turn_delivery", fail)
+        elif fault_stage == "catalog":
+            monkeypatch.setattr(turn_packer_module, "compile_grounded_action_catalog", fail)
+        elif fault_stage == "admission":
+            monkeypatch.setattr(pydantic_bridge.GroundedPolicyContextBinder, "action_request", fail)
+        else:
+            monkeypatch.setattr(pydantic_bridge, "_pydantic_prompt", fail)
+
+        result = await policy.port.generate(ModelDecisionRequest(f"request:{fault_stage}", context))
+
+        assert result.output is None
+        assert result.failure is not None
+        assert result.failure.kind is ModelFailureKind.INTERNAL_ERROR
+        assert result.failure.attempt_origin is ProviderAttemptOrigin.LOCAL_RUNTIME
+        assert len(result.attempts) == 1
+        assert result.attempts[0].phase == "local_runtime"
+        assert result.diagnostics["policy_model_call_count"] == 0
+        assert policy.port.last_model_call_count == 0
+        assert scripted.calls == 0
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("fault_stage", "fault", "expected_kind"),
+    (
+        (
+            "catalog",
+            GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID),
+            ModelFailureKind.SCHEMA_ERROR,
+        ),
+        (
+            "admission",
+            ModelRequestCapacityError(
+                ModelRequestBreakdown(
+                    "initial",
+                    admission_action="context_capacity",
+                    admission_limit=1,
+                )
+            ),
+            ModelFailureKind.CONTEXT_CAPACITY,
+        ),
+    ),
+)
+def test_pre_provider_typed_schema_and_capacity_faults_remain_local(
+    monkeypatch,
+    fault_stage,
+    fault,
+    expected_kind,
+) -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world(f"typed-pre-provider-{fault_stage}", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        def fail(*_args, **_kwargs):
+            raise fault
+
+        if fault_stage == "catalog":
+            monkeypatch.setattr(turn_packer_module, "compile_grounded_action_catalog", fail)
+        else:
+            monkeypatch.setattr(pydantic_bridge.GroundedPolicyContextBinder, "action_request", fail)
+
+        result = await policy.port.generate(ModelDecisionRequest(f"request:typed-{fault_stage}", context))
+
+        assert result.failure is not None
+        assert result.failure.kind is expected_kind
+        assert result.failure.attempt_origin is ProviderAttemptOrigin.LOCAL_RUNTIME
+        assert policy.port.last_model_call_count == 0
+        assert scripted.calls == 0
+
+    asyncio.run(scenario())
+
+
 def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action", "first_gui_action"])
@@ -483,8 +587,8 @@ def test_representation_repair_cannot_change_effect_bearing_leaf_values() -> Non
             "additionalProperties": False,
         },
     )
-    set_form_fields = ToolSpec(
-        "set_form_fields",
+    update_profile = ToolSpec(
+        "update_profile",
         "fixture",
         {
             "type": "object",
@@ -492,6 +596,7 @@ def test_representation_repair_cannot_change_effect_bearing_leaf_values() -> Non
                 "form_ref": {"type": "string"},
                 "fields": {
                     "type": "array",
+                    "maxItems": 4,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -518,15 +623,15 @@ def test_representation_repair_cannot_change_effect_bearing_leaf_values() -> Non
         invalid,
         (
             ToolCall(
-                "set_form_fields",
+                "update_profile",
                 {"form_ref": "N1", "fields": [{"target": "E1", "value": "old"}]},
             ),
         ),
         ToolCall(
-            "set_form_fields",
+            "update_profile",
             {"form_ref": "N1", "fields": [{"target": "E1", "value": "new"}]},
         ),
-        (set_form_fields,),
+        (update_profile,),
     )
     assert preserves(
         invalid,
@@ -544,7 +649,11 @@ def test_representation_repair_cannot_delete_legal_optional_operands() -> None:
             "type": "object",
             "properties": {
                 "question": {"type": "string"},
-                "requested_fields": {"type": "array", "items": {"type": "string"}},
+                    "requested_fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 32,
+                    },
             },
             "required": ["question"],
             "additionalProperties": False,
@@ -768,7 +877,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     )
     output = DeferredToolRequests(calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")])
 
-    decision, error, parsed = pydantic_bridge._resolve_deferred(
+    decision, next_delivery_store, error, parsed = pydantic_bridge._resolve_deferred(
         output,
         SimpleNamespace(
             catalog_id="grounded-catalog:test",
@@ -779,6 +888,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
 
     assert decision == normalized
     assert error is None
+    assert next_delivery_store is None
     assert parsed == (normalized,)
     assert captured["resolution"].decision == normalized
 

@@ -5,6 +5,7 @@ import pytest
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    ContinueDeliveryResult,
     DecisionKind,
     ReadRegionResult,
     RememberFactResult,
@@ -14,14 +15,13 @@ from affordance_runtime.agent import (
     RunStatus,
     SearchPageContentResult,
     SelectAction,
-    SetFormFields,
     StandaloneRunBudget,
     StepResult,
     ToolRejectedResult,
     Wait,
 )
 from affordance_runtime.agent.context.step_projection import project_step_result
-from affordance_runtime.agent.decisions import FinalResponse, FormFieldUpdate
+from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
@@ -53,14 +53,6 @@ def test_every_control_decision_uses_the_single_decision_kind_algebra() -> None:
 def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(tmp_path) -> None:
     decisions = (
         SelectAction("context:test", "action:one"),
-        SetFormFields(
-            "context:test",
-            "form:test",
-            (
-                FormFieldUpdate("action:one", "type_text", "E1", {"text": "a"}),
-                FormFieldUpdate("action:two", "type_text", "E2", {"text": "b"}),
-            ),
-        ),
         RequestObservation(
             "context:test",
             "entity_discovery",
@@ -72,6 +64,7 @@ def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(
         AskUser("context:test", "Which value?"),
         ReadRegionResult("context:test", "read_region", {}, {"items": ()}),
         SearchPageContentResult("context:test", "search_page_content", {}, {"items": ()}),
+        ContinueDeliveryResult("context:test", "read_next_page", {}, {"continued": True}),
         RememberFactResult("context:test", "remember_fact", {}, {"pinned": True}),
         ToolRejectedResult("context:test", "tool_rejected", {}, {"rejected": True}),
         FinalResponse("context:test", "done", ("evidence:test",)),

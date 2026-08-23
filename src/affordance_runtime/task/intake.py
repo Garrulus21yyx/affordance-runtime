@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, TypeAlias
 
-from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import (
     EvaluationSpec,
     LoopBudget,
@@ -16,18 +16,6 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 from affordance_runtime.task.intent_context import IntentContext
-
-_PRIVATE_INPUT_KEYS = frozenset({
-    "action_id",
-    "binding_id",
-    "coordinate",
-    "coordinates",
-    "dom_id",
-    "e_ref",
-    "executor",
-    "screen_point",
-    "selector",
-})
 
 
 class TaskIntakeStatus(StrEnum):
@@ -157,9 +145,6 @@ class ThinTaskIntake:
                 ("allowed_effects",),
                 "effect_authority_required",
             )
-        private_path = _private_input_path(to_json_compatible(boundary.inputs))
-        if private_path:
-            return TaskUnsupported(request.request_id, "runtime_private_input_not_supported")
         try:
             task = TaskGoal(
                 request.request_id,
@@ -179,19 +164,3 @@ class ThinTaskIntake:
         except (TypeError, ValueError):
             return TaskUnsupported(request.request_id, "task_goal_contract_invalid")
         return ReadyTask(request.request_id, task, request.intent_context, request.source_ref)
-
-
-def _private_input_path(value: object, path: str = "inputs") -> str:
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            normalized = str(key).strip().casefold()
-            child = f"{path}.{key}"
-            if normalized in _PRIVATE_INPUT_KEYS or normalized.startswith("_runtime"):
-                return child
-            if found := _private_input_path(item, child):
-                return found
-    elif isinstance(value, list | tuple):
-        for index, item in enumerate(value):
-            if found := _private_input_path(item, f"{path}[{index}]"):
-                return found
-    return ""

@@ -402,5 +402,4 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "latest_attempt_signature",
         "same_attempt_streak",
         "no_progress_count",
-        "last_progress_event_type",
     } == set(vars(monitor)) - {"profile"}

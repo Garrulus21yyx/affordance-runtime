@@ -11,7 +11,10 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.actions.classification import classify_dom_action
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.world_projection import project_model_world
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution.contracts import (
     ActionIntent,
     ActionResult,
@@ -84,9 +87,105 @@ def test_action_space_is_current_and_schema_is_immutable() -> None:
     space = ActionSpaceBuilder().build(task, _world())
     assert space.observation_id == "obs-1"
     assert space.options[0].observation_barrier is True
-    assert space.options[0].batchable is False
     with pytest.raises(TypeError):
         space.options[0].parameter_schema["type"] = "array"  # type: ignore[index]
+
+
+def test_identical_current_routes_merge_only_their_private_binding_ids() -> None:
+    world = _world()
+    duplicate = replace(world.bindings[0], binding_id="binding-2", confidence=0.25)
+    merged_world = replace(world, bindings=(world.bindings[0], duplicate))
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        risk_profile=RiskProfile.LOW,
+    )
+
+    space = ActionSpaceBuilder().build(task, merged_world)
+
+    assert len(space.options) == 1
+    assert space.options[0].eligible_binding_ids == ("binding-1", "binding-2")
+    assert space.issues == ()
+
+
+def test_conflicting_current_route_contracts_fail_closed_before_publication() -> None:
+    world = _world()
+    conflicting = replace(
+        world.bindings[0],
+        binding_id="binding-conflict",
+        observation_barrier=False,
+        verification_contract_digest="",
+        verification_family="",
+    )
+    conflicted_world = replace(world, bindings=(world.bindings[0], conflicting))
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        risk_profile=RiskProfile.LOW,
+    )
+
+    space = ActionSpaceBuilder().build(task, conflicted_world)
+
+    assert space.options == ()
+    assert len(space.issues) == 1
+    assert space.issues[0].code.value == "action_route_conflict"
+    assert space.issues[0].conflicting_contract_fields == (
+        "observation_barrier",
+        "verification_contract",
+    )
+
+
+def test_private_identity_and_binding_enumeration_do_not_change_public_delivery() -> None:
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        risk_profile=RiskProfile.LOW,
+    )
+
+    def delivery(identity: str, private_ids: tuple[str, str], reversed_bindings: bool):
+        targets = (
+            SemanticTarget(private_ids[0], "button", "First action", {"enabled": True}),
+            SemanticTarget(private_ids[1], "button", "Second action", {"enabled": True}),
+        )
+        bindings = tuple(
+            replace(
+                _world().bindings[0],
+                binding_id=f"binding:{identity}:{index}",
+                world_observation_id=identity,
+                source_observation_id=identity,
+                source_revision=f"revision:{identity}",
+                target_fingerprint=f"fingerprint:{identity}:{index}",
+                target_id=target_id,
+                source_target_id=target_id,
+            )
+            for index, target_id in enumerate(private_ids)
+        )
+        if reversed_bindings:
+            bindings = tuple(reversed(bindings))
+        source = SurfaceObservation(
+            identity,
+            "dom",
+            f"revision:{identity}",
+            ObservationSourceProfile.dom(),
+            targets,
+            bindings=bindings,
+        )
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        world = fused.observation
+        action_space = ActionSpaceBuilder().build(task, world)
+        evaluation = TaskEvaluation(task.task_id, identity, TaskEvaluationStatus.INCOMPLETE, "ongoing")
+        context = ContextBuilder().build(task, world, action_space, evaluation)
+        return build_model_turn_delivery(context, include_images=False)
+
+    first = delivery("obs:private-a", ("private:900", "private:100"), False)
+    second = delivery("obs:private-b", ("private:2", "private:9999"), True)
+
+    assert first.view.text == second.view.text
+    assert first.manifest.action_routes == second.manifest.action_routes
 
 
 @pytest.mark.parametrize(
@@ -230,14 +329,12 @@ def test_schema_variants_have_distinct_option_identity_and_routes() -> None:
     world = replace(_world(), bindings=(first, second))
     task = TaskGoal("share", "Enable sharing", allowed_effects=("shared_state_enabled",), risk_profile=RiskProfile.LOW)
     builder = ActionSpaceBuilder()
-    options = builder.build(task, world).options
+    action_space = builder.build(task, world)
 
-    assert len(options) == 2
-    assert len({option.action_id for option in options}) == 2
-    for option in options:
-        value = option.parameter_schema["properties"]["text"]["enum"][0]
-        request = ActionBinder().bind(builder.admit(option, {"text": value}), world, "context:test")
-        assert request.binding.binding_id == option.eligible_binding_ids[0]
+    assert action_space.options == ()
+    assert len(action_space.issues) == 1
+    assert action_space.issues[0].code.value == "action_route_conflict"
+    assert "parameter_schema" in action_space.issues[0].conflicting_contract_fields
 
 
 def test_unsupported_schema_type_fails_closed() -> None:

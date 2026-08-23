@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.task.public_input import admit_public_task_value
 
 
 class RiskProfile(StrEnum):
@@ -87,11 +88,23 @@ class TaskGoal:
             raise ValueError("task goal revision must be a positive integer")
         if self.risk_profile != RiskProfile.READ_ONLY and not self.allowed_effects:
             raise ValueError("effectful task requires explicit allowed_effects")
+        if len(self.instruction) > 16_384:
+            raise ValueError("task instruction exceeds the public intake bound")
         object.__setattr__(self, "constraints", tuple(self.constraints))
         object.__setattr__(self, "allowed_effects", tuple(self.allowed_effects))
         object.__setattr__(self, "forbidden_effects", tuple(self.forbidden_effects))
-        object.__setattr__(self, "inputs", freeze_json(self.inputs))
-        object.__setattr__(self, "success_criteria", tuple(freeze_json(item) for item in self.success_criteria))
+        admitted_public = admit_public_task_value(
+            {"inputs": self.inputs, "success_criteria": self.success_criteria},
+            path="task_public",
+        )
+        if not isinstance(admitted_public, dict):
+            raise TypeError("task public admission changed the root object")
+        inputs = admitted_public["inputs"]
+        criteria = admitted_public["success_criteria"]
+        if not isinstance(criteria, list | tuple):
+            raise TypeError("task success criteria admission changed the sequence")
+        object.__setattr__(self, "inputs", freeze_json(inputs))
+        object.__setattr__(self, "success_criteria", tuple(freeze_json(item) for item in criteria))
         criterion_ids = tuple(criterion_id(item) for item in self.success_criteria)
         if any(not item.strip() for item in criterion_ids) or len(set(criterion_ids)) != len(criterion_ids):
             raise ValueError("success criterion IDs must be nonblank and unique")

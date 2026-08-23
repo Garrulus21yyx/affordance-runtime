@@ -8,9 +8,12 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
+from types import MappingProxyType
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,39 @@ _HEADING_ROLES = frozenset({"heading"})
 _ALNUM = re.compile(r"[^\W_]", re.UNICODE)
 
 
+class FunctionalContainerKind(StrEnum):
+    FORM = "form"
+    SEARCH = "search"
+    DIALOG = "dialog"
+    NAVIGATION = "navigation"
+    TABLE = "table"
+    LIST = "list"
+    REGION = "region"
+    GENERIC = "generic"
+
+
+@dataclass(frozen=True)
+class TargetFunctionalContext:
+    """Canonical public structure facets for one current target."""
+
+    target_id: str
+    primary_region_key: str
+    container_kind: FunctionalContainerKind
+    public_order: int
+    focused: bool = False
+    viewport: str = "unknown"
+    secondary_provenance: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.target_id.strip() or not self.primary_region_key.startswith("region:"):
+            raise ValueError("functional context requires a current target and primary region")
+        if type(self.public_order) is not int or self.public_order < 0:
+            raise ValueError("functional context public order is invalid")
+        if self.viewport not in {"visible", "offscreen", "unknown"}:
+            raise ValueError("functional context viewport state is invalid")
+        object.__setattr__(self, "secondary_provenance", tuple(sorted(set(self.secondary_provenance))))
+
+
 @dataclass(frozen=True)
 class WorldRegion:
     key: str
@@ -82,7 +118,7 @@ class WorldRegion:
     def __post_init__(self) -> None:
         if (
             not self.key.startswith("region:")
-            or not re.fullmatch(r"R[1-9][0-9]{0,3}", self.public_ref)
+            or not PublicRefCodec.accepts(self.public_ref, expected=PublicRefKind.REGION)
             or not self.source_id.strip()
             or not self.root_structure_id.strip()
         ):
@@ -158,6 +194,7 @@ class WorldDeliveryIndex:
     public_world_delta: object | None = field(default=None, repr=False, compare=False)
     document_lineage: str = ""
     region_versions: tuple[RegionVersion, ...] = ()
+    target_contexts: Mapping[str, TargetFunctionalContext] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         if not self.world_observation_id.strip():
@@ -220,6 +257,17 @@ class WorldDeliveryIndex:
                     raise ValueError("delivery region version membership must be exact")
         object.__setattr__(self, "document_lineage", lineage)
         object.__setattr__(self, "region_versions", versions)
+        contexts = dict(self.target_contexts)
+        if contexts and set(contexts) != set(self.target_region_keys):
+            raise ValueError("functional contexts must cover the exact target partition")
+        if any(
+            not isinstance(item, TargetFunctionalContext)
+            or item.target_id != target_id
+            or item.primary_region_key != self.target_region_keys[target_id]
+            for target_id, item in contexts.items()
+        ):
+            raise ValueError("functional context disagrees with the primary target partition")
+        object.__setattr__(self, "target_contexts", MappingProxyType(contexts))
 
     @classmethod
     def from_observation(
@@ -245,6 +293,11 @@ class WorldDeliveryIndex:
             previous_index,
             limits,
         )
+        contexts = _target_functional_contexts(
+            observation,
+            regions,
+            target_keys,
+        )
         return cls(
             observation.observation_id,
             regions,
@@ -255,6 +308,7 @@ class WorldDeliveryIndex:
             public_world_delta,
             document_lineage,
             versions,
+            contexts,
         )
 
     @property
@@ -289,6 +343,9 @@ class WorldDeliveryIndex:
             return tuple(path)
         region = self.region_for_target(target_id)
         return region.scope_path if region is not None else ()
+
+    def functional_context_for_target(self, target_id: str) -> TargetFunctionalContext | None:
+        return self.target_contexts.get(target_id)
 
     def version_for(self, region_key: str) -> RegionVersion | None:
         return next((item for item in self.region_versions if item.region_key == region_key), None)
@@ -375,7 +432,7 @@ def _functional_partition(
                     "member_fact_ids": [],
                     "member_action_ids": [],
                     "heading": heading,
-                    "role": _region_kind(root.role),
+                    "role": _region_kind(_functional_role(root)),
                     "direct_labels": direct_labels,
                     "repeated_item_roots": repeated_roots,
                     "state_badges": state_badges,
@@ -413,10 +470,19 @@ def _functional_partition(
             }
         )
 
-    target_owner: dict[str, int] = {}
+    target_memberships: dict[str, list[int]] = defaultdict(list)
     for index, seed in enumerate(seeds):
         for target_id in seed["member_target_ids"]:  # type: ignore[union-attr]
-            target_owner.setdefault(str(target_id), index)
+            target_memberships[str(target_id)].append(index)
+    target_owner = {
+        target_id: min(indexes, key=lambda index: _primary_seed_key(seeds[index], observation))
+        for target_id, indexes in target_memberships.items()
+    }
+    for index, seed in enumerate(seeds):
+        seed["member_target_ids"] = tuple(
+            target_id for target_id in seed["member_target_ids"]  # type: ignore[union-attr]
+            if target_owner[str(target_id)] == index
+        )
     # Targets without a structural source remain public and are merged into the
     # first matching source/document owner rather than dropped.
     for target in observation.targets:
@@ -521,7 +587,7 @@ def _functional_partition(
                 tuple(seed["scope_path"]),  # type: ignore[arg-type]
             )
         )
-    return tuple(result)
+    return tuple(sorted(result, key=_seed_public_sort_key))
 
 
 def _target_functional_paths(
@@ -563,7 +629,7 @@ def _target_functional_paths(
 def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits) -> set[str]:
     candidates = set(roots)
     for item in nodes.values():
-        role = item.role.casefold()
+        role = _functional_role(item)
         if role in _BOUNDARY_ROLES:
             candidates.add(item.structure_id)
         children = tuple(nodes[child] for child in item.child_structure_ids if child in nodes)
@@ -578,10 +644,10 @@ def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits)
         root = nodes[root_id]
         descendants = tuple(_walk_ids(root_id, nodes))
         boundary_count = sum(
-            1 for item in descendants[1:] if nodes[item].role.casefold() in _BOUNDARY_ROLES | _HEADING_ROLES
+            1 for item in descendants[1:] if _functional_role(nodes[item]) in _BOUNDARY_ROLES | _HEADING_ROLES
         )
         estimated_tokens = _estimate_tokens(" ".join(nodes[item].label for item in descendants if nodes[item].label))
-        if root.role.casefold() == "generic" and (boundary_count >= 2 or estimated_tokens > limits.exact_region_tokens):
+        if _functional_role(root) == "generic" and (boundary_count >= 2 or estimated_tokens > limits.exact_region_tokens):
             for child_id in root.child_structure_ids:
                 if child_id in nodes and _meaningful_text(nodes[child_id].label):
                     candidates.add(child_id)
@@ -774,19 +840,148 @@ def _region_kind(role: str) -> str:
     return "document" if normalized in {"webarea", "rootwebarea"} else normalized
 
 
+def _functional_role(node: object) -> str:
+    role = str(getattr(node, "role", "")).casefold() or "generic"
+    state = getattr(node, "state", {})
+    if isinstance(state, Mapping):
+        public_tag = next(
+            (
+                str(value).casefold()
+                for key, value in state.items()
+                if str(key).casefold().replace("_", ".") in {"semantic.dom.tag", "dom.tag", "tag"}
+            ),
+            "",
+        )
+        if public_tag in _BOUNDARY_ROLES:
+            return public_tag
+    return role
+
+
+def _source_family(source_id: str, observation: WorldObservation) -> str:
+    manifest = next(
+        (item for item in observation.source_manifest if item.source_observation_id == source_id),
+        None,
+    )
+    if manifest is None:
+        return "world"
+    return f"{manifest.surface}:{manifest.modality}:{manifest.profile}"
+
+
+def _source_priority(source_id: str, observation: WorldObservation) -> int:
+    family = _source_family(source_id, observation).casefold()
+    return next(
+        (
+            rank
+            for rank, marker in enumerate(("accessibility", "dom", "http", "wot", "visual"))
+            if marker in family
+        ),
+        99,
+    )
+
+
+def _primary_seed_key(seed: Mapping[str, object], observation: WorldObservation) -> tuple[object, ...]:
+    role = str(seed["role"])
+    functional_priority = 1 if role in {"generic", "region", "document"} else 0
+    return (
+        _source_priority(str(seed["source_id"]), observation),
+        functional_priority,
+        role,
+        tuple(seed["scope_path"]),  # type: ignore[arg-type]
+        str(seed["heading"]),
+        tuple(seed["direct_labels"]),  # type: ignore[arg-type]
+    )
+
+
+def _seed_public_sort_key(seed: _RegionSeed) -> tuple[object, ...]:
+    return (
+        1 if seed.role in {"generic", "region", "document"} else 0,
+        seed.scope_path,
+        seed.role,
+        seed.heading,
+        seed.direct_labels,
+        tuple(sorted(seed.state_badges.items())),
+    )
+
+
+def _target_functional_contexts(
+    observation: WorldObservation,
+    regions: tuple[WorldRegion, ...],
+    target_keys: Mapping[str, str],
+) -> dict[str, TargetFunctionalContext]:
+    targets = {item.target_id: item for item in observation.targets}
+    regions_by_key = {item.key: item for item in regions}
+    ordered_target_ids = tuple(
+        target_id
+        for region in regions
+        for target_id in region.member_target_ids
+    )
+    order = {target_id: index for index, target_id in enumerate(ordered_target_ids)}
+    source_families: dict[str, set[str]] = defaultdict(set)
+    for link in observation.entity_source_links:
+        source_families[link.canonical_target_id].add(
+            _source_family(link.source_observation_id, observation)
+        )
+    result: dict[str, TargetFunctionalContext] = {}
+    for target_id, region_key in target_keys.items():
+        target = targets[target_id]
+        region = regions_by_key[region_key]
+        state = dict(target.state)
+        focused = any(
+            str(key).casefold().rsplit(".", 1)[-1] == "focused" and value is True
+            for key, value in state.items()
+        )
+        visible = next(
+            (
+                value for key, value in state.items()
+                if str(key).casefold().rsplit(".", 1)[-1] in {"visible", "in_viewport", "offscreen"}
+                and isinstance(value, bool)
+            ),
+            None,
+        )
+        viewport = "unknown" if visible is None else "visible" if visible else "offscreen"
+        primary_family = _source_family(region.source_id, observation)
+        secondary = tuple(item for item in source_families.get(target_id, ()) if item != primary_family)
+        kind = FunctionalContainerKind(
+            region.role if region.role in FunctionalContainerKind._value2member_map_ else "generic"
+        )
+        result[target_id] = TargetFunctionalContext(
+            target_id,
+            region_key,
+            kind,
+            order.get(target_id, len(order)),
+            focused,
+            viewport,
+            secondary,
+        )
+    return result
+
+
 def _assign_public_refs(observation: WorldObservation, seeds: tuple[_RegionSeed, ...]) -> tuple[WorldRegion, ...]:
     regions: list[WorldRegion] = []
+    public_occurrences: dict[str, int] = defaultdict(int)
     manifests = {item.source_observation_id: item for item in observation.source_manifest}
     for index, seed in enumerate(seeds, 1):
         manifest = manifests.get(seed.source_id)
         source_family = (
             f"{manifest.surface}\0{manifest.modality}\0{manifest.profile}" if manifest is not None else "world"
         )
-        digest = hashlib.sha256(f"{source_family}\0{seed.root_structure_id}".encode()).hexdigest()[:24]
+        public_seed = (
+            source_family,
+            seed.role,
+            seed.heading,
+            seed.scope_path,
+            seed.direct_labels,
+        )
+        public_digest = hashlib.sha256(
+            json.dumps(public_seed, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()[:24]
+        occurrence = public_occurrences[public_digest]
+        public_occurrences[public_digest] += 1
+        digest = hashlib.sha256(f"{public_digest}:{occurrence}".encode()).hexdigest()[:24]
         regions.append(
             WorldRegion(
                 key=f"region:{digest}",
-                public_ref=f"R{index}",
+                public_ref=PublicRefCodec.encode(PublicRefKind.REGION, index),
                 source_id=seed.source_id,
                 root_structure_id=seed.root_structure_id,
                 member_target_ids=seed.member_target_ids,

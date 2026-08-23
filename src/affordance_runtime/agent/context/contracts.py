@@ -11,6 +11,7 @@ from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _GENERATION_REF = re.compile(r"\b[ENFR][1-9][0-9]{0,3}\b")
 _LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]{0,3}>", re.IGNORECASE)
@@ -124,11 +125,8 @@ class AgentTaskView:
     public_inputs_total_count: int = 0
     public_inputs_truncated: bool = False
     evaluation: AgentTaskEvaluationView = field(default_factory=lambda: AgentTaskEvaluationView("unknown"))
-    final_response_contract: Mapping[str, object] = field(default_factory=dict)
-
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
-        object.__setattr__(self, "final_response_contract", freeze_json(self.final_response_contract))
         if self.public_inputs_total_count < len(self.public_inputs):
             raise ValueError("public input total cannot be smaller than its projection")
         if self.public_inputs_truncated != (self.public_inputs_total_count > len(self.public_inputs)):
@@ -146,7 +144,9 @@ class AgentDestinationView:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "semantics", freeze_json(self.semantics))
-        if self.grounding_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.grounding_ref) is None:
+        if self.grounding_ref and not PublicRefCodec.accepts(
+            self.grounding_ref, expected=PublicRefKind.EXECUTABLE
+        ):
             raise ValueError("destination grounding ref is invalid")
         if any((self.grounding_ref, self.semantics, self.grounding_context_id)) and not all(
             (self.grounding_ref, self.semantics, self.grounding_context_id)
@@ -214,7 +214,9 @@ class AgentActionOptionView:
             and not closed
         ):
             raise ValueError("action candidate target projection is incomplete")
-        if self.target_ref and re.fullmatch(r"E[1-9][0-9]{0,2}", self.target_ref) is None:
+        if self.target_ref and not PublicRefCodec.accepts(
+            self.target_ref, expected=PublicRefKind.EXECUTABLE
+        ):
             raise ValueError("action candidate target ref is invalid")
         if self.destination_mode and self.destination_mode not in {"forbidden", "required", "optional"}:
             raise ValueError("action candidate destination mode is invalid")
@@ -239,15 +241,11 @@ class AgentActionPageView:
     page_size: int
     truncated: bool
     has_more: bool
-    available_filters: tuple[str, ...] = ()
     active_query: str = ""
-    active_target_filter: str = ""
-    active_relevance_filter: str = ""
     next_cursor: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "options", tuple(self.options))
-        object.__setattr__(self, "available_filters", tuple(self.available_filters))
         if self.total_count < len(self.options) or self.page_size != len(self.options):
             raise ValueError("action page counts are inconsistent")
         if self.truncated != (self.total_count > len(self.options)):

@@ -13,6 +13,7 @@ import os
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlparse
 
 from affordance_runtime.agent.context.context import AgentImageInput
@@ -22,6 +23,7 @@ from affordance_runtime.agent.context.failures import (
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
+from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
@@ -38,11 +40,11 @@ from affordance_runtime.model.policy.grounded_policy_context import (
     GroundedPolicyContextBinder,
 )
 from affordance_runtime.model.policy.grounded_tool_catalog import (
-    compile_grounded_action_catalog,
     resolve_grounded_action_call,
 )
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GROUNDED_TOOLS_PROTOCOL,
+    GroundedToolCatalog,
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
@@ -57,11 +59,13 @@ from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyReasoningPolicy,
 )
 from affordance_runtime.model.policy.request_admission import (
+    AdmittedModelRequest,
     ModelRequestBreakdown,
     ModelRequestCapacityError,
     request_breakdown_diagnostics,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.turn_packer import TurnPacker
 
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
@@ -209,31 +213,32 @@ class PydanticAIGroundedDecisionPort:
                 request,
             )
 
-        delivery = None
+        delivery: ModelTurnDelivery | None = None
+        catalog: GroundedToolCatalog | None = None
+        admitted: AdmittedModelRequest | None = None
+        instructions: str | None = None
+        user_prompt: object | None = None
+        toolset: object | None = None
+        agent: Any | None = None
+        object.__setattr__(self, "last_tool_resolution_code", None)
+        object.__setattr__(self, "last_tool_resolution_detail", "")
         try:
-            delivery = self.context_binder.model_turn_delivery(
+            packed = TurnPacker().pack(
                 request,
+                binder=self.context_binder,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
             )
-            catalog = compile_grounded_action_catalog(request.agent_context, delivery)
+            delivery = packed.delivery
+            catalog = packed.catalog
+            admitted = packed.admitted_request
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
-            object.__setattr__(self, "last_image_input_count", len(request.image_inputs))
-            object.__setattr__(self, "last_tool_resolution_code", None)
-            object.__setattr__(self, "last_tool_resolution_detail", "")
-            admitted = self.context_binder.action_request(
-                request,
-                catalog.specs,
-                delivery,
-                supports_multimodal=self.supports_multimodal,
-                perception_profile=self.perception_profile,
-                include_tool_menu=False,
-            )
+            object.__setattr__(self, "last_image_input_count", len(delivery.media))
             self._append_request_breakdown(admitted.breakdown)
             messages = admitted.messages
-            instructions, user_prompt = _pydantic_prompt(messages, request.image_inputs, BinaryContent)
+            instructions, user_prompt = _pydantic_prompt(messages, delivery.media, BinaryContent)
             toolset = ExternalToolset(
                 [
                     ToolDefinition(
@@ -272,7 +277,7 @@ class PydanticAIGroundedDecisionPort:
                 provider_error_type=ModelAPIError,
             )
             resolution_error = None
-            decision, resolution_error, initial_calls = _resolve_deferred(
+            decision, next_delivery_store, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
                 catalog,
                 request.context_id,
@@ -304,7 +309,7 @@ class PydanticAIGroundedDecisionPort:
                     input_messages=[{"role": "user", "content": repair_prompt}],
                     provider_error_type=ModelAPIError,
                 )
-                decision, repair_error, repaired_calls = _resolve_deferred(
+                decision, next_delivery_store, repair_error, repaired_calls = _resolve_deferred(
                     repair_result.output,
                     catalog,
                     request.context_id,
@@ -322,6 +327,7 @@ class PydanticAIGroundedDecisionPort:
                     )
                 ):
                     decision = None
+                    next_delivery_store = None
                     repair_error = GroundedToolResolutionError(
                         GroundedToolResolutionCode.INVALID_ARGUMENTS,
                         "representation repair changed operation or semantic operands",
@@ -352,7 +358,11 @@ class PydanticAIGroundedDecisionPort:
                 delivery,
             )
         except UnexpectedModelBehavior as error:
-            self._record_local_failure(error, "pydantic_ai_output_validation", catalog.specs)
+            self._record_local_failure(
+                error,
+                "pydantic_ai_output_validation",
+                catalog.specs if catalog is not None else (),
+            )
             return self._invocation_failure(
                 _failure(ModelFailureKind.SCHEMA_ERROR, "provider_envelope_invalid"),
                 request,
@@ -384,17 +394,32 @@ class PydanticAIGroundedDecisionPort:
             )
         except GroundedToolResolutionError as exc:
             self._set_tool_resolution(exc, accepted=False)
+            if exc.code is GroundedToolResolutionCode.CATALOG_INVALID:
+                return self._invocation_failure(
+                    _failure(
+                        ModelFailureKind.SCHEMA_ERROR,
+                        "grounded_tool_catalog_invalid",
+                        attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
+                    ),
+                    request,
+                    delivery,
+                )
             return self._invocation_failure(
                 _tool_resolution_failure(exc),
                 request,
                 delivery,
             )
         except Exception as error:
-            self._record_local_failure(error, "local_runtime", catalog.specs)
+            self._record_local_failure(
+                error,
+                "local_runtime",
+                catalog.specs if catalog is not None else (),
+            )
             return self._invocation_failure(
                 _failure(
                     ModelFailureKind.INTERNAL_ERROR,
                     "PydanticAI decision adapter failed locally",
+                    attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
                 ),
                 request,
                 delivery,
@@ -425,7 +450,7 @@ class PydanticAIGroundedDecisionPort:
             endpoint_host=self.endpoint_host,
         )
         invocation = ModelInvocationResult(
-            output=ResolvedModelDecision(decision, metadata),
+            output=ResolvedModelDecision(decision, metadata, next_delivery_store),
             metadata=metadata,
             attempts=self.last_generation_attempts,
             diagnostics=self._diagnostics(),
@@ -460,7 +485,7 @@ class PydanticAIGroundedDecisionPort:
             lineage.update(
                 {
                     "delivery_id": delivery.delivery_id,
-                    "world_observation_id": delivery.world_observation_id,
+                    "world_observation_id": request.agent_context.current_observation.observation_id,
                 }
             )
         return lineage
@@ -915,11 +940,11 @@ def _resolve_deferred(output, catalog, context_id: str):
     from pydantic_ai import DeferredToolRequests
 
     if not isinstance(output, DeferredToolRequests) or output.approvals:
-        return None, None, ()
+        return None, None, None, ()
     parsed_calls = _parse_deferred_calls(output.calls)
     if len(output.calls) != 1:
         code = GroundedToolResolutionCode.ZERO_CALLS if not output.calls else GroundedToolResolutionCode.MULTIPLE_CALLS
-        return None, GroundedToolResolutionError(code), parsed_calls
+        return None, None, GroundedToolResolutionError(code), parsed_calls
     call = output.calls[0]
     parsed_call = None
     try:
@@ -930,23 +955,26 @@ def _resolve_deferred(output, catalog, context_id: str):
             catalog,
         )
         if reconciliation.status is not ToolCallReconciliationStatus.EXACT:
-            return None, _reconciliation_error(reconciliation), (parsed_call,)
+            return None, None, _reconciliation_error(reconciliation), (parsed_call,)
         assert reconciliation.exact_call is not None
+        resolution = resolve_grounded_action_call(
+            catalog,
+            reconciliation.exact_call,
+            expected_context_id=context_id,
+            expected_delivery_id=catalog.delivery_id,
+            expected_catalog_id=catalog.catalog_id,
+        )
         return (
-            resolve_grounded_action_call(
-                catalog,
-                reconciliation.exact_call,
-                expected_context_id=context_id,
-                expected_delivery_id=catalog.delivery_id,
-                expected_catalog_id=catalog.catalog_id,
-            ).decision,
+            resolution.decision,
+            getattr(resolution, "next_delivery_store", None),
             None,
             (reconciliation.exact_call,),
         )
     except GroundedToolResolutionError as exc:
-        return None, exc, (parsed_call,) if parsed_call is not None else ()
+        return None, None, exc, (parsed_call,) if parsed_call is not None else ()
     except (ValueError, TypeError):
         return (
+            None,
             None,
             GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS),
             (parsed_call,) if parsed_call is not None else (),

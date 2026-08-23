@@ -16,7 +16,6 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkI
 from affordance_runtime.evaluation import CriterionEvaluationStatus
 from affordance_runtime.evaluation.semantic_contracts import SemanticCriterionProposal
 from affordance_runtime.execution import ActionResult, BoundActionRequest, DispatchStatus
-from affordance_runtime.goals import GoalSemanticContract
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
@@ -60,10 +59,6 @@ class ManagedRealEnvironment:
     def observation_capabilities(self):
         return self.inner.observation_capabilities
 
-    @property
-    def goal_semantic_contract(self):
-        return self.inner.goal_semantic_contract
-
     async def reset(self, task: TaskGoal):
         return await self.inner.reset(task)
 
@@ -75,9 +70,6 @@ class ManagedRealEnvironment:
 
     async def execute(self, request: BoundActionRequest):
         return await self.inner.execute(request)
-
-    async def execute_form_fields(self, command):
-        return await self.inner.execute_form_fields(command)
 
     def is_current(self, request: BoundActionRequest) -> bool:
         return self.inner.is_current(request)
@@ -109,10 +101,6 @@ class CountingAdapter:
     @property
     def observation_offers(self):
         return self.wrapped.observation_offers
-
-    @property
-    def goal_semantic_contract(self):
-        return getattr(self.wrapped, "goal_semantic_contract", GoalSemanticContract())
 
     @property
     def physical_environment_id(self) -> str:

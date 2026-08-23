@@ -15,9 +15,6 @@ from affordance_runtime.benchmarks.target_loop.detached_run import (
     launch_detached,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest
-from affordance_runtime.benchmarks.target_loop.result_store import (
-    SQLiteRunResultStore,
-)
 from affordance_runtime.benchmarks.target_loop.runner import (
     abandon_detached_watchdog_tasks,
     run_suite,
@@ -144,9 +141,6 @@ async def _run_benchmark(manifest, output_dir: Path) -> int:
             interruption_requested=interruption_requested,
             status_changed=status_changed,
         )
-        store = SQLiteRunResultStore(output_dir / "run-results.sqlite3")
-        store.commit_run_report(result)
-        store.export_run_report(result.identity.run_id, output_dir)
     finally:
         heartbeat.cancel()
         await asyncio.gather(heartbeat, return_exceptions=True)

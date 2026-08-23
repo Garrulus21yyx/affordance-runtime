@@ -27,7 +27,6 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SelectAction,
-    SetFormFields,
     Wait,
 )
 from affordance_runtime.agent.run_state import StepResult
@@ -49,7 +48,6 @@ def project_step_result(
         decision,
         (
             SelectAction,
-            SetFormFields,
             RequestObservation,
             RequestActionPage,
             AskUser,
@@ -82,37 +80,9 @@ def project_step_result(
             str(sanitize_history_value(action.reason if action is not None else result.feedback)),
             {"feedback_code": result.feedback},
         )
-    if isinstance(decision, SetFormFields):
-        batch = result.execution_receipts
-        receipts = (
-            ()
-            if batch is None
-            else tuple(
-                {
-                    "operation": receipt.request.intent.semantic_action,
-                    "target": _historical_target_summary(result, receipt.request.intent.target_id),
-                    "dispatch_status": str(receipt.result.dispatch_status),
-                    "error": str(receipt.result.error) if receipt.result.error is not None else "",
-                }
-                for receipt in batch.receipts
-            )
-        )
-        return AgentTurnView(
-            decision.kind.value,
-            "set_form_fields",
-            task_evaluation_status=_task_evaluation_status(result),
-            reason=str(sanitize_history_value(result.feedback)),
-            semantic_summary=_historical_value(
-                {
-                    "form": decision.form_key,
-                    "receipts": receipts,
-                    "feedback_code": result.feedback,
-                }
-            ),
-        )
     target_id = ""
-    if isinstance(decision, RequestObservation | RequestActionPage):
-        target_id = decision.subject_id if isinstance(decision, RequestObservation) else decision.target_id
+    if isinstance(decision, RequestObservation):
+        target_id = decision.subject_id
     summary = dict(project_decision_summary(decision))
     if information_delta is not None:
         summary["information_delta"] = information_delta.kind.value
@@ -120,8 +90,8 @@ def project_step_result(
     replay = information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY
     if result.tool_result is not None and not replay:
         summary["result"] = project_public_value(result.tool_result)
-    if isinstance(decision, RequestActionPage) and result.action_page_result and not replay:
-        summary["result"] = project_public_value(result.action_page_result)
+    if isinstance(decision, RequestActionPage) and result.action_page_result is not None and not replay:
+        summary["result"] = result.action_page_result.to_public_value()
     summary["feedback_code"] = result.feedback
     return AgentTurnView(
         decision.kind.value,
@@ -251,10 +221,8 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
         }
     if isinstance(decision, RequestActionPage):
         return {
-            "query": _bounded(decision.query, 120),
-            "exact_target": decision.exact_target_ref,
-            "relevance_role": decision.relevance_role,
-            "cursor_requested": bool(decision.cursor),
+            "query": decision.query,
+            "continuation_scope": decision.continuation_scope,
         }
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}

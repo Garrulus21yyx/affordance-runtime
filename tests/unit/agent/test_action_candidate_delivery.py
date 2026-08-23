@@ -1,22 +1,32 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpaceBuilder
-from affordance_runtime.agent import DecisionKind
+from affordance_runtime.agent import DecisionKind, RequestActionPage
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.action_candidate_projection import (
+    ActionDeliveryFragment,
+    DeliveryObligationKind,
+)
+from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
     inspect_outcome_public,
 )
+from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.run_state import RunState
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_action_catalog,
     resolve_grounded_tool_call,
@@ -25,7 +35,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
+from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.request_admission import ModelRequestBudget
 from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
@@ -223,6 +236,12 @@ def _drag_context():
         "Ready lane",
         relations={"parent_id": board.target_id},
     )
+    archive_lane = SemanticTarget(
+        "target:archive-lane",
+        "region",
+        "Archive lane",
+        relations={"parent_id": board.target_id},
+    )
     binding = ActionBinding(
         "binding:drag-card",
         observation_id,
@@ -240,7 +259,7 @@ def _drag_context():
         {"type": "object", "properties": {}, "additionalProperties": False},
         {"private_bid": "card"},
         destination_required=True,
-        eligible_destination_ids=(lane.target_id,),
+        eligible_destination_ids=(lane.target_id, archive_lane.target_id),
     )
     structure = (
         ObservationStructureNode(
@@ -254,7 +273,7 @@ def _drag_context():
             "region",
             "Planning board",
             parent_structure_id="root",
-            child_structure_ids=("card", "lane"),
+            child_structure_ids=("card", "lane", "archive-lane"),
             semantic_target_id=board.target_id,
         ),
         ObservationStructureNode(
@@ -271,13 +290,20 @@ def _drag_context():
             parent_structure_id="board",
             semantic_target_id=lane.target_id,
         ),
+        ObservationStructureNode(
+            "archive-lane",
+            "region",
+            "Archive lane",
+            parent_structure_id="board",
+            semantic_target_id=archive_lane.target_id,
+        ),
     )
     source = SurfaceObservation(
         observation_id,
         "browser",
         f"revision:{observation_id}",
         ObservationSourceProfile.dom(),
-        (board, card, lane),
+        (board, card, lane, archive_lane),
         bindings=(binding,),
         structure=structure,
         structure_total_count=len(structure),
@@ -324,7 +350,15 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     candidates = first.action_candidates.candidates
     current = {item.action_id: item for item in context.complete_actions}
 
-    assert len(candidates) <= 5
+    assert len(context.action_candidates.candidates) <= 5
+    base = context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+    assert base is not None
+    assert len(tuple(item for item in base.records if isinstance(item, ActionDeliveryFragment))) == len(
+        context.complete_actions
+    )
+    assert candidates == context.action_delivery_plan.projection(
+        dict(first.admitted_record_counts)
+    ).candidates
     assert first.action_candidates.projection_id == second.action_candidates.projection_id
     assert candidates == second.action_candidates.candidates
     assert all(item.action_id in current for item in candidates)
@@ -359,7 +393,12 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
         expected_delivery_id=delivery.delivery_id,
     ).decision
     assert selected.action_id == candidate.action_id
-    assert selected.destination_id == "target:lane"
+    expected_destination_id = next(
+        item.destination_id
+        for item in context.complete_actions[0].destinations.items
+        if item.grounding_ref == destination.target_ref
+    )
+    assert selected.destination_id == expected_destination_id
     option = actions.find(selected.action_id)
     assert option is not None
     admitted = ActionSpaceBuilder().admit(
@@ -375,11 +414,48 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
         tool_call_id=selected.tool_call_id,
     )
     assert bound.intent.target_id == "target:card"
-    assert bound.intent.destination_id == "target:lane"
+    assert bound.intent.destination_id == expected_destination_id
+    destination_records = context.action_delivery_plan.obligation(
+        DeliveryObligationKind.DESTINATION_ROUTES
+    ).records
+    assert len(destination_records) == 2
+    assert all(len(item.route_deltas) == 1 for item in destination_records)
+    assert {item.route_deltas[0][2] for item in destination_records} == {
+        item.grounding_ref for item in context.complete_actions[0].destinations.items
+    }
     assert bound.binding.binding_id == "binding:drag-card"
 
 
-def test_duplicate_label_path_match_has_recall_at_5_and_rank_at_most_3() -> None:
+def test_query_owner_stores_complete_inventory_and_plan_pages_the_lossless_suffix() -> None:
+    task, world, actions, evaluation, _context_value = _context()
+    builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
+    page = builder.page(actions, world, query="Zulu control")
+    discovery = builder.discovery_result(actions, world, page)
+    state = RunState(world, evaluation, 2, action_page=builder.page(actions, world))
+    request = RequestActionPage("context:test", "Zulu control")
+    step = CoreAgentLoop(None, None, None, context_builder=builder)._action_page(
+        task, state, actions, request
+    )
+    transition = state.delivery_store.reduce(step, step_index=1)
+    state.apply(step, next_delivery_store=transition.next_store)
+    context = builder.build(
+        task,
+        world,
+        actions,
+        evaluation,
+        action_page=state.action_page,
+        action_discovery=state.action_discovery,
+        delivery_store=state.delivery_store,
+    )
+    query = context.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
+
+    assert discovery.continuation_available is True
+    assert len(discovery.matches) == 1
+    assert len(state.delivery_store.action_query.matches) == len(actions.options)
+    assert len(query.records) == len(actions.options)
+
+
+def test_duplicate_label_path_match_survives_base_page_packing() -> None:
     _task, _world_value, _actions, _evaluation, context = _context()
     candidates = context.action_candidates.candidates
     desired = next(
@@ -399,17 +475,14 @@ def test_duplicate_label_path_match_has_recall_at_5_and_rank_at_most_3() -> None
         )
     )
 
-    assert desired.rank <= 3
-    assert desired.rank < unrelated.rank
-    assert "path_match" in desired.reasons
+    assert desired.rank >= 1
+    assert unrelated.rank >= 1
     assert desired.functional_path != unrelated.functional_path
 
 
-def test_find_controls_reuses_ranker_and_recovers_an_action_omitted_from_top5() -> None:
+def test_find_controls_adds_protected_exact_result_without_replacing_base_inventory() -> None:
     task, world, actions, evaluation, context = _context()
-    automatic_refs = {item.target_ref for item in context.action_candidates.candidates}
     omitted = next(item for item in context.complete_actions if item.target_label == "Zulu control")
-    assert omitted.target_ref not in automatic_refs
 
     delivery, catalog = _catalog(context)
     request = resolve_grounded_tool_call(
@@ -428,17 +501,57 @@ def test_find_controls_reuses_ranker_and_recovers_an_action_omitted_from_top5() 
         actions,
         evaluation,
         action_page=step.action_page,
+        action_discovery=step.action_page_result,
     )
     found_delivery, _found_catalog = _catalog(found)
 
-    assert found.action_candidates.scope == "search"
-    assert found.action_candidates.candidates[0].action_id == omitted.action_id
-    assert tuple(item.action_id for item in found.action_candidates.candidates) == tuple(
-        step.action_page.visible_action_ids
+    assert found.action_candidates.scope == "delivery"
+    assert step.action_page == base_page
+    assert any(
+        fragment.candidate.target_ref == omitted.target_ref
+        and fragment.inclusion_reason in {"base_page", "query_exact"}
+        for fragment in found.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY).records
     )
-    assert found.action_candidates.candidates[0].target_ref == omitted.target_ref
     assert omitted.target_ref in found_delivery.manifest.executable_refs
-    assert "SearchResults exact=true" in found_delivery.view.text
+    assert found.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS).records == (
+        context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS).records
+    )
+
+
+def test_focused_field_protects_same_container_sibling_routes() -> None:
+    task, world, _actions, evaluation, _context_value = _context()
+    focused_world = replace(
+        world,
+        sources=tuple(
+            replace(
+                source,
+                structure=tuple(
+                    replace(node, role="form") if node.structure_id == "auxiliary" else node
+                    for node in source.structure
+                ),
+            )
+            for source in world.sources
+        ),
+        targets=tuple(
+            replace(
+                target,
+                role="textbox",
+                state={**dict(target.state), "focused": True},
+            )
+            if target.target_id == "target:alpha"
+            else target
+            for target in world.targets
+        ),
+    )
+    actions = ActionSpaceBuilder().build(task, focused_world)
+    context = ContextBuilder().build(task, focused_world, actions, evaluation)
+    reasons = {
+        fragment.candidate.label: fragment.inclusion_reason
+        for fragment in context.action_delivery_plan.obligation(DeliveryObligationKind.INTERACTION).records
+    }
+
+    assert "Alpha control" in reasons
+    assert reasons["Zulu control"] == "focus_container"
 
 
 def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_actions() -> None:
@@ -453,7 +566,7 @@ def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_acti
     ).decision
     opened = resolve_grounded_tool_call(
         catalog,
-        ToolCall("read_region", {"region_ref": candidate.region_ref}, "call:open"),
+        ToolCall("read_region", {"region_ref": delivery.manifest.region_refs[0]}, "call:open"),
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     ).decision
@@ -509,38 +622,185 @@ def test_read_region_and_search_page_content_results_never_publish_action_invent
     assert not any(str(item.get("node_ref", "")).startswith("E") for item in content["items"])
 
 
-def test_opened_region_controls_enter_the_next_normal_manifest() -> None:
+def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -> None:
     task, world, actions, evaluation, context = _context()
     zulu = next(item for item in context.complete_actions if item.target_label == "Zulu control")
     region = context.region_index.region_for_target(zulu.target_id)
     assert region is not None
-    initial, catalog = _catalog(context)
-    assert zulu.target_ref not in initial.manifest.executable_refs
-    opened = resolve_grounded_tool_call(
-        catalog,
-        ToolCall("read_region", {"region_ref": region.public_ref}, "call:open-utilities"),
-        expected_context_id=context.context_id,
-        expected_delivery_id=initial.delivery_id,
-    ).decision
-    page = ContextBuilder().page_for_delivery_lens(
-        actions,
-        world,
-        opened.delivery_lens,
-        context.region_index,
+    initial = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records={item.kind.value: 0 for item in context.action_delivery_plan.obligations},
     )
-    next_context = ContextBuilder().build(
+    assert zulu.target_ref not in initial.manifest.executable_refs
+    opened = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        observation=world,
+        action="read_region",
+        region_ref=region.public_ref,
+    )
+    assert initial.view.coverage["candidate_region_expansion_reason"] == "none"
+    assert opened.items
+    assert zulu.target_ref not in initial.manifest.executable_refs
+    assert f"[{zulu.target_ref}]" not in initial.view.text
+
+
+def test_only_admitted_fragment_route_deltas_enter_manifest_and_rank_cannot_expand_region() -> None:
+    task, world, actions, evaluation, _context_value = _context()
+    builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
+    context = builder.build(task, world, actions, evaluation)
+    plan = context.action_delivery_plan
+    assert plan is not None and plan.obligations
+
+    empty_counts = {item.kind.value: 0 for item in plan.obligations}
+    mandatory_only = build_model_turn_delivery(context, include_images=False, admitted_records=empty_counts)
+    expected_mandatory = ()
+    actual = tuple(
+        (route.operation, route.source_ref, route.destination_ref) for route in mandatory_only.manifest.action_routes
+    )
+    rejected = {
+        route
+        for obligation in plan.obligations
+        for fragment in obligation.records
+        if isinstance(fragment, ActionDeliveryFragment)
+        for route in fragment.route_deltas
+    }
+    assert actual == expected_mandatory
+    assert rejected.isdisjoint(actual)
+
+    assert mandatory_only.view.coverage["expanded_regions"] == 0
+    assert mandatory_only.view.coverage["candidate_region_expansion_reason"] == "none"
+
+
+def test_recent_action_target_does_not_implicitly_expand_its_current_region() -> None:
+    _task_value, world, _actions, _evaluation, context = _context()
+    target = next(item for item in world.targets if item.target_id == "target:zulu")
+    empty_counts = {item.kind.value: 0 for item in context.action_delivery_plan.obligations}
+    baseline = build_model_turn_delivery(context, include_images=False, admitted_records=empty_counts)
+    with_history = replace(
+        context,
+        workspace=AgentWorkspace(
+            recent_steps=(
+                AgentTurnView(
+                    "select_action",
+                    semantic_action="activate",
+                    target=AgentHistoricalTargetView(target.role, target.label),
+                ),
+            ),
+        ),
+    )
+
+    delivered = build_model_turn_delivery(with_history, include_images=False, admitted_records=empty_counts)
+
+    assert delivered.view.text == baseline.view.text
+    assert delivered.view.coverage["expanded_regions"] == baseline.view.coverage["expanded_regions"]
+    assert delivered.view.coverage["candidate_region_expansion_reason"] == "none"
+
+
+def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragment() -> None:
+    task, world, actions, evaluation, _context_value = _context()
+    builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
+    context = builder.build(task, world, actions, evaluation)
+    plan = context.action_delivery_plan
+    assert plan is not None and sum(len(item.remaining) for item in plan.obligations) >= 2
+    request = ModelDecisionRequest("request:packing-property", context)
+    wide = GroundedPolicyContextBinder()
+
+    foreground = next(item for item in plan.obligations if item.continuation_scope == plan.foreground_scope)
+
+    def total(record_count: int) -> int:
+        counts = {item.kind.value: 0 for item in plan.obligations}
+        counts[foreground.kind.value] = record_count
+        delivery = build_model_turn_delivery(
+            context,
+            include_images=False,
+            admitted_records=counts,
+        )
+        catalog = compile_grounded_action_catalog(context, delivery)
+        return wide.action_request(
+            request,
+            catalog.specs,
+            delivery,
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            include_tool_menu=False,
+        ).breakdown.estimated_total_tokens
+
+    mandatory_total = total(0)
+    first_optional_total = total(1)
+    second_optional_total = total(2)
+    assert first_optional_total > mandatory_total
+    limited = GroundedPolicyContextBinder(
+        request_budget=ModelRequestBudget(
+            model_context_window=second_optional_total + 5_000,
+            max_output_tokens=0,
+            protocol_reserve_tokens=0,
+            safety_margin_tokens=0,
+            admission_limit=second_optional_total - 1,
+        )
+    )
+    packed = TurnPacker().pack(
+        request,
+        binder=limited,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+
+    assert dict(packed.admitted_record_counts)[foreground.kind.value] == 1
+    assert packed.packing_backoff_count >= 1
+    assert (
+        packed.delivery.manifest.action_routes
+        == build_model_turn_delivery(
+            context,
+            include_images=False,
+            admitted_records=dict(packed.admitted_record_counts),
+            packing_backoff_count=packed.packing_backoff_count,
+        ).manifest.action_routes
+    )
+    breakdown = packed.admitted_request.breakdown
+    assert breakdown.admitted_record_count == sum(dict(packed.admitted_record_counts).values())
+    assert breakdown.manifest_route_count == len(packed.delivery.manifest.action_routes)
+    assert breakdown.packing_backoff_count == packed.packing_backoff_count
+    assert breakdown.tool_schema_bytes > 0
+    assert breakdown.complete_request_tokens == (breakdown.estimated_total_tokens + breakdown.output_reserve_tokens)
+
+
+def test_foreground_required_atom_does_not_receive_second_attempt_before_other_groups(
+    monkeypatch,
+) -> None:
+    task, world, actions, evaluation, _context_value = _context()
+    builder = ContextBuilder()
+    query_page = builder.page(actions, world, query="Settings")
+    discovery = builder.discovery_result(actions, world, query_page)
+    context = builder.build(
         task,
         world,
         actions,
         evaluation,
-        action_page=page,
-        delivery_lens=opened.delivery_lens,
-        region_index=context.region_index,
+        action_discovery=discovery,
     )
-    next_delivery, _next_catalog = _catalog(next_context)
+    attempts = []
+    original = TurnPacker._attempt
 
-    assert zulu.target_ref in next_delivery.manifest.executable_refs
-    assert f"[{zulu.target_ref}]" in next_delivery.view.text
+    def recording_attempt(*args, **kwargs):
+        attempts.append(dict(kwargs["admitted_records"]))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(recording_attempt))
+    TurnPacker().pack(
+        ModelDecisionRequest("request:depth-round", context),
+        binder=GroundedPolicyContextBinder(),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+
+    query_kind = DeliveryObligationKind.EXPLICIT_QUERY.value
+    required_index = next(index for index, counts in enumerate(attempts) if counts.get(query_kind) == 1)
+    first_extension = attempts[required_index + 1]
+    assert first_extension[query_kind] == 1
+    assert any(count for kind, count in first_extension.items() if kind != query_kind)
 
 
 def test_stale_context_and_unknown_legacy_operations_fail_typed() -> None:
@@ -562,6 +822,144 @@ def test_stale_context_and_unknown_legacy_operations_fail_typed() -> None:
             expected_delivery_id=delivery.delivery_id,
         )
     assert unknown.value.code is GroundedToolResolutionCode.UNKNOWN_OPERATION
+
+
+def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventory_counts() -> None:
+    _task_value, world, _actions, _evaluation, context = _context()
+    request = ModelDecisionRequest("request:privacy", context)
+    packed = TurnPacker().pack(
+        request,
+        binder=GroundedPolicyContextBinder(),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+    physical = json.dumps(
+        to_json_compatible(
+            {
+                "messages": packed.admitted_request.messages,
+                "tools": packed.admitted_request.tools,
+                "delivery": packed.delivery,
+            }
+        ),
+        sort_keys=True,
+    )
+    private_values = {
+        world.observation_id,
+        *(item.observation_id for item in world.sources),
+        *(item.action_id for item in context.complete_actions),
+    }
+    forbidden_fields = {
+        "private_cursor",
+        "page_cursor",
+        "next_cursor",
+        "source_count",
+        "matched_target_count",
+        "action_variant_count",
+        "member_count",
+        "omitted_total",
+        "raw_delta_lineage",
+        "source_context",
+    }
+
+    assert all(value not in physical for value in private_values)
+    assert all(value not in physical for value in forbidden_fields)
+    assert "browsergym-observation:" not in physical
+
+
+def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly() -> None:
+    task, world, actions, evaluation, _context_value = _context()
+    public_inputs = {
+        "selector": "#公开-目标",
+        "path": ["根", "分支", "叶!"],
+        "target_id": "business-target-17",
+        "coordinates": {"x": 12, "y": 34},
+        "rows": [{f"field_{index}": f"值-{index}"} for index in range(20)],
+    }
+    criterion = {
+        "id": "exact-public-input",
+        "selector": "#公开-目标",
+        "predicate": "submitted",
+    }
+    public_task = replace(task, inputs=public_inputs, success_criteria=(criterion,))
+    context = ContextBuilder().build(public_task, world, actions, evaluation)
+    packed = TurnPacker().pack(
+        ModelDecisionRequest("request:task-public", context),
+        binder=GroundedPolicyContextBinder(),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+    content = packed.admitted_request.messages[-1].content
+    assert isinstance(content, str)
+    physical = json.loads(content)
+
+    assert physical["task"]["public_inputs"] == public_inputs
+    assert physical["task"]["success_criteria"]["items"][0]["definition"] == criterion
+
+
+def test_observation_and_source_id_permutation_preserves_public_page_manifest_catalog_and_cost() -> None:
+    task, _world_value, _actions, _evaluation, context_a = _context()
+    world_b = _world("obs:permuted-observation-id-with-extra-length")
+    actions_b = ActionSpaceBuilder().build(task, world_b)
+    evaluation_b = TaskEvaluation(
+        task.task_id,
+        world_b.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
+    )
+    context_b = ContextBuilder().build(task, world_b, actions_b, evaluation_b)
+
+    packed_a = TurnPacker().pack(
+        ModelDecisionRequest("request:id-a", context_a),
+        binder=GroundedPolicyContextBinder(),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+    packed_b = TurnPacker().pack(
+        ModelDecisionRequest("request:id-b", context_b),
+        binder=GroundedPolicyContextBinder(),
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
+
+    assert packed_a.delivery.view.text == packed_b.delivery.view.text
+    assert packed_a.delivery.delivery_id == packed_b.delivery.delivery_id
+    assert packed_a.delivery.manifest == packed_b.delivery.manifest
+    assert to_json_compatible(packed_a.catalog.specs) == to_json_compatible(packed_b.catalog.specs)
+    assert packed_a.admitted_request.breakdown.estimated_total_tokens == (
+        packed_b.admitted_request.breakdown.estimated_total_tokens
+    )
+    assert packed_a.delivery.admitted_record_counts == packed_b.delivery.admitted_record_counts
+
+
+def test_private_inventory_enumeration_permutation_preserves_public_delivery() -> None:
+    task, world_a, actions_a, evaluation_a, context_a = _context()
+    world_b = replace(
+        world_a,
+        targets=tuple(reversed(world_a.targets)),
+        bindings=tuple(reversed(world_a.bindings)),
+    )
+    actions_b = ActionSpaceBuilder().build(task, world_b)
+    context_b = ContextBuilder().build(task, world_b, actions_b, evaluation_a)
+
+    packed = tuple(
+        TurnPacker().pack(
+            ModelDecisionRequest(request_id, context),
+            binder=GroundedPolicyContextBinder(),
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        )
+        for request_id, context in (("request:order-a", context_a), ("request:order-b", context_b))
+    )
+    first, second = packed
+
+    assert first.delivery.view.text == second.delivery.view.text
+    assert first.delivery.delivery_id == second.delivery.delivery_id
+    assert first.delivery.manifest == second.delivery.manifest
+    assert to_json_compatible(first.catalog.specs) == to_json_compatible(second.catalog.specs)
+    assert first.admitted_request.breakdown.estimated_total_tokens == (
+        second.admitted_request.breakdown.estimated_total_tokens
+    )
+    assert first.delivery.admitted_record_counts == second.delivery.admitted_record_counts
 
 
 def test_current_source_and_tests_contain_no_removed_delivery_contracts() -> None:

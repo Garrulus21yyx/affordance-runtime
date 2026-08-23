@@ -7,7 +7,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from affordance_runtime.actions.admission import (
@@ -28,6 +28,8 @@ from affordance_runtime.actions.space_contracts import (
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.page_cursor import cursor_fingerprint, decode_cursor, encode_cursor
 
+PUBLIC_ACTION_LABEL_MAX_CHARS = 240
+
 _ROLE_ORDER = {
     ActionRelevanceRole.DIRECT: 0,
     ActionRelevanceRole.ENABLING: 1,
@@ -35,23 +37,33 @@ _ROLE_ORDER = {
     ActionRelevanceRole.OTHER: 3,
 }
 
-ACTION_CANDIDATE_REASON_VOCABULARY = frozenset({
-    "exact_label",
-    "lexical_match",
-    "path_match",
-    "role_compatible",
-    "state_ready",
-    "newly_revealed",
-    "repeated_penalty",
-    "already_satisfied_penalty",
-    "risk_penalty",
-    "effect_penalty",
-})
+ACTION_CANDIDATE_REASON_VOCABULARY = frozenset(
+    {
+        "exact_label",
+        "lexical_match",
+        "path_match",
+        "role_compatible",
+        "state_ready",
+        "repeated_penalty",
+        "already_satisfied_penalty",
+        "risk_penalty",
+        "effect_penalty",
+    }
+)
 
 _OPERATION_ROLES = {
-    "activate": frozenset({
-        "button", "checkbox", "link", "menuitem", "radio", "switch", "tab", "treeitem",
-    }),
+    "activate": frozenset(
+        {
+            "button",
+            "checkbox",
+            "link",
+            "menuitem",
+            "radio",
+            "switch",
+            "tab",
+            "treeitem",
+        }
+    ),
     "type_text": frozenset({"combobox", "searchbox", "textbox"}),
     "select_option": frozenset({"combobox", "listbox", "option"}),
     "check": frozenset({"checkbox", "menuitemcheckbox", "switch"}),
@@ -59,10 +71,33 @@ _OPERATION_ROLES = {
     "read": frozenset({"cell", "document", "gridcell", "row", "status", "table"}),
 }
 _TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
-_LEXICAL_STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into",
-    "is", "it", "of", "on", "or", "that", "the", "this", "to", "use", "with",
-})
+_LEXICAL_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "in",
+        "into",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "use",
+        "with",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -84,8 +119,8 @@ class RankedActionCandidate:
 
 
 @dataclass(frozen=True)
-class ActionCandidateRanker:
-    """Pure shared ordering for automatic delivery and explicit action search."""
+class ActionReranker:
+    """Non-authoritative ordering over an already admitted recall set."""
 
     fuzzy_threshold: float = 0.86
 
@@ -102,31 +137,23 @@ class ActionCandidateRanker:
         objectives: tuple[str, ...] = (),
         done_when: tuple[str, ...] = (),
         recent_outcomes: tuple[object, ...] = (),
-        require_match: bool = False,
     ) -> tuple[RankedActionCandidate, ...]:
         roles = roles or {}
         states = states or {}
         functional_paths = functional_paths or {}
-        explicit_query = _normalize_text(query[:120])
-        intent = explicit_query or _normalize_text(
-            " ".join((instruction, *objectives, *done_when))
-        )
+        explicit_query = canonical_action_query(query)
+        intent = explicit_query or _normalize_text(" ".join((instruction, *objectives, *done_when)))
         intent_tokens = _tokens(intent)
-        scored: list[tuple[float, str, str, str, str, tuple[str, ...]]] = []
-        for option in options:
+        scored: list[tuple[float, str, str, str, int, object, tuple[str, ...]]] = []
+        for ordinal, option in enumerate(options):
             action_id = str(getattr(option, "action_id", ""))
             target_id = str(getattr(option, "target_id", ""))
-            operation = str(
-                getattr(option, "operation", "") or getattr(option, "semantic_action", "")
-            ).casefold()
+            operation = str(getattr(option, "operation", "") or getattr(option, "semantic_action", "")).casefold()
             if not action_id or not target_id or not operation:
                 continue
             label = _normalize_text(labels.get(target_id, ""))
             role = _normalize_text(roles.get(target_id, ""))
-            path = tuple(
-                value for item in functional_paths.get(target_id, ())
-                if (value := _normalize_text(item))
-            )
+            path = tuple(value for item in functional_paths.get(target_id, ()) if (value := _normalize_text(item)))
             state = states.get(target_id, {})
             reasons: list[str] = []
             score = 0.0
@@ -134,10 +161,10 @@ class ActionCandidateRanker:
             label_tokens = _tokens(label)
             path_text = " ".join(path)
             path_tokens = _tokens(path_text)
-            exact_label = bool(label and (
-                label == explicit_query
-                or (label in intent and label_tokens and label_tokens <= intent_tokens)
-            ))
+            exact_label = bool(
+                label
+                and (label == explicit_query or (label in intent and label_tokens and label_tokens <= intent_tokens))
+            )
             if exact_label:
                 score += 8.0
                 reasons.append("exact_label")
@@ -156,9 +183,6 @@ class ActionCandidateRanker:
             if _state_ready(operation, state):
                 score += 0.5
                 reasons.append("state_ready")
-            if _state_flag(state, "changed", "newly_revealed"):
-                score += 0.75
-                reasons.append("newly_revealed")
             if _state_flag(state, "selected", "active", "checked", "pressed"):
                 score -= 0.75
                 reasons.append("already_satisfied_penalty")
@@ -174,34 +198,143 @@ class ActionCandidateRanker:
                 score -= 0.5 if effect == "external" else 1.0
                 reasons.append("effect_penalty")
 
-            matched = any(item in reasons for item in (
-                "exact_label", "lexical_match", "path_match",
-            ))
-            if require_match and not matched:
-                continue
-            scored.append((
-                -score,
-                path_text,
-                label,
-                operation,
-                action_id,
-                tuple(dict.fromkeys(reasons)),
-            ))
+            scored.append(
+                (
+                    -score,
+                    path_text,
+                    label,
+                    operation,
+                    ordinal,
+                    option,
+                    tuple(dict.fromkeys(reasons)),
+                )
+            )
         result = []
         for rank, item in enumerate(sorted(scored), 1):
-            option = next(
-                candidate for candidate in options
-                if str(getattr(candidate, "action_id", "")) == item[4]
+            option = item[5]
+            result.append(
+                RankedActionCandidate(
+                    str(getattr(option, "action_id", "")),
+                    str(getattr(option, "target_id", "")),
+                    item[3],
+                    rank,
+                    -item[0],
+                    item[6],
+                )
             )
-            result.append(RankedActionCandidate(
-                item[4],
-                str(getattr(option, "target_id", "")),
-                item[3],
-                rank,
-                -item[0],
-                item[5],
-            ))
         return tuple(result)
+
+
+@dataclass(frozen=True)
+class ActionRecallPartition:
+    """High-priority recall followed by the complete non-vetoed remainder."""
+
+    prioritized: tuple[object, ...] = ()
+    remainder: tuple[object, ...] = ()
+
+    def __post_init__(self) -> None:
+        prioritized = tuple(self.prioritized)
+        remainder = tuple(self.remainder)
+        prioritized_ids = tuple(str(getattr(item, "action_id", "")) for item in prioritized)
+        remainder_ids = tuple(str(getattr(item, "action_id", "")) for item in remainder)
+        if any(not item for item in (*prioritized_ids, *remainder_ids)) or len(
+            set((*prioritized_ids, *remainder_ids))
+        ) != len(prioritized_ids) + len(remainder_ids):
+            raise ValueError("action recall partitions must be disjoint current actions")
+        object.__setattr__(self, "prioritized", prioritized)
+        object.__setattr__(self, "remainder", remainder)
+
+    @property
+    def ordered(self) -> tuple[object, ...]:
+        return self.prioritized + self.remainder
+
+
+@dataclass(frozen=True)
+class ActionRecallSet:
+    """Complete high-recall inventory over the current ActionSpace."""
+
+    def include(
+        self,
+        options,
+        *,
+        labels: Mapping[str, str],
+        roles: Mapping[str, str] | None = None,
+        functional_paths: Mapping[str, tuple[str, ...]] | None = None,
+        query: str = "",
+        focused_target_ids: frozenset[str] = frozenset(),
+        viewport_target_ids: frozenset[str] = frozenset(),
+    ) -> tuple[object, ...]:
+        return self.partition(
+            options,
+            labels=labels,
+            roles=roles,
+            functional_paths=functional_paths,
+            query=query,
+            focused_target_ids=focused_target_ids,
+            viewport_target_ids=viewport_target_ids,
+        ).ordered
+
+    def partition(
+        self,
+        options,
+        *,
+        labels: Mapping[str, str],
+        roles: Mapping[str, str] | None = None,
+        functional_paths: Mapping[str, tuple[str, ...]] | None = None,
+        query: str = "",
+        focused_target_ids: frozenset[str] = frozenset(),
+        viewport_target_ids: frozenset[str] = frozenset(),
+    ) -> ActionRecallPartition:
+        normalized_query = canonical_action_query(query)
+        if not normalized_query:
+            return ActionRecallPartition(tuple(options), ())
+        roles = roles or {}
+        functional_paths = functional_paths or {}
+        direct_target_ids: set[str] = set()
+        for option in options:
+            target_id = str(getattr(option, "target_id", ""))
+            operation = _normalize_text(getattr(option, "operation", "") or getattr(option, "semantic_action", ""))
+            label = _normalize_text(labels.get(target_id, ""))
+            role = _normalize_text(roles.get(target_id, ""))
+            if label == normalized_query or normalized_query in {operation, role}:
+                direct_target_ids.add(target_id)
+        direct_containers = {
+            tuple(functional_paths.get(target_id, ()))[:-1]
+            for target_id in direct_target_ids
+            if functional_paths.get(target_id, ())
+        }
+        prioritized: list[tuple[int, object]] = []
+        remainder: list[object] = []
+        for option in options:
+            target_id = str(getattr(option, "target_id", ""))
+            operation = _normalize_text(getattr(option, "operation", "") or getattr(option, "semantic_action", ""))
+            label = _normalize_text(labels.get(target_id, ""))
+            role = _normalize_text(roles.get(target_id, ""))
+            path = tuple(functional_paths.get(target_id, ()))
+            exact = bool(label and (label == normalized_query or label in normalized_query))
+            structural = target_id in focused_target_ids
+            operation_or_role = normalized_query in {operation, role}
+            same_container = bool(path and path[:-1] in direct_containers)
+            if exact or operation_or_role or structural or same_container:
+                priority = 0 if (exact or operation_or_role) else 1 if structural else 2
+                prioritized.append((priority, option))
+                continue
+            # Query recall is additive. Semantic/viewport signals affect only
+            # ordering; the complete base inventory remains behind the cursor.
+            remainder.append(option)
+        return ActionRecallPartition(
+            tuple(
+                item
+                for _, item in sorted(
+                    prioritized,
+                    key=lambda pair: (
+                        pair[0],
+                        _public_option_order(pair[1], labels, roles, functional_paths),
+                    ),
+                )
+            ),
+            tuple(remainder),
+        )
 
 
 def rank_delivery_descriptors(
@@ -242,7 +375,9 @@ def canonical_action_query(query: str) -> str:
 
     if not isinstance(query, str):
         raise TypeError("action page query must be text")
-    return query[:120].casefold()
+    if len(query) > PUBLIC_ACTION_LABEL_MAX_CHARS:
+        raise ValueError("action page query exceeds the public label/query bound")
+    return _normalize_text(query)
 
 
 @dataclass(frozen=True)
@@ -252,13 +387,12 @@ class InternalActionPage:
     visible_action_ids: tuple[str, ...]
     visible_destinations: tuple[tuple[str, tuple[str, ...]], ...]
     total_count: int
+    visible_route_count: int
     has_more: bool
     cursor: str = ""
     next_cursor: str = ""
     offset: int = 0
     query: str = ""
-    target_id: str = ""
-    relevance_role: ActionRelevanceRole | None = None
     relevance: tuple[tuple[str, ActionRelevance], ...] = ()
     objective_digest: str = "objective:none"
 
@@ -267,9 +401,13 @@ class InternalActionPage:
         destinations = tuple((action_id, tuple(items)) for action_id, items in self.visible_destinations)
         object.__setattr__(self, "visible_destinations", destinations)
         object.__setattr__(self, "relevance", tuple(self.relevance))
-        if self.offset < 0 or self.total_count < self.offset + len(self.visible_action_ids):
+        if (
+            self.offset < 0
+            or self.visible_route_count < len(self.visible_action_ids)
+            or self.total_count < self.offset + self.visible_route_count
+        ):
             raise ValueError("internal action page counts are inconsistent")
-        if self.has_more != (self.total_count > self.offset + len(self.visible_action_ids)):
+        if self.has_more != (self.total_count > self.offset + self.visible_route_count):
             raise ValueError("internal action page continuation is inconsistent")
         if self.has_more != bool(self.next_cursor):
             raise ValueError("has_more requires a usable next cursor")
@@ -286,8 +424,6 @@ class InternalActionPage:
             self.cursor,
             self.offset,
             self.query,
-            self.target_id,
-            self.relevance_role,
             self.objective_digest,
         ):
             raise ValueError("internal action page identity does not bind its exact projection")
@@ -319,18 +455,120 @@ class InternalActionPage:
 
 
 @dataclass(frozen=True)
+class ActionDiscoveryMatch:
+    """One public target/verb record returned by current action discovery."""
+
+    target_ref: str
+    label: str
+    role: str
+    operation: str
+    destination_refs: tuple[str, ...] = ()
+    match_kinds: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "destination_refs", tuple(self.destination_refs))
+        object.__setattr__(self, "match_kinds", tuple(self.match_kinds))
+        if not self.target_ref or not self.role or not self.operation:
+            raise ValueError("discovery match requires public target, role, and operation")
+        if len(set(self.destination_refs)) != len(self.destination_refs):
+            raise ValueError("discovery destinations must be unique")
+
+
+@dataclass(frozen=True)
+class ActionDiscoveryResult:
+    """Typed public output owned by action discoverability, never CoreLoop."""
+
+    matches: tuple[ActionDiscoveryMatch, ...]
+    query: str
+    source_coverage: str
+    result_coverage: str
+    continuation_available: bool
+    continuation_scope: str = ""
+    unmatched_terms: tuple[str, ...] = ()
+    suggested_next: str = ""
+    private_inventory: tuple[ActionDiscoveryMatch, ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
+    )
+    private_world_lineage: str = field(
+        default="", repr=False, compare=False, metadata={"serialize": False}
+    )
+    private_action_lineage: str = field(
+        default="", repr=False, compare=False, metadata={"serialize": False}
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "matches", tuple(self.matches))
+        inventory = tuple(self.private_inventory)
+        if any(not isinstance(item, ActionDiscoveryMatch) for item in inventory):
+            raise TypeError("discovery private inventory must contain typed matches")
+        if inventory and (
+            not self.private_world_lineage.strip() or not self.private_action_lineage.strip()
+        ):
+            raise ValueError("discovery private inventory requires current authority lineage")
+        object.__setattr__(self, "private_inventory", inventory)
+        if self.query != canonical_action_query(self.query):
+            raise ValueError("discovery query must be canonical")
+        if self.source_coverage not in {"complete", "partial", "unavailable"}:
+            raise ValueError("discovery source coverage is invalid")
+        if self.result_coverage not in {"complete", "partial", "empty"}:
+            raise ValueError("discovery result coverage is invalid")
+        if bool(self.continuation_scope) != self.continuation_available:
+            raise ValueError("discovery continuation is inconsistent")
+        object.__setattr__(self, "unmatched_terms", tuple(self.unmatched_terms))
+
+    def to_public_value(self) -> dict[str, object]:
+        return {
+            "kind": "empty" if not self.matches else "page",
+            "matches": _public_discovery_rows(self.matches),
+            "searched_domain": "executable_controls",
+            "source_scope": "current_action_space",
+            "source_coverage": self.source_coverage,
+            "result_scope": "query" if self.query else "base_inventory",
+            "result_coverage": self.result_coverage,
+            "query": self.query,
+            "continuation_available": self.continuation_available,
+            "continuation_scope": self.continuation_scope,
+            "unmatched_terms": self.unmatched_terms,
+            "suggested_next": self.suggested_next,
+        }
+
+
+def _public_discovery_rows(matches: tuple[ActionDiscoveryMatch, ...]) -> tuple[Mapping[str, object], ...]:
+    grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+    for item in matches:
+        key = (item.target_ref, item.label, item.role)
+        row = grouped.setdefault(
+            key,
+            {
+                "target_ref": item.target_ref,
+                "label": item.label,
+                "role": item.role,
+                "verbs": [],
+                "match_kinds": [],
+            },
+        )
+        row["verbs"].append(item.operation)
+        row["match_kinds"].extend(item.match_kinds)
+    return tuple(
+        {
+            **row,
+            "verbs": tuple(dict.fromkeys(row["verbs"])),
+            "match_kinds": tuple(dict.fromkeys(row["match_kinds"])),
+        }
+        for row in grouped.values()
+    )
+
+
+@dataclass(frozen=True)
 class ActionPager:
-    # Normal GUI slices are admitted by the byte budget, not split into tiny
-    # fixed pages.  The count remains only a defensive upper bound.
-    page_size: int = 128
+    # Count is a protocol page bound. Whole-request bytes are owned later by
+    # RequestAdmission.
+    page_size: int = 32
     relevance_policy: ActionRelevancePolicy = ActionRelevancePolicy()
-    max_projected_bytes: int = 24 * 1024
 
     def __post_init__(self) -> None:
         if not 1 <= self.page_size <= 128:
             raise ValueError("action page size must be within [1, 128]")
-        if self.max_projected_bytes <= 0:
-            raise ValueError("action page byte budget must be positive")
 
     def page(
         self,
@@ -338,35 +576,28 @@ class ActionPager:
         objective: ActionObjective | None = None,
         *,
         query: str = "",
-        target_id: str = "",
-        relevance_role: ActionRelevanceRole | str | None = None,
         labels: Mapping[str, str] | None = None,
         roles: Mapping[str, str] | None = None,
         states: Mapping[str, Mapping[str, object]] | None = None,
         functional_paths: Mapping[str, tuple[str, ...]] | None = None,
+        focused_target_ids: frozenset[str] = frozenset(),
+        viewport_target_ids: frozenset[str] = frozenset(),
         cursor: str = "",
         page_size: int | None = None,
-        max_destinations_per_option: int = 16,
-        max_targets: int = 64,
         allowed_action_ids: frozenset[str] | None = None,
         authority_digest: str = "",
     ) -> InternalActionPage:
         query = canonical_action_query(query)
-        role = ActionRelevanceRole(relevance_role) if relevance_role else None
         labels = labels or {}
         limit = min(self.page_size, page_size or self.page_size)
-        if limit <= 0 or max_destinations_per_option <= 0 or max_targets <= 0:
+        if limit <= 0:
             raise ValueError("paging limits must be positive")
         objective_digest = _objective_digest(objective, authority_digest)
         fingerprint = cursor_fingerprint(
             action_space.action_space_id,
             query,
-            target_id,
-            role,
             objective_digest,
             limit,
-            max_destinations_per_option,
-            max_targets,
             tuple(sorted(allowed_action_ids)) if allowed_action_ids is not None else (),
         )
         offset = decode_cursor(cursor, fingerprint) if cursor else 0
@@ -375,32 +606,37 @@ class ActionPager:
             objective,
             self.relevance_policy,
             query,
-            target_id,
-            role,
             labels,
             roles or {},
             states or {},
             functional_paths or {},
+            focused_target_ids,
+            viewport_target_ids,
             allowed_action_ids,
         )
-        if offset > len(ranked):
-            raise ValueError("action page cursor is outside the filtered result")
-        visible = _select_page_slice(
-            ranked,
-            offset,
-            limit,
-            max_destinations_per_option,
-            max_targets,
-            self.max_projected_bytes,
-        )
-        visible_ids = tuple(item[1].action_id for item in visible)
+        route_rows = _route_rows(ranked)
+        if offset > len(route_rows):
+            raise ValueError("action page cursor is outside the filtered route result")
+        visible_routes = route_rows[offset : offset + limit]
+        visible_by_action: dict[str, tuple[tuple[int, ActionOption, ActionRelevance], list[str]]] = {}
+        for ranked_item, destination_id in visible_routes:
+            action_id = ranked_item[1].action_id
+            if action_id not in visible_by_action:
+                visible_by_action[action_id] = (ranked_item, [])
+            if destination_id:
+                visible_by_action[action_id][1].append(destination_id)
+        visible = tuple(item[0] for item in visible_by_action.values())
+        visible_ids = tuple(visible_by_action)
         visible_destinations = tuple(
-            (item[1].action_id, item[1].eligible_destination_ids[:max_destinations_per_option])
-            for item in visible
+            (
+                action_id,
+                tuple(destinations) if ranked_item[1].destination_required else ranked_item[1].eligible_destination_ids,
+            )
+            for action_id, (ranked_item, destinations) in visible_by_action.items()
         )
-        next_offset = offset + len(visible)
-        has_more = next_offset < len(ranked)
-        if has_more and not visible:
+        next_offset = offset + len(visible_routes)
+        has_more = next_offset < len(route_rows)
+        if has_more and not visible_routes:
             raise ValueError("action page budgets cannot represent the next option")
         next_cursor = encode_cursor(next_offset, fingerprint) if has_more else ""
         page_id = _page_id(
@@ -410,8 +646,6 @@ class ActionPager:
             cursor,
             offset,
             query,
-            target_id,
-            role,
             objective_digest,
         )
         return InternalActionPage(
@@ -419,14 +653,13 @@ class ActionPager:
             action_space_id=action_space.action_space_id,
             visible_action_ids=visible_ids,
             visible_destinations=visible_destinations,
-            total_count=len(ranked),
+            total_count=len(route_rows),
+            visible_route_count=len(visible_routes),
             has_more=has_more,
             cursor=cursor,
             next_cursor=next_cursor,
             offset=offset,
             query=query,
-            target_id=target_id,
-            relevance_role=role,
             relevance=tuple((item[1].action_id, item[2]) for item in visible),
             objective_digest=objective_digest,
         )
@@ -437,19 +670,13 @@ class ActionPager:
         objective: ActionObjective | None,
         action_id: str,
         destination_id: str = "",
-        *,
-        max_destinations_per_option: int = 16,
     ) -> InternalActionPage:
         option = action_space.find(action_id)
         if option is None:
             raise ValueError("execution page action is absent from the current ActionSpace")
         if destination_id and destination_id not in option.eligible_destination_ids:
             raise ValueError("execution page destination is absent from the current ActionSpace")
-        visible_destinations = (
-            (destination_id,)
-            if destination_id
-            else option.eligible_destination_ids[:max_destinations_per_option]
-        )
+        visible_destinations = (destination_id,) if destination_id else option.eligible_destination_ids
         objective_digest = _objective_digest(objective)
         destinations = ((action_id, visible_destinations),)
         relevance = self.relevance_policy.classify(option, objective)
@@ -460,8 +687,6 @@ class ActionPager:
             "",
             0,
             "",
-            "",
-            None,
             objective_digest,
         )
         return InternalActionPage(
@@ -470,6 +695,7 @@ class ActionPager:
             visible_action_ids=(action_id,),
             visible_destinations=destinations,
             total_count=1,
+            visible_route_count=1,
             has_more=False,
             relevance=((action_id, relevance),),
             objective_digest=objective_digest,
@@ -483,8 +709,6 @@ def _page_id(
     cursor: str,
     offset: int,
     query: str,
-    target_id: str,
-    role: ActionRelevanceRole | None,
     objective_digest: str,
 ) -> str:
     payload = (
@@ -494,8 +718,6 @@ def _page_id(
         visible_ids,
         visible_destinations,
         canonical_action_query(query),
-        target_id,
-        role.value if role else "",
         objective_digest,
     )
     digest = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
@@ -507,44 +729,72 @@ def _ranked_options(
     objective: ActionObjective | None,
     relevance_policy: ActionRelevancePolicy,
     query: str,
-    target_id: str,
-    role: ActionRelevanceRole | None,
     labels: Mapping[str, str],
     roles: Mapping[str, str],
     states: Mapping[str, Mapping[str, object]],
     functional_paths: Mapping[str, tuple[str, ...]],
+    focused_target_ids: frozenset[str],
+    viewport_target_ids: frozenset[str],
     allowed_action_ids: frozenset[str] | None = None,
 ) -> list[tuple[int, ActionOption, ActionRelevance]]:
     ranked = [
         (index, option, relevance_policy.classify(option, objective))
         for index, option in enumerate(action_space.options)
         if (allowed_action_ids is None or option.action_id in allowed_action_ids)
-        and (not target_id or option.target_id == target_id)
     ]
-    if role is not None:
-        ranked = [item for item in ranked if item[2].role == role]
     if query:
-        shared_order = ActionCandidateRanker().rank(
+        partition = ActionRecallSet().partition(
             tuple(item[1] for item in ranked),
+            labels=labels,
+            roles=roles,
+            functional_paths=functional_paths,
+            query=query,
+            focused_target_ids=focused_target_ids,
+            viewport_target_ids=viewport_target_ids,
+        )
+        prioritized_ids = tuple(str(getattr(item, "action_id", "")) for item in partition.prioritized)
+        remainder_ids = {str(getattr(item, "action_id", "")) for item in partition.remainder}
+        shared_order = ActionReranker().rank(
+            partition.remainder,
             labels=labels,
             roles=roles,
             states=states,
             functional_paths=functional_paths,
             query=query,
-            require_match=True,
         )
-        order = {item.action_id: item.rank for item in shared_order}
-        ranked = [item for item in ranked if item[1].action_id in order]
-        ranked.sort(key=lambda item: order[item[1].action_id])
+        optional_order = {item.action_id: item.rank for item in shared_order}
+        by_id = {item[1].action_id: item for item in ranked}
+        prioritized = [by_id[action_id] for action_id in prioritized_ids]
+        remainder = [item for item in ranked if item[1].action_id in remainder_ids]
+        if objective is not None:
+            remainder.sort(
+                key=lambda item: (
+                    _ROLE_ORDER[item[2].role],
+                    -item[2].score,
+                    optional_order[item[1].action_id],
+                )
+            )
+        else:
+            remainder.sort(key=lambda item: optional_order[item[1].action_id])
+        return [*prioritized, *remainder]
     if objective is not None:
         ranked.sort(key=lambda item: (_ROLE_ORDER[item[2].role], -item[2].score, item[0]))
     return ranked
 
 
+def _public_option_order(option, labels, roles, functional_paths) -> tuple[object, ...]:
+    target_id = str(getattr(option, "target_id", ""))
+    return (
+        tuple(_normalize_text(item) for item in functional_paths.get(target_id, ())),
+        _normalize_text(labels.get(target_id, "")),
+        _normalize_text(roles.get(target_id, "")),
+        _normalize_text(getattr(option, "operation", "") or getattr(option, "semantic_action", "")),
+        json.dumps(to_json_compatible(getattr(option, "parameter_schema", {})), sort_keys=True, ensure_ascii=False),
+    )
+
+
 def _normalize_text(value: object) -> str:
-    return " ".join(
-        unicodedata.normalize("NFKC", str(value)).casefold().split()
-    )[:1000]
+    return " ".join(unicodedata.normalize("NFKC", str(value)).casefold().split())[:1000]
 
 
 def _tokens(value: str) -> frozenset[str]:
@@ -584,30 +834,21 @@ def _lexical_score(intent: frozenset[str], candidate) -> float:
 def _fuzzy_score(intent: frozenset[str], label: frozenset[str]) -> float:
     if not intent or not label:
         return 0.0
-    return max(
-        SequenceMatcher(None, wanted, actual).ratio()
-        for wanted in intent
-        for actual in label
-    )
+    return max(SequenceMatcher(None, wanted, actual).ratio() for wanted in intent for actual in label)
 
 
 def _state_flag(state: Mapping[str, object], *names: str) -> bool:
     wanted = {item.casefold() for item in names}
-    return any(
-        key.casefold().rsplit(".", 1)[-1] in wanted and value is True
-        for key, value in state.items()
-    )
+    return any(key.casefold().rsplit(".", 1)[-1] in wanted and value is True for key, value in state.items())
 
 
 def _state_ready(operation: str, state: Mapping[str, object]) -> bool:
     if any(
-        key.casefold().rsplit(".", 1)[-1] in {"disabled", "hidden"} and value is True
-        for key, value in state.items()
+        key.casefold().rsplit(".", 1)[-1] in {"disabled", "hidden"} and value is True for key, value in state.items()
     ):
         return False
     if any(
-        key.casefold().rsplit(".", 1)[-1] in {"enabled", "visible"} and value is False
-        for key, value in state.items()
+        key.casefold().rsplit(".", 1)[-1] in {"enabled", "visible"} and value is False for key, value in state.items()
     ):
         return False
     if operation == "type_text" and any(
@@ -620,9 +861,7 @@ def _state_ready(operation: str, state: Mapping[str, object]) -> bool:
 
 
 def _repeated_without_progress(option, label: str, role: str, outcomes: tuple[object, ...]) -> bool:
-    operation = str(
-        getattr(option, "operation", "") or getattr(option, "semantic_action", "")
-    ).casefold()
+    operation = str(getattr(option, "operation", "") or getattr(option, "semantic_action", "")).casefold()
     for outcome in outcomes[-4:]:
         prior_operation = str(getattr(outcome, "semantic_action", "")).casefold()
         target = getattr(outcome, "target", None)
@@ -631,55 +870,28 @@ def _repeated_without_progress(option, label: str, role: str, outcomes: tuple[ob
         transition = getattr(outcome, "transition", {})
         no_progress = (
             isinstance(transition, Mapping)
-            and str(transition.get("observed_change", "")).casefold()
-            in {"unchanged", "no_effect", "regressed"}
+            and str(transition.get("observed_change", "")).casefold() in {"unchanged", "no_effect", "regressed"}
         ) or str(getattr(outcome, "local_postcondition", "")).casefold() in {
-            "unchanged", "no_effect", "unknown",
+            "unchanged",
+            "no_effect",
+            "unknown",
         }
         if no_progress and prior_operation == operation and prior_label == label and prior_role == role:
             return True
     return False
 
 
-def _select_page_slice(
+def _route_rows(
     ranked: list[tuple[int, ActionOption, ActionRelevance]],
-    offset: int,
-    limit: int,
-    max_destinations: int,
-    max_targets: int,
-    max_bytes: int,
-) -> list[tuple[int, ActionOption, ActionRelevance]]:
-    visible: list[tuple[int, ActionOption, ActionRelevance]] = []
-    projected_bytes = 0
-    pinned_targets: set[str] = set()
-    for item in ranked[offset : offset + limit]:
-        option_bytes = _projected_option_weight(item[1], max_destinations)
-        if option_bytes > max_bytes:
-            raise ValueError("single action option exceeds the page byte budget")
-        option_targets = {item[1].target_id, *item[1].eligible_destination_ids[:max_destinations]}
-        if len(pinned_targets | option_targets) > max_targets or projected_bytes + option_bytes > max_bytes:
-            break
-        visible.append(item)
-        projected_bytes += option_bytes
-        pinned_targets.update(option_targets)
-    return visible
-
-
-def _projected_option_weight(option: ActionOption, max_destinations: int) -> int:
-    payload = (
-        option.action_id,
-        option.semantic_action,
-        option.target_id,
-        option.effect_category,
-        to_json_compatible(option.parameter_schema),
-        option.description,
-        option.semantic_effects,
-        option.risk,
-        option.destination_required,
-        option.eligible_destination_ids[:max_destinations],
-        option.observation_barrier,
-    )
-    return len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+) -> list[tuple[tuple[int, ActionOption, ActionRelevance], str]]:
+    rows = []
+    for item in ranked:
+        option = item[1]
+        if option.destination_required:
+            rows.extend((item, destination_id) for destination_id in option.eligible_destination_ids)
+        else:
+            rows.append((item, ""))
+    return rows
 
 
 def _objective_digest(objective: ActionObjective | None, authority_digest: str = "") -> str:

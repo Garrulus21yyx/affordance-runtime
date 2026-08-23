@@ -54,7 +54,7 @@ class PagingPolicy:
     async def decide(self, context):
         self.calls += 1
         if self.calls == 1:
-            return RequestActionPage(context.context_id, cursor=context.actions.next_cursor)
+            return RequestActionPage(context.context_id, query="control 32")
         return SelectAction(context.context_id, context.actions.options[0].action_id)
 
 

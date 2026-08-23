@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Mapping
 
+from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
+from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import (
     DeliveryManifest,
     Matches,
@@ -25,14 +27,13 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
+    ContinueDeliveryResult,
     FinalResponse,
-    FormFieldUpdate,
     ReadRegionResult,
     RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
-    SetFormFields,
     Wait,
 )
 from affordance_runtime.agent.working_facts import (
@@ -45,7 +46,6 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
-    MAX_GROUNDED_WORKSPACE_BYTES,
     GroundedActionResolution,
     GroundedToolCatalog,
     GroundedToolPhase,
@@ -55,6 +55,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.observation_needs import ObservationPurpose
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 
 class GroundedLocalToolName(StrEnum):
@@ -67,7 +68,6 @@ class GroundedLocalToolName(StrEnum):
     SEARCH_PAGE_CONTENT = "search_page_content"
     LIST_REGIONS = "list_regions"
     FIND_CONTROLS = "find_controls"
-    SET_FORM_FIELDS = "set_form_fields"
     READ_NEXT_PAGE = "read_next_page"
     ACTION_RESULTS_NEXT_PAGE = "action_results_next_page"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
@@ -88,67 +88,51 @@ class _FindControlsBinding:
 
 
 @dataclass(frozen=True)
-class _FormFieldAction:
-    action_id: str
-    operation: str
-    target_ref: str
-    parameter_schema: Mapping[str, object]
-
-
-@dataclass(frozen=True)
-class _SetFormFieldsBinding:
-    forms: Mapping[str, Mapping[tuple[str, str], _FormFieldAction]]
-
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        form_key = str(arguments.get("form", ""))
-        raw_fields = arguments.get("fields")
-        form = self.forms.get(form_key)
-        if form is None or not isinstance(raw_fields, list | tuple) or not 2 <= len(raw_fields) <= 4:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        updates: list[FormFieldUpdate] = []
-        seen: set[str] = set()
-        for raw in raw_fields:
-            if not isinstance(raw, Mapping):
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            target_ref = str(raw.get("target", ""))
-            operation = str(raw.get("operation", ""))
-            action = form.get((target_ref, operation))
-            if action is None or target_ref in seen:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            seen.add(target_ref)
-            parameters = {"text" if operation == "type_text" else "value": raw.get("value")}
-            try:
-                validate_value(parameters, action.parameter_schema, path="command")
-            except ValueError as exc:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
-            updates.append(
-                FormFieldUpdate(
-                    action.action_id,
-                    operation,
-                    target_ref,
-                    parameters,
-                )
-            )
-        return SetFormFields(context_id, form_key, tuple(updates), tool_call_id)
-
-
-@dataclass(frozen=True)
 class _ActionResultsNextPageBinding:
-    active_query: str
-    active_target_id: str
-    active_relevance_role: str
-    next_cursor: str
+    context: AgentContext
+    delivery: ModelTurnDelivery
+    scopes: tuple[str, ...]
 
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        if arguments or not self.next_cursor:
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> GroundedActionResolution:
+        scope = str(arguments.get("scope", "")) if arguments else ""
+        if not scope and len(self.scopes) == 1:
+            scope = self.scopes[0]
+        if scope not in self.scopes or set(arguments).difference({"scope"}):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        return RequestActionPage(
-            context_id,
-            self.active_query,
-            self.active_target_id,
-            self.active_relevance_role,
-            self.next_cursor,
-            tool_call_id,
+        plan = self.context.action_delivery_plan
+        obligation = next(
+            (item for item in plan.obligations if item.continuation_scope == scope),
+            None,
+        ) if plan is not None else None
+        admitted = dict(self.delivery.admitted_record_counts).get(obligation.kind.value, 0) if obligation else 0
+        if obligation is None or admitted <= 0 or admitted >= len(obligation.remaining):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        new_offset = obligation.cursor.offset + admitted
+        advance_cursor = getattr(self.context.delivery_store, "with_advanced_cursor", None)
+        if not callable(advance_cursor):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        next_store = advance_cursor(
+            scope,
+            world_lineage=obligation.cursor.world_lineage,
+            action_lineage=obligation.cursor.action_space_lineage,
+            result_lineage=obligation.cursor.effect_or_result_lineage,
+            order_digest=obligation.cursor.order_digest,
+            offset=new_offset,
+        )
+        return GroundedActionResolution(
+            ContinueDeliveryResult(
+                context_id,
+                GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
+                {"scope": scope},
+                {
+                    "continuation_available": new_offset < len(obligation.records),
+                    "continuation_scope": scope,
+                    "read_only": True,
+                    "zero_browser_dispatch": True,
+                },
+                tool_call_id,
+            ),
+            next_store,
         )
 
 
@@ -157,7 +141,7 @@ class _ManifestBoundAction:
     inner: object
     manifest: DeliveryManifest
 
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision | GroundedActionResolution:
         for name in ("target", "source", "destination"):
             value = arguments.get(name)
             if isinstance(value, str) and not self.manifest.admits_executable(value):
@@ -258,7 +242,7 @@ class _CountChildrenBinding:
         if not isinstance(raw_refs, list | tuple):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         container_refs = tuple(str(item) for item in raw_refs)
-        if len(set(container_refs)) != len(container_refs) or any(item not in self.counts for item in container_refs):
+        if any(item not in self.counts for item in container_refs):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         counts = {item: self.counts[item] for item in container_refs}
         return ReadRegionResult(
@@ -330,8 +314,10 @@ class _RememberFactBinding:
 class _WorldReadBinding:
     context: AgentContext
     kind: str
+    continuation_scopes: tuple[str, ...] = ()
+    delivery: ModelTurnDelivery | None = None
 
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
+    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision | GroundedActionResolution:
         observation, region_index = _current_world_read_authority(self.context)
         region_ref = ""
         query = ""
@@ -348,9 +334,14 @@ class _WorldReadBinding:
             tool_name = GroundedLocalToolName.LIST_REGIONS.value
             action = "view_all"
         elif self.kind == "continue":
-            if arguments:
+            scope = str(arguments.get("scope", "")) if arguments else ""
+            if not scope and len(self.continuation_scopes) == 1:
+                scope = self.continuation_scopes[0]
+            if scope not in self.continuation_scopes or set(arguments).difference({"scope"}):
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            lens = self.context.delivery_lens
+            if scope in {"effect", "page_directory"}:
+                return self._continue_obligation(scope, context_id, tool_call_id)
+            lens = getattr(self.context.delivery_store, "active_read", None)
             if lens is None or not lens.next_cursor:
                 raise GroundedToolResolutionError(
                     GroundedToolResolutionCode.INVALID_ARGUMENTS,
@@ -395,11 +386,18 @@ class _WorldReadBinding:
             page_cursor,
             result,
         )
+        store = self.context.delivery_store
+        replace_active_read = getattr(store, "with_active_read", None)
+        if not callable(replace_active_read):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        next_store = replace_active_read(lens)
         public_arguments: Mapping[str, object]
         if tool_name == GroundedLocalToolName.READ_REGION.value:
             public_arguments = {"region_ref": region_ref}
         elif tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value:
             public_arguments = {"query": query}
+        elif tool_name == GroundedLocalToolName.READ_NEXT_PAGE.value:
+            public_arguments = {"scope": "active_read"}
         else:
             public_arguments = {}
         public_result = dict(inspect_outcome_public(result))
@@ -416,13 +414,58 @@ class _WorldReadBinding:
             if tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value
             else ReadRegionResult
         )
-        return result_type(
-            context_id,
-            tool_name,
-            public_arguments,
-            public_result,
-            tool_call_id,
-            delivery_lens=lens,
+        return GroundedActionResolution(
+            result_type(
+                context_id,
+                tool_name,
+                public_arguments,
+                public_result,
+                tool_call_id,
+            ),
+            next_store,
+        )
+
+    def _continue_obligation(
+        self, scope: str, context_id: str, tool_call_id: str
+    ) -> GroundedActionResolution:
+        plan = self.context.action_delivery_plan
+        delivery = self.delivery
+        if plan is None or delivery is None:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        obligation = next(
+            (item for item in plan.obligations if item.continuation_scope == scope),
+            None,
+        )
+        admitted = dict(delivery.admitted_record_counts).get(obligation.kind.value, 0) if obligation else 0
+        if obligation is None or admitted <= 0 or admitted >= len(obligation.remaining):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
+        new_offset = obligation.cursor.offset + admitted
+        store = self.context.delivery_store
+        advance_cursor = getattr(store, "with_advanced_cursor", None)
+        if not callable(advance_cursor):
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        next_store = advance_cursor(
+            scope,
+            world_lineage=obligation.cursor.world_lineage,
+            action_lineage=obligation.cursor.action_space_lineage,
+            result_lineage=obligation.cursor.effect_or_result_lineage,
+            order_digest=obligation.cursor.order_digest,
+            offset=new_offset,
+        )
+        return GroundedActionResolution(
+            ReadRegionResult(
+                context_id,
+                GroundedLocalToolName.READ_NEXT_PAGE.value,
+                {"scope": scope},
+                {
+                    "read_only": True,
+                    "zero_browser_dispatch": True,
+                    "continuation_available": new_offset < len(obligation.records),
+                    "continuation_scope": scope,
+                },
+                tool_call_id,
+            ),
+            next_store,
         )
 
 
@@ -455,14 +498,14 @@ def _next_world_delivery_lens(
             result.next_cursor,
         )
     if isinstance(result, Matches) and result.items:
-        return WorldDeliveryLens(
-            observation_id,
-            "find",
-            "",
-            query[:120],
-            page_cursor,
-            result.next_cursor,
-        )
+            return WorldDeliveryLens(
+                observation_id,
+                "find",
+                "",
+                query,
+                page_cursor,
+                result.next_cursor,
+            )
     if isinstance(result, Page):
         return WorldDeliveryLens(
             observation_id,
@@ -487,10 +530,10 @@ def compile_grounded_tool_catalog(
             GroundedToolResolutionCode.STALE_CATALOG,
             "ModelTurnDelivery belongs to another Context",
         )
-    if delivery.manifest.world_observation_id != getattr(
+    if delivery.action_candidates.world_observation_id != getattr(
         context.current_observation,
         "observation_id",
-        delivery.manifest.world_observation_id,
+        delivery.action_candidates.world_observation_id,
     ):
         raise GroundedToolResolutionError(
             GroundedToolResolutionCode.STALE_CATALOG,
@@ -527,51 +570,10 @@ def compile_grounded_tool_catalog(
             _ManifestBoundAction(item, delivery.manifest),
         )
         for item in GroundedToolCompiler().compile(
-            context.complete_actions,
+            _delivered_action_options(context, delivery.manifest),
             context_id=context.context_id,
         )
     )
-
-    form_fields = _current_form_field_bindings(context, delivery.manifest)
-    if form_fields:
-        form_keys = tuple(sorted(form_fields))
-        target_refs = tuple(sorted({target_ref for form in form_fields.values() for target_ref, _ in form}))
-        registered.append(
-            RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.SET_FORM_FIELDS.value,
-                    "Update two to four editable fields in one current form; never submits the form.",
-                    _object_schema(
-                        {
-                            "form": {
-                                "type": "string",
-                                "description": "one current form scope",
-                                "enum": list(form_keys),
-                            },
-                            "fields": {
-                                "type": "array",
-                                "description": "ordered field updates within that form",
-                                "items": _object_schema(
-                                    {
-                                        "target": {"type": "string", "enum": list(target_refs)},
-                                        "operation": {
-                                            "type": "string",
-                                            "enum": ["type_text", "select_option"],
-                                        },
-                                        "value": {"type": "string"},
-                                    },
-                                    ("target", "operation", "value"),
-                                ),
-                                "minItems": 2,
-                                "maxItems": 4,
-                            },
-                        },
-                        ("form", "fields"),
-                    ),
-                ),
-                _SetFormFieldsBinding(form_fields),
-            )
-        )
 
     child_counts = {
         ref: count
@@ -589,7 +591,10 @@ def compile_grounded_tool_catalog(
                             "containers": {
                                 "type": "array",
                                 "description": "all relevant repeated-group references from the current observation",
-                                "items": {"type": "string", "pattern": "^[EN][1-9][0-9]{0,2}$"},
+                                "items": {
+                                    "type": "string",
+                                    "enum": sorted(child_counts),
+                                },
                                 "minItems": 1,
                                 "maxItems": len(child_counts),
                             }
@@ -627,7 +632,7 @@ def compile_grounded_tool_catalog(
                                 "evidence_ref": {
                                     "type": "string",
                                     "description": "current scalar F-ref",
-                                    "pattern": "^F[1-9][0-9]{0,3}$",
+                                    "enum": sorted(eligible),
                                 },
                                 "purpose": {
                                     "type": "string",
@@ -648,8 +653,8 @@ def compile_grounded_tool_catalog(
                 )
             )
 
-    registered.extend(
-        (
+    if delivery.manifest.region_refs:
+        registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.READ_REGION.value,
@@ -659,14 +664,17 @@ def compile_grounded_tool_catalog(
                             "region_ref": {
                                 "type": "string",
                                 "description": "current PageMap R-ref",
-                                "pattern": "^R[1-9][0-9]{0,3}$",
+                                "enum": sorted(delivery.manifest.region_refs),
                             }
                         },
                         ("region_ref",),
                     ),
                 ),
                 _WorldReadBinding(context, "region"),
-            ),
+            )
+        )
+    registered.extend(
+        (
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.SEARCH_PAGE_CONTENT.value,
@@ -703,7 +711,7 @@ def compile_grounded_tool_catalog(
                                 "type": "string",
                                 "description": "desired current control or action",
                                 "minLength": 1,
-                                "maxLength": 120,
+                                "maxLength": PUBLIC_ACTION_LABEL_MAX_CHARS,
                             }
                         },
                         ("query",),
@@ -713,35 +721,65 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
-    if (
-        context.delivery_lens is not None
-        and context.delivery_lens.world_observation_id == getattr(context.current_observation, "observation_id", "")
-        and context.delivery_lens.next_cursor
-    ):
+    plan = context.action_delivery_plan
+    read_scopes: list[str] = []
+    active_read = getattr(context.delivery_store, "active_read", None)
+    if active_read is not None and active_read.next_cursor:
+        read_scopes.append("active_read")
+    admitted_counts = dict(delivery.admitted_record_counts)
+    if plan is not None:
+        for scope in ("effect", "page_directory"):
+            obligation = next((item for item in plan.obligations if item.continuation_scope == scope), None)
+            if obligation is not None and 0 < admitted_counts.get(obligation.kind.value, 0) < len(obligation.remaining):
+                read_scopes.append(scope)
+    if read_scopes:
+        properties = (
+            {
+                "scope": {
+                    "type": "string",
+                    "description": "which bounded current World delivery to continue",
+                    "enum": read_scopes,
+                }
+            }
+            if len(read_scopes) > 1
+            else {}
+        )
         registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.READ_NEXT_PAGE.value,
-                    "Continue the prior World read; Runtime owns paging.",
-                    _object_schema({}),
+                    "Continue a current World delivery page; Runtime owns paging.",
+                    _object_schema(properties, ("scope",) if properties else ()),
                 ),
-                _WorldReadBinding(context, "continue"),
+                _WorldReadBinding(context, "continue", tuple(read_scopes), delivery),
             )
         )
-    if context.actions.next_cursor:
+    continuation_scopes = tuple(
+        item.continuation_scope
+        for item in (plan.obligations if plan is not None else ())
+        if item.continuation_scope not in {"effect", "page_directory"}
+        and 0 < admitted_counts.get(item.kind.value, 0) < len(item.remaining)
+    )
+    if continuation_scopes:
+        properties = (
+            {
+                "scope": {
+                    "type": "string",
+                    "description": "which independent action result cursor to continue",
+                    "enum": continuation_scopes,
+                }
+            }
+            if len(continuation_scopes) > 1
+            else {}
+        )
         registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
                     "Continue current action results; Runtime owns paging.",
-                    _object_schema({}),
+                    _object_schema(properties, ("scope",) if properties else ()),
                 ),
-                _ActionResultsNextPageBinding(
-                    context.actions.active_query,
-                    context.actions.active_target_filter,
-                    context.actions.active_relevance_filter,
-                    context.actions.next_cursor,
-                ),
+                _ActionResultsNextPageBinding(context, delivery, continuation_scopes),
             )
         )
 
@@ -766,8 +804,15 @@ def compile_grounded_tool_catalog(
                         "evidence_refs": {
                             "type": "array",
                             "description": "optional current F-refs for traceability",
-                            "items": {"type": "string", "pattern": "^F[1-9][0-9]{0,3}$"},
-                            "maxItems": 32,
+                            "items": (
+                                PublicRefCodec.enum_schema(
+                                    tuple(sorted(final_evidence)),
+                                    expected=PublicRefKind.FACT,
+                                )
+                                if final_evidence
+                                else {"type": "string"}
+                            ),
+                            "maxItems": min(32, len(final_evidence)),
                         },
                     },
                     ("content",),
@@ -849,65 +894,6 @@ def compile_grounded_tool_catalog(
     return _catalog_from_registrations(context, delivery, tuple(registered))
 
 
-def _current_form_field_bindings(
-    context: AgentContext,
-    manifest: DeliveryManifest,
-) -> dict[str, dict[tuple[str, str], _FormFieldAction]]:
-    """Group current editable action refs by their nearest explicit form/search node."""
-
-    paths: dict[str, tuple[ActorWorldNodeView, ...]] = {}
-
-    def visit(node: ActorWorldNodeView, parents: tuple[ActorWorldNodeView, ...]) -> None:
-        path = (*parents, node)
-        paths[node.ref] = path
-        for child in node.children:
-            visit(child, path)
-
-    for document in context.actor_world.documents:
-        for root in document.roots:
-            visit(root, ())
-
-    grouped: dict[tuple[str, str], dict[tuple[str, str], _FormFieldAction]] = {}
-    for option in context.complete_actions:
-        if (
-            option.operation not in {"type_text", "select_option"}
-            or not option.target_ref
-            or not manifest.admits_executable(option.target_ref)
-        ):
-            continue
-        path = paths.get(option.target_ref, ())
-        container = next(
-            (node for node in reversed(path[:-1]) if node.role.casefold() in {"form", "search"}),
-            None,
-        )
-        if container is None:
-            continue
-        label = container.label.strip() or container.role
-        grouped.setdefault((container.ref, label), {})[(option.target_ref, option.operation)] = _FormFieldAction(
-            option.action_id,
-            option.operation,
-            option.target_ref,
-            option.parameter_schema,
-        )
-
-    result: dict[str, dict[tuple[str, str], _FormFieldAction]] = {}
-    for (container_ref, label), actions in sorted(grouped.items(), key=lambda item: item[0][1].casefold()):
-        if len({target for target, _ in actions}) < 2:
-            continue
-        slug = (
-            "-".join(
-                part
-                for part in "".join(character if character.isalnum() else " " for character in label.casefold()).split()
-            )[:48]
-            or "fields"
-        )
-        key = f"form:{slug}"
-        if key in result:
-            key = f"{key}-{hashlib.sha256(container_ref.encode()).hexdigest()[:8]}"
-        result[key] = actions
-    return result
-
-
 def _catalog_from_registrations(
     context: AgentContext,
     delivery: ModelTurnDelivery,
@@ -930,7 +916,7 @@ def _catalog_from_registrations(
     )
     encoded = json.dumps(public_tools, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     encoded_bytes = len(encoded.encode())
-    if len(specs) > MAX_GROUNDED_TOOL_COUNT or encoded_bytes > MAX_GROUNDED_WORKSPACE_BYTES:
+    if len(specs) > MAX_GROUNDED_TOOL_COUNT:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     digest = hashlib.sha256(f"{context.context_id}\0{delivery.delivery_id}\0{encoded}".encode()).hexdigest()[:32]
     catalog_id = f"grounded-catalog:{digest}"
@@ -939,10 +925,38 @@ def _catalog_from_registrations(
         context.context_id,
         delivery.delivery_id,
         delivery.manifest,
-        delivery.delivery_index,
+        context.region_index,
         registered,
         encoded_bytes,
     )
+
+
+def _delivered_action_options(
+    context: AgentContext,
+    manifest: DeliveryManifest,
+):
+    routes = {
+        (item.operation, item.source_ref, item.destination_ref)
+        for item in manifest.action_routes
+    }
+    delivered = []
+    for option in context.complete_actions:
+        if option.destination_required:
+            destinations = tuple(
+                item
+                for item in option.destinations.items
+                if (option.operation, option.target_ref, item.grounding_ref) in routes
+            )
+            if destinations:
+                delivered.append(
+                    replace(
+                        option,
+                        destinations=BoundedSection(destinations, len(destinations), False),
+                    )
+                )
+        elif (option.operation, option.target_ref, "") in routes:
+            delivered.append(option)
+    return tuple(delivered)
 
 
 def compile_grounded_action_catalog(
@@ -995,7 +1009,7 @@ def resolve_grounded_tool_call(
             GroundedToolResolutionCode.INVALID_ARGUMENTS,
             str(exc),
         ) from exc
-    return GroundedActionResolution(decision)
+    return decision if isinstance(decision, GroundedActionResolution) else GroundedActionResolution(decision)
 
 
 def resolve_grounded_action_call(
@@ -1030,7 +1044,7 @@ def _evidence_request_schema(
     subject_schema = {
         "type": "string",
         "description": "current_world or current E/N ref",
-        "pattern": "^(current_world|[EN][1-9][0-9]{0,2})$",
+        "enum": sorted(subjects),
     }
     property_schema = {
         "type": "string",

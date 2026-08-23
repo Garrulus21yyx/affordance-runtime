@@ -18,7 +18,6 @@ from affordance_runtime.task import (
     TaskBoundary,
     TaskInputRequired,
     TaskPolicyRejected,
-    TaskUnsupported,
     ThinTaskIntake,
 )
 from tests.support.world import fused_world
@@ -75,6 +74,17 @@ def test_thin_intake_admits_stable_semantics_without_gui_identity() -> None:
     assert not hasattr(outcome.task, "selector")
 
 
+def test_thin_intake_preserves_bounded_official_goal_text_without_reinterpreting_schema() -> None:
+    schema_text = '{"$defs":' + (" " * 4_100) + "{}}"
+    instruction = f"Retrieve the record.\n---\nFinal response format:\n{schema_text}"
+
+    outcome = ThinTaskIntake().compile(NaturalLanguageTaskRequest("task:official-goal", instruction))
+
+    assert isinstance(outcome, ReadyTask)
+    assert outcome.task.instruction == instruction
+    assert outcome.task.inputs == {}
+
+
 def test_thin_intake_returns_closed_nonready_outcomes() -> None:
     missing_effect_authority = ThinTaskIntake().compile(
         NaturalLanguageTaskRequest(
@@ -107,8 +117,8 @@ def test_thin_intake_returns_closed_nonready_outcomes() -> None:
     assert missing_effect_authority.reason_code == "effect_authority_required"
     assert isinstance(conflicting_effects, TaskPolicyRejected)
     assert conflicting_effects.reason_code == "allowed_forbidden_effect_conflict"
-    assert isinstance(private_execution_input, TaskUnsupported)
-    assert private_execution_input.reason_code == "runtime_private_input_not_supported"
+    assert isinstance(private_execution_input, ReadyTask)
+    assert private_execution_input.task.inputs == {"selector": "#save"}
 
 
 def test_target_runtime_runs_a_natural_language_request_through_intake() -> None:

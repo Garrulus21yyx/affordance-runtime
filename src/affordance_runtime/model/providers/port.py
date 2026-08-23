@@ -376,7 +376,8 @@ class OpenAICompatibleModelPort:
             completion_details.get("reasoning_tokens") or usage.get("reasoning_tokens") or 0
         )
         choice = _first_choice(response)
-        message = choice.get("message") if isinstance(choice.get("message"), Mapping) else {}
+        raw_message = choice.get("message")
+        message: Mapping[str, Any] = raw_message if isinstance(raw_message, Mapping) else {}
         finish_reason = str(choice.get("finish_reason") or "")[:80]
         content = _final_content(message.get("content"))
         final_content_present = bool(content.strip())
@@ -559,7 +560,8 @@ class OllamaModelPort:
         latency_ms = round((perf_counter() - started) * 1_000, 3)
         prompt_tokens = int(response.get("prompt_eval_count") or 0)
         completion_tokens = int(response.get("eval_count") or 0)
-        message = response.get("message") if isinstance(response.get("message"), Mapping) else {}
+        raw_message = response.get("message")
+        message: Mapping[str, Any] = raw_message if isinstance(raw_message, Mapping) else {}
         finish_reason = str(response.get("done_reason") or "")[:80]
         content = _final_content(message.get("content"))
         final_content_present = bool(content.strip())

@@ -5,6 +5,9 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
+
+import pytest
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context import ContextBuilder, ModelFailureKind
@@ -30,7 +33,12 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolPhase,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
-from affordance_runtime.model.policy.request_admission import ModelRequestBudget, estimate_model_request
+from affordance_runtime.model.policy.request_admission import (
+    ModelRequestBudget,
+    ModelRequestPrivacyError,
+    estimate_model_request,
+    validate_provider_request_privacy,
+)
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelConfig,
@@ -59,6 +67,69 @@ async def _request():
         delivery,
     )
     return ModelDecisionRequest("request:test", context), catalog, delivery
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        '{"private_cursor":"opaque"}',
+        '{"observation_id":"opaque"}',
+        '{"capture_epoch":"opaque"}',
+        '{"omitted_count":84}',
+        'browsergym-observation:123e4567-e89b-12d3-a456-426614174000:9',
+    ),
+)
+def test_provider_request_privacy_rejects_would_be_serialization(payload: str) -> None:
+    async def scenario() -> None:
+        request, _catalog, _delivery = await _request()
+        candidate = SimpleNamespace(
+            messages=(ModelMessage(role="user", content=payload),),
+            tools=(),
+            component_payloads={"actor_world": json.loads(payload) if payload.startswith("{") else payload},
+        )
+
+        with pytest.raises(ModelRequestPrivacyError):
+            validate_provider_request_privacy(candidate, request)
+
+    asyncio.run(scenario())
+
+
+def test_provider_request_privacy_rejects_dynamic_source_and_binding_lineage() -> None:
+    async def scenario() -> None:
+        request, _catalog, _delivery = await _request()
+        private_values = (
+            request.agent_context.current_observation.observation_id,
+            request.agent_context.current_observation.bindings[0].binding_id,
+        )
+        for value in private_values:
+            candidate = SimpleNamespace(
+                messages=(ModelMessage(role="user", content=value),),
+                tools=(),
+                component_payloads={"actor_world": value},
+            )
+            with pytest.raises(ModelRequestPrivacyError, match="provider_request_privacy"):
+                validate_provider_request_privacy(candidate, request)
+
+    asyncio.run(scenario())
+
+
+def test_provider_request_privacy_does_not_reinterpret_exact_public_task_fields() -> None:
+    async def scenario() -> None:
+        request, _catalog, _delivery = await _request()
+        public_inputs = {
+            "observation_id": "business-observation",
+            "omitted_count": 12,
+            "private_cursor": "customer-visible-column-name",
+        }
+        candidate = SimpleNamespace(
+            messages=(ModelMessage(role="user", content=json.dumps(public_inputs)),),
+            tools=(),
+            component_payloads={"task_plan": public_inputs, "actor_world": "safe"},
+        )
+
+        validate_provider_request_privacy(candidate, request)
+
+    asyncio.run(scenario())
 
 
 def test_complete_request_breakdown_covers_rendered_sections_and_is_deterministic() -> None:
@@ -114,12 +185,14 @@ def test_image_tokens_are_dimension_based_not_compressed_byte_based() -> None:
         "image/png",
         small_png,
         hashlib.sha256(small_png).hexdigest(),
+        "viewport:small",
     )
     second = AgentImageInput(
         "artifact:image:padded",
         "image/png",
         padded_png,
         hashlib.sha256(padded_png).hexdigest(),
+        "viewport:padded",
     )
 
     small = estimate_model_request(

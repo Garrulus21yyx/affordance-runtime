@@ -10,11 +10,6 @@ from affordance_runtime.goals.compiler import (
     TaskSemanticsBoundary,
     UnavailableGoalCompiler,
 )
-from affordance_runtime.goals.contracts import (
-    GoalPredicateValueType,
-    GoalSemanticContract,
-    merge_goal_semantic_contracts,
-)
 from affordance_runtime.goals.plan import (
     AgentGoalPlanView,
     Failed,
@@ -42,8 +37,6 @@ __all__ = [
     "GoalPlanItem",
     "GoalPlanProposal",
     "GoalPlanResolution",
-    "GoalPredicateValueType",
-    "GoalSemanticContract",
     "InvalidGoalProposal",
     "NeedsInput",
     "NotRequired",
@@ -52,6 +45,5 @@ __all__ = [
     "TaskSemanticsBoundary",
     "UnavailableGoalCompiler",
     "Unsupported",
-    "merge_goal_semantic_contracts",
     "project_agent_goal_plan",
 ]

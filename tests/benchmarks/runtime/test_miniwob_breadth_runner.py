@@ -103,8 +103,6 @@ def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_p
     results = tuple(
         replace(
             item,
-            case_failure_code="",
-            runtime_reason_code="",
             failure_facts=FailureFacts(),
         )
         for item in _bound_results(manifest, failed=lambda _index: True)
@@ -346,9 +344,7 @@ def _result(index: int, *, failed: bool) -> BenchmarkCaseResult:
     return BenchmarkCaseResult(
         f"miniwob-60-{index:02d}", "failed" if failed else "done", True, "", 2.0,
         measurements,
-        case_failure_code="turn_budget_exhausted" if failed else "",
         latest_task_status="" if failed else "complete",
-        runtime_reason_code="turn_budget_exhausted" if failed else "",
         failure_facts=facts,
     )
 

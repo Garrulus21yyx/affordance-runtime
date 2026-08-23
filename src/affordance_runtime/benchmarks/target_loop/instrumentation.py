@@ -13,7 +13,6 @@ from affordance_runtime.agent.decisions import (
     LocalToolResult,
     RequestObservation,
     SelectAction,
-    SetFormFields,
 )
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
@@ -28,8 +27,6 @@ from affordance_runtime.execution import (
     ExecutionDiagnostic,
     ExecutionDiagnosticPhase,
     ExecutionOutcome,
-    FormFieldsExecutionCancelled,
-    FormFieldsExecutionOutcome,
     execution_diagnostic_from_exception,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -325,7 +322,7 @@ def _policy_trace_event(call: int, context, outcome, policy, *, exception: str =
     decision = outcome
     if isinstance(
         decision,
-        (SelectAction, SetFormFields, RequestObservation, LocalToolResult),
+        (SelectAction, RequestObservation, LocalToolResult),
     ):
         event["outcome"] = decision.kind.value
         event["decision"] = _decision_trace(decision)
@@ -370,7 +367,7 @@ def _selected_grounding_trace(context, decision, *, image_attached: bool):
     action_id = getattr(decision, "action_id", "")
     if not action_id:
         return None
-    option = next((item for item in context.actions.options if item.action_id == action_id), None)
+    option = next((item for item in context.complete_actions if item.action_id == action_id), None)
     if option is None:
         return None
     ref = context.grounding.target_refs.get(option.target_id)
@@ -395,7 +392,6 @@ def _decision_trace(decision):
         "subject_id",
         "purpose",
         "evidence_property",
-        "relevance_role",
         "cursor",
         "category",
         "tool_name",
@@ -403,14 +399,10 @@ def _decision_trace(decision):
         "call_count",
         "detail",
         "feedback_kind",
-        "form_key",
     ):
         item = getattr(decision, name, None)
         if item not in (None, ""):
             value[name] = item.value if hasattr(item, "value") else item
-    if isinstance(decision, SetFormFields):
-        value["field_count"] = len(decision.fields)
-        value["operations"] = tuple(item.operation for item in decision.fields)
     return value
 
 
@@ -666,43 +658,15 @@ class CountingEnvironment:
         )
         return outcome
 
-    async def execute_form_fields(self, command):
-        state = self.instrumentation
-        state.environment_execute_calls += 1
-        before = _executed_count(self.wrapped)
-        state.forbidden_effect_attempts += sum(
-            bool(set(request.selection.semantic_effects) & self.forbidden_effects) for request in command.requests
-        )
-        try:
-            outcome = await self.wrapped.execute_form_fields(command)
-        except FormFieldsExecutionCancelled as exc:
-            _record_execution_batch(
-                state,
-                self.wrapped,
-                before,
-                requests=exc.outcome.requests,
-                results=exc.outcome.results,
-                post_acquisition=exc.outcome.post_acquisition,
-            )
-            raise
-        except Exception as exc:
-            state.record_failure(CaseFailureOrigin.EXECUTION, "execution_exception", exc)
-            raise
-        if not isinstance(outcome, FormFieldsExecutionOutcome):
-            return outcome
-        _record_execution_batch(
-            state,
-            self.wrapped,
-            before,
-            requests=outcome.requests,
-            results=outcome.results,
-            post_acquisition=outcome.post_acquisition,
-        )
-        return outcome
-
     @property
     def supports_finalization(self):
         return bool(getattr(self.wrapped, "supports_finalization", False))
+
+    @property
+    def final_response_codec(self):
+        from affordance_runtime.world.finalization import PLAIN_TEXT_FINAL_RESPONSE_CODEC
+
+        return getattr(self.wrapped, "final_response_codec", PLAIN_TEXT_FINAL_RESPONSE_CODEC)
 
     async def finalize(self, content: str):
         state = self.instrumentation

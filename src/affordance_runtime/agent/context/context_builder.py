@@ -6,10 +6,17 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 
-from affordance_runtime.actions.paging import ActionPager, InternalActionPage
+from affordance_runtime.actions.paging import (
+    ActionDiscoveryMatch,
+    ActionDiscoveryResult,
+    ActionPager,
+    InternalActionPage,
+    canonical_action_query,
+)
 from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.acquisition_projection import project_acquisition_offers
 from affordance_runtime.agent.context.action_candidate_projection import (
+    build_action_delivery_plan,
     close_action_candidates,
     project_action_candidates,
 )
@@ -27,7 +34,6 @@ from affordance_runtime.agent.context.observation_delivery import (
 )
 from affordance_runtime.agent.context.projection import project_action_page, project_action_space
 from affordance_runtime.agent.context.task_projection import project_task
-from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_projection import (
     ModelWorldView,
     project_model_world,
@@ -65,15 +71,17 @@ class ContextBuilder:
         observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
         goal_resolution: GoalPlanResolution | None = None,
         runtime_controls: tuple[str, ...] = (),
-        delivery_lens: WorldDeliveryLens | None = None,
         region_index: WorldDeliveryIndex | None = None,
         delivery_store: ObservationDeliveryStore = ObservationDeliveryStore(),
         control_feedback: dict[str, object] | None = None,
+        action_discovery: ActionDiscoveryResult | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
-        if delivery_lens is not None and delivery_lens.world_observation_id != observation.observation_id:
-            raise ValueError("delivery lens belongs to a previous observation")
+        active_read = delivery_store.active_read
+        if active_read is not None and active_read.world_observation_id != observation.observation_id:
+            delivery_store = delivery_store.with_active_read(None)
+            active_read = None
         current_region_index = region_index or WorldDeliveryIndex.from_observation(
             observation,
             action_space.options,
@@ -89,7 +97,6 @@ class ContextBuilder:
             action_space,
             page,
             {item.target_id: item.label for item in observation.targets},
-            self.budget.max_destinations_per_option,
         )
         complete_projected_actions = project_action_space(
             action_space,
@@ -105,11 +112,6 @@ class ContextBuilder:
             shown_actions,
             observation,
             self.budget.observation_pinned_capacity(len(observation.targets)),
-            extra_target_ids=(
-                current_region_index.member_target_ids(delivery_lens.selected_region_key)
-                if delivery_lens is not None and delivery_lens.selected_region_key
-                else ()
-            ),
         )
         world = project_model_world(
             observation,
@@ -128,10 +130,7 @@ class ContextBuilder:
             len(shown_actions),
             page.total_count > len(shown_actions),
             page.has_more,
-            ("exact_target", "query", "cursor"),
             page.query,
-            page.target_id,
-            page.relevance_role.value if page.relevance_role else "",
             page.next_cursor,
         )
         if not isinstance(workspace, AgentWorkspace):
@@ -143,7 +142,6 @@ class ContextBuilder:
             len(complete_projected_actions.options),
             False,
             False,
-            ("exact_target", "query", "cursor"),
         )
         grounding = self.grounding_projection.project(
             observation,
@@ -162,7 +160,13 @@ class ContextBuilder:
             page,
             context_generation,
             goal_plan,
-            _tool_catalog_digest(complete_page, world, grounding, runtime_controls, delivery_lens),
+            _tool_catalog_digest(
+                complete_page,
+                world,
+                grounding,
+                runtime_controls,
+                active_read_available=bool(active_read is not None and active_read.next_cursor),
+            ),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         complete_page = close_action_candidates(
@@ -170,21 +174,54 @@ class ContextBuilder:
             grounding.index,
             context_id=identity.context_id,
         )
-        candidate_projection = project_action_candidates(
+        delivery_evidence_index = _evidence_index(
+            observation,
+            include_public_text=self.include_public_text_evidence,
+        )
+        delivery_fact_refs = _public_fact_refs(
+            world.facts.items,
+            task_evaluation,
+            delivery_evidence_index,
+            observation,
+        )
+        observation_delivery = project_observation_delivery(
+            observation,
+            current_region_index,
+            delivery_evidence_index,
+            delivery_fact_refs,
+            grounding.index,
+            delivery_store,
+        )
+        base_candidate_projection = project_action_candidates(
             complete_page.options,
             action_space_id=action_space.action_space_id,
             world_observation_id=observation.observation_id,
             region_index=current_region_index,
-            query=actions.active_query,
             instruction=task.instruction,
             objectives=tuple(item.objective for item in goal_plan.items),
             done_when=tuple(item.done_when for item in goal_plan.items),
             recent_outcomes=history_items,
-            allowed_action_ids=(
-                frozenset(item.action_id for item in actions.options) if actions.active_query else None
-            ),
-            top_k=None if actions.active_query else 5,
+            top_k=5,
         )
+        action_delivery_plan = build_action_delivery_plan(
+            action_space_id=action_space.action_space_id,
+            world_observation_id=observation.observation_id,
+            base_actions=actions.options,
+            complete_actions=complete_page.options,
+            automatic=base_candidate_projection,
+            region_index=current_region_index,
+            discovery=action_discovery,
+            action_space_issues=action_space.issues,
+            target_refs=grounding.index.target_refs,
+            observation_delivery=observation_delivery,
+            latest_effect=(
+                delivery_store.latest_effect.inventory
+                if delivery_store.latest_effect is not None
+                else None
+            ),
+            cursor_store=delivery_store,
+        )
+        candidate_projection = action_delivery_plan.projection(action_delivery_plan.bounded_preview_counts())
         return _fit_context(
             identity.context_id,
             task,
@@ -198,14 +235,15 @@ class ContextBuilder:
             self.budget,
             current_step_index,
             runtime_controls,
-            delivery_lens,
             current_region_index,
             control_feedback or {},
             self.include_public_text_evidence,
             complete_page.options,
             action_space.action_space_id,
             candidate_projection,
+            action_delivery_plan,
             delivery_store,
+            observation_delivery,
         )
 
     def page(
@@ -214,8 +252,6 @@ class ContextBuilder:
         observation: WorldObservation,
         *,
         query: str = "",
-        target_id: str = "",
-        relevance_role: str = "",
         cursor: str = "",
         region_index: WorldDeliveryIndex | None = None,
     ) -> InternalActionPage:
@@ -227,56 +263,130 @@ class ContextBuilder:
         )
         if region_index.world_observation_id != observation.observation_id:
             raise ValueError("delivery index belongs to a previous observation")
+        contexts = region_index.target_contexts
         return self.pager.page(
             action_space,
             None,
             query=query,
-            target_id=target_id,
-            relevance_role=relevance_role or None,
             labels=labels,
             roles={target_id: item.role for target_id, item in targets.items()},
             states={target_id: item.state for target_id, item in targets.items()},
             functional_paths={target_id: region_index.functional_path_for_target(target_id) for target_id in targets},
+            focused_target_ids=frozenset(target_id for target_id, item in contexts.items() if item.focused),
+            viewport_target_ids=frozenset(
+                target_id for target_id, item in contexts.items() if item.viewport == "visible"
+            ),
             cursor=cursor,
             page_size=min(
                 self.budget.max_action_options,
                 self.pager.page_size,
             ),
-            max_destinations_per_option=self.budget.max_destinations_per_option,
-            max_targets=self.budget.observation_pinned_capacity(len(observation.targets)),
         )
 
-    def page_for_delivery_lens(
+    def discovery_result(
         self,
         action_space: ActionSpace,
         observation: WorldObservation,
-        lens: WorldDeliveryLens,
-        region_index: WorldDeliveryIndex,
-    ) -> InternalActionPage:
-        if lens.world_observation_id != observation.observation_id:
-            raise ValueError("delivery lens belongs to a previous observation")
-        if region_index.world_observation_id != observation.observation_id:
-            raise ValueError("region index belongs to a previous observation")
-        selected_targets = set(region_index.member_target_ids(lens.selected_region_key))
-        allowed = {
-            option.action_id
-            for option in action_space.options
-            if option.target_id in selected_targets or bool(set(option.eligible_destination_ids) & selected_targets)
-        }
-        if not allowed:
-            return self.page(action_space, observation, region_index=region_index)
-        labels = {item.target_id: item.label for item in observation.targets}
-        return self.pager.page(
-            action_space,
-            None,
-            labels=labels,
-            page_size=min(self.budget.max_action_options, self.pager.page_size),
-            max_destinations_per_option=self.budget.max_destinations_per_option,
-            max_targets=self.budget.observation_pinned_capacity(len(observation.targets)),
-            allowed_action_ids=frozenset(allowed),
-            authority_digest="delivery-lens:" + lens.selected_region_key,
-        )
+        page: InternalActionPage,
+        *,
+        region_index: WorldDeliveryIndex | None = None,
+    ) -> ActionDiscoveryResult:
+        """Close a page into its public typed result at the discovery owner."""
 
+        current_index = region_index or WorldDeliveryIndex.from_observation(observation, action_space.options)
+        if current_index.world_observation_id != observation.observation_id:
+            raise ValueError("delivery index belongs to a previous observation")
+        targets = {item.target_id: item for item in observation.targets}
+        labels = {target_id: item.label for target_id, item in targets.items()}
+        projected = project_action_page(action_space, page, labels)
+        complete = project_action_space(action_space, labels)
+        pinned = _pinned_targets(
+            projected.options,
+            observation,
+            self.budget.observation_pinned_capacity(len(observation.targets)),
+        )
+        model_world = project_model_world(
+            observation,
+            self.budget,
+            pinned,
+            lossless_public=True,
+        )
+        complete_view = AgentActionPageView(
+            complete.options,
+            len(complete.options),
+            len(complete.options),
+            False,
+            False,
+        )
+        grounding = self.grounding_projection.project(observation, model_world, complete_view)
+        query = canonical_action_query(page.query)
+        def page_matches(current_page: InternalActionPage) -> tuple[ActionDiscoveryMatch, ...]:
+            current_projected = project_action_page(action_space, current_page, labels)
+            current_labels = {item.action_id: item.target_label for item in current_projected.options}
+            current_view = close_action_candidates(
+                AgentActionPageView(
+                    current_projected.options,
+                    current_page.total_count,
+                    len(current_projected.options),
+                    current_page.total_count > len(current_projected.options),
+                    current_page.has_more,
+                    current_page.query,
+                    current_page.next_cursor,
+                ),
+                grounding.index,
+                context_id="context:action-discovery",
+            )
+            values = []
+            for item in current_view.options:
+                public_label = current_labels.get(item.action_id, "") or item.target_label
+                target = targets.get(item.target_id)
+                public_role = (target.role if target is not None else "") or item.target_role
+                values.append(
+                    ActionDiscoveryMatch(
+                        item.target_ref,
+                        public_label,
+                        public_role,
+                        item.operation,
+                        tuple(destination.grounding_ref for destination in item.destinations.items),
+                        _discovery_match_kinds(query, public_label, public_role, item.operation),
+                    )
+                )
+            return tuple(values)
+
+        matches = page_matches(page)
+        inventory = list(matches)
+        continuation = page
+        seen_cursors: set[str] = set()
+        while continuation.has_more:
+            if continuation.next_cursor in seen_cursors:
+                raise ValueError("action discovery cursor cycle")
+            seen_cursors.add(continuation.next_cursor)
+            continuation = self.page(
+                action_space,
+                observation,
+                query=page.query,
+                cursor=continuation.next_cursor,
+                region_index=current_index,
+            )
+            inventory.extend(page_matches(continuation))
+        coverage = (
+            "complete"
+            if all(source.coverage is CoverageState.COMPLETE for source in observation.sources)
+            else "partial"
+        )
+        return ActionDiscoveryResult(
+            matches,
+            query,
+            coverage,
+            "empty" if not matches else "partial" if page.has_more else "complete",
+            page.has_more,
+            "query" if page.has_more else "",
+            (),
+            "search_page_content" if query and not matches else "",
+            tuple(inventory),
+            observation.observation_id,
+            action_space.action_space_id,
+        )
 
 def _context_identity(
     task_revision,
@@ -319,7 +429,8 @@ def _tool_catalog_digest(
     world,
     grounding: GroundingProjectionResult,
     runtime_controls: tuple[str, ...],
-    delivery_lens: WorldDeliveryLens | None,
+    *,
+    active_read_available: bool,
 ) -> str:
     """Bind identity to the exact current inputs that determine the public tool catalog."""
 
@@ -330,7 +441,7 @@ def _tool_catalog_digest(
             "world_targets": world.targets,
             "grounding_entities": grounding.index.entities,
             "runtime_controls": tuple(runtime_controls),
-            "delivery_lens": delivery_lens,
+            "active_read_available": active_read_available,
         }
     )
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -367,14 +478,15 @@ def _fit_context(
     budget: ContextProjectionBudget,
     current_step_index: int,
     runtime_controls: tuple[str, ...],
-    delivery_lens: WorldDeliveryLens | None,
     region_index: WorldDeliveryIndex,
     control_feedback: dict[str, object],
     include_public_text_evidence: bool,
     complete_actions,
     action_space_id: str,
     action_candidates,
+    action_delivery_plan,
     delivery_store: ObservationDeliveryStore,
+    observation_delivery,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
@@ -392,20 +504,11 @@ def _fit_context(
         world.facts.items,
         fact_refs,
         grounding.index.target_refs,
-        include_final_response_contract=True,
     )
     private_fact_bindings = _current_public_fact_bindings(
         observation,
         evidence_index,
         fact_refs,
-    )
-    observation_delivery = project_observation_delivery(
-        observation,
-        region_index,
-        evidence_index,
-        fact_refs,
-        grounding.index,
-        delivery_store,
     )
     return AgentContext(
         context_id,
@@ -429,7 +532,6 @@ def _fit_context(
         private_fact_bindings,
         evidence_index,
         observation,
-        delivery_lens,
         region_index,
         current_step_index,
         runtime_controls,
@@ -438,6 +540,8 @@ def _fit_context(
         action_space_id,
         action_candidates,
         observation_delivery,
+        action_delivery_plan,
+        delivery_store,
     )
 
 
@@ -456,6 +560,27 @@ def _evidence_index(observation: WorldObservation, *, include_public_text: bool)
         tuple(sorted(item.evidence_ref for item in records)),
         records,
     )
+
+
+def _discovery_match_kinds(
+    query: str,
+    label: str,
+    role: str,
+    operation: str,
+) -> tuple[str, ...]:
+    if not query:
+        return ("inventory",)
+    normalized_label = canonical_action_query(label) if len(label) <= 240 else ""
+    kinds: list[str] = []
+    if normalized_label and (normalized_label == query or normalized_label in query):
+        kinds.append("exact_label")
+    if query == role.casefold():
+        kinds.append("role")
+    if query == operation.casefold():
+        kinds.append("operation")
+    if not kinds:
+        kinds.append("semantic")
+    return tuple(kinds)
 
 
 def _current_public_fact_bindings(

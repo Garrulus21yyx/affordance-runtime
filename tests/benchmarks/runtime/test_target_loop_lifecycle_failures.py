@@ -11,7 +11,7 @@ from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.episode_snapshot import EpisodeSnapshot
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
-from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest
+from affordance_runtime.benchmarks.target_loop.contracts import BenchmarkManifest, CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest
 from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
@@ -19,6 +19,8 @@ from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
 )
 from affordance_runtime.benchmarks.target_loop.reporting import write_case_report
 from affordance_runtime.benchmarks.target_loop.result_store import (
+    CaseRecordRevision,
+    ProjectionDisposition,
     RunResultStoreError,
     SQLiteRunResultStore,
 )
@@ -370,7 +372,6 @@ def test_watchdog_report_retains_persisted_official_outcome(tmp_path) -> None:
             "",
             0,
             0,
-            "",
             0,
             "submit_final_response",
             0,
@@ -558,7 +559,7 @@ def test_json_export_failure_keeps_regenerable_sqlite_report(
             "SELECT payload_json FROM case_reports WHERE case_id = ?",
             (case.case_id,),
         ).fetchone()[0]
-    assert json.loads(payload)["failure_code"] == result.failure_code
+    assert json.loads(payload)["failure_facts"]["component_code"] == result.failure_facts.component_code
 
     monkeypatch.setattr(store_module, "_write_json_projection", original_projection)
     regenerated = store.export_case_report(case.case_id, tmp_path)
@@ -627,6 +628,7 @@ def test_case_lifecycle_is_persisted_at_owner_boundaries(tmp_path) -> None:
         "RESULT_PERSISTED",
         "CLEANUP_STARTED",
         "CLEANUP_FINISHED",
+        "FINAL_ATTEMPT",
         "CASE_FINISHED",
     )
     assert store.load_lifecycle(case.case_id)["current_phase"] == "CASE_FINISHED"
@@ -640,16 +642,9 @@ def test_hung_report_commit_has_independent_deadline_and_typed_failure(
 
     monkeypatch.setattr(runner, "_REPORT_TIMEOUT_S", 0.02)
 
-    calls = 0
-    original_commit = SQLiteRunResultStore.commit_case_report
-
     def hang_commit(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        if calls > 1:
-            time.sleep(0.2)
-            return None
-        return original_commit(*args, **kwargs)
+        del args, kwargs
+        time.sleep(0.2)
 
     monkeypatch.setattr(SQLiteRunResultStore, "commit_case_report", hang_commit)
     manifest = get_manifest("internal-core", "deterministic", 7)
@@ -703,12 +698,12 @@ def test_local_jsonl_failure_preserves_runtime_truth_but_invalidates_benchmark_a
     assert any("trace_recording_failures" in error for error in suite.acceptance.acceptance_errors)
 
 
-def test_final_trace_write_failure_is_included_before_acceptance_projection(monkeypatch, tmp_path) -> None:
+def test_final_attempt_trace_failure_is_included_before_acceptance_projection(monkeypatch, tmp_path) -> None:
     original_emit = RunTraceRecorder._emit
 
     def fail_final_emit(self, event_type, **payload):
-        if event_type == "benchmark_case_finished":
-            self.errors.append("benchmark_case_finished:SyntheticTraceFailure")
+        if event_type == "case_lifecycle_phase" and payload.get("phase") == "FINAL_ATTEMPT":
+            self.errors.append("FINAL_ATTEMPT:SyntheticTraceFailure")
             return
         original_emit(self, event_type, **payload)
 
@@ -776,3 +771,215 @@ def test_sync_and_async_target_closed_cleanup_are_idempotent_success() -> None:
     ]
     assert all(item.cleanup_failure_code == "" for item in results)
     assert all(item.execution_completed for item in results)
+
+
+def test_projection_failure_occurs_after_cleanup_and_is_durable_as_orthogonal_disposition(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from affordance_runtime.benchmarks.target_loop import runner
+
+    original_projection = runner.project_case_result
+
+    def fail_projection(*args, **kwargs):
+        raise RuntimeError("synthetic projection failure")
+
+    monkeypatch.setattr(runner, "project_case_result", fail_projection)
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    case = manifest.cases[0]
+    result = asyncio.run(run_suite(
+        BenchmarkManifest(
+            manifest.schema_version,
+            manifest.suite_id,
+            manifest.profile_id,
+            manifest.seed,
+            (case,),
+        ),
+        trace_dir=tmp_path,
+    )).cases[0]
+    monkeypatch.setattr(runner, "project_case_result", original_projection)
+
+    stored = SQLiteRunResultStore(tmp_path / "run-results.sqlite3").load_case_outcome(case.case_id)
+    assert result.failure_origin is CaseFailureOrigin.HARNESS_PROJECTION
+    assert result.cleanup_status == "succeeded"
+    assert stored is not None
+    assert stored.revision is CaseRecordRevision.FINAL
+    assert stored.projection_disposition is ProjectionDisposition.FAILED
+    assert stored.finished
+
+
+def test_final_commit_failure_leaves_cleanup_revision_and_no_finished_phase(monkeypatch, tmp_path) -> None:
+    original_commit = SQLiteRunResultStore.commit_case_outcome
+
+    def fail_final(self, record):
+        if record.revision is CaseRecordRevision.FINAL:
+            raise RunResultStoreError("synthetic final commit failure")
+        return original_commit(self, record)
+
+    monkeypatch.setattr(SQLiteRunResultStore, "commit_case_outcome", fail_final)
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    case = manifest.cases[0]
+    asyncio.run(run_suite(
+        BenchmarkManifest(
+            manifest.schema_version,
+            manifest.suite_id,
+            manifest.profile_id,
+            manifest.seed,
+            (case,),
+        ),
+        trace_dir=tmp_path,
+    ))
+
+    store = SQLiteRunResultStore(tmp_path / "run-results.sqlite3")
+    stored = store.load_case_outcome(case.case_id)
+    assert stored is not None
+    assert stored.revision is CaseRecordRevision.CLEANUP
+    assert not stored.finished
+    assert "CASE_FINISHED" not in store.load_case_phases(case.case_id)
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "traces" / case.case_id / "trace.jsonl").read_text().splitlines()
+    ]
+    terminal = [event for event in events if event["event"] == "benchmark_case_finished"]
+    assert len(terminal) == 1
+    assert terminal[0]["final_commit_disposition"] == "failed"
+
+
+def test_terminal_case_event_is_exactly_once_after_finalization_and_before_viewer_close(monkeypatch, tmp_path) -> None:
+    from affordance_runtime.benchmarks.target_loop import runner
+
+    recorders = []
+
+    class OrderingRecorder(RunTraceRecorder):
+        def __init__(self, directory):
+            super().__init__(directory)
+            self.order = []
+            recorders.append(self)
+
+        def benchmark_case_finished(self, **event):
+            self.order.append(("terminal", dict(event)))
+            super().benchmark_case_finished(**event)
+
+        def flush_viewer(self, *, timeout_s):
+            del timeout_s
+            self.order.append(("viewer_close", {}))
+            raise RuntimeError("synthetic viewer close failure")
+
+    monkeypatch.setattr(
+        runner,
+        "trace_recorder_from_environment",
+        lambda *_args, directory, **_kwargs: OrderingRecorder(directory),
+    )
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    case = manifest.cases[0]
+
+    suite = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    )
+
+    assert suite.cases[0].status == "done"
+    assert len(recorders) == 1
+    assert [kind for kind, _ in recorders[0].order] == ["terminal", "viewer_close"]
+    terminal = recorders[0].order[0][1]
+    assert terminal == {
+        "case_id": case.case_id,
+        "status": "done",
+        "projection_disposition": "projected",
+        "report_disposition": "committed",
+        "export_disposition": "exported",
+        "final_commit_disposition": "committed",
+    }
+    assert sum(event["event"] == "benchmark_case_finished" for event in recorders[0].events) == 1
+
+
+@pytest.mark.parametrize(
+    ("fault_owner", "report_disposition", "export_disposition", "failure_code"),
+    (
+        ("commit", "failed", "not_attempted", "suite_report_commit_failed"),
+        ("export", "committed", "failed", "suite_report_export_failed"),
+    ),
+)
+def test_suite_report_faults_are_typed_and_do_not_replace_case_finalization(
+    monkeypatch,
+    tmp_path,
+    fault_owner,
+    report_disposition,
+    export_disposition,
+    failure_code,
+) -> None:
+    def fail(*_args, **_kwargs):
+        raise RunResultStoreError(f"synthetic suite {fault_owner} failure")
+
+    monkeypatch.setattr(
+        SQLiteRunResultStore,
+        "commit_run_report" if fault_owner == "commit" else "export_run_report",
+        fail,
+    )
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    case = manifest.cases[0]
+    suite = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    )
+
+    assert suite.cases[0].status == "done"
+    store = SQLiteRunResultStore(tmp_path / "run-results.sqlite3")
+    case_record = store.load_case_outcome(case.case_id)
+    disposition = store.load_suite_report_disposition(suite.identity.run_id)
+    assert case_record is not None and case_record.revision is CaseRecordRevision.FINAL
+    assert disposition is not None
+    assert disposition.report_disposition.value == report_disposition
+    assert disposition.export_disposition.value == export_disposition
+    assert disposition.failure_code == failure_code
+
+
+def test_hung_suite_report_commit_is_bounded_and_preserves_final_case(monkeypatch, tmp_path) -> None:
+    from affordance_runtime.benchmarks.target_loop import runner
+
+    monkeypatch.setattr(runner, "_REPORT_TIMEOUT_S", 0.02)
+
+    def hang(*_args, **_kwargs):
+        time.sleep(0.2)
+
+    monkeypatch.setattr(SQLiteRunResultStore, "commit_run_report", hang)
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    case = manifest.cases[0]
+    started = time.perf_counter()
+    suite = asyncio.run(
+        run_suite(
+            BenchmarkManifest(
+                manifest.schema_version,
+                manifest.suite_id,
+                manifest.profile_id,
+                manifest.seed,
+                (case,),
+            ),
+            trace_dir=tmp_path,
+        )
+    )
+
+    assert time.perf_counter() - started < 0.15
+    store = SQLiteRunResultStore(tmp_path / "run-results.sqlite3")
+    case_record = store.load_case_outcome(case.case_id)
+    disposition = store.load_suite_report_disposition(suite.identity.run_id)
+    assert case_record is not None and case_record.revision is CaseRecordRevision.FINAL
+    assert disposition is not None
+    assert disposition.report_disposition.value == "failed"
+    assert disposition.failure_code == "suite_report_commit_failed"

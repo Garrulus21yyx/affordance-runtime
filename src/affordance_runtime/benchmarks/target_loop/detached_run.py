@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -111,12 +112,21 @@ def detached_status(output_dir: str | Path) -> dict[str, object]:
     summary = root / "summary.json"
     case_reports = tuple(sorted((root / "cases").glob("*.json"))) if (root / "cases").is_dir() else ()
     traces = tuple(sorted((root / "traces").glob("**/trace.jsonl"))) if (root / "traces").is_dir() else ()
+    durable = _durable_status(root / "run-results.sqlite3")
     if running:
         state = "running"
-    elif run_report.is_file() and summary.is_file():
+    elif durable == "run_final":
         state = "completed_reported"
-    elif case_reports:
+    elif durable in {"suite_report_failed", "suite_export_failed"}:
+        state = "stopped_with_suite_report_failure"
+    elif durable == "case_complete":
+        state = "stopped_with_complete_cases"
+    elif durable in {"partial_run", "case_final", "durable_prefix"}:
         state = "stopped_with_partial_cases"
+    elif durable == "absent" and run_report.is_file() and summary.is_file():
+        # Compatibility for evidence produced before SQLite became the
+        # primary finalization authority. Existing SQLite always wins.
+        state = "completed_reported"
     else:
         state = "stopped_without_report"
     return {
@@ -139,7 +149,60 @@ def detached_status(output_dir: str | Path) -> dict[str, object]:
             }
             for item in traces
         ),
+        "durable_status": durable,
     }
+
+
+def _durable_status(location: Path) -> str:
+    if not location.is_file():
+        return "absent"
+    try:
+        with sqlite3.connect(location) as connection:
+            tables = {
+                str(row[0])
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            run_count = (
+                connection.execute("SELECT COUNT(*) FROM run_reports").fetchone()[0]
+                if "run_reports" in tables
+                else 0
+            )
+            revisions = tuple(
+                int(row[0])
+                for row in connection.execute("SELECT revision FROM case_outcomes")
+            ) if "case_outcomes" in tables else ()
+            suite = (
+                connection.execute(
+                    """
+                    SELECT expected_case_count, report_disposition, export_disposition
+                    FROM run_finalization LIMIT 1
+                    """
+                ).fetchone()
+                if "run_finalization" in tables
+                else None
+            )
+    except (sqlite3.Error, TypeError, ValueError):
+        return "invalid"
+    if suite is not None:
+        expected_case_count, report_disposition, export_disposition = suite
+        if report_disposition == "failed":
+            return "suite_report_failed"
+        if export_disposition == "failed":
+            return "suite_export_failed"
+        if report_disposition == "committed" and export_disposition == "exported" and run_count:
+            return "run_final"
+        final_count = sum(item == 3 for item in revisions)
+        if final_count == int(expected_case_count) and len(revisions) == int(expected_case_count):
+            return "case_complete"
+        if revisions or int(expected_case_count) > 0:
+            return "partial_run"
+    if run_count:
+        return "run_final"
+    if revisions and all(item == 3 for item in revisions):
+        return "case_final"
+    if revisions:
+        return "durable_prefix"
+    return "empty"
 
 
 def _require_new_run_directory(root: Path) -> None:

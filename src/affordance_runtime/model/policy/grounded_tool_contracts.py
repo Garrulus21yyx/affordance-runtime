@@ -15,7 +15,6 @@ from affordance_runtime.model.policy.tool_contracts import ToolSpec
 GROUNDED_TOOLS_PROTOCOL = "grounded_tools.v2"
 GROUNDED_TOOL_CALL_ENVELOPE = "name-arguments.v1"
 MAX_GROUNDED_TOOL_COUNT = 40
-MAX_GROUNDED_WORKSPACE_BYTES = 384 * 1024
 
 
 class GroundedToolPhase(StrEnum):
@@ -46,7 +45,7 @@ class GroundedToolBinding(Protocol):
         arguments: Mapping[str, object],
         context_id: str,
         tool_call_id: str,
-    ) -> AgentDecision: ...
+    ) -> AgentDecision | GroundedActionResolution: ...
 
 
 @dataclass(frozen=True)
@@ -82,15 +81,12 @@ class GroundedToolCatalog:
             raise ValueError("grounded catalog identity is invalid")
         if not isinstance(self.manifest, DeliveryManifest):
             raise TypeError("grounded catalog requires the current DeliveryManifest")
-        if (
-            not isinstance(self.delivery_index, WorldDeliveryIndex)
-            or self.delivery_index.world_observation_id != self.manifest.world_observation_id
-        ):
+        if not isinstance(self.delivery_index, WorldDeliveryIndex):
             raise TypeError("grounded catalog requires the sibling current delivery index")
         if (
             not 1 <= len(self.tools) <= MAX_GROUNDED_TOOL_COUNT
             or len({item.spec.name for item in self.tools}) != len(self.tools)
-            or not 0 < self.serialized_bytes <= MAX_GROUNDED_WORKSPACE_BYTES
+            or self.serialized_bytes <= 0
         ):
             raise ValueError("grounded catalog registrations are invalid")
         object.__setattr__(self, "tools", tuple(self.tools))
@@ -109,10 +105,13 @@ class GroundedActionResolution:
     """One current action/control decision resolved from a clean action tool."""
 
     decision: AgentDecision
+    next_delivery_store: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("grounded action resolution requires a typed decision")
+        if self.next_delivery_store is not None and type(self.next_delivery_store).__name__ != "ObservationDeliveryStore":
+            raise TypeError("grounded action resolution requires the delivery owner's next store")
 
 
 class GroundedToolResolutionError(ValueError):

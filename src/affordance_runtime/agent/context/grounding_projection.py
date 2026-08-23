@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
+import json
 from dataclasses import dataclass, replace
 
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
@@ -11,12 +11,14 @@ from affordance_runtime.agent.context.context import (
     AgentGroundingIndexView,
     AgentImageInput,
 )
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 from affordance_runtime.world.visual_annotation import (
     BoundingBox,
     VisualMark,
-    annotate_screenshot,
+    annotate_screenshot_result,
 )
 
 
@@ -59,16 +61,17 @@ class GroundingProjection:
         for _, media in candidates:
             for region in media.grounding_regions:
                 region_order.setdefault(region.target_id, region.bbox)
-        target_position = {
-            item.target_id: index for index, item in enumerate(world.targets.items)
-        }
+        targets_by_id = {item.target_id: item for item in world.targets.items}
+        options_by_target: dict[str, list[object]] = {}
+        for option in actions.options:
+            options_by_target.setdefault(option.target_id, []).append(option)
         ordered_targets = tuple(sorted(
             world.targets.items,
             key=lambda item: (
                 0 if item.target_id in region_order else 1,
                 region_order.get(item.target_id, (0, 0, 0, 0))[1],
                 region_order.get(item.target_id, (0, 0, 0, 0))[0],
-                target_position[item.target_id],
+                _public_target_order_key(item, targets_by_id, options_by_target),
             ),
         ))
         target_refs: dict[str, str] = {}
@@ -76,10 +79,10 @@ class GroundingProjection:
         readonly_index = 1
         for target in ordered_targets:
             if target.target_id in offered:
-                target_refs[target.target_id] = f"E{executable_index}"
+                target_refs[target.target_id] = PublicRefCodec.encode(PublicRefKind.EXECUTABLE, executable_index)
                 executable_index += 1
             else:
-                target_refs[target.target_id] = f"N{readonly_index}"
+                target_refs[target.target_id] = PublicRefCodec.encode(PublicRefKind.NODE, readonly_index)
                 readonly_index += 1
         selected_regions = {
             region.target_id for _, media in candidates for region in media.grounding_regions
@@ -133,9 +136,14 @@ class GroundingProjection:
                 for region in media.grounding_regions
                 if region.target_id in marked_targets
             )
-            data = annotate_screenshot(media.data, marks) if marks else media.data
+            annotation = annotate_screenshot_result(media.data, media.mime_type, marks)
             images.append(AgentImageInput(
-                artifact_ref, media.mime_type, data, hashlib.sha256(data).hexdigest(),
+                artifact_ref,
+                annotation.mime_type,
+                annotation.data,
+                annotation.sha256,
+                media.coordinate_space_id,
+                tuple((mark.mark_id, mark.bbox.xywh) for mark in annotation.marks),
             ))
             media_refs.append(artifact_ref)
         return GroundingProjectionResult(
@@ -143,6 +151,56 @@ class GroundingProjection:
             tuple(images),
             tuple(media_refs),
         )
+
+
+def _public_target_order_key(target, targets_by_id, options_by_target) -> str:
+    def semantic(target_id: str) -> object:
+        item = targets_by_id.get(target_id)
+        return (
+            (item.role, item.label, to_json_compatible(item.state))
+            if item is not None
+            else ("unknown", "", {})
+        )
+
+    relation_context: list[tuple[str, object]] = []
+    for key, value in target.relations.items():
+        normalized = str(key).casefold()
+        if normalized.endswith("parent_id") and isinstance(value, str):
+            relation_context.append((normalized, semantic(value)))
+        elif normalized.endswith("child_ids") and isinstance(value, tuple | list):
+            relation_context.append(
+                (normalized, tuple(sorted((semantic(item) for item in value if isinstance(item, str)), key=repr)))
+            )
+        elif not normalized.endswith("_id") and not normalized.endswith("_ids"):
+            relation_context.append((normalized, to_json_compatible(value)))
+    routes = []
+    for option in options_by_target.get(target.target_id, ()):
+        routes.append(
+            (
+                option.semantic_action,
+                to_json_compatible(option.parameter_schema),
+                tuple(
+                    sorted(
+                        (semantic(item.destination_id) for item in option.destinations.items),
+                        key=repr,
+                    )
+                ),
+            )
+        )
+    return json.dumps(
+        to_json_compatible(
+            (
+                target.role,
+                target.label,
+                target.state,
+                tuple(sorted(relation_context, key=lambda item: item[0])),
+                tuple(sorted(routes, key=repr)),
+            )
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 def _deduplicated_media(candidates):

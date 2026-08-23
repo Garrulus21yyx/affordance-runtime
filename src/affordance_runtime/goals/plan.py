@@ -64,7 +64,7 @@ class GoalPlan:
             raise ValueError("goal plan item cannot depend on itself")
         if sum(item.final for item in self.items) > 1:
             raise ValueError("goal plan supports at most one final item")
-        outgoing = {item_id: [] for item_id in ids}
+        outgoing: dict[str, list[str]] = {item_id: [] for item_id in ids}
         indegree = {item_id: 0 for item_id in ids}
         for item in self.items:
             for prerequisite in item.depends_on:

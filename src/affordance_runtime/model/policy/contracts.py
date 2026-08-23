@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Generic, Mapping, TypeVar
 
-from affordance_runtime.agent.context.context import AgentContext, AgentImageInput
+from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.failures import ModelFailure
 from affordance_runtime.agent.decisions import AgentDecision
 from affordance_runtime.model.providers.port import StructuredOutputFailureKind
@@ -112,21 +112,21 @@ class ModelDecisionRequest:
     def context_id(self) -> str:
         return self.agent_context.context_id
 
-    @property
-    def image_inputs(self) -> tuple[AgentImageInput, ...]:
-        return self.agent_context.image_inputs
-
-
 @dataclass(frozen=True)
 class ResolvedModelDecision:
     """A provider response parsed exactly once by its protocol adapter."""
 
     decision: AgentDecision
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
+    next_delivery_store: object | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("resolved model outcome requires one typed AgentDecision")
+        if self.next_delivery_store is not None and type(self.next_delivery_store).__name__ != "ObservationDeliveryStore":
+            raise TypeError("resolved local decision requires the delivery owner's next store")
 
 
 @dataclass(frozen=True)

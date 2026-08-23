@@ -24,7 +24,7 @@ from affordance_runtime.app.composition import compose_target_runtime_from_envir
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
 from affordance_runtime.goals import NotRequiredGoalCompiler, UnavailableGoalCompiler
 from affordance_runtime.model.policy import ConfiguredModelRoles
-from affordance_runtime.task import RiskProfile, TaskUnsupported, ThinTaskIntake
+from affordance_runtime.task import ReadyTask, RiskProfile, ThinTaskIntake
 from tests.support.agent.target_agent_loop_support import FirstOfferedActionPolicy
 
 
@@ -69,7 +69,7 @@ def test_target_boundary_rejects_unknown_fields_and_empty_success(tmp_path: Path
         )
 
 
-def test_target_boundary_private_inputs_fail_closed_at_target_intake(tmp_path: Path) -> None:
+def test_target_boundary_accepted_inputs_are_conserved_at_target_intake(tmp_path: Path) -> None:
     request = load_target_request(
         "task:private",
         "Save the form",
@@ -87,8 +87,8 @@ def test_target_boundary_private_inputs_fail_closed_at_target_intake(tmp_path: P
     )
     admitted = ThinTaskIntake().compile(request)
 
-    assert isinstance(admitted, TaskUnsupported)
-    assert admitted.reason_code == "runtime_private_input_not_supported"
+    assert isinstance(admitted, ReadyTask)
+    assert admitted.task.inputs == {"selector": "#save"}
 
 
 def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> None:

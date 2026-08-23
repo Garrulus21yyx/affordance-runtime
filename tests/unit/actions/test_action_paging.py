@@ -1,6 +1,8 @@
 from dataclasses import dataclass, replace
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from affordance_runtime.actions import (
     ActionOption,
@@ -9,6 +11,7 @@ from affordance_runtime.actions import (
     ActionRisk,
     ActionSpace,
 )
+from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS, ActionRecallSet
 from affordance_runtime.schema_digest import schema_digest
 from tests.support.action_contracts import verification_kwargs
 
@@ -40,20 +43,20 @@ def _option(index: int, *, action: str = "activate", effect: str = "changed") ->
     )
 
 
-def test_action_page_is_bounded_truthful_and_other_remains_retrievable() -> None:
+def test_action_page_is_bounded_truthful_and_tail_remains_retrievable() -> None:
     space = ActionSpace("obs:1", tuple(_option(index) for index in range(40)))
     pager = ActionPager(page_size=8)
     objective = _Objective(direct_target_ids=("target:00",))
 
     default = pager.page(space, objective)
-    other = pager.page(space, objective, relevance_role=ActionRelevanceRole.OTHER)
+    second = pager.page(space, objective, cursor=default.next_cursor)
 
     assert default.visible_action_ids[0] == "action:00"
     assert len(default.visible_action_ids) == 8
     assert default.total_count == 40 and default.has_more
     assert "action:39" not in default.visible_action_ids
-    assert "action:39" in other.visible_action_ids or other.has_more
-    assert other.page_id != default.page_id
+    assert set(default.visible_action_ids).isdisjoint(second.visible_action_ids)
+    assert second.page_id != default.page_id
 
 
 def test_cursor_pager_traverses_every_action_without_overlap() -> None:
@@ -75,17 +78,17 @@ def test_cursor_pager_traverses_every_action_without_overlap() -> None:
     assert pages[-1].next_cursor == ""
 
 
-def test_filtered_cursor_is_bound_to_its_exact_filter() -> None:
+def test_query_cursor_is_bound_to_its_exact_query() -> None:
     space = ActionSpace(
         "obs:1",
         tuple(_option(index, action="read", effect="") for index in range(12)),
     )
     pager = ActionPager(page_size=5)
 
-    first = pager.page(space, relevance_role=ActionRelevanceRole.INFORMATION)
+    first = pager.page(space, query="read")
     second = pager.page(
         space,
-        relevance_role=ActionRelevanceRole.INFORMATION,
+        query="read",
         cursor=first.next_cursor,
     )
 
@@ -94,15 +97,40 @@ def test_filtered_cursor_is_bound_to_its_exact_filter() -> None:
         pager.page(space, query="different", cursor=first.next_cursor)
 
 
-def test_single_oversized_option_fails_closed_at_the_page_budget() -> None:
-    option = replace(_option(0), description="x" * 1_000)
+def test_private_description_size_does_not_change_page_membership() -> None:
+    base = ActionSpace("obs:1", (_option(0), _option(1)))
+    enlarged = ActionSpace("obs:1", (replace(_option(0), description="x" * 1_000), _option(1)))
 
-    with pytest.raises(ValueError, match="byte budget"):
-        ActionPager(max_projected_bytes=100).page(ActionSpace("obs:1", (option,)))
+    assert ActionPager().page(base).visible_action_ids == ActionPager().page(enlarged).visible_action_ids
 
 
-def test_page_weight_counts_only_the_visible_destination_slice() -> None:
-    destinations = tuple(f"destination:{index:04}" for index in range(500))
+def test_business_schema_size_does_not_change_route_page_membership() -> None:
+    def typed(index: int, enum: tuple[str, ...]) -> ActionOption:
+        schema = {
+            "type": "object",
+            "properties": {"text": {"type": "string", "enum": enum}},
+            "required": ["text"],
+            "additionalProperties": False,
+        }
+        return replace(
+            _option(index),
+            semantic_action="type_text",
+            parameter_schema=schema,
+            schema_digest=schema_digest(schema),
+            **verification_kwargs("type_text", schema_digest(schema), ("changed",)),
+        )
+
+    small = ActionSpace("obs:1", (typed(0, ("a",)), _option(1)))
+    large = ActionSpace("obs:1", (typed(0, tuple(f"value-{index}" for index in range(256))), _option(1)))
+
+    assert ActionPager(page_size=1).page(small).visible_action_ids == (
+        ActionPager(page_size=1).page(large).visible_action_ids
+    )
+
+
+@pytest.mark.parametrize("destination_count", (16, 17, 512, 513))
+def test_destination_routes_are_paged_without_truncation_or_overlap(destination_count: int) -> None:
+    destinations = tuple(f"destination:{index:04}" for index in range(destination_count))
     base = _option(0)
     option = replace(
         base,
@@ -113,24 +141,33 @@ def test_page_weight_counts_only_the_visible_destination_slice() -> None:
         **verification_kwargs("drag_to", base.schema_digest, ("changed",)),
     )
 
-    page = ActionPager(max_projected_bytes=600).page(
-        ActionSpace("obs:1", (option,)),
-        max_destinations_per_option=1,
-    )
+    pager = ActionPager()
+    space = ActionSpace("obs:1", (option,))
+    seen = []
+    cursor = ""
+    while True:
+        page = pager.page(space, cursor=cursor)
+        assert page.visible_action_ids == (option.action_id,)
+        seen.extend(page.visible_destination_ids(option.action_id))
+        if not page.has_more:
+            break
+        cursor = page.next_cursor
 
-    assert page.visible_action_ids == (option.action_id,)
-    assert page.visible_destination_ids(option.action_id) == (destinations[0],)
+    assert tuple(seen) == destinations
+    assert len(seen) == len(set(seen))
 
 
-def test_empty_filtered_page_is_complete_empty_not_truncated() -> None:
+def test_false_positive_query_preserves_finite_inventory_reachability() -> None:
+    space = ActionSpace("obs:1", (_option(0),))
     page = ActionPager(page_size=1).page(
-        ActionSpace("obs:1", (_option(0),)),
-        target_id="target:missing",
+        space,
+        query="definitely absent operation",
     )
 
-    assert page.visible_action_ids == ()
-    assert page.total_count == 0
+    assert page.visible_action_ids == ("action:00",)
+    assert page.total_count == 1
     assert not page.has_more and not page.next_cursor
+    assert ActionPager(page_size=1).page(space).visible_action_ids == ("action:00",)
 
 
 def test_default_page_orders_explicit_relevance_without_changing_membership() -> None:
@@ -154,3 +191,82 @@ def test_default_page_orders_explicit_relevance_without_changing_membership() ->
         ActionRelevanceRole.INFORMATION,
         ActionRelevanceRole.OTHER,
     )
+
+
+@pytest.mark.parametrize(
+    "label",
+    ("G", "Go", "保存", "!?!", "two   spaces", "x" * 119, "x" * 120, "x" * 121, "x" * 240),
+)
+def test_exact_public_labels_are_mandatory_query_inclusions(label: str) -> None:
+    space = ActionSpace("obs:1", (_option(0), _option(1)))
+    page = ActionPager(page_size=1).page(
+        space,
+        query=label,
+        labels={"target:00": label, "target:01": "other"},
+    )
+
+    assert page.visible_action_ids == ("action:00",)
+
+
+def test_empty_and_duplicate_labels_remain_finitely_cursor_reachable() -> None:
+    space = ActionSpace("obs:1", tuple(_option(index) for index in range(3)))
+    labels = {"target:00": "", "target:01": "Duplicate", "target:02": "Duplicate"}
+    pager = ActionPager(page_size=1)
+    pages = []
+    cursor = ""
+    while True:
+        page = pager.page(space, query="Duplicate", labels=labels, cursor=cursor)
+        pages.append(page)
+        if not page.has_more:
+            break
+        cursor = page.next_cursor
+
+    assert {action for page in pages for action in page.visible_action_ids} == {
+        "action:01",
+        "action:02",
+        "action:00",
+    }
+    assert ActionPager(page_size=3).page(space).visible_action_ids == (
+        "action:00",
+        "action:01",
+        "action:02",
+    )
+
+
+@given(st.permutations(tuple(range(8))))
+def test_prioritized_membership_and_leading_order_ignore_unrelated_permutation_and_page_limit(
+    permutation: list[int],
+) -> None:
+    options = tuple(_option(index) for index in permutation)
+    labels = {f"target:{index:02}": f"optional {index}" for index in range(8)}
+    labels["target:06"] = "保存!"
+    partition = ActionRecallSet().partition(options, labels=labels, query="请立即 保存! then continue")
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:06",)
+    page = ActionPager(page_size=1).page(
+        ActionSpace("obs:1", options),
+        _Objective(direct_target_ids=("target:00",)),
+        query="请立即 保存! then continue",
+        labels=labels,
+    )
+    assert page.visible_action_ids == ("action:06",)
+
+
+def test_empty_label_is_not_exact_but_focus_recovery_is_prioritized() -> None:
+    options = (_option(0), _option(1))
+    partition = ActionRecallSet().partition(
+        options,
+        labels={"target:00": "", "target:01": "unrelated"},
+        query="missing",
+        focused_target_ids=frozenset({"target:00"}),
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:00",)
+
+
+def test_query_bound_plus_one_fails_typed_without_slicing() -> None:
+    with pytest.raises(ValueError, match="bound"):
+        ActionPager().page(
+            ActionSpace("obs:1", (_option(0),)),
+            query="x" * (PUBLIC_ACTION_LABEL_MAX_CHARS + 1),
+        )

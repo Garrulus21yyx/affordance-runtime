@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from affordance_runtime.agent.context.budgets import BoundedSection
-from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.model_turn_delivery import (
     ModelTurnDelivery,
@@ -98,22 +97,15 @@ class GroundedPolicyContextBinder:
         include_images = self._include_images(request, supports_multimodal, perception_profile)
         if delivery.context_id != request.context_id:
             raise ValueError("model turn delivery belongs to another Context")
-        if delivery.includes_images != include_images:
+        if bool(delivery.media) != include_images:
             raise ValueError("model turn delivery image selection is inconsistent")
-        full_view = render_compact_actor_world(
-            request.agent_context.actor_world,
-            request.agent_context.grounding,
-            include_images=include_images,
-            observation=request.agent_context.current_observation,
-            action_candidates=request.agent_context.action_candidates,
-        )
-        full_actor_payload = json.dumps(
-            {"observation": full_view.text},
+        admitted_actor_payload = json.dumps(
+            {"observation": delivery.view.text},
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
         )
-        full_actor_tokens = max(1, math.ceil(len(full_actor_payload.encode()) / 3))
+        admitted_actor_tokens = max(1, math.ceil(len(admitted_actor_payload.encode()) / 3))
         return self.request_admission.admit(
             request=request,
             tools=tools,
@@ -124,9 +116,15 @@ class GroundedPolicyContextBinder:
                 delivery,
                 include_images=include_images,
                 include_tool_menu=include_tool_menu,
+                output_reserve_tokens=(
+                    budget.max_output_tokens
+                    + budget.protocol_reserve_tokens
+                    + budget.safety_margin_tokens
+                ),
             ),
             include_images=include_images,
-            full_candidate_tokens=full_actor_tokens,
+            media=delivery.media,
+            full_candidate_tokens=admitted_actor_tokens,
         )
 
     def _candidate(
@@ -137,6 +135,7 @@ class GroundedPolicyContextBinder:
         *,
         include_images: bool,
         include_tool_menu: bool,
+        output_reserve_tokens: int = 0,
     ) -> "_PolicyRequestCandidate":
         sections = self._public_context_sections(
             request.agent_context,
@@ -153,8 +152,7 @@ class GroundedPolicyContextBinder:
         messages = self._messages(
             self.prompts.actor,
             public,
-            request,
-            include_images,
+            delivery,
         )
         component_payloads = {
             "task_plan": sections["task_plan"],
@@ -175,6 +173,12 @@ class GroundedPolicyContextBinder:
             folded,
             len(request.agent_context.complete_actions) - searchable,
             searchable,
+            len(request.agent_context.action_delivery_plan.obligations),
+            sum(dict(delivery.admitted_record_counts).values()),
+            sum(len(item.remaining) for item in request.agent_context.action_delivery_plan.obligations),
+            len(delivery.manifest.action_routes),
+            delivery.packing_backoff_count,
+            output_reserve_tokens,
         )
 
     @staticmethod
@@ -199,7 +203,7 @@ class GroundedPolicyContextBinder:
     ) -> dict[str, object]:
         if delivery.context_id != context.context_id:
             raise ValueError("model turn delivery belongs to another Context")
-        if delivery.includes_images != include_images:
+        if bool(delivery.media) != include_images:
             raise ValueError("model turn delivery image selection is inconsistent")
         task = _task(context)
         view = delivery.view
@@ -253,7 +257,7 @@ class GroundedPolicyContextBinder:
         perception_profile: DecisionPerceptionProfile,
     ) -> bool:
         include_images = perception_uses_images(request, perception_profile)
-        if include_images and (not supports_multimodal or not request.image_inputs):
+        if include_images and (not supports_multimodal or not request.agent_context.image_inputs):
             raise ValueError("selected grounded perception requires a current image input")
         return include_images
 
@@ -261,17 +265,16 @@ class GroundedPolicyContextBinder:
     def _messages(
         system_prompt: str,
         public: Mapping[str, object],
-        request: ModelDecisionRequest,
-        include_images: bool,
+        delivery: ModelTurnDelivery,
     ) -> tuple[ModelMessage, ...]:
         text = json.dumps(public, separators=(",", ":"), ensure_ascii=False)
-        if not include_images:
+        if not delivery.media:
             return (
                 ModelMessage(role="system", content=system_prompt),
                 ModelMessage(role="user", content=text),
             )
         parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
-        for image in request.image_inputs:
+        for image in delivery.media:
             encoded = base64.b64encode(image.data).decode("ascii")
             parts.append(ModelImageURLPart(image_url=f"data:{image.mime_type};base64,{encoded}"))
         return (
@@ -291,12 +294,15 @@ def _task(context: AgentContext) -> dict[str, object]:
             task.success_criteria,
             lambda item: {
                 "criterion_id": item.criterion_id,
-                "definition": project_public_value(item.definition),
+                "definition": to_json_compatible(item.definition),
             },
         ),
         "requested_outputs": _section(task.requested_output_ids),
         "risk_profile": str(task.risk_profile),
-        "public_inputs": project_public_value(task.public_inputs),
+        # Task intake already owns bounded typed admission. Preserve that
+        # admitted public value exactly; World/history privacy filters do not
+        # own TaskGoal semantics and must not delete route-shaped key names.
+        "public_inputs": to_json_compatible(task.public_inputs),
         "public_inputs_total_count": task.public_inputs_total_count,
         "public_inputs_truncated": task.public_inputs_truncated,
         "material_bindings": _section(
@@ -308,8 +314,6 @@ def _task(context: AgentContext) -> dict[str, object]:
             },
         ),
     }
-    if task.final_response_contract:
-        result["final_response_contract"] = to_json_compatible(task.final_response_contract)
     evaluation = {
         "status": str(task.evaluation.status),
         "criteria": tuple(
@@ -385,6 +389,12 @@ class _PolicyRequestCandidate:
     folded_region_count: int
     direct_action_count: int
     searchable_action_count: int
+    obligation_group_count: int
+    admitted_record_count: int
+    available_record_count: int
+    manifest_route_count: int
+    packing_backoff_count: int
+    output_reserve_tokens: int
 
 
 def _section(

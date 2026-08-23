@@ -132,4 +132,12 @@ def _result(**changes) -> BenchmarkCaseResult:
         "measurements": {"official_success_count": MetricMeasurement(0, True)},
     }
     values.update(changes)
+    for name in {
+        "case_failure_code", "runtime_reason_code", "agent_failure_code",
+        "last_policy_failure_code", "termination_origin", "failure_origin",
+        "failure_code", "exception_class", "cleanup_failure_code",
+        "cleanup_exception_class", "cleanup_failures", "watchdog_triggered",
+        "harness_integrity_code", "harness_integrity_failures",
+    }:
+        values.pop(name, None)
     return BenchmarkCaseResult(**values)

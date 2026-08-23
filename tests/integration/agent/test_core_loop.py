@@ -16,7 +16,7 @@ from affordance_runtime.agent import (
     Wait,
     WorkingFact,
 )
-from affordance_runtime.agent.decisions import AbortCategory, FormFieldUpdate, SetFormFields
+from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import RunTraceRecorder
@@ -46,7 +46,6 @@ from affordance_runtime.execution.contracts import (
     ExecutionCancellationPhase,
     ExecutionCompletion,
     ExecutionReceiptBatch,
-    FormFieldsExecutionCancelled,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -62,6 +61,11 @@ from affordance_runtime.world import (
     WorldFusion,
     WorldObservation,
 )
+
+# Collection-only sentinels for skipped witnesses of the removed compound path.
+RemovedCompoundDecision = object
+RemovedCompoundField = object
+RemovedCompoundCancellation = RuntimeError
 
 
 def _world(observation_id: str, enabled: bool) -> WorldObservation:
@@ -380,7 +384,8 @@ class CorePolicy:
         if self.choice == "action_page":
             if self.turns == 1:
                 return RequestActionPage(context.context_id, query="shared state")
-            assert context.actions.active_query == "shared state"
+            assert context.actions.active_query == ""
+            assert context.action_candidates.scope == "delivery"
             assert context.workspace.recent_steps[-1].semantic_action == "find_controls"
             return Abort(context.context_id, "page observed", AbortCategory.USER_REQUEST)
         if self.choice == "wait":
@@ -630,7 +635,7 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert snapshot.same_attempt_streak == 2
         assert snapshot.no_progress_count == 2
         assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
-        assert snapshot.last_progress_event_type == "no_operational_progress"
+        assert snapshot.latest_control_reason_code == "control_stalled"
 
     asyncio.run(scenario())
 
@@ -670,7 +675,8 @@ def test_failed_causal_post_acquisition_stops_before_next_policy_turn() -> None:
     asyncio.run(scenario())
 
 
-def test_core_executes_one_bound_form_command_through_the_world_port() -> None:
+@pytest.mark.skip(reason="compound action protocol was physically removed; atomic flow has dedicated coverage")
+def test_removed_compound_command_witness() -> None:
     @dataclass
     class FormPolicy:
         async def decide(self, context):
@@ -683,11 +689,11 @@ def test_core_executes_one_bound_form_command_through_the_world_port() -> None:
                 key=lambda item: item.target_label,
             )
             values = {"From": "CMU", "To": "PIT"}
-            return SetFormFields(
+            return RemovedCompoundDecision(
                 context.context_id,
                 "form:route",
                 tuple(
-                    FormFieldUpdate(
+                    RemovedCompoundField(
                         option.action_id,
                         option.operation,
                         option.target_ref,
@@ -749,7 +755,8 @@ def test_core_executes_one_bound_form_command_through_the_world_port() -> None:
     asyncio.run(scenario())
 
 
-def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_episode() -> None:
+@pytest.mark.skip(reason="compound action protocol was physically removed; atomic flow has dedicated coverage")
+def test_removed_compound_navigation_witness() -> None:
     @dataclass
     class RoutePolicy:
         turns: int = 0
@@ -760,11 +767,11 @@ def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_ep
                 return SelectAction(context.context_id, context.actions.options[0].action_id)
             if self.turns == 2:
                 options = sorted(context.complete_actions, key=lambda item: item.target_label)
-                return SetFormFields(
+                return RemovedCompoundDecision(
                     context.context_id,
                     "form:route",
                     tuple(
-                        FormFieldUpdate(
+                        RemovedCompoundField(
                             option.action_id,
                             option.operation,
                             option.target_ref,
@@ -852,7 +859,8 @@ def test_production_core_keeps_navigation_form_submit_and_result_reads_in_one_ep
     asyncio.run(scenario())
 
 
-def test_compound_cancellation_is_committed_before_snapshot_projection() -> None:
+@pytest.mark.skip(reason="compound action protocol was physically removed; atomic uncertainty has dedicated coverage")
+def test_removed_compound_cancellation_witness() -> None:
     @dataclass
     class FormPolicy:
         async def decide(self, context):
@@ -864,11 +872,11 @@ def test_compound_cancellation_is_committed_before_snapshot_projection() -> None
                 ),
                 key=lambda item: item.target_label,
             )
-            return SetFormFields(
+            return RemovedCompoundDecision(
                 context.context_id,
                 "form:route",
                 tuple(
-                    FormFieldUpdate(
+                    RemovedCompoundField(
                         option.action_id,
                         option.operation,
                         option.target_ref,
@@ -890,8 +898,8 @@ def test_compound_cancellation_is_committed_before_snapshot_projection() -> None
 
     @dataclass
     class CancellingFormEnvironment(ScriptedEnvironment):
-        async def execute_form_fields(self, command):
-            outcome = await super().execute_form_fields(command)
+        async def execute_removed_compound(self, command):
+            outcome = await super().execute_removed_compound(command)
             cancelled = replace(
                 outcome,
                 results=(
@@ -906,7 +914,7 @@ def test_compound_cancellation_is_committed_before_snapshot_projection() -> None
                 ),
                 failed_field_index=1,
             )
-            raise FormFieldsExecutionCancelled(cancelled)
+            raise RemovedCompoundCancellation(cancelled)
 
     async def scenario() -> None:
         task = TaskGoal(
@@ -956,7 +964,7 @@ def test_compound_cancellation_is_committed_before_snapshot_projection() -> None
         )
         assert snapshot.execution_count == 2
         assert snapshot.sent_unknown_count == 1
-        assert snapshot.last_decision_kind == "set_form_fields"
+        assert snapshot.last_decision_kind == "removed_compound"
         assert instrumentation.effectful_dispatches == 2
         assert case.measurements["executions"].value == 2
         assert case.measurements["sent_unknown_count"].value == 1
@@ -1262,7 +1270,7 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
     asyncio.run(scenario())
 
 
-def test_action_page_is_installed_for_the_next_turn() -> None:
+def test_action_search_is_additive_to_the_base_page_on_the_next_turn() -> None:
     async def scenario() -> None:
         environment = ScriptedEnvironment(initial_observation=_world("before", False))
         state = await _runtime("action_page").run_task(environment, _task())
@@ -1280,7 +1288,7 @@ def test_action_page_is_installed_for_the_next_turn() -> None:
             final_snapshot=snapshot_episode(state),
         )
         assert case.last_decision_kind == "abort"
-        assert case.runtime_reason_code == "abort_user_request"
+        assert case.runtime_reason_code == "agent_aborted"
 
     asyncio.run(scenario())
 

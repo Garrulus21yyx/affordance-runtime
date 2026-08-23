@@ -119,7 +119,6 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
         region_index=_region_index(15, observation.observation_id),
         observation=observation,
         expanded_refs=frozenset({"E3"}),
-        max_rendered_bytes=700,
     )
 
     assert "projection=page_map" in rendered

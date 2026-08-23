@@ -62,10 +62,6 @@ def project_action_space(
             tuple(option.action_id for option in action_space.options),
             target_labels,
             relevance or {},
-            max_destinations_per_option=max(
-                (len(option.eligible_destination_ids) for option in action_space.options),
-                default=1,
-            ),
         )
     )
 
@@ -74,7 +70,6 @@ def project_action_page(
     action_space: ActionSpace,
     page: InternalActionPage,
     target_labels: Mapping[str, str],
-    max_destinations_per_option: int,
 ) -> AgentActionSpaceView:
     if page.action_space_id != action_space.action_space_id:
         raise ValueError("action page does not belong to the projected ActionSpace")
@@ -84,7 +79,6 @@ def project_action_page(
             page.visible_action_ids,
             target_labels,
             dict(page.relevance),
-            max_destinations_per_option,
             dict(page.visible_destinations),
         )
     )
@@ -95,7 +89,6 @@ def _project_action_options(
     visible_action_ids: tuple[str, ...],
     target_labels: Mapping[str, str],
     relevance: Mapping[str, ActionRelevance],
-    max_destinations_per_option: int,
     visible_destinations: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[AgentActionOptionView, ...]:
     labels = dict(target_labels)
@@ -113,11 +106,15 @@ def _project_action_options(
                         for item in (
                             visible_destinations.get(option.action_id, ())
                             if visible_destinations is not None
-                            else option.eligible_destination_ids[:max_destinations_per_option]
+                            else option.eligible_destination_ids
                         )
                     ),
                     len(option.eligible_destination_ids),
-                    len(option.eligible_destination_ids) > max_destinations_per_option,
+                    (
+                        visible_destinations is not None
+                        and len(visible_destinations.get(option.action_id, ()))
+                        < len(option.eligible_destination_ids)
+                    ),
                 ),
                 project_parameter_schema_for_model(option.parameter_schema),
                 option.description,

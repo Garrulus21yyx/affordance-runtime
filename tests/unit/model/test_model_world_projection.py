@@ -10,7 +10,6 @@ from affordance_runtime.agent.context.budgets import BoundedSection, ContextProj
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
-from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_projection import project_model_world
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace
@@ -368,8 +367,8 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
 
     tool = next(item for item in catalog.specs if item.name == "select_option")
     target_ref = context.actions.options[0].target_ref
-    assert tool.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
-    assert target_ref in rendered.manifest.executable_refs
+    assert tool.input_schema["properties"]["target"]["enum"] == (target_ref,)
+    assert target_ref not in rendered.manifest.executable_refs
     actor_nodes = {
         node.ref: node
         for document in context.actor_world.documents
@@ -384,7 +383,7 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
     for field in ("value", "selected_options", "option_domain", "expanded", "required"):
         assert node.state[field] == context.actions.options[0].target_state[field]
     assert "state_coverage=" not in rendered
-    assert target_ref in rendered
+    assert target_ref not in rendered
     assert "binding:country" not in rendered
 
 
@@ -565,12 +564,13 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     first = builder.build(task, observation, action_space, evaluation)
     _, first_catalog = catalog_for(first)
-    opened = resolve_catalog_call(
+    opened_resolution = resolve_catalog_call(
         first_catalog,
         ToolCall("read_region", {"region_ref": "R1"}),
         expected_context_id=first.context_id,
         expected_catalog_id=first_catalog.catalog_id,
-    ).decision
+    )
+    opened = opened_resolution.decision
     state = RunState(observation, evaluation, 3)
     state.apply(
         StepResult(
@@ -580,23 +580,18 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
             evaluation,
             RunStatus.RUNNING,
             feedback="local_tool_result",
+            next_delivery_store=opened_resolution.next_delivery_store,
         )
     )
 
-    second_page = builder.page_for_delivery_lens(
-        action_space,
-        observation,
-        state.delivery_lens,
-        first.region_index,
-    )
+    assert first.delivery_store.active_read is None
     second = builder.build(
         task,
         observation,
         action_space,
         evaluation,
-        action_page=second_page,
         context_generation=state.next_context_generation(),
-        delivery_lens=state.delivery_lens,
+        delivery_store=state.delivery_store,
     )
     _, second_catalog = catalog_for(second)
     rendered = render_compact_actor_world(
@@ -605,17 +600,22 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
         include_images=False,
         region_index=second.region_index,
         observation=second.current_observation,
-        delivery_lens=second.delivery_lens,
-        selected_region_keys=frozenset({second.delivery_lens.selected_region_key}),
-        max_rendered_bytes=100,
+        selected_region_keys=frozenset(),
     )
     activate = next(item for item in second_catalog.specs if item.name == "activate")
 
-    assert state.delivery_lens.world_observation_id == observation.observation_id
-    assert state.delivery_lens.selected_region_key
+    assert second.delivery_store.active_read.world_observation_id == observation.observation_id
+    assert second.delivery_store.active_read.selected_region_key
     assert any(projection in rendered for projection in ("projection=page_map", "projection=full"))
-    assert activate.input_schema["properties"]["target"]["pattern"] == r"^E[1-9][0-9]{0,2}$"
-    assert f'[{second.grounding.target_refs["target:1"]}] button "Button 1" verbs=["activate"]' in rendered
+    branches = activate.input_schema.get("oneOf", (activate.input_schema,))
+    assert {
+        ref
+        for branch in branches
+        for ref in branch["properties"]["target"]["enum"]
+    } == {
+        item.target_ref for item in second.complete_actions if item.operation == "activate"
+    }
+    assert f'[{second.grounding.target_refs["target:1"]}] button "Button 1" verbs=["activate"]' not in rendered
 
 
 def test_expanded_region_projects_source_structure_sibling_and_current_refs() -> None:
@@ -682,7 +682,6 @@ def test_expanded_region_projects_source_structure_sibling_and_current_refs() ->
         region_index=context.region_index,
         observation=context.current_observation,
         selected_region_keys=frozenset({region.key}),
-        max_rendered_bytes=100,
     )
 
     current_ref = context.grounding.target_refs[target_id]
@@ -773,19 +772,12 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
     )
     navigation_region = next(item for item in context.region_index.regions if item.role == "navigation")
     main_region = next(item for item in context.region_index.regions if item.role == "main")
-    lens = WorldDeliveryLens(
-        observation.observation_id,
-        "region",
-        main_region.key,
-    )
-
     rendered = render_compact_actor_world(
         context.actor_world,
         context.grounding,
         include_images=False,
         region_index=context.region_index,
         observation=context.current_observation,
-        delivery_lens=lens,
         selected_region_keys=frozenset({main_region.key}),
         action_candidates=context.action_candidates,
     )

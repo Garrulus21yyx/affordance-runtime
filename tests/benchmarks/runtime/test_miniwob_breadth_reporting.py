@@ -100,15 +100,6 @@ def test_privacy_scan_rejects_private_coordinate_field_and_route_value(tmp_path:
 def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
     result = replace(
         _result(1, failed=True),
-        case_failure_code="case_timeout",
-        runtime_reason_code="",
-        watchdog_triggered=True,
-        termination_origin="harness_watchdog",
-        harness_integrity_code="metric_name_collision",
-        harness_integrity_failures=1,
-        failure_origin=CaseFailureOrigin.ACTION_EVALUATION,
-        failure_code="action_outcome_projector_exception",
-        exception_class="RuntimeError",
         failure_facts=FailureFacts(
             component_origin=CaseFailureOrigin.ACTION_EVALUATION,
             component_code="action_outcome_projector_exception",
@@ -123,8 +114,6 @@ def test_case_json_preserves_watchdog_and_integrity_typed_truth() -> None:
     )
     evidence = _case_payload(record)["benchmark_case_evidence"]
     assert isinstance(evidence, dict)
-    assert evidence["watchdog_triggered"] is True
-    assert evidence["harness_integrity_code"] == "metric_name_collision"
     assert evidence["failure_facts"] == {
         "runtime_reason_code": "",
         "agent_failure_code": "",

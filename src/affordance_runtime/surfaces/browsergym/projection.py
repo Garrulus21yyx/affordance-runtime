@@ -18,6 +18,7 @@ from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     VerificationFamily,
 )
+from affordance_runtime.actions.schema_validation import MAX_OPTION_DOMAIN_ITEMS
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragBinding,
     BrowserGymDragDestination,
@@ -63,10 +64,7 @@ from affordance_runtime.world.regular_lattice import (
     derive_regular_lattice,
 )
 
-MAX_INVENTORY_TARGETS = 512
 MAX_INVENTORY_FACTS = 4_096
-MAX_INVENTORY_OPTIONS_PER_TARGET = 512
-MAX_SELECT_OPTIONS = 16
 MAX_STRUCTURE_NODES = 2_048
 
 
@@ -91,7 +89,10 @@ def project_browsergym_observation(
 ) -> BrowserGymProjection:
     analysis = analyze_browsergym_semantics(raw)
     candidates = list(analysis.controls)
-    projected = candidates[:MAX_INVENTORY_TARGETS]
+    # Action-bearing inventory is all-or-typed-capacity.  BrowserGym already
+    # produced this finite supported control set, so retain it in full; only
+    # read-only facts/structure may remain explicitly partial below.
+    projected = candidates
     lattice = derive_regular_lattice(
         tuple(
             SpatialNode(node.private_node_id, node.private_parent_id, node.private_bbox)
@@ -125,8 +126,6 @@ def project_browsergym_observation(
     option_value_total = sum(len(node.public_options) for node in candidates)
     option_value_count = 0
     issues: list[EntityInventoryIssueCode] = []
-    if len(candidates) > len(projected):
-        issues.append(EntityInventoryIssueCode.ENTITY_CAPACITY_EXCEEDED)
     target_ids = {
         node.private_node_id: entity_identity.entity_id(
             node,
@@ -201,7 +200,7 @@ def project_browsergym_observation(
                 "grid_coordinate_confidence": membership.confidence,
             })
         if node.public_options:
-            option_domain = node.public_options[:MAX_INVENTORY_OPTIONS_PER_TARGET]
+            option_domain = node.public_options[:MAX_OPTION_DOMAIN_ITEMS]
             state["option_domain"] = option_domain
             option_value_count += len(option_domain)
             if len(option_domain) < len(node.public_options):
@@ -668,7 +667,7 @@ def _binding_pairs(
         semantic = translator.semantic_action
         if semantic == "drag_to" and not drag_destinations:
             continue
-        if semantic == "select_option" and len(options) > MAX_SELECT_OPTIONS:
+        if semantic == "select_option" and len(options) > MAX_OPTION_DOMAIN_ITEMS:
             continue
         current_value_schema = (
             {"type": "string", "enum": [label for label, _ in options]}

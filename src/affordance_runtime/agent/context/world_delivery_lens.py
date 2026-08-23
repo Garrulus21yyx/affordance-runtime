@@ -58,7 +58,7 @@ class WorldDeliveryLens:
             self.world_observation_id,
             "find",
             "",
-            query[:120],
+            query,
             page_cursor,
             next_cursor,
         )

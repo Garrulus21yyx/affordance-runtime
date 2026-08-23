@@ -1,6 +1,7 @@
 import json
 
 import numpy as np
+import pytest
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.agent.context.context_builder import ContextBuilder
@@ -392,11 +393,11 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
 
     delivery = build_model_turn_delivery(context, include_images=False)
     public = GroundedPolicyContextBinder._public_context(context, False, delivery)
-    option = next(item for item in context.actions.options if item.target_label == "Add to cart")
+    option = next(item for item in context.complete_actions if item.target_label == "Add to cart")
     observation = public["observation"]
 
-    assert 'group "Products"' in observation
-    assert 'row "MacBook Pro"' in observation
+    assert "Products" in repr(context.actor_world)
+    assert "MacBook Pro" in repr(context.actor_world)
     button_line = next(
         line for line in observation.splitlines()
         if f"[{option.target_ref}] activate button" in line
@@ -405,7 +406,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
     assert 'verbs=["activate","press_key"]' in button_line
     assert 'path=["MacBook Pro","Add to cart"]' in button_line
     assert 'context=["Products","MacBook Pro"]' in button_line
-    assert observation.index('group "Products"') < observation.index('row "MacBook Pro"')
+    assert delivery.view.coverage["candidate_region_expansion_reason"] == "none"
     encoded = json.dumps(observation)
     assert "entity:" not in encoded
     assert "observation:" not in encoded
@@ -489,7 +490,7 @@ def test_inactive_tab_panel_descendants_do_not_gain_action_authority() -> None:
     assert expanded_labels == {"Section #37", "Submit"}
 
 
-def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -> None:
+def test_projected_non_executable_and_large_option_domain_are_distinct() -> None:
     disabled = raw_observation(ax_node("disabled", "button", "Disabled"))
     disabled[PRIVATE_CONTROL_PROPERTIES_KEY]["disabled"]["enabled"] = False
     disabled_projection = _project(disabled)
@@ -506,27 +507,34 @@ def test_projected_non_executable_and_quota_omission_are_distinct(monkeypatch) -
     select_inventory = select_projection.world.sources[0].semantic_inventory
     assert select_inventory.status is SemanticInventoryStatus.REPRESENTED
     assert select_inventory.non_executable_target_count == 0
-    assert {item.semantic_action for item in _page_bindings(select_projection.world)} == {"press_key"}
+    assert {item.semantic_action for item in _page_bindings(select_projection.world)} == {
+        "press_key",
+        "select_option",
+    }
+    assert select_inventory.omitted_target_count == 0
 
-    monkeypatch.setattr(projection_module, "MAX_INVENTORY_TARGETS", 1)
-    truncated = _project(
-        raw_observation(
-            ax_node("one", "button", "One"),
-            ax_node("two", "button", "Two"),
-            ax_node("radio", "radio", "Three"),
-        )
+
+@pytest.mark.parametrize("option_count", (12, 13, 16, 17, 512, 513))
+def test_select_option_domain_has_one_shared_capacity_contract(option_count: int) -> None:
+    projected = _project(raw_observation(
+        ax_node("select", "combobox", "Choice"),
+        *(ax_node(f"option-{index}", "option", f"Choice {index}") for index in range(option_count)),
+    ))
+    select_bindings = tuple(
+        item for item in _page_bindings(projected.world) if item.semantic_action == "select_option"
     )
-    truncated_inventory = truncated.world.sources[0].semantic_inventory
-    assert truncated.world.source_manifest[0].coverage is CoverageState.TRUNCATED
-    assert truncated_inventory.status is SemanticInventoryStatus.PARTIAL
-    assert (
-        truncated_inventory.recognized_target_count,
-        truncated_inventory.projected_target_count,
-        truncated_inventory.omitted_target_count,
-    ) == (5, 3, 2)
-    retained = truncated.world.sources[0].entity_inventory
-    assert retained.status is EntityInventoryStatus.PARTIAL
-    assert EntityInventoryIssueCode.ENTITY_CAPACITY_EXCEEDED in retained.issue_codes
+
+    if option_count <= 512:
+        assert len(select_bindings) == 1
+        assert len(select_bindings[0].parameter_schema["properties"]["value"]["enum"]) == option_count
+        assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
+    else:
+        assert select_bindings == ()
+        inventory = projected.world.sources[0].entity_inventory
+        assert inventory.status is EntityInventoryStatus.PARTIAL
+        assert inventory.option_value_count == 512
+        assert inventory.option_value_total_count == option_count
+        assert EntityInventoryIssueCode.OPTION_DOMAIN_CAPACITY_EXCEEDED in inventory.issue_codes
 
 
 def test_fact_only_truncation_does_not_change_target_inventory(monkeypatch) -> None:
@@ -580,6 +588,17 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
     assert document.retained_node_count == 67
     assert document.truncated is False
     assert context.actor_world.traversal is None
+
+
+def test_action_inventory_does_not_publish_a_first_512_partial_world() -> None:
+    projected = _project(raw_observation(
+        *(ax_node(f"button-{index}", "button", f"Button {index}") for index in range(513))
+    ))
+
+    assert len(_page_targets(projected.world)) == 513
+    assert len(_page_bindings(projected.world)) == 1_026
+    assert projected.world.source_manifest[0].coverage is CoverageState.COMPLETE
+    assert projected.world.sources[0].entity_inventory.status is EntityInventoryStatus.COMPLETE
 
 
 def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> None:
@@ -660,7 +679,7 @@ def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None
             break
         cursor = page.next_cursor
 
-    assert page_count == 1
+    assert page_count > 1
     assert seen == {item.action_id for item in action_space.options}
     assert len(seen) == len(world.bindings) == 44
 

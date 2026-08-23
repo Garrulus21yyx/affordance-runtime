@@ -11,6 +11,9 @@ from affordance_runtime.actions import (
     AdmittedActionSelection,
 )
 from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import ActionIntent, BoundActionRequest
 from affordance_runtime.risk import RiskPolicy
 from affordance_runtime.schema_digest import schema_digest
@@ -51,6 +54,115 @@ def _task() -> TaskGoal:
         allowed_effects=("message_sent",),
         risk_profile=RiskProfile.HIGH,
     )
+
+
+def _destination_binding(binding_id: str, destinations: tuple[str, ...]) -> ActionBinding:
+    return ActionBinding(
+        binding_id,
+        "observation:1",
+        "observation:1",
+        "revision:1",
+        f"fingerprint:{binding_id}",
+        "message:quarterly",
+        "message:quarterly",
+        "dom",
+        "dom",
+        "drag_to",
+        "drag",
+        "external",
+        ("message_sent",),
+        SCHEMA,
+        {"selector": f"#{binding_id}"},
+        risk=ActionRisk.HIGH,
+        destination_required=True,
+        eligible_destination_ids=destinations,
+    )
+
+
+def _destination_world(*bindings: ActionBinding):
+    return fused_world(
+        "observation:1",
+        (
+            SemanticTarget("message:quarterly", "message", "Quarterly report"),
+            SemanticTarget("person:alice", "person", "Alice"),
+            SemanticTarget("person:bob", "person", "Bob"),
+            SemanticTarget("person:carol", "person", "Carol"),
+        ),
+        bindings=bindings,
+        surface="dom",
+    )
+
+
+def test_partially_overlapping_destination_contracts_fail_closed_on_atomic_route() -> None:
+    left = _destination_binding("binding:left", ("person:alice", "person:bob"))
+    right = replace(
+        _destination_binding("binding:right", ("person:bob", "person:carol")),
+        observation_barrier=False,
+        **verification_kwargs(
+            "drag_to",
+            schema_digest(SCHEMA),
+            ("message_sent",),
+            observation_barrier=False,
+        ),
+    )
+
+    space = ActionSpaceBuilder().build(_task(), _destination_world(left, right))
+
+    assert tuple(option.eligible_destination_ids for option in space.options) == (
+        ("person:alice",),
+        ("person:carol",),
+    )
+    assert len(space.issues) == 1
+    assert space.issues[0].code.value == "action_route_conflict"
+    assert space.issues[0].destination_ids == ("person:bob",)
+    assert space.issues[0].conflicting_contract_fields == (
+        "observation_barrier",
+        "verification_contract",
+    )
+
+    world = _destination_world(left, right)
+    context = ContextBuilder().build(
+        _task(),
+        world,
+        space,
+        TaskEvaluation(
+            _task().task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "route conflict why-not witness",
+        ),
+    )
+    counts = {item.kind.value: 0 for item in context.action_delivery_plan.obligations}
+    counts["issues"] = 1
+    delivery = build_model_turn_delivery(context, include_images=False, admitted_records=counts)
+    assert "ActionRouteIssues" in delivery.view.text
+    assert "code=action_route_conflict operation=drag_to" in delivery.view.text
+    assert "observation_barrier" in delivery.view.text
+    assert all(
+        route.destination_ref != context.grounding.target_refs["person:bob"]
+        for route in delivery.manifest.action_routes
+    )
+
+
+def test_compatible_destination_adjacency_merges_without_cartesian_route_loss() -> None:
+    left = _destination_binding("binding:left", ("person:alice", "person:bob"))
+    right = _destination_binding("binding:right", ("person:bob", "person:carol"))
+    world = _destination_world(left, right)
+
+    space = ActionSpaceBuilder().build(_task(), world)
+
+    assert space.issues == ()
+    assert len(space.options) == 1
+    option = space.options[0]
+    assert option.eligible_destination_ids == (
+        "person:alice",
+        "person:bob",
+        "person:carol",
+    )
+    assert option.eligible_binding_ids == ("binding:left", "binding:right")
+    admitted = ActionSpaceBuilder().admit(option, {}, "person:carol")
+    bound = ActionBinder().bind(admitted, world, "context:test")
+    assert bound.binding.binding_id == "binding:right"
 
 
 def test_destination_admission_requires_one_current_offered_semantic_id() -> None:

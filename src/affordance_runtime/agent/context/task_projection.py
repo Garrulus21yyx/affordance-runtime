@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -17,21 +17,14 @@ from affordance_runtime.agent.context.contracts import (
     AgentTaskView,
 )
 from affordance_runtime.agent.context.projection import (
-    _bounded_string,
-    _model_private_key,
     project_public_value,
 )
 from affordance_runtime.agent.context.world_projection import PublicFactView
 from affordance_runtime.evaluation.contracts import TaskEvaluation
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal, criterion_id
 
-_MAX_ITEMS = 12
-_MAX_DEPTH = 3
 _MAX_STRING = 240
-_MAX_FINAL_CONTRACT_DEPTH = 8
-_MAX_FINAL_CONTRACT_STRING = 4_096
-PUBLIC_FINAL_RESPONSE_CONTRACT_KEY = "public_final_response_contract"
-_MAX_INSTRUCTION = 1_024
 _SHA256_REFERENCE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 
 
@@ -41,28 +34,19 @@ def project_task(
     facts: tuple[PublicFactView, ...] = (),
     fact_refs: Mapping[str, str] | None = None,
     target_refs: Mapping[str, str] | None = None,
-    include_final_response_contract: bool = False,
 ) -> AgentTaskView:
     if evaluation is not None and evaluation.task_id != task.task_id:
         raise ValueError("task projection evaluation belongs to another task")
     materials = []
-    for item in task.material_bindings[:_MAX_ITEMS]:
+    for item in task.material_bindings:
         reference = item.public_reference or (item.digest if _SHA256_REFERENCE.fullmatch(item.digest) else "")
         if reference and _safe_public_reference(reference):
-            materials.append(AgentMaterialBindingView(item.name[:_MAX_STRING], item.media_type[:_MAX_STRING], reference))
+            materials.append(AgentMaterialBindingView(item.name, item.media_type, reference))
     criteria = tuple(
         AgentSuccessCriterionView(criterion_id(item), _project_task_value(item))
-        for item in task.success_criteria[:_MAX_ITEMS]
+        for item in task.success_criteria
     )
-    public_inputs, public_input_count = _project_public_inputs(
-        task.inputs,
-        include_final_response_contract=include_final_response_contract,
-    )
-    final_response_contract = (
-        _project_final_response_contract(task.inputs.get(PUBLIC_FINAL_RESPONSE_CONTRACT_KEY))
-        if include_final_response_contract
-        else {}
-    )
+    public_inputs, public_input_count = _project_public_inputs(task.inputs)
     fact_refs = fact_refs or {}
     target_refs = target_refs or {}
     evidence_refs = (
@@ -85,7 +69,7 @@ def project_task(
     )
     return AgentTaskView(
         task.task_id,
-        _bounded_string(task.instruction, _MAX_INSTRUCTION),
+        task.instruction,
         _strings(task.constraints),
         _strings(task.allowed_effects),
         _strings(task.forbidden_effects),
@@ -97,7 +81,6 @@ def project_task(
         public_input_count,
         public_input_count > len(public_inputs),
         _evaluation_view(evaluation, verified_facts),
-        final_response_contract,
     )
 
 
@@ -122,67 +105,29 @@ def _evaluation_view(
 
 
 def _strings(values: tuple[str, ...]) -> BoundedSection[str]:
-    items = tuple(_bounded_string(item, _MAX_STRING) for item in values[:_MAX_ITEMS])
-    return _section(items, len(values))
+    return _section(tuple(values), len(values))
 
 
 def _section(items: tuple[Any, ...], total_count: int) -> BoundedSection[Any]:
     return BoundedSection(items, total_count, total_count > len(items))
 
 
-def _project_task_value(value: Any, depth: int = 0) -> Any:
-    if isinstance(value, Mapping):
-        if depth >= _MAX_DEPTH:
-            return "[TRUNCATED]"
-        return {
-            str(key): _project_task_value(item, depth + 1)
-            for key, item in list(value.items())[:_MAX_ITEMS]
-            if not _model_private_key(str(key))
-        }
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        if depth >= _MAX_DEPTH:
-            return "[TRUNCATED]"
-        return [_project_task_value(item, depth + 1) for item in list(value)[:_MAX_ITEMS]]
-    return project_public_value(value, depth)
+def _project_task_value(value: Any) -> Any:
+    return to_json_compatible(value)
 
 
 def _project_public_inputs(
     value: Mapping[str, object],
-    *,
-    include_final_response_contract: bool = False,
 ) -> tuple[dict[str, object], int]:
     safe_items = tuple(
         (str(key), item)
         for key, item in value.items()
-        if not _model_private_key(str(key))
-        and (include_final_response_contract or str(key) != PUBLIC_FINAL_RESPONSE_CONTRACT_KEY)
     )
     projected = {
-        key: _project_task_value(item, 1)
-        for key, item in safe_items[:_MAX_ITEMS]
+        key: _project_task_value(item)
+        for key, item in safe_items
     }
     return projected, len(safe_items)
-
-
-def _project_final_response_contract(value: object, depth: int = 0) -> object:
-    if value is None:
-        return {}
-    if isinstance(value, Mapping):
-        if depth >= _MAX_FINAL_CONTRACT_DEPTH:
-            return "[TRUNCATED]"
-        return {
-            str(key): _project_final_response_contract(item, depth + 1)
-            for key, item in list(value.items())[:32]
-            if not _model_private_key(str(key))
-        }
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        if depth >= _MAX_FINAL_CONTRACT_DEPTH:
-            return "[TRUNCATED]"
-        return [_project_final_response_contract(item, depth + 1) for item in list(value)[:32]]
-    if isinstance(value, str):
-        return _bounded_string(value, _MAX_FINAL_CONTRACT_STRING)
-    return project_public_value(value, depth)
-
 
 def _safe_public_reference(value: str) -> bool:
     if len(value) > _MAX_STRING or _SHA256_REFERENCE.fullmatch(value):
