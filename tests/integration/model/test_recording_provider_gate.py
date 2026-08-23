@@ -19,6 +19,7 @@ import affordance_runtime.model.policy.canonical_provider_envelope as canonical_
 from affordance_runtime.actions import ActionBinding, ActionSpaceBuilder
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
 from affordance_runtime.agent import RunStatus
+from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
@@ -27,6 +28,7 @@ from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.canonical_provider_envelope import CanonicalProviderEnvelopeBinder
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.pydantic_ai_bridge import PydanticAIGroundedDecisionPort
@@ -54,7 +56,12 @@ from tests.support.model.recording_pydantic_model import (
 )
 
 
-def _policy(recorder: RecordingPydanticModel, *, supports_multimodal: bool = False) -> ModelBackedAgentPolicy:
+def _policy(
+    recorder: RecordingPydanticModel,
+    *,
+    supports_multimodal: bool = False,
+    request_budget: ModelRequestBudget | None = None,
+) -> ModelBackedAgentPolicy:
     model = recorder.build()
     assert isinstance(model, FunctionModel)
     return ModelBackedAgentPolicy(
@@ -70,6 +77,9 @@ def _policy(recorder: RecordingPydanticModel, *, supports_multimodal: bool = Fal
                 else DecisionPerceptionProfile.TEXT_ONLY
             ),
             transport_timeout_s=4.0,
+            envelope_binder=CanonicalProviderEnvelopeBinder(
+                request_budget=request_budget or ModelRequestBudget()
+            ),
         ),
         call_timeout_s=5.0,
     )
@@ -382,15 +392,10 @@ def test_gate_2_annotated_media_route_and_operand_role_reach_real_recording_boun
             ("E1", (1, 1, 5, 5)),
             ("N1", (10, 1, 5, 5)),
         )
-        assert recorded_media.operand_roles == (
-            ("E1", ("source",)),
-            ("N1", ()),
-        )
-        assert recorded_media.route_deltas == (("activate", "E1", ""),)
         assert tuple(
             (route.operation, route.source_ref, route.destination_ref)
             for route in envelope.catalog.manifest.action_routes
-        ) == recorded_media.route_deltas
+        ) == (("activate", "E1", ""),)
         assert envelope.catalog.manifest.readonly_refs == ("N1",)
         assert all(
             "N1" not in (route.source_ref, route.destination_ref)
@@ -471,8 +476,6 @@ def test_gate_2_readonly_only_actual_mark_reaches_recorder_without_action_author
         assert envelope.media[0].data.startswith(b"\x89PNG\r\n\x1a\n")
         assert envelope.media[0].dimensions == (20, 20)
         assert envelope.media[0].marks == (("N1", (2, 2, 6, 6)),)
-        assert envelope.media[0].operand_roles == (("N1", ()),)
-        assert envelope.media[0].route_deltas == ()
         assert envelope.catalog.manifest.readonly_refs == ("N1",)
         assert envelope.catalog.manifest.executable_refs == ()
         assert envelope.catalog.manifest.action_routes == ()

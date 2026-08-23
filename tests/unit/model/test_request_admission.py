@@ -110,8 +110,6 @@ def _media(data: bytes) -> CanonicalMediaRecord:
         (20, 20),
         "raw",
         (),
-        (),
-        (),
         "viewport:private",
     )
 
@@ -297,7 +295,6 @@ def test_media_bytes_mime_digest_dimensions_and_marks_each_participate_in_identi
                     "dimensions": record.dimensions,
                     "variant": record.variant,
                     "marks": record.marks,
-                    "operand_roles": record.operand_roles,
                 },
             ),
         }

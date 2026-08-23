@@ -3,7 +3,7 @@ import io
 
 from PIL import Image
 
-from affordance_runtime.agent.context.context import AgentImageInput, AgentImageMark
+from affordance_runtime.agent.context.context import AgentImageMark, VisualEvidenceFragment
 from affordance_runtime.world.visual_annotation import (
     BoundingBox,
     VisualMark,
@@ -35,7 +35,7 @@ def test_annotation_owns_actual_png_mime_digest_and_in_frame_marks() -> None:
     assert result.data.startswith(b"\x89PNG\r\n\x1a\n")
     assert result.sha256 == hashlib.sha256(result.data).hexdigest()
     assert tuple(mark.mark_id for mark in result.marks) == ("E1",)
-    admitted = AgentImageInput(
+    admitted = VisualEvidenceFragment(
         "artifact:image",
         result.mime_type,
         result.data,

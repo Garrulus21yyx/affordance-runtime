@@ -4,13 +4,12 @@ Goal: recover the Run21 C8/C10 migration through serial owner cutovers. Preserve
 
 ## Serial cutover constraints
 
-- Gate 0 and World remain complete. Gate 3 Envelope/diagnostic coordinates remains admitted. Gate 2 was re-admitted
-  from `27e85efe`, then reopened by Gate 4 attempt 3: a single actual source/destination mark can attach a complete
-  binary media route while final packed text omits the complementary operand, causing ModelTurnDelivery to fail closed
-  before provider entry. Gate 4 remains stopped / not admitted.
-- Gate 2's E/N visual candidates are canonical, bounded, action-independent, and actual only after annotation output;
-  roles/routes remain E-only. Final full/static verification is green (`1613 passed, 24 skipped` plus static/negative
-  checks).
+- Gate 0 and World remain complete. Gate 3 Envelope/diagnostic coordinates remains admitted. The Gate 2/4 convergence
+  migration is implemented and provider-free verified: media is pure visual evidence, and the DeliveryPlan-owned
+  `ActionRouteFragment` is the sole atomic action authorization. Joint Gate 2/Gate 4 exit review remains pending.
+- E/N visual candidates are canonical, bounded, action-independent, and actual only after annotation output. Media has
+  no route or operand-role fields; Manifest/Catalog consume only admitted complete route fragments. Current verification
+  is `184 passed, 2 skipped` focused and `1620 passed, 24 skipped` full plus static/negative checks.
 - Preserve `output/` and all unrelated user files; each cutover receives one independent commit.
 - A failing test or auditor counterexample is design evidence only. It does not authorize a local production patch.
 - Run30 predates current production changes and is stale for current-tree verification.
@@ -24,9 +23,9 @@ Goal: recover the Run21 C8/C10 migration through serial owner cutovers. Preserve
 | 5. Review the three designs together for authority uniqueness and establish non-circular serial migration | completed | one normative chain and responsibility table in `docs/architecture.md`; Gate 0 → World → Delivery → Envelope → vertical conservation in both current authority docs |
 | 6. Build test-only Recording Provider Gate 0 through the actual policy/CoreLoop/provider boundary | completed | `tests/support/model/recording_pydantic_model.py`; `tests/integration/model/test_recording_provider_gate.py`; actual TargetRuntime/CoreLoop path: 6 passed; focused 78 passed/3 skipped; full 1558 passed/24 skipped/2 known non-Gate failures; no `src/` diff |
 | 7. Implement World cutover and pass its owner-local production-path gate | completed | sole immutable `CanonicalPublicWorldProjection`; all E/N/F/R consumers migrated; old production allocators/fallbacks deleted; permutation/remount/effect/ambiguity/identity/Gate-0 production-path properties pass; focused `175 passed, 2 skipped`; full `1568 passed, 24 skipped`; Ruff/compileall/diff/negative searches pass; no Delivery/Envelope semantic migration |
-| 8. Implement Delivery cutover and pass its two-turn production-path gate | reopened by Gate 4 attempt 3 | E/N mark ownership remains valid, but binary single-mark media routes are not composed with a guaranteed final text delivery of the complementary operand |
+| 8. Implement Delivery cutover and pass its two-turn production-path gate | implemented/provider-free verified; exit review pending | media is pure visual evidence; complete atomic `ActionRouteFragment` records alone authorize Manifest routes; selected/unselected marks and ordered full continuation pass |
 | 9. Implement Envelope cutover and pass Recording Provider identity/cost gate | completed / re-admitted after fresh review | one `estimated_input_tokens`, separate reserve, complete-request sum, and `effective_input_limit`; all candidate/component ghost metrics and WebArena consumers removed |
-| 10. Run final vertical conservation plus focused/relevant/full static and provider-free verification | attempt 3 stopped; Gate 4 remains not admitted | unary/permutation witnesses pass, but both binary single-mark orientations falsify Gate 2 before provider entry; no completion commit exists |
+| 10. Run final vertical conservation plus focused/relevant/full static and provider-free verification | implemented/provider-free verified; exit review pending | request/response, annotated selected/unselected, sparse schema/resolver, full continuation, permutation, and exact-fit/one-under capacity paths pass; focused `184/2`, full `1620/24`, static/negative green |
 | 11. Run one fresh-context read-only audit and report non-closed status honestly | pending | no closure without fresh evidence and separately authorized live benchmark |
 
 ## Known design evidence to absorb, not patch locally

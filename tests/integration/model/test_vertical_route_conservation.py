@@ -9,14 +9,16 @@ import pytest
 
 pytest.importorskip("pydantic_ai")
 
-import affordance_runtime.model.policy.pydantic_ai_bridge as bridge_module
 from PIL import Image
 
+import affordance_runtime.model.policy.pydantic_ai_bridge as bridge_module
 from affordance_runtime.actions import ActionBinding, ActionSpaceBuilder
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import RunStatus, SelectAction
+from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
+from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
     ActionOutcome,
     EvidenceMethod,
@@ -44,8 +46,9 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
-from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from tests.integration.model.test_recording_provider_gate import (
+    _fanout_world,
+    _IncompleteTaskEvaluator,
     _one_action_environment,
     _policy,
     _runtime,
@@ -61,16 +64,6 @@ from tests.support.model.recording_pydantic_model import (
 
 def _route_tuple(route) -> tuple[str, str, str]:
     return route.operation, route.source_ref, route.destination_ref
-
-
-def _ordered_union(*groups) -> tuple[tuple[str, str, str], ...]:
-    result: list[tuple[str, str, str]] = []
-    for group in groups:
-        for item in group:
-            value = item if isinstance(item, tuple) else _route_tuple(item)
-            if value not in result:
-                result.append(value)
-    return tuple(result)
 
 
 def _thaw_recorded(value):
@@ -121,7 +114,7 @@ def _binary_task() -> TaskGoal:
     )
 
 
-def _binary_world(phase: str, *, marked_operand: str | None = None):
+def _binary_world(phase: str, *, mark_mode: str | None = None):
     observation_id = f"gate-4-binary:{phase}"
     source_target = SemanticTarget("private-source", "listitem", "短!", {"phase": phase})
     destination = SemanticTarget("private-destination", "region", "目标✓", {"phase": phase})
@@ -145,23 +138,29 @@ def _binary_world(phase: str, *, marked_operand: str | None = None):
         eligible_destination_ids=(destination.target_id,),
     )
     media = ()
-    if marked_operand is not None:
+    if mark_mode is not None:
         output = io.BytesIO()
         Image.new("RGB", (24, 16), "white").save(output, format="JPEG")
-        marked_target = source_target if marked_operand == "source" else destination
+        marked_targets = {
+            "none": (),
+            "source": (source_target,),
+            "destination": (destination,),
+            "both": (source_target, destination),
+        }[mark_mode]
         media = (
             ObservationMedia(
-                f"binary-{marked_operand}",
+                f"binary-{mark_mode}",
                 "screenshot",
                 "image/jpeg",
                 output.getvalue(),
-                (
+                tuple(
                     ObservationGroundingRegion(
                         marked_target.target_id,
-                        (2, 2, 6, 6),
+                        (2 + index * 10, 2, 6, 6),
                         1.0,
                         "viewport:binary",
-                    ),
+                    )
+                    for index, marked_target in enumerate(marked_targets)
                 ),
                 capture_group_id="capture:binary",
                 variant=ObservationMediaVariant.RAW,
@@ -196,6 +195,44 @@ def _binary_world(phase: str, *, marked_operand: str | None = None):
     ))
     assert fused.observation is not None
     return fused.observation
+
+
+def _fanout_world_with_unselected_mark(observation_id: str, enabled: bool):
+    base = _fanout_world(observation_id, enabled, count=300)
+    source = base.sources[0]
+    marked_targets = tuple(
+        replace(
+            target,
+            label=f"Recover marked control {index:02d} " + ("界!" * 40),
+        )
+        for index, target in enumerate(source.targets[-32:])
+    )
+    targets = (*source.targets[:-32], *marked_targets)
+    output = io.BytesIO()
+    Image.new("RGB", (330, 16), "white").save(output, format="JPEG")
+    media = ObservationMedia(
+        "fanout-unselected-mark",
+        "screenshot",
+        "image/jpeg",
+        output.getvalue(),
+        tuple(
+            ObservationGroundingRegion(
+                marked_target.target_id,
+                (2 + index * 10, 2, 6, 6),
+                1.0,
+                "viewport:fanout",
+            )
+            for index, marked_target in enumerate(marked_targets)
+        ),
+        capture_group_id="capture:fanout",
+        variant=ObservationMediaVariant.RAW,
+        dimensions=(330, 16),
+        coordinate_space_id="viewport:fanout",
+    )
+    fused = WorldFusion().fuse((replace(source, targets=targets, media=(media,)),))
+    assert fused.observation is not None
+    selected_target = marked_targets[-1]
+    return fused.observation, selected_target.target_id, selected_target.label
 
 
 def _binary_runtime(policy) -> TargetRuntime:
@@ -235,30 +272,23 @@ def test_gate_4_ordered_request_and_response_conservation_through_real_runtime(m
         assert packed.catalog is envelope.catalog
         assert normalize_recorded_provider_input(record) == envelope.model_boundary_projection()
 
-        text_routes = tuple(_route_tuple(item) for item in packed.delivery.manifest.action_routes)
-        media_routes = tuple(
-            route
-            for media in packed.delivery.media
-            for route in (
-                tuple(_route_tuple(item) for item in media.route_deltas)
-            )
+        admitted_route_fragments = tuple(
+            _route_tuple(item) for item in packed.delivery.manifest.action_routes
         )
         manifest_routes = tuple(_route_tuple(item) for item in envelope.catalog.manifest.action_routes)
-        assert manifest_routes == _ordered_union(text_routes, media_routes)
+        assert manifest_routes == admitted_route_fragments
         assert envelope.delivery_id == packed.delivery.delivery_id
         assert tuple(item.name for item in envelope.function_tools) == tuple(
             item.spec.name for item in packed.catalog.tools
         )
         assert tuple(
-            (item.mime_type, item.digest, item.marks, item.operand_roles, item.route_deltas)
+            (item.mime_type, item.digest, item.marks)
             for item in envelope.media
         ) == tuple(
             (
                 item.mime_type,
                 item.sha256,
                 tuple((mark.ref, mark.bbox) for mark in item.actual_marks),
-                tuple((mark.ref, tuple(role.value for role in mark.operand_roles)) for mark in item.actual_marks),
-                tuple(_route_tuple(route) for route in item.route_deltas),
             )
             for item in packed.delivery.media
         )
@@ -394,12 +424,12 @@ def test_gate_4_private_identity_permutation_preserves_physical_request_and_publ
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("marked_operand", ("source", "destination"))
-def test_gate_4_binary_single_mark_joint_visibility_reaches_schema_resolver_and_binder(
-    marked_operand: str,
+@pytest.mark.parametrize("mark_mode", ("source", "destination", "both", "none"))
+def test_gate_4_selected_binary_route_is_atomic_independently_of_visual_marks(
+    mark_mode: str,
 ) -> None:
     async def scenario() -> None:
-        before = _binary_world("before", marked_operand=marked_operand)
+        before = _binary_world("before", mark_mode=mark_mode)
         after = _binary_world("after")
         recorder = RecordingPydanticModel(["first_schema_action"], scripted_phases=["ordinary"])
         policy = _policy(recorder, supports_multimodal=True)
@@ -423,17 +453,16 @@ def test_gate_4_binary_single_mark_joint_visibility_reaches_schema_resolver_and_
         destination_ref = str(arguments["destination"])
         route = ("drag_to", source_ref, destination_ref)
         assert tuple(_route_tuple(item) for item in envelope.catalog.manifest.action_routes) == (route,)
-        assert envelope.media[0].route_deltas == (route,)
-        assert envelope.media[0].marks == ((source_ref if marked_operand == "source" else destination_ref, (2, 2, 6, 6)),)
-        assert envelope.media[0].operand_roles == (
-            (
-                source_ref if marked_operand == "source" else destination_ref,
-                (marked_operand,),
-            ),
-        )
+        expected_marks = {
+            "none": (),
+            "source": ((source_ref, (2, 2, 6, 6)),),
+            "destination": ((destination_ref, (2, 2, 6, 6)),),
+            "both": ((source_ref, (2, 2, 6, 6)), (destination_ref, (12, 2, 6, 6))),
+        }[mark_mode]
+        assert envelope.media[0].marks == expected_marks
         public_text = envelope.user_text
-        unmarked_ref = destination_ref if marked_operand == "source" else source_ref
-        assert unmarked_ref in public_text
+        assert source_ref in public_text
+        assert destination_ref in public_text
         assert route in tuple(_route_tuple(item) for item in envelope.catalog.manifest.action_routes)
         recorded_tool = next(item for item in record.function_tools if item.name == "drag_to")
         validate_value(
@@ -450,5 +479,200 @@ def test_gate_4_binary_single_mark_joint_visibility_reaches_schema_resolver_and_
         assert bound.binding.binding_id not in physical
         assert "#private-source" not in physical
         assert "#private-destination" not in physical
+
+    asyncio.run(scenario())
+
+
+def test_gate_4_unselected_mark_does_not_authorize_route_and_find_controls_recovers_it() -> None:
+    async def scenario() -> None:
+        before, marked_target_id, marked_label = _fanout_world_with_unselected_mark(
+            "gate-4-unselected-before", False
+        )
+        after = _fanout_world("gate-4-unselected-after", True, count=300)
+        recorder = RecordingPydanticModel(
+            [
+                ("find_controls", {"query": marked_label}),
+                f"schema_action_label:{marked_label}",
+            ],
+            scripted_phases=["recovery", "ordinary"],
+        )
+        policy = _policy(recorder, supports_multimodal=True)
+        environment = ScriptedEnvironment(
+            initial_observation=before,
+            post_observations=(after,),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await _runtime(policy).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE, (
+            policy.port.last_local_failure,
+            recorder.last_gui_call,
+        )
+        assert recorder.calls == 2
+        first_envelope, second_envelope = policy.port.envelope_history
+        assert len(first_envelope.media) == 1
+        assert len(first_envelope.media[0].marks) == 32
+        assert state.last_step is not None
+        assert state.last_step.before_public_world is not None
+        marked_ref = state.last_step.before_public_world.target_refs[marked_target_id]
+        assert marked_ref in {ref for ref, _bbox in first_envelope.media[0].marks}
+        assert all(
+            marked_ref not in (route.source_ref, route.destination_ref)
+            for route in first_envelope.catalog.manifest.action_routes
+        ), (
+            marked_ref,
+            len(first_envelope.catalog.manifest.action_routes),
+            policy.port.last_request_breakdowns[0].estimated_input_tokens,
+        )
+        assert "find_controls" in recorder.offered_tools[0]
+        assert any(
+            marked_ref in (route.source_ref, route.destination_ref)
+            for route in second_envelope.catalog.manifest.action_routes
+        )
+        assert normalize_recorded_provider_input(recorder.records[0]) == (
+            first_envelope.model_boundary_projection()
+        )
+        assert normalize_recorded_provider_input(recorder.records[1]) == (
+            second_envelope.model_boundary_projection()
+        )
+        assert len(environment.executed_requests) == 1
+        assert environment.executed_requests[0].selection.target_id == marked_target_id
+
+    asyncio.run(scenario())
+
+
+def test_gate_4_production_continuation_pages_conserve_owner_route_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        packed_turns = []
+        plans = []
+        production_packer = TurnPacker
+
+        class RecordingTurnPacker:
+            def pack(self, request, **kwargs):
+                plans.append(request.agent_context.action_delivery_plan)
+                packed = production_packer().pack(request, **kwargs)
+                packed_turns.append(packed)
+                return packed
+
+        monkeypatch.setattr(bridge_module, "TurnPacker", RecordingTurnPacker)
+        before = _fanout_world("gate-4-pages-before", False, count=84)
+        after = _fanout_world("gate-4-pages-after", True, count=84)
+        recorder = RecordingPydanticModel(["continue_until_action"])
+        policy = _policy(recorder)
+        environment = ScriptedEnvironment(
+            initial_observation=before,
+            post_observations=(after,),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await _runtime(policy).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE
+        assert len(packed_turns) == recorder.calls == len(policy.port.envelope_history)
+        assert len(packed_turns) >= 2
+        owner_candidates = plans[0].projection().candidates
+        owner_routes = tuple(
+            (
+                candidate.operation,
+                candidate.target_ref,
+                destination.target_ref if destination is not None else "",
+            )
+            for candidate in owner_candidates
+            for destination in (
+                candidate.destinations if candidate.destination_required else (None,)
+            )
+        )
+        delivered_pages = tuple(
+            tuple(_route_tuple(route) for route in packed.delivery.manifest.action_routes)
+            for packed in packed_turns
+        )
+        delivered_routes = tuple(route for page in delivered_pages for route in page)
+        assert all(delivered_pages)
+        assert len(delivered_routes) == len(set(delivered_routes))
+        assert delivered_routes == owner_routes
+        assert all(
+            "action_results_next_page" in recorder.offered_tools[index]
+            for index in range(len(recorder.records) - 1)
+        )
+        assert "action_results_next_page" not in recorder.offered_tools[-1]
+        assert all(
+            normalize_recorded_provider_input(record) == envelope.model_boundary_projection()
+            for record, envelope in zip(
+                recorder.records,
+                policy.port.envelope_history,
+                strict=True,
+            )
+        )
+        physical = json.dumps(
+            tuple(envelope.model_boundary_projection() for envelope in policy.port.envelope_history),
+            default=str,
+            ensure_ascii=False,
+        )
+        assert "cursor" not in physical
+        assert before.observation_id not in physical
+        assert all(
+            item.action_id not in physical
+            for item in ActionSpaceBuilder().build(shared_task(), before).options
+        )
+
+    asyncio.run(scenario())
+
+
+def test_gate_4_final_physical_envelope_exact_fit_and_one_under_never_calls_recorder() -> None:
+    async def invoke(request_budget: ModelRequestBudget | None = None):
+        fused = WorldFusion().fuse((
+            SurfaceObservation(
+                "gate-4-capacity-world",
+                "dom",
+                "revision:gate-4-capacity-world",
+                ObservationSourceProfile.dom(),
+                (SemanticTarget("private-readonly", "note", "容量✓"),),
+            ),
+        ))
+        assert fused.observation is not None
+        recorder = RecordingPydanticModel(["zero_calls"])
+        policy = _policy(recorder, request_budget=request_budget)
+        state = await _runtime(policy, evaluator=_IncompleteTaskEvaluator()).run_task(
+            ScriptedEnvironment(initial_observation=fused.observation),
+            TaskGoal("capacity", "Inspect 容量✓", risk_profile=RiskProfile.READ_ONLY),
+        )
+        return state, recorder, policy
+
+    async def scenario() -> None:
+        _baseline_state, baseline_recorder, baseline_policy = await invoke()
+        assert baseline_recorder.calls == 1
+        baseline = baseline_policy.port.last_request_breakdowns[0]
+        exact_budget = replace(
+            ModelRequestBudget(),
+            soft_target_tokens=max(8_000, baseline.estimated_input_tokens),
+            admission_limit=baseline.estimated_input_tokens,
+        )
+        _exact_state, exact_recorder, exact_policy = await invoke(exact_budget)
+        assert exact_recorder.calls == 1
+        assert exact_policy.port.last_request_breakdowns[0].estimated_input_tokens == (
+            baseline.estimated_input_tokens
+        )
+
+        rejected_budget = replace(
+            exact_budget,
+            admission_limit=baseline.estimated_input_tokens - 1,
+        )
+        rejected_state, rejected_recorder, rejected_policy = await invoke(rejected_budget)
+        assert rejected_state.status is RunStatus.FAILED
+        assert rejected_recorder.calls == 0
+        assert rejected_policy.port.last_model_call_count == 0
+        assert rejected_policy.port.last_generation_attempts == ()
+        rejection = rejected_policy.port.last_request_breakdowns[0]
+        assert rejection.estimated_input_tokens == baseline.estimated_input_tokens
+        assert rejection.complete_request_tokens == (
+            rejection.estimated_input_tokens + rejection.output_reserve_tokens
+        )
+        assert rejection.effective_input_limit == baseline.estimated_input_tokens - 1
+        assert rejected_policy.port.last_invocation_result is not None
+        assert rejected_policy.port.last_invocation_result.failure is not None
+        assert rejected_policy.port.last_invocation_result.failure.kind.value == "context_capacity"
 
     asyncio.run(scenario())

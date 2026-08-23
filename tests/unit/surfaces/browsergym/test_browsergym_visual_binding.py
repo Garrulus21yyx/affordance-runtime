@@ -303,11 +303,7 @@ def test_visual_only_evidence_mark_does_not_create_action_authority() -> None:
             )
             assert len(context.image_inputs) == 1
             assert sum(item.marked for item in context.grounding.entities) == 1
-            assert tuple(
-                (mark.ref, mark.operand_roles)
-                for mark in context.image_inputs[0].marks
-            ) == (("N1", ()),)
-            assert context.image_inputs[0].route_deltas == ()
+            assert tuple(mark.ref for mark in context.image_inputs[0].marks) == ("N1",)
         finally:
             await environment.close()
 

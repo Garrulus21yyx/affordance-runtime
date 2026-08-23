@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.action_candidate_projection import (
-        ActionDeliveryFragment,
         ActionDeliveryPlan,
+        ActionRouteFragment,
     )
     from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
     from affordance_runtime.agent.context.context import (
@@ -45,9 +45,9 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.task_projection import project_task
 
 _EXPORTS = {
-    "ActionDeliveryFragment": (
+    "ActionRouteFragment": (
         "affordance_runtime.agent.context.action_candidate_projection",
-        "ActionDeliveryFragment",
+        "ActionRouteFragment",
     ),
     "ActionDeliveryPlan": (
         "affordance_runtime.agent.context.action_candidate_projection",

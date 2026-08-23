@@ -7,7 +7,6 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.agent.context.contracts import (
@@ -79,70 +78,32 @@ class ContextIdentity:
         return f"context:{digest}"
 
 
-class AgentImageOperandRole(StrEnum):
-    SOURCE = "source"
-    DESTINATION = "destination"
-
-
-@dataclass(frozen=True)
-class AgentImageActionRoute:
-    operation: str
-    source_ref: str
-    destination_ref: str = ""
-    private_action_id: str = field(
-        default="", repr=False, compare=False, metadata={"serialize": False}
-    )
-    private_option: object | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
-
-    def __post_init__(self) -> None:
-        if (
-            not self.operation.strip()
-            or not PublicRefCodec.accepts(self.source_ref, expected=PublicRefKind.EXECUTABLE)
-            or not self.private_action_id.strip()
-            or self.private_option is None
-        ):
-            raise ValueError("agent image route requires exact public and private lineage")
-        if self.destination_ref and not PublicRefCodec.accepts(
-            self.destination_ref, expected=PublicRefKind.EXECUTABLE
-        ):
-            raise ValueError("agent image route destination is invalid")
-
-
 @dataclass(frozen=True)
 class AgentImageMark:
     ref: str
     bbox: tuple[int, int, int, int]
-    operand_roles: tuple[AgentImageOperandRole, ...] = ()
 
     def __post_init__(self) -> None:
-        roles = tuple(AgentImageOperandRole(item) for item in self.operand_roles)
         if (
             not PublicRefCodec.accepts(self.ref)
             or self.ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
             or len(self.bbox) != 4
             or any(type(value) is not int for value in self.bbox)
-            or len(roles) != len(set(roles))
         ):
             raise ValueError("agent image mark is invalid")
-        if self.ref.startswith(PublicRefKind.NODE.value) and roles:
-            raise ValueError("read-only image mark cannot carry an action operand role")
         object.__setattr__(self, "bbox", tuple(self.bbox))
-        object.__setattr__(self, "operand_roles", roles)
 
 
 @dataclass(frozen=True)
-class AgentImageInput:
+class VisualEvidenceFragment:
+    """Exact model-visible image evidence with actual marks and no action authority."""
+
     evidence_ref: str
     mime_type: str
     data: bytes = field(repr=False)
     sha256: str = ""
     coordinate_space_id: str = ""
     marks: tuple[AgentImageMark, ...] = ()
-    route_deltas: tuple[AgentImageActionRoute, ...] = field(
-        default=(), repr=False, compare=False
-    )
 
     def __post_init__(self) -> None:
         if (
@@ -163,40 +124,13 @@ class AgentImageInput:
                 and not self.data.startswith(b"\xff\xd8\xff")
             )
         ):
-            raise ValueError("agent image input is invalid")
+            raise ValueError("visual evidence fragment is invalid")
         marks = tuple(self.marks)
-        routes = tuple(self.route_deltas)
-        if any(not isinstance(mark, AgentImageMark) for mark in marks) or any(
-            not isinstance(route, AgentImageActionRoute) for route in routes
-        ):
-            raise ValueError("agent image relation must be typed")
-        if len({mark.ref for mark in marks}) != len(marks) or len(routes) != len(set(routes)):
-            raise ValueError("agent image relation must be unique")
-        role_map = {mark.ref: frozenset(mark.operand_roles) for mark in marks}
-        for route in routes:
-            if not (
-                AgentImageOperandRole.SOURCE in role_map.get(route.source_ref, frozenset())
-                or (
-                    route.destination_ref
-                    and AgentImageOperandRole.DESTINATION
-                    in role_map.get(route.destination_ref, frozenset())
-                )
-            ):
-                raise ValueError("agent image route lacks an actual typed operand mark")
-        for mark in marks:
-            expected = {
-                role
-                for route in routes
-                for role, operand in (
-                    (AgentImageOperandRole.SOURCE, route.source_ref),
-                    (AgentImageOperandRole.DESTINATION, route.destination_ref),
-                )
-                if operand == mark.ref
-            }
-            if set(mark.operand_roles) != expected:
-                raise ValueError("agent image mark roles differ from exact route deltas")
+        if any(not isinstance(mark, AgentImageMark) for mark in marks):
+            raise ValueError("agent image marks must be typed")
+        if len({mark.ref for mark in marks}) != len(marks):
+            raise ValueError("agent image marks must be unique")
         object.__setattr__(self, "marks", marks)
-        object.__setattr__(self, "route_deltas", routes)
 
 
 @dataclass(frozen=True)
@@ -247,7 +181,7 @@ class AgentContext:
     actions: AgentActionPageView
     workspace: AgentWorkspace
     actor_world: ActorWorldSnapshot
-    image_inputs: tuple[AgentImageInput, ...] = ()
+    image_inputs: tuple[VisualEvidenceFragment, ...] = ()
     grounding: AgentGroundingIndexView = field(default_factory=AgentGroundingIndexView)
     private_fact_bindings: Mapping[str, str] = field(
         default_factory=dict,
@@ -318,7 +252,9 @@ class AgentContext:
         if not self.context_id.startswith("context:"):
             raise ValueError("AgentContext requires opaque context identity")
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
-        if len(self.image_inputs) > 2 or any(not isinstance(item, AgentImageInput) for item in self.image_inputs):
+        if len(self.image_inputs) > 2 or any(
+            not isinstance(item, VisualEvidenceFragment) for item in self.image_inputs
+        ):
             raise TypeError("AgentContext image inputs must be bounded and typed")
         if not isinstance(self.grounding, AgentGroundingIndexView):
             raise TypeError("AgentContext grounding index must be typed")

@@ -204,9 +204,40 @@ class RecordingPydanticModel:
                 self.last_gui_call = (name, dict(arguments))
                 if scripted == "first_gui_action_invalid_extra":
                     arguments["unexpected"] = "remove-me"
-            elif scripted == "first_schema_action":
-                name, arguments = _select_schema_action(info)
+            elif isinstance(scripted, str) and scripted in {
+                "first_schema_action",
+                "last_schema_action",
+            }:
+                name, arguments = _select_schema_action(
+                    info,
+                    last=scripted == "last_schema_action",
+                )
                 self.last_gui_call = (name, dict(arguments))
+            elif isinstance(scripted, str) and scripted.startswith("schema_action_label:"):
+                name, arguments = _select_schema_action_for_label(
+                    messages,
+                    info,
+                    scripted.removeprefix("schema_action_label:"),
+                )
+                self.last_gui_call = (name, dict(arguments))
+            elif scripted == "continue_until_action":
+                continuation = next(
+                    (
+                        tool
+                        for tool in info.function_tools
+                        if tool.name == "action_results_next_page"
+                    ),
+                    None,
+                )
+                if continuation is not None:
+                    name = continuation.name
+                    sampled = _schema_example(continuation.parameters_json_schema)
+                    assert isinstance(sampled, dict)
+                    arguments = sampled
+                    self.decisions.insert(0, scripted)
+                else:
+                    name, arguments = _select_schema_action(info)
+                    self.last_gui_call = (name, dict(arguments))
             elif scripted == "repeat_last_gui_call":
                 assert self.last_gui_call is not None
                 name, remembered_arguments = self.last_gui_call
@@ -318,14 +349,19 @@ def _select_current_tool_call(
     raise AssertionError("actual PydanticAI request offered no current target-bearing route")
 
 
-def _select_schema_action(info: AgentInfo) -> tuple[str, dict[str, object]]:
+def _select_schema_action(
+    info: AgentInfo,
+    *,
+    last: bool = False,
+) -> tuple[str, dict[str, object]]:
     """Choose one action solely from the actual provider-visible schema."""
 
-    for tool in info.function_tools:
+    tools = reversed(info.function_tools) if last else info.function_tools
+    for tool in tools:
         schema = tool.parameters_json_schema
         if not _schema_has_action_operand(schema):
             continue
-        value = _schema_example(schema)
+        value = _schema_example(schema, last=last)
         if isinstance(value, dict):
             return tool.name, value
     raise AssertionError("actual PydanticAI request offered no schema-described action route")
@@ -343,18 +379,80 @@ def _schema_has_action_operand(schema: Mapping[str, object]) -> bool:
     )
 
 
-def _schema_example(schema: Mapping[str, object]) -> object:
+def _select_schema_action_for_label(
+    messages: list[ModelMessage],
+    info: AgentInfo,
+    label: str,
+) -> tuple[str, dict[str, object]]:
+    """Resolve a public label to a ref in actual text, then use only an accepting schema row."""
+
+    public_text = _latest_public_text(messages)
+    matching_line = next((line for line in public_text.splitlines() if label in line), "")
+    match = re.search(r"\[(E[1-9][0-9]*)\]", matching_line)
+    if match is None:
+        raise AssertionError("actual provider text omitted the requested public label")
+    ref = match.group(1)
+    for tool in info.function_tools:
+        arguments = _schema_example_for_operand_ref(tool.parameters_json_schema, ref)
+        if arguments is not None:
+            return tool.name, arguments
+    raise AssertionError("actual provider schema omitted the requested public route")
+
+
+def _schema_example_for_operand_ref(
+    schema: Mapping[str, object],
+    ref: str,
+) -> dict[str, object] | None:
     for keyword in ("oneOf", "anyOf"):
         branches = schema.get(keyword)
         if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes, bytearray)):
-            branch = next((item for item in branches if isinstance(item, Mapping)), None)
+            for branch in branches:
+                if isinstance(branch, Mapping):
+                    result = _schema_example_for_operand_ref(branch, ref)
+                    if result is not None:
+                        return result
+    if schema.get("type") != "object":
+        return None
+    properties = schema.get("properties", {})
+    required = schema.get("required", ())
+    if not isinstance(properties, Mapping) or not isinstance(required, Sequence):
+        return None
+    operand_name = next(
+        (
+            name
+            for name in ("target", "source")
+            if isinstance(properties.get(name), Mapping)
+            and (
+                properties[name].get("const") == ref
+                or ref in properties[name].get("enum", ())
+            )
+        ),
+        None,
+    )
+    if operand_name is None:
+        return None
+    result = {
+        str(name): _schema_example(properties[str(name)])
+        for name in required
+        if isinstance(properties.get(str(name)), Mapping)
+    }
+    result[operand_name] = ref
+    return result
+
+
+def _schema_example(schema: Mapping[str, object], *, last: bool = False) -> object:
+    for keyword in ("oneOf", "anyOf"):
+        branches = schema.get(keyword)
+        if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes, bytearray)):
+            choices = tuple(item for item in branches if isinstance(item, Mapping))
+            branch = choices[-1 if last else 0] if choices else None
             if branch is not None:
-                return _schema_example(branch)
+                return _schema_example(branch, last=last)
     if "const" in schema:
         return copy.deepcopy(schema["const"])
     enum = schema.get("enum")
     if isinstance(enum, Sequence) and not isinstance(enum, (str, bytes, bytearray)) and enum:
-        return copy.deepcopy(enum[0])
+        return copy.deepcopy(enum[-1 if last else 0])
     kind = schema.get("type")
     if kind == "object":
         properties = schema.get("properties", {})
@@ -362,14 +460,18 @@ def _schema_example(schema: Mapping[str, object]) -> object:
         assert isinstance(properties, Mapping)
         assert isinstance(required, Sequence)
         return {
-            str(name): _schema_example(properties[str(name)])
+            str(name): _schema_example(properties[str(name)], last=last)
             for name in required
             if isinstance(properties.get(str(name)), Mapping)
         }
     if kind == "array":
         items = schema.get("items", {})
         count = int(schema.get("minItems", 0))
-        return [_schema_example(items) for _ in range(count)] if isinstance(items, Mapping) else []
+        return (
+            [_schema_example(items, last=last) for _ in range(count)]
+            if isinstance(items, Mapping)
+            else []
+        )
     if kind == "integer":
         return int(schema.get("minimum", 0))
     if kind == "number":

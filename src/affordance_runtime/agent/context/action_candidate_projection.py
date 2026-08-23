@@ -164,8 +164,8 @@ class ActionCandidateProjection:
 
 
 @dataclass(frozen=True)
-class ActionDeliveryFragment:
-    """One atomic public route/context fragment proposed for this turn."""
+class ActionRouteFragment:
+    """The sole atomic action-authorization record proposed for one turn."""
 
     candidate: ActionCandidate
     inclusion_reason: str
@@ -176,18 +176,20 @@ class ActionDeliveryFragment:
         if (
             not self.inclusion_reason.strip()
             or self.rendered_cost_bytes < 0
+            or (self.candidate.destination_required and len(self.candidate.destinations) != 1)
         ):
             raise ValueError("action delivery fragment metadata is invalid")
         object.__setattr__(self, "public_provenance", tuple(self.public_provenance))
 
     @property
-    def route_deltas(self) -> tuple[tuple[str, str, str], ...]:
+    def public_route(self) -> tuple[str, str, str]:
         if self.candidate.destination_required:
-            return tuple(
-                (self.candidate.operation, self.candidate.target_ref, item.target_ref)
-                for item in self.candidate.destinations
+            return (
+                self.candidate.operation,
+                self.candidate.target_ref,
+                self.candidate.destinations[0].target_ref,
             )
-        return ((self.candidate.operation, self.candidate.target_ref, ""),)
+        return (self.candidate.operation, self.candidate.target_ref, "")
 
 
 @dataclass(frozen=True)
@@ -238,7 +240,7 @@ class WorldDeliveryRecord:
     record_kind: str
     record_index: int
     rendered_cost_bytes: int
-    route_fragments: tuple[ActionDeliveryFragment, ...] = ()
+    route_fragments: tuple[ActionRouteFragment, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -251,7 +253,7 @@ class WorldDeliveryRecord:
         object.__setattr__(self, "route_fragments", tuple(self.route_fragments))
 
 
-DeliveryAtomicRecord = ActionDeliveryFragment | ActionRouteIssueFragment | WorldDeliveryRecord
+DeliveryAtomicRecord = ActionRouteFragment | ActionRouteIssueFragment | WorldDeliveryRecord
 
 
 @dataclass(frozen=True)
@@ -349,7 +351,7 @@ class ActionDeliveryPlan:
 
     def projection(self, admitted: Mapping[str, int] | None = None) -> ActionCandidateProjection:
         counts = dict(admitted or {})
-        fragments: list[ActionDeliveryFragment] = []
+        fragments: list[ActionRouteFragment] = []
         seen_routes: set[tuple[str, str, str]] = set()
         for obligation in self.obligations:
             count = counts.get(obligation.kind.value, len(obligation.remaining) if admitted is None else 0)
@@ -358,16 +360,15 @@ class ActionDeliveryPlan:
             for record in obligation.remaining[:count]:
                 route_fragments = (
                     (record,)
-                    if isinstance(record, ActionDeliveryFragment)
+                    if isinstance(record, ActionRouteFragment)
                     else record.route_fragments
                     if isinstance(record, WorldDeliveryRecord)
                     else ()
                 )
                 for fragment in route_fragments:
-                    new_routes = tuple(route for route in fragment.route_deltas if route not in seen_routes)
-                    if not new_routes:
+                    if fragment.public_route in seen_routes:
                         continue
-                    seen_routes.update(new_routes)
+                    seen_routes.add(fragment.public_route)
                     fragments.append(fragment)
         candidates = tuple(replace(item.candidate, rank=index) for index, item in enumerate(fragments, 1))
         return ActionCandidateProjection(
@@ -435,7 +436,7 @@ def build_action_delivery_plan(
             else (candidate,)
         )
         for atomic_candidate in atomic_candidates:
-            fragment = ActionDeliveryFragment(
+            fragment = ActionRouteFragment(
                 atomic_candidate,
                 reason,
                 ("current_action_space", reason),
@@ -444,10 +445,10 @@ def build_action_delivery_plan(
             assigned_routes = {
                 route
                 for current in groups[kind]
-                if isinstance(current, ActionDeliveryFragment)
-                for route in current.route_deltas
+                if isinstance(current, ActionRouteFragment)
+                for route in (current.public_route,)
             }
-            if fragment.route_deltas[0] not in assigned_routes:
+            if fragment.public_route not in assigned_routes:
                 groups[kind].append(fragment)
 
     query_options: list[tuple[AgentActionOptionView, bool]] = []
@@ -572,7 +573,7 @@ def build_action_delivery_plan(
         effect_routes = tuple(
             item
             for item in groups[DeliveryObligationKind.PUBLIC_EFFECT]
-            if isinstance(item, ActionDeliveryFragment)
+            if isinstance(item, ActionRouteFragment)
         )
         groups[DeliveryObligationKind.PUBLIC_EFFECT] = [
             WorldDeliveryRecord(
@@ -800,7 +801,7 @@ def _public_candidate_value(candidate: ActionCandidate) -> dict[str, object]:
     }
 
 
-def _public_fragment_value(fragment: ActionDeliveryFragment) -> dict[str, object]:
+def _public_fragment_value(fragment: ActionRouteFragment) -> dict[str, object]:
     return {
         "candidate": _public_candidate_value(fragment.candidate),
         "inclusion_reason": fragment.inclusion_reason,
@@ -810,7 +811,7 @@ def _public_fragment_value(fragment: ActionDeliveryFragment) -> dict[str, object
 
 
 def _public_record_value(record: DeliveryAtomicRecord) -> Mapping[str, object]:
-    if isinstance(record, ActionDeliveryFragment):
+    if isinstance(record, ActionRouteFragment):
         return _public_fragment_value(record)
     if isinstance(record, ActionRouteIssueFragment):
         return freeze_json(to_json_compatible(record))

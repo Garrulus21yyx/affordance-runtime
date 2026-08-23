@@ -3,9 +3,9 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 reopened by Gate 4 attempt 3 /
+Gate 2 owner implementation and vertical proof provider-free verified / joint exit review pending /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 attempt 3 stopped / not admitted / Overall reopened / non-closed / no live run
+Gate 4 implemented and provider-free verified / Gate 4 exit review pending / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
 remain separate reopened gates; C10 cannot close before Gate 4. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -261,6 +261,18 @@ route, but final text omitted its complementary unmarked operand. The expected `
 `source mark ∪ destination text` relation was therefore incomplete. Gate 2 is reopened at the media-route/final-text
 composition owner; Gate 3 remains admitted; Gate 4 is stopped/not admitted. Sparse, continuation, capacity-rejection,
 full, and static closure checks were not continued, and no completion commit was made.
+
+Gate 2/4 route-authority convergence is now implemented and provider-free verified while the attempt-3 failure remains
+the historical falsification witness. Media is pure `VisualEvidenceFragment` data (bytes, actual E/N marks, bbox) and
+has no action route or operand-role metadata. DeliveryPlan `ActionRouteFragment` records are the sole complete unary or
+binary authorization units; Manifest consumes only admitted route fragments and Catalog consumes only Manifest plus
+Store continuation capabilities. Selected binary routes pass with source-only, destination-only, both, or no marks;
+an unselected marked route creates no tool and is recovered through a real `find_controls` turn. Sparse schemas accept
+iff exactly one resolver row accepts the complete selector/business arguments, without missing-edge Cartesian
+expansion. A real multi-page continuation reproduces the ordered owner inventory once, and exact-fit/one-token-under
+capacity produces one recorder call/zero recorder attempts respectively. Focused verification is `184 passed, 2
+skipped`; full pytest is `1620 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches pass. Gate 2/4
+joint exit review remains pending; overall remains reopened/non-closed. No provider, live benchmark, or Task7 ran.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -1109,16 +1121,17 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery reopened by Gate 4 attempt 3:** E/N actual-mark ownership remains scoped prior evidence, but a binary
-   single-mark route is not atomically composed with final text containing the complementary operand.
+4. **Delivery implemented/provider-free verified; exit review pending:** media is pure E/N visual evidence;
+   DeliveryPlan-owned complete `ActionRouteFragment` records alone authorize Manifest/Catalog routes, with omitted
+   routes retained behind Store continuation/find-controls recovery.
 5. **Envelope complete/re-admitted after fresh provider-free review:** one `CanonicalProviderEnvelopeBinder`
    closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
    exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Breakdown
    diagnostics expose one input total and separate reserve/complete totals; producerless candidate metrics are absent.
-6. **Stopped/not admitted — vertical conservation:** attempt 3 falsified Gate 2 binary joint visibility before later
-   vertical assertions. Gate 3 remains admitted; Gate 2 requires owner repair and fresh re-admission before a future
-   Gate 4 attempt.
+6. **Implemented/provider-free verified — vertical conservation; exit review pending:** the real Runtime/Recording
+   FunctionModel path passes request/response, annotated selected/unselected, sparse relation, ordered continuation,
+   private permutation, and capacity-coordinate properties. This does not yet authorize overall closure or a live run.
 7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
    pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free diagnostic.
 8. Run an independent fresh-context read-only review. Reconcile implementation, docs, schema version, evidence, and

@@ -20,7 +20,7 @@ from affordance_runtime.world.contracts import (
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
 if TYPE_CHECKING:
-    from affordance_runtime.agent.context.context import AgentGroundingIndexView, AgentImageInput
+    from affordance_runtime.agent.context.context import AgentGroundingIndexView, VisualEvidenceFragment
 
 
 _MAX_FACET_COLLECTIONS = 24
@@ -275,7 +275,7 @@ def project_actor_world_snapshot(
     projection: CanonicalPublicWorldProjection,
     world: ModelWorldView,
     grounding: AgentGroundingIndexView,
-    image_inputs: tuple[AgentImageInput, ...],
+    image_inputs: tuple[VisualEvidenceFragment, ...],
     max_structure_nodes: int | None = None,
     max_structure_bytes: int | None = None,
 ) -> ActorWorldSnapshot:

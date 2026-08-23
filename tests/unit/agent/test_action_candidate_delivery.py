@@ -8,13 +8,14 @@ from types import SimpleNamespace
 import pytest
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpaceBuilder
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import DecisionKind, RequestActionPage
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import (
-    ActionDeliveryFragment,
+    ActionRouteFragment,
     DeliveryObligationKind,
 )
-from affordance_runtime.agent.context.budgets import ContextProjectionBudget
+from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
 from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
     inspect_outcome_public,
@@ -39,6 +40,7 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_action_catalog,
     resolve_grounded_tool_call,
 )
+from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
@@ -457,7 +459,7 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     assert len(context.action_candidates.candidates) <= 5
     base = context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
     assert base is not None
-    assert len(tuple(item for item in base.records if isinstance(item, ActionDeliveryFragment))) == len(
+    assert len(tuple(item for item in base.records if isinstance(item, ActionRouteFragment))) == len(
         context.complete_actions
     )
     assert candidates == context.action_delivery_plan.projection(
@@ -523,11 +525,132 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
         DeliveryObligationKind.DESTINATION_ROUTES
     ).records
     assert len(destination_records) == 2
-    assert all(len(item.route_deltas) == 1 for item in destination_records)
-    assert {item.route_deltas[0][2] for item in destination_records} == {
+    assert {item.public_route[2] for item in destination_records} == {
         item.grounding_ref for item in context.complete_actions[0].destinations.items
     }
     assert bound.binding.binding_id == "binding:drag-card"
+
+
+def test_sparse_public_schema_acceptance_equals_one_private_resolver_row() -> None:
+    _task_value, _world_value, _actions, drag_context = _drag_context()
+    drag = drag_context.complete_actions[0]
+    first_destination, second_destination = drag.destinations.items
+    second_source = replace(
+        drag,
+        action_id="private:drag:second-source-with-different-length",
+        target_id="private:second-source",
+        target_label="界!",
+        target_ref="E9",
+        destinations=BoundedSection((second_destination,), 1, False),
+    )
+    sparse = GroundedToolCompiler().compile(
+        (drag, second_source),
+        context_id=drag_context.context_id,
+    )[0]
+
+    source_refs = (drag.target_ref, second_source.target_ref)
+    destination_refs = (
+        first_destination.grounding_ref,
+        second_destination.grounding_ref,
+    )
+    expected = {
+        (drag.target_ref, first_destination.grounding_ref),
+        (drag.target_ref, second_destination.grounding_ref),
+        (second_source.target_ref, second_destination.grounding_ref),
+    }
+    for source_ref in source_refs:
+        for destination_ref in destination_refs:
+            arguments = {"source": source_ref, "destination": destination_ref}
+            schema_accepts = True
+            try:
+                validate_value(arguments, sparse.public_spec.input_schema, path="command")
+            except ValueError:
+                schema_accepts = False
+            matches = tuple(
+                row
+                for row in sparse.private_resolutions
+                if dict(row.selector_values) == arguments
+            )
+            assert schema_accepts is ((source_ref, destination_ref) in expected)
+            assert schema_accepts is (len(matches) == 1)
+            if schema_accepts:
+                assert sparse.resolve(arguments, drag_context.context_id, "call:sparse").action_id == matches[0].action_id
+            else:
+                with pytest.raises(GroundedToolResolutionError):
+                    sparse.resolve(arguments, drag_context.context_id, "call:cartesian-gap")
+
+    _task_value, _world_value, _actions, _evaluation, unary_context = _context()
+    unary = unary_context.complete_actions[0]
+    option_a = replace(
+        unary,
+        action_id="private:select:短",
+        semantic_action="select_option",
+        operation="select_option",
+        target_id="private:duplicate-label-a",
+        target_label="短!",
+        target_ref="E20",
+        parameter_schema={
+            "type": "object",
+            "properties": {"value": {"type": "string", "enum": ["甲", "!"]}},
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+    )
+    option_b = replace(
+        option_a,
+        action_id="private:select:longer-binding-identity",
+        target_id="private:duplicate-label-b",
+        target_label="短!",
+        target_ref="E21",
+        parameter_schema={
+            "type": "object",
+            "properties": {"value": {"type": "string", "enum": ["乙✓"]}},
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+    )
+    tools = {
+        item.canonical_operation: item
+        for item in GroundedToolCompiler().compile(
+            (unary, option_a, option_b),
+            context_id=unary_context.context_id,
+        )
+    }
+    assert {"activate", "select_option"} == set(tools)
+    select = tools["select_option"]
+    for arguments, expected_acceptance in (
+        ({"target": "E20", "value": "甲"}, True),
+        ({"target": "E20", "value": "!"}, True),
+        ({"target": "E20", "value": "乙✓"}, False),
+        ({"target": "E21", "value": "乙✓"}, True),
+        ({"target": "E21", "value": "甲"}, False),
+    ):
+        try:
+            validate_value(arguments, select.public_spec.input_schema, path="command")
+            accepted = True
+        except ValueError:
+            accepted = False
+        matches = []
+        for row in select.private_resolutions:
+            if dict(row.selector_values) != {"target": arguments["target"]}:
+                continue
+            try:
+                validate_value(
+                    {"value": arguments["value"]},
+                    row.parameter_schema,
+                    path="command",
+                )
+            except ValueError:
+                continue
+            matches.append(row)
+        assert accepted is expected_acceptance
+        assert accepted is (len(matches) == 1)
+        if accepted:
+            decision = select.resolve(arguments, unary_context.context_id, "call:business-domain")
+            assert decision.action_id == matches[0].action_id
+        else:
+            with pytest.raises(GroundedToolResolutionError):
+                select.resolve(arguments, unary_context.context_id, "call:wrong-domain")
 
 
 def test_query_owner_stores_complete_inventory_and_plan_pages_the_lossless_suffix() -> None:
@@ -821,7 +944,7 @@ def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -
     assert f"[{zulu.target_ref}]" not in initial.view.text
 
 
-def test_only_admitted_fragment_route_deltas_enter_manifest_and_rank_cannot_expand_region() -> None:
+def test_only_admitted_action_route_fragments_enter_manifest_and_rank_cannot_expand_region() -> None:
     task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     context = builder.build(task, world, actions, evaluation)
@@ -838,8 +961,8 @@ def test_only_admitted_fragment_route_deltas_enter_manifest_and_rank_cannot_expa
         route
         for obligation in plan.obligations
         for fragment in obligation.records
-        if isinstance(fragment, ActionDeliveryFragment)
-        for route in fragment.route_deltas
+        if isinstance(fragment, ActionRouteFragment)
+        for route in (fragment.public_route,)
     }
     assert actual == expected_mandatory
     assert rejected.isdisjoint(actual)

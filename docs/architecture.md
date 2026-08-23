@@ -3,9 +3,9 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 reopened by Gate 4 attempt 3 /
+Gate 2 owner implementation and vertical proof provider-free verified / joint exit review pending /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 attempt 3 stopped / not admitted / Overall reopened / non-closed / no live run
+Gate 4 implemented and provider-free verified / Gate 4 exit review pending / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -258,6 +258,23 @@ not a recorder, Catalog, CoreLoop, or Binder defect. Gate 2 is reopened, Gate 3 
 before sparse-relation, continuation, capacity-rejection, full, or static closure checks. No production compensation
 or Gate-4 completion commit was made.
 
+Gate 2/4 route-authority convergence checkpoint (2026-08-23): the attempt-3 falsification is retained above, then the
+shared owner defect was removed. `AgentImageInput`, `DeliveredMedia`, and `CanonicalMediaRecord` now contain only exact
+image bytes, actual E/N marks, and bounding boxes; media route deltas, operand roles, `bind_image_action_routes`, and
+Manifest media-route union no longer exist. The DeliveryPlan-owned `ActionRouteFragment` is the sole action
+authorization record and closes operation, source, optional destination, complete public label/context, business
+schema, and one private resolver row atomically. `ModelTurnDelivery` consumes only the renderer Manifest produced from
+admitted route fragments; media can add a visible N-ref but cannot add an executable ref or route.
+
+The real provider-free Runtime path passes selected binary routes with source-only, destination-only, both, or no
+marks; an unselected marked route remains absent until a real `find_controls` recovery makes its complete fragment
+foreground. Sparse schema acceptance equals exactly one resolver row without Cartesian expansion, all continuation
+pages reproduce the ordered owner inventory once, private permutations conserve physical input, and exact-fit versus
+one-token-under capacity reaches one recorder call versus typed local `context_capacity` with zero attempts. Focused
+verification is `184 passed, 2 skipped`; full pytest is `1620 passed, 24 skipped`; Ruff, compileall, diff check, and
+production negative searches pass. This is implementation/provider-free evidence, not independent exit review or
+overall closure. No provider, live benchmark, or Task7 replay ran.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -266,8 +283,8 @@ provider request, or acceptance sequence. If a later diagram disagrees with this
 later diagram must be corrected or moved to history.
 
 The pre-cutover implementation was frozen because it layered new projections over old owners instead of cutting the
-old owners over. Gates 1–3 have now cut over World, Delivery, and Envelope; Gate 4 remains an explicitly non-admitted
-vertical conservation target, not another Agent framework:
+old owners over. Gates 1–3 have now cut over World, Delivery, and Envelope; Gate 4 implementation is provider-free
+verified and awaits independent exit review, not another Agent framework:
 
 ```text
 BrowserGym observation
@@ -319,8 +336,8 @@ World, loop, planner, workflow graph, memory system, or state machine.
 | `CanonicalPublicWorldProjection` | allocate public `E/N/F/R` refs and one stable public order exactly once | legality, temporal state, prompt capacity |
 | `ObservationDeliveryStore` | own current effect/local inventories, private cursors, requested scope, staleness, and cursor transitions | ranking, rendering, token fitting, tool schemas |
 | `ActionRecallSet` + `ActionDeliveryPlan` | preserve complete recall and express one immutable per-turn priority/obligation plan | deleting legal routes, mutating cursors, declaring prompt admission |
-| `TurnPacker` | choose bounded World/action/media records and freeze their exact route deltas under the supplied request profile | full-World truth, cross-turn state, semantic action legality, provider transport |
-| `DeliveryManifest` | record the exact operand roles and routes actually delivered in text or attached media | inferring routes from refs after rendering |
+| `TurnPacker` | choose bounded World records, complete atomic action-route fragments, and independent visual evidence under the supplied request profile | full-World truth, cross-turn state, semantic action legality, provider transport |
+| `DeliveryManifest` | record exactly the complete `ActionRouteFragment` records admitted from the DeliveryPlan | inferring or authorizing routes from media marks or refs after rendering |
 | `PerTurnToolCatalog` | compile model-callable operations from the frozen Manifest and Store continuation capabilities | independent search/ranking, complete-ActionSpace scanning, cursor interpretation |
 | `ProviderEnvelopeBinder` | assemble one typed physical request from admitted public parts | compression policy, action selection, provider retry |
 | `RequestAdmission` | validate and price that exact envelope once | rebuilding messages/tools or applying another component cap |
@@ -349,15 +366,15 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (reopened by Gate 4 attempt 3).** E/N mark selection and route-bearing media retain scoped prior
-   evidence, but a binary route with only one actually marked operand is not atomically composed with final text that
-   exposes the complementary operand.
+3. **Delivery cutover (implemented/provider-free verified; exit review pending).** Media is pure E/N visual evidence;
+   `ActionRouteFragment` is the sole complete unary/binary authorization record; Manifest consumes only admitted route
+   fragments, and Store continuation preserves every omitted route.
 4. **Envelope cutover (complete/re-admitted after fresh provider-free review).** Messages/tools/media/settings/output
    are bound once and transported unchanged; diagnostics expose one input total, separate reserve/complete totals, and
    the effective input ceiling, with no component-payload subtotals.
-5. **Vertical conservation gate (attempt 3 stopped/not admitted).** Attempt 3 falsified the preceding Delivery
-   composition before later vertical assertions; a future separately admitted Gate 4 may proceed only after Gate 2
-   repair and fresh re-admission.
+5. **Vertical conservation gate (implemented/provider-free verified; exit review pending).** Request/response,
+   annotated selected/unselected routes, sparse schema/resolver equivalence, ordered continuation, private permutation,
+   and final capacity coordinates pass through the real Recording FunctionModel boundary.
 
 No failing example authorizes a local production patch. A stage may begin only after the previous stage's owner-local
 production-path gate is green; closure still requires the final vertical gate and fresh held-out review.

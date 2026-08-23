@@ -15,15 +15,13 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     WorldDeliveryRecord,
 )
 from affordance_runtime.agent.context.compact_world_renderer import (
-    DeliveredActionRoute,
     DeliveryManifest,
     WorldDeliveryView,
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context import (
     AgentContext,
-    AgentImageInput,
-    AgentImageOperandRole,
+    VisualEvidenceFragment,
 )
 from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
 from affordance_runtime.immutable import to_json_compatible
@@ -36,10 +34,8 @@ _DELIVERY_ID = re.compile(r"^delivery:[0-9a-f]{64}$")
 class DeliveredMediaMark:
     ref: str
     bbox: tuple[int, int, int, int]
-    operand_roles: tuple[AgentImageOperandRole, ...] = ()
 
     def __post_init__(self) -> None:
-        roles = tuple(AgentImageOperandRole(item) for item in self.operand_roles)
         if (
             not PublicRefCodec.accepts(self.ref)
             or self.ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
@@ -47,17 +43,12 @@ class DeliveredMediaMark:
             or any(type(value) is not int for value in self.bbox)
         ):
             raise ValueError("delivered media mark is invalid")
-        if self.ref.startswith(PublicRefKind.NODE.value) and roles:
-            raise ValueError("read-only delivered mark cannot carry an operand role")
-        if len(roles) != len(set(roles)):
-            raise ValueError("delivered media operand roles must be unique")
         object.__setattr__(self, "bbox", tuple(self.bbox))
-        object.__setattr__(self, "operand_roles", roles)
 
 
 @dataclass(frozen=True)
 class DeliveredMedia:
-    """Exact attached bytes, actual marks, and their admitted route relation."""
+    """Exact attached visual evidence; never an action-authorization source."""
 
     evidence_ref: str
     mime_type: str
@@ -65,7 +56,6 @@ class DeliveredMedia:
     sha256: str
     coordinate_space_id: str = field(repr=False, compare=False)
     actual_marks: tuple[DeliveredMediaMark, ...] = ()
-    route_deltas: tuple[DeliveredActionRoute, ...] = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if (
@@ -78,38 +68,12 @@ class DeliveredMedia:
         ):
             raise ValueError("delivered media payload is invalid")
         marks = tuple(self.actual_marks)
-        routes = tuple(self.route_deltas)
         if (
             any(not isinstance(item, DeliveredMediaMark) for item in marks)
             or len({item.ref for item in marks}) != len(marks)
-            or any(not isinstance(item, DeliveredActionRoute) for item in routes)
-            or len(routes) != len(set(routes))
         ):
-            raise ValueError("delivered media relation is invalid")
-        roles_by_ref = {item.ref: frozenset(item.operand_roles) for item in marks}
-        for route in routes:
-            marked_operands = (
-                AgentImageOperandRole.SOURCE in roles_by_ref.get(route.source_ref, frozenset()),
-                bool(route.destination_ref)
-                and AgentImageOperandRole.DESTINATION
-                in roles_by_ref.get(route.destination_ref, frozenset()),
-            )
-            if not any(marked_operands):
-                raise ValueError("media route lacks an actual typed operand mark")
-        for mark in marks:
-            expected_roles = {
-                role
-                for route in routes
-                for role, ref in (
-                    (AgentImageOperandRole.SOURCE, route.source_ref),
-                    (AgentImageOperandRole.DESTINATION, route.destination_ref),
-                )
-                if ref == mark.ref
-            }
-            if set(mark.operand_roles) != expected_roles:
-                raise ValueError("media mark operand roles differ from its exact route deltas")
+            raise ValueError("delivered media marks are invalid")
         object.__setattr__(self, "actual_marks", marks)
-        object.__setattr__(self, "route_deltas", routes)
 
 
 @dataclass(frozen=True)
@@ -174,8 +138,6 @@ class ModelTurnDelivery:
         media = tuple(self.media)
         if any(not isinstance(item, DeliveredMedia) for item in media):
             raise TypeError("model turn media must contain exact admitted image records")
-        if any(route not in self.manifest.action_routes for item in media for route in item.route_deltas):
-            raise ValueError("attached media routes must belong to the delivered Manifest")
         route_refs = {
             ref
             for route in self.manifest.action_routes
@@ -288,7 +250,7 @@ def build_model_turn_delivery(
         },
     )
     media = _delivered_media(context.image_inputs) if include_images else ()
-    manifest = _manifest_with_media_routes(rendered.manifest, media)
+    manifest = _manifest_with_media_evidence(rendered.manifest, media)
     payload = {
         "projection": view.projection,
         "text": view.text,
@@ -305,11 +267,7 @@ def build_model_turn_delivery(
                 "mime": item.mime_type,
                 "digest": item.sha256,
                 "coordinate_space": item.coordinate_space_id,
-                "marks": tuple((mark.ref, mark.bbox, mark.operand_roles) for mark in item.actual_marks),
-                "route_deltas": tuple(
-                    (route.operation, route.source_ref, route.destination_ref)
-                    for route in item.route_deltas
-                ),
+                "marks": tuple((mark.ref, mark.bbox) for mark in item.actual_marks),
             }
             for item in media
         ),
@@ -337,27 +295,16 @@ def build_model_turn_delivery(
 
 
 def _delivered_media(
-    images: tuple[AgentImageInput, ...],
+    images: tuple[VisualEvidenceFragment, ...],
 ) -> tuple[DeliveredMedia, ...]:
-    """Preserve the exact route/role relation carried by each actual media fragment."""
+    """Preserve exact image bytes and marks without inferring action authority."""
 
     delivered = []
     for image in images:
-        routes = tuple(
-            DeliveredActionRoute(
-                route.operation,
-                route.source_ref,
-                route.destination_ref,
-                route.private_action_id,
-                route.private_option,
-            )
-            for route in image.route_deltas
-        )
         marks = tuple(
             DeliveredMediaMark(
                 mark.ref,
                 mark.bbox,
-                mark.operand_roles,
             )
             for mark in image.marks
         )
@@ -369,37 +316,28 @@ def _delivered_media(
                 image.sha256,
                 image.coordinate_space_id,
                 marks,
-                routes,
             )
         )
     return tuple(delivered)
 
 
-def _manifest_with_media_routes(
+def _manifest_with_media_evidence(
     text_manifest: DeliveryManifest,
     media: tuple[DeliveredMedia, ...],
 ) -> DeliveryManifest:
-    """Union only typed route deltas carried by admitted text and attached media."""
+    """Add visible read-only marks without allowing media to authorize actions."""
 
-    routes = list(text_manifest.action_routes)
-    executable = list(text_manifest.executable_refs)
     readonly = list(text_manifest.readonly_refs)
     for item in media:
         for mark in item.actual_marks:
             if mark.ref.startswith("N") and mark.ref not in readonly:
                 readonly.append(mark.ref)
-        for route in item.route_deltas:
-            if route not in routes:
-                routes.append(route)
-            for ref in (route.source_ref, route.destination_ref):
-                if ref and ref not in executable:
-                    executable.append(ref)
     return DeliveryManifest(
-        tuple(executable),
+        text_manifest.executable_refs,
         tuple(readonly),
         text_manifest.fact_refs,
         text_manifest.region_refs,
-        tuple(routes),
+        text_manifest.action_routes,
     )
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from affordance_runtime.actions.paging import (
     ActionDiscoveryMatch,
@@ -28,7 +28,6 @@ from affordance_runtime.agent.context.contracts import AgentActionPageView
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
-    bind_image_action_routes,
 )
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
@@ -180,10 +179,6 @@ class ContextBuilder:
             complete_page,
             grounding.index,
             context_id=identity.context_id,
-        )
-        grounding = replace(
-            grounding,
-            images=bind_image_action_routes(grounding.images, complete_page.options),
         )
         delivery_evidence_index = _evidence_index(
             observation,

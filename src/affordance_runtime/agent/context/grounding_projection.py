@@ -8,10 +8,8 @@ from affordance_runtime.agent.context.canonical_world_projection import Canonica
 from affordance_runtime.agent.context.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
-    AgentImageActionRoute,
-    AgentImageInput,
     AgentImageMark,
-    AgentImageOperandRole,
+    VisualEvidenceFragment,
 )
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
@@ -72,7 +70,7 @@ class VisualMarkCandidateSet:
 @dataclass(frozen=True)
 class GroundingProjectionResult:
     index: AgentGroundingIndexView
-    images: tuple[AgentImageInput, ...]
+    images: tuple[VisualEvidenceFragment, ...]
     selected_media_refs: tuple[str, ...]
 
 
@@ -137,7 +135,7 @@ class GroundingProjection:
                 for candidate in mark_candidates.items
             )
             annotation = annotate_screenshot_result(media.data, media.mime_type, marks)
-            images.append(AgentImageInput(
+            images.append(VisualEvidenceFragment(
                 artifact_ref,
                 annotation.mime_type,
                 annotation.data,
@@ -209,55 +207,6 @@ def _intersects_media(
     x, y, width, height = bbox
     media_width, media_height = dimensions
     return x < media_width and y < media_height and x + width > 0 and y + height > 0
-
-
-def bind_image_action_routes(
-    images: tuple[AgentImageInput, ...],
-    actions,
-) -> tuple[AgentImageInput, ...]:
-    """Close actual annotation fragments over exact current public action routes."""
-
-    delivered = []
-    for image in images:
-        actual_refs = frozenset(mark.ref for mark in image.marks)
-        routes = tuple(
-            AgentImageActionRoute(
-                option.operation,
-                option.target_ref,
-                destination.grounding_ref if destination is not None else "",
-                option.action_id,
-                option,
-            )
-            for option in actions
-            for destination in (
-                option.destinations.items if option.destination_required else (None,)
-            )
-            if option.target_ref in actual_refs
-            or (destination is not None and destination.grounding_ref in actual_refs)
-        )
-        marks = tuple(
-            AgentImageMark(
-                mark.ref,
-                mark.bbox,
-                tuple(
-                    role
-                    for role, matched in (
-                        (
-                            AgentImageOperandRole.SOURCE,
-                            any(route.source_ref == mark.ref for route in routes),
-                        ),
-                        (
-                            AgentImageOperandRole.DESTINATION,
-                            any(route.destination_ref == mark.ref for route in routes),
-                        ),
-                    )
-                    if matched
-                ),
-            )
-            for mark in image.marks
-        )
-        delivered.append(replace(image, marks=marks, route_deltas=routes))
-    return tuple(delivered)
 
 
 def _deduplicated_media(candidates):

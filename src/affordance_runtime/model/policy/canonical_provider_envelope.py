@@ -54,8 +54,6 @@ class CanonicalMediaRecord:
     dimensions: tuple[int, int]
     variant: str
     marks: tuple[tuple[str, tuple[int, int, int, int]], ...]
-    operand_roles: tuple[tuple[str, tuple[str, ...]], ...]
-    route_deltas: tuple[tuple[str, str, str], ...]
     coordinate_space_lineage: str = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -72,50 +70,14 @@ class CanonicalMediaRecord:
         if len(self.dimensions) != 2 or any(type(item) is not int or item <= 0 for item in self.dimensions):
             raise ValueError("canonical media dimensions are invalid")
         object.__setattr__(self, "marks", tuple((ref, tuple(box)) for ref, box in self.marks))
-        roles = tuple((ref, tuple(values)) for ref, values in self.operand_roles)
-        routes = tuple(tuple(item) for item in self.route_deltas)
         if (
-            tuple(ref for ref, _bbox in self.marks) != tuple(ref for ref, _values in roles)
-            or any(
+            any(
                 not PublicRefCodec.accepts(ref)
                 or ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
                 for ref, _bbox in self.marks
             )
-            or any(set(values).difference({"source", "destination"}) for _ref, values in roles)
-            or any(
-                len(item) != 3
-                or not item[0]
-                or not PublicRefCodec.accepts(item[1], expected=PublicRefKind.EXECUTABLE)
-                or (
-                    item[2]
-                    and not PublicRefCodec.accepts(item[2], expected=PublicRefKind.EXECUTABLE)
-                )
-                for item in routes
-            )
         ):
-            raise ValueError("canonical media route/operand-role relation is invalid")
-        if any(ref.startswith("N") and values for ref, values in roles):
-            raise ValueError("canonical read-only media mark cannot carry an operand role")
-        role_map = {ref: frozenset(values) for ref, values in roles}
-        for ref, values in roles:
-            expected = {
-                role
-                for _operation, source, destination in routes
-                for role, operand in (("source", source), ("destination", destination))
-                if operand == ref
-            }
-            if set(values) != expected:
-                raise ValueError("canonical media operand roles differ from route deltas")
-        if any(
-            not (
-                "source" in role_map.get(source, frozenset())
-                or (destination and "destination" in role_map.get(destination, frozenset()))
-            )
-            for _operation, source, destination in routes
-        ):
-            raise ValueError("canonical media route lacks an actual typed operand mark")
-        object.__setattr__(self, "operand_roles", roles)
-        object.__setattr__(self, "route_deltas", routes)
+            raise ValueError("canonical media marks are invalid")
 
 
 @dataclass(frozen=True)
@@ -233,8 +195,6 @@ class CanonicalProviderEnvelope:
                                 "dimensions": item.dimensions,
                                 "variant": item.variant,
                                 "marks": item.marks,
-                                "operand_roles": item.operand_roles,
-                                "route_deltas": item.route_deltas,
                             }
                             for item in self.media
                         ),
@@ -489,14 +449,6 @@ def _media_record(item: DeliveredMedia) -> CanonicalMediaRecord:
         dimensions=_image_dimensions(item.data),
         variant="marked" if item.actual_marks else "raw",
         marks=tuple((mark.ref, mark.bbox) for mark in item.actual_marks),
-        operand_roles=tuple(
-            (mark.ref, tuple(role.value for role in mark.operand_roles))
-            for mark in item.actual_marks
-        ),
-        route_deltas=tuple(
-            (route.operation, route.source_ref, route.destination_ref)
-            for route in item.route_deltas
-        ),
         coordinate_space_lineage=item.coordinate_space_id,
     )
 

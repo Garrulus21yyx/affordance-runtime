@@ -137,7 +137,6 @@ def test_out_of_frame_readonly_candidate_is_not_an_actual_mark() -> None:
     assert candidates.items == ()
     assert candidates.total_count == 0
     assert grounded.images[0].marks == ()
-    assert grounded.images[0].route_deltas == ()
     assert grounded.images[0].sha256 == media.sha256
 
 
