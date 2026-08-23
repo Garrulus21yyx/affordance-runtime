@@ -3,9 +3,9 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 owner implementation and vertical proof provider-free verified / joint exit review pending /
+Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 implemented and provider-free verified / Gate 4 exit review pending / Overall reopened / non-closed / no live run
+Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -275,6 +275,16 @@ verification is `184 passed, 2 skipped`; full pytest is `1620 passed, 24 skipped
 production negative searches pass. This is implementation/provider-free evidence, not independent exit review or
 overall closure. No provider, live benchmark, or Task7 replay ran.
 
+Gate 2/4 joint fresh exit review (2026-08-23): an independent read-only reviewer started from fixed HEAD
+`f667697f7ce0c9db4b9c09519a1d7c76e7e3354d` and found no falsification. The review confirmed the sole
+`ActionRouteFragment` producer; authority-free E/N media; atomic selected binary operation/source/destination
+delivery; exclusion and real continuation recovery of unselected marked routes; ordered Manifest → Catalog →
+physical Envelope → provider schema → Resolver → Binder conservation; exclusion of private cursor/action/binding/
+selector data from physical requests; and physical removal of media-route and complete-ActionSpace Catalog
+fallbacks. The focused real-runtime/provider-free review suite passed `57 passed in 9.39s`; the reviewer changed no
+files and ran no live benchmark. Gate 2 and Gate 4 are admitted. Overall remains reopened/non-closed pending the full
+C8–C12/current-revision provider-free acceptance, final fresh-context review, and separately authorized live witness.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -366,13 +376,13 @@ prerequisite for an earlier cutover gate:
 2. **World cutover (implemented and provider-free verified; not closure).** One canonical public projection is supplied
    to every public-ref/order consumer; displaced allocators are physically removed; canonical records, refs, public
    signature and page membership are invariant under supported private identity/enumeration changes.
-3. **Delivery cutover (implemented/provider-free verified; exit review pending).** Media is pure E/N visual evidence;
+3. **Delivery cutover (admitted after joint fresh provider-free exit review).** Media is pure E/N visual evidence;
    `ActionRouteFragment` is the sole complete unary/binary authorization record; Manifest consumes only admitted route
    fragments, and Store continuation preserves every omitted route.
 4. **Envelope cutover (complete/re-admitted after fresh provider-free review).** Messages/tools/media/settings/output
    are bound once and transported unchanged; diagnostics expose one input total, separate reserve/complete totals, and
    the effective input ceiling, with no component-payload subtotals.
-5. **Vertical conservation gate (implemented/provider-free verified; exit review pending).** Request/response,
+5. **Vertical conservation gate (admitted after joint fresh provider-free exit review).** Request/response,
    annotated selected/unselected routes, sparse schema/resolver equivalence, ordered continuation, private permutation,
    and final capacity coordinates pass through the real Recording FunctionModel boundary.
 

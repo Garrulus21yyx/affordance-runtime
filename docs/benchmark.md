@@ -3,11 +3,11 @@
 ## Status
 
 Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 owner implementation and vertical proof provider-free verified / joint exit review pending /
+Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 implemented and provider-free verified / Gate 4 exit review pending / Overall reopened / non-closed / no live run
+Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
-remain separate reopened gates; C10 cannot close before Gate 4. Prior
+remain separate reopened gates; the combined current-tree provider-free acceptance remains pending. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run.
 
@@ -273,6 +273,14 @@ expansion. A real multi-page continuation reproduces the ordered owner inventory
 capacity produces one recorder call/zero recorder attempts respectively. Focused verification is `184 passed, 2
 skipped`; full pytest is `1620 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches pass. Gate 2/4
 joint exit review remains pending; overall remains reopened/non-closed. No provider, live benchmark, or Task7 ran.
+
+The Gate 2/4 joint fresh exit review then passed from fixed HEAD
+`f667697f7ce0c9db4b9c09519a1d7c76e7e3354d`. An independent read-only reviewer found no falsification across the
+sole route producer, authority-free media, atomic selected binary delivery, unselected-route exclusion plus real
+continuation recovery, ordered Manifest → Catalog → physical Envelope → provider schema → Resolver → Binder
+conservation, private-state exclusion, and deleted fallback paths. The focused production-path/provider-free suite
+passed `57 passed in 9.39s`; no files changed during review and no live benchmark ran. Gate 2 and Gate 4 are admitted;
+overall remains reopened/non-closed. The next authorized work is execution step 7, not a new Gate or live run.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -1121,7 +1129,7 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery implemented/provider-free verified; exit review pending:** media is pure E/N visual evidence;
+4. **Delivery admitted after joint fresh provider-free exit review:** media is pure E/N visual evidence;
    DeliveryPlan-owned complete `ActionRouteFragment` records alone authorize Manifest/Catalog routes, with omitted
    routes retained behind Store continuation/find-controls recovery.
 5. **Envelope complete/re-admitted after fresh provider-free review:** one `CanonicalProviderEnvelopeBinder`
@@ -1129,7 +1137,7 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
    envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
    exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Breakdown
    diagnostics expose one input total and separate reserve/complete totals; producerless candidate metrics are absent.
-6. **Implemented/provider-free verified — vertical conservation; exit review pending:** the real Runtime/Recording
+6. **Admitted after joint fresh provider-free exit review — vertical conservation:** the real Runtime/Recording
    FunctionModel path passes request/response, annotated selected/unselected, sparse relation, ordered continuation,
    private permutation, and capacity-coordinate properties. This does not yet authorize overall closure or a live run.
 7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
