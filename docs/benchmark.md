@@ -180,6 +180,9 @@ coordinates. Focused verification is `167 passed, 2 skipped`; full pytest is `16
 compileall, diff check, and old-name/cross-coordinate negative searches pass. No provider/live/Task7 run occurred.
 Gate 3 still awaits joint fresh exit review with Gate 2; Gate 4 remains aborted/not admitted.
 
+Fresh Gate 3 review removed the last ambiguous producer-only subtotal, `fixed_request_tokens`. It had no consumer and
+did not participate in Admission; the explicit input total, reserve, and complete-request total remain authoritative.
+
 Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
 required both operands to be marked in one image. The final-media owner now retains a route when at least one exact
 operand is actually marked and assigns only the role belonging to each actual mark. Source-only and destination-only

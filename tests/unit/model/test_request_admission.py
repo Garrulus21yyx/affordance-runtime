@@ -142,6 +142,7 @@ def test_complete_envelope_count_is_deterministic_and_covers_every_physical_comp
             "prefit_estimated_total_tokens",
             "full_candidate_tokens",
             "lens_candidate_tokens",
+            "fixed_request_tokens",
         }.isdisjoint(diagnostics)
 
     asyncio.run(scenario())

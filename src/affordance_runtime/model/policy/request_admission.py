@@ -58,7 +58,6 @@ class ModelRequestBreakdown:
     tool_schema_bytes: int = 0
     media_bytes: int = 0
     output_reserve_tokens: int = 0
-    fixed_request_tokens: int = 0
     complete_request_tokens: int = 0
 
     def __post_init__(self) -> None:
@@ -238,7 +237,6 @@ def estimate_canonical_envelope(
         tool_schema_bytes=tool_bytes,
         media_bytes=media_bytes,
         output_reserve_tokens=envelope.output_token_reserve,
-        fixed_request_tokens=(input_total - actor_world_tokens - tool_schema_tokens),
         complete_request_tokens=complete_total,
     )
 

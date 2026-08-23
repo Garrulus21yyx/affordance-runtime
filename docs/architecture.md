@@ -183,6 +183,10 @@ target, exact fit, one-over, and zero-provider-attempt rejection properties rema
 passed, 2 skipped`; full provider-free pytest is `1605 passed, 24 skipped`; Ruff, compileall, diff check, and negative
 searches pass. This is Gate 3 implementation evidence only; joint Gate 2/3 exit review and Gate 4 remain blocked.
 
+Fresh Gate 3 review also removed `fixed_request_tokens`: it was an unconsumed partial input subtotal whose name did
+not identify a stable coordinate. No consumer or Admission decision used it. The breakdown now retains physical input
+components, the single `estimated_input_tokens` total, the separate output reserve, and the complete-request sum.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure

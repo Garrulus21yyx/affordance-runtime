@@ -97,3 +97,6 @@ owner-produced input coordinates and performs no conversion.
   not excluded by the repository's dataclass JSON projection. They are now explicitly `serialize=False`, with a
   property test proving only operation/source/destination survive. Focused owner/Recording/Admission/architecture
   verification is `122 passed`; review restarts again from this correction.
+- Fresh Gate 3 review found one remaining producer-only ambiguous field, `fixed_request_tokens`. It was neither an
+  Admission input nor consumed diagnostic and duplicated a partial input subtotal, so the breakdown owner deletes it
+  and the old-name property now covers it. Gate 3 review restarts from that correction.
