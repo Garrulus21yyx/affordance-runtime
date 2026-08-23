@@ -29,6 +29,10 @@ from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+)
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
@@ -40,7 +44,15 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
-from affordance_runtime.model.policy.request_admission import ModelRequestBudget
+from affordance_runtime.model.policy.reasoning_policy import (
+    ActionPolicyCallProfile,
+    ActionPolicyInvocationPhase,
+    ActionPolicyInvocationTrigger,
+)
+from affordance_runtime.model.policy.request_admission import (
+    ModelRequestBudget,
+    estimate_canonical_envelope,
+)
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.task import RiskProfile, TaskGoal
@@ -53,6 +65,29 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.support.canonical_world import canonical_world
+
+_IDENTITY = CanonicalProviderIdentity("fixture", "recording", "fixture.invalid", "text_only")
+_PROFILE = ActionPolicyCallProfile(
+    ActionPolicyInvocationPhase.ORDINARY,
+    ActionPolicyInvocationTrigger.ORDINARY,
+    1024,
+    "disabled",
+)
+
+
+def _pack(request, *, binder=None, supports_multimodal=False, perception_profile=DecisionPerceptionProfile.TEXT_ONLY):
+    if binder is None:
+        binder = CanonicalProviderEnvelopeBinder()
+    elif isinstance(binder, GroundedPolicyContextBinder):
+        binder = CanonicalProviderEnvelopeBinder(context_binder=binder)
+    return TurnPacker().pack(
+        request,
+        binder=binder,
+        identity=_IDENTITY,
+        call_profile=_PROFILE,
+        supports_multimodal=supports_multimodal,
+        perception_profile=perception_profile,
+    )
 
 
 def _binding(observation_id: str, target_id: str) -> ActionBinding:
@@ -845,7 +880,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
     plan = context.action_delivery_plan
     assert plan is not None and sum(len(item.remaining) for item in plan.obligations) >= 2
     request = ModelDecisionRequest("request:packing-property", context)
-    wide = GroundedPolicyContextBinder()
+    wide = CanonicalProviderEnvelopeBinder()
 
     foreground = next(item for item in plan.obligations if item.continuation_scope == plan.foreground_scope)
 
@@ -858,20 +893,21 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
             admitted_records=counts,
         )
         catalog = compile_grounded_action_catalog(context, delivery)
-        return wide.action_request(
+        envelope = wide.bind(
             request,
-            catalog.specs,
             delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        ).breakdown.estimated_total_tokens
+            catalog,
+            identity=_IDENTITY,
+            call_profile=_PROFILE,
+            output_token_reserve=_PROFILE.max_output_tokens,
+        )
+        return estimate_canonical_envelope(envelope).complete_request_tokens
 
     mandatory_total = total(0)
     first_optional_total = total(1)
     second_optional_total = total(2)
     assert first_optional_total > mandatory_total
-    limited = GroundedPolicyContextBinder(
+    limited = CanonicalProviderEnvelopeBinder(
         request_budget=ModelRequestBudget(
             model_context_window=second_optional_total + 5_000,
             max_output_tokens=0,
@@ -880,7 +916,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
             admission_limit=second_optional_total - 1,
         )
     )
-    packed = TurnPacker().pack(
+    packed = _pack(
         request,
         binder=limited,
         supports_multimodal=False,
@@ -898,7 +934,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
             packing_backoff_count=packed.packing_backoff_count,
         ).manifest.action_routes
     )
-    breakdown = packed.admitted_request.breakdown
+    breakdown = packed.admitted_envelope.token_breakdown
     assert breakdown.admitted_record_count == sum(dict(packed.admitted_record_counts).values())
     assert breakdown.manifest_route_count == len(packed.delivery.manifest.action_routes)
     assert breakdown.packing_backoff_count == packed.packing_backoff_count
@@ -958,7 +994,7 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
     assert effect is not None
     assert len(effect.records) >= count
 
-    packed = TurnPacker().pack(
+    packed = _pack(
         ModelDecisionRequest(f"request:fanout:{count}", context),
         binder=GroundedPolicyContextBinder(),
         supports_multimodal=False,
@@ -971,7 +1007,7 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
     if count >= 84:
         assert admitted < len(effect.records)
         assert any(item.scope == "effect" for item in packed.delivery.continuation_capabilities)
-    assert packed.admitted_request.breakdown.estimated_total_tokens <= ModelRequestBudget().soft_target_tokens
+    assert packed.admitted_envelope.token_breakdown.complete_request_tokens <= ModelRequestBudget().admission_limit
     assert (*effect.records[:admitted], *effect.records[admitted:]) == effect.records
     changes = {item.change.value for item in store.latest_effect.inventory.atoms}
     assert {"added", "removed", "modified"} <= changes
@@ -1002,7 +1038,7 @@ def test_foreground_required_atom_does_not_receive_second_attempt_before_other_g
         return original(*args, **kwargs)
 
     monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(recording_attempt))
-    TurnPacker().pack(
+    _pack(
         ModelDecisionRequest("request:depth-round", context),
         binder=GroundedPolicyContextBinder(),
         supports_multimodal=False,
@@ -1040,7 +1076,7 @@ def test_stale_context_and_unknown_legacy_operations_fail_typed() -> None:
 def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventory_counts() -> None:
     _task_value, world, _actions, _evaluation, context = _context()
     request = ModelDecisionRequest("request:privacy", context)
-    packed = TurnPacker().pack(
+    packed = _pack(
         request,
         binder=GroundedPolicyContextBinder(),
         supports_multimodal=False,
@@ -1049,8 +1085,7 @@ def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventor
     physical = json.dumps(
         to_json_compatible(
             {
-                "messages": packed.admitted_request.messages,
-                "tools": packed.admitted_request.tools,
+                "envelope": packed.admitted_envelope.envelope.physical_content(),
                 "delivery": packed.delivery,
             }
         ),
@@ -1127,15 +1162,13 @@ def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly
     }
     public_task = replace(task, inputs=public_inputs, success_criteria=(criterion,))
     context = ContextBuilder().build(public_task, world, actions, evaluation)
-    packed = TurnPacker().pack(
+    packed = _pack(
         ModelDecisionRequest("request:task-public", context),
         binder=GroundedPolicyContextBinder(),
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
     )
-    content = packed.admitted_request.messages[-1].content
-    assert isinstance(content, str)
-    physical = json.loads(content)
+    physical = json.loads(packed.admitted_envelope.envelope.user_text)
 
     assert physical["task"]["public_inputs"] == public_inputs
     assert physical["task"]["success_criteria"]["items"][0]["definition"] == criterion
@@ -1153,13 +1186,13 @@ def test_observation_and_source_id_permutation_preserves_public_page_manifest_ca
     )
     context_b = ContextBuilder().build(task, world_b, actions_b, evaluation_b)
 
-    packed_a = TurnPacker().pack(
+    packed_a = _pack(
         ModelDecisionRequest("request:id-a", context_a),
         binder=GroundedPolicyContextBinder(),
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
     )
-    packed_b = TurnPacker().pack(
+    packed_b = _pack(
         ModelDecisionRequest("request:id-b", context_b),
         binder=GroundedPolicyContextBinder(),
         supports_multimodal=False,
@@ -1170,8 +1203,8 @@ def test_observation_and_source_id_permutation_preserves_public_page_manifest_ca
     assert packed_a.delivery.delivery_id == packed_b.delivery.delivery_id
     assert packed_a.delivery.manifest == packed_b.delivery.manifest
     assert to_json_compatible(packed_a.catalog.specs) == to_json_compatible(packed_b.catalog.specs)
-    assert packed_a.admitted_request.breakdown.estimated_total_tokens == (
-        packed_b.admitted_request.breakdown.estimated_total_tokens
+    assert packed_a.admitted_envelope.token_breakdown.complete_request_tokens == (
+        packed_b.admitted_envelope.token_breakdown.complete_request_tokens
     )
     assert packed_a.delivery.admitted_record_counts == packed_b.delivery.admitted_record_counts
 
@@ -1187,7 +1220,7 @@ def test_private_inventory_enumeration_permutation_preserves_public_delivery() -
     context_b = ContextBuilder().build(task, world_b, actions_b, evaluation_a)
 
     packed = tuple(
-        TurnPacker().pack(
+        _pack(
             ModelDecisionRequest(request_id, context),
             binder=GroundedPolicyContextBinder(),
             supports_multimodal=False,
@@ -1201,8 +1234,8 @@ def test_private_inventory_enumeration_permutation_preserves_public_delivery() -
     assert first.delivery.delivery_id == second.delivery.delivery_id
     assert first.delivery.manifest == second.delivery.manifest
     assert to_json_compatible(first.catalog.specs) == to_json_compatible(second.catalog.specs)
-    assert first.admitted_request.breakdown.estimated_total_tokens == (
-        second.admitted_request.breakdown.estimated_total_tokens
+    assert first.admitted_envelope.token_breakdown.complete_request_tokens == (
+        second.admitted_envelope.token_breakdown.complete_request_tokens
     )
     assert first.delivery.admitted_record_counts == second.delivery.admitted_record_counts
 

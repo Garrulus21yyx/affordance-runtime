@@ -59,8 +59,11 @@ from affordance_runtime.execution import (
     ExecutionReceiptBatch,
 )
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+)
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
-from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
@@ -70,6 +73,11 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.reasoning_policy import (
+    ActionPolicyCallProfile,
+    ActionPolicyInvocationPhase,
+    ActionPolicyInvocationTrigger,
+)
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.schema_digest import schema_digest
@@ -98,6 +106,30 @@ WA_BROWSERGYM_COMMIT = "9e779f087de9a65668b6974d11f9ce9816026e96"
 WA_VERIFIED_COMMIT = "6473f72db5dcefc97b5725b59e734504edc28a21"
 WA_HARD_SUBSET_SHA256 = "d20872f9894e4e8ffc250155fe0ad5c797c640f40d3094404654a8b1dab14e68"
 WA_SELECTION_SEED = 20260818
+
+_DIAGNOSTIC_IDENTITY = CanonicalProviderIdentity(
+    "provider-free",
+    "diagnostic",
+    "fixture.invalid",
+    "text_only",
+)
+_DIAGNOSTIC_PROFILE = ActionPolicyCallProfile(
+    ActionPolicyInvocationPhase.ORDINARY,
+    ActionPolicyInvocationTrigger.ORDINARY,
+    1024,
+    "disabled",
+)
+
+
+def _diagnostic_pack(request: ModelDecisionRequest, binder: CanonicalProviderEnvelopeBinder | None = None):
+    return TurnPacker().pack(
+        request,
+        binder=binder or CanonicalProviderEnvelopeBinder(),
+        identity=_DIAGNOSTIC_IDENTITY,
+        call_profile=_DIAGNOSTIC_PROFILE,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+    )
 WA_DEFAULT_TIMEOUT_S = 0.0
 WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
 WA_FINAL_OUTPUT_ID = "webarena_final_response"
@@ -770,20 +802,15 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             evaluation,
             observation_capabilities=environment.observation_capabilities,
         )
-        binder = GroundedPolicyContextBinder()
+        binder = CanonicalProviderEnvelopeBinder()
         request = ModelDecisionRequest(
             request_id=f"diagnostic:{context.context_id}",
             agent_context=context,
         )
-        packed = TurnPacker().pack(
-            request,
-            binder=binder,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-        )
+        packed = _diagnostic_pack(request, binder)
         delivery = packed.delivery
         catalog = packed.catalog
-        request_budget = packed.admitted_request.breakdown.as_diagnostics()
+        request_budget = packed.admitted_envelope.token_breakdown.as_diagnostics()
         return _w1b_world_success(
             case_ref,
             environment,
@@ -793,7 +820,7 @@ async def _inspect_w1b_world_case(case_ref: WebArenaVerifiedCaseRef, *, seed: in
             context,
             catalog,
             delivery,
-            packed.admitted_request,
+            packed.admitted_envelope,
             request_budget,
         )
     except Exception as exc:
@@ -823,7 +850,7 @@ def _w1b_world_success(
     context,
     catalog,
     delivery: ModelTurnDelivery,
-    admitted_request,
+    admitted_envelope,
     request_budget: Mapping[str, object],
 ) -> dict[str, Any]:
     source_counts = _source_counts(observation)
@@ -838,7 +865,7 @@ def _w1b_world_success(
     leak_markers = _private_leak_markers(
         rendered.text,
         catalog,
-        admitted_request,
+        admitted_envelope,
         _private_runtime_strings(observation),
     )
     find_controls_offered = "find_controls" in {item.name for item in catalog.specs}
@@ -1124,19 +1151,14 @@ def _transition_delivery_diagnostic(
         working_facts_digest(workspace),
     )
 
-    binder = GroundedPolicyContextBinder()
+    binder = CanonicalProviderEnvelopeBinder()
     request = ModelDecisionRequest(
         request_id=f"diagnostic:transition:{after_context.context_id}",
         agent_context=after_context,
     )
-    packed = TurnPacker().pack(
-        request,
-        binder=binder,
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-    )
+    packed = _diagnostic_pack(request, binder)
     delivery = packed.delivery
-    admitted = packed.admitted_request
+    admitted = packed.admitted_envelope
 
     local_decision = SearchPageContentResult(
         after_context.context_id,
@@ -1182,14 +1204,9 @@ def _transition_delivery_diagnostic(
         request_id=f"diagnostic:local:{local_context.context_id}",
         agent_context=local_context,
     )
-    local_packed = TurnPacker().pack(
-        local_request,
-        binder=binder,
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-    )
+    local_packed = _diagnostic_pack(local_request, binder)
     local_delivery = local_packed.delivery
-    local_admitted = local_packed.admitted_request
+    local_admitted = local_packed.admitted_envelope
     transition_leaks = _private_leak_markers(
         delivery.view.text,
         packed.catalog,
@@ -1247,7 +1264,10 @@ def _transition_delivery_diagnostic(
         errors.append("transition:monitor_rejected_information_increment")
     if local_monitor.recommendation is not EpisodeMonitorRecommendation.CONTINUE:
         errors.append("transition:monitor_rejected_bounded_local_search")
-    if admitted.breakdown.estimated_total_tokens <= 0 or local_admitted.breakdown.estimated_total_tokens <= 0:
+    if (
+        admitted.token_breakdown.estimated_total_tokens <= 0
+        or local_admitted.token_breakdown.estimated_total_tokens <= 0
+    ):
         errors.append("transition:post_transition_request_not_admitted")
     if "LatestEffect" not in delivery.view.text or "CurrentFindings" not in delivery.view.text:
         errors.append("transition:change_first_order_missing")
@@ -1278,17 +1298,17 @@ def _transition_delivery_diagnostic(
         "monitor_recommendation": transition_monitor.recommendation.value,
         "local_operation": "search_page_content",
         "local_monitor_recommendation": local_monitor.recommendation.value,
-        "post_transition_request_admitted": admitted.breakdown.estimated_total_tokens > 0,
-        "post_transition_request_tokens": admitted.breakdown.estimated_total_tokens,
-        "post_transition_request_budget": admitted.breakdown.as_diagnostics(),
+        "post_transition_request_admitted": admitted.token_breakdown.estimated_total_tokens > 0,
+        "post_transition_request_tokens": admitted.token_breakdown.estimated_total_tokens,
+        "post_transition_request_budget": admitted.token_breakdown.as_diagnostics(),
         "post_transition_manifest_route_count": len(delivery.manifest.action_routes),
         "post_transition_obligation_group_count": len(after_context.action_delivery_plan.obligations),
         "post_transition_admitted_record_count": sum(dict(delivery.admitted_record_counts).values()),
         "post_transition_packing_backoff_count": delivery.packing_backoff_count,
         "post_transition_privacy_checked": not transition_leaks,
-        "post_local_request_admitted": local_admitted.breakdown.estimated_total_tokens > 0,
-        "post_local_request_tokens": local_admitted.breakdown.estimated_total_tokens,
-        "post_local_request_budget": local_admitted.breakdown.as_diagnostics(),
+        "post_local_request_admitted": local_admitted.token_breakdown.estimated_total_tokens > 0,
+        "post_local_request_tokens": local_admitted.token_breakdown.estimated_total_tokens,
+        "post_local_request_budget": local_admitted.token_breakdown.as_diagnostics(),
         "post_local_manifest_route_count": len(local_delivery.manifest.action_routes),
         "post_local_obligation_group_count": len(local_context.action_delivery_plan.obligations),
         "post_local_admitted_record_count": sum(dict(local_delivery.admitted_record_counts).values()),
@@ -1480,12 +1500,7 @@ def _delivery_probe_diagnostic(
                 request_id=f"diagnostic:retrieval:{next_context.context_id}",
                 agent_context=next_context,
             )
-            packed = TurnPacker().pack(
-                next_request,
-                binder=GroundedPolicyContextBinder(),
-                supports_multimodal=False,
-                perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            )
+            packed = _diagnostic_pack(next_request)
             next_delivery = packed.delivery
             discovery_routes = {(match.target_ref, match.operation) for match in discovery_matches}
             for candidate in next_delivery.action_candidates.candidates:
@@ -1806,29 +1821,12 @@ def _evidence_retention_diagnostic(
         workspace=AgentWorkspace(working_facts=(fact,)),
         region_index=context.region_index,
     )
-    binder = GroundedPolicyContextBinder()
     next_request = ModelDecisionRequest(
         request_id=f"diagnostic:retention:{next_context.context_id}",
         agent_context=next_context,
     )
-    next_delivery = binder.model_turn_delivery(
-        next_request,
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-    )
-    next_catalog = compile_grounded_tool_catalog(
-        next_context,
-        GroundedToolPhase.ACTION_SELECTION,
-        next_delivery,
-    )
-    admitted = binder.action_request(
-        next_request,
-        next_catalog.specs,
-        next_delivery,
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-        include_tool_menu=False,
-    )
+    packed = _diagnostic_pack(next_request)
+    admitted = packed.admitted_envelope
     original_record = context.evidence_index.resolve_record(canonical_ref)
     exact_value_retained = bool(
         original_record is not None
@@ -1840,7 +1838,7 @@ def _evidence_retention_diagnostic(
     view_changed = (
         next_context.context_id != context.context_id and changed_page.query == "provider free retention probe"
     )
-    working_set_visible = admitted.breakdown.working_set_tokens > 0
+    working_set_visible = admitted.token_breakdown.actor_world_tokens > 0
     errors = []
     if not view_changed:
         errors.append("evidence:view_change_not_observed")
@@ -1858,7 +1856,7 @@ def _evidence_retention_diagnostic(
         "view_changed": view_changed,
         "exact_value_retained": exact_value_retained,
         "working_set_visible": working_set_visible,
-        "working_set_tokens": admitted.breakdown.working_set_tokens,
+        "working_set_tokens": admitted.token_breakdown.working_set_tokens,
         "acceptance_errors": tuple(errors),
     }
 
@@ -2443,23 +2441,14 @@ def _walk_actor_nodes(root):
 def _private_leak_markers(
     rendered: str,
     catalog,
-    admitted_request,
+    admitted_envelope,
     private_binding_values: tuple[str, ...],
 ) -> tuple[str, ...]:
     public_tools = tuple(
         {"name": item.name, "description": item.description, "input_schema": to_json_compatible(item.input_schema)}
         for item in catalog.specs
     )
-    physical_request = {
-        "messages": tuple(
-            {"role": str(item.role), "content": to_json_compatible(item.content)}
-            for item in admitted_request.messages
-        ),
-        "tools": tuple(
-            {"name": item.name, "description": item.description, "input_schema": item.input_schema}
-            for item in admitted_request.tools
-        ),
-    }
+    physical_request = admitted_envelope.envelope.physical_content()
     payload = (
         rendered
         + "\n"

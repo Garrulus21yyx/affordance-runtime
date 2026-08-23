@@ -1,5 +1,10 @@
 """Provider-neutral structured model policy boundary."""
 
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalProviderEnvelope,
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+)
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelGenerationAttempt,
@@ -43,4 +48,7 @@ __all__ = [
     "ActionPolicyWireCapability",
     "PackedModelTurn",
     "TurnPacker",
+    "CanonicalProviderEnvelope",
+    "CanonicalProviderEnvelopeBinder",
+    "CanonicalProviderIdentity",
 ]

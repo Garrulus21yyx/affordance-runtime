@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -21,6 +24,11 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
 )
 from affordance_runtime.agent.decisions import ToolRejectedResult
+from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+)
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelGenerationAttempt,
@@ -54,18 +62,28 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallIssueCode,
     ToolCallReconciliationStatus,
 )
-from affordance_runtime.model.policy.reasoning_policy import ActionPolicyReasoningPolicy
+from affordance_runtime.model.policy.reasoning_policy import (
+    ActionPolicyCallProfile,
+    ActionPolicyInvocationPhase,
+    ActionPolicyInvocationTrigger,
+    ActionPolicyReasoningPolicy,
+)
 from affordance_runtime.model.policy.request_admission import (
+    InvalidProviderEnvelope,
     ModelRequestBreakdown,
     ModelRequestCapacityError,
+    RejectedProviderEnvelope,
+    RequestAdmission,
     request_breakdown_diagnostics,
 )
 from affordance_runtime.model.policy.strict_json import validate_json_tree
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import (
     ModelConfig,
+    ModelImageURLPart,
     ModelMessage,
     ModelPort,
+    ModelTextPart,
     ProviderFailureKind,
     ProviderModelError,
     ProviderTransportErrorCategory,
@@ -147,11 +165,113 @@ _NON_NORMALIZABLE_ISSUES = frozenset({ToolCallIssueCode.UNKNOWN_TOOL})
 
 
 @dataclass(frozen=True)
+class _LegacyContextBinder:
+    """Test-only compatibility over the production canonical envelope owner."""
+
+    public: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
+    request_budget: ModelRequestBudget = field(default_factory=ModelRequestBudget)
+
+    def prompt_version(self, context) -> str:
+        return self.public.prompt_version(context)
+
+    def model_turn_delivery(self, request, *, supports_multimodal, perception_profile):
+        return self.public.model_turn_delivery(
+            request,
+            supports_multimodal=supports_multimodal,
+            perception_profile=perception_profile,
+        )
+
+    def action_request(
+        self,
+        request,
+        tools,
+        delivery,
+        *,
+        supports_multimodal,
+        perception_profile,
+        include_tool_menu,
+        request_budget,
+    ):
+        del supports_multimodal, perception_profile
+        sections = self.public._public_context_sections(  # noqa: SLF001 - frozen legacy fixture
+            request.agent_context,
+            bool(delivery.media),
+            delivery,
+        )
+        payload = dict(sections["public"])
+        if include_tool_menu:
+            payload["tools"] = tuple(
+                {
+                    "name": item.name,
+                    "description": item.description,
+                    "input_schema": to_json_compatible(item.input_schema),
+                }
+                for item in tools
+            )
+        user_text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        registrations = tuple(SimpleNamespace(spec=item) for item in tools)
+        catalog = SimpleNamespace(
+            context_id=request.context_id,
+            delivery_id=delivery.delivery_id,
+            catalog_id="legacy-test-catalog",
+            specs=tuple(tools),
+            tools=registrations,
+        )
+        profile = ActionPolicyCallProfile(
+            ActionPolicyInvocationPhase.ORDINARY,
+            ActionPolicyInvocationTrigger.ORDINARY,
+            request_budget.max_output_tokens,
+            "disabled",
+        )
+        envelope = CanonicalProviderEnvelopeBinder._create_from_parts(  # noqa: SLF001 - test fixture
+            context_id=request.context_id,
+            delivery_id=delivery.delivery_id,
+            catalog=catalog,
+            identity=CanonicalProviderIdentity("legacy", "fixture", "fixture.invalid", "test"),
+            instructions=(self.public.prompts.actor,),
+            user_text=user_text,
+            media=(),
+            call_profile=profile,
+            output_token_reserve=(
+                request_budget.max_output_tokens
+                + request_budget.protocol_reserve_tokens
+                + request_budget.safety_margin_tokens
+            ),
+            attempt_phase="initial",
+            diagnostics=(delivery.view.projection, 0, 0, 0, 0, 0, 0, 0, len(delivery.manifest.action_routes), 0),
+        )
+        outcome = RequestAdmission().admit(envelope, budget=request_budget)
+        if isinstance(outcome, RejectedProviderEnvelope):
+            raise ModelRequestCapacityError(outcome.token_breakdown)
+        if isinstance(outcome, InvalidProviderEnvelope):
+            raise ValueError(outcome.detail)
+        if delivery.media:
+            parts = [ModelTextPart(text=user_text)]
+            parts.extend(
+                ModelImageURLPart(
+                    image_url=f"data:{item.mime_type};base64,{base64.b64encode(item.data).decode('ascii')}"
+                )
+                for item in delivery.media
+            )
+            user_content = tuple(parts)
+        else:
+            user_content = user_text
+        return SimpleNamespace(
+            messages=(
+                ModelMessage(role="system", content=self.public.prompts.actor),
+                ModelMessage(role="user", content=user_content),
+            ),
+            tools=tuple(tools),
+            breakdown=outcome.token_breakdown,
+        )
+
+
+@dataclass(frozen=True)
 class CompactJsonDecisionPort:
     port: ModelPort
     config: ModelConfig
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
-    context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
+    context_binder: _LegacyContextBinder = field(default_factory=_LegacyContextBinder)
     timeout_fast_retry_timeout_s: float | None = None
     timeout_fast_retry_max_tokens: int = 512
     timeout_fast_retry_thinking_mode: str | None = "disabled"
@@ -195,7 +315,7 @@ class CompactJsonDecisionPort:
             raise ValueError("grounded-tools bridge allows at most one transport retry")
         profile = DecisionPerceptionProfile(self.perception_profile)
         object.__setattr__(self, "perception_profile", profile)
-        if not isinstance(self.context_binder, GroundedPolicyContextBinder):
+        if not isinstance(self.context_binder, _LegacyContextBinder):
             raise TypeError("grounded adapter requires one typed context binder")
         if not isinstance(self.reasoning_policy, ActionPolicyReasoningPolicy):
             raise TypeError("grounded adapter requires one typed reasoning policy")

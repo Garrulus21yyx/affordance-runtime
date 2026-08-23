@@ -21,6 +21,31 @@ from affordance_runtime.model.policy.turn_packer import TurnPacker
 _BOUND = 8
 
 
+def _packed_artifacts(counts: dict[str, int], backoff_count: int):
+    admitted_counts = tuple(sorted(counts.items()))
+    delivery = SimpleNamespace(
+        delivery_id="delivery:test",
+        admitted_record_counts=admitted_counts,
+        packing_backoff_count=backoff_count,
+    )
+    catalog = SimpleNamespace(delivery_id="delivery:test")
+    admitted = SimpleNamespace(
+        envelope=SimpleNamespace(delivery_id="delivery:test", catalog=catalog)
+    )
+    return delivery, catalog, admitted
+
+
+def _fake_binder():
+    return SimpleNamespace(
+        request_budget=ModelRequestBudget(),
+        context_binder=SimpleNamespace(_include_images=lambda *_args: False),
+    )
+
+
+def _fake_profile():
+    return SimpleNamespace(max_output_tokens=1024)
+
+
 def _records(count: int):
     return tuple(
         ActionRouteIssueFragment(
@@ -133,22 +158,14 @@ def test_depth_round_packer_obeys_exact_fit_and_one_unit_under(
         calls.append(counts)
         if sum(counts.values()) > capacity:
             raise ModelRequestCapacityError(SimpleNamespace())
-        admitted_counts = tuple(sorted(counts.items()))
-        delivery = SimpleNamespace(
-            delivery_id="delivery:test",
-            admitted_record_counts=admitted_counts,
-            packing_backoff_count=kwargs["backoff_count"],
-        )
-        return delivery, SimpleNamespace(delivery_id="delivery:test"), SimpleNamespace()
+        return _packed_artifacts(counts, kwargs["backoff_count"])
 
     monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(attempt))
-    binder = SimpleNamespace(
-        request_budget=ModelRequestBudget(),
-        _include_images=lambda *_args: False,
-    )
     packed = TurnPacker().pack(
         SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
-        binder=binder,
+        binder=_fake_binder(),
+        identity=None,
+        call_profile=_fake_profile(),
         supports_multimodal=False,
         perception_profile=SimpleNamespace(),
     )
@@ -182,25 +199,14 @@ def test_oversized_optional_head_blocks_only_its_group(
         counts = dict(kwargs["admitted_records"])
         if counts[oversized_kind.value] or sum(counts.values()) > 2:
             raise ModelRequestCapacityError(SimpleNamespace())
-        admitted_counts = tuple(sorted(counts.items()))
-        return (
-            SimpleNamespace(
-                delivery_id="delivery:test",
-                admitted_record_counts=admitted_counts,
-                packing_backoff_count=kwargs["backoff_count"],
-            ),
-            SimpleNamespace(delivery_id="delivery:test"),
-            SimpleNamespace(),
-        )
+        return _packed_artifacts(counts, kwargs["backoff_count"])
 
     monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(attempt))
-    binder = SimpleNamespace(
-        request_budget=ModelRequestBudget(),
-        _include_images=lambda *_args: False,
-    )
     packed = TurnPacker().pack(
         SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
-        binder=binder,
+        binder=_fake_binder(),
+        identity=None,
+        call_profile=_fake_profile(),
         supports_multimodal=False,
         perception_profile=SimpleNamespace(),
     )
@@ -230,24 +236,14 @@ def test_run21_fanout_shape_keeps_one_foreground_minimum_and_bounded_cost(
         counts = dict(kwargs["admitted_records"])
         if sum(counts.values()) > capacity:
             raise ModelRequestCapacityError(SimpleNamespace())
-        admitted_counts = tuple(sorted(counts.items()))
-        return (
-            SimpleNamespace(
-                delivery_id="delivery:test",
-                admitted_record_counts=admitted_counts,
-                packing_backoff_count=kwargs["backoff_count"],
-            ),
-            SimpleNamespace(delivery_id="delivery:test"),
-            SimpleNamespace(),
-        )
+        return _packed_artifacts(counts, kwargs["backoff_count"])
 
     monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(attempt))
     packed = TurnPacker().pack(
         SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
-        binder=SimpleNamespace(
-            request_budget=ModelRequestBudget(),
-            _include_images=lambda *_args: False,
-        ),
+        binder=_fake_binder(),
+        identity=None,
+        call_profile=_fake_profile(),
         supports_multimodal=False,
         perception_profile=SimpleNamespace(),
     )

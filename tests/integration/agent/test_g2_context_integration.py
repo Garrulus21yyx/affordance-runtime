@@ -11,10 +11,9 @@ from affordance_runtime.agent.context.model_turn_delivery import build_model_tur
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.goals import Failed, GoalPlan, GoalPlanItem, NotRequired, Ready, Unsupported
-from affordance_runtime.model.policy.contracts import ModelDecisionRequest
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.task.contracts import TaskGoal
 from tests.support.agent.core_loop_support import _world
 
@@ -56,15 +55,20 @@ def _context(world, resolution=None, recent_steps: tuple[AgentTurnView, ...] = (
 def _public(context):
     delivery = build_model_turn_delivery(context, include_images=False)
     catalog = compile_grounded_action_catalog(context, delivery)
-    messages = GroundedPolicyContextBinder().action_messages(
-        ModelDecisionRequest("model-request:g2", context),
-        catalog.specs,
+    public = dict(GroundedPolicyContextBinder()._public_context_sections(  # noqa: SLF001 - projection gate
+        context,
+        False,
         delivery,
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
-        include_tool_menu=True,
+    )["public"])
+    public["tools"] = tuple(
+        {
+            "name": item.name,
+            "description": item.description,
+            "input_schema": to_json_compatible(item.input_schema),
+        }
+        for item in catalog.specs
     )
-    return json.loads(messages[1].content)
+    return json.loads(json.dumps(public))
 
 
 def test_ready_goal_plan_is_direct_static_context_without_progress_projection() -> None:

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import base64
-import json
-import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,13 +25,6 @@ from affordance_runtime.model.policy.prompt import (
     MODEL_POLICY_INSTRUCTIONS,
     MODEL_POLICY_PROMPT_VERSION,
 )
-from affordance_runtime.model.policy.request_admission import (
-    AdmittedModelRequest,
-    ModelRequestBudget,
-    RequestAdmission,
-)
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
-from affordance_runtime.model.providers.port import ModelImageURLPart, ModelMessage, ModelTextPart
 
 
 @dataclass(frozen=True)
@@ -53,133 +43,13 @@ def load_grounded_agent_prompts() -> GroundedAgentPrompts:
 
 @dataclass(frozen=True)
 class GroundedPolicyContextBinder:
-    """Convert one canonical AgentContext to one provider message boundary."""
+    """Project the public ActionPolicy context consumed by the envelope binder."""
 
     prompts: GroundedAgentPrompts = field(default_factory=load_grounded_agent_prompts)
-    request_budget: ModelRequestBudget = field(default_factory=ModelRequestBudget)
-    request_admission: RequestAdmission = field(default_factory=RequestAdmission)
 
     def prompt_version(self, context: AgentContext) -> str:
         del context
         return self.prompts.version
-
-    def action_messages(
-        self,
-        request: ModelDecisionRequest,
-        tools: tuple[ToolSpec, ...],
-        delivery: ModelTurnDelivery,
-        *,
-        supports_multimodal: bool,
-        perception_profile: DecisionPerceptionProfile,
-        include_tool_menu: bool,
-    ) -> tuple[ModelMessage, ...]:
-        return self.action_request(
-            request,
-            tools,
-            delivery,
-            supports_multimodal=supports_multimodal,
-            perception_profile=perception_profile,
-            include_tool_menu=include_tool_menu,
-        ).messages
-
-    def action_request(
-        self,
-        request: ModelDecisionRequest,
-        tools: tuple[ToolSpec, ...],
-        delivery: ModelTurnDelivery,
-        *,
-        supports_multimodal: bool,
-        perception_profile: DecisionPerceptionProfile,
-        include_tool_menu: bool,
-        request_budget: ModelRequestBudget | None = None,
-    ) -> AdmittedModelRequest:
-        budget = request_budget or self.request_budget
-        include_images = self._include_images(request, supports_multimodal, perception_profile)
-        if delivery.context_id != request.context_id:
-            raise ValueError("model turn delivery belongs to another Context")
-        if bool(delivery.media) != include_images:
-            raise ValueError("model turn delivery image selection is inconsistent")
-        admitted_actor_payload = json.dumps(
-            {"observation": delivery.view.text},
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        admitted_actor_tokens = max(1, math.ceil(len(admitted_actor_payload.encode()) / 3))
-        return self.request_admission.admit(
-            request=request,
-            tools=tools,
-            budget=budget,
-            serialize=lambda fitted_request: self._candidate(
-                fitted_request,
-                tools,
-                delivery,
-                include_images=include_images,
-                include_tool_menu=include_tool_menu,
-                output_reserve_tokens=(
-                    budget.max_output_tokens
-                    + budget.protocol_reserve_tokens
-                    + budget.safety_margin_tokens
-                ),
-            ),
-            include_images=include_images,
-            media=delivery.media,
-            full_candidate_tokens=admitted_actor_tokens,
-        )
-
-    def _candidate(
-        self,
-        request: ModelDecisionRequest,
-        tools: tuple[ToolSpec, ...],
-        delivery: ModelTurnDelivery,
-        *,
-        include_images: bool,
-        include_tool_menu: bool,
-        output_reserve_tokens: int = 0,
-    ) -> "_PolicyRequestCandidate":
-        sections = self._public_context_sections(
-            request.agent_context,
-            include_images,
-            delivery,
-        )
-        view = sections["delivery_view"]
-        if view is not delivery.view:
-            raise ValueError("policy observation must use the supplied ModelTurnDelivery")
-        direct_tools = tools
-        public = dict(sections["public"])
-        if include_tool_menu:
-            public["tools"] = _tool_menu(direct_tools)
-        messages = self._messages(
-            self.prompts.actor,
-            public,
-            delivery,
-        )
-        component_payloads = {
-            "task_plan": sections["task_plan"],
-            "actor_world": sections["actor_world"],
-            "history": sections["history"],
-            "working_set": sections["working_set"],
-        }
-        expanded = int(view.coverage.get("expanded_regions", 0))
-        folded = int(view.coverage.get("folded_regions", 0))
-        direct_refs = frozenset(delivery.manifest.executable_refs)
-        searchable = sum(1 for option in request.agent_context.complete_actions if option.target_ref not in direct_refs)
-        return _PolicyRequestCandidate(
-            messages,
-            direct_tools,
-            component_payloads,
-            delivery.view.projection,
-            expanded,
-            folded,
-            len(request.agent_context.complete_actions) - searchable,
-            searchable,
-            len(request.agent_context.action_delivery_plan.obligations),
-            sum(dict(delivery.admitted_record_counts).values()),
-            sum(len(item.remaining) for item in request.agent_context.action_delivery_plan.obligations),
-            len(delivery.manifest.action_routes),
-            delivery.packing_backoff_count,
-            output_reserve_tokens,
-        )
 
     @staticmethod
     def _public_context(
@@ -261,26 +131,6 @@ class GroundedPolicyContextBinder:
             raise ValueError("selected grounded perception requires a current image input")
         return include_images
 
-    @staticmethod
-    def _messages(
-        system_prompt: str,
-        public: Mapping[str, object],
-        delivery: ModelTurnDelivery,
-    ) -> tuple[ModelMessage, ...]:
-        text = json.dumps(public, separators=(",", ":"), ensure_ascii=False)
-        if not delivery.media:
-            return (
-                ModelMessage(role="system", content=system_prompt),
-                ModelMessage(role="user", content=text),
-            )
-        parts: list[ModelTextPart | ModelImageURLPart] = [ModelTextPart(text=text)]
-        for image in delivery.media:
-            encoded = base64.b64encode(image.data).decode("ascii")
-            parts.append(ModelImageURLPart(image_url=f"data:{image.mime_type};base64,{encoded}"))
-        return (
-            ModelMessage(role="system", content=system_prompt),
-            ModelMessage(role="user", content=tuple(parts)),
-        )
 
 
 def _task(context: AgentContext) -> dict[str, object]:
@@ -366,35 +216,6 @@ def _goal_plan(context: AgentContext) -> dict[str, object]:
             for item in plan.items
         ),
     }
-
-
-def _tool_menu(tools: tuple[ToolSpec, ...]) -> tuple[dict[str, object], ...]:
-    return tuple(
-        {
-            "name": item.name,
-            "description": item.description,
-            "input_schema": to_json_compatible(item.input_schema),
-        }
-        for item in tools
-    )
-
-
-@dataclass(frozen=True)
-class _PolicyRequestCandidate:
-    messages: tuple[ModelMessage, ...]
-    tools: tuple[ToolSpec, ...]
-    component_payloads: Mapping[str, object]
-    delivery_projection: str
-    expanded_region_count: int
-    folded_region_count: int
-    direct_action_count: int
-    searchable_action_count: int
-    obligation_group_count: int
-    admitted_record_count: int
-    available_record_count: int
-    manifest_route_count: int
-    packing_backoff_count: int
-    output_reserve_tokens: int
 
 
 def _section(

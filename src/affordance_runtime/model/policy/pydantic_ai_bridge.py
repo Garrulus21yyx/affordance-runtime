@@ -11,12 +11,11 @@ import asyncio
 import json
 import os
 import time
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import urlparse
 
-from affordance_runtime.agent.context.context import AgentImageInput
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -29,15 +28,17 @@ from affordance_runtime.agent.decision_capability import (
     DecisionCapability,
 )
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalProviderEnvelope,
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+)
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelGenerationAttempt,
     ModelInvocationResult,
     ModelMetadata,
     ResolvedModelDecision,
-)
-from affordance_runtime.model.policy.grounded_policy_context import (
-    GroundedPolicyContextBinder,
 )
 from affordance_runtime.model.policy.grounded_tool_catalog import (
     resolve_grounded_action_call,
@@ -59,9 +60,12 @@ from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyReasoningPolicy,
 )
 from affordance_runtime.model.policy.request_admission import (
-    AdmittedModelRequest,
+    AdmittedProviderEnvelope,
+    InvalidProviderEnvelope,
     ModelRequestBreakdown,
     ModelRequestCapacityError,
+    RejectedProviderEnvelope,
+    RequestAdmission,
     request_breakdown_diagnostics,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
@@ -97,15 +101,6 @@ class _ProviderCallExhausted(RuntimeError):
         self.detail = detail
 
 
-def _action_model_settings(profile: ActionPolicyCallProfile) -> dict[str, object]:
-    return {
-        "thinking": profile.thinking_mode == "enabled",
-        "max_tokens": profile.max_output_tokens,
-        "temperature": 0.0,
-        "parallel_tool_calls": False,
-    }
-
-
 @dataclass(frozen=True)
 class PydanticAIGroundedDecisionPort:
     """Resolve exactly one current external tool call into a Runtime decision."""
@@ -119,7 +114,7 @@ class PydanticAIGroundedDecisionPort:
     transport_timeout_s: float = 85.0
     provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
     max_provider_retry_delay_s: float = _MAX_PROVIDER_BACKOFF_S
-    context_binder: GroundedPolicyContextBinder = field(default_factory=GroundedPolicyContextBinder)
+    envelope_binder: CanonicalProviderEnvelopeBinder = field(default_factory=CanonicalProviderEnvelopeBinder)
     reasoning_policy: ActionPolicyReasoningPolicy = field(default_factory=ActionPolicyReasoningPolicy)
     consumed_recovery_events: frozenset[str] = field(default_factory=frozenset, init=False, compare=False)
     last_call_profile: ActionPolicyCallProfile | None = field(default=None, init=False, compare=False)
@@ -131,6 +126,9 @@ class PydanticAIGroundedDecisionPort:
     last_provider_retry_count: int = field(default=0, init=False, compare=False)
     last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(default=(), init=False, compare=False)
     last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(default=(), init=False, compare=False)
+    last_admitted_envelopes: tuple[CanonicalProviderEnvelope, ...] = field(default=(), init=False, compare=False)
+    envelope_history: tuple[CanonicalProviderEnvelope, ...] = field(default=(), init=False, compare=False)
+    last_local_failure: Mapping[str, object] = field(default_factory=dict, init=False, compare=False)
     last_tool_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_tool_resolution_detail: str = field(default="", init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
@@ -178,6 +176,8 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_provider_retry_count", 0)
         object.__setattr__(self, "last_generation_attempts", ())
         object.__setattr__(self, "last_request_breakdowns", ())
+        object.__setattr__(self, "last_admitted_envelopes", ())
+        object.__setattr__(self, "last_local_failure", {})
         object.__setattr__(self, "last_invocation_result", None)
         call_profile = self.reasoning_policy.select(
             request.agent_context,
@@ -215,7 +215,8 @@ class PydanticAIGroundedDecisionPort:
 
         delivery: ModelTurnDelivery | None = None
         catalog: GroundedToolCatalog | None = None
-        admitted: AdmittedModelRequest | None = None
+        admitted: AdmittedProviderEnvelope | None = None
+        envelope: CanonicalProviderEnvelope | None = None
         instructions: str | None = None
         user_prompt: object | None = None
         toolset: object | None = None
@@ -225,31 +226,31 @@ class PydanticAIGroundedDecisionPort:
         try:
             packed = TurnPacker().pack(
                 request,
-                binder=self.context_binder,
+                binder=self.envelope_binder,
+                identity=CanonicalProviderIdentity(
+                    self.provider_id,
+                    self.model_id,
+                    self.endpoint_host,
+                    self.perception_profile.value,
+                ),
+                call_profile=call_profile,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
             )
             delivery = packed.delivery
             catalog = packed.catalog
-            admitted = packed.admitted_request
+            admitted = packed.admitted_envelope
+            envelope = admitted.envelope
             object.__setattr__(self, "last_catalog_count", len(catalog.specs))
             object.__setattr__(self, "last_catalog_bytes", catalog.serialized_bytes)
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
-            object.__setattr__(self, "last_image_input_count", len(delivery.media))
-            self._append_request_breakdown(admitted.breakdown)
-            messages = admitted.messages
-            instructions, user_prompt = _pydantic_prompt(messages, delivery.media, BinaryContent)
-            toolset = ExternalToolset(
-                [
-                    ToolDefinition(
-                        name=spec.name,
-                        description=spec.description,
-                        parameters_json_schema=to_json_compatible(spec.input_schema),
-                        strict=True,
-                    )
-                    for spec in admitted.tools
-                ],
-                id=catalog.catalog_id,
+            object.__setattr__(self, "last_image_input_count", len(envelope.media))
+            self._append_admitted_envelope(admitted)
+            instructions, user_prompt, toolset = _pydantic_model_boundary_codec(
+                envelope,
+                BinaryContent,
+                ExternalToolset,
+                ToolDefinition,
             )
             agent = Agent(
                 self.model,
@@ -269,11 +270,10 @@ class PydanticAIGroundedDecisionPort:
                     toolsets=[toolset],
                     usage=usage,
                     usage_limits=limits,
-                    model_settings=_action_model_settings(call_profile),
+                    model_settings=dict(envelope.model_settings),
                 ),
                 phase=call_profile.phase.value,
-                specs=catalog.specs,
-                input_messages=_initial_input_transcript(instructions, user_prompt),
+                envelope=envelope,
                 provider_error_type=ModelAPIError,
             )
             resolution_error = None
@@ -285,28 +285,50 @@ class PydanticAIGroundedDecisionPort:
             self._set_tool_resolution(resolution_error, accepted=decision is not None)
             if decision is None and initial_calls:
                 repair_profile = self.reasoning_policy.repair()
+                repair_prompt = _representation_repair_prompt(result.output, resolution_error, catalog.specs)
+                repair_envelope = self.envelope_binder.bind_representation_repair(
+                    envelope,
+                    user_text=repair_prompt,
+                    call_profile=repair_profile,
+                    output_token_reserve=(
+                        repair_profile.max_output_tokens
+                        + self.envelope_binder.request_budget.protocol_reserve_tokens
+                        + self.envelope_binder.request_budget.safety_margin_tokens
+                    ),
+                )
+                repair_budget = replace(
+                    self.envelope_binder.request_budget,
+                    max_output_tokens=repair_profile.max_output_tokens,
+                )
+                repair_admission = RequestAdmission().admit(repair_envelope, budget=repair_budget)
+                if isinstance(repair_admission, RejectedProviderEnvelope):
+                    raise ModelRequestCapacityError(repair_admission.token_breakdown)
+                if isinstance(repair_admission, InvalidProviderEnvelope):
+                    raise ValueError(f"{repair_admission.reason}: {repair_admission.detail}")
+                self._append_admitted_envelope(repair_admission)
+                repair_instructions, repair_user_prompt, repair_toolset = _pydantic_model_boundary_codec(
+                    repair_envelope,
+                    BinaryContent,
+                    ExternalToolset,
+                    ToolDefinition,
+                )
                 repair_agent = Agent(
                     self.model,
                     name="action-policy-representation-repair",
-                    instructions=(
-                        "Repair only the rejected tool-call representation. Emit exactly one offered tool call. "
-                        "Do not inspect the GUI, choose a new strategy, or change a valid target or operation."
-                    ),
+                    instructions=repair_instructions,
                     output_type=[str, DeferredToolRequests],
                     retries=0,
                 )
-                repair_prompt = _representation_repair_prompt(result.output, resolution_error, catalog.specs)
                 repair_result = await self._run_provider_call(
                     lambda: repair_agent.run(
-                        repair_prompt,
-                        toolsets=[toolset],
+                        repair_user_prompt,
+                        toolsets=[repair_toolset],
                         usage=RunUsage(),
                         usage_limits=UsageLimits(request_limit=2),
-                        model_settings=_action_model_settings(repair_profile),
+                        model_settings=dict(repair_envelope.model_settings),
                     ),
                     phase=repair_profile.phase.value,
-                    specs=catalog.specs,
-                    input_messages=[{"role": "user", "content": repair_prompt}],
+                    envelope=repair_envelope,
                     provider_error_type=ModelAPIError,
                 )
                 decision, next_delivery_store, repair_error, repaired_calls = _resolve_deferred(
@@ -437,7 +459,7 @@ class PydanticAIGroundedDecisionPort:
             provider_id=self.provider_id,
             model_id=self.model_id,
             endpoint_class="openai-compatible",
-            prompt_version=self.context_binder.prompt_version(request.agent_context),
+            prompt_version=self.envelope_binder.context_binder.prompt_version(request.agent_context),
             schema_version=GROUNDED_TOOLS_PROTOCOL,
             latency_ms=(time.perf_counter() - semantic_started) * 1000,
             prompt_tokens=invocation_prompt_tokens,
@@ -488,6 +510,8 @@ class PydanticAIGroundedDecisionPort:
                     "world_observation_id": request.agent_context.current_observation.observation_id,
                 }
             )
+        if self.last_admitted_envelopes:
+            lineage["envelope_ids"] = tuple(item.envelope_id for item in self.last_admitted_envelopes)
         return lineage
 
     def _diagnostics(self) -> Mapping[str, object]:
@@ -500,6 +524,8 @@ class PydanticAIGroundedDecisionPort:
             "model_image_input_count": self.last_image_input_count,
             "policy_model_call_count": self.last_model_call_count,
             "provider_retry_count": self.last_provider_retry_count,
+            "provider_envelope_ids": tuple(item.envelope_id for item in self.last_admitted_envelopes),
+            "pre_provider_failure": self.last_local_failure,
             "tool_resolution_code": (
                 self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
             ),
@@ -514,6 +540,15 @@ class PydanticAIGroundedDecisionPort:
 
     def _append_request_breakdown(self, breakdown: ModelRequestBreakdown) -> None:
         object.__setattr__(self, "last_request_breakdowns", (*self.last_request_breakdowns, breakdown))
+
+    def _append_admitted_envelope(self, admitted: AdmittedProviderEnvelope) -> None:
+        self._append_request_breakdown(admitted.token_breakdown)
+        object.__setattr__(
+            self,
+            "last_admitted_envelopes",
+            (*self.last_admitted_envelopes, admitted.envelope),
+        )
+        object.__setattr__(self, "envelope_history", (*self.envelope_history, admitted.envelope)[-64:])
 
     def _set_tool_resolution(self, error: GroundedToolResolutionError | None, *, accepted: bool) -> None:
         if accepted:
@@ -530,8 +565,7 @@ class PydanticAIGroundedDecisionPort:
         call,
         *,
         phase: str,
-        specs: tuple[object, ...],
-        input_messages: object,
+        envelope: CanonicalProviderEnvelope,
         provider_error_type: type[Exception],
     ) -> object:
         for retry_index in range(_MAX_PROVIDER_RETRIES + 1):
@@ -542,15 +576,15 @@ class PydanticAIGroundedDecisionPort:
                     "last_provider_retry_count",
                     self.last_provider_retry_count + 1,
                 )
-            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             started = time.perf_counter()
+            self._record_attempt_started(envelope, attempt_phase)
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             try:
                 result = await call()
             except asyncio.CancelledError:
                 self._record_cancelled_attempt(
                     attempt_phase,
-                    specs,
-                    input_messages,
+                    envelope,
                     latency_ms=(time.perf_counter() - started) * 1000,
                 )
                 raise
@@ -559,8 +593,7 @@ class PydanticAIGroundedDecisionPort:
                 self._record_provider_failure(
                     detail,
                     attempt_phase,
-                    specs,
-                    input_messages,
+                    envelope,
                     latency_ms=(time.perf_counter() - started) * 1000,
                 )
                 if retry_index >= _MAX_PROVIDER_RETRIES or not detail.retryable:
@@ -577,17 +610,40 @@ class PydanticAIGroundedDecisionPort:
             self._record_generation(
                 result,
                 attempt_phase,
-                specs,
+                envelope,
                 latency_ms=(time.perf_counter() - started) * 1000,
             )
             return result
         raise AssertionError("bounded provider retry loop did not resolve")
 
+    def _record_attempt_started(self, envelope: CanonicalProviderEnvelope, phase: str) -> None:
+        transcript = {
+            "openinference.span.kind": "LLM",
+            "llm.system": self.provider_id,
+            "llm.model_name": self.model_id,
+            "llm.configured_endpoint_host": self.endpoint_host,
+            "canonical_provider_envelope": envelope.model_boundary_projection(),
+            "envelope_id": envelope.envelope_id,
+            "status": "started",
+            "network_dispatched": False,
+        }
+        attempt = ModelGenerationAttempt(
+            attempt=len(self.last_generation_attempts) + 1,
+            phase=phase,
+            schema_name=GROUNDED_TOOLS_PROTOCOL,
+            status="started",
+            envelope_id=envelope.envelope_id,
+            envelope_projection=envelope.model_boundary_projection(),
+            **self._attempt_role_fields(envelope),
+            transcript=transcript,
+        )
+        object.__setattr__(self, "last_generation_attempts", (*self.last_generation_attempts, attempt))
+
     def _record_generation(
         self,
         result: object,
         phase: str,
-        specs: tuple[object, ...],
+        envelope: CanonicalProviderEnvelope,
         *,
         latency_ms: float = 0.0,
     ) -> None:
@@ -614,15 +670,16 @@ class PydanticAIGroundedDecisionPort:
             "llm.system": self.provider_id,
             "llm.model_name": self.model_id,
             "llm.configured_endpoint_host": self.endpoint_host,
-            "llm.input_messages": requests,
+            "llm.input_messages": envelope.model_boundary_projection()["messages"],
+            "llm.actual_messages": requests,
             "llm.output_messages": responses,
             "llm.tools": [
                 {
                     "tool.name": getattr(spec, "name", ""),
                     "tool.description": getattr(spec, "description", ""),
-                    "tool.json_schema": to_json_compatible(getattr(spec, "input_schema", {})),
+                    "tool.json_schema": to_json_compatible(spec.parameters_json_schema),
                 }
-                for spec in specs
+                for spec in envelope.function_tools
             ],
             "llm.token_count.prompt": attempt_prompt_tokens,
             "llm.token_count.completion": attempt_completion_tokens,
@@ -637,7 +694,7 @@ class PydanticAIGroundedDecisionPort:
             "error": "",
         }
         attempt = ModelGenerationAttempt(
-            attempt=len(self.last_generation_attempts) + 1,
+            attempt=len(self.last_generation_attempts),
             phase=phase,
             schema_name=GROUNDED_TOOLS_PROTOCOL,
             status="accepted",
@@ -647,31 +704,28 @@ class PydanticAIGroundedDecisionPort:
             completion_tokens=attempt_completion_tokens,
             total_tokens=attempt_prompt_tokens + attempt_completion_tokens,
             finish_reason=str(response.get("finish_reason") or "")[:80],
-            max_output_tokens=(self.last_call_profile.max_output_tokens if self.last_call_profile else 0),
+            max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
             final_content_present=bool(getattr(result.output, "calls", ())),
             reasoning_content_present=False,
             role="action_policy",
             mode="single_action",
             schema_version=GROUNDED_TOOLS_PROTOCOL,
-            thinking_requested=(self.last_call_profile.thinking_mode if self.last_call_profile else "provider_default"),
-            thinking_effective=(self.last_call_profile.thinking_mode if self.last_call_profile else "provider_default"),
-            trigger=(self.last_call_profile.trigger.value if self.last_call_profile else "ordinary"),
+            thinking_requested=envelope.thinking_requested,
+            thinking_effective=("enabled" if envelope.model_settings.get("thinking") is True else "disabled"),
+            trigger=envelope.attempt_trigger,
             reasoning_tokens=0,
             final_content_tokens=attempt_completion_tokens,
             final_tool_call_present=bool(getattr(result.output, "calls", ())),
+            envelope_id=envelope.envelope_id,
+            envelope_projection=envelope.model_boundary_projection(),
             transcript=transcript,
         )
-        object.__setattr__(
-            self,
-            "last_generation_attempts",
-            (*self.last_generation_attempts, attempt),
-        )
+        self._replace_active_attempt(attempt)
 
     def _record_cancelled_attempt(
         self,
         phase: str,
-        specs: tuple[object, ...],
-        input_messages: object,
+        envelope: CanonicalProviderEnvelope,
         *,
         latency_ms: float,
     ) -> None:
@@ -680,36 +734,33 @@ class PydanticAIGroundedDecisionPort:
             "llm.system": self.provider_id,
             "llm.model_name": self.model_id,
             "llm.configured_endpoint_host": self.endpoint_host,
-            "llm.input_messages": input_messages,
+            "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
-            "llm.tools": _tool_transcript(specs),
+            "llm.tools": _tool_transcript(envelope.function_tools),
             "status": "cancelled",
             "network_dispatched": True,
             "error.code": "cancelled",
             "error.exception_class": "CancelledError",
         }
         attempt = ModelGenerationAttempt(
-            attempt=len(self.last_generation_attempts) + 1,
+            attempt=len(self.last_generation_attempts),
             phase=phase,
             schema_name=GROUNDED_TOOLS_PROTOCOL,
             status="cancelled",
             latency_ms=latency_ms,
             exception_class="CancelledError",
-            **self._attempt_role_fields(),
+            envelope_id=envelope.envelope_id,
+            envelope_projection=envelope.model_boundary_projection(),
+            **self._attempt_role_fields(envelope),
             transcript=transcript,
         )
-        object.__setattr__(
-            self,
-            "last_generation_attempts",
-            (*self.last_generation_attempts, attempt),
-        )
+        self._replace_active_attempt(attempt)
 
     def _record_provider_failure(
         self,
         detail: _ProviderFailureDetail,
         phase: str,
-        specs: tuple[object, ...],
-        input_messages: object,
+        envelope: CanonicalProviderEnvelope,
         *,
         latency_ms: float,
     ) -> None:
@@ -718,9 +769,9 @@ class PydanticAIGroundedDecisionPort:
             "llm.system": self.provider_id,
             "llm.model_name": self.model_id,
             "llm.configured_endpoint_host": self.endpoint_host,
-            "llm.input_messages": input_messages,
+            "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
-            "llm.tools": _tool_transcript(specs),
+            "llm.tools": _tool_transcript(envelope.function_tools),
             "status": "failed",
             "error.code": detail.code.value,
             "error.reason": detail.reason,
@@ -730,31 +781,37 @@ class PydanticAIGroundedDecisionPort:
             "error.retry_after_s": detail.retry_after_s,
         }
         attempt = ModelGenerationAttempt(
-            attempt=len(self.last_generation_attempts) + 1,
+            attempt=len(self.last_generation_attempts),
             phase=phase,
             schema_name=GROUNDED_TOOLS_PROTOCOL,
             status="failed",
             latency_ms=latency_ms,
             exception_class=detail.exception_class,
-            **self._attempt_role_fields(),
+            envelope_id=envelope.envelope_id,
+            envelope_projection=envelope.model_boundary_projection(),
+            **self._attempt_role_fields(envelope),
             transcript=transcript,
         )
+        self._replace_active_attempt(attempt)
+
+    def _replace_active_attempt(self, attempt: ModelGenerationAttempt) -> None:
+        if not self.last_generation_attempts or self.last_generation_attempts[-1].status != "started":
+            raise RuntimeError("provider attempt completion has no recorded boundary input")
         object.__setattr__(
             self,
             "last_generation_attempts",
-            (*self.last_generation_attempts, attempt),
+            (*self.last_generation_attempts[:-1], attempt),
         )
 
-    def _attempt_role_fields(self) -> dict[str, object]:
-        profile = self.last_call_profile
+    def _attempt_role_fields(self, envelope: CanonicalProviderEnvelope) -> dict[str, object]:
         return {
-            "max_output_tokens": profile.max_output_tokens if profile else 0,
+            "max_output_tokens": int(envelope.model_settings.get("max_tokens", 0)),
             "role": "action_policy",
             "mode": "single_action",
             "schema_version": GROUNDED_TOOLS_PROTOCOL,
-            "thinking_requested": profile.thinking_mode if profile else "provider_default",
-            "thinking_effective": profile.thinking_mode if profile else "provider_default",
-            "trigger": profile.trigger.value if profile else "ordinary",
+            "thinking_requested": envelope.thinking_requested,
+            "thinking_effective": "enabled" if envelope.model_settings.get("thinking") is True else "disabled",
+            "trigger": envelope.attempt_trigger,
         }
 
     def _record_local_failure(
@@ -763,15 +820,17 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         specs: tuple[object, ...],
     ) -> None:
-        if self.last_generation_attempts and self.last_generation_attempts[-1].status == "failed":
-            return
-        detail = _ProviderFailureDetail(
-            ProviderFailureCode.UNAVAILABLE,
-            False,
-            str(error)[:500] or "PydanticAI decision adapter failed locally",
-            type(error).__name__,
+        object.__setattr__(
+            self,
+            "last_local_failure",
+            {
+                "phase": phase,
+                "exception_class": type(error).__name__,
+                "detail": str(error)[:500] or "PydanticAI decision adapter failed locally",
+                "constructed_tool_count": len(specs),
+                "provider_attempts": self.last_model_call_count,
+            },
         )
-        self._record_provider_failure(detail, phase, specs, (), latency_ms=0.0)
 
 
 def openai_compatible_pydantic_ai_policy_from_environment(
@@ -1113,52 +1172,40 @@ def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> Model
     return _failure(ModelFailureKind.INVALID_TOOL_ARGUMENTS, str(error))
 
 
-def _pydantic_prompt(messages, image_inputs: Sequence[AgentImageInput], binary_content_type):
-    if len(messages) != 2 or messages[0].role != "system" or messages[1].role != "user":
-        raise ValueError("grounded PydanticAI prompt requires one system and one user message")
-    instructions = messages[0].content
-    if not isinstance(instructions, str):
-        raise ValueError("grounded PydanticAI instructions must be text")
-    content = messages[1].content
-    if isinstance(content, str):
-        return instructions, content
-    text_parts = [part.text for part in content if part.type == "text"]
-    if len(text_parts) != 1:
-        raise ValueError("grounded PydanticAI prompt requires one public text projection")
-    prompt: list[object] = [text_parts[0]]
-    prompt.extend(binary_content_type(data=image.data, media_type=image.mime_type) for image in image_inputs)
-    return instructions, prompt
+def _pydantic_model_boundary_codec(
+    envelope: CanonicalProviderEnvelope,
+    binary_content_type,
+    external_toolset_type,
+    tool_definition_type,
+):
+    """Losslessly convert one admitted envelope to PydanticAI typed values."""
 
-
-def _initial_input_transcript(instructions: str, user_prompt: object) -> list[dict[str, object]]:
-    return [
-        {"role": "system", "content": instructions},
-        {"role": "user", "content": _safe_prompt_projection(user_prompt)},
-    ]
-
-
-def _safe_prompt_projection(value: object) -> object:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        projected = []
-        for item in value:
-            data = getattr(item, "data", None)
-            if isinstance(data, (bytes, bytearray)):
-                projected.append(
-                    {
-                        "type": "binary",
-                        "media_type": str(getattr(item, "media_type", "")),
-                        "byte_count": len(data),
-                    }
-                )
-            else:
-                projected.append(to_json_compatible(item))
-        return projected
-    try:
-        return to_json_compatible(value)
-    except (TypeError, ValueError):
-        return {"type": type(value).__name__}
+    if len(envelope.instructions) != 1:
+        raise ValueError("PydanticAI ActionPolicy codec requires one ordered instruction")
+    prompt: object
+    if envelope.media:
+        prompt = [
+            envelope.user_text,
+            *(
+                binary_content_type(data=item.data, media_type=item.mime_type)
+                for item in envelope.media
+            ),
+        ]
+    else:
+        prompt = envelope.user_text
+    toolset = external_toolset_type(
+        [
+            tool_definition_type(
+                name=item.name,
+                description=item.description,
+                parameters_json_schema=to_json_compatible(item.parameters_json_schema),
+                strict=item.strict,
+            )
+            for item in envelope.function_tools
+        ],
+        id=envelope.catalog.catalog_id,
+    )
+    return envelope.instructions[0], prompt, toolset
 
 
 def _attempt_token_delta(
@@ -1195,7 +1242,9 @@ def _tool_transcript(specs: tuple[object, ...]) -> list[dict[str, object]]:
         {
             "tool.name": getattr(spec, "name", ""),
             "tool.description": getattr(spec, "description", ""),
-            "tool.json_schema": to_json_compatible(getattr(spec, "input_schema", {})),
+            "tool.json_schema": to_json_compatible(
+                getattr(spec, "parameters_json_schema", getattr(spec, "input_schema", {}))
+            ),
         }
         for spec in specs
     ]

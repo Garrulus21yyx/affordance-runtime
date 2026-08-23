@@ -8,15 +8,22 @@ from affordance_runtime.agent.context.model_turn_delivery import (
     ModelTurnDelivery,
     build_model_turn_delivery,
 )
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+)
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
-from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
 from affordance_runtime.model.policy.request_admission import (
-    AdmittedModelRequest,
+    AdmittedProviderEnvelope,
+    InvalidProviderEnvelope,
     ModelRequestBudget,
     ModelRequestCapacityError,
+    RejectedProviderEnvelope,
+    RequestAdmission,
 )
 
 
@@ -24,7 +31,7 @@ from affordance_runtime.model.policy.request_admission import (
 class PackedModelTurn:
     delivery: ModelTurnDelivery
     catalog: GroundedToolCatalog
-    admitted_request: AdmittedModelRequest
+    admitted_envelope: AdmittedProviderEnvelope
     attempted_record_counts: tuple[tuple[str, int], ...]
     admitted_record_counts: tuple[tuple[str, int], ...]
     packing_backoff_count: int
@@ -33,6 +40,8 @@ class PackedModelTurn:
         if (
             self.delivery.delivery_id != self.catalog.delivery_id
             or self.catalog.delivery_id != self.delivery.delivery_id
+            or self.admitted_envelope.envelope.delivery_id != self.delivery.delivery_id
+            or self.admitted_envelope.envelope.catalog is not self.catalog
             or self.admitted_record_counts != self.delivery.admitted_record_counts
             or self.packing_backoff_count != self.delivery.packing_backoff_count
             or any(
@@ -51,36 +60,41 @@ class TurnPacker:
         self,
         request: ModelDecisionRequest,
         *,
-        binder: GroundedPolicyContextBinder,
+        binder: CanonicalProviderEnvelopeBinder,
+        identity: CanonicalProviderIdentity,
+        call_profile: ActionPolicyCallProfile,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
     ) -> PackedModelTurn:
         plan = request.agent_context.action_delivery_plan
         if plan is None:
             raise ValueError("turn packing requires one ActionDeliveryPlan")
-        include_images = binder._include_images(  # noqa: SLF001 - same request-boundary owner
+        include_images = binder.context_binder._include_images(  # noqa: SLF001 - same request-boundary owner
             request,
             supports_multimodal,
             perception_profile,
         )
+        request_budget = replace(binder.request_budget, max_output_tokens=call_profile.max_output_tokens)
 
         admitted_counts = {item.kind.value: 0 for item in plan.obligations}
         attempted_counts = dict(admitted_counts)
         accepted = self._attempt(
             request,
             binder=binder,
+            identity=identity,
+            call_profile=call_profile,
             include_images=include_images,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
             admitted_records=admitted_counts,
             backoff_count=0,
-            request_budget=binder.request_budget,
+            request_budget=request_budget,
         )
         packing_budget = replace(
-            binder.request_budget,
+            request_budget,
             admission_limit=min(
-                binder.request_budget.admission_limit,
-                binder.request_budget.soft_target_tokens,
+                request_budget.admission_limit,
+                request_budget.soft_target_tokens,
             ),
         )
         backoffs = 0
@@ -103,12 +117,14 @@ class TurnPacker:
             accepted = self._attempt(
                 request,
                 binder=binder,
+                identity=identity,
+                call_profile=call_profile,
                 include_images=include_images,
                 supports_multimodal=supports_multimodal,
                 perception_profile=perception_profile,
                 admitted_records=required,
                 backoff_count=0,
-                request_budget=binder.request_budget,
+                request_budget=request_budget,
             )
             admitted_counts = required
 
@@ -131,6 +147,8 @@ class TurnPacker:
                     accepted = self._attempt(
                         request,
                         binder=binder,
+                        identity=identity,
+                        call_profile=call_profile,
                         include_images=include_images,
                         supports_multimodal=supports_multimodal,
                         perception_profile=perception_profile,
@@ -158,12 +176,14 @@ class TurnPacker:
         accepted = self._attempt(
             request,
             binder=binder,
+            identity=identity,
+            call_profile=call_profile,
             include_images=include_images,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
             admitted_records=admitted_counts,
             backoff_count=backoffs,
-            request_budget=binder.request_budget,
+            request_budget=request_budget,
         )
         delivery, catalog, admitted = accepted
         return PackedModelTurn(
@@ -179,14 +199,16 @@ class TurnPacker:
     def _attempt(
         request: ModelDecisionRequest,
         *,
-        binder: GroundedPolicyContextBinder,
+        binder: CanonicalProviderEnvelopeBinder,
+        identity: CanonicalProviderIdentity,
+        call_profile: ActionPolicyCallProfile,
         include_images: bool,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
         admitted_records: dict[str, int],
         backoff_count: int,
         request_budget: ModelRequestBudget,
-    ) -> tuple[ModelTurnDelivery, GroundedToolCatalog, AdmittedModelRequest]:
+    ) -> tuple[ModelTurnDelivery, GroundedToolCatalog, AdmittedProviderEnvelope]:
         delivery = build_model_turn_delivery(
             request.agent_context,
             include_images=include_images,
@@ -194,13 +216,21 @@ class TurnPacker:
             packing_backoff_count=backoff_count,
         )
         catalog = compile_grounded_action_catalog(request.agent_context, delivery)
-        admitted = binder.action_request(
+        envelope = binder.bind(
             request,
-            catalog.specs,
             delivery,
-            supports_multimodal=supports_multimodal,
-            perception_profile=perception_profile,
-            include_tool_menu=False,
-            request_budget=request_budget,
+            catalog,
+            identity=identity,
+            call_profile=call_profile,
+            output_token_reserve=(
+                call_profile.max_output_tokens
+                + request_budget.protocol_reserve_tokens
+                + request_budget.safety_margin_tokens
+            ),
         )
-        return delivery, catalog, admitted
+        outcome = RequestAdmission().admit(envelope, budget=request_budget)
+        if isinstance(outcome, RejectedProviderEnvelope):
+            raise ModelRequestCapacityError(outcome.token_breakdown)
+        if isinstance(outcome, InvalidProviderEnvelope):
+            raise ValueError(f"{outcome.reason}: {outcome.detail}")
+        return delivery, catalog, outcome

@@ -7,6 +7,7 @@ The recorder snapshots only the typed values PydanticAI supplies to a
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
@@ -14,8 +15,11 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import TypeAlias
 
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai import BinaryContent
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+from affordance_runtime.immutable import to_json_compatible
 
 
 @dataclass(frozen=True)
@@ -220,6 +224,75 @@ class RecordingPydanticModel:
         return FunctionModel(respond, model_name="recording-scripted")
 
 
+def normalize_recorded_provider_input(record: RecordedProviderInvocation) -> Mapping[str, object]:
+    """Normalize only fields exposed at the FunctionModel boundary."""
+
+    return {
+        "instructions": (record.instructions,) if record.instructions else (),
+        "messages": tuple(_normalize_message(item) for item in record.messages),
+        "function_tools": tuple(
+            {
+                "name": item.name,
+                "description": item.description,
+                "parameters_json_schema": to_json_compatible(_thaw(item.parameters_json_schema)),
+                "strict": item.strict,
+            }
+            for item in record.function_tools
+        ),
+        "model_settings": _thaw(record.model_settings) if record.model_settings is not None else None,
+        "output_mode": record.model_request_parameters.field("output_mode"),
+        "allow_text_output": record.allow_text_output,
+        "allow_image_output": record.model_request_parameters.field("allow_image_output"),
+        "output_tools": tuple(
+            {
+                "name": item.name,
+                "description": item.description,
+                "parameters_json_schema": to_json_compatible(_thaw(item.parameters_json_schema)),
+                "strict": item.strict,
+            }
+            for item in record.output_tools
+        ),
+    }
+
+
+def _normalize_message(message: ModelMessage) -> Mapping[str, object]:
+    if not isinstance(message, ModelRequest):
+        raise TypeError("Gate 3 recorder expected a PydanticAI ModelRequest")
+    parts = []
+    for part in message.parts:
+        if not isinstance(part, UserPromptPart):
+            raise TypeError("Gate 3 recorder expected only user prompt request parts")
+        content = part.content
+        items = (content,) if isinstance(content, str) else tuple(content)
+        normalized = []
+        for item in items:
+            if isinstance(item, str):
+                normalized.append({"part_kind": "text", "content": item})
+            elif isinstance(item, BinaryContent):
+                normalized.append(
+                    {
+                        "part_kind": "binary",
+                        "media_type": item.media_type,
+                        "data": item.data,
+                        "digest": hashlib.sha256(item.data).hexdigest(),
+                    }
+                )
+            else:
+                raise TypeError(f"unsupported recorded user content: {type(item).__name__}")
+        parts.append({"part_kind": "user-prompt", "content": tuple(normalized)})
+    return {"kind": "request", "parts": tuple(parts)}
+
+
+def _thaw(value: object) -> object:
+    if isinstance(value, FrozenMapping):
+        return {key: _thaw(item) for key, item in value.items_in_order}
+    if isinstance(value, FrozenBoundaryObject):
+        return {key: _thaw(item) for key, item in value.fields_in_order}
+    if isinstance(value, tuple):
+        return tuple(_thaw(item) for item in value)
+    return value
+
+
 def _select_current_tool_call(
     messages: list[ModelMessage],
     info: AgentInfo,
@@ -263,4 +336,5 @@ __all__ = [
     "RecordedToolDefinition",
     "RecordingPydanticModel",
     "freeze_boundary_value",
+    "normalize_recorded_provider_input",
 ]

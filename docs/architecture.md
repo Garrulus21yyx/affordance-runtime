@@ -2,8 +2,8 @@
 
 ## Status
 
-Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery implemented and provider-free verified /
-Gate 3 Envelope pending / Gate 4 vertical conservation pending / overall reopened and non-closed / no live run
+Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery complete /
+Gate 3 Envelope implemented and provider-free verified / Gate 4 vertical conservation pending / Overall reopened / non-closed / no live run
 authorized**. Causal post-action transition, TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -99,8 +99,23 @@ fragments cannot publish an unrouted executable ref. Public history no longer ca
 or raw delta records. Provider-free verification covers fanout `1/2/16/84/167/500`, added/removed/modified effects,
 multi-scope finite recovery and staleness, exact short/Unicode/punctuation/boundary labels, zero-prefix continuation,
 and a two-request real `TargetRuntime/CoreLoop → PydanticAI FunctionModel` sequence. Full pytest is `1594 passed, 24
-skipped`; Ruff, compileall, diff check, and Delivery negative searches pass. Gate 3 physical Envelope identity/cost and
-Gate 4 vertical conservation remain pending; this is not C10, benchmark, provider, or live closure.
+skipped`; Ruff, compileall, diff check, and Delivery negative searches pass. Gate 4 vertical conservation remains
+pending; this is not C10, benchmark, provider, or live closure.
+
+Envelope Gate 3 implementation checkpoint (2026-08-23): `CanonicalProviderEnvelopeBinder` is the sole producer of the
+immutable PydanticAI model-boundary request. It closes ordered instructions and messages, exact media bytes and MIME,
+Catalog-derived ordered strict tool definitions and schemas, model identity/settings, parallel-call policy, output
+contract, output reserve, deterministic counting method, and attempt lineage before admission. The stable
+`envelope_id` hashes only physical model-visible content and selected provider/model profile; Runtime-only Catalog
+resolver identity and trace/delivery lineage are excluded. `RequestAdmission` accepts only that complete envelope,
+counts every physical component with a deterministic conservative local fallback, and returns the same immutable
+value on admission. `TurnPacker` reuses its final admitted envelope. The PydanticAI bridge is a mechanical typed codec
+to ordered `ModelMessages + ModelRequestParameters`; it no longer rebuilds prompt, tools, media, settings, or output
+contract after admission. Every physical initial or repair call records its envelope projection at attempt start.
+Provider-free exact-boundary, identity/cost, media/tool, pre-provider totality, repair, and two-turn production-path
+properties pass. Full pytest is `1594 passed, 24 skipped`; Ruff, compileall, diff check, and production negative
+searches pass. No real provider, live benchmark, Task-7 replay, external token-count request, or raw HTTP payload
+builder was used. Gate 4 vertical conservation remains pending; overall status is reopened/non-closed.
 
 ## Normative single production chain
 
@@ -110,8 +125,8 @@ provider request, or acceptance sequence. If a later diagram disagrees with this
 later diagram must be corrected or moved to history.
 
 The pre-cutover implementation was frozen because it layered new projections over old owners instead of cutting the
-old owners over. Gate 1 has now cut over World only; the remaining target is one small data pipeline, not another Agent
-framework:
+old owners over. Gates 1–3 have now cut over World, Delivery, and Envelope; the remaining Gate 4 target is one small
+vertical conservation proof, not another Agent framework:
 
 ```text
 BrowserGym observation

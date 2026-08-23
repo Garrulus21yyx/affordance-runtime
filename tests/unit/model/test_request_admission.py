@@ -2,56 +2,43 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
-import re
-from dataclasses import dataclass, field, replace
-from types import SimpleNamespace
-
-import pytest
+from dataclasses import replace
 
 from affordance_runtime.actions import ActionSpaceBuilder
-from affordance_runtime.agent.context import ContextBuilder, ModelFailureKind
-from affordance_runtime.agent.context.actor_world_snapshot import (
-    ActorWorldDocumentView,
-    ActorWorldNodeView,
-    ActorWorldSnapshot,
-    ActorWorldSourceView,
-)
-from affordance_runtime.agent.context.budgets import BoundedSection
-from affordance_runtime.agent.context.context import (
-    AgentGroundingEntityView,
-    AgentGroundingIndexView,
-    AgentImageInput,
-)
+from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
-from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
-from affordance_runtime.agent.workspace import AgentWorkspace, SemanticEvent, SemanticEventKind
+from affordance_runtime.model.policy.canonical_provider_envelope import (
+    CanonicalMediaRecord,
+    CanonicalOutputContract,
+    CanonicalProviderEnvelope,
+    CanonicalProviderEnvelopeBinder,
+    CanonicalProviderIdentity,
+    _envelope_id,
+)
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
-from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
-from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
-from affordance_runtime.model.policy.grounded_tool_contracts import (
-    GroundedToolPhase,
+from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
+from affordance_runtime.model.policy.grounded_tool_contracts import RegisteredGroundedTool
+from affordance_runtime.model.policy.reasoning_policy import (
+    ActionPolicyCallProfile,
+    ActionPolicyInvocationPhase,
+    ActionPolicyInvocationTrigger,
 )
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.request_admission import (
-    ModelRequestBudget,
-    ModelRequestPrivacyError,
-    estimate_model_request,
-    validate_provider_request_privacy,
-)
-from affordance_runtime.model.policy.tool_contracts import ToolSpec
-from affordance_runtime.model.providers.port import (
-    ModelConfig,
-    ModelMessage,
-    StructuredOutputError,
-    StructuredOutputViolation,
+    AdmittedProviderEnvelope,
+    RejectedProviderEnvelope,
+    RequestAdmission,
+    estimate_canonical_envelope,
 )
 from tests.support.agent.core_loop_support import SharedTaskEvaluator, _task, _world
-from tests.support.canonical_world import canonical_world_with_regions
-from tests.support.legacy_compact_json_decision_port import CompactJsonDecisionPort
 
 
-async def _request():
+class _EquivalentResolver:
+    def resolve(self, arguments, context_id: str, tool_call_id: str):
+        raise AssertionError((arguments, context_id, tool_call_id))
+
+
+async def _bound_envelope() -> CanonicalProviderEnvelope:
     task = _task()
     world = _world("request-admission", False)
     evaluation = await SharedTaskEvaluator().evaluate(task, world)
@@ -61,574 +48,293 @@ async def _request():
         ActionSpaceBuilder().build(task, world),
         evaluation,
     )
+    request = ModelDecisionRequest("request:test", context)
     delivery = build_model_turn_delivery(context, include_images=False)
-    catalog = compile_grounded_tool_catalog(
-        context,
-        GroundedToolPhase.ACTION_SELECTION,
+    catalog = compile_grounded_action_catalog(context, delivery)
+    return CanonicalProviderEnvelopeBinder().bind(
+        request,
         delivery,
+        catalog,
+        identity=CanonicalProviderIdentity("fixture", "recording", "fixture.invalid", "text_only"),
+        call_profile=_profile(),
+        output_token_reserve=4_096,
     )
-    return ModelDecisionRequest("request:test", context), catalog, delivery
 
 
-@pytest.mark.parametrize(
-    "payload",
-    (
-        '{"private_cursor":"opaque"}',
-        '{"observation_id":"opaque"}',
-        '{"capture_epoch":"opaque"}',
-        '{"omitted_count":84}',
-        'browsergym-observation:123e4567-e89b-12d3-a456-426614174000:9',
-    ),
-)
-def test_provider_request_privacy_rejects_would_be_serialization(payload: str) -> None:
+def _profile(*, max_output_tokens: int = 1024) -> ActionPolicyCallProfile:
+    return ActionPolicyCallProfile(
+        ActionPolicyInvocationPhase.ORDINARY,
+        ActionPolicyInvocationTrigger.ORDINARY,
+        max_output_tokens,
+        "disabled",
+    )
+
+
+def _replace_physical(envelope: CanonicalProviderEnvelope, **changes) -> CanonicalProviderEnvelope:
+    values = {name: getattr(envelope, name) for name in envelope.__dataclass_fields__ if name != "envelope_id"}
+    values.update(changes)
+    provisional = CanonicalProviderEnvelope.__new__(CanonicalProviderEnvelope)
+    for key, value in values.items():
+        object.__setattr__(provisional, key, value)
+    return CanonicalProviderEnvelope(envelope_id=_envelope_id(provisional.physical_content()), **values)
+
+
+def _budget(limit: int) -> ModelRequestBudget:
+    return ModelRequestBudget(
+        soft_target_tokens=max(1, limit),
+        model_context_window=max(1, limit + 10_000),
+        max_output_tokens=0,
+        protocol_reserve_tokens=0,
+        safety_margin_tokens=0,
+        admission_limit=max(1, limit),
+    )
+
+
+def _png(width: int = 20, height: int = 20, *, padding: int = 0) -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00" * 8
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"x" * padding
+    )
+
+
+def _media(data: bytes) -> CanonicalMediaRecord:
+    return CanonicalMediaRecord(
+        data,
+        "image/png",
+        hashlib.sha256(data).hexdigest(),
+        (20, 20),
+        "raw",
+        (),
+        (),
+        "viewport:private",
+    )
+
+
+def test_complete_envelope_count_is_deterministic_and_covers_every_physical_component() -> None:
     async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        candidate = SimpleNamespace(
-            messages=(ModelMessage(role="user", content=payload),),
-            tools=(),
-            component_payloads={"actor_world": json.loads(payload) if payload.startswith("{") else payload},
-        )
-
-        with pytest.raises(ModelRequestPrivacyError):
-            validate_provider_request_privacy(candidate, request)
-
-    asyncio.run(scenario())
-
-
-def test_provider_request_privacy_rejects_dynamic_source_and_binding_lineage() -> None:
-    async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        private_values = (
-            request.agent_context.current_observation.observation_id,
-            request.agent_context.current_observation.bindings[0].binding_id,
-        )
-        for value in private_values:
-            candidate = SimpleNamespace(
-                messages=(ModelMessage(role="user", content=value),),
-                tools=(),
-                component_payloads={"actor_world": value},
-            )
-            with pytest.raises(ModelRequestPrivacyError, match="provider_request_privacy"):
-                validate_provider_request_privacy(candidate, request)
-
-    asyncio.run(scenario())
-
-
-def test_provider_request_privacy_does_not_reinterpret_exact_public_task_fields() -> None:
-    async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        public_inputs = {
-            "observation_id": "business-observation",
-            "omitted_count": 12,
-            "private_cursor": "customer-visible-column-name",
-        }
-        candidate = SimpleNamespace(
-            messages=(ModelMessage(role="user", content=json.dumps(public_inputs)),),
-            tools=(),
-            component_payloads={"task_plan": public_inputs, "actor_world": "safe"},
-        )
-
-        validate_provider_request_privacy(candidate, request)
-
-    asyncio.run(scenario())
-
-
-def test_complete_request_breakdown_covers_rendered_sections_and_is_deterministic() -> None:
-    async def scenario() -> None:
-        request, catalog, delivery = await _request()
-        binder = GroundedPolicyContextBinder()
-
-        first = binder.action_request(
-            request,
-            catalog.specs,
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        ).breakdown
-        second = binder.action_request(
-            request,
-            catalog.specs,
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        ).breakdown
+        envelope = await _bound_envelope()
+        first = estimate_canonical_envelope(envelope)
+        second = estimate_canonical_envelope(envelope)
 
         assert first == second
         assert first.system_tokens > 0
-        assert first.task_plan_tokens > 0
         assert first.actor_world_tokens > 0
-        assert first.history_tokens > 0
         assert first.tool_schema_tokens > 0
+        assert first.model_settings_tokens > 0
+        assert first.output_contract_tokens > 0
         assert first.image_estimated_tokens == 0
-        assert first.estimated_total_tokens == (
-            first.system_tokens
-            + first.task_plan_tokens
-            + first.actor_world_tokens
-            + first.history_tokens
-            + first.working_set_tokens
-            + first.evidence_tokens
-            + first.tool_schema_tokens
-            + first.image_estimated_tokens
-            + first.repair_tokens
-            + first.provider_envelope_tokens
-        )
+        assert first.output_reserve_tokens == envelope.output_token_reserve
+        assert first.complete_request_tokens == first.estimated_total_tokens + first.output_reserve_tokens
+        assert first.counting_method == envelope.counting_method
 
     asyncio.run(scenario())
 
 
-def test_image_tokens_are_dimension_based_not_compressed_byte_based() -> None:
-    small_png = _png(1280, 720)
-    padded_png = small_png + (b"x" * (250 * 1024))
-    first = AgentImageInput(
-        "artifact:image:small",
-        "image/png",
-        small_png,
-        hashlib.sha256(small_png).hexdigest(),
-        "viewport:small",
-    )
-    second = AgentImageInput(
-        "artifact:image:padded",
-        "image/png",
-        padded_png,
-        hashlib.sha256(padded_png).hexdigest(),
-        "viewport:padded",
-    )
-
-    small = estimate_model_request(
-        messages=(ModelMessage(role="user", content="see image"),),
-        tools=(),
-        image_inputs=(first,),
-    )
-    padded = estimate_model_request(
-        messages=(ModelMessage(role="user", content="see image"),),
-        tools=(),
-        image_inputs=(second,),
-    )
-
-    assert small.image_estimated_tokens == padded.image_estimated_tokens
-    assert padded.image_estimated_tokens < 5_000
-
-
-def test_soft_target_uses_recoverable_region_projection_without_mutating_context() -> None:
+def test_admission_exact_fit_returns_the_same_immutable_envelope_and_one_unit_over_rejects() -> None:
     async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        roots = tuple(
-            ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
-            for index in range(1, 240)
-        )
-        region_index = WorldDeliveryIndex(
-            request.agent_context.current_observation.observation_id,
-            tuple(
-                WorldRegion(
-                    key=f"region:test:{index + 1}-{min(index + 32, 239)}",
-                    source_id="S1",
-                    root_structure_id=f"targets:{index + 1}-{min(index + 32, 239)}",
-                    member_target_ids=tuple(
-                        f"target:{target}" for target in range(index + 1, min(index + 33, 240))
-                    ),
-                    heading=f"button items {index + 1}-{min(index + 32, 239)}",
-                    role="button",
-                    counts={
-                        "targets": min(32, 239 - index),
-                        "facts": 0,
-                        "actions": min(32, 239 - index),
-                    },
-                    coverage="complete",
-                )
-                for index in range(0, 239, 32)
-            ),
-        )
-        large_context = replace(
-            request.agent_context,
-            actor_world=ActorWorldSnapshot(
-                (ActorWorldDocumentView("S1", "structural", roots, len(roots), len(roots), False),),
-                (
-                    ActorWorldSourceView(
-                        "S1",
-                        "structural",
-                        "structural",
-                        "current",
-                        "complete",
-                        "complete",
-                        "not_available",
-                    ),
-                ),
-                (),
-                (),
-                BoundedSection((), 0, False),
-                (),
-                (),
-                (),
-            ),
-            grounding=AgentGroundingIndexView(
-                tuple(
-                    AgentGroundingEntityView(f"E{index}", "button", f"Button {index}", verbs=("activate",))
-                    for index in range(1, 240)
-                ),
-                {f"target:{index}": f"E{index}" for index in range(1, 240)},
-            ),
-            region_index=region_index,
-            canonical_world=canonical_world_with_regions(
-                request.agent_context.canonical_world,
-                request.agent_context.current_observation,
-                region_index,
-            ),
-        )
-        request = ModelDecisionRequest(request.request_id, large_context)
-        tool = ToolSpec(
-            "activate_target",
-            "Activate one current target.",
-            {
-                "type": "object",
-                "properties": {"target": {"type": "string", "enum": ["E1"]}},
-                "required": ["target"],
+        envelope = await _bound_envelope()
+        total = estimate_canonical_envelope(envelope, budget=_budget(1_000_000)).complete_request_tokens
+
+        admitted = RequestAdmission().admit(envelope, budget=_budget(total))
+        rejected = RequestAdmission().admit(envelope, budget=_budget(total - 1))
+
+        assert isinstance(admitted, AdmittedProviderEnvelope)
+        assert admitted.envelope is envelope
+        assert admitted.token_breakdown.complete_request_tokens == total
+        assert isinstance(rejected, RejectedProviderEnvelope)
+        assert rejected.reason == "context_capacity"
+        assert rejected.token_breakdown.complete_request_tokens == total
+        assert rejected.counting_method == envelope.counting_method
+
+    asyncio.run(scenario())
+
+
+def test_schema_media_settings_and_output_reserve_monotonically_change_complete_cost() -> None:
+    async def scenario() -> None:
+        base = await _bound_envelope()
+        base_cost = estimate_canonical_envelope(base).complete_request_tokens
+
+        first = base.function_tools[0]
+        larger_tool = replace(
+            first,
+            parameters_json_schema={
+                **dict(first.parameters_json_schema),
+                "description": "schema expansion " + "x" * 900,
             },
         )
-        binder = GroundedPolicyContextBinder(
-            request_budget=ModelRequestBudget(
-                soft_target_tokens=10,
-                model_context_window=200_000,
-                max_output_tokens=1,
-                protocol_reserve_tokens=1,
-                safety_margin_tokens=1,
-                admission_limit=100_000,
-            )
+        with_tool = _replace_physical(base, function_tools=(larger_tool, *base.function_tools[1:]))
+        with_media = _replace_physical(base, media=(_media(_png(padding=64 * 1024)),))
+        with_settings = _replace_physical(
+            base,
+            model_settings={**dict(base.model_settings), "seed": 123456789},
         )
-        before_actor_world = request.agent_context.actor_world
-        before_bindings = request.agent_context.private_fact_bindings
-        delivery = build_model_turn_delivery(request.agent_context, include_images=False)
+        with_reserve = _replace_physical(base, output_token_reserve=base.output_token_reserve + 17)
 
-        admitted = binder.action_request(
-            request,
-            (tool,),
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        )
-
-        payload = json.loads(admitted.messages[1].content)
-        observation = payload["observation"]
-        assert any(projection in observation for projection in ("projection=page_map", "projection=full"))
-        assert "recovery=read_region/search_page_content/find_controls" in observation
-        assert "recovery=none" not in observation
-        assert "[E1]" in observation
-        assert request.agent_context.actor_world == before_actor_world
-        assert request.agent_context.private_fact_bindings == before_bindings
-        assert admitted.breakdown.admission_action == "admitted"
-        assert admitted.breakdown.delivery_projection == "page_map"
-        assert admitted.breakdown.prefit_estimated_total_tokens == admitted.breakdown.estimated_total_tokens
+        assert estimate_canonical_envelope(with_tool).complete_request_tokens > base_cost
+        assert estimate_canonical_envelope(with_media).complete_request_tokens > base_cost
+        assert estimate_canonical_envelope(with_settings).complete_request_tokens > base_cost
+        assert estimate_canonical_envelope(with_reserve).complete_request_tokens == base_cost + 17
 
     asyncio.run(scenario())
 
 
-def test_tool_schema_refs_do_not_expand_all_regions_and_direct_tools_match_delivery() -> None:
+def test_media_byte_growth_changes_cost_even_when_dimensions_are_equal() -> None:
     async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        total = 240
-        roots = tuple(
-            ActorWorldNodeView(f"E{index}", "button", f"Button {index}", {"enabled": True}, source_refs=("S1",))
-            for index in range(1, total + 1)
+        base = await _bound_envelope()
+        small = _replace_physical(base, media=(_media(_png(padding=1)),))
+        large = _replace_physical(base, media=(_media(_png(padding=128 * 1024)),))
+
+        small_cost = estimate_canonical_envelope(small)
+        large_cost = estimate_canonical_envelope(large)
+        assert large_cost.image_estimated_tokens > small_cost.image_estimated_tokens
+        assert large_cost.media_bytes > small_cost.media_bytes
+
+    asyncio.run(scenario())
+
+
+def test_media_bytes_mime_digest_dimensions_and_marks_each_participate_in_identity() -> None:
+    async def scenario() -> None:
+        base = await _bound_envelope()
+        data = _png()
+        record = _media(data)
+        physical = dict(base.physical_content())
+        message = {
+            "kind": "request",
+            "parts": (
+                {"part_kind": "user-prompt", "content": base.user_text},
+                {
+                    "part_kind": "binary",
+                    "mime_type": record.mime_type,
+                    "digest": record.digest,
+                    "dimensions": record.dimensions,
+                    "variant": record.variant,
+                    "marks": record.marks,
+                    "operand_roles": record.operand_roles,
+                },
+            ),
+        }
+        original = {**physical, "messages": (message,)}
+        binary = message["parts"][1]
+        variants = (
+            {**binary, "digest": "f" * 64},
+            {**binary, "mime_type": "image/jpeg"},
+            {**binary, "dimensions": (21, 20)},
+            {**binary, "marks": (("E1", (1, 2, 3, 4)),)},
         )
-        region_index = WorldDeliveryIndex(
-            request.agent_context.current_observation.observation_id,
-            tuple(
-                WorldRegion(
-                    key=f"region:many:{index + 1}-{index + 12}",
-                    source_id="S1",
-                    root_structure_id=f"targets:{index + 1}-{index + 12}",
-                    member_target_ids=tuple(
-                        f"target:{target}" for target in range(index + 1, index + 13)
-                    ),
-                    heading=f"button items {index + 1}-{index + 12}",
-                    role="region",
-                    counts={"targets": 12, "facts": 0, "actions": 12},
-                    coverage="complete",
-                )
-                for index in range(0, total, 12)
-            ),
+
+        assert all(
+            _envelope_id(
+                {
+                    **physical,
+                    "messages": ({**message, "parts": (message["parts"][0], variant)},),
+                }
+            )
+            != _envelope_id(original)
+            for variant in variants
         )
-        large_context = replace(
-            request.agent_context,
-            actor_world=ActorWorldSnapshot(
-                (ActorWorldDocumentView("S1", "structural", roots, len(roots), len(roots), False),),
-                (
-                    ActorWorldSourceView(
-                        "S1",
-                        "structural",
-                        "structural",
-                        "current",
-                        "complete",
-                        "complete",
-                        "not_available",
-                    ),
-                ),
-                (),
-                (),
-                BoundedSection((), 0, False),
-                (),
-                (),
-                (),
-            ),
-            grounding=AgentGroundingIndexView(
-                tuple(
-                    AgentGroundingEntityView(f"E{index}", "button", f"Button {index}", verbs=("activate",))
-                    for index in range(1, total + 1)
-                ),
-                {f"target:{index}": f"E{index}" for index in range(1, total + 1)},
-            ),
-            region_index=region_index,
-            canonical_world=canonical_world_with_regions(
-                request.agent_context.canonical_world,
-                request.agent_context.current_observation,
-                region_index,
-            ),
-        )
-        request = ModelDecisionRequest(request.request_id, large_context)
-        broad_tool = ToolSpec(
-            "activate",
-            "Activate one current target.",
+
+    asyncio.run(scenario())
+
+
+def test_envelope_identity_covers_every_model_visible_field_and_excludes_runtime_lineage() -> None:
+    async def scenario() -> None:
+        base = await _bound_envelope()
+        physical = dict(base.physical_content())
+
+        variants = []
+        variants.append({**physical, "instructions": (base.instructions[0] + " changed",)})
+        messages = list(physical["messages"])
+        messages[-1] = {
+            **messages[-1],
+            "parts": ({"part_kind": "user-prompt", "content": base.user_text + " changed"},),
+        }
+        variants.append({**physical, "messages": tuple(messages)})
+        tools = list(physical["tools"])
+        tools[0] = {**tools[0], "parameters_json_schema": {"type": "object", "properties": {}}}
+        variants.append({**physical, "tools": tuple(tools)})
+        tools[0] = {**physical["tools"][0], "strict": False}
+        variants.append({**physical, "tools": tuple(tools)})
+        variants.append({**physical, "tools": tuple(reversed(physical["tools"]))})
+        variants.append({**physical, "model_settings": {**physical["model_settings"], "temperature": 0.25}})
+        variants.append(
             {
-                "type": "object",
-                "properties": {"target": {"type": "string", "pattern": r"^E[1-9][0-9]{0,2}$"}},
-                "required": ["target"],
-            },
+                **physical,
+                "output_contract": {**physical["output_contract"], "allow_text_output": False},
+            }
         )
-        binder = GroundedPolicyContextBinder(
-            request_budget=ModelRequestBudget(
-                soft_target_tokens=16_000,
-                model_context_window=200_000,
-                max_output_tokens=1,
-                protocol_reserve_tokens=1,
-                safety_margin_tokens=1,
-                admission_limit=100_000,
-            )
-        )
-        delivery = build_model_turn_delivery(request.agent_context, include_images=False)
-
-        admitted = binder.action_request(
-            request,
-            (broad_tool,),
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        )
-
-        payload = json.loads(admitted.messages[1].content)
-        observation = payload["observation"]
-        delivered_refs = set(re.findall(r"\bE[1-9][0-9]*\b", observation))
-        target_schema = admitted.tools[0].input_schema["properties"]["target"]
-        assert admitted.breakdown.delivery_projection == "page_map"
-        assert admitted.breakdown.expanded_region_count < len(large_context.region_index.regions)
-        assert target_schema["pattern"] == r"^E[1-9][0-9]{0,2}$"
-        assert 0 < len(delivered_refs) < total
-        assert admitted.breakdown.folded_region_count > 0
-
-    asyncio.run(scenario())
-
-
-def test_full_projection_is_only_a_cost_baseline_and_cannot_replace_scoped_page_map() -> None:
-    async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        region_index = WorldDeliveryIndex(
-            request.agent_context.current_observation.observation_id,
-            tuple(
-                WorldRegion(
-                    key=f"region:oversized:{index}",
-                    source_id="S1",
-                    root_structure_id=f"synthetic:{index}",
-                    member_target_ids=("shared-toggle",) if index == 1 else (),
-                    heading="oversized directory entry " + ("x" * 240),
-                    role="region",
-                    counts={
-                        "targets": 1 if index == 1 else 0,
-                        "facts": 0,
-                        "actions": 1 if index == 1 else 0,
-                    },
-                    coverage="complete",
-                )
-                for index in range(1, 90)
-            ),
-        )
-        context = replace(
-            request.agent_context,
-            region_index=region_index,
-            canonical_world=canonical_world_with_regions(
-                request.agent_context.canonical_world,
-                request.agent_context.current_observation,
-                region_index,
-            ),
-        )
-        request = ModelDecisionRequest(request.request_id, context)
-        tool = ToolSpec(
-            "activate_target",
-            "Activate one current target.",
+        variants.append({**physical, "output_token_reserve": base.output_token_reserve + 1})
+        variants.append(
             {
-                "type": "object",
-                "properties": {"target": {"type": "string", "enum": ["E1"]}},
-                "required": ["target"],
-            },
-        )
-        binder = GroundedPolicyContextBinder(
-            request_budget=ModelRequestBudget(
-                soft_target_tokens=1,
-                model_context_window=200_000,
-                max_output_tokens=1,
-                protocol_reserve_tokens=1,
-                safety_margin_tokens=1,
-                admission_limit=100_000,
-            )
-        )
-        delivery = build_model_turn_delivery(request.agent_context, include_images=False)
-
-        admitted = binder.action_request(
-            request,
-            (tool,),
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
+                **physical,
+                "messages": (*physical["messages"], {"kind": "request", "parts": ({"part_kind": "binary", "mime_type": "image/png", "digest": "a" * 64},)}),
+            }
         )
 
-        payload = json.loads(admitted.messages[1].content)
-        assert "projection=page_map" in payload["observation"]
-        assert admitted.breakdown.delivery_projection == "page_map"
-        assert admitted.breakdown.full_candidate_tokens > 0
-        assert admitted.breakdown.lens_candidate_tokens == admitted.breakdown.estimated_total_tokens
+        assert all(_envelope_id(item) != base.envelope_id for item in variants)
+        assert "context_id" not in physical
+        assert "delivery_id" not in physical
+        assert "attempt_phase" not in physical
+        assert "catalog" not in physical
+
+        replacement_tools = tuple(
+            RegisteredGroundedTool(item.spec, _EquivalentResolver()) for item in base.catalog.tools
+        )
+        replacement_catalog = replace(base.catalog, tools=replacement_tools)
+        rebound = _replace_physical(base, catalog=replacement_catalog, attempt_phase="trace-only-change")
+        assert rebound.envelope_id == base.envelope_id
 
     asyncio.run(scenario())
 
 
-@dataclass
-class _FakeCompactPort:
-    scripted: list[object] = field(default_factory=list)
-    calls: int = 0
-    provider: str = "zhipu"
-    model: str = "glm-4.1v-thinking-flashx"
-    endpoint_class: str = "fixture"
-    last_call: object | None = None
-    last_transcript: object | None = None
-
-    @property
-    def supports_multimodal(self) -> bool:
-        return False
-
-    async def generate_structured(self, messages, output_schema, config):
-        del messages, config
-        self.calls += 1
-        item = self.scripted.pop(0)
-        if isinstance(item, BaseException):
-            raise item
-        name, arguments = item
-        return output_schema(name=name, arguments=arguments)
-
-
-def test_irreducible_over_budget_returns_context_capacity_without_provider_attempt() -> None:
+def test_tool_order_schema_strictness_and_output_contract_are_closed_in_envelope() -> None:
     async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        port = _FakeCompactPort()
-        adapter = CompactJsonDecisionPort(
-            port,
-            ModelConfig(rate_limit_retries=0, transient_retries=0),
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            context_binder=GroundedPolicyContextBinder(request_budget=ModelRequestBudget(admission_limit=1)),
+        envelope = await _bound_envelope()
+
+        assert tuple(item.name for item in envelope.function_tools) == tuple(
+            item.spec.name for item in envelope.catalog.tools
         )
-
-        result = await adapter.generate(request)
-
-        assert result.failure is not None
-        assert result.failure.kind is ModelFailureKind.CONTEXT_CAPACITY
-        assert port.calls == 0
-        assert result.diagnostics["policy_model_call_count"] == 0
-        assert result.diagnostics["admission_action"] == "context_capacity"
-        assert result.diagnostics["estimated_total_tokens"] > result.diagnostics["admission_limit"]
+        assert all(item.strict is True for item in envelope.function_tools)
+        assert all(
+            item.parameters_json_schema == catalog_item.spec.input_schema
+            for item, catalog_item in zip(envelope.function_tools, envelope.catalog.tools, strict=True)
+        )
+        assert envelope.output_contract == CanonicalOutputContract()
+        assert envelope.model_settings["parallel_tool_calls"] is False
+        assert envelope.media == ()
 
     asyncio.run(scenario())
 
 
-def test_request_admission_fits_reducible_workspace_before_complete_reestimate() -> None:
+def test_private_resolver_value_and_length_do_not_change_public_cost_or_identity() -> None:
     async def scenario() -> None:
-        request, catalog, original_delivery = await _request()
-        baseline = GroundedPolicyContextBinder().action_request(
-            request,
-            catalog.specs,
-            original_delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
+        base = await _bound_envelope()
+        replacement_catalog = replace(
+            base.catalog,
+            tools=tuple(RegisteredGroundedTool(item.spec, _EquivalentResolver()) for item in base.catalog.tools),
         )
-        events = tuple(
-            SemanticEvent(index, SemanticEventKind.GUI_EFFECT, f"ordinary effect {index} " + ("x" * 180))
-            for index in range(1, 25)
-        )
-        context = replace(
-            request.agent_context,
-            workspace=AgentWorkspace(semantic_events=events),
-            current_step_index=24,
-        )
-        request = ModelDecisionRequest(request.request_id, context)
-        delivery = build_model_turn_delivery(context, include_images=False)
-        high = GroundedPolicyContextBinder().action_request(
-            request,
-            catalog.specs,
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        )
-        fitted = GroundedPolicyContextBinder(
-            request_budget=ModelRequestBudget(
-                admission_limit=(baseline.breakdown.estimated_total_tokens + high.breakdown.estimated_total_tokens) // 2
-            )
-        ).action_request(
-            request,
-            catalog.specs,
-            delivery,
-            supports_multimodal=False,
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
-            include_tool_menu=False,
-        )
+        replacement = _replace_physical(base, catalog=replacement_catalog)
 
-        payload = json.loads(fitted.messages[1].content)
-        assert fitted.breakdown.prefit_estimated_total_tokens > fitted.breakdown.estimated_total_tokens
-        assert payload["recent_steps"]["semantic_events"] == []
-        assert request.agent_context.workspace.semantic_events == events
+        assert replacement.envelope_id == base.envelope_id
+        assert estimate_canonical_envelope(replacement) == estimate_canonical_envelope(base)
 
     asyncio.run(scenario())
 
 
-def _png(width: int, height: int) -> bytes:
-    return b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + width.to_bytes(4, "big") + height.to_bytes(4, "big")
-
-
-def test_schema_error_has_no_second_action_policy_request() -> None:
+def test_multiple_media_and_large_history_are_counted_without_provider_access() -> None:
     async def scenario() -> None:
-        request, _catalog, _delivery = await _request()
-        port = _FakeCompactPort(
-            [
-                StructuredOutputError(
-                    "invalid",
-                    violations=(StructuredOutputViolation("$.name", "missing"),),
-                ),
-                ("abort", {"reason": "stop", "category": "policy"}),
-            ]
-        )
-        adapter = CompactJsonDecisionPort(
-            port,
-            ModelConfig(rate_limit_retries=0, transient_retries=0),
-            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        base = await _bound_envelope()
+        expanded = _replace_physical(
+            base,
+            history_messages=tuple({"kind": "request", "content": "history " + "x" * 1000} for _ in range(8)),
+            media=(_media(_png(padding=100)), _media(_png(padding=200))),
         )
 
-        result = await adapter.generate(request)
-
-        assert result.failure is None
-        assert result.output is not None
-        assert port.calls == 1
-        breakdowns = result.diagnostics["request_breakdowns"]
-        assert [item["phase"] for item in breakdowns] == ["initial"]
-        assert breakdowns[0]["repair_tokens"] == 0
+        breakdown = estimate_canonical_envelope(expanded)
+        assert breakdown.history_tokens > 0
+        assert breakdown.image_estimated_tokens > 0
+        assert breakdown.media_bytes == sum(len(item.data) for item in expanded.media)
 
     asyncio.run(scenario())

@@ -15,6 +15,7 @@ from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
+import affordance_runtime.model.policy.canonical_provider_envelope as canonical_envelope_module
 from affordance_runtime.actions import ActionBinding, ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context.failures import ModelFailureKind
@@ -44,6 +45,7 @@ from tests.support.agent.core_loop_support import (
 from tests.support.model.recording_pydantic_model import (
     FrozenBoundaryObject,
     RecordingPydanticModel,
+    normalize_recorded_provider_input,
 )
 
 
@@ -168,6 +170,8 @@ def test_gate_0_records_text_request_and_executes_one_current_tool_call_through_
         assert state.last_step.decision.tool_call_id == "recording-call:1"
         assert recorder.calls == 1
         record = recorder.records[0]
+        envelope = policy.port.last_admitted_envelopes[0]
+        assert normalize_recorded_provider_input(record) == envelope.model_boundary_projection()
         assert (record.ordinal, record.scripted_phase) == (1, "ordinary")
         assert record.instructions
         assert record.instruction_parts is not None
@@ -279,8 +283,9 @@ def test_gate_0_records_actual_media_part_mime_and_bytes_identity() -> None:
         before = WorldFusion().fuse((source,)).observation
         assert before is not None
         recorder = RecordingPydanticModel(["first_gui_action"], scripted_phases=["ordinary"])
+        policy = _policy(recorder, supports_multimodal=True)
 
-        state = await _runtime(_policy(recorder, supports_multimodal=True)).run_task(
+        state = await _runtime(policy).run_task(
             _one_action_environment(before=before),
             shared_task(),
         )
@@ -288,6 +293,8 @@ def test_gate_0_records_actual_media_part_mime_and_bytes_identity() -> None:
         assert state.status is RunStatus.DONE
         assert recorder.calls == 1
         request = recorder.records[0].messages[0]
+        envelope = policy.port.last_admitted_envelopes[0]
+        assert normalize_recorded_provider_input(recorder.records[0]) == envelope.model_boundary_projection()
         assert isinstance(request, ModelRequest)
         user_part = next(part for part in request.parts if isinstance(part, UserPromptPart))
         assert not isinstance(user_part.content, str)
@@ -296,6 +303,71 @@ def test_gate_0_records_actual_media_part_mime_and_bytes_identity() -> None:
         assert media_parts[0].media_type == "image/png"
         assert media_parts[0].data == png
         assert media_parts[0].data is png
+        assert envelope.media[0].data == png
+        assert envelope.media[0].mime_type == "image/png"
+        assert envelope.media[0].dimensions == (20, 20)
+
+    asyncio.run(scenario())
+
+
+def test_gate_3_media_bind_fault_is_local_total_and_never_reaches_function_model(monkeypatch) -> None:
+    async def scenario() -> None:
+        output = io.BytesIO()
+        Image.new("RGB", (20, 20), "white").save(output, format="PNG")
+        media = ObservationMedia(
+            "gate-3-media-fault",
+            "screenshot",
+            "image/png",
+            output.getvalue(),
+            capture_group_id="capture:gate-3-fault",
+            variant=ObservationMediaVariant.RAW,
+            dimensions=(20, 20),
+            coordinate_space_id="viewport:gate-3-fault",
+        )
+        base = shared_world("gate-3-media-fault", False)
+        before = WorldFusion().fuse((replace(base.sources[0], media=(media,)),)).observation
+        assert before is not None
+        recorder = RecordingPydanticModel(["first_gui_action"])
+        policy = _policy(recorder, supports_multimodal=True)
+
+        def fail(_item):
+            raise RuntimeError("synthetic media bind fault")
+
+        monkeypatch.setattr(canonical_envelope_module, "_media_record", fail)
+        state = await _runtime(policy).run_task(_one_action_environment(before=before), shared_task())
+
+        assert state.status is RunStatus.FAILED
+        assert recorder.calls == 0
+        assert policy.port.last_model_call_count == 0
+        assert policy.port.last_generation_attempts == ()
+        assert policy.port.last_local_failure["exception_class"] == "RuntimeError"
+
+    asyncio.run(scenario())
+
+
+def test_gate_3_representation_repair_has_its_own_admitted_exact_envelope() -> None:
+    async def scenario() -> None:
+        recorder = RecordingPydanticModel(
+            ["first_gui_action_invalid_extra", "repeat_last_gui_call"],
+            scripted_phases=["ordinary", "representation_repair"],
+        )
+        policy = _policy(recorder)
+
+        state = await _runtime(policy).run_task(_one_action_environment(), shared_task())
+
+        assert state.status is RunStatus.DONE
+        assert recorder.calls == 2
+        envelopes = policy.port.last_admitted_envelopes
+        assert len(envelopes) == 2
+        assert tuple(normalize_recorded_provider_input(item) for item in recorder.records) == tuple(
+            item.model_boundary_projection() for item in envelopes
+        )
+        assert envelopes[0].envelope_id != envelopes[1].envelope_id
+        assert tuple(item.attempt_phase for item in envelopes) == ("ordinary", "representation_repair")
+        assert tuple(item.phase for item in policy.port.last_generation_attempts) == (
+            "ordinary",
+            "representation_repair",
+        )
 
     asyncio.run(scenario())
 
@@ -313,8 +385,9 @@ def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_r
             post_observations=(after,),
             results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
         )
+        policy = _policy(recorder)
 
-        state = await _runtime(_policy(recorder)).run_task(environment, shared_task())
+        state = await _runtime(policy).run_task(environment, shared_task())
 
         assert state.status is RunStatus.DONE
         assert state.execution_count == 1
@@ -327,9 +400,17 @@ def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_r
         assert first_routes
         assert second_routes
         assert second_routes - first_routes
-        assert "continuation_available" in first
+        assert "action_results_next_page" in recorder.offered_tools[0]
         assert recorder.records[0].scripted_phase == "continuation"
         assert recorder.records[1].scripted_phase == "ordinary"
+        envelopes = policy.port.envelope_history
+        assert len(envelopes) == 2
+        assert envelopes[0].envelope_id != envelopes[1].envelope_id
+        assert tuple(normalize_recorded_provider_input(item) for item in recorder.records) == tuple(
+            item.model_boundary_projection() for item in envelopes
+        )
+        assert policy.port.last_generation_attempts[0].envelope_id == envelopes[-1].envelope_id
+        assert recorder.calls == len(envelopes)
         recorded_public = "\n".join(
             _actual_public_text(record)
             + json.dumps(

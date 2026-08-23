@@ -4,7 +4,7 @@ Goal: recover the Run21 C8/C10 migration through serial owner cutovers. Preserve
 
 ## Serial cutover constraints
 
-- Gate 0 and World source/test/diagnostic changes were authorized and are complete; Delivery and Envelope semantics remain frozen until their serial stages.
+- Gate 0, World, Delivery, and Envelope owner cutovers are implemented and provider-free verified; vertical conservation remains frozen until Gate 4.
 - Preserve `output/` and all unrelated user files; each cutover receives one independent commit.
 - A failing test or auditor counterexample is design evidence only. It does not authorize a local production patch.
 - Run30 predates current production changes and is stale for current-tree verification.
@@ -19,7 +19,7 @@ Goal: recover the Run21 C8/C10 migration through serial owner cutovers. Preserve
 | 6. Build test-only Recording Provider Gate 0 through the actual policy/CoreLoop/provider boundary | completed | `tests/support/model/recording_pydantic_model.py`; `tests/integration/model/test_recording_provider_gate.py`; actual TargetRuntime/CoreLoop path: 6 passed; focused 78 passed/3 skipped; full 1558 passed/24 skipped/2 known non-Gate failures; no `src/` diff |
 | 7. Implement World cutover and pass its owner-local production-path gate | completed | sole immutable `CanonicalPublicWorldProjection`; all E/N/F/R consumers migrated; old production allocators/fallbacks deleted; permutation/remount/effect/ambiguity/identity/Gate-0 production-path properties pass; focused `175 passed, 2 skipped`; full `1568 passed, 24 skipped`; Ruff/compileall/diff/negative searches pass; no Delivery/Envelope semantic migration |
 | 8. Implement Delivery cutover and pass its two-turn production-path gate | completed | Store-owned immutable inventories/capabilities; pure Plan and bounded Packer; atomic Manifest resolver rows; capability-only dynamic Catalog; fanout/state/exact/privacy properties; real two-request FunctionModel gate; focused `231 passed`; full `1594 passed, 24 skipped`; Ruff/compileall/diff/negative searches pass |
-| 9. Implement Envelope cutover and pass Recording Provider identity/cost gate | pending | exact admitted object must be the transported/recorded object |
+| 9. Implement Envelope cutover and pass Recording Provider identity/cost gate | completed | sole immutable `CanonicalProviderEnvelopeBinder`; exact admitted envelope reused by Packer/Port; lossless PydanticAI codec; exact Recording FunctionModel, capacity, media/tool, totality, repair, and two-turn properties; focused `583 passed, 3 skipped`; full `1594 passed, 24 skipped`; static/negative gates pass |
 | 10. Run final vertical conservation plus focused/relevant/full static and provider-free verification | pending | Run30 cannot be reused |
 | 11. Run one fresh-context read-only audit and report non-closed status honestly | pending | no closure without fresh evidence and separately authorized live benchmark |
 
@@ -36,4 +36,4 @@ producer/consumer/deletion scope; implement the positive typed owner; migrate ev
 path in the same stage; pass owner + CoreLoop production gates; stop before the next owner. No fallback keeps old and
 new authorities simultaneously reachable.
 
-Constraints: no provider calls, live benchmark, Task7/Go/OSM/page-specific production branches, fixed selectors/action IDs, second Loop/World/ActionSpace authority, generic optimizer, event sourcing, commit, or closure claim.
+Constraints: no provider calls, live benchmark, Task7/Go/OSM/page-specific production branches, fixed selectors/action IDs, second Loop/World/ActionSpace authority, generic optimizer, event sourcing, or closure claim.

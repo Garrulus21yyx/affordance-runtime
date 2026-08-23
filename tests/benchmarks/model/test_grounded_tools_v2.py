@@ -262,17 +262,21 @@ def _bound_public_context(context) -> dict[str, object]:
         GroundedToolPhase.ACTION_SELECTION,
         delivery,
     )
-    messages = GroundedPolicyContextBinder().action_messages(
-        _action_request(context),
-        catalog.specs,
+    binder = GroundedPolicyContextBinder()
+    public = dict(binder._public_context_sections(  # noqa: SLF001 - owner-boundary fixture
+        context,
+        False,
         delivery,
-        supports_multimodal=False,
-        perception_profile=DecisionPerceptionProfile.STRUCTURE_FIRST,
-        include_tool_menu=True,
+    )["public"])
+    public["tools"] = tuple(
+        {
+            "name": item.name,
+            "description": item.description,
+            "input_schema": to_json_compatible(item.input_schema),
+        }
+        for item in catalog.specs
     )
-    content = messages[1].content
-    assert isinstance(content, str)
-    return json.loads(content)
+    return json.loads(json.dumps(public, ensure_ascii=False))
 
 
 def _evidence_handoff_context(*, visual: bool = False):

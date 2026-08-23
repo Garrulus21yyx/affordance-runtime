@@ -149,8 +149,7 @@ async def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff
 def test_w1b_privacy_gate_rejects_prohibited_serialization_fields(leak: str) -> None:
     catalog = SimpleNamespace(specs=())
     admitted = SimpleNamespace(
-        messages=(SimpleNamespace(role="user", content=leak),),
-        tools=(),
+        envelope=SimpleNamespace(physical_content=lambda: {"messages": (leak,)}),
     )
 
     assert _private_leak_markers(leak, catalog, admitted, ())
@@ -162,8 +161,7 @@ def test_w1b_privacy_gate_rejects_exact_runtime_lineage_values() -> None:
     leaked = next(value for value in private_values if len(value) >= 4)
     catalog = SimpleNamespace(specs=())
     admitted = SimpleNamespace(
-        messages=(SimpleNamespace(role="user", content=leaked),),
-        tools=(),
+        envelope=SimpleNamespace(physical_content=lambda: {"messages": (leaked,)}),
     )
 
     assert _private_leak_markers(leaked, catalog, admitted, private_values) == (

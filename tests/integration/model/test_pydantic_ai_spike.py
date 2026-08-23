@@ -13,7 +13,9 @@ from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import ModelRequestParameters
 
+import affordance_runtime.model.policy.canonical_provider_envelope as canonical_envelope_module
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
+import affordance_runtime.model.policy.request_admission as request_admission_module
 import affordance_runtime.model.policy.turn_packer as turn_packer_module
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
@@ -71,6 +73,31 @@ def _policy(model) -> ModelBackedAgentPolicy:
     return ModelBackedAgentPolicy(port, call_timeout_s=5.0)
 
 
+async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request_id: str):
+    task = shared_task()
+    world = shared_world(request_id, False)
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        await SharedTaskEvaluator().evaluate(task, world),
+    )
+    profile = port.reasoning_policy.select(context, frozenset())
+    return turn_packer_module.TurnPacker().pack(
+        ModelDecisionRequest(f"request:{request_id}", context),
+        binder=port.envelope_binder,
+        identity=pydantic_bridge.CanonicalProviderIdentity(
+            port.provider_id,
+            port.model_id,
+            port.endpoint_host,
+            port.perception_profile.value,
+        ),
+        call_profile=profile,
+        supports_multimodal=False,
+        perception_profile=port.perception_profile,
+    ).admitted_envelope.envelope
+
+
 def _runtime(model) -> TargetRuntime:
     return TargetRuntime(
         AgentDecisionPorts(_policy(model)),
@@ -103,8 +130,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         # FunctionModel strips unsupported thinking while preserving the
         # transport-level single-call prohibition and output/sampling budget.
         assert scripted.model_settings == [{"max_tokens": 1024, "temperature": 0.0, "parallel_tool_calls": False}]
-        assert pydantic_bridge._action_model_settings(policy.port.last_call_profile) == {
-            "thinking": False,
+        assert dict(policy.port.last_admitted_envelopes[0].model_settings) == {
             "max_tokens": 1024,
             "temperature": 0.0,
             "parallel_tool_calls": False,
@@ -232,7 +258,19 @@ def test_unexpected_value_error_is_internal_not_invalid_tool_arguments() -> None
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("fault_stage", ("delivery", "catalog", "admission", "provider_bind"))
+@pytest.mark.parametrize(
+    "fault_stage",
+    (
+        "delivery",
+        "catalog",
+        "envelope_bind",
+        "schema_bind",
+        "token_count",
+        "admission",
+        "provider_bind",
+        "trace_record",
+    ),
+)
 def test_pre_provider_ordinary_faults_are_total_and_never_attempt_provider(monkeypatch, fault_stage) -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])
@@ -253,10 +291,18 @@ def test_pre_provider_ordinary_faults_are_total_and_never_attempt_provider(monke
             monkeypatch.setattr(turn_packer_module, "build_model_turn_delivery", fail)
         elif fault_stage == "catalog":
             monkeypatch.setattr(turn_packer_module, "compile_grounded_action_catalog", fail)
+        elif fault_stage == "envelope_bind":
+            monkeypatch.setattr(canonical_envelope_module.CanonicalProviderEnvelopeBinder, "bind", fail)
+        elif fault_stage == "schema_bind":
+            monkeypatch.setattr(canonical_envelope_module, "CanonicalFunctionTool", fail)
+        elif fault_stage == "token_count":
+            monkeypatch.setattr(request_admission_module, "estimate_canonical_envelope", fail)
         elif fault_stage == "admission":
-            monkeypatch.setattr(pydantic_bridge.GroundedPolicyContextBinder, "action_request", fail)
+            monkeypatch.setattr(pydantic_bridge.RequestAdmission, "admit", fail)
+        elif fault_stage == "provider_bind":
+            monkeypatch.setattr(pydantic_bridge, "_pydantic_model_boundary_codec", fail)
         else:
-            monkeypatch.setattr(pydantic_bridge, "_pydantic_prompt", fail)
+            monkeypatch.setattr(pydantic_bridge.PydanticAIGroundedDecisionPort, "_record_attempt_started", fail)
 
         result = await policy.port.generate(ModelDecisionRequest(f"request:{fault_stage}", context))
 
@@ -264,8 +310,8 @@ def test_pre_provider_ordinary_faults_are_total_and_never_attempt_provider(monke
         assert result.failure is not None
         assert result.failure.kind is ModelFailureKind.INTERNAL_ERROR
         assert result.failure.attempt_origin is ProviderAttemptOrigin.LOCAL_RUNTIME
-        assert len(result.attempts) == 1
-        assert result.attempts[0].phase == "local_runtime"
+        assert result.attempts == ()
+        assert result.diagnostics["pre_provider_failure"]["phase"] == "local_runtime"
         assert result.diagnostics["policy_model_call_count"] == 0
         assert policy.port.last_model_call_count == 0
         assert scripted.calls == 0
@@ -318,7 +364,7 @@ def test_pre_provider_typed_schema_and_capacity_faults_remain_local(
         if fault_stage == "catalog":
             monkeypatch.setattr(turn_packer_module, "compile_grounded_action_catalog", fail)
         else:
-            monkeypatch.setattr(pydantic_bridge.GroundedPolicyContextBinder, "action_request", fail)
+            monkeypatch.setattr(pydantic_bridge.RequestAdmission, "admit", fail)
 
         result = await policy.port.generate(ModelDecisionRequest(f"request:typed-{fault_stage}", context))
 
@@ -720,13 +766,13 @@ def test_pydantic_ai_does_not_count_retry_cancelled_during_backoff(monkeypatch) 
         async def cancelled_backoff(_delay: float) -> None:
             raise asyncio.CancelledError
 
+        envelope = await _bound_envelope_for_port(port, "retry-backoff-envelope")
         monkeypatch.setattr(pydantic_bridge.asyncio, "sleep", cancelled_backoff)
         with pytest.raises(asyncio.CancelledError):
             await port._run_provider_call(
                 provider_call,
                 phase="initial",
-                specs=(),
-                input_messages=(),
+                envelope=envelope,
                 provider_error_type=ModelHTTPError,
             )
 
@@ -752,12 +798,12 @@ def test_pydantic_ai_records_inflight_provider_cancellation() -> None:
         async def provider_call():
             raise asyncio.CancelledError
 
+        envelope = await _bound_envelope_for_port(port, "inflight-cancellation")
         with pytest.raises(asyncio.CancelledError):
             await port._run_provider_call(
                 provider_call,
                 phase="initial_provider_retry",
-                specs=(),
-                input_messages=({"role": "user", "content": "fixture"},),
+                envelope=envelope,
                 provider_error_type=ModelHTTPError,
             )
 
@@ -825,7 +871,12 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
     assert policy.port.transport_timeout_s == 2.0
     assert policy.port.max_provider_retry_delay_s == 0.5
     prepared, _ = policy.port.model.prepare_request(
-        pydantic_bridge._action_model_settings(policy.port.reasoning_policy.repair()),
+        {
+            "thinking": False,
+            "max_tokens": policy.port.reasoning_policy.repair().max_output_tokens,
+            "temperature": 0.0,
+            "parallel_tool_calls": False,
+        },
         ModelRequestParameters(),
     )
     assert prepared["extra_body"]["thinking"]["type"] == "disabled"

@@ -35,6 +35,8 @@ def test_agent_workspace_is_the_only_production_model_history_owner() -> None:
 def test_request_admission_is_the_only_complete_request_capacity_owner() -> None:
     admission = (_SRC / "model" / "policy" / "request_admission.py").read_text()
     binder = (_SRC / "model" / "policy" / "grounded_policy_context.py").read_text()
+    envelope = (_SRC / "model" / "policy" / "canonical_provider_envelope.py").read_text()
+    packer = (_SRC / "model" / "policy" / "turn_packer.py").read_text()
     other_source = "\n".join(
         path.read_text()
         for path in _SRC.rglob("*.py")
@@ -42,11 +44,14 @@ def test_request_admission_is_the_only_complete_request_capacity_owner() -> None
     )
 
     assert "class RequestAdmission" in admission
-    assert "self.workspace_reducer.fit(" in admission
-    assert "self.request_admission.admit(" in binder
+    assert "CanonicalProviderEnvelope" in admission
+    assert "RequestAdmission().admit(envelope" in packer
+    assert "class CanonicalProviderEnvelopeBinder" in envelope
+    assert "component_payloads" not in admission
+    assert "RequestAdmission" not in binder
     assert "estimate_model_request(" not in binder
     assert "admit_model_request(" not in binder
-    assert "raise ModelRequestCapacityError(" not in other_source
+    assert "estimate_canonical_envelope(" not in other_source
 
 
 def test_monitor_has_one_fixed_information_increment_state() -> None:

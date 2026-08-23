@@ -2,10 +2,10 @@
 
 ## Status
 
-Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery implemented and provider-free verified /
-Gate 3 Envelope pending / Gate 4 vertical conservation pending / overall reopened and non-closed / no live run
+Current status: **Gate 0 complete / Gate 1 World complete / Gate 2 Delivery complete /
+Gate 3 Envelope implemented and provider-free verified / Gate 4 vertical conservation pending / Overall reopened / non-closed / no live run
 authorized**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal public-input projection
-remain separate reopened gates; C10 cannot close before Gate 3 and Gate 4. Prior
+remain separate reopened gates; C10 cannot close before Gate 4. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
 current end-to-end invariants or authorize another live run.
 
@@ -126,8 +126,23 @@ relation; backed-off and issue-only fragments add no ghost route/ref. The real
 two-request gate records a continuation tool in request one, commits the Store transition through CoreLoop, and records
 new suffix routes in request two without exposing observation/action IDs. The expanded Delivery/C8/C10 focused suite is
 `231 passed`; full pytest is `1594 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative
-searches pass. No real provider, live benchmark, or Task-7 replay ran. Gate 3 exact physical-envelope identity/cost and
-Gate 4 vertical conservation remain pending, so C10 and overall status remain reopened/non-closed.
+searches pass. No real provider, live benchmark, or Task-7 replay ran. Gate 4 vertical conservation remains pending,
+so C10 and overall status remain reopened/non-closed.
+
+Envelope Gate 3 provider-free evidence proves that one immutable `CanonicalProviderEnvelope` is bound for each
+semantic model request, admitted without replacement, and projected mechanically to PydanticAI's ordered
+`ModelMessages + ModelRequestParameters`. The Recording FunctionModel normalization equals the envelope projection
+field-for-field for text, multimodal bytes/MIME, dynamic ordered strict tools and schemas, settings, and text output
+contract. Stable identity properties vary every physical field while excluding private Catalog resolver identity and
+trace/delivery lineage. Deterministic conservative capacity properties cover exact fit, one unit over, history, large
+schemas, single/multiple media, settings, and output reserve; rejection remains local with zero provider attempts.
+Fault injection covers Delivery read, Catalog compile, Envelope/media/schema bind, counting, Admission, typed codec,
+and pre-provider trace input recording without secondary failures. Initial and representation-repair physical calls
+have directly recorded envelope lineage, and the real two-turn CoreLoop/FunctionModel continuation sequence records a
+different current envelope on each turn. The C8-C12 owner-focused suite is `583 passed, 3 skipped`; full pytest is
+`1594 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative searches pass. No provider,
+live benchmark, Task-7 replay, external token counter, raw HTTP normalization, or billing-token equivalence is claimed.
+Gate 4 remains pending and C10/overall status remains reopened/non-closed.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -978,10 +993,11 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 4. **Delivery implemented and provider-free verified:** `ObservationDeliveryStore` is the sole inventory/cursor
    transition owner; immutable Plan/Packer consumers, atomic Manifest rows, Store capabilities, dynamic Catalog, and
    the two-request production gate agree. This is owner-local Gate 2 evidence, not C10 closure.
-5. **Next/pending — Envelope only:** add one `ProviderEnvelopeBinder`; make RequestAdmission accept/return its exact
-   `CanonicalProviderEnvelope`; reduce PydanticAI integration to a lossless wire codec; remove sidecar privacy/cost
-   substitutes and post-admission message/tool/media reconstruction; pass the Recording Provider identity gate.
-6. Run the vertical World → Delivery → Manifest/Catalog → Envelope → provider-recording and tool-call → Resolver →
+5. **Envelope implemented and provider-free verified:** one `CanonicalProviderEnvelopeBinder` closes the physical
+   request; RequestAdmission accepts/returns that exact envelope; the PydanticAI codec transports its typed projection;
+   sidecar authority and post-admission message/tool/media reconstruction are removed; exact Recording Provider,
+   capacity, totality, repair, and two-turn gates pass.
+6. **Next/pending — vertical conservation:** run the World → Delivery → Manifest/Catalog → Envelope → provider-recording and tool-call → Resolver →
    Binder conservation gate. This is the first point where final envelope digest/cost and end-to-end route equivalence
    count as evidence.
 7. Run all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault gates, full
