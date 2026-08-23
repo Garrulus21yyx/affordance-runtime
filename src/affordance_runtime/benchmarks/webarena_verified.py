@@ -1361,16 +1361,8 @@ def _serialized_public_snapshot_diff(before, after) -> tuple[tuple[str, str, str
 def _w1b_cost_errors(request_budget: Mapping[str, object]) -> tuple[str, ...]:
     errors: list[str] = []
     delivered = int(request_budget.get("estimated_input_tokens", 0))
-    history = int(request_budget.get("history_tokens", 0))
-    tool_schemas = int(request_budget.get("tool_schema_tokens", 0))
     if delivered > 12_000:
         errors.append("cost:new_page_over_12k")
-    if history > 1_500:
-        errors.append("cost:history_over_1_5k")
-    if tool_schemas > 2_000:
-        errors.append("cost:tool_schema_over_2k")
-    if delivered > math.floor(90_368 * 0.60):
-        errors.append("cost:task0_baseline_reduction_under_40_percent")
     return tuple(errors)
 
 

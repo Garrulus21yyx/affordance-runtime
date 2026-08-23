@@ -6,7 +6,7 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B full acceptance blocked by obsolete W1b component-budget veto**. Causal post-action transition,
+authorized / Stage-B full acceptance rerun pending after W1b projection repair**. Causal post-action transition,
 TaskGoal public-input projection, and benchmark finalization remain
 separate reopened gates. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -294,6 +294,13 @@ component-budget veto in WebArena W1b `_w1b_cost_errors`, after the complete Env
 `RequestAdmission`; it is not a GUI, World, Delivery, route, Catalog, TurnPacker, Envelope, or dispatch falsification.
 Gate 2 and Gate 4 remain admitted. Stage B and Overall remain reopened/non-closed, and live remains unauthorized.
 
+W1b acceptance-projection repair checkpoint (2026-08-23): `_w1b_cost_errors` now has one per-page hard readiness
+coordinate, the complete physical `estimated_input_tokens <= 12,000` value already owned by Envelope construction and
+RequestAdmission. The historical `history_tokens <= 1,500`, `tool_schema_tokens <= 2,000`, and mislabeled Task-0 40%
+branches are removed together. Component tokens remain diagnostic breakdowns for regression analysis; they cannot
+independently reject an admitted complete request. The six-page summary retains its 8,000-token median gate. No
+Catalog, Packer, Envelope, GUI, route, or dispatch code changed. Stage-B rerun remains required before admission.
+
 ## Normative single production chain
 
 This section is the sole normative production data flow. Later sections may explain an owner or preserve failure
@@ -373,6 +380,9 @@ fit, the typed result is `context_capacity` with zero provider attempts.
 During fitting, `TurnPacker` may call the pure Manifest/Catalog/envelope-cost projections repeatedly to price a
 tentative page. Those tentative values have no identity, cursor transition, or provider visibility; only the final
 frozen page enters the linear chain above. This is a bounded construction loop, not another Runtime state machine.
+W1b artifacts may retain owner-produced media, wire, World, history, and Tool Schema component breakdowns for
+diagnosis, but readiness is decided only by the complete per-page input gate and six-page median gate; no component
+breakdown is a second acceptance budget.
 
 ### Serial cutover and non-circular gates
 

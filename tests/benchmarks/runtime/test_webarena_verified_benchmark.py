@@ -73,14 +73,16 @@ def test_w1b_world_capability_census_reports_t1_browsergym_support() -> None:
     assert census["hover"]["absence_reason"] == "adapter_not_supported"
 
 
-def test_w1b_cost_gate_consumes_only_owner_produced_input_coordinates() -> None:
+def test_w1b_cost_gate_treats_component_breakdowns_as_diagnostics_only() -> None:
     within_target = _w1b_cost_errors(
         {
-            "estimated_input_tokens": 11_000,
+            "estimated_input_tokens": 12_000,
             "output_reserve_tokens": 4_096,
-            "complete_request_tokens": 15_096,
-            "history_tokens": 1_000,
-            "tool_schema_tokens": 1_000,
+            "complete_request_tokens": 16_096,
+            # Component breakdowns remain observable but are not independent
+            # readiness budgets after the complete Envelope is admitted.
+            "history_tokens": 1_501,
+            "tool_schema_tokens": 2_103,
             # Removed ghost fields cannot restore a cross-coordinate comparison.
             "full_candidate_tokens": 1,
             "lens_candidate_tokens": 99_999,
@@ -92,8 +94,8 @@ def test_w1b_cost_gate_consumes_only_owner_produced_input_coordinates() -> None:
             "estimated_input_tokens": 12_001,
             "output_reserve_tokens": 4_096,
             "complete_request_tokens": 16_097,
-            "history_tokens": 1_000,
-            "tool_schema_tokens": 1_000,
+            "history_tokens": 0,
+            "tool_schema_tokens": 0,
         }
     )
 

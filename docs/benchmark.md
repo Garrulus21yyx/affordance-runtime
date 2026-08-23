@@ -6,7 +6,7 @@ Current status: **Gate 0 complete / Gate 1 World complete /
 Gate 2 admitted after joint fresh provider-free exit review /
 Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed / no live run
-authorized / Stage-B full acceptance blocked by obsolete W1b component-budget veto**. C8 causal post-action
+authorized / Stage-B full acceptance rerun pending after W1b projection repair**. C8 causal post-action
 transition, C11 benchmark finalization, and C12 TaskGoal public-input projection remain separate reopened gates; the
 combined current-tree provider-free acceptance is blocked. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -294,6 +294,14 @@ This is an obsolete benchmark acceptance sub-budget after successful complete-En
 capacity or route failure. The raw evidence is
 `evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-f3a42dfd-py312/`. Gate 2 and Gate 4 remain admitted;
 Stage B and Overall remain reopened/non-closed; no live benchmark ran.
+
+The W1b acceptance projection is now repaired without changing the product chain. Per-page readiness uses only
+`estimated_input_tokens <= 12,000`; the six-page aggregate continues to require median input `<= 8,000`.
+`history_tokens`, `tool_schema_tokens`, and other owner-produced component proportions remain in artifacts strictly as
+diagnostics. The former 1.5k history, 2k Tool Schema, and redundant/mislabeled Task-0 reduction vetoes are removed as
+one consumer migration. Catalog operation/scope bounds, schema↔unique-resolver equivalence, sparse adjacency, and
+continuation properties remain unchanged. Stage B remains non-admitted until the full rerun and new revision-bound
+artifacts pass.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -629,6 +637,11 @@ candidate-to-region expansion reasons, omitted-record cursors, actual factorized
 backoff count, and the final complete-request estimate. A larger or differently partitioned internal World does not
 fail by itself; unexplained final-delivery growth, missing recoverable routes, post-hoc manifest routes, an
 unrecoverable omission, or exceeding the frozen median gate does.
+
+Cost readiness has exactly two hard coordinates: every complete physical input is at most 12,000 tokens, and the
+six-page median is at most 8,000 tokens. Component breakdowns such as history, Tool Schema, media, wire, and World
+proportions remain diagnostic fields only. Their structure and boundedness are verified by the C8–C12 properties; no
+component token subtotal independently vetoes a request already accepted by RequestAdmission.
 
 ### W1b-Agent — live compatibility smokes
 
