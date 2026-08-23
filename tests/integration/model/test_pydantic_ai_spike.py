@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -12,9 +10,8 @@ pytest.importorskip("pydantic_ai")
 
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import ModelRequestParameters
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 import affordance_runtime.model.policy.turn_packer as turn_packer_module
@@ -56,93 +53,9 @@ from tests.support.agent.core_loop_support import (
     shared_task,
     shared_world,
 )
+from tests.support.model.recording_pydantic_model import RecordingPydanticModel
 
-DecisionScript = list[tuple[str, dict[str, object]] | str | Exception]
-
-
-@dataclass
-class ScriptedModel:
-    decisions: DecisionScript
-    calls: int = 0
-    messages: list[object] = field(default_factory=list)
-    offered_tools: list[tuple[str, ...]] = field(default_factory=list)
-    model_settings: list[object] = field(default_factory=list)
-    last_gui_call: tuple[str, dict[str, object]] | None = None
-
-    def build(self) -> FunctionModel:
-        async def respond(messages, info: AgentInfo) -> ModelResponse:
-            self.calls += 1
-            self.messages.append(messages)
-            self.offered_tools.append(tuple(tool.name for tool in info.function_tools))
-            self.model_settings.append(info.model_settings)
-            scripted = self.decisions.pop(0)
-            if isinstance(scripted, Exception):
-                raise scripted
-            if isinstance(scripted, str) and scripted in {"final_response", "zero_calls"}:
-                return ModelResponse(
-                    parts=[TextPart("Shared state is enabled." if scripted == "final_response" else "no tool call")],
-                    provider_response_id=f"pydantic-response:{self.calls}",
-                )
-            if scripted == "malformed_tool_call":
-                name = info.function_tools[0].name
-                return ModelResponse(
-                    parts=[ToolCallPart(name, "{not-json", tool_call_id=f"pydantic-call:{self.calls}")],
-                    provider_response_id=f"pydantic-response:{self.calls}",
-                )
-            if isinstance(scripted, str) and scripted in {
-                "first_gui_action",
-                "first_gui_action_invalid_extra",
-                "multiple_gui_actions",
-            }:
-                controls = {
-                    "ask_user",
-                    "wait",
-                    "abort",
-                    "find_controls",
-                    "request_evidence",
-                }
-                name = next(tool.name for tool in info.function_tools if tool.name not in controls)
-                selected = next(tool for tool in info.function_tools if tool.name == name)
-                target_schema = selected.parameters_json_schema["properties"].get("target", {})
-                public = json.loads(messages[-1].parts[0].content)
-                match = re.search(
-                    rf"\[(E[1-9][0-9]{{0,2}})\][^\n]*verbs=[^\n]*\b{re.escape(name)}\b",
-                    public["observation"],
-                )
-                assert match is not None
-                target = match.group(1)
-                arguments: dict[str, object] = {"target": target} if target_schema else {}
-                self.last_gui_call = (name, dict(arguments))
-                if scripted == "first_gui_action_invalid_extra":
-                    arguments["unexpected"] = "remove-me"
-            elif scripted == "repeat_last_gui_call":
-                assert self.last_gui_call is not None
-                name, remembered_arguments = self.last_gui_call
-                arguments = dict(remembered_arguments)
-            else:
-                assert isinstance(scripted, tuple)
-                name, arguments = scripted
-            parts = [
-                ToolCallPart(
-                    name,
-                    arguments,
-                    tool_call_id=f"pydantic-call:{self.calls}",
-                )
-            ]
-            if scripted == "multiple_gui_actions":
-                parts.append(
-                    ToolCallPart(
-                        name,
-                        arguments,
-                        tool_call_id=f"pydantic-call:{self.calls}:second",
-                    )
-                )
-            return ModelResponse(
-                parts=parts,
-                provider_response_id=f"pydantic-response:{self.calls}",
-            )
-
-        return FunctionModel(respond, model_name="scripted")
+ScriptedModel = RecordingPydanticModel
 
 
 def _policy(model) -> ModelBackedAgentPolicy:
@@ -197,7 +110,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
             "parallel_tool_calls": False,
         }
         assert state.last_step is not None
-        assert state.last_step.decision.tool_call_id == "pydantic-call:1"
+        assert state.last_step.decision.tool_call_id == "recording-call:1"
         assert "ask_user" in scripted.offered_tools[0]
         assert "propose_done" not in scripted.offered_tools[0]
         attempt = policy.port.last_generation_attempts[0]

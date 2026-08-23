@@ -16,7 +16,7 @@ Goal: recover the Run21 C8/C10 migration from a non-convergent layered implement
 | 3. Design `ObservationDeliveryStore` delivery-state owner cutover | completed | `docs/architecture.md` cursor/capability algebra, Plan/Catalog cutover, zero-prefix committed sequence gate |
 | 4. Design `CanonicalProviderEnvelope` owner cutover | completed | `docs/architecture.md` binder/admission/adapter ownership, typed provenance, exact Recording Provider gate |
 | 5. Review the three designs together for authority uniqueness and establish non-circular serial migration | completed | one normative chain and responsibility table in `docs/architecture.md`; Gate 0 → World → Delivery → Envelope → vertical conservation in both current authority docs |
-| 6. Build test-only Recording Provider Gate 0 through the actual policy/CoreLoop/provider boundary | pending | instrumentation only; no production semantics, provider call, or second request builder |
+| 6. Build test-only Recording Provider Gate 0 through the actual policy/CoreLoop/provider boundary | completed | `tests/support/model/recording_pydantic_model.py`; `tests/integration/model/test_recording_provider_gate.py`; actual TargetRuntime/CoreLoop path: 6 passed; focused 78 passed/3 skipped; full 1558 passed/24 skipped/2 known non-Gate failures; no `src/` diff |
 | 7. Implement World cutover and pass its owner-local production-path gate | pending | no Delivery/Envelope migration; final envelope invariance is deferred to the vertical gate |
 | 8. Implement Delivery cutover and pass its two-turn production-path gate | pending | no Envelope migration until complete |
 | 9. Implement Envelope cutover and pass Recording Provider identity/cost gate | pending | exact admitted object must be the transported/recorded object |

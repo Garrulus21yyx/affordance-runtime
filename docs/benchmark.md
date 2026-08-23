@@ -63,7 +63,7 @@ or identity equality between the admitted envelope and the object consumed by th
 Production and test code are frozen until the single normative chain in `architecture.md` is approved. Migration and
 acceptance are serial and non-circular:
 
-0. **Recording boundary.** Add a test-only local Recording Provider around the actual current
+0. **Recording boundary (implemented; not closure).** A test-only local Recording Provider observes the actual current
    `ModelBackedAgentPolicy → CoreLoop → provider adapter` boundary. It records the physical request but owns no
    production semantics and calls no model provider.
 1. **World.** One `CanonicalPublicWorldProjection` allocates every public ref/order exactly once. Private-ID value,
@@ -80,6 +80,25 @@ acceptance are serial and non-circular:
 4. **Vertical conservation.** Run the complete chain from fresh World through the Recording Provider and from a
    recorded tool call through Resolver/Binder. Only here must Manifest, Catalog, physical envelope digest, and complete
    cost remain invariant under private permutations, with visible/callable route equivalence preserved end to end.
+
+Gate 0 is implemented on baseline source commit `0717f8e58b75aab778612d7990929a39e73a792e` with an intentionally dirty,
+revision-scoped test/doc worktree and preserved untracked `output/`. The recorder support, Gate test, and migrated spike
+file have Git blob identities `b0fc1eac24d2a8cc6451f0422f01c545b98f8da9`,
+`349ac0dc2cc54f829781bcbe1c4cdce6ab799436`, and `989d878d91aa2a1a715a2048d1c20b90f45d5bfc` respectively. `git diff -- src/`
+is empty. Provider-free evidence on this worktree:
+
+- `PYTHONPATH=src:. python -m pytest -q tests/integration/model/test_recording_provider_gate.py` → `6 passed`;
+- the Gate test plus `test_pydantic_ai_spike.py`, `test_model_backed_agent_policy.py`, `test_request_admission.py`, and
+  `test_core_loop.py` → `78 passed, 3 skipped`;
+- touched-file Ruff, recorder `compileall`, and `git diff --check` → pass;
+- default `PYTHONPATH=src:. python -m pytest -q` → `1558 passed, 24 skipped, 2 failed`. The failures are the already-open
+  private-inventory permutation/World cutover witness and a pre-existing exact architecture-text assertion; neither is
+  repaired or reclassified by Gate 0.
+
+This evidence proves only that the test recorder observes the current physical PydanticAI boundary and can return a
+current single tool call, text/no-call output, or local exception through the existing typed Runtime behavior. It does
+not establish canonical request identity/digest, Envelope closure, C10 closure, benchmark closure, or live
+generalization. World is pending and status remains reopened/non-closed.
 
 Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
 depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
@@ -922,8 +941,9 @@ failure cannot authorize a caller-side fallback, threshold adjustment, compatibi
 
 1. Keep production/tests frozen. Preserve the dirty worktree, keep all earlier artifacts revision-scoped, and do not
    call a model provider or live benchmark.
-2. Build Gate 0 as test-only Recording Provider instrumentation around the actual production policy/CoreLoop/provider
-   boundary. It must not become a second request builder, evaluator, loop, or Runtime state.
+2. Gate 0 is implemented as test-only Recording Provider instrumentation around the actual production
+   policy/CoreLoop/provider boundary. It is not a second request builder, evaluator, loop, or Runtime state; this
+   implementation status is not closure.
 3. Cut over **World only**: create one `CanonicalPublicWorldProjection` value from fresh World + the existing
    unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
    every alternative public allocator/orderer; pass the World owner-local gate.

@@ -59,8 +59,19 @@ The current relevant gate is red on the inventory-enumeration permutation proper
 `evidence/w1b-world-c8-c10-provider-free-20260823-run30/` was written before later Store, Grounding, RequestAdmission,
 diagnostic, and test changes and has no source-revision binding. Its six internally consistent provider-free case
 records remain historical scoped evidence only; Run30 cannot verify the current tree or any production-chain
-conservation claim. No model provider, live ActionPolicy, live benchmark, or commit was run. Status remains reopened
-and non-closed.
+conservation claim. No model provider, live ActionPolicy, or live benchmark was run. The user-authorized pre-Gate
+baseline commit is `0717f8e5`; it does not change the reopened/non-closed status.
+
+Gate 0 implementation checkpoint (2026-08-23): the test-only Recording PydanticAI model is implemented through the
+actual `TargetRuntime/CoreAgentLoop → ModelBackedAgentPolicy → PydanticAIGroundedDecisionPort → PydanticAI Agent →
+FunctionModel` path. It snapshots the ordered typed `ModelMessage`/parts and the `AgentInfo` values PydanticAI 2.21.0
+actually supplies: instructions/instruction parts, complete function/output tool definitions and parameter schemas,
+strictness, model settings, and the public `ModelRequestParameters` output contract. It also observes real
+`BinaryContent` MIME and bytes without rebuilding, sorting, filtering, or interpreting the request. The callback API
+does not expose the Agent name or Runtime phase, so call ordinal is observed and phase is explicitly a scripted test
+label rather than a claimed provider-boundary field. The recorder calls no network/provider and owns no production
+state or semantics. No `src/` file was modified for Gate 0. This is acceptance instrumentation only: World remains the
+next pending cutover, and overall status remains reopened/non-closed.
 
 ## Normative single production chain
 
@@ -146,7 +157,7 @@ frozen page enters the linear chain above. This is a bounded construction loop, 
 Migration is strictly `Gate 0 → World → Delivery → Envelope → vertical conservation`. A later owner is never a
 prerequisite for an earlier cutover gate:
 
-1. **Gate 0 — test-only recorder.** Add a local Recording Provider/harness that observes the actual current
+1. **Gate 0 — test-only recorder (implemented; not closure).** A local Recording Provider/harness observes the actual current
    `ModelBackedAgentPolicy → CoreAgentLoop → provider adapter` boundary. It records but does not reinterpret the current
    physical request. It is acceptance instrumentation, not a production owner.
 2. **World cutover.** Produce one canonical public projection, migrate every public-ref/order consumer, physically
