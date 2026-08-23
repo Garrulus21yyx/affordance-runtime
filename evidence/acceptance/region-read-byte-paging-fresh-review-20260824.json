@@ -1,0 +1,23 @@
+{
+  "kind": "fresh_context_review",
+  "reviewed_revision": "3a3254189e2696d89b507b509c98646cdfb0da9c",
+  "result": "pass",
+  "falsification_found": false,
+  "live": false,
+  "provider_attempts": 0,
+  "tracked_tree_clean": true,
+  "independent_checks": {
+    "final_payload_byte_greedy_paging": "passed",
+    "atomic_exact_inventory_coverage": "passed",
+    "oversized_unicode_fragment_reassembly": "passed:60 pages, max 4096 bytes",
+    "private_monotonic_continuation": "passed",
+    "fresh_world_staleness": "passed",
+    "active_read_information_delta": "passed",
+    "unchanged_causal_surfaces": "passed",
+    "docs_tests_artifacts_consistency": "passed",
+    "focused_tests": "71 passed",
+    "full_pytest": "1628 passed, 24 skipped"
+  },
+  "status": "overall_non_closed",
+  "next_step": "request explicit authorization to rerun only the single held-out Task 21 witness; bounded cohort remains stopped"
+}

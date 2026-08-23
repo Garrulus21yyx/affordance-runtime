@@ -8,7 +8,8 @@ Gate 3 complete / re-admitted after fresh provider-free exit review /
 Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
 held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
-byte-bounded region-read repair provider-free verified / fresh-context review pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
+byte-bounded region-read repair provider-free verified / fresh-context review passed /
+held-out witness rerun authorization pending / bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
 Planner/Milestone/Evidence/Auditor production path remains removed. Prior G0–G6 and C8–C9 artifacts are historical
@@ -44,7 +45,12 @@ compileall, diff/static checks, and case/threshold-specialization negative searc
 ordinary long-record pages, exact inventory reconstruction, individually oversized typed fragments, private cursor
 progress, fresh-World invalidation, and information-delta delivery. No provider or live call was made. Evidence:
 [`region-read-byte-paging-provider-free-20260824.json`](../evidence/acceptance/region-read-byte-paging-provider-free-20260824.json).
-This is implementation acceptance only; fresh-context review remains required before requesting another witness.
+This is implementation acceptance only and did not itself authorize another witness.
+The independent read-only review of `3a325418` passed with no falsification, including an additional oversized Unicode
+fragment probe and an independent full-suite run. Its attestation is
+[`region-read-byte-paging-fresh-review-20260824.json`](../evidence/acceptance/region-read-byte-paging-fresh-review-20260824.json).
+Overall remains non-closed. The only next step is to request explicit authorization for the single held-out Task 21
+witness; the bounded cohort remains stopped.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
