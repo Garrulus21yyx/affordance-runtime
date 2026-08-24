@@ -1,0 +1,39 @@
+{
+  "schema": "accepted-tool-exchange-fresh-review.v1",
+  "date": "2026-08-24",
+  "review_revision": "faecb0e55535aff5a4d0ebd3ba2e6a6e0a43c5e1",
+  "implementation_revision": "70dae8dd838ae700a768ab7233b11baf23756a7e",
+  "source_tree": "da20e36b31defdc05c3f3ed444c7263a4c28e20b",
+  "test_tree": "61aaabceba2b1800b16560878a05cbf4ac0c97d0",
+  "review": "independent_fresh_context_read_only",
+  "result": "passed_no_falsification",
+  "overall_status": "reopened_non_closed",
+  "execution_profile": {
+    "provider_attempts": 0,
+    "live_provider_run": false,
+    "live_benchmark_run": false,
+    "browsergym_run": false,
+    "bounded_cohort": "stopped"
+  },
+  "findings": {
+    "raw_multi_call_exchange_is_transcript_only": "passed",
+    "accepted_exchange_is_single_typed_authority": "passed",
+    "decision_pending_history_step_and_result_identity": "passed",
+    "discarded_calls_excluded_from_execution_history_results": "passed",
+    "repair_cannot_change_operation_or_semantic_operands": "passed",
+    "pending_survives_pre_provider_failure": "passed",
+    "parallel_tool_calls_false_not_correctness_authority": "passed",
+    "unrelated_runtime_owners_unchanged": "passed",
+    "docs_evidence_revision_and_tree_hashes_agree": "passed"
+  },
+  "independent_verification": {
+    "bridge_function_model": "40 passed",
+    "collected": 1689,
+    "full_pytest": "1670 passed, 19 skipped",
+    "ruff": "passed",
+    "diff_check": "passed",
+    "production_negative_searches": "passed"
+  },
+  "worktree": "tracked clean; pre-existing untracked output directory untouched",
+  "next_step": "request explicit authorization for one held-out Task21 witness; bounded cohort remains stopped"
+}

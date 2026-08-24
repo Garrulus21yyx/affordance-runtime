@@ -171,9 +171,13 @@ Live and cohort execution remain stopped.
      Keep `parallel_tool_calls=false` only as a provider hint, never as correctness authority.
    - Run focused/full/static/negative verification and independent fresh review before requesting any further live run.
 
-23. **pending — Independent fresh-context accepted-exchange review**
+23. **completed — Independent fresh-context accepted-exchange review**
    - Read-only reconcile the committed owner/consumer graph, generated vertical property, full/static evidence, docs,
      and revision/tree hashes. Any falsification stops before provider/live execution.
+
+24. **pending — Request one held-out Task21 witness authorization**
+   - Do not start provider/live execution without explicit authorization. The bounded cohort remains stopped until the
+     single held-out witness passes.
 
 ## Explicit non-goals
 

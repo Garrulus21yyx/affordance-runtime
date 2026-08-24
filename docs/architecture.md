@@ -14,7 +14,7 @@ standard call-correlated result repair provider-free acceptance falsified by fre
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
 authorized held-out rerun falsified multiple-call pending-exchange conservation /
-accepted-tool-exchange owner repair provider-free verified; independent fresh-context review pending /
+accepted-tool-exchange owner repair provider-free verified; independent fresh-context review passed /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -357,8 +357,15 @@ property proves Decision, StepResult, pending history, and ToolReturn conserve t
 are absent from execution/history/results. Focused verification passes `82 passed`; the full suite passes
 `1670 passed / 19 skipped`, with Ruff, compileall, diff and negative searches also passing. No provider/live call ran.
 Evidence: [`accepted-tool-exchange-provider-free-20260824.json`](../evidence/acceptance/accepted-tool-exchange-provider-free-20260824.json).
-This is implementation acceptance only; independent fresh-context read-only review is still pending, Overall remains
-non-closed, and neither a Task21 rerun nor the bounded cohort is authorized.
+That checkpoint was implementation acceptance only and did not itself authorize a rerun; Overall remained non-closed.
+
+The independent read-only review of `faecb0e5` passed with no falsification. It independently ran the complete bridge
+FunctionModel file (`40 passed`), collected `1689` tests, reran the full suite (`1670 passed / 19 skipped`), and passed
+Ruff, diff and production negative searches. The implementation/source/test hashes reconcile exactly; tracked files
+were clean and no provider/live/BrowserGym run occurred. Evidence:
+[`accepted-tool-exchange-fresh-review-20260824.json`](../evidence/acceptance/accepted-tool-exchange-fresh-review-20260824.json).
+Overall remains non-closed. The next eligible step is only to request explicit authorization for one held-out Task21
+witness; the bounded cohort remains stopped.
 
 #### Reuse boundary and remaining custom surface
 

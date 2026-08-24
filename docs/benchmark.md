@@ -14,7 +14,7 @@ standard call-correlated result repair provider-free acceptance falsified by fre
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
 authorized held-out rerun falsified multiple-call pending-exchange conservation /
-accepted-tool-exchange owner repair provider-free verified; independent fresh-context review pending /
+accepted-tool-exchange owner repair provider-free verified; independent fresh-context review passed /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -260,8 +260,14 @@ bound to implementation revision `70dae8dd`. The canonicalizer now emits one typ
 1..8-call two-turn production path proves that the accepted Decision, StepResult, sole pending-history call, and
 DeferredToolResult share one call identity while raw discarded calls remain transcript-only. Focused verification is
 `82 passed`; full verification is `1670 passed / 19 skipped`, plus Ruff, compileall, diff and negative searches, with
-zero provider/live attempts. This is provider-free implementation evidence, not closure or rerun authorization;
-independent fresh-context review is pending and the bounded cohort remains stopped.
+zero provider/live attempts. This was provider-free implementation evidence, not closure or rerun authorization.
+
+The independent read-only review of `faecb0e5` passed with no falsification; see
+[`accepted-tool-exchange-fresh-review-20260824.json`](../evidence/acceptance/accepted-tool-exchange-fresh-review-20260824.json).
+It independently verified `40` bridge FunctionModel tests, `1689` collected tests, the full
+`1670 passed / 19 skipped` suite, static/negative checks, and exact revision/tree-hash agreement. No provider/live or
+BrowserGym run occurred. Overall remains non-closed; only an explicit authorization may start one held-out Task21
+witness, and the bounded cohort remains stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 
