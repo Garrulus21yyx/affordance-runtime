@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from affordance_runtime.actions.capabilities import InteractionSubjectKind
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldDocumentView,
     ActorWorldFactView,
@@ -172,6 +173,42 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
     assert "R1" in rendered.manifest.region_refs
     assert "Post 1" in rendered
     assert "R15" in rendered.manifest.region_refs
+
+
+def test_page_map_keeps_every_current_non_entity_action_subject() -> None:
+    subject_kinds = tuple(
+        kind for kind in InteractionSubjectKind if kind is not InteractionSubjectKind.ENTITY
+    )
+    snapshot = _snapshot(
+        tuple(
+            ActorWorldNodeView(
+                f"N{index}",
+                kind.value,
+                f"Current {kind.value}",
+                {"subject.kind": kind.value, "current_marker": kind.value},
+            )
+            for index, kind in enumerate(subject_kinds, start=1)
+        )
+    )
+    observation = _observation(1)
+    region_index = _region_index(1, observation.observation_id)
+    projection = canonical_world_with_regions(
+        _canonical_world(observation), observation, region_index
+    )
+
+    rendered = render_compact_actor_world(
+        snapshot,
+        _grounding(post_count=1, include_submit=False),
+        include_images=False,
+        region_index=region_index,
+        canonical_world=projection,
+        observation=observation,
+    )
+
+    assert rendered.view.text.count("CurrentActionSubjects") == 1
+    for kind in subject_kinds:
+        assert rendered.view.text.count(f"  {kind.value} label=") == 1
+        assert f'"current_marker":"{kind.value}"' in rendered.view.text
 
 
 def test_large_page_map_is_bounded_without_shrinking_recoverable_region_index() -> None:

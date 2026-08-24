@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 
+from affordance_runtime.actions.capabilities import InteractionSubjectKind
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionCandidateProjection,
     ActionRouteIssueFragment,
@@ -60,6 +61,9 @@ _TOOL_RESULT_TEXT_MAX_CHARS = 2_048
 _TOOL_RESULT_COLLECTION_MAX_ITEMS = 64
 _TOOL_RESULT_MAX_DEPTH = 6
 _SOURCE_TEXT_TRUNCATION_FIELD = "semantic.accessible_name.truncated"
+_CURRENT_ACTION_SUBJECT_ROLES = frozenset(
+    kind.value for kind in InteractionSubjectKind if kind is not InteractionSubjectKind.ENTITY
+)
 
 
 @dataclass(frozen=True)
@@ -429,7 +433,7 @@ def _render_page_map(
         "projection=page_map public_content=folded recovery=read_region/search_page_content/find_controls",
         f"{page_identity} coverage={_index_coverage(index)}",
     ]
-    lines.extend(_render_browser_context(observation))
+    lines.extend(_render_current_action_subjects(delivered))
     exact_region_keys = set(selected_region_keys)
     exact_region_keys.update(
         region.key for region in index.regions if _region_public_refs(region, grounding).intersection(expanded_refs)
@@ -557,21 +561,34 @@ def _render_page_map(
     )
 
 
-def _render_browser_context(observation: WorldObservation) -> list[str]:
-    """Keep browser-global action parameters visible in the one current World.
+def _render_current_action_subjects(delivered: ActorWorldSnapshot) -> list[str]:
+    """Render the fixed non-entity action subjects already present in Actor World."""
 
-    Browser actions intentionally have no page-grounding ref, so their current
-    tab domain cannot be recovered from ActionCandidates or a folded page
-    region.  The SurfaceAdapter already owns and publishes this state on the
-    browser-context target; this renderer only preserves that authoritative
-    public state in the compact model view.
-    """
+    subjects = tuple(
+        node
+        for document in delivered.documents
+        for root in document.roots
+        for node in _walk_actor_nodes(root)
+        if node.role.casefold() in _CURRENT_ACTION_SUBJECT_ROLES
+    )
+    if not subjects:
+        return []
+    lines = ["CurrentActionSubjects"]
+    for subject in subjects:
+        line = f"  {subject.role.casefold()} label={_value(subject.label)}"
+        state = _model_state(subject.state, interactive=True)
+        if state:
+            line += f" state={_value(state)}"
+        if subject.state_truncated:
+            line += f" state_coverage={len(subject.state)}/{subject.state_total_count}"
+        lines.append(line)
+    return lines
 
-    return [
-        f"BrowserContext label={_value(target.label)} state={_value(_model_state(target.state, interactive=True))}"
-        for target in observation.targets
-        if target.role.casefold() == "browser_context"
-    ]
+
+def _walk_actor_nodes(node: ActorWorldNodeView) -> Iterator[ActorWorldNodeView]:
+    yield node
+    for child in node.children:
+        yield from _walk_actor_nodes(child)
 
 
 def inspect_actor_world(

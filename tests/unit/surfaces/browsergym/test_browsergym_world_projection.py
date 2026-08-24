@@ -175,10 +175,17 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     )
     context = ContextBuilder().build(task, webarena.world, action_space, evaluation)
     delivery = build_model_turn_delivery(context, include_images=False)
-    assert 'BrowserContext label="Browser navigation"' in delivery.view.text
-    assert '"active_tab_index":1' in delivery.view.text
-    assert '"index":0,"route":"https://example.test/start"' in delivery.view.text
-    assert '"index":1,"route":"https://docs.example.test/guide"' in delivery.view.text
+    public = GroundedPolicyContextBinder._public_context(context, False, delivery)
+    model_observation = public["observation"]
+    assert isinstance(model_observation, str)
+    assert model_observation == delivery.view.text
+    assert "CurrentActionSubjects" in model_observation
+    assert 'browser_context label="Browser navigation"' in model_observation
+    assert 'viewport label="Current page viewport"' in model_observation
+    assert 'focused_context label="Current keyboard focus"' in model_observation
+    assert '"active_tab_index":1' in model_observation
+    assert '"index":0,"route":"https://example.test/start"' in model_observation
+    assert '"index":1,"route":"https://docs.example.test/guide"' in model_observation
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
     browser_specs = {
         item.name: item

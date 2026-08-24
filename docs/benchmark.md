@@ -25,8 +25,8 @@ matches by target coverage, and leaves an executable-control miss empty instead 
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `136` focused action-recall/delivery/catalog tests, and the full suite at
-`1692 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
+Current provider-free verification passes `168` focused action-subject/delivery/catalog/vertical tests, and the full
+suite at `1693 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
 pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
@@ -57,8 +57,9 @@ then used `goto` for an unauthorized external API instead of switching to the be
 BrowserGym correctly terminated the task at that dispatch; the later `stale_binding` report was a downstream
 `task_done` symptom. The run's fresh World contained both open tab routes and the active index, while the physical
 model input contained only the folded `Browser navigation` region heading. This is failed pre-repair evidence for the
-compact browser-context projection, not acceptance. The renderer now keeps that current public state in the sole
-compact World; it does not relax WebArena URL authorization or add task/site-specific routing.
+compact action-subject projection, not acceptance. The browser-only direct-observation patch has been removed: the
+sole renderer now keeps every current non-entity action subject already present in Actor World, including the browser
+tab state. It does not relax WebArena URL authorization or add tool/task/site-specific routing.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -561,8 +562,9 @@ The final read-only review for this cutover must answer:
 16. Does SDK history compact before hard overflow while pinning the newest progress response and exact pending pair?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
-18. When a browser profile publishes tab operations, does the same compact current World expose the authoritative
-    active tab and public index-to-route mapping without a second browser-state channel?
+18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
+    observation—including authoritative active-tab and public index-to-route state—without a per-tool renderer branch
+    or second browser-state channel?
 
 ## Exit statement
 
