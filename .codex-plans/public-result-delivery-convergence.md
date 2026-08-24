@@ -7,7 +7,11 @@ one Store, one packer, one Envelope, and one CoreAgentLoop. Workspace retains re
 
 Status: implementation/provider-free acceptance at `a20fce29` was falsified by independent review of `2a0ce38c`.
 The pending-call committed Store suppresses the same-step GUI-effect `advance` transition. Work stops and returns only
-to the `ObservationDeliveryStore.reduce` merge owner. Live and cohort execution remain stopped.
+to the provider-protocol / `ObservationDeliveryStore.reduce` ownership boundary. The normative replacement is now
+frozen in `docs/architecture.md` and its acceptance in `docs/benchmark.md`: policy retains the official PydanticAI
+pending exchange, the existing typed AgentDecision/StepResult algebra owns execution truth, and the Store reducer
+alone constructs the next Store.
+Live and cohort execution remain stopped.
 
 ## Steps
 
@@ -72,11 +76,51 @@ to the `ObservationDeliveryStore.reduce` merge owner. Live and cohort execution 
    - A committed pending-call Store currently bypasses the sole GUI-effect `advance` transition. Stop and return only
      to the Store merge owner; no live.
 
+14. **done — Freeze provider-protocol / delivery-state convergence design**
+   - PydanticAI owns pending call/history/result pairing; policy returns the existing immutable call-correlated
+     AgentDecision and no Store snapshot.
+   - StepResult owns the existing typed result/receipt/failure and execution/World facts; do not add a duplicate outcome
+     wrapper.
+   - `ObservationDeliveryStore.reduce(previous, step)` composes effect, result, continuation, discovery, failure, and
+     novelty exactly once and is the only next-Store constructor.
+   - Record the complete deletion map, reuse boundary, composition matrix, and non-goals in the two current authority
+     docs. This plan tracks work only and does not override them.
+
+15. **pending — Close the existing call/result algebra and reducer composition properties**
+   - Reuse AgentDecision.tool_call_id, StepResult, existing typed local results/receipts/failures, and official
+     PydanticAI message/deferred-result types; add only an exhaustive pure projection function where required.
+   - Add generated legal combinations of pending exchange, GUI effect, public evidence, continuation, discovery, and
+     typed failure. Keep production behavior unchanged until the cutover can remain green.
+   - Commit this verified scaffold independently.
+
+16. **pending — Atomic production cutover and deletion**
+   - Migrate policy, Catalog resolver, CoreLoop, StepResult, Store, RunState, Workspace/Monitor, TurnPacker, Envelope
+     codec, and trace consumers together.
+   - Delete whole-Store return fields, Store pending-call/outcome fields, manual mapping history reconstruction,
+     caller-side merges, and generic result-body projections.
+   - Do not add a replacement state machine, Store, packer, provider transport, or benchmark/site branch.
+   - Commit only after focused production-path and existing suites are green.
+
+17. **pending — Provider-free vertical acceptance and evidence commit**
+   - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`
+     paths for the generated composition matrix.
+   - Run focused/full/Ruff/compileall/diff and production negative searches; persist a revision-bound evidence artifact.
+   - Commit verification/status independently from implementation.
+
+18. **pending — Independent fresh-context exit review**
+   - Read-only review from the committed revision. Any falsification stops immediately, records its owner and witness,
+     and leaves live/cohort stopped.
+
+19. **pending — Request authorization for one held-out witness**
+   - Eligible only after steps 15–18 pass. One Task 21 witness precedes any bounded cohort.
+
 ## Explicit non-goals
 
 - No new Memory, pager, packer, Manager, semantic judge, VLM fallback, CoreLoop branch, or second Envelope authority.
 - No `_MAX_DEPTH`, string-length, record-count, or Task21-specific threshold patch.
 - No live/provider call before explicit post-review authorization.
+- No GoalCompiler/semantic-judge ModelPort migration or visual-specialist restructuring in this convergence; those are
+  separately scoped simplification candidates and cannot delay return to the GUI benchmark.
 
 ## Produced files
 

@@ -11,6 +11,7 @@ owner repair provider-free verified / fresh-context review passed / held-out rer
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
+provider-protocol and delivery-state convergence design frozen; implementation pending /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -138,6 +139,93 @@ that creates `LatestEffect/PublicEffectInventory`. A paired external-call receip
 [`call-correlated-tool-results-fresh-review-falsification-20260824.json`](../evidence/acceptance/call-correlated-tool-results-fresh-review-falsification-20260824.json).
 The review stopped read-only with zero provider/live attempts. Work returns only to the Store merge owner; Overall is
 non-closed and the bounded cohort remains stopped.
+
+### Reopened C10 tool-result / Store-transition composition gate
+
+This replaces the falsified call-correlated-result acceptance; it is not a new numbered Gate. It proves that one
+committed step can conserve provider call identity, a GUI effect, a public result, continuation state, and typed
+failure simultaneously. Separate examples for each feature do not satisfy it.
+
+The production path under test is:
+
+```text
+Recording FunctionModel
+→ PydanticAI DeferredToolRequests(original call_id)
+→ production Catalog resolver / Binder / Executor or local-tool owner
+→ committed StepResult using the existing closed decision/result/receipt/failure algebra
+→ ObservationDeliveryStore.reduce(previous_store, committed_step)
+→ RunState.apply(next_store)
+→ private next ModelDecisionRequest reference to RunState.last_step
+→ production ContextBuilder / TurnPacker / Catalog / CanonicalProviderEnvelope
+→ PydanticAI DeferredToolResults.calls[the same call_id]
+→ Recording FunctionModel
+```
+
+The gate requires all of the following.
+
+1. **No whole-Store handoff.** Policy, grounded resolution, CoreLoop, and StepResult cannot return or prefer an
+   `ObservationDeliveryStore`. Production negative searches cover `next_delivery_store`, `last_delivery_store`, and
+   caller-side Store merge/fallback paths.
+2. **One official pending exchange.** The provider policy retains the exact admitted PydanticAI model messages and
+   `DeferredToolRequests`; Store has no pending-call/outcome fields and no manually reconstructed mapping history.
+3. **Total Store composition.** For one committed step, every applicable GUI-effect, public-result, continuation,
+   discovery, replay, and typed-failure transition is applied exactly once in the documented temporal order. Adding
+   one transition kind cannot clear, replace, or suppress an independent transition kind.
+4. **One execution truth.** The original call ID remains on the existing typed AgentDecision, and its local result,
+   execution receipt, discovery/observation result, or typed RuntimeFailure is committed in StepResult. One exhaustive
+   pure projector over that existing algebra supplies Store/provider projections; no new outcome wrapper or second
+   interpretation table is admitted. Operation names and display strings never classify the result. The next
+   ModelDecisionRequest may reference `RunState.last_step` privately for protocol pairing; it cannot recover the
+   outcome from Workspace or serialized prompt text.
+5. **Exact result retention.** Public evidence enters one atomic Store inventory with currentness and private
+   continuation. TurnPacker may select a complete-record prefix; Workspace/recent steps contain receipt/lineage only;
+   provider-visible result content never traverses `project_public_value` or an ordinary user-context result segment.
+6. **Exact provider protocol.** The physical request contains exactly one original assistant tool call and one
+   subsequent ToolReturn under the same call ID, followed by the fresh current prompt. It contains neither an orphan,
+   duplicate, completed-old exchange nor private cursor/lineage metadata. CanonicalProviderEnvelope and
+   RequestAdmission count the exact values recorded by FunctionModel.
+7. **Exactly-once completion.** A pending exchange remains unchanged when the next envelope is locally rejected; it is
+   cleared only after its admitted paired result is handed to PydanticAI. Retry/repair cannot create a second semantic
+   result or change the accepted call identity.
+
+The generated composition matrix must cover at least:
+
+| Provider call | Runtime step | Public outcome | Expected conserved state |
+|---|---|---|---|
+| read-only tool | no GUI dispatch | one/many/nested/Unicode evidence atoms | result inventory + paired ToolReturn; no fabricated GUI effect |
+| GUI unary action | dispatched, changed World | execution receipt | pending pair + exact `LatestEffect/PublicEffectInventory` |
+| GUI binary action | dispatched, unchanged or changed World | receipt or typed execution failure | route identity + typed outcome; effect only when produced |
+| discovery/query | no GUI dispatch | typed discovery result with suffix | query inventory + continuation + paired result |
+| continuation | no GUI dispatch | zero/nonzero admitted prefix | exact offset/requested foreground conservation + paired result |
+| any supported call | capacity rejection before provider | already committed Runtime/Store facts | zero new provider attempts; pending official exchange unchanged |
+
+Generated tests take the Cartesian product of independent dimensions where legal: pending exchange present/absent,
+GUI receipt present/absent, semantic effect empty/non-empty, public evidence empty/non-empty, continuation absent/
+zero-prefix/nonzero-prefix, and success/typed failure. They assert field conservation, deterministic output under
+private-ID/enumeration permutation, exactly-once novelty, and absence of duplicate results. A factorized set that tests
+the dimensions only in isolation is insufficient.
+
+The vertical test must pass through the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply`
+path. Direct builder/Store probes are supporting owner tests only. The Recording FunctionModel must compare ordered
+physical PydanticAI parts, tool definitions, call IDs, result values, media, settings, output contract, and token
+breakdown with the admitted CanonicalProviderEnvelope. It runs under the fixed BrowserGym interpreter and records
+PydanticAI Slim `2.33.0`, matching the declared `>=2.33,<2.34` project profile; default-shell `2.21.0` results are
+historical and cannot attest this gate.
+
+Implementation proceeds serially and each green cutover receives its own commit:
+
+1. make the existing call-correlated AgentDecision/StepResult algebra exhaustive for Store/provider projection and add
+   reducer composition properties without changing benchmark/site behavior;
+2. atomically cut policy, Catalog resolution, CoreLoop, StepResult, Store, RunState, Workspace/Monitor, TurnPacker, and
+   PydanticAI codec to that contract, then delete the whole-Store and duplicate pending-result paths;
+3. add the production-path generated composition matrix, focused/full/static/negative verification, and a
+   revision-bound provider-free evidence artifact;
+4. perform an independent fresh-context read-only review from the committed revision. Any falsification stops before
+   provider/live execution and returns to the named owner.
+
+Provider-free implementation completion is not closure. Only after all four stages agree may the user be asked to
+authorize one held-out Task 21 witness. The bounded cohort remains stopped until that witness passes; live execution is
+never implied by this gate.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

@@ -11,6 +11,7 @@ owner repair provider-free verified / fresh-context review passed / held-out rer
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
+provider-protocol and delivery-state convergence contract frozen for implementation /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -151,7 +152,10 @@ transport. The fresh-review `list_regions` omission exposed the deeper defect: p
 open set of operation names instead of closing the result algebra by typed return value, and the provider never received
 a standard result paired to the original external-tool call.
 
-The installed PydanticAI `2.21.0` already provides the protocol owner needed here. An `ExternalToolset` call ends as a
+The declared project profile (`pydantic-ai-slim[openai]>=2.33,<2.34`) and fixed BrowserGym interpreter currently resolve
+PydanticAI Slim `2.33.0`, which provides the protocol owner needed here. The default shell still contains historical
+`2.21.0`; it is not implementation or acceptance authority for this convergence. All new deferred-result production
+and Recording FunctionModel gates use the fixed interpreter and record the resolved version. An `ExternalToolset` call ends as a
 `DeferredToolRequests.calls` entry containing validated arguments and `tool_call_id`; a later run accepts the original
 message history plus `DeferredToolResults.calls[tool_call_id]`. `ToolReturn.return_value` becomes the model-visible tool
 result, while `ToolReturn.metadata` remains application-only. See the official
@@ -223,6 +227,114 @@ code changes, provider, BrowserGym, or live execution. Evidence:
 [`call-correlated-tool-results-fresh-review-falsification-20260824.json`](../evidence/acceptance/call-correlated-tool-results-fresh-review-falsification-20260824.json).
 Work returns only to the `ObservationDeliveryStore.reduce` committed-state/effect-transition merge owner; Overall
 remains non-closed and the bounded cohort remains stopped.
+
+### Provider protocol and delivery-state convergence decision (normative, 2026-08-24)
+
+The fresh-review failure is not repaired by merging two whole Store snapshots. It proves that provider conversation
+state and model-delivery state were assigned to the same value. A model call may establish a pending external call
+before Runtime execution, while the committed Runtime step may independently establish a fresh GUI effect, a public
+tool result, a continuation transition, and a typed failure. Those facts are concurrent inputs to one reduction; none
+is an alternative to another.
+
+The supported chain is:
+
+```text
+PydanticAI DeferredToolRequests + admitted PydanticAI message history
+→ existing ResolvedModelDecision(typed AgentDecision carrying the original tool_call_id)
+→ Catalog resolver / Binder / Executor or typed local-tool owner
+→ one committed StepResult
+   - the same decision/tool_call_id
+   - existing typed local result, execution receipt, discovery/observation result, or RuntimeFailure
+   - execution receipt when applicable
+   - canonical before/after World and PublicWorldDelta when applicable
+→ ObservationDeliveryStore.reduce(previous_store, committed_step)
+   1. apply the authoritative post-dispatch PublicEffectInventory, if present
+   2. ingest typed public-result atoms and install/advance their private continuation, if present
+   3. apply typed continuation/discovery transitions, if present
+   4. derive one DeliveryTransition and InformationDelta
+→ RunState commits exactly that next Store
+→ Workspace and Monitor consume the same committed DeliveryTransition
+→ the next ModelDecisionRequest privately references RunState.last_step
+→ TurnPacker selects an atomic public-result prefix from the committed Store
+→ DeferredToolResults.calls[original call_id] = ToolReturn(admitted outcome)
+→ CanonicalProviderEnvelope counts the original call/result pair plus the fresh prompt
+→ PydanticAI/provider
+```
+
+This is one reducer, not a new workflow or lifecycle state machine. Temporal order is explicit: provider call identity
+is established first; Runtime execution and fresh observation establish the step facts; Store reduction conserves all
+applicable delivery facts; only then is the next provider request packed. A call-result pair may be sent only after
+the whole next envelope is admitted. When no provider request is admitted, the pending official exchange remains
+unchanged and no synthetic ToolReturn is recorded.
+
+#### Sole owners and projections
+
+| Meaning | Sole owner | Allowed projections |
+|---|---|---|
+| pending provider call, original admitted message history, and `tool_call_id` pairing | `PydanticAIGroundedDecisionPort` using PydanticAI `DeferredToolRequests`, model messages, `DeferredToolResults`, and `ToolReturn` types | existing `ResolvedModelDecision`/`AgentDecision` carrying the call ID; the admitted paired history in `CanonicalProviderEnvelope` |
+| one external or local tool execution outcome | committed `StepResult` over the existing closed `AgentDecision` union and typed result/receipt/failure fields | Store public-result ingestion, bounded Workspace receipt, Trace, paired `ToolReturn` |
+| fresh GUI truth and post-dispatch effect | canonical before/after Worlds, `PublicWorldDelta`, and the effect projector | `ObservationDeliveryStore.latest_effect`, Workspace/Monitor summaries, action recall |
+| retained current public evidence and continuation | `ObservationDeliveryStore` | TurnPacker atoms, continuation capabilities, bounded summaries |
+| next delivery state | `ObservationDeliveryStore.reduce(previous, step)` | `DeliveryTransition.next_store`; no caller or provider adapter constructs or merges a Store |
+
+Multiple projections are permitted only when they consume the same typed owner fact. The committed `StepResult` is the
+execution truth; Store inventory is its retained-evidence projection; `ToolReturn` is its provider-protocol projection;
+Workspace is a lossy receipt projection. One exhaustive pure projector over the existing decision/result algebra
+produces the provider result; Store and provider transport do not maintain separate interpretation tables. No new
+`ExternalToolOutcome` wrapper duplicates the decision, receipt, result, or failure. `ModelDecisionRequest` may carry a
+private, non-serialized reference to the last committed StepResult so the provider
+policy can pair it with its pending official exchange; this is a read-only handoff from `RunState.last_step`, not a
+second result store.
+
+#### Required cutover and physical deletion
+
+The production cutover is atomic across its consumers:
+
+1. The provider bridge returns the existing immutable `ResolvedModelDecision` whose typed `AgentDecision` carries the
+   original call ID. It never returns or mutates an `ObservationDeliveryStore`.
+2. Catalog continuation resolution returns a typed continuation request/outcome, not a pre-mutated Store.
+3. CoreLoop commits one typed `StepResult` and passes it to the Store reducer. CoreLoop contains no field-wise Store
+   merge and no provider-history construction. The next `ModelDecisionRequest` receives the last committed StepResult
+   as a private typed input rather than recovering an outcome from Workspace or prompt text.
+4. The Store reducer always evaluates every applicable transition for the committed step. GUI effect, public result,
+   continuation, discovery, failure, and replay classification compose deterministically rather than through
+   precedence or truthiness.
+5. The PydanticAI policy boundary retains exactly one immediately pending official exchange and closes it exactly once
+   with the same call ID after the next admitted result envelope. Completed exchanges leave only bounded Workspace
+   receipts and private Trace.
+
+The cutover deletes the production fields and paths that encode the old shared snapshot authority:
+
+- `ResolvedModelDecision.next_delivery_store`, `GroundedActionResolution.next_delivery_store`,
+  `ModelBackedAgentPolicy.last_delivery_store`, and `StepResult.next_delivery_store`;
+- `ObservationDeliveryStore.pending_tool_call` and `pending_tool_outcome`;
+- the manual mapping-based `_pending_exchange` reconstruction once the policy retains the exact admitted PydanticAI
+  model messages and `DeferredToolRequests` value;
+- `committed_store or self.advance(step)` and every caller-side Store merge/fallback;
+- provider-visible exact result bodies through `project_public_value`, Workspace, recent steps, or an ordinary
+  `latest_public_results` user segment.
+
+Generic lossy projection remains available only for explicitly diagnostic/private views. It is never an admissible
+path for typed public evidence or provider call/result messages.
+
+#### Reuse boundary and remaining custom surface
+
+BrowserGym/Playwright remain the capture, fresh-observation, ref, actionability, and physical execution substrate.
+PydanticAI remains the provider-message, deferred-call/result, call-ID, tool-schema transport, and provider adapter.
+The project retains only the semantics these libraries intentionally do not own: canonical cross-surface public
+World, complete legal ActionSpace and private Binder, current public evidence inventory/cursors, deterministic
+TurnPacker, and exact Manifest/Catalog relation.
+
+`CanonicalProviderEnvelope` remains a deterministic admitted request value only; its PydanticAI codec is mechanical
+and cannot become a second conversation or retry protocol. The remaining custom `ModelPort` used by GoalCompiler and
+the optional semantic-judge profile is a separate transport-consolidation candidate, not part of this Store repair and
+not a blocker for returning the main GUI path to benchmark. Semantic judge is never an ActionPolicy, recovery, or
+native WebArena completion authority. Optional visual proposer/grounder/disambiguator/classifier implementations stay
+behind one SurfaceAdapter/Fusion perception boundary; they cannot create parallel World or control state.
+
+This convergence does not add Memory, Manager/Worker, event sourcing, a provider state machine, a second Store, a
+second packer, a new tool scheduler, or a new benchmark gate number. It repairs the existing C10 vertical
+tool-result/delivery-transition composition contract.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the
@@ -567,17 +679,21 @@ BrowserGym observation
 The return path is equally direct:
 
 ```text
-provider tool call
+PydanticAI DeferredToolRequests(tool_call_id)
 → one PerTurnToolCatalog resolver row
-→ SelectAction
-→ Binder
-→ Executor
-→ dispatch receipt
-→ causal stable fresh WorldObservation
+→ typed Runtime decision
+→ Binder / Executor or typed local-tool owner
+→ committed StepResult + dispatch receipt when applicable
+→ causal stable fresh WorldObservation when applicable
+→ ObservationDeliveryStore.reduce(previous_store, committed_step)
+→ one committed DeliveryTransition
+→ TurnPacker-admitted typed result
+→ PydanticAI DeferredToolResults.calls[the same tool_call_id]
 ```
 
-Only `WorldObservation`, complete `ActionSpace`, `ObservationDeliveryStore`, and the existing episode `RunState` are
-authoritative or stateful within their declared responsibilities. `CanonicalPublicWorldProjection`,
+Only `WorldObservation`, complete `ActionSpace`, `ObservationDeliveryStore`, the existing episode `RunState`, and the
+immediately pending official PydanticAI exchange are authoritative or stateful within their declared responsibilities.
+The pending exchange is transport continuity, not task/World/delivery state. `CanonicalPublicWorldProjection`,
 `PublicEffectInventory`, `ActionRecallSet`, `ActionDeliveryPlan`, `ModelTurnDelivery`, `DeliveryManifest`,
 `PerTurnToolCatalog`, and `CanonicalProviderEnvelope` are immutable values or read models. They do not add a second
 World, loop, planner, workflow graph, memory system, or state machine.
@@ -796,7 +912,7 @@ clear effect or page-directory continuations.
 | Plan copies `requested_continuation_scope` and separately derives foreground | pure Store-backed projection; foreground rule consumes the typed requested scope without persisting plan state |
 | Catalog checks `0 < admitted < len(remaining)` and resolver repeats the check | delete both interpretations; Catalog consumes frozen capabilities and resolver applies their Store-owned transition |
 | separate world/action continuation bindings derive offsets | both bind the same `DeliveryContinuationCapability` algebra; only public tool vocabulary differs |
-| policy/bridge carries an untyped `next_delivery_store`; non-local decisions can currently attach one | `ResolvedModelDecision` and `StepResult` admit a next Store only for the closed local continuation/read/search result algebra |
+| policy/bridge carries an untyped `next_delivery_store`; a committed snapshot can suppress an independent same-step GUI effect | policy returns only an immutable call-correlated typed decision; every local/GUI result is committed in `StepResult`, and `ObservationDeliveryStore.reduce(previous, step)` alone constructs the next Store |
 
 The Delivery migration gate uses the real canonical projection → Store → Plan → renderer → Packer → Manifest → Catalog
 path for every obligation kind. It covers zero-prefix, exact fit, one-unit-under, and an oversized optional head followed
@@ -949,6 +1065,9 @@ separates commit/load states and warns that time-based waits can observe stale s
 | current action recall inventories | `ActionRecallSet` over complete `ActionSpace` + canonical public projection + active Store effect | ranking may order but cannot delete exact/structural/base/effect members or claim that recall membership requires simultaneous delivery |
 | per-turn delivery selection | stateless `ActionDeliveryPlan` | bounded obligations and cursors select candidates for packing; only records actually admitted by `TurnPacker` become protected |
 | active latest external GUI effect and local-result delivery state | `ObservationDeliveryStore` | World rendering, action recall, Workspace, and Monitor consume the same effect identity; a local read/find/search cannot clear or fork it |
+| pending provider tool exchange and call/result pairing | `PydanticAIGroundedDecisionPort` using exact admitted PydanticAI messages plus `DeferredToolRequests/DeferredToolResults` | Store, Workspace, CoreLoop, Catalog, and Trace cannot rebuild provider history or own a second pending-call state |
+| committed tool execution truth | `StepResult` over the existing closed decision/result/receipt/failure algebra under the original call ID | Store and ToolReturn are projections; neither may infer the outcome from operation name, display text, or the other projection |
+| next Store transition | `ObservationDeliveryStore.reduce(previous_store, committed_step)` | policy, resolver, CoreLoop, RunState, and provider bridge cannot supply, merge, or prefer a whole Store snapshot |
 | final model-turn payload and delivered action-route relation | deterministic `TurnPacker` producing atomic `ModelTurnDelivery` | renderer fragments and actual image marks carry route deltas at creation; post-hoc ref scans, ToolCatalog, history, and trace cannot infer or add a route |
 | model-facing current-run continuity | total `WorkspaceReducer` producing `AgentWorkspace` | raw history, provider messages, and trace cannot become a second workspace |
 | whole-request capacity | `RequestAdmission` | `TurnPacker` consumes its profile/estimator to fit one candidate request; RunState, history projection, renderer, pager, catalog, and provider Binder cannot own independent caps |
@@ -2219,6 +2338,9 @@ than retained as compatibility fallbacks:
 | CoreLoop `_action_page_result_payload` ad-hoc public dictionary | discovery owner emits typed `ActionDiscoveryResult`; CoreLoop only commits it | paging/discovery, StepResult, renderer, Workspace, Monitor, trace |
 | `exact=true`, `complete_current_action_space`, and `authority_changed` search fields | typed source/result/match coverage contract | CoreLoop payload, renderer, Monitor novelty, trace, tests |
 | private action IDs in `matches`, recent history, and information-delta novelty | public target/verb match records; private IDs remain resolver-only | CoreLoop local result, step projection, ObservationDeliveryStore, Workspace |
+| whole `ObservationDeliveryStore` snapshots returned by policy/resolver and attached to `StepResult` | existing immutable resolved decision plus one committed typed StepResult; the Store reducer composes all applicable effect/result/continuation transitions | PydanticAI bridge, policy wrapper, grounded tool resolution, CoreLoop, StepResult, RunState, ObservationDeliveryStore |
+| provider pending-call state duplicated in Store `pending_tool_call/pending_tool_outcome` and policy `pending_exchange` | exact admitted PydanticAI messages and `DeferredToolRequests/DeferredToolResults` retained only by the provider policy boundary | ObservationDeliveryStore, model policy bridge, CanonicalProviderEnvelope codec, Recording FunctionModel tests |
+| typed public results copied through generic `project_public_value`, Workspace, recent steps, and ordinary user context | one committed typed StepResult; Store retains atomic evidence, ToolReturn transports its admitted prefix, Workspace retains receipt only | step projection, Workspace reducer, TurnPacker, grounded policy context, provider codec, Monitor |
 | manifest mutation before fragment byte admission, post-hoc `_manifest_with_routes` ref scan over complete ActionSpace, image marks outside manifest, `ModelTurnDelivery.includes_images` without media identity, direct `request.image_inputs` provider attachment, “marked” raw/out-of-frame images, and annotated PNG bytes retaining an input JPEG MIME | every text/media fragment carries its exact route delta at creation; `TurnPacker` atomically commits final text/media MIME+digest/actual marks and unions only admitted route deltas; provider binding consumes delivery media only | renderer, annotation/grounding projection, catalog, provider media binding, resolver, delivery identity, trace |
 | operation schemas using E-ref regexes and merged per-target business domains while resolver accepts only sparse tuples | PerTurnToolCatalog compiles a bounded relational schema whose admitted calls equal unique current resolver rows | grounded tool compiler/catalog, schema validator, normalizer, resolver tests |
 | `ToolSpec` accepting any JSON tree while `validate_parameter_schema_contract` and `validate_value` recognize different schema keywords | extend the existing schema-validation owner to one finite structural/value subset and require every ToolSpec/catalog/final schema to pass it before provider admission | capability schemas, ToolSpec, catalog compiler, provider normalizer, ActionSpace/final-response value validation |
