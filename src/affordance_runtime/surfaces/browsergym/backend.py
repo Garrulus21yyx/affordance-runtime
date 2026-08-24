@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Callable, Protocol, cast
@@ -194,6 +195,52 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
   })()
 })"""
 
+# BrowserGym already captures the page in one DOM/AX transaction.  Enrich the
+# BIDs from that transaction in one browser-side pass per frame; one Playwright
+# locator round trip per AX node makes large document pages effectively
+# unbounded and prevents the surrounding asyncio watchdog from running.
+_BULK_PHYSICAL_PROPERTIES_SCRIPT = r"""bids => {
+  const inspect = (""" + _PHYSICAL_PROPERTIES_SCRIPT + r""");
+  const wanted = new Set(bids);
+  const result = {};
+  for (const el of document.querySelectorAll('[bid]')) {
+    const bid = String(el.getAttribute('bid') || '');
+    if (!wanted.has(bid)) continue;
+    const physical = inspect(el);
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const disabled = Boolean(
+      ('disabled' in el && el.disabled) || el.getAttribute('aria-disabled') === 'true'
+    );
+    const readonly = Boolean(
+      physical.readonly || el.getAttribute('aria-readonly') === 'true'
+    );
+    const tag = el.tagName.toLowerCase();
+    const type = String(el.getAttribute('type') || '').toLowerCase();
+    const textEditable = (
+      tag === 'textarea' ||
+      (tag === 'input' && ![
+        'button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio',
+        'range', 'reset', 'submit'
+      ].includes(type)) ||
+      el.isContentEditable
+    );
+    const visible = typeof el.checkVisibility === 'function'
+      ? el.checkVisibility({checkOpacity: false, checkVisibilityCSS: true})
+      : style.display !== 'none' && style.visibility !== 'hidden' &&
+        (rect.width > 0 || rect.height > 0 || el.getClientRects().length > 0);
+    result[bid] = {
+      ...physical,
+      attached: el.isConnected,
+      visible: Boolean(visible),
+      enabled: !disabled,
+      readonly,
+      editable: !disabled && !readonly && textEditable
+    };
+  }
+  return result;
+}"""
+
 _VERIFIER_PROBE_SCRIPT = """() => {
   const facts = {
     url: location.href
@@ -237,7 +284,7 @@ class _PagePort(Protocol):
 
     def on(self, event: str, handler: Callable[..., object]) -> None: ...
     def remove_listener(self, event: str, handler: Callable[..., object]) -> None: ...
-    def evaluate(self, expression: str) -> object: ...
+    def evaluate(self, expression: str, arg: object = ...) -> object: ...
     def wait_for_event(self, event: str, **kwargs: object) -> object: ...
     def wait_for_load_state(self, state: str, **kwargs: object) -> None: ...
     def wait_for_function(self, expression: str, **kwargs: object) -> object: ...
@@ -322,6 +369,7 @@ class ThreadBoundBrowserGym:
         self._commands: queue.Queue[
             tuple[str, tuple[object, ...], dict[str, object], Future[object]] | None
         ] = queue.Queue()
+        self._command_timed_out = threading.Event()
         self._ready: Future[object] = Future()
         self._thread = threading.Thread(
             target=self._run,
@@ -440,9 +488,22 @@ class ThreadBoundBrowserGym:
     ) -> object:
         if self._closed:
             raise RuntimeError("BrowserGym owner thread is closed")
+        if self._command_timed_out.is_set():
+            raise RuntimeError("BrowserGym owner is unavailable after a command timeout")
         outcome: Future[object] = Future()
         self._commands.put((name, args, kwargs, outcome))
-        return outcome.result(timeout=wait_timeout_s)
+        try:
+            return outcome.result(timeout=wait_timeout_s)
+        except FutureTimeoutError as exc:
+            # ``Future.result`` also propagates a TimeoutError raised by a
+            # completed command.  Only an unfinished Future proves that the
+            # owner itself exceeded this call's service deadline.
+            if outcome.done():
+                raise
+            self._command_timed_out.set()
+            raise TimeoutError(
+                f"BrowserGym owner command {name!r} exceeded {wait_timeout_s:.3f}s"
+            ) from exc
 
     def reset(self, *, seed: int):
         return self._call("reset", seed=seed)
@@ -468,6 +529,19 @@ class ThreadBoundBrowserGym:
 
     def close(self) -> None:
         if self._closed:
+            return
+        if self._command_timed_out.is_set():
+            # Python cannot safely cancel synchronous Playwright work running
+            # in another thread.  Do not queue cleanup behind that work for
+            # another full command timeout; arrange for the daemon owner to
+            # exit if it ever returns and fail cleanup promptly.
+            self._commands.put(None)
+            self._thread.join(timeout=1)
+            self._closed = True
+            self.browser = None
+            self.context = None
+            if self._thread.is_alive():
+                raise RuntimeError("BrowserGym owner remained busy after a command timeout")
             return
         outcome: Future[object] = Future()
         self._commands.put(("close", (), {}, outcome))
@@ -672,8 +746,6 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
     nodes = tree.get("nodes") if isinstance(tree, dict) else None
     if not isinstance(nodes, list):
         raise RuntimeError("BrowserGym observation omitted AX nodes")
-    from browsergym.core.action.utils import get_elem_by_bid  # type: ignore[import-not-found]
-
     bids = tuple(dict.fromkeys(
         bid for node in nodes if isinstance(node, dict)
         for bid in (node.get("browsergym_id"),)
@@ -681,38 +753,15 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
     ))
     dom_extra = raw.get("extra_element_properties")
     dom_extra = dom_extra if isinstance(dom_extra, dict) else {}
+    captured = _bulk_physical_properties(page, bids)
     properties: dict[str, object] = {}
     for bid in bids:
-        try:
-            locator = get_elem_by_bid(page, bid)
-            attached = locator.count() > 0
-        except BaseException:
-            properties[bid] = {
-                "attached": False,
-                "visible": False,
-                "enabled": None,
-                "readonly": None,
-                "editable": None,
-                "options": [],
-            }
-            continue
-        try:
-            visible: bool | None = locator.is_visible(timeout=500)
-        except BaseException:
-            visible = None
-        try:
-            enabled: bool | None = locator.is_enabled(timeout=500)
-        except BaseException:
-            enabled = None
-        try:
-            editable: bool | None = locator.is_editable(timeout=500)
-        except BaseException:
-            editable = None
-        try:
-            physical = locator.evaluate(_PHYSICAL_PROPERTIES_SCRIPT)
-        except BaseException:
-            physical = {}
+        physical = captured.get(bid)
         physical = physical if isinstance(physical, dict) else {}
+        attached = physical.get("attached")
+        visible = physical.get("visible")
+        enabled = physical.get("enabled")
+        editable = physical.get("editable")
         readonly = physical.get("readonly")
         options = physical.get("options")
         bbox = physical.get("bbox")
@@ -730,9 +779,12 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         spatial = physical.get("spatialHint")
         spatial = spatial if isinstance(spatial, dict) else {}
         properties[bid] = {
-            "attached": attached,
-            "visible": _effective_visibility(visible, physical),
-            "enabled": enabled,
+            "attached": attached if isinstance(attached, bool) else False,
+            "visible": _effective_visibility(
+                visible if isinstance(visible, bool) else None,
+                physical,
+            ),
+            "enabled": enabled if isinstance(enabled, bool) else None,
             "readonly": readonly if isinstance(readonly, bool) else None,
             "selected": (
                 physical.get("selected")
@@ -749,7 +801,7 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
                 if isinstance(physical.get("colorFamily"), str)
                 else ""
             ),
-            "editable": editable,
+            "editable": editable if isinstance(editable, bool) else None,
             "focusable": (
                 physical["focusable"]
                 if isinstance(physical.get("focusable"), bool)
@@ -796,6 +848,34 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
     enriched = dict(raw)
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
     return enriched
+
+
+def _bulk_physical_properties(
+    page: object,
+    bids: tuple[str, ...],
+) -> dict[str, object]:
+    if not bids:
+        return {}
+    wanted = frozenset(bids)
+    frames = getattr(page, "frames", None)
+    owners = tuple(frames) if isinstance(frames, list | tuple) and frames else (page,)
+    captured: dict[str, object] = {}
+    for owner in owners:
+        evaluate = getattr(owner, "evaluate", None)
+        if not callable(evaluate):
+            continue
+        try:
+            values = evaluate(_BULK_PHYSICAL_PROPERTIES_SCRIPT, list(bids))
+        except BaseException:
+            continue
+        if not isinstance(values, dict):
+            continue
+        captured.update(
+            (bid, value)
+            for bid, value in values.items()
+            if isinstance(bid, str) and bid in wanted and isinstance(value, dict)
+        )
+    return captured
 
 
 def _with_stable_private_control_properties(page: object, getter: object, raw: object) -> dict[str, object]:

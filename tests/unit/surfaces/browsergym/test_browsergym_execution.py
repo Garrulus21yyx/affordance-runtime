@@ -1,15 +1,15 @@
 import asyncio
 import copy
-import sys
+import threading
 import time
 from dataclasses import replace
-from types import ModuleType
 
 import pytest
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.execution import ActionError, DispatchStatus, ExecutionDiagnosticPhase
+from affordance_runtime.surfaces.browsergym import backend as browsergym_backend
 from affordance_runtime.surfaces.browsergym.backend import _with_stable_private_control_properties
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
@@ -55,42 +55,30 @@ def _fixture(*, fail_step=False, fail_probe=False):
     return fake, environment, task, start_environment(environment, task)
 
 
-class _Locator:
-    def __init__(self, page):
-        self.page = page
-
-    def count(self):
-        return 1
-
-    def is_visible(self, timeout=0):
-        del timeout
-        return self.page.visible
-
-    def is_enabled(self, timeout=0):
-        del timeout
-        return True
-
-    def is_editable(self, timeout=0):
-        del timeout
-        return False
-
-    def evaluate(self, script):
-        del script
-        return {
-            "readonly": False,
-            "active": False,
-            "focusable": True,
-            "focused": False,
-            "bbox": [10, 10, 80, 20],
-            "options": [],
-        }
-
-
 class _StablePage:
     def __init__(self):
         self.visible = False
         self.wait_count = 0
-        self.locator = _Locator(self)
+        self.batch_sizes = []
+
+    def evaluate(self, script, bids):
+        assert script == browsergym_backend._BULK_PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
+        self.batch_sizes.append(len(bids))
+        return {
+            bid: {
+                "attached": True,
+                "visible": self.visible,
+                "enabled": True,
+                "readonly": False,
+                "active": False,
+                "focusable": True,
+                "focused": False,
+                "editable": False,
+                "bbox": [10, 10, 80, 20],
+                "options": [],
+            }
+            for bid in bids
+        }
 
     def wait_for_timeout(self, delay_ms):
         del delay_ms
@@ -98,21 +86,93 @@ class _StablePage:
         self.visible = True
 
 
-def test_thread_bound_capture_waits_for_stable_executable_inventory(monkeypatch) -> None:
+def test_thread_bound_capture_batches_large_stable_executable_inventory() -> None:
     page = _StablePage()
-    raw = raw_observation(ax_node("best", "link", "Bestsellers"))
-
-    utils = ModuleType("browsergym.core.action.utils")
-    utils.get_elem_by_bid = lambda _page, _bid: page.locator  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "browsergym", ModuleType("browsergym"))
-    monkeypatch.setitem(sys.modules, "browsergym.core", ModuleType("browsergym.core"))
-    monkeypatch.setitem(sys.modules, "browsergym.core.action", ModuleType("browsergym.core.action"))
-    monkeypatch.setitem(sys.modules, "browsergym.core.action.utils", utils)
+    raw = raw_observation(*(
+        ax_node(f"link-{index}", "link", f"Result {index}")
+        for index in range(2_000)
+    ))
 
     enriched = _with_stable_private_control_properties(page, lambda: raw, raw)
 
-    assert page.wait_count >= 2
-    assert enriched[PRIVATE_CONTROL_PROPERTIES_KEY]["best"]["visible"] is True
+    assert page.wait_count == 2
+    assert page.batch_sizes == [2_000, 2_000, 2_000]
+    assert len(enriched[PRIVATE_CONTROL_PROPERTIES_KEY]) == 2_000
+    assert enriched[PRIVATE_CONTROL_PROPERTIES_KEY]["link-1999"]["visible"] is True
+
+
+def test_browsergym_physical_calls_do_not_block_the_asyncio_watchdog() -> None:
+    class BlockingProbe(FakeBrowserGym):
+        def __init__(self, raw):
+            super().__init__(raw, raw)
+            self.release = threading.Event()
+            self.order = []
+
+        def currentness_probe(self, bid):
+            self.order.append("probe_started")
+            self.release.wait(timeout=1)
+            self.order.append("probe_finished")
+            return super().currentness_probe(bid)
+
+    raw = raw_observation(ax_node("1", "button", "okay"))
+    fake = BlockingProbe(raw)
+    environment, task = open_fake(fake)
+    world = start_environment(environment, task)
+    request = request_for(world, task, "activate")
+
+    async def scenario() -> None:
+        timer = threading.Timer(0.2, fake.release.set)
+        timer.start()
+        try:
+            execution = asyncio.create_task(environment.execute(request))
+
+            async def watchdog_tick() -> None:
+                await asyncio.sleep(0)
+                fake.order.append("watchdog_tick")
+
+            await asyncio.gather(execution, watchdog_tick())
+        finally:
+            timer.cancel()
+        assert fake.order.index("watchdog_tick") < fake.order.index("probe_finished")
+        await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_owner_timeout_poisoning_rejects_queued_fallback_immediately() -> None:
+    owner = object.__new__(browsergym_backend.ThreadBoundBrowserGym)
+    owner._closed = False  # noqa: SLF001 - owner timeout contract gate
+    owner._commands = browsergym_backend.queue.Queue()  # noqa: SLF001
+    owner._command_timed_out = threading.Event()  # noqa: SLF001
+
+    with pytest.raises(TimeoutError, match="owner command 'causal_step'"):
+        owner._call("causal_step", "click('1')", True, wait_timeout_s=0.01)  # noqa: SLF001
+
+    started = time.perf_counter()
+    with pytest.raises(RuntimeError, match="unavailable after a command timeout"):
+        owner._call("capture_current", wait_timeout_s=1)  # noqa: SLF001
+    assert time.perf_counter() - started < 0.1
+    assert owner._commands.qsize() == 1  # noqa: SLF001
+
+
+def test_completed_command_timeout_does_not_poison_owner() -> None:
+    owner = object.__new__(browsergym_backend.ThreadBoundBrowserGym)
+    owner._closed = False  # noqa: SLF001 - owner timeout contract gate
+    owner._commands = browsergym_backend.queue.Queue()  # noqa: SLF001
+    owner._command_timed_out = threading.Event()  # noqa: SLF001
+
+    def complete_command() -> None:
+        _name, _args, _kwargs, outcome = owner._commands.get(timeout=1)  # noqa: SLF001
+        outcome.set_exception(TimeoutError("operation-owned timeout"))
+
+    worker = threading.Thread(target=complete_command)
+    worker.start()
+    with pytest.raises(TimeoutError, match="operation-owned timeout"):
+        owner._call("currentness_probe", "1", wait_timeout_s=1)  # noqa: SLF001
+    worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert owner._command_timed_out.is_set() is False  # noqa: SLF001
 
 
 def _drag_fixture():

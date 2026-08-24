@@ -10,6 +10,9 @@ from hypothesis import strategies as st
 from playwright.sync_api import sync_playwright
 
 from affordance_runtime.surfaces.browsergym import backend
+from affordance_runtime.surfaces.browsergym.semantics import (
+    PRIVATE_CONTROL_PROPERTIES_KEY,
+)
 from affordance_runtime.surfaces.browsergym.transition import (
     BrowserGymStabilityStatus,
     BrowserGymStepTransition,
@@ -85,6 +88,39 @@ def test_causal_step_uses_event_and_predicate_waits_not_fixed_sleep() -> None:
     assert "wait_for_function" in source
     assert "time.sleep(" not in source
     assert "wait_for_timeout(" not in source
+
+
+def test_bulk_physical_projection_uses_one_page_evaluation() -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_content(
+            """<a bid='link' href='/next'>Next</a>
+            <input bid='field' value='hello'>
+            <button bid='disabled' disabled>Disabled</button>"""
+        )
+        raw = {
+            "axtree_object": {
+                "nodes": [
+                    {"browsergym_id": "link"},
+                    {"browsergym_id": "field"},
+                    {"browsergym_id": "disabled"},
+                ]
+            },
+            "extra_element_properties": {},
+        }
+
+        enriched = backend._with_private_control_properties(page, raw)  # noqa: SLF001
+
+        physical = enriched[PRIVATE_CONTROL_PROPERTIES_KEY]
+        assert physical["link"]["attached"] is True
+        assert physical["link"]["visible"] is True
+        assert physical["link"]["enabled"] is True
+        assert physical["link"]["focusable"] is True
+        assert physical["link"]["navigation_potential"] is True
+        assert physical["field"]["editable"] is True
+        assert physical["disabled"]["enabled"] is False
+        browser.close()
 
 
 @given(

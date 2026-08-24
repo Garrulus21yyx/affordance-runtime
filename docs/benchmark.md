@@ -4,23 +4,25 @@
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
-recapture repair are implemented.
+recapture repair, and BrowserGym large-page liveness repair are implemented.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
 Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, and the full
-suite at `1659 passed / 19 skipped`; the BrowserGym/World/Core focused surface passes `237 / 18 skipped`. Ruff,
+suite at `1663 passed / 19 skipped`; the BrowserGym/World/Core focused surface passes `245 / 18 skipped`. Ruff,
 compileall, `git diff --check`, negative-path searches, the run15 exact-World replay, and the bounded fresh review pass.
-This is implementation evidence for the bounded changes, not a live witness for the Task27 repair.
+This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- post-repair live validation of the BrowserGym recapture repair;
+- post-repair live validation of the BrowserGym large-page liveness repair;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
-`verified_success`. Task27 run1 is a failed pre-repair diagnostic for the post-action recapture defect described below.
+`verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
+repair; Task44 run1 also accepted. Task266 run1 is a stopped, failed pre-repair diagnostic for the liveness defect
+described below.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -138,8 +140,29 @@ not acquired may receive one independent read-only recovery acquisition. Browser
 for `acquisition_unstable`, using its existing `capture_current()` path, while `navigation_pending` remains typed and
 fail-closed. The action is never replayed, a successful recovery becomes the same receipt's after-observation, and a
 failed recovery cannot reach another policy turn with stale World. No action retry, timer loop, transition framework,
-cursor, evidence path, or benchmark-specific branch was added. Task27 run1 remains a pre-repair failed witness; a new
-explicitly authorized live run is required for acceptance.
+cursor, evidence path, or benchmark-specific branch was added. Task27 run1 remains a pre-repair failed witness;
+Task27 run2 is the accepted post-repair witness.
+
+Task266 run1 then reached the Wiki search results and the model correctly selected the `Portland, Maine` link. Its last
+model call completed in about 4.1 seconds; no later `step_completed` event appeared, heartbeat stopped, and the live
+Python/Playwright processes continued consuming CPU. The user explicitly sent SIGTERM to the single detached session,
+but the blocked event loop did not process it until about 534 seconds; formal durable status is
+`failed / environment_unresponsive`, with trace and SQLite evidence intact.
+
+The failure was not provider latency or missing fallback policy. The Portland article contains 5,064 HTML elements and
+1,482 links; the pinned BrowserGym extraction yielded 12,369 AX nodes and 3,397 BIDs. After BrowserGym had already
+captured one DOM/AX snapshot, the project made five synchronous Playwright calls per BID to add private physical
+properties—roughly 17,000 RPCs. That synchronous facade was called on the asyncio event loop, preventing heartbeat and
+the 900-second watchdog from being scheduled. Its 180-second command timeout then queued `capture_current()` behind
+the still-running owner command, so the existing observation fallback could not execute.
+
+The owner repair keeps the published contract and removes the unbounded mechanism. Physical properties are evaluated
+once per frame in the browser and joined to the BrowserGym snapshot by private BID. All synchronous currentness,
+step, capture, finalization, and health calls execute off the asyncio loop. A hard owner timeout poisons that physical
+session and rejects later capture immediately rather than queueing behind uninterruptible work; no action replay is
+allowed. The exact Portland page now completes BrowserGym extraction in about 1.55 seconds and bulk enrichment in
+about 1.0 second for all 3,397 BIDs. This is a general page-size invariant, not a Wiki/Task266 threshold or branch.
+Task266 run1 remains pre-repair evidence; a new explicitly authorized live run is required for acceptance.
 
 The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
 while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
@@ -265,7 +288,8 @@ ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World 
 
 The post-action repair reuses this route. A failed normal acquisition now permits one independent read-only recapture
 for the same dispatch; tests prove a recovered fresh World reaches the receipt and next control state with one physical
-action. This provider-free evidence does not close the live BrowserGym transition until a post-repair witness passes.
+action. Task27 run2 supplies the live recapture witness. Large-page liveness remains open until Task266 is rerun after
+the batch/off-loop repair.
 
 The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
@@ -328,7 +352,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1659 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1663 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -394,6 +418,8 @@ The final read-only review for this cutover must answer:
     state?
 11. Does a failed normal post-action acquisition receive at most one read-only recapture, preserve one physical
     dispatch, admit only the recovered fresh World, and keep `navigation_pending` fail-closed?
+12. Does BrowserGym enrich one captured BID inventory in O(frames) Playwright round trips, keep synchronous physical
+    calls off the asyncio loop, and reject fallback immediately after an owner timeout?
 
 ## Exit statement
 

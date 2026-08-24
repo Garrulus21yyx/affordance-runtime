@@ -7,24 +7,25 @@ longer part of the architecture: local tool results are not copied into a Store-
 admitted prefix, or exposed through generic continuation tools.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
-single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action recapture repair is complete.
-Verification counts below are refreshed by the current review; live benchmark validation remains separately
-authorized. The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and
-is not counted as a passing gate.
+single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
+large-page liveness repair is complete. Verification counts below are refreshed by the current review; live benchmark
+validation remains separately authorized. The repository-wide mypy command still reports its pre-existing baseline
+errors in unchanged modules and is not counted as a passing gate.
 
 Current provider-free verification: `323` focused owner/vertical tests and `63` readable-result tests pass; the full
-suite passes `1659` with `19` skipped; the BrowserGym/World/Core focused surface passes `237` with `18` skipped. Ruff,
+suite passes `1663` with `19` skipped; the BrowserGym/World/Core focused surface passes `245` with `18` skipped. Ruff,
 compileall, and diff checks pass. The fresh review found no remaining blocking owner, currentness, result-pairing,
-Manifest-conservation, readable-search, or recovery-eligibility defect in this bounded implementation.
+Manifest-conservation, readable-search, recovery-eligibility, or async-liveness defect in this bounded implementation.
 
 Overall project closure is still **open**:
 
-- the BrowserGym post-action recapture repair still requires a post-repair live witness before its separately scoped
-  gate can close;
+- the BrowserGym large-page liveness repair still requires a post-repair Task266 live witness before its separately
+  scoped gate can close;
 - Planner lexical admission still has a known gap.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
-`done`, and the native evaluator returned `verified_success`.
+`done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action
+recapture path, and Task44 run1 independently completed with native `verified_success`.
 
 A live W1b witness was run after the accepted-response repair. Run8 verified that bounded model-authored progress notes
 survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. Run10
@@ -191,8 +192,52 @@ The recovery never replays the action. BrowserGym admits that recapture only for
 belongs to. A failed second acquisition remains typed and terminal for the step. The existing execution outcome,
 independent-capture port, fresh-World projection, receipt lineage, and policy loop are reused; no retry state machine,
 effect channel, cursor, evidence store, or new observation authority was added. Provider-free owner and vertical tests
-prove one step, one recapture, recovered after-observation lineage, and no action replay. A post-repair live witness is
-still required before this separately reopened gate can be called closed.
+prove one step, one recapture, recovered after-observation lineage, and no action replay. Task27 run2 is the accepted
+post-repair live witness for this contract.
+
+Task266 run1 exposed a separate liveness defect after the model correctly selected the `Portland, Maine` Wiki link.
+No provider request was pending. The last completed model turn took about 4.1 seconds, but no subsequent
+`step_completed` event appeared and heartbeat stopped. The process and Playwright child remained alive and consumed
+CPU until the explicitly requested stop. Because the blocked event loop could not process SIGTERM promptly, the
+durable run eventually finalized as `failed / environment_unresponsive`; it is preserved only as a pre-repair
+diagnostic.
+
+The page itself made the immediate mechanism measurable. The local Portland article is about 317 KB with 5,064 HTML
+elements and 1,482 links. A BrowserGym/Chromium diagnostic produced 12,369 AX nodes and 3,397 marked BIDs. BrowserGym
+had already captured those BIDs in one DOM/AX transaction, but `_with_private_control_properties()` then performed
+five synchronous Playwright locator calls for every BID (`count`, visibility, enabled, editable, and evaluate): about
+17,000 cross-process RPCs for this one page.
+
+Two existing boundaries amplified that O(N × RPC) producer defect. `BrowserGymSurfaceAdapter` invoked the synchronous
+thread-bound facade directly from the asyncio event loop, so heartbeat and the 900-second harness watchdog could not
+run. After the facade's 180-second command timeout, the normal recovery capture was queued behind the same owner
+thread that was still processing the timed-out command, causing another full wait instead of a usable fallback.
+
+The positive liveness contract is now:
+
+```text
+BrowserGym DOM/AX snapshot
+-> one bulk physical-property evaluation per frame
+-> bounded current World projection
+
+async Runtime
+-> synchronous BrowserGym call runs off-loop
+-> heartbeat/watchdog remain schedulable
+-> responsive typed fallback, or fail-closed owner timeout
+```
+
+The property owner still returns the same private availability, state, option, geometry, gesture, and navigation
+fields; DOMSnapshot geometry remains authoritative for screenshot-aligned boxes. The implementation only replaces
+per-node Playwright round trips with one browser-side batch per frame. A hard owner timeout marks that physical session
+unavailable, so observation fallback fails immediately rather than joining a queue whose owner cannot service it; the
+action is never replayed. This reuses BrowserGym snapshots, Playwright evaluation, the existing thread-bound facade,
+typed recovery, and harness watchdog. It adds no Agent fallback policy, page-size heuristic, retry state machine,
+cursor, evidence path, or task/site branch.
+
+The exact Portland diagnostic now enriches all 3,397 BIDs in about 1.0 second after BrowserGym's approximately
+1.55-second DOM/AX extraction. Provider-free tests prove one batch for a 2,000-control inventory, real-Chromium bulk
+semantics, event-loop heartbeat progress during a blocked physical probe, and immediate rejection of recovery after an
+owner timeout. A post-repair Task266 live witness is still required before this liveness gate closes.
 
 ## Normative production chain
 

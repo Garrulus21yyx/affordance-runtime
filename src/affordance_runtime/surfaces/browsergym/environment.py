@@ -492,7 +492,9 @@ class BrowserGymSurfaceAdapter:
                         for request in requests
                     )
                 self.capture_calls += 1
-                raw, probe = self.gym_environment.capture_current()
+                raw, probe = await asyncio.to_thread(
+                    self.gym_environment.capture_current,
+                )
                 self._page_identity = page_identity(raw)
                 self._episode_identity = probe_episode(probe, self._episode_identity)
                 observation_id, revision = self._next_identity()
@@ -531,7 +533,11 @@ class BrowserGymSurfaceAdapter:
 
     async def execute(self, request: BoundActionRequest) -> ActionResult:
         private = self.bindings.get(request.binding.binding_id)
-        error, physical_probe_count = self._probe_currentness(request, private)
+        error, physical_probe_count = await asyncio.to_thread(
+            self._probe_currentness,
+            request,
+            private,
+        )
         if error is not None:
             return ActionResult(
                 request.request_id,
@@ -561,7 +567,8 @@ class BrowserGymSurfaceAdapter:
         self._pending_error_code = ""
         started = perf_counter()
         try:
-            transition = self.gym_environment.step(
+            transition = await asyncio.to_thread(
+                self.gym_environment.step,
                 action,
                 may_navigate=_may_navigate(request, private),
             )
@@ -653,7 +660,10 @@ class BrowserGymSurfaceAdapter:
         self._pending_acquisition_id = ""
         started = perf_counter()
         try:
-            raw, reward, terminated, truncated, info = self.gym_environment.send_msg_to_user(content)
+            raw, reward, terminated, truncated, info = await asyncio.to_thread(
+                self.gym_environment.send_msg_to_user,
+                content,
+            )
         except BaseException as exc:
             self._pending_error_code = "final_response_failed_after_dispatch"
             return ActionResult(
@@ -719,7 +729,7 @@ class BrowserGymSurfaceAdapter:
         if not callable(probe):
             return SessionHealth(SessionHealthStatus.UNKNOWN)
         try:
-            raw = probe()
+            raw = await asyncio.to_thread(probe)
         except BaseException:
             return SessionHealth(SessionHealthStatus.UNKNOWN)
         raw = raw if isinstance(raw, dict) else {}
