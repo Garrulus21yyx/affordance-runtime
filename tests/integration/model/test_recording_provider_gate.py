@@ -572,6 +572,7 @@ def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_r
 
         assert state.status is RunStatus.DONE
         assert state.execution_count == 1
+        assert state.delivery_store.latest_effect is not None
         assert recorder.calls == 2
         assert "action_results_next_page" in recorder.offered_tools[0]
         first = json.loads(_actual_public_text(recorder.records[0]))["observation"]
@@ -584,6 +585,14 @@ def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_r
         assert "action_results_next_page" in recorder.offered_tools[0]
         assert recorder.records[0].scripted_phase == "continuation"
         assert recorder.records[1].scripted_phase == "ordinary"
+        paired = normalize_recorded_provider_input(recorder.records[1])["messages"]
+        prior_call = paired[-2]["parts"][0]
+        paired_result = paired[-1]["parts"][0]
+        assert prior_call["part_kind"] == "tool-call"
+        assert paired_result["part_kind"] == "tool-return"
+        assert prior_call["tool_call_id"] == paired_result["tool_call_id"] == "recording-call:1"
+        assert paired_result["tool_name"] == prior_call["tool_name"]
+        assert paired[-1]["parts"][1]["part_kind"] == "user-prompt"
         envelopes = policy.port.envelope_history
         assert len(envelopes) == 2
         assert envelopes[0].envelope_id != envelopes[1].envelope_id

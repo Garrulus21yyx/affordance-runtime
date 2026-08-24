@@ -11,7 +11,7 @@ owner repair provider-free verified / fresh-context review passed / held-out rer
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
-provider-protocol and delivery-state convergence contract frozen for implementation /
+provider-protocol and delivery-state convergence implemented and provider-free verified; independent fresh-context review pending /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -710,7 +710,7 @@ World, loop, planner, workflow graph, memory system, or state machine.
 | `ActionRecallSet` + `ActionDeliveryPlan` | preserve complete recall and express one immutable per-turn priority/obligation plan | deleting legal routes, mutating cursors, declaring prompt admission |
 | `TurnPacker` | choose bounded World records, complete atomic action-route fragments, and independent visual evidence under the supplied request profile | full-World truth, cross-turn state, semantic action legality, provider transport |
 | `DeliveryManifest` | record exactly the complete `ActionRouteFragment` records admitted from the DeliveryPlan | inferring or authorizing routes from media marks or refs after rendering |
-| `PerTurnToolCatalog` | compile model-callable operations from the frozen Manifest and Store continuation capabilities | independent search/ranking, complete-ActionSpace scanning, cursor interpretation |
+| `PerTurnToolCatalog` | compile model-callable operations from the frozen Manifest and admitted Plan/true-result continuation capabilities | independent search/ranking, complete-ActionSpace scanning, cursor interpretation |
 | `ProviderEnvelopeBinder` | assemble one typed physical request from admitted public parts | compression policy, action selection, provider retry |
 | `RequestAdmission` | validate and price that exact envelope once | rebuilding messages/tools or applying another component cap |
 | PydanticAI adapter | encode the admitted envelope and transport it | adding, filtering, reprioritizing, or reparsing semantic content |
@@ -863,8 +863,9 @@ for starting them.
 
 ### Cutover B: delivery state
 
-`ObservationDeliveryStore` is the sole temporal and continuation-state owner. It owns the active external-effect and
-local-result inventory identities plus every private cursor transition:
+`ObservationDeliveryStore` is the sole temporal and continuation-state owner. It owns the active external-effect,
+true local-result inventories, and every persistent private cursor transition. Current-ActionSpace-derived inventories
+belong only to the immutable per-turn `ActionDeliveryPlan`:
 
 ```text
 DeliveryInventoryKey =
@@ -876,18 +877,19 @@ DeliveryCursorState = DeliveryInventoryKey + offset
 
 ObservationDeliveryStore =
   latest_effect
-  local result inventories / active_read
-  cursor states by bounded public scope
+  true local result inventories / active_read
+  small cursor progress by bounded public scope
   requested_foreground_scope | None
   currentness/staleness rules
 ```
 
-`ActionDeliveryPlan` becomes a pure immutable projection of current authorities plus a Store snapshot. It may contain
-the current deterministic obligation records and derive one foreground, but it cannot own a cursor transition or
-reinterpret continuation availability. After `TurnPacker` freezes admitted prefixes, the Store owner projects typed
+`ActionDeliveryPlan` is the immutable result snapshot for one current World/ActionSpace. It contains the deterministic
+action-derived obligation records, applies matching Store cursor progress, and derives one foreground; it never returns
+or mutates a Store. After `TurnPacker` freezes admitted prefixes, the Plan projects typed
 `DeliveryContinuationCapability` values. Each capability carries a public `scope` and `continuation_available`, plus a
-Runtime-private exact cursor transition binding used only by the resolver. `ModelTurnDelivery` freezes these
-capabilities with the admitted counts. Catalog construction merely factorizes the frozen capabilities into the fixed
+Runtime-private exact inventory-key/offset/World/action/result/order binding used only by the resolver and reducer.
+`ModelTurnDelivery` freezes these capabilities with the admitted counts. Catalog construction merely factorizes them
+alongside true Store-backed local-read capabilities into the fixed
 `read_next_page` scopes (`effect | page_directory | active_read`) and the currently present bounded action-result
 scopes; it does not inspect offsets or invent its own inequality.
 
@@ -908,8 +910,8 @@ clear effect or page-directory continuations.
 
 | Current path | Cutover |
 |---|---|
-| Store exposes generic `cursor_offset`/`with_advanced_cursor` while Plan reconstructs cursor meaning | Store exposes typed inventory/cursor snapshot and validates/produces the only transition |
-| Plan copies `requested_continuation_scope` and separately derives foreground | pure Store-backed projection; foreground rule consumes the typed requested scope without persisting plan state |
+| Store exposes generic `cursor_offset`/`with_advanced_cursor` while Plan reconstructs cursor meaning | Plan owns the immutable action inventory snapshot; Store validates and commits only typed cursor progress |
+| Plan copies `requested_continuation_scope` and separately derives foreground | pure projection consumes matching persisted cursor/requested scope; fresh lineage resets or fails typed stale |
 | Catalog checks `0 < admitted < len(remaining)` and resolver repeats the check | delete both interpretations; Catalog consumes frozen capabilities and resolver applies their Store-owned transition |
 | separate world/action continuation bindings derive offsets | both bind the same `DeliveryContinuationCapability` algebra; only public tool vocabulary differs |
 | policy/bridge carries an untyped `next_delivery_store`; a committed snapshot can suppress an independent same-step GUI effect | policy returns only an immutable call-correlated typed decision; every local/GUI result is committed in `StepResult`, and `ObservationDeliveryStore.reduce(previous, step)` alone constructs the next Store |
@@ -1063,8 +1065,8 @@ separates commit/load states and warns that time-based waits can observe stale s
 | unnumbered public functional context | the existing `WorldDeliveryIndex` | region formation and container grouping consume the same fields; it does not allocate model refs/order or create another World |
 | public records, `E/N/F/R` refs, and public order | one immutable `CanonicalPublicWorldProjection` | Grounding, findings, pager, effects, renderer, Manifest, Catalog, Workspace, and evaluator views consume it and never sort raw World inventories or allocate refs |
 | current action recall inventories | `ActionRecallSet` over complete `ActionSpace` + canonical public projection + active Store effect | ranking may order but cannot delete exact/structural/base/effect members or claim that recall membership requires simultaneous delivery |
-| per-turn delivery selection | stateless `ActionDeliveryPlan` | bounded obligations and cursors select candidates for packing; only records actually admitted by `TurnPacker` become protected |
-| active latest external GUI effect and local-result delivery state | `ObservationDeliveryStore` | World rendering, action recall, Workspace, and Monitor consume the same effect identity; a local read/find/search cannot clear or fork it |
+| per-turn action inventory snapshot and delivery selection | stateless `ActionDeliveryPlan` | it owns current action-derived obligation records and admitted continuation capabilities, never a persistent Store transition |
+| active latest external GUI effect, true local-result inventory, and persistent cursor progress | `ObservationDeliveryStore` | it does not retain current-ActionSpace-derived inventories; a local read/find/search cannot clear or fork the latest effect |
 | pending provider tool exchange and call/result pairing | `PydanticAIGroundedDecisionPort` using exact admitted PydanticAI messages plus `DeferredToolRequests/DeferredToolResults` | Store, Workspace, CoreLoop, Catalog, and Trace cannot rebuild provider history or own a second pending-call state |
 | committed tool execution truth | `StepResult` over the existing closed decision/result/receipt/failure algebra under the original call ID | Store and ToolReturn are projections; neither may infer the outcome from operation name, display text, or the other projection |
 | next Store transition | `ObservationDeliveryStore.reduce(previous_store, committed_step)` | policy, resolver, CoreLoop, RunState, and provider bridge cannot supply, merge, or prefer a whole Store snapshot |
@@ -1072,7 +1074,7 @@ separates commit/load states and warns that time-based waits can observe stale s
 | model-facing current-run continuity | total `WorkspaceReducer` producing `AgentWorkspace` | raw history, provider messages, and trace cannot become a second workspace |
 | whole-request capacity | `RequestAdmission` | `TurnPacker` consumes its profile/estimator to fit one candidate request; RunState, history projection, renderer, pager, catalog, and provider Binder cannot own independent caps |
 | finite public JSON-Schema subset | existing `actions.schema_validation` contract validator | ToolSpec, capability schemas, catalog compiler, normalizer, value validator, and final-response admission consume the same supported AST; JSON-tree validity alone is not schema admission |
-| model-visible action contract | `PerTurnToolCatalog` compiled from frozen Manifest routes + Store continuation capabilities | it cannot scan complete ActionSpace, rank controls, or derive cursor inequalities |
+| model-visible action contract | `PerTurnToolCatalog` compiled from frozen Manifest routes + admitted Plan/true-result continuation capabilities | it cannot scan complete ActionSpace, rank controls, or derive cursor inequalities |
 | physical provider request | `ProviderEnvelopeBinder` producing one `CanonicalProviderEnvelope` | RequestAdmission validates/prices it and the provider adapter transports it; neither reconstructs semantic content |
 | private physical binding | Binder | model never submits selector, BID, or coordinates |
 | physical dispatch truth | `ExecutionReceiptBatch` | projection cannot reconstruct or overwrite receipts |
@@ -1157,12 +1159,12 @@ BrowserGym raw observation
    └→ lossless PublicWorldDelta against the preceding fresh World
 → one CanonicalPublicWorldProjection with all public records/refs/order
 → one reconciled PublicEffectInventory
-→ ObservationDeliveryStore inventories and private cursors
+→ ObservationDeliveryStore true-result inventories and private cursor progress
 → ActionRecallSet complete ordered recall
-→ immutable ActionDeliveryPlan obligations and one foreground
+→ immutable ActionDeliveryPlan action inventories, obligations, capabilities, and one foreground
 → TurnPacker
 → atomic ModelTurnDelivery + DeliveryManifest
-→ PerTurnToolCatalog from admitted routes and Store continuation capabilities
+→ PerTurnToolCatalog from admitted routes and admitted Plan/true-result capabilities
 ```
 
 ### Run3 World-delivery inflation: causal model
@@ -1486,7 +1488,7 @@ complete current ActionSpace
    - greedily admits atomic current-page records under the complete request budget
    - freezes admitted records; leaves every remainder behind its cursor
 → atomic text/image ModelTurnDelivery + DeliveryManifest
-→ PerTurnToolCatalog from Manifest routes + frozen Store continuation capabilities
+→ PerTurnToolCatalog from Manifest routes + frozen Plan/true-result continuation capabilities
 ```
 
 `ActionRecallSet` is a union, not a classifier decision, delivery page, or capacity promise. Objective/semantic scoring
@@ -1886,11 +1888,11 @@ Semantic Capability Registry
 → CanonicalPublicWorldProjection refs + WorldDeliveryIndex functional context
 → high-recall ActionRecallSet over complete ActionSpace
 → non-authoritative ActionReranker over complete ordered recall inventories
-→ one immutable ActionDeliveryPlan over Store-backed bounded obligations
+→ one immutable ActionDeliveryPlan over current action snapshots plus Store cursor progress
 → TurnPacker commits route-bearing text/media fragments
 → atomic ModelTurnDelivery + exact DeliveryManifest action-route relation
 → factorized PerTurnToolCatalog compiled only from delivered routes
-   + Store-owned continuation capabilities
+   + admitted Plan/true-result continuation capabilities
 → ProviderEnvelopeBinder → CanonicalProviderEnvelope → RequestAdmission
 → PydanticAI wire codec
 → provider-native tool call

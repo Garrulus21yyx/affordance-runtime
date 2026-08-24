@@ -539,6 +539,64 @@ def test_pre_provider_typed_schema_and_capacity_faults_remain_local(
     asyncio.run(scenario())
 
 
+def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monkeypatch) -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("pending-capacity", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+        scripted = ScriptedModel([("list_regions", {})])
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(ModelDecisionRequest("request:pending-first", first_context))
+        assert first.failure is None and first.output is not None
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        transition = first_context.delivery_store.reduce(step, step_index=1)
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            delivery_store=transition.next_store,
+            last_step=step,
+        )
+        pending_before = policy.port.pending_exchange
+
+        def reject(*_args, **_kwargs):
+            raise ModelRequestCapacityError(
+                ModelRequestBreakdown(
+                    "initial",
+                    admission_action="context_capacity",
+                    effective_input_limit=1,
+                )
+            )
+
+        monkeypatch.setattr(pydantic_bridge.RequestAdmission, "admit", reject)
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:pending-rejected", second_context, last_step=step)
+        )
+
+        assert second.output is None
+        assert second.failure is not None
+        assert second.failure.kind is ModelFailureKind.CONTEXT_CAPACITY
+        assert second.attempts == ()
+        assert policy.port.last_model_call_count == 0
+        assert scripted.calls == 1
+        assert policy.port.pending_exchange is pending_before
+        assert policy.port.pending_exchange == pending_before
+        assert transition.next_store is second_context.delivery_store
+
+    asyncio.run(scenario())
+
+
 def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action", "first_gui_action"])

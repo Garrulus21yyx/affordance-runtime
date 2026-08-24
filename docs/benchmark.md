@@ -11,7 +11,7 @@ owner repair provider-free verified / fresh-context review passed / held-out rer
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
-provider-protocol and delivery-state convergence design frozen; implementation pending /
+provider-protocol and delivery-state convergence provider-free verified; independent fresh-context review pending /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -211,6 +211,18 @@ physical PydanticAI parts, tool definitions, call IDs, result values, media, set
 breakdown with the admitted CanonicalProviderEnvelope. It runs under the fixed BrowserGym interpreter and records
 PydanticAI Slim `2.33.0`, matching the declared `>=2.33,<2.34` project profile; default-shell `2.21.0` results are
 historical and cannot attest this gate.
+
+The provider-protocol/delivery-state implementation and provider-free acceptance are recorded in
+[`provider-protocol-delivery-state-provider-free-20260824.json`](../evidence/acceptance/provider-protocol-delivery-state-provider-free-20260824.json),
+bound to implementation revision `c80236a2`. The generated legal composition matrix conserves an existing GUI effect
+across public evidence `0/2` × continuation `absent/zero/nonzero` × typed failure `absent/present`; the real two-turn
+`ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel` path observes one
+same-ID assistant call/ToolReturn pair followed by the fresh prompt and commits the GUI effect. A separate local
+capacity witness proves the official pending exchange remains unchanged with zero new provider attempts. Focused
+verification is `155 passed`; full verification is `1666 passed / 19 skipped`, plus Ruff, compileall, diff checks, and
+production negative searches. PydanticAI Slim is `2.33.0`; provider/live/Task21 attempts are zero. This is implementation
+completion, not closure: Overall remains reopened/non-closed, independent fresh-context review is pending, and the
+bounded cohort remains stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 

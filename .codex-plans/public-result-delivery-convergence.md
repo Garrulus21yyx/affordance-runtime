@@ -123,7 +123,7 @@ Live and cohort execution remain stopped.
      inventory installation in Store. Rebuilding the next Plan against fresh World/ActionSpace either reapplies the
      cursor to matching lineage or fails typed stale/reset.
 
-17. **pending — Provider-free vertical acceptance and evidence commit**
+17. **completed — Provider-free vertical acceptance and evidence commit**
    - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`
      paths for the generated composition matrix.
    - Run focused/full/Ruff/compileall/diff and production negative searches; persist a revision-bound evidence artifact.

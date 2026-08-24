@@ -1,0 +1,77 @@
+{
+  "schema": "provider-protocol-delivery-state-provider-free.v1",
+  "date": "2026-08-24",
+  "starting_revision": "90bff9293137c67d499dae69718ed34fa874f0f5",
+  "scaffold_revision": "dccf6a0c",
+  "implementation_revision": "c80236a2",
+  "source_tree": "5ad0abf30acebcc3ff2b1924dd350ac57f9a60d2",
+  "test_tree": "2615b383eca91317b9fa311b95825e7d0e795ae0",
+  "status": "provider_free_passed_fresh_review_pending",
+  "overall_status": "reopened_non_closed",
+  "execution_profile": {
+    "python": "/home/yang/.venvs/affordance-browsergym-py312/bin/python",
+    "pydantic_ai_slim": "2.33.0",
+    "project_constraint": ">=2.33,<2.34",
+    "provider_attempts": 0,
+    "live_provider_run": false,
+    "live_benchmark_run": false,
+    "task21_replay": false,
+    "bounded_cohort": "stopped"
+  },
+  "owner_contract": {
+    "per_turn_inventory_snapshot": "ActionDeliveryPlan",
+    "private_continuation_binding": "DeliveryContinuationCapability on admitted ModelTurnDelivery/Catalog row",
+    "persistent_cursor_and_temporal_facts": "ObservationDeliveryStore",
+    "sole_next_store_transition": "ObservationDeliveryStore.reduce(previous_store, committed_step)",
+    "provider_pending_exchange": "PydanticAIGroundedDecisionPort exact official PydanticAI messages and DeferredToolRequests",
+    "execution_truth": "committed StepResult under existing AgentDecision.tool_call_id",
+    "provider_result": "DeferredToolResults.calls[same_call_id] = ToolReturn"
+  },
+  "properties": {
+    "whole_store_handoff_deleted": "passed",
+    "store_pending_call_and_outcome_deleted": "passed",
+    "mapping_history_reconstruction_deleted": "passed",
+    "action_inventory_not_persisted_in_store": "passed",
+    "cursor_currentness_world_action_result_order_offset": "passed",
+    "zero_and_nonzero_prefix_continuation": "passed",
+    "fresh_world_stale_or_reset": "passed",
+    "gui_effect_survives_local_read_search_continuation": "passed",
+    "typed_public_result_never_uses_project_public_value": "passed",
+    "workspace_recent_steps_receipt_lineage_only": "passed",
+    "official_same_call_id_pair_exactly_once": "passed",
+    "pending_exchange_preserved_on_pre_provider_capacity_failure": "passed",
+    "repair_preserves_accepted_call_identity": "passed",
+    "recording_input_equals_admitted_envelope": "passed",
+    "exact_fit_and_one_token_short": "passed",
+    "private_id_and_enumeration_permutation": "passed",
+    "generated_nested_unicode_public_results": "passed",
+    "legal_composition_cartesian_matrix": {
+      "existing_gui_effect": true,
+      "public_evidence_counts": [0, 2],
+      "continuation_admitted_counts": [null, 0, 1],
+      "typed_failure": [false, true],
+      "cases": 12,
+      "result": "passed"
+    }
+  },
+  "vertical_witness": {
+    "test": "tests/integration/model/test_recording_provider_gate.py::test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_routes",
+    "path": "ModelBackedAgentPolicy -> CoreAgentLoop -> ObservationDeliveryStore.reduce -> RunState.apply -> Recording FunctionModel",
+    "assertions": [
+      "one prior assistant tool call and one ToolReturn share recording-call:1",
+      "ToolReturn precedes the fresh user prompt in the current request",
+      "Recording FunctionModel input equals CanonicalProviderEnvelope.model_boundary_projection",
+      "continuation exposes a new suffix route",
+      "the subsequent dispatched GUI action commits LatestEffect"
+    ]
+  },
+  "verification": {
+    "focused": "155 passed",
+    "full_pytest": "1666 passed, 19 skipped",
+    "ruff": "passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "production_negative_searches": "passed"
+  },
+  "next_step": "independent fresh-context read-only review; no provider/live/Task21 execution"
+}
