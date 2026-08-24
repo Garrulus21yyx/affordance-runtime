@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -16,7 +15,6 @@ from affordance_runtime.agent.context.contracts import (
 )
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.context.world_transition import PublicWorldDelta
-from affordance_runtime.agent.working_facts import WorkingFact, validate_working_fact_collection
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import CoverageState
 
@@ -46,7 +44,6 @@ class CurrentFinding:
 class SemanticEventKind(StrEnum):
     GUI_EFFECT = "gui_effect"
     PUBLIC_RESULT = "public_result"
-    WORKING_FACT = "working_fact"
     TYPED_FAILURE = "typed_failure"
     RECOVERY = "recovery"
 
@@ -119,7 +116,6 @@ class AgentWorkspace:
     recent_steps: tuple[AgentTurnView, ...] = ()
     semantic_events: tuple[SemanticEvent, ...] = ()
     activities: tuple[ActivitySummary, ...] = ()
-    working_facts: tuple[WorkingFact, ...] = ()
 
     def __post_init__(self) -> None:
         recent = tuple(self.recent_steps)
@@ -138,7 +134,6 @@ class AgentWorkspace:
         object.__setattr__(self, "recent_steps", recent)
         object.__setattr__(self, "semantic_events", events)
         object.__setattr__(self, "activities", activities)
-        object.__setattr__(self, "working_facts", validate_working_fact_collection(self.working_facts))
 
 
 class WorkspaceReducer(Protocol):
@@ -160,36 +155,6 @@ class WorkspaceReducer(Protocol):
 
 class WorkspaceCapacityError(ValueError):
     """The bounded diagnostic workspace cannot fit its assigned request allocation."""
-
-
-def working_facts_digest(
-    workspace: AgentWorkspace,
-    pending_fact: WorkingFact | None = None,
-) -> str:
-    """Digest exact retained facts, including a fact produced by the current step."""
-
-    if not isinstance(workspace, AgentWorkspace):
-        raise TypeError("working-facts digest requires typed workspace")
-    facts = {item.key: item for item in workspace.working_facts}
-    if pending_fact is not None:
-        if not isinstance(pending_fact, WorkingFact):
-            raise TypeError("pending working fact must be typed")
-        facts[pending_fact.key] = pending_fact
-    encoded = json.dumps(
-        tuple(
-            (
-                key,
-                fact.record.predicate,
-                to_json_compatible(fact.value),
-                fact.record.evidence_ref,
-            )
-            for key, fact in sorted(facts.items())
-        ),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -244,22 +209,6 @@ class DefaultWorkspaceReducer:
                     str(getattr(information_delta, "inventory_digest", ""))[:96],
                 ),
             )
-        decision = getattr(step, "decision", None)
-        working_fact = getattr(decision, "working_fact", None)
-        working_facts = {item.key: item for item in previous.working_facts}
-        if isinstance(working_fact, WorkingFact):
-            working_facts[working_fact.key] = working_fact
-            _append_event(
-                events,
-                    SemanticEvent(
-                        step_index,
-                        SemanticEventKind.WORKING_FACT,
-                        f"retained exact working fact {working_fact.key}",
-                        "remember_fact",
-                        working_fact.key,
-                    ),
-                )
-
         recovery = getattr(step, "recovery_signal", None)
         if recovery is not None:
             _append_event(
@@ -285,7 +234,6 @@ class DefaultWorkspaceReducer:
             recent,
             tuple(events[-MAX_WORKSPACE_SEMANTIC_EVENTS:]),
             activities,
-            tuple(working_facts.values()),
         )
 
     def fit(self, workspace: AgentWorkspace, allocation_bytes: int) -> AgentWorkspace:
@@ -300,7 +248,6 @@ class DefaultWorkspaceReducer:
             candidate.recent_steps,
             candidate.semantic_events,
             (),
-            candidate.working_facts,
         )
         if _workspace_bytes(candidate) <= allocation_bytes:
             return candidate

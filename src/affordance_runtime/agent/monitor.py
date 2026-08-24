@@ -25,7 +25,6 @@ from affordance_runtime.agent.recovery import (
     RecoverySignal,
 )
 from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.agent.workspace import AgentWorkspace, working_facts_digest
 from affordance_runtime.evaluation.contracts import (
     LocalPostconditionStatus,
     ObservedChange,
@@ -43,19 +42,16 @@ class EpisodeMonitor:
     profile: AgentLoopProfile = DEFAULT_AGENT_LOOP_PROFILE
     world_digest: str = ""
     current_findings_digest: str = ""
-    working_facts_digest: str = ""
     observation_only_streak: int = 0
     recovery_count: int = 0
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
 
-    def start_episode(self, world, task_evaluation, working_facts=()) -> None:
+    def start_episode(self, world, task_evaluation) -> None:
         del task_evaluation
-        workspace = AgentWorkspace(working_facts=tuple(working_facts))
         self.world_digest = public_world_semantic_digest(world)
         self.current_findings_digest = current_findings_digest(world)
-        self.working_facts_digest = working_facts_digest(workspace)
         self.observation_only_streak = 0
         self.recovery_count = 0
         self.latest_attempt_signature = None
@@ -66,25 +62,22 @@ class EpisodeMonitor:
         self,
         result: StepResult,
         findings_digest: str,
-        facts_digest: str,
         information_delta: InformationDelta | None = None,
     ) -> EpisodeMonitorTransition:
         """Advance only from owner-produced digests and a typed dispatch receipt."""
 
-        if not findings_digest or not facts_digest:
-            raise ValueError("episode monitor requires nonblank owner digests")
+        if not findings_digest:
+            raise ValueError("episode monitor requires a nonblank findings digest")
         next_world_digest = result.public_world_delta.after_world_digest
         if not self.world_digest:
             self.world_digest = result.public_world_delta.before_world_digest
             self.current_findings_digest = current_findings_digest(result.before_world)
-            self.working_facts_digest = facts_digest
 
         events = _diagnostic_events(result)
         information_changed = any(
             (
                 next_world_digest != self.world_digest,
                 findings_digest != self.current_findings_digest,
-                facts_digest != self.working_facts_digest,
                 information_delta is not None
                 and information_delta.kind is InformationDeltaKind.NEW_INFORMATION,
             )
@@ -93,7 +86,6 @@ class EpisodeMonitor:
 
         self.world_digest = next_world_digest
         self.current_findings_digest = findings_digest
-        self.working_facts_digest = facts_digest
 
         if information_changed:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)
@@ -230,7 +222,6 @@ def _control_stall_signal(
     signature_payload: tuple[object, ...] = (
         monitor.world_digest,
         monitor.current_findings_digest,
-        monitor.working_facts_digest,
     )
     if prohibited_attempt_signature is not None:
         signature_payload += (prohibited_attempt_signature.digest,)
@@ -244,7 +235,6 @@ def _control_stall_signal(
             "observation_only_streak": monitor.observation_only_streak,
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,
-            "working_facts_digest": monitor.working_facts_digest,
         },
         attempted_modes=(_attempted_mode(result),),
         prohibited_attempt_signature=prohibited_attempt_signature,

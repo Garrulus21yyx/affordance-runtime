@@ -10,7 +10,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _SRC = _ROOT / "src" / "affordance_runtime"
 
 
-def test_agent_workspace_is_the_only_production_model_history_owner() -> None:
+def test_workspace_and_provider_transport_own_distinct_bounded_histories() -> None:
     run_fields = {item.name for item in fields(RunState)}
     python_source = "\n".join(path.read_text() for path in _SRC.rglob("*.py"))
 
@@ -28,8 +28,11 @@ def test_agent_workspace_is_the_only_production_model_history_owner() -> None:
 
     core = (_SRC / "agent" / "core_loop.py").read_text()
     binder = (_SRC / "model" / "policy" / "grounded_policy_context.py").read_text()
+    bridge = (_SRC / "model" / "policy" / "pydantic_ai_bridge.py").read_text()
     assert "self.workspace_reducer.reduce(" in core
     assert "render_agent_workspace(" in binder
+    assert "message_history: tuple[object, ...]" in bridge
+    assert "working_facts" not in binder
 
 
 def test_request_admission_is_the_only_complete_request_capacity_owner() -> None:
@@ -62,7 +65,6 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
     assert monitor_fields == {
         "world_digest",
         "current_findings_digest",
-        "working_facts_digest",
         "observation_only_streak",
         "recovery_count",
         "latest_attempt_signature",
@@ -78,7 +80,6 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
     ):
         assert removed not in monitor_source
     assert "current_findings_digest(result.after_world)" in core_source
-    assert "working_facts_digest(state.workspace, pending_fact)" in core_source
     assert "delivery_transition.information_delta" in core_source
     assert '"max_policy_decisions"' in core_source
     assert '"control_stalled"' in monitor_source

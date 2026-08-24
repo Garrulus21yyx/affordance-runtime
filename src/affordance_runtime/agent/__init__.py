@@ -22,7 +22,6 @@ from affordance_runtime.agent.decisions import (
     FinalResponse,
     LocalToolResult,
     ReadRegionResult,
-    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
@@ -40,7 +39,6 @@ from affordance_runtime.agent.run_state import (
     StepResult,
 )
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
-from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.agent.workspace import (
     ActivitySummary,
     AgentWorkspace,
@@ -59,7 +57,6 @@ __all__ = [
     "ActivitySummary",
     "AskUser",
     "LocalToolResult",
-    "RememberFactResult",
     "CoreAgentLoop",
     "CoreLoopStartError",
     "ControlTermination",
@@ -90,7 +87,6 @@ __all__ = [
     "UnsupportedComposition",
     "UnsupportedCompositionError",
     "Wait",
-    "WorkingFact",
     "WorldTransitionProjector",
     "WorkspaceReducer",
 ]

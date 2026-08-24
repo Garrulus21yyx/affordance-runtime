@@ -25,7 +25,7 @@ from affordance_runtime.agent.context.world_region_index import (
     WorldDeliveryIndex,
     WorldRegion,
 )
-from affordance_runtime.agent.working_facts import is_public_scalar
+from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import WorldObservation
@@ -702,9 +702,6 @@ def inspect_actor_world(
                     region,
                     canonical_world,
                     observation,
-                    grounding,
-                    public_fact_bindings=public_fact_bindings or {},
-                    evidence_index=evidence_index,
                 )
             )
             return _page_region_items(
@@ -826,12 +823,9 @@ def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, obj
     projected = dict(item)
     region_ref = str(item.get("region_ref", ""))
     match_ref = str(item.get("node_ref") or item.get("evidence_ref") or "")
-    if (
-        PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION)
-        and PublicRefCodec.accepts(match_ref)
-        and PublicRefCodec.decode(match_ref).kind is not PublicRefKind.REGION
-    ):
-        projected["match_ref"] = match_ref
+    if PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION):
+        if PublicRefCodec.accepts(match_ref) and PublicRefCodec.decode(match_ref).kind is not PublicRefKind.REGION:
+            projected["match_ref"] = match_ref
         projected["follow_up"] = {
             "operation": "read_region",
             "region_ref": region_ref,
@@ -1437,7 +1431,18 @@ def _find_matches(
         for target_id in region.member_target_ids
     }
     matches: list[Mapping[str, object]] = []
+    repeated_target_ids: set[str] = set()
+    for region in index.regions:
+        grouped, grouped_target_ids = _repeated_item_records(
+            region,
+            canonical_world,
+            observation,
+        )
+        repeated_target_ids.update(grouped_target_ids)
+        matches.extend(item for item in grouped if needle in _tool_record_search_text(item))
     for target in observation.targets:
+        if target.target_id in repeated_target_ids:
+            continue
         values = [target.role, target.label, *(str(value) for value in target.state.values())]
         if needle not in " ".join(values).casefold():
             continue
@@ -1477,6 +1482,8 @@ def _find_matches(
             )
         matches.append(match)
     for fact in observation.facts:
+        if fact.subject_id in repeated_target_ids:
+            continue
         values = [fact.predicate, str(fact.value)]
         if needle not in " ".join(values).casefold():
             continue
@@ -1557,119 +1564,111 @@ def _region_items(
     region,
     canonical_world,
     observation,
-    grounding,
-    *,
-    public_fact_bindings: Mapping[str, str],
-    evidence_index: WorldEvidenceIndex | None,
 ) -> tuple[Mapping[str, object], ...]:
     targets = {item.target_id: item for item in observation.targets}
-    if region.repeated_item_roots:
-        source = next(
-            (item for item in observation.sources if item.observation_id == region.source_id),
-            None,
-        )
-        if source is not None:
-            nodes = {item.structure_id: item for item in source.structure}
-            canonical = {
-                item.source_target_id: item.canonical_target_id
-                for item in observation.entity_source_links
-                if item.source_observation_id == source.observation_id
+    grouped, repeated_target_ids = _repeated_item_records(
+        region,
+        canonical_world,
+        observation,
+    )
+    if grouped:
+        schema = tuple(
+            {
+                "kind": "schema_member",
+                **_target_item(canonical_world.region_refs[region.key], targets[target_id]),
             }
-            grouped: list[Mapping[str, object]] = []
-            repeated_target_ids: set[str] = set()
-            for root_id in region.repeated_item_roots:
-                if root_id not in nodes:
-                    continue
-                target_ids = tuple(
-                    dict.fromkeys(
-                        canonical.get(nodes[item_id].semantic_target_id, "")
-                        for item_id in _walk_structure_ids(root_id, nodes)
-                        if nodes[item_id].semantic_target_id
-                        and canonical.get(nodes[item_id].semantic_target_id, "") in targets
-                    )
-                )
-                repeated_target_ids.update(target_ids)
-                grouped.append(
-                    {
-                        "kind": "complete_item",
-                        "role": nodes[root_id].role,
-                        "label": nodes[root_id].label,
-                        "targets": tuple(
-                            _target_item(
-                                region,
-                                canonical_world.region_refs[region.key],
-                                targets[target_id],
-                                grounding,
-                                public_fact_bindings,
-                                evidence_index,
-                            )
-                            for target_id in target_ids
-                        ),
-                    }
-                )
-            if grouped:
-                schema = tuple(
-                    {
-                        "kind": "schema_member",
-                        **_target_item(
-                            region,
-                            canonical_world.region_refs[region.key],
-                            targets[target_id],
-                            grounding,
-                            public_fact_bindings,
-                            evidence_index,
-                        ),
-                    }
-                    for target_id in region.member_target_ids
-                    if target_id in targets and target_id not in repeated_target_ids
-                )
-                return (*schema, *grouped)
+            for target_id in region.member_target_ids
+            if target_id in targets and target_id not in repeated_target_ids
+        )
+        return (*schema, *grouped)
     items: list[Mapping[str, object]] = []
     for target_id in region.member_target_ids:
         target = targets.get(target_id)
         if target is None:
             continue
         items.append(
-            _target_item(
-                region,
-                canonical_world.region_refs[region.key],
-                target,
-                grounding,
-                public_fact_bindings,
-                evidence_index,
-            )
+            _target_item(canonical_world.region_refs[region.key], target)
         )
     return tuple(items)
 
 
-def _target_item(
-    region, region_ref, target, grounding, public_fact_bindings, evidence_index
-) -> Mapping[str, object]:
+def _repeated_item_records(
+    region,
+    canonical_world,
+    observation,
+) -> tuple[tuple[Mapping[str, object], ...], set[str]]:
+    if not region.repeated_item_roots:
+        return (), set()
+    source = next(
+        (item for item in observation.sources if item.observation_id == region.source_id),
+        None,
+    )
+    if source is None:
+        return (), set()
+    targets = {item.target_id: item for item in observation.targets}
+    nodes = {item.structure_id: item for item in source.structure}
+    canonical = {
+        item.source_target_id: item.canonical_target_id
+        for item in observation.entity_source_links
+        if item.source_observation_id == source.observation_id
+    }
+    region_ref = canonical_world.region_refs[region.key]
+    grouped: list[Mapping[str, object]] = []
+    repeated_target_ids: set[str] = set()
+    for root_id in region.repeated_item_roots:
+        if root_id not in nodes:
+            continue
+        target_ids = tuple(
+            dict.fromkeys(
+                canonical.get(nodes[item_id].semantic_target_id, "")
+                for item_id in _walk_structure_ids(root_id, nodes)
+                if nodes[item_id].semantic_target_id
+                and canonical.get(nodes[item_id].semantic_target_id, "") in targets
+            )
+        )
+        repeated_target_ids.update(target_ids)
+        content = tuple(
+            compact
+            for target_id in target_ids
+            if (compact := _compact_repeated_target(targets[target_id])) is not None
+        )
+        record: dict[str, object] = {
+            "kind": "complete_item",
+            "region_ref": region_ref,
+            "role": nodes[root_id].role,
+            "content": content,
+        }
+        if nodes[root_id].label:
+            record["label"] = nodes[root_id].label
+        grouped.append(record)
+    return tuple(grouped), repeated_target_ids
+
+
+def _compact_repeated_target(target) -> Mapping[str, object] | None:
+    state = _model_state(target.state, interactive=False)
+    if not target.label and not state:
+        return None
+    item: dict[str, object] = {"role": target.role}
+    if target.label:
+        item["text"] = target.label
+    if state:
+        item["state"] = state
+    return item
+
+
+def _tool_record_search_text(item: Mapping[str, object]) -> str:
+    return json.dumps(to_json_compatible(item), ensure_ascii=False, separators=(",", ":")).casefold()
+
+
+def _target_item(region_ref, target) -> Mapping[str, object]:
     item: dict[str, object] = {
         "region_ref": region_ref,
         "role": target.role,
         "label": target.label,
-        "state": target.state,
     }
-    if evidence_index is None:
-        return item
-    public_by_canonical = {canonical: public for public, canonical in public_fact_bindings.items()}
-    records = tuple(
-        record
-        for record in evidence_index.records
-        if record.subject_id == target.target_id
-        and record.evidence_ref in public_by_canonical
-        and is_public_scalar(record.value)
-    )
-    if records:
-        item["evidence"] = tuple(
-            {
-                "evidence_ref": public_by_canonical[record.evidence_ref],
-                "predicate": record.predicate,
-                "value": record.value,
-            }
-            for record in records[:8]
-        )
+    state = _model_state(target.state, interactive=False)
+    if state:
+        item["state"] = state
     return item
 
 

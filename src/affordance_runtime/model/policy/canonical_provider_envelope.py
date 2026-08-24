@@ -142,13 +142,11 @@ class CanonicalProviderEnvelope:
             raise ValueError("deferred tool result requires its bounded call history")
         if bool(self.pydantic_history) != bool(self.history_messages):
             raise ValueError("canonical history requires the exact admitted PydanticAI messages")
-        if self.pydantic_history and len(self.pydantic_history) != 1:
-            raise ValueError("ActionPolicy retains exactly one exact PydanticAI call message")
-        if self.history_messages and len(self.history_messages) != 1:
-            raise ValueError("ActionPolicy retains exactly one unresolved call message")
         if self.history_messages:
             try:
-                response_message = self.history_messages[0]
+                if tuple(self.history_messages) != _project_pydantic_history(self.pydantic_history):
+                    raise ValueError("canonical history projection differs from exact PydanticAI messages")
+                response_message = self.history_messages[-1]
                 prior_call = tuple(response_message["parts"])[0]
                 current_result = self.tool_result
                 assert current_result is not None
@@ -158,7 +156,7 @@ class CanonicalProviderEnvelope:
                     and prior_call["tool_call_id"] == current_result["tool_call_id"]
                     and prior_call["tool_name"] == current_result["tool_name"]
                 )
-            except (AssertionError, IndexError, KeyError, TypeError):
+            except (AssertionError, IndexError, KeyError, TypeError, ValueError):
                 valid_exchange = False
             if not valid_exchange:
                 raise ValueError("deferred tool result does not match its prior call")
@@ -533,31 +531,68 @@ def _media_record(item: DeliveredMedia) -> CanonicalMediaRecord:
 def _project_pydantic_history(
     messages: tuple[object, ...],
 ) -> tuple[Mapping[str, object], ...]:
-    """Mechanically project provider-visible parts from exact official messages."""
+    """Project compact official call/result history and validate its pairing algebra."""
 
     if not messages:
         return ()
     try:
-        from pydantic_ai.messages import ModelResponse, ToolCallPart
+        from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
     except ImportError as exc:  # pragma: no cover - guarded by the provider bridge
         raise ValueError("PydanticAI messages are unavailable") from exc
-    if len(messages) != 1 or not isinstance(messages[0], ModelResponse):
-        raise ValueError("pending PydanticAI exchange must contain its exact call response")
-    response_parts = tuple(
-        {
-            "part_kind": "tool-call",
-            "tool_name": part.tool_name,
-            "arguments": to_json_compatible(part.args_as_dict()),
-            "tool_call_id": part.tool_call_id,
-        }
-        for part in messages[0].parts
-        if isinstance(part, ToolCallPart)
-    )
-    if len(response_parts) != 1:
-        raise ValueError("pending PydanticAI response must contain one tool call")
-    return (
-        {"kind": "response", "parts": response_parts},
-    )
+    if len(messages) % 2 != 1:
+        raise ValueError("compact PydanticAI history must end with one unresolved call")
+    projected: list[Mapping[str, object]] = []
+    pending: tuple[str, str] | None = None
+    for index, message in enumerate(messages):
+        if index % 2 == 0:
+            if not isinstance(message, ModelResponse):
+                raise ValueError("compact PydanticAI history expected a tool-call response")
+            calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
+            if len(calls) != 1 or len(message.parts) != 1:
+                raise ValueError("accepted PydanticAI response must contain exactly one tool call")
+            call = calls[0]
+            pending = (call.tool_name, call.tool_call_id)
+            projected.append(
+                {
+                    "kind": "response",
+                    "parts": (
+                        {
+                            "part_kind": "tool-call",
+                            "tool_name": call.tool_name,
+                            "arguments": to_json_compatible(call.args_as_dict()),
+                            "tool_call_id": call.tool_call_id,
+                        },
+                    ),
+                }
+            )
+            continue
+        if not isinstance(message, ModelRequest):
+            raise ValueError("compact PydanticAI history expected a tool-result request")
+        returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
+        if len(returns) != 1 or len(message.parts) != 1 or pending is None:
+            raise ValueError("completed PydanticAI request must contain exactly one tool result")
+        returned = returns[0]
+        if (returned.tool_name, returned.tool_call_id) != pending:
+            raise ValueError("PydanticAI history tool result does not match its call")
+        projected.append(
+            {
+                "kind": "request",
+                "parts": (
+                    {
+                        "part_kind": "tool-return",
+                        "tool_name": returned.tool_name,
+                        "tool_call_id": returned.tool_call_id,
+                        "content": to_json_compatible(returned.content),
+                        "metadata": to_json_compatible(returned.metadata),
+                        "outcome": returned.outcome,
+                    },
+                ),
+            }
+        )
+        pending = None
+    if pending is None:
+        raise ValueError("compact PydanticAI history lost its unresolved suffix")
+    return tuple(projected)
 
 
 def _image_dimensions(data: bytes) -> tuple[int, int]:

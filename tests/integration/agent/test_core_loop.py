@@ -8,13 +8,11 @@ from affordance_runtime.agent import (
     Abort,
     AskUser,
     ReadRegionResult,
-    RememberFactResult,
     RequestActionPage,
     RunStatus,
     SearchPageContentResult,
     SelectAction,
     Wait,
-    WorkingFact,
 )
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
@@ -794,20 +792,8 @@ def test_removed_compound_navigation_witness() -> None:
                     {"items": ({"text": "route result"},)},
                 )
             if self.turns == 6:
-                assert context.observation_delivery is not None
-                finding = context.observation_delivery.current_findings[0]
-                canonical = context.private_fact_bindings[finding.evidence_ref]
-                record = context.evidence_index.resolve_record(canonical)
-                assert record is not None
-                fact = WorkingFact("route_result", record, context.current_step_index, "retain route result")
-                return RememberFactResult(
-                    context.context_id,
-                    "remember_fact",
-                    {"key": "route_result", "evidence_ref": finding.evidence_ref},
-                    {"key": "route_result", "value": fact.value},
-                    working_fact=fact,
-                )
-            return Abort(context.context_id, "route inspected", AbortCategory.USER_REQUEST)
+                return Abort(context.context_id, "route inspected", AbortCategory.USER_REQUEST)
+            raise AssertionError("unexpected policy turn")
 
     class IncompleteEvaluator:
         async def evaluate(self, task, observation):
@@ -845,12 +831,12 @@ def test_removed_compound_navigation_witness() -> None:
         state = await runtime.run_task(environment, task)
 
         assert state.status is RunStatus.CANCELLED
-        assert policy.turns == 7
+        assert policy.turns == 6
         assert state.execution_count == 4
         assert [step.semantic_action for step in state.workspace.recent_steps] == [
+            "select_action",
             "search_page_content",
             "read_region",
-            "remember_fact",
             "abort",
         ]
         assert isinstance(state.last_step.decision, Abort)

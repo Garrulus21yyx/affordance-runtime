@@ -63,7 +63,7 @@ def test_production_prompts_cannot_advertise_deleted_control_protocols() -> None
     ):
         assert displaced not in assets
     assert "required_evidence" not in prompt
-    assert "remember_fact" in prompt
+    assert "remember_fact" not in prompt
     assert "submit_final_response" in prompt
 
 
@@ -89,7 +89,7 @@ def test_decision_and_repair_algebra_is_closed() -> None:
     )
 
     assert 'SUBMIT_FINAL_RESPONSE = "submit_final_response"' in decisions
-    assert 'REMEMBER_FACT = "remember_fact"' in decisions
+    assert 'REMEMBER_FACT = "remember_fact"' not in decisions
     assert "PROTOCOL_FEEDBACK" not in decisions
     assert 'phase="representation_repair"' not in bridge
     assert "repair_profile.phase.value" in bridge

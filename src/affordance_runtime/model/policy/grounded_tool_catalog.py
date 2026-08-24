@@ -25,18 +25,11 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     FinalResponse,
     ReadRegionResult,
-    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
     Wait,
 )
-from affordance_runtime.agent.working_facts import (
-    WorkingFact,
-    is_public_scalar,
-    validate_working_fact_collection,
-)
-from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolCompiler
 from affordance_runtime.model.policy.grounded_tool_contracts import (
@@ -58,7 +51,6 @@ class GroundedLocalToolName(StrEnum):
 
     REQUEST_EVIDENCE = "request_evidence"
     COUNT_CHILDREN = "count_children"
-    REMEMBER_FACT = "remember_fact"
     READ_REGION = "read_region"
     SEARCH_PAGE_CONTENT = "search_page_content"
     LIST_REGIONS = "list_regions"
@@ -195,62 +187,6 @@ class _CountChildrenBinding:
             {"containers": container_refs},
             {"counts": counts, "total": sum(counts.values())},
             tool_call_id,
-        )
-
-
-@dataclass(frozen=True)
-class _RememberFactBinding:
-    public_to_canonical: Mapping[str, str]
-    evidence_index: WorldEvidenceIndex
-    existing: Mapping[str, WorkingFact]
-    current_step_index: int
-
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        key = str(arguments["key"])
-        public_ref = str(arguments["evidence_ref"])
-        purpose = str(arguments["purpose"])
-        try:
-            canonical = self.public_to_canonical[public_ref]
-        except KeyError as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.GROUNDING_GAP,
-                "evidence_ref is not a current public scalar fact",
-            ) from exc
-        record = self.evidence_index.resolve_record(canonical)
-        if record is None:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                "evidence_ref is stale",
-            )
-        fact = WorkingFact(key, record, self.current_step_index, purpose)
-        previous = self.existing.get(key)
-        if previous is not None:
-            if previous.record.evidence_ref != fact.record.evidence_ref:
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                    "working fact key already identifies different evidence",
-                )
-            return RememberFactResult(
-                context_id,
-                GroundedLocalToolName.REMEMBER_FACT.value,
-                {"key": key, "evidence_ref": public_ref, "purpose": purpose},
-                {"status": "already_remembered", "key": key},
-                tool_call_id,
-            )
-        try:
-            validate_working_fact_collection((*self.existing.values(), fact))
-        except ValueError as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                str(exc),
-            ) from exc
-        return RememberFactResult(
-            context_id,
-            GroundedLocalToolName.REMEMBER_FACT.value,
-            {"key": key, "evidence_ref": public_ref, "purpose": purpose},
-            {"status": "remembered", "key": key},
-            tool_call_id,
-            working_fact=fact,
         )
 
 
@@ -411,53 +347,6 @@ def compile_grounded_tool_catalog(
                 _CountChildrenBinding(child_counts),
             )
         )
-
-    if context.evidence_index is not None:
-        eligible = {
-            public: canonical
-            for public, canonical in context.private_fact_bindings.items()
-            if (
-                public in delivery.manifest.fact_refs
-                and (record := context.evidence_index.resolve_record(canonical)) is not None
-                and is_public_scalar(record.value)
-            )
-        }
-        if eligible:
-            registered.append(
-                RegisteredGroundedTool(
-                    ToolSpec(
-                        GroundedLocalToolName.REMEMBER_FACT.value,
-                        "Remember one current scalar F-ref for this episode.",
-                        _object_schema(
-                            {
-                                "key": {
-                                    "type": "string",
-                                    "description": "name for the remembered fact",
-                                    "pattern": "^[a-z][a-z0-9_]{0,63}$",
-                                },
-                                "evidence_ref": {
-                                    "type": "string",
-                                    "description": "current scalar F-ref",
-                                    "enum": sorted(eligible),
-                                },
-                                "purpose": {
-                                    "type": "string",
-                                    "description": "why it is needed later",
-                                    "minLength": 1,
-                                    "maxLength": 240,
-                                },
-                            },
-                            ("key", "evidence_ref", "purpose"),
-                        ),
-                    ),
-                    _RememberFactBinding(
-                        eligible,
-                        context.evidence_index,
-                        {item.key: item for item in context.workspace.working_facts},
-                        context.current_step_index,
-                    ),
-                )
-            )
 
     if context.canonical_world.region_refs:
         registered.append(

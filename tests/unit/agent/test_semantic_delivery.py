@@ -297,6 +297,73 @@ def _long_record_world(lengths: tuple[int, ...], *, suffix: str = "current"):
     return result.observation
 
 
+def _review_record_world():
+    rows = ("review:one", "review:two")
+    fields = {
+        "review:one": (
+            ("title", "StaticText", "Compact fit"),
+            ("body", "StaticText", "The ear cups are small for me."),
+            ("author", "StaticText", "Review by Dibbins"),
+        ),
+        "review:two": (
+            ("title", "StaticText", "Good battery"),
+            ("body", "StaticText", "Battery lasts all week."),
+            ("author", "StaticText", "Review by Morgan"),
+        ),
+    }
+    targets = tuple(
+        SemanticTarget(f"{row}:{name}", role, text)
+        for row in rows
+        for name, role, text in fields[row]
+    )
+    nodes = (
+        ObservationStructureNode("root", "document", "Product", child_structure_ids=("reviews",)),
+        ObservationStructureNode(
+            "reviews",
+            "list",
+            "Customer reviews",
+            parent_structure_id="root",
+            child_structure_ids=rows,
+        ),
+        *(
+            ObservationStructureNode(
+                row,
+                "listitem",
+                "",
+                parent_structure_id="reviews",
+                child_structure_ids=tuple(f"{row}:{name}" for name, _role, _text in fields[row]),
+            )
+            for row in rows
+        ),
+        *(
+            ObservationStructureNode(
+                f"{row}:{name}",
+                role,
+                text,
+                parent_structure_id=row,
+                semantic_target_id=f"{row}:{name}",
+            )
+            for row in rows
+            for name, role, text in fields[row]
+        ),
+    )
+    result = WorldFusion().fuse(
+        (
+            SurfaceObservation(
+                "source:review-records",
+                "browser",
+                "revision:review-records",
+                ObservationSourceProfile.dom(),
+                targets,
+                structure=nodes,
+                structure_total_count=len(nodes),
+            ),
+        )
+    )
+    assert result.observation is not None
+    return result.observation
+
+
 def _serialized_outcome_bytes(outcome) -> int:
     return len(
         json.dumps(
@@ -647,6 +714,35 @@ def test_region_read_pages_long_records_by_final_payload_bytes_without_loss() ->
     assert all(item.get("kind") != "content_fragment" for item in delivered)
 
 
+def test_search_returns_the_smallest_complete_repeated_item_not_a_leaf_snippet() -> None:
+    world = _review_record_world()
+    task = TaskGoal("structured-search", "Find matching content and its enclosing record")
+    context = ContextBuilder().build(
+        task, world, ActionSpace(world.observation_id, ()), _evaluation(task, world.observation_id)
+    )
+    outcome = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="find",
+        query="ear cups",
+    )
+
+    assert isinstance(outcome, Matches)
+    assert len(outcome.items) == 1
+    match = outcome.items[0]
+    assert match["kind"] == "complete_item"
+    texts = tuple(item["text"] for item in match["content"])
+    assert texts == (
+        "Compact fit",
+        "The ear cups are small for me.",
+        "Review by Dibbins",
+    )
+    assert "Review by Morgan" not in texts
+
+
 def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -> None:
     world = _long_record_world((100_000, 100), suffix="bounded")
     task = TaskGoal("bounded-record", "Inspect all reviews")
@@ -660,7 +756,7 @@ def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -
 
     assert len(delivered) == 2
     assert delivered[0]["content_truncated"] is True
-    assert len(delivered[0]["targets"][0]["label"]) <= 2_048
+    assert len(delivered[0]["content"][0]["text"]) <= 2_048
     assert all(item.get("kind") != "content_fragment" for item in delivered)
 
 
@@ -752,7 +848,7 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
     rows = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
     assert schema_labels >= {"Product", "Price", "Quantity"}
     assert len(rows) == 5
-    assert all(len(item["targets"]) == 3 for item in rows)
+    assert all(len(item["content"]) == 3 for item in rows)
 
     view = render_compact_actor_world(
         context.actor_world,

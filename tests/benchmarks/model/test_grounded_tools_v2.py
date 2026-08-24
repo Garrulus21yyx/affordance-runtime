@@ -21,7 +21,6 @@ from affordance_runtime.agent import (
     FinalResponse,
     LocalToolResult,
     ReadRegionResult,
-    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
@@ -44,14 +43,14 @@ from affordance_runtime.agent.context.step_projection import _semantic_neighborh
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.monitor import EpisodeMonitor, EpisodeMonitorRecommendation, RecoveryKind
 from affordance_runtime.agent.profile import AgentLoopProfile
-from affordance_runtime.agent.workspace import AgentWorkspace, working_facts_digest
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.benchmarks.target_loop.instrumentation import (
     BenchmarkInstrumentation,
     CountingDecisionPort,
     CountingPolicy,
     _policy_trace_event,
 )
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus, WorldEvidenceIndex
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
@@ -486,7 +485,6 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "activate",
         "press_key",
         "scroll",
-        "remember_fact",
         "read_region",
         "search_page_content",
         "list_regions",
@@ -778,15 +776,14 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "activate",
         "press",
         "scroll",
-            "remember",
         "read",
         "search",
-            "find",
-                "list",
+        "find",
+        "list",
         "ask",
         "wait",
-            "abort",
-            "submit",
+        "abort",
+        "submit",
     }
     assert all("E1(" not in item["description"] for item in public["tools"])
     assert all(
@@ -896,52 +893,6 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
     assert tuple(item.binding for item in catalog.tools) == catalog.bindings
 
 
-def test_remember_fact_resolves_the_value_from_current_public_evidence() -> None:
-    context = _context()
-    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in catalog.specs if item.name == "remember_fact")
-    assert spec.input_schema["properties"]["evidence_ref"]["enum"]
-    evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
-
-    assert "value" not in spec.input_schema["properties"]
-    resolution = _resolve_catalog_call(
-        catalog,
-        ToolCall(
-            "remember_fact",
-            {
-                "key": "login_field_value",
-                "evidence_ref": evidence_ref,
-                "purpose": "reuse after navigating away",
-            },
-            "provider-call:pin",
-        ),
-        expected_context_id=context.context_id,
-    )
-
-    assert isinstance(resolution.decision, LocalToolResult)
-    assert resolution.decision.working_fact is not None
-    canonical = context.private_fact_bindings[evidence_ref]
-    record = context.evidence_index.resolve_record(canonical)
-    assert record is not None
-    assert resolution.decision.working_fact.value == record.value
-    assert "value" not in resolution.decision.result
-
-    next_context = replace(
-        context,
-        workspace=replace(context.workspace, working_facts=(resolution.decision.working_fact,)),
-    )
-    public = _bound_public_context(next_context)
-    assert public["working_set"] == [
-        {
-            "key": "login_field_value",
-            "value": record.value,
-            "purpose": "reuse after navigating away",
-            "acquired_at_step": context.current_step_index,
-        }
-    ]
-    assert canonical not in json.dumps(public)
-
-
 @pytest.mark.parametrize("visual", (False, True))
 def test_search_page_content_offers_one_runtime_evidence_ref_for_exact_public_scalar(
     visual: bool,
@@ -973,7 +924,7 @@ def test_search_page_content_offers_one_runtime_evidence_ref_for_exact_public_sc
     assert record is not None and record.value == item["value"]
 
 
-def test_read_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> None:
+def test_read_region_returns_compact_readable_records_without_memory_tool() -> None:
     context = _evidence_handoff_context()
     found = _resolve_catalog_call(
         _compile_catalog(context),
@@ -987,231 +938,12 @@ def test_read_region_retains_existing_scalar_fact_ref_and_domain_metadata() -> N
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(opened, LocalToolResult)
-    evidence = tuple(record for item in opened.result["items"] for record in item.get("evidence", ()))
-    assert any(item["evidence_ref"].startswith("F") for item in evidence)
+    assert opened.result["items"]
+    assert "Metric: 33 units" in json.dumps(to_json_compatible(opened.result["items"]))
+    assert all("evidence" not in item for item in opened.result["items"])
     assert opened.result["searched_domain"] == "readable_content"
     assert opened.result["zero_browser_dispatch"] is True
-    opened_view = context
-    offered_refs = set(_delivery(opened_view).manifest.fact_refs)
-    assert any(item["evidence_ref"] in offered_refs for item in evidence)
-    assert "remember_fact" in {item.name for item in _compile_catalog(opened_view).specs}
-
-
-def test_find_pin_replace_search_retains_the_runtime_owned_working_fact() -> None:
-    context = _evidence_handoff_context()
-    first_search = _resolve_catalog_call(
-        _compile_catalog(context),
-        ToolCall("search_page_content", {"query": "33 units"}, "provider-call:find-alpha"),
-        expected_context_id=context.context_id,
-    ).decision
-    assert isinstance(first_search, LocalToolResult)
-    alpha_ref = first_search.result["items"][0]["evidence_ref"]
-    alpha_view = context
-    assert alpha_ref in _delivery(alpha_view).manifest.fact_refs
-
-    pinned = _resolve_catalog_call(
-        _compile_catalog(alpha_view),
-        ToolCall(
-            "remember_fact",
-            {
-                "key": "alpha_metric",
-                "evidence_ref": alpha_ref,
-                "purpose": "compare after another search",
-            },
-            "provider-call:pin-alpha",
-        ),
-        expected_context_id=alpha_view.context_id,
-    ).decision
-    assert isinstance(pinned, LocalToolResult) and pinned.working_fact is not None
-    assert pinned.working_fact.value == "Metric: 33 units"
-    assert pinned.working_fact.record.observation_id == (context.current_observation.observation_id)
-
-    with_fact = replace(alpha_view, workspace=replace(alpha_view.workspace, working_facts=(pinned.working_fact,)))
-    _resolve_catalog_call(
-        _compile_catalog(with_fact),
-        ToolCall("search_page_content", {"query": "48 units"}, "provider-call:find-beta"),
-        expected_context_id=with_fact.context_id,
-    ).decision
-    beta_view = with_fact
-
-    assert beta_view.workspace.working_facts == (pinned.working_fact,)
-    assert _bound_public_context(beta_view)["working_set"] == [
-        {
-            "key": "alpha_metric",
-            "value": "Metric: 33 units",
-            "purpose": "compare after another search",
-            "acquired_at_step": context.current_step_index,
-        }
-    ]
-
-
-def test_remember_fact_is_idempotent_for_same_evidence_and_rejects_key_conflict() -> None:
-    context = _context()
-    first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    spec = next(item for item in first_catalog.specs if item.name == "remember_fact")
-    assert spec.input_schema["properties"]["evidence_ref"]["enum"]
-    refs = tuple(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
-    assert len(refs) >= 2
-    first = _resolve_catalog_call(
-        first_catalog,
-        ToolCall(
-            "remember_fact",
-            {"key": "saved_value", "evidence_ref": refs[0], "purpose": "later use"},
-            "provider-call:first-pin",
-        ),
-        expected_context_id=context.context_id,
-    ).decision
-    assert isinstance(first, LocalToolResult) and first.working_fact is not None
-    pinned = replace(context, workspace=replace(context.workspace, working_facts=(first.working_fact,)))
-    catalog = _compile_catalog(pinned, GroundedToolPhase.ACTION_SELECTION)
-
-    same = _resolve_catalog_call(
-        catalog,
-        ToolCall(
-            "remember_fact",
-            {"key": "saved_value", "evidence_ref": refs[0], "purpose": "later use"},
-            "provider-call:same-pin",
-        ),
-        expected_context_id=context.context_id,
-    ).decision
-    assert isinstance(same, LocalToolResult)
-    assert same.working_fact is None
-    assert same.result["status"] == "already_remembered"
-
-    with pytest.raises(GroundedToolResolutionError) as captured:
-        _resolve_catalog_call(
-            catalog,
-            ToolCall(
-                "remember_fact",
-                {"key": "saved_value", "evidence_ref": refs[1], "purpose": "later use"},
-                "provider-call:conflicting-pin",
-            ),
-            expected_context_id=context.context_id,
-        )
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
-
-
-def test_remember_fact_rejects_a_second_observation_version_of_one_retained_canonical_ref() -> None:
-    task = TaskGoal("task:pin-version", "Retain the toggle state")
-    before = fused_world(
-        "pin-version-before",
-        targets=(SemanticTarget("toggle", "checkbox", "Toggle"),),
-        facts=(StateFact("toggle", "toggle", "enabled", False, "pin-version-before"),),
-    )
-    before_context = ContextBuilder().build(
-        task,
-        before,
-        ActionSpaceBuilder().build(task, before),
-        TaskEvaluation(task.task_id, before.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
-    )
-    before_delivery = _delivery(before_context)
-    before_record = next(
-        item
-        for item in WorldEvidenceIndex.from_observation(before).records
-        if item.subject_id == "toggle" and item.predicate == "enabled"
-    )
-    before_ref = next(
-        ref
-        for ref in before_delivery.manifest.fact_refs
-        if before_context.private_fact_bindings.get(ref) == before_record.evidence_ref
-    )
-    first = _resolve_catalog_call(
-        _compile_catalog(before_context),
-        ToolCall(
-            "remember_fact",
-            {"key": "before_value", "evidence_ref": before_ref, "purpose": "retain before state"},
-            "provider-call:pin-before-version",
-        ),
-        expected_context_id=before_context.context_id,
-    ).decision
-    assert isinstance(first, LocalToolResult) and first.working_fact is not None
-
-    after = fused_world(
-        "pin-version-after",
-        targets=(SemanticTarget("toggle", "checkbox", "Toggle"),),
-        facts=(StateFact("toggle", "toggle", "enabled", True, "pin-version-after"),),
-    )
-    after_context = ContextBuilder().build(
-        task,
-        after,
-        ActionSpaceBuilder().build(task, after),
-        TaskEvaluation(task.task_id, after.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
-        workspace=AgentWorkspace(working_facts=(first.working_fact,)),
-    )
-    after_delivery = _delivery(after_context)
-    after_ref = next(
-        ref
-        for ref in after_delivery.manifest.fact_refs
-        if after_context.private_fact_bindings.get(ref) == first.working_fact.record.evidence_ref
-    )
-    with pytest.raises(GroundedToolResolutionError) as captured:
-        _resolve_catalog_call(
-            _compile_catalog(after_context),
-            ToolCall(
-                "remember_fact",
-                {"key": "after_value", "evidence_ref": after_ref, "purpose": "retain after state"},
-                "provider-call:pin-after-version",
-            ),
-            expected_context_id=after_context.context_id,
-        )
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
-    assert "conflicting observation versions" in str(captured.value)
-
-
-def test_remember_fact_capacity_rejection_is_typed_before_run_state_application() -> None:
-    context = _context()
-    first_catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    evidence_ref = next(ref for ref in _delivery(context).manifest.fact_refs if ref in context.private_fact_bindings)
-    first = _resolve_catalog_call(
-        first_catalog,
-        ToolCall(
-            "remember_fact",
-            {"key": "value_0", "evidence_ref": evidence_ref, "purpose": "later use"},
-            "provider-call:capacity-basis",
-        ),
-        expected_context_id=context.context_id,
-    ).decision
-    assert isinstance(first, LocalToolResult) and first.working_fact is not None
-    full = replace(
-        context,
-        workspace=replace(
-            context.workspace,
-            working_facts=tuple(replace(first.working_fact, key=f"value_{index}") for index in range(16)),
-        ),
-    )
-    catalog = _compile_catalog(full, GroundedToolPhase.ACTION_SELECTION)
-
-    with pytest.raises(GroundedToolResolutionError) as captured:
-        _resolve_catalog_call(
-            catalog,
-            ToolCall(
-                "remember_fact",
-                {"key": "overflow", "evidence_ref": evidence_ref, "purpose": "later use"},
-                "provider-call:capacity",
-            ),
-            expected_context_id=context.context_id,
-        )
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
-
-
-def test_remember_fact_rejects_stale_or_private_evidence_names_at_the_public_schema() -> None:
-    context = _context()
-    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
-    for invalid in ("F999", next(iter(context.private_fact_bindings.values()))):
-        with pytest.raises(GroundedToolResolutionError) as captured:
-            _resolve_catalog_call(
-                catalog,
-                ToolCall(
-                    "remember_fact",
-                    {"key": "saved_value", "evidence_ref": invalid, "purpose": "later use"},
-                    "provider-call:invalid-pin",
-                ),
-                expected_context_id=context.context_id,
-            )
-        assert captured.value.code in {
-            GroundedToolResolutionCode.INVALID_ARGUMENTS,
-            GroundedToolResolutionCode.GROUNDING_GAP,
-        }
+    assert "remember_fact" not in {item.name for item in _compile_catalog(context).specs}
 
 
 def test_stale_source_scalar_is_not_offered_as_pinnable_evidence() -> None:
@@ -1256,55 +988,6 @@ def test_stale_source_scalar_is_not_offered_as_pinnable_evidence() -> None:
     assert _delivery(stale_view).manifest.fact_refs == ()
 
 
-def test_remember_fact_rejects_a_current_non_scalar_evidence_record() -> None:
-    target = SemanticTarget("target:complex", "text", "Complex value")
-    world = fused_world(
-        "source:complex",
-        (target,),
-        (
-            StateFact(
-                "fact:complex:value",
-                target.target_id,
-                "value",
-                {"nested": "not scalar"},
-                "source:complex",
-            ),
-        ),
-    )
-    task = TaskGoal("task:complex", "Read the complex value.")
-    context = ContextBuilder().build(
-        task,
-        world,
-        ActionSpaceBuilder().build(task, world),
-        TaskEvaluation(
-            task.task_id,
-            world.observation_id,
-            TaskEvaluationStatus.INCOMPLETE,
-            "ongoing",
-        ),
-    )
-    complex_ref = next(
-        public for public, canonical in context.private_fact_bindings.items() if canonical == "fact:complex:value"
-    )
-
-    with pytest.raises(GroundedToolResolutionError) as captured:
-        _resolve_catalog_call(
-            _compile_catalog(context),
-            ToolCall(
-                "remember_fact",
-                {
-                    "key": "complex_value",
-                    "evidence_ref": complex_ref,
-                    "purpose": "later use",
-                },
-                "provider-call:non-scalar",
-            ),
-            expected_context_id=context.context_id,
-        )
-
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
-
-
 def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> None:
     grounding_gap = GroundedToolResolutionError(
         GroundedToolResolutionCode.GROUNDING_GAP,
@@ -1344,7 +1027,6 @@ def test_every_registered_local_tool_resolver_produces_its_contract_decision_typ
     expected = {
         GroundedLocalToolName.REQUEST_EVIDENCE.value: RequestObservation,
         GroundedLocalToolName.COUNT_CHILDREN.value: ReadRegionResult,
-        GroundedLocalToolName.REMEMBER_FACT.value: RememberFactResult,
         GroundedLocalToolName.READ_REGION.value: ReadRegionResult,
         GroundedLocalToolName.SEARCH_PAGE_CONTENT.value: SearchPageContentResult,
         GroundedLocalToolName.LIST_REGIONS.value: ReadRegionResult,
@@ -1509,13 +1191,12 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     local_step = replace(search_step, decision=local, feedback="local_tool_result", action_page_result=None)
     monitor.start_episode(world, evaluation)
     findings_digest = current_findings_digest(world)
-    facts_digest = working_facts_digest(AgentWorkspace())
-    assert monitor.evaluate(local_step, findings_digest, facts_digest).recommendation is EpisodeMonitorRecommendation.CONTINUE
-    recovery = monitor.evaluate(local_step, findings_digest, facts_digest)
+    assert monitor.evaluate(local_step, findings_digest).recommendation is EpisodeMonitorRecommendation.CONTINUE
+    recovery = monitor.evaluate(local_step, findings_digest)
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    blocked = monitor.evaluate(local_step, findings_digest, facts_digest)
+    blocked = monitor.evaluate(local_step, findings_digest)
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
 
 

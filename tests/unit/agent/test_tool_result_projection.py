@@ -6,7 +6,6 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
     ReadRegionResult,
-    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
@@ -65,7 +64,7 @@ def test_supported_nonlocal_decisions_have_one_call_correlated_public_projection
 
 @pytest.mark.parametrize(
     "result_type",
-    (ReadRegionResult, SearchPageContentResult, RememberFactResult, ToolRejectedResult),
+    (ReadRegionResult, SearchPageContentResult, ToolRejectedResult),
 )
 def test_closed_local_result_algebra_projects_the_owner_mapping_unchanged(result_type) -> None:
     result = {

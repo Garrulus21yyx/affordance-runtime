@@ -13,7 +13,7 @@ pytest.importorskip("pydantic_ai")
 
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import ModelRequestParameters
 
 import affordance_runtime.model.policy.canonical_provider_envelope as canonical_envelope_module
@@ -298,12 +298,11 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_name == "list_regions"
         assert first.output.decision.tool_call_id == "recording-call:1"
-        accepted = policy.port.pending_exchange
-        assert isinstance(accepted, pydantic_bridge.AcceptedToolExchange)
-        assert accepted.call == ToolCall("list_regions", {}, "recording-call:1")
-        assert accepted.decision is first.output.decision
-        assert accepted.discarded_call_count == call_count - 1
-        assert len(accepted.response.parts) == len(accepted.requests.calls) == 1
+        history = policy.port.message_history
+        assert len(history) == 1
+        assert pydantic_bridge._pending_call_from_history(history) == ToolCall(
+            "list_regions", {}, "recording-call:1"
+        )
         raw_response_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
         assert len(
             [part for part in raw_response_parts if part["part_kind"] == "tool-call"]
@@ -316,8 +315,8 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
             evaluation,
             feedback="local_tool_result",
         )
-        assert step.decision is accepted.decision
-        assert step.decision.tool_call_id == accepted.call.call_id
+        assert step.decision is first.output.decision
+        assert step.decision.tool_call_id == "recording-call:1"
         transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
             task,
@@ -440,18 +439,56 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
         assert third.output is not None
         assert isinstance(third.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[2])
-        response_part = recorded["messages"][-2]["parts"][0]
-        result_part = recorded["messages"][-1]["parts"][0]
-        assert result_part["part_kind"] == "tool-return"
-        assert result_part["tool_call_id"] == response_part["tool_call_id"]
-        assert tuple(result_part["content"]["items"]) == tuple(second.output.decision.result["items"])
+        history_parts = tuple(
+            part
+            for message in recorded["messages"]
+            for part in message["parts"]
+            if part["part_kind"] in {"tool-call", "tool-return"}
+        )
+        assert tuple(part["part_kind"] for part in history_parts) == (
+            "tool-call",
+            "tool-return",
+            "tool-call",
+            "tool-return",
+        )
+        assert tuple(part["tool_call_id"] for part in history_parts) == (
+            "recording-call:1",
+            "recording-call:1",
+            "recording-call:2",
+            "recording-call:2",
+        )
+        assert history_parts[1]["content"] == first.output.decision.result
+        assert history_parts[3]["content"] == second.output.decision.result
+        assert all(
+            part["part_kind"] != "user-prompt"
+            for message in recorded["messages"][:-1]
+            for part in message["parts"]
+        )
         assert not hasattr(third_context.delivery_store, "public_result_inventory")
         user_text = recorded["messages"][-1]["parts"][1]["content"][0]["content"]
         payload = json.loads(user_text)
         assert "latest_public_results" not in payload
         assert scripted.calls == 3
+        assert policy.port.message_history == ()
 
     asyncio.run(scenario())
+
+
+def test_compact_sdk_history_drops_only_the_oldest_complete_pair() -> None:
+    history = (
+        ModelResponse(parts=[ToolCallPart("first", {}, "call:1")]),
+        ModelRequest(parts=[ToolReturnPart("first", {"page": 1}, "call:1")]),
+        ModelResponse(parts=[ToolCallPart("second", {}, "call:2")]),
+        ModelRequest(parts=[ToolReturnPart("second", {"page": 2}, "call:2")]),
+        ModelResponse(parts=[ToolCallPart("third", {}, "call:3")]),
+    )
+
+    compacted = pydantic_bridge._drop_oldest_completed_exchange(history)
+
+    assert compacted == history[2:]
+    assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
+        "third", {}, "call:3"
+    )
 
 
 def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_result() -> None:
@@ -804,7 +841,7 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
             delivery_store=transition.next_store,
             last_step=step,
         )
-        pending_before = policy.port.pending_exchange
+        history_before = policy.port.message_history
 
         def reject(*_args, **_kwargs):
             raise ModelRequestCapacityError(
@@ -826,8 +863,8 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
         assert second.attempts == ()
         assert policy.port.last_model_call_count == 0
         assert scripted.calls == 1
-        assert policy.port.pending_exchange is pending_before
-        assert policy.port.pending_exchange == pending_before
+        assert policy.port.message_history is history_before
+        assert policy.port.message_history == history_before
         assert transition.next_store is second_context.delivery_store
 
     asyncio.run(scenario())
@@ -1359,7 +1396,6 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     assert exchange.call == normalized
     assert exchange.decision is resolved_decision
     assert len(exchange.response.parts) == 1
-    assert len(exchange.requests.calls) == 1
     assert error is None
     assert parsed == ()
     assert captured["resolution"].decision is resolved_decision

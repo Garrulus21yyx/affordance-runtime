@@ -10,7 +10,6 @@ from typing import Any, ClassVar, TypeAlias
 
 from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
-from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.observation_needs import ObservationPurpose
 
@@ -46,7 +45,6 @@ class DecisionKind(StrEnum):
     READ_REGION = "read_region"
     FIND_CONTROLS = "find_controls"
     SEARCH_PAGE_CONTENT = "search_page_content"
-    REMEMBER_FACT = "remember_fact"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
     ABORT = "abort"
@@ -165,7 +163,6 @@ class LocalToolResult:
     arguments: Mapping[str, object]
     result: Mapping[str, object]
     tool_call_id: str = ""
-    working_fact: WorkingFact | None = field(default=None, repr=False, compare=False)
     rejected_attempt_signature: PublicAttemptSignature | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -179,8 +176,6 @@ class LocalToolResult:
             raise ValueError("local tool result cannot be empty")
         object.__setattr__(self, "arguments", freeze_json(self.arguments))
         object.__setattr__(self, "result", freeze_json(self.result))
-        if self.working_fact is not None and not isinstance(self.working_fact, WorkingFact):
-            raise TypeError("local tool state effect must be a typed working fact")
         if self.rejected_attempt_signature is not None and not isinstance(
             self.rejected_attempt_signature, PublicAttemptSignature
         ):
@@ -195,11 +190,6 @@ class ReadRegionResult(LocalToolResult):
 @dataclass(frozen=True)
 class SearchPageContentResult(LocalToolResult):
     kind: ClassVar[DecisionKind] = DecisionKind.SEARCH_PAGE_CONTENT
-
-
-@dataclass(frozen=True)
-class RememberFactResult(LocalToolResult):
-    kind: ClassVar[DecisionKind] = DecisionKind.REMEMBER_FACT
 
 
 @dataclass(frozen=True)
@@ -266,7 +256,6 @@ AgentDecision: TypeAlias = (
     | AskUser
     | ReadRegionResult
     | SearchPageContentResult
-    | RememberFactResult
     | ToolRejectedResult
     | FinalResponse
     | Wait

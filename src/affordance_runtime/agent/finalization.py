@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from affordance_runtime.agent.decisions import FinalResponse
-from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.evaluation.contracts import TaskEvaluationStatus
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
 from affordance_runtime.execution.contracts import DispatchStatus
@@ -72,7 +71,6 @@ class FinalizationProtocolResult:
 
 def admit_final_response(
     world: WorldObservation,
-    working_facts: tuple[WorkingFact, ...],
     response: FinalResponse,
 ) -> FinalResponseAdmission:
     """Validate optional current lineage; representation belongs to the environment codec."""
@@ -81,7 +79,6 @@ def admit_final_response(
         item.evidence_ref
         for item in (*WorldEvidenceIndex.from_observation(world).records, *public_text_evidence_records(world))
     }
-    retained_refs = {item.record.evidence_ref for item in working_facts}
-    if any(ref not in current_refs | retained_refs for ref in response.evidence_refs):
+    if any(ref not in current_refs for ref in response.evidence_refs):
         return FinalResponseAdmission(False, "final_response_evidence_not_current")
     return FinalResponseAdmission(True)

@@ -27,7 +27,7 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
-from affordance_runtime.agent.decisions import AgentDecision
+from affordance_runtime.agent.decisions import AgentDecision, DecisionKind
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
     CanonicalProviderEnvelope,
@@ -77,7 +77,6 @@ _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 
 if TYPE_CHECKING:
-    from pydantic_ai import DeferredToolRequests
     from pydantic_ai.messages import ModelResponse
 
 
@@ -108,16 +107,14 @@ class _ProviderCallExhausted(RuntimeError):
 
 @dataclass(frozen=True)
 class AcceptedToolExchange:
-    """One canonical accepted call shared by decision and provider continuation."""
+    """One accepted call plus the exact typed response retained in SDK history."""
 
     call: ToolCall
     decision: AgentDecision
     response: ModelResponse
-    requests: DeferredToolRequests
     discarded_call_count: int = 0
 
     def __post_init__(self) -> None:
-        from pydantic_ai import DeferredToolRequests
         from pydantic_ai.messages import ModelResponse, ToolCallPart
 
         decision_call_id = str(getattr(self.decision, "tool_call_id", ""))
@@ -125,7 +122,6 @@ class AcceptedToolExchange:
             not isinstance(self.call, ToolCall)
             or not isinstance(self.decision, AgentDecision)
             or not isinstance(self.response, ModelResponse)
-            or not isinstance(self.requests, DeferredToolRequests)
             or type(self.discarded_call_count) is not int
             or self.discarded_call_count < 0
         ):
@@ -133,35 +129,23 @@ class AcceptedToolExchange:
         response_calls = tuple(
             part for part in self.response.parts if isinstance(part, ToolCallPart)
         )
-        request_calls = tuple(self.requests.calls)
         expected = (self.call.name, dict(self.call.arguments), self.call.call_id)
         if (
             len(response_calls) != 1
-            or len(request_calls) != 1
             or (
                 response_calls[0].tool_name,
                 response_calls[0].args_as_dict(),
                 response_calls[0].tool_call_id,
             )
             != expected
-            or (
-                request_calls[0].tool_name,
-                request_calls[0].args_as_dict(),
-                request_calls[0].tool_call_id,
-            )
-            != expected
             or (decision_call_id and decision_call_id != self.call.call_id)
         ):
             raise ValueError("accepted tool exchange identities disagree")
 
-    @property
-    def history_messages(self) -> tuple[ModelResponse, ...]:
-        return (self.response,)
-
 
 @dataclass(frozen=True)
 class PydanticAIGroundedDecisionPort:
-    """Resolve exactly one current external tool call into a Runtime decision."""
+    """Resolve one current call while retaining bounded official call/result history."""
 
     model: object
     provider_id: str
@@ -193,9 +177,7 @@ class PydanticAIGroundedDecisionPort:
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
-    pending_exchange: AcceptedToolExchange | None = field(
-        default=None, init=False, compare=False, repr=False
-    )
+    message_history: tuple[object, ...] = field(default=(), init=False, compare=False, repr=False)
     last_model_delivery: ModelTurnDelivery | None = field(
         default=None, init=False, compare=False, repr=False
     )
@@ -292,15 +274,14 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_tool_resolution_code", None)
         object.__setattr__(self, "last_tool_resolution_detail", "")
         object.__setattr__(self, "last_discarded_protocol_call_count", 0)
-        history_messages: tuple[object, ...] = ()
+        history_messages = self.message_history
         pending_call: ToolCall | None = None
-        if self.pending_exchange is not None:
+        if history_messages:
             try:
-                history_messages = self.pending_exchange.history_messages
-                pending_call = self.pending_exchange.call
+                pending_call = _pending_call_from_history(history_messages)
             except (TypeError, ValueError):
                 return self._invocation_failure(
-                    _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_exchange_unavailable"),
+                    _failure(ModelFailureKind.INTERNAL_ERROR, "model_message_history_unavailable"),
                     request,
                 )
             last_step = request.last_step
@@ -314,22 +295,30 @@ class PydanticAIGroundedDecisionPort:
                     request,
                 )
         try:
-            packed = TurnPacker().pack(
-                request,
-                binder=self.envelope_binder,
-                identity=CanonicalProviderIdentity(
-                    self.provider_id,
-                    self.model_id,
-                    self.endpoint_host,
-                    self.perception_profile.value,
-                ),
-                call_profile=call_profile,
-                supports_multimodal=self.supports_multimodal,
-                perception_profile=self.perception_profile,
-                history_messages=history_messages,
-                pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
-                pending_tool_name=pending_call.name if pending_call is not None else "",
-            )
+            while True:
+                try:
+                    packed = TurnPacker().pack(
+                        request,
+                        binder=self.envelope_binder,
+                        identity=CanonicalProviderIdentity(
+                            self.provider_id,
+                            self.model_id,
+                            self.endpoint_host,
+                            self.perception_profile.value,
+                        ),
+                        call_profile=call_profile,
+                        supports_multimodal=self.supports_multimodal,
+                        perception_profile=self.perception_profile,
+                        history_messages=history_messages,
+                        pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
+                        pending_tool_name=pending_call.name if pending_call is not None else "",
+                    )
+                    break
+                except ModelRequestCapacityError:
+                    compacted = _drop_oldest_completed_exchange(history_messages)
+                    if compacted == history_messages:
+                        raise
+                    history_messages = compacted
             delivery = packed.delivery
             catalog = packed.catalog
             admitted = packed.admitted_envelope
@@ -373,8 +362,6 @@ class PydanticAIGroundedDecisionPort:
                 envelope=envelope,
                 provider_error_type=ModelAPIError,
             )
-            if pending_call is not None:
-                object.__setattr__(self, "pending_exchange", None)
             resolution_error = None
             accepted_exchange, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
@@ -592,12 +579,24 @@ class PydanticAIGroundedDecisionPort:
             "last_discarded_protocol_call_count",
             accepted_exchange.discarded_call_count,
         )
-        if str(getattr(decision, "tool_call_id", "")):
+        if (
+            str(getattr(decision, "tool_call_id", ""))
+            and decision.kind is not DecisionKind.ABORT
+        ):
             object.__setattr__(
                 self,
-                "pending_exchange",
-                accepted_exchange,
+                "message_history",
+                _accepted_message_history(
+                    result,
+                    history_messages,
+                    accepted_exchange,
+                    pending_call,
+                ),
             )
+        else:
+            # A terminal local decision consumes the final pending ToolReturn.
+            # No provider exchange is pending in the next episode.
+            object.__setattr__(self, "message_history", ())
         object.__setattr__(self, "last_model_delivery", delivery)
         invocation = ModelInvocationResult(
             output=ResolvedModelDecision(decision, metadata),
@@ -1171,21 +1170,73 @@ def _resolve_deferred(output, catalog, context_id: str):
             to_json_compatible(accepted_call.arguments),
             accepted_call.call_id,
         )
-        request_call = ToolCallPart(
-            accepted_call.name,
-            to_json_compatible(accepted_call.arguments),
-            accepted_call.call_id,
-        )
         return AcceptedToolExchange(
             accepted_call,
             resolution.decision,
             ModelResponse(parts=[response_call]),
-            DeferredToolRequests(calls=[request_call]),
             max(0, len(output.calls) - 1),
         ), None, ()
     if repair_anchor is not None:
         return None, repair_anchor[1], (repair_anchor[0],)
     return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), ()
+
+
+def _pending_call_from_history(messages: tuple[object, ...]) -> ToolCall | None:
+    """Return the one unresolved call at the end of compact official history."""
+
+    if not messages:
+        return None
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+    response = messages[-1]
+    if not isinstance(response, ModelResponse):
+        raise ValueError("model message history must end with an accepted tool call")
+    calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
+    if len(calls) != 1:
+        raise ValueError("model message history must end with exactly one accepted tool call")
+    call = calls[0]
+    return ToolCall(call.tool_name, call.args_as_dict(raise_if_invalid=True), call.tool_call_id)
+
+
+def _accepted_message_history(
+    result,
+    prior_history: tuple[object, ...],
+    accepted: AcceptedToolExchange,
+    pending_call: ToolCall | None,
+) -> tuple[object, ...]:
+    """Keep SDK-produced ToolReturn parts and accepted calls, never old World prompts."""
+
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+    if pending_call is None:
+        if prior_history:
+            raise ValueError("history without a pending call cannot accept a new exchange")
+        return (accepted.response,)
+
+    returned_parts = tuple(
+        part
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+        and part.tool_call_id == pending_call.call_id
+        and part.tool_name == pending_call.name
+    )
+    if len(returned_parts) != 1:
+        raise ValueError("PydanticAI did not produce one matching deferred ToolReturn")
+    return (
+        *prior_history,
+        ModelRequest(parts=returned_parts),
+        accepted.response,
+    )
+
+
+def _drop_oldest_completed_exchange(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Drop one oldest completed call/result pair while preserving the pending suffix."""
+
+    if len(messages) <= 1:
+        return messages
+    return messages[2:]
 
 
 def _repair_preserves_rejected_semantics(

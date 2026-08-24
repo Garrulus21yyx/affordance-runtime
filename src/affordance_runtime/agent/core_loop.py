@@ -66,7 +66,6 @@ from affordance_runtime.agent.waiting import MAX_TOTAL_WAIT_MS, SystemWaitContro
 from affordance_runtime.agent.workspace import (
     DefaultWorkspaceReducer,
     WorkspaceReducer,
-    working_facts_digest,
 )
 from affordance_runtime.evaluation.contracts import (
     CriterionEvaluationStatus,
@@ -244,7 +243,7 @@ class CoreAgentLoop:
         state.install_canonical_world(initial_projection)
         start_episode = getattr(self.episode_monitor, "start_episode", None)
         if callable(start_episode):
-            start_episode(initial, evaluation, state.workspace.working_facts)
+            start_episode(initial, evaluation)
         if isinstance(goal_resolution, NeedsInput) and initial_status is RunStatus.WAITING_USER:
             state.apply(
                 StepResult(
@@ -493,11 +492,9 @@ class CoreAgentLoop:
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
             return result
-        pending_fact = getattr(result.decision, "working_fact", None)
         transition = evaluate(
             result,
             current_findings_digest(result.after_world),
-            working_facts_digest(state.workspace, pending_fact),
             delivery_transition.information_delta,
         )
         recommendation = getattr(transition, "recommendation", "")
@@ -730,7 +727,6 @@ class CoreAgentLoop:
             case (
                 DecisionKind.READ_REGION
                 | DecisionKind.SEARCH_PAGE_CONTENT
-                | DecisionKind.REMEMBER_FACT
                 | DecisionKind.TOOL_REJECTED
             ):
                 assert isinstance(decision, LocalToolResult)
@@ -783,7 +779,7 @@ class CoreAgentLoop:
         state: RunState,
         decision: FinalResponse,
     ) -> StepResult:
-        admission = admit_final_response(state.current_world, state.workspace.working_facts, decision)
+        admission = admit_final_response(state.current_world, decision)
         if not admission.admitted:
             return _same_world_step(
                 state,

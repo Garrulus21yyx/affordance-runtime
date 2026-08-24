@@ -13,7 +13,6 @@ from affordance_runtime.agent.context.model_turn_delivery import (
     build_model_turn_delivery,
 )
 from affordance_runtime.agent.context.projection import project_public_value
-from affordance_runtime.agent.working_facts import public_working_facts
 from affordance_runtime.agent.workspace import render_agent_workspace
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
@@ -82,11 +81,6 @@ class GroundedPolicyContextBinder:
             context.workspace,
             total_step_count=context.current_step_index,
         )
-        working_set = (
-            public_working_facts(context.workspace.working_facts)
-            if context.workspace.working_facts
-            else ()
-        )
         public: dict[str, object] = {
             "task": task,
             "observation": observation,
@@ -95,14 +89,11 @@ class GroundedPolicyContextBinder:
         }
         if context.control_feedback:
             public["control_feedback"] = project_public_value(context.control_feedback)
-        if working_set:
-            public["working_set"] = working_set
         return {
             "public": public,
             "task_plan": {"task": task, "goal_plan": public["goal_plan"]},
             "actor_world": {"observation": observation},
             "history": {"recent_steps": recent_steps, "control_feedback": context.control_feedback},
-            "working_set": working_set,
             "delivery_view": view,
             "delivery_id": delivery.delivery_id,
         }

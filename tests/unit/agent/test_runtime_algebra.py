@@ -7,7 +7,6 @@ from affordance_runtime.agent import (
     AskUser,
     DecisionKind,
     ReadRegionResult,
-    RememberFactResult,
     RequestActionPage,
     RequestObservation,
     RunState,
@@ -39,12 +38,10 @@ def _evaluation(observation_id: str) -> TaskEvaluation:
 def test_every_control_decision_uses_the_single_decision_kind_algebra() -> None:
     decisions = (
         AskUser("context:test", "Which value?"),
-        RememberFactResult("context:test", "remember_fact", {}, {"pinned": True}),
         Abort("context:test", "stop", "user_request"),
     )
     assert tuple(item.kind for item in decisions) == (
         DecisionKind.ASK_USER,
-        DecisionKind.REMEMBER_FACT,
         DecisionKind.ABORT,
     )
 
@@ -63,7 +60,6 @@ def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(
         AskUser("context:test", "Which value?"),
         ReadRegionResult("context:test", "read_region", {}, {"items": ()}),
         SearchPageContentResult("context:test", "search_page_content", {}, {"items": ()}),
-        RememberFactResult("context:test", "remember_fact", {}, {"pinned": True}),
         ToolRejectedResult("context:test", "tool_rejected", {}, {"rejected": True}),
         FinalResponse("context:test", "done", ("evidence:test",)),
         Wait("context:test", "settle", 1),

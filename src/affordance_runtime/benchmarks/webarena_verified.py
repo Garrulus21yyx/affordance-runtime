@@ -27,13 +27,12 @@ from affordance_runtime.agent.context.world_transition import WorldTransitionPro
 from affordance_runtime.agent.decisions import SearchPageContentResult, SelectAction
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE
+from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.agent.recovery import EpisodeMonitorRecommendation
 from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import (
     AgentWorkspace,
     DefaultWorkspaceReducer,
-    working_facts_digest,
 )
 from affordance_runtime.benchmarks.browsergym_runtime import (
     DEFAULT_BROWSERGYM_RUNTIME_PYTHON,
@@ -891,14 +890,6 @@ def _w1b_world_success(
         recoverability,
         request_budget,
     )
-    evidence_diagnostic = _evidence_retention_diagnostic(
-        task,
-        observation,
-        action_space,
-        context,
-        catalog,
-        delivery,
-    )
     transition_diagnostic = _transition_delivery_diagnostic(
         task,
         observation,
@@ -918,7 +909,6 @@ def _w1b_world_success(
     acceptance_errors.extend(recoverability["acceptance_errors"])
     acceptance_errors.extend(delivery_probe["acceptance_errors"])
     acceptance_errors.extend(candidate_diagnostic["acceptance_errors"])
-    acceptance_errors.extend(evidence_diagnostic["acceptance_errors"])
     acceptance_errors.extend(transition_diagnostic["acceptance_errors"])
     acceptance_errors.extend(_w1b_cost_errors(request_budget))
     return {
@@ -984,7 +974,6 @@ def _w1b_world_success(
         "recoverability": recoverability,
         "delivery_probe": delivery_probe,
         "action_candidates": candidate_diagnostic,
-        "evidence_retention": evidence_diagnostic,
         "perception_route": {
             "profile": "TEXT_ONLY",
             "image_attached": False,
@@ -1145,7 +1134,6 @@ def _transition_delivery_diagnostic(
     transition_monitor = monitor.evaluate(
         transition_step,
         current_findings_digest(after),
-        working_facts_digest(workspace),
     )
 
     binder = CanonicalProviderEnvelopeBinder()
@@ -1184,7 +1172,6 @@ def _transition_delivery_diagnostic(
     local_monitor = monitor.evaluate(
         local_step,
         current_findings_digest(after),
-        working_facts_digest(local_workspace),
     )
     local_context = ContextBuilder().build(
         task,
@@ -1646,142 +1633,6 @@ def _candidate_diagnostic(
     }
 
 
-def _evidence_retention_diagnostic(
-    task: TaskGoal,
-    observation,
-    action_space,
-    context,
-    catalog,
-    delivery: ModelTurnDelivery,
-) -> dict[str, object]:
-    """Exercise current F-ref resolution and exact WorkingFact retention without dispatch."""
-
-    eligible: list[tuple[str, str]] = []
-    if context.evidence_index is not None:
-        for public_ref, canonical_ref in context.private_fact_bindings.items():
-            record = context.evidence_index.resolve_record(canonical_ref)
-            if public_ref in delivery.manifest.fact_refs and record is not None and is_public_scalar(record.value):
-                eligible.append((public_ref, canonical_ref))
-    if not eligible or "remember_fact" not in {item.name for item in catalog.specs}:
-        return {
-            "provider_attempts": 0,
-            "gui_dispatch_count": 0,
-            "eligible_scalar_count": len(eligible),
-            "pin_resolved": False,
-            "view_changed": False,
-            "exact_value_retained": False,
-            "working_set_visible": False,
-            "acceptance_errors": ("evidence:no_current_scalar_pin_route",),
-        }
-
-    default_candidates = tuple(
-        item.evidence_ref
-        for item in context.observation_delivery.current_findings
-        if item.evidence_ref in {public for public, _canonical in eligible}
-    )
-    if not default_candidates:
-        return {
-            "provider_attempts": 0,
-            "gui_dispatch_count": 0,
-            "eligible_scalar_count": len(eligible),
-            "default_candidate_count": 0,
-            "pin_resolved": False,
-            "view_changed": False,
-            "exact_value_retained": False,
-            "working_set_visible": False,
-            "acceptance_errors": ("evidence:no_current_exact_scalar_finding",),
-        }
-    public_ref = default_candidates[0]
-    canonical_ref = dict(eligible)[public_ref]
-    resolution = resolve_grounded_tool_call(
-        catalog,
-        ToolCall(
-            "remember_fact",
-            {
-                "key": "diagnostic_fact",
-                "evidence_ref": public_ref,
-                "purpose": "provider-free retention diagnostic",
-            },
-        ),
-        expected_context_id=context.context_id,
-        expected_delivery_id=catalog.delivery_id,
-        expected_catalog_id=catalog.catalog_id,
-    )
-    fact = getattr(resolution.decision, "working_fact", None)
-    if fact is None:
-        return {
-            "provider_attempts": 0,
-            "gui_dispatch_count": 0,
-            "eligible_scalar_count": len(eligible),
-            "pin_resolved": False,
-            "view_changed": False,
-            "exact_value_retained": False,
-            "working_set_visible": False,
-            "acceptance_errors": ("evidence:remember_fact_resolution_failed",),
-        }
-
-    builder = ContextBuilder()
-    changed_page = builder.page(
-        action_space,
-        observation,
-        query="provider free retention probe",
-        region_index=context.region_index,
-    )
-    evaluation = TaskEvaluation(
-        task.task_id,
-        observation.observation_id,
-        TaskEvaluationStatus.INCOMPLETE,
-        "w1b-world evidence retention rerender",
-    )
-    next_context = builder.build(
-        task,
-        observation,
-        action_space,
-        evaluation,
-        action_page=changed_page,
-        context_generation=1,
-        workspace=AgentWorkspace(working_facts=(fact,)),
-        region_index=context.region_index,
-    )
-    next_request = ModelDecisionRequest(
-        request_id=f"diagnostic:retention:{next_context.context_id}",
-        agent_context=next_context,
-    )
-    packed = _diagnostic_pack(next_request)
-    admitted = packed.admitted_envelope
-    original_record = context.evidence_index.resolve_record(canonical_ref)
-    exact_value_retained = bool(
-        original_record is not None
-        and next_context.workspace.working_facts == (fact,)
-        and fact.record == original_record
-        and next_context.evidence_index is not None
-        and next_context.evidence_index.resolve_record(canonical_ref) == original_record
-    )
-    view_changed = (
-        next_context.context_id != context.context_id and changed_page.query == "provider free retention probe"
-    )
-    working_set_visible = admitted.token_breakdown.actor_world_tokens > 0
-    errors = []
-    if not view_changed:
-        errors.append("evidence:view_change_not_observed")
-    if not exact_value_retained:
-        errors.append("evidence:exact_value_not_retained")
-    if not working_set_visible:
-        errors.append("evidence:working_set_not_visible")
-    return {
-        "provider_attempts": 0,
-        "gui_dispatch_count": 0,
-        "eligible_scalar_count": len(eligible),
-        "default_candidate_count": len(default_candidates),
-        "selected_default_candidate": public_ref,
-        "pin_resolved": True,
-        "view_changed": view_changed,
-        "exact_value_retained": exact_value_retained,
-        "working_set_visible": working_set_visible,
-        "acceptance_errors": tuple(errors),
-    }
-
-
 def _delivery_probe_item_diagnostic(
     item: object,
     probe: DeliveryRetrievalProbe,
@@ -2063,7 +1914,6 @@ def _catalog_has_action_tool(catalog) -> bool:
         "find_controls",
         "request_evidence",
         "count_" + "children",
-        "remember_fact",
         "ask_user",
         "wait",
         "abort",

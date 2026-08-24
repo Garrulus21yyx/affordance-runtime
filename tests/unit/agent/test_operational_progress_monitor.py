@@ -18,7 +18,6 @@ from affordance_runtime.agent.recovery import (
     RecoveryKind,
 )
 from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.agent.workspace import AgentWorkspace, working_facts_digest
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import (
     ActionResult,
@@ -121,7 +120,6 @@ def _evaluate(monitor: EpisodeMonitor, step: StepResult):
     return monitor.evaluate(
         step,
         current_findings_digest(step.after_world),
-        working_facts_digest(AgentWorkspace()),
     )
 
 
@@ -159,20 +157,17 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     first_monitor = monitor.evaluate(
         step,
         current_findings_digest(world),
-        working_facts_digest(AgentWorkspace()),
         first.information_delta,
     )
     replay = store.reduce(step, step_index=2)
     recovery = monitor.evaluate(
         step,
         current_findings_digest(world),
-        working_facts_digest(AgentWorkspace()),
         replay.information_delta,
     )
     stalled = monitor.evaluate(
         step,
         current_findings_digest(world),
-        working_facts_digest(AgentWorkspace()),
         replay.information_delta,
     )
 
@@ -313,21 +308,17 @@ def test_world_increment_resets_streak_and_recovery_count() -> None:
     assert monitor.recovery_count == 0
 
 
-def test_findings_or_working_fact_increment_resets_streak() -> None:
+def test_findings_increment_resets_streak() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(30, 3, 1))
     monitor.start_episode(world, _evaluation(world))
     step = _local_step(world)
     _evaluate(monitor, step)
 
-    finding_transition = monitor.evaluate(step, "new-findings", working_facts_digest(AgentWorkspace()))
-    _evaluate(monitor, step)
-    facts_transition = monitor.evaluate(step, current_findings_digest(world), "new-working-facts")
+    finding_transition = monitor.evaluate(step, "new-findings")
 
     assert finding_transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert facts_transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert EpisodeMonitorEvent.STATE_CHANGED in finding_transition.events
-    assert EpisodeMonitorEvent.STATE_CHANGED in facts_transition.events
 
 
 def test_first_gui_dispatch_without_information_increment_records_no_progress() -> None:
@@ -396,7 +387,6 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
     assert {
         "world_digest",
         "current_findings_digest",
-        "working_facts_digest",
         "observation_only_streak",
         "recovery_count",
         "latest_attempt_signature",

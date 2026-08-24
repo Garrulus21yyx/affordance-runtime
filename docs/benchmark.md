@@ -2,9 +2,9 @@
 
 ## Current status
 
-The thin tool-result/cursor cutover is implemented and provider-free verified. The focused suite passes `204` tests;
-the full suite passes `1653` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh diff review
-pass.
+The thin tool-result/history cutover is implemented and provider-free verified. The affected focused suite passes
+`164` tests; the full suite passes `1645` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh
+diff review pass.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -26,6 +26,10 @@ The held-out R9 sequence exposed three related symptoms:
 2. a large region result was bounded by logical item count rather than final serialized bytes;
 3. the resulting data was copied through Store/Workspace/TurnPacker and changed shape before the model consumed it.
 
+The later live trace added a fourth, directly observed symptom: one turn received the requested names, the next read a
+continuation page, and the following turn repeated the search. `TaskGoal`, `GoalPlan`, and fresh World were present.
+The PydanticAI bridge had retained only the latest pending exchange, so the earlier completed ToolReturn was absent.
+
 Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
 currentness, producer, and Store-composition failures all arose on that shared path.
 
@@ -37,10 +41,13 @@ local ToolCall(call_id)
 -> owner-bounded direct result
 -> StepResult
 -> same-call PydanticAI ToolReturn
+-> bounded typed call/result history for later policy turns
 -> next Recording FunctionModel turn
 ```
 
-Read/search/list pagination is optional and local to the same tool. GUI effects and action discovery do not use it.
+Read/search/list pagination is optional and local to the same tool. Search returns the smallest complete enclosing
+repeated item so ordinary record lookup does not require reading an entire large region. GUI effects and action
+discovery do not use the read cursor.
 
 ## Provider-free acceptance gates
 
@@ -67,7 +74,7 @@ Properties cover:
 
 The byte bound belongs to the read/search/list owner, not Store or request packing.
 
-### G3 — direct same-call physical result
+### G3 — direct same-call result and bounded SDK history
 
 A Recording PydanticAI `FunctionModel` executes:
 
@@ -79,9 +86,10 @@ read_region(Rx)
 -> submit_final_response
 ```
 
-The next physical provider input must contain the accepted assistant tool call and an immediately following tool result
-with the same call ID. Its content must equal the committed page-2 result. The Store must contain only bounded digest
-receipts and no result body/inventory.
+The second physical provider input contains page 1 under its original call ID. The final physical input contains both
+completed accepted pairs in order: page 1 under call 1 and page 2 under call 2. Their contents equal the corresponding
+committed results, and no prior user/World prompt is retained. A terminal response clears the bridge history. The Store
+contains only bounded digest receipts and no result body/inventory.
 
 ### G4 — R-ref follow-up
 
@@ -118,6 +126,7 @@ Production negative searches must find no:
 - admitted-evidence prefix or copied `latest_public_results` transport;
 - Store-owned result body/cursor/pending provider exchange;
 - `content_fragment`/fragment offset/reassembly path;
+- `remember_fact`, `WorkingFact`, or Workspace working-set result-retention path;
 - Task21, R9, reviewer-name, site, selector, or benchmark-case production specialization.
 
 ## Verification commands
@@ -126,15 +135,18 @@ Focused owner/vertical suite:
 
 ```bash
 pytest -q \
-  tests/unit/agent/test_action_candidate_delivery.py \
-  tests/unit/agent/test_action_delivery_plan_properties.py \
+  tests/architecture/test_workspace_authority.py \
+  tests/architecture/test_single_action_policy_convergence.py \
+  tests/unit/agent/test_runtime_algebra.py \
+  tests/unit/agent/test_tool_result_projection.py \
+  tests/unit/agent/test_episode_context.py \
   tests/unit/agent/test_semantic_delivery.py \
   tests/unit/agent/test_operational_progress_monitor.py \
   tests/benchmarks/model/test_grounded_tools_v2.py \
   tests/integration/model/test_pydantic_ai_spike.py
 ```
 
-Result: `204 passed`.
+Result: `164 passed`.
 
 Full and static verification:
 
@@ -145,7 +157,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1653 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing Python 3.13
+Result: `1645 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing Python 3.13
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 No live provider command belongs in this provider-free acceptance sequence.
@@ -195,7 +207,8 @@ The final read-only review for this cutover must answer:
 2. Can any generic continuation tool still be registered or resolved?
 3. Does every registered local producer return the subtype declared by its contract?
 4. Can a result exceed its owner byte bound or require fragment reassembly?
-5. Does the physical PydanticAI exchange preserve exactly one accepted call ID/result pair?
+5. Does physical PydanticAI history preserve bounded completed accepted call ID/result pairs, append the current
+   same-call result, exclude old World prompts, and clear on terminal completion?
 6. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
 7. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
    state?

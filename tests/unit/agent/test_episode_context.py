@@ -5,7 +5,6 @@ import re
 from collections import Counter
 from types import SimpleNamespace
 
-import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -18,13 +17,11 @@ from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.decisions import (
     ReadRegionResult,
-    RememberFactResult,
     SearchPageContentResult,
     ToolRejectedResult,
 )
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.agent.workspace import (
     ActivityFamily,
     AgentWorkspace,
@@ -32,7 +29,7 @@ from affordance_runtime.agent.workspace import (
     SemanticEventKind,
     render_agent_workspace,
 )
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus, WorldEvidenceIndex
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from tests.support.agent.core_loop_support import shared_world
 from tests.support.canonical_world import canonical_world
@@ -87,7 +84,7 @@ def test_workspace_reducer_folds_generated_observation_activity_sequences(
         step = SimpleNamespace(
             public_world_delta=unchanged,
             execution_receipts=None,
-            decision=SimpleNamespace(working_fact=None),
+            decision=SimpleNamespace(),
             recovery_signal=None,
             status_after="running",
             failure_code=None,
@@ -117,7 +114,7 @@ def test_workspace_keeps_gui_effect_summary_without_copying_exact_values() -> No
     effect = SimpleNamespace(
         public_world_delta=delta,
         execution_receipts=SimpleNamespace(receipts=(object(),)),
-        decision=SimpleNamespace(working_fact=None),
+        decision=SimpleNamespace(),
         recovery_signal=None,
         status_after="running",
         failure_code=None,
@@ -138,7 +135,7 @@ def test_workspace_keeps_gui_effect_summary_without_copying_exact_values() -> No
     ordinary = SimpleNamespace(
         public_world_delta=WorldTransitionProjector().project(after, after),
         execution_receipts=None,
-        decision=SimpleNamespace(working_fact=None),
+        decision=SimpleNamespace(),
         recovery_signal=None,
         status_after="running",
         failure_code=None,
@@ -208,25 +205,6 @@ def test_rejected_action_workspace_keeps_receipt_not_result_body_or_ref_identity
     assert "E59" not in encoded
 
 
-def test_working_fact_moves_into_workspace_without_gui_execution() -> None:
-    world = shared_world("observation:pin", False)
-    record = WorldEvidenceIndex.from_observation(world).records[0]
-    fact = WorkingFact("saved_enabled", record, 0, "reuse later")
-    decision = RememberFactResult(
-        "context:test",
-        "remember_fact",
-        {"key": "saved_enabled", "evidence_ref": "F1", "purpose": "reuse later"},
-        {"status": "pinned", "key": "saved_enabled"},
-        "provider-call:pin",
-        working_fact=fact,
-    )
-    step = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
-    workspace = DefaultWorkspaceReducer().reduce(AgentWorkspace(), step, project_step_result(step), 1)
-
-    assert workspace.working_facts == (fact,)
-    assert workspace.semantic_events[-1].kind is SemanticEventKind.WORKING_FACT
-
-
 def test_local_delivery_records_stay_in_store_and_workspace_keeps_only_lineage() -> None:
     world = shared_world("observation:local-delivery", False)
     decision = SearchPageContentResult(
@@ -273,7 +251,7 @@ def test_typed_failure_is_retained_as_a_bounded_semantic_event() -> None:
     step = SimpleNamespace(
         public_world_delta=WorldTransitionProjector().project(world, world),
         execution_receipts=None,
-        decision=SimpleNamespace(working_fact=None),
+        decision=SimpleNamespace(),
         recovery_signal=None,
         status_after="failed",
         failure_code="internal_error",
@@ -286,23 +264,3 @@ def test_typed_failure_is_retained_as_a_bounded_semantic_event() -> None:
     assert len(workspace.semantic_events) == 1
     assert workspace.semantic_events[0].kind is SemanticEventKind.TYPED_FAILURE
     assert workspace.semantic_events[0].step_index == 7
-
-
-def test_working_fact_rejects_non_scalar_evidence() -> None:
-    world = shared_world("observation:non-scalar", False)
-    record = WorldEvidenceIndex.from_observation(world).records[0]
-    non_scalar = type(record)(
-        record.evidence_ref,
-        record.observation_id,
-        record.kind,
-        record.source_id,
-        record.source_observation_id,
-        record.source_modality,
-        record.source_assurance,
-        record.subject_id,
-        record.predicate,
-        ("not", "scalar"),
-    )
-
-    with pytest.raises(ValueError, match="scalar"):
-        WorkingFact("invalid", non_scalar, 0, "later")

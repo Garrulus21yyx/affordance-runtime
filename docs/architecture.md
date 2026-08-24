@@ -6,8 +6,9 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
-Implementation and provider-free verification of this cutover are complete. The focused suite passes `204` tests; the
-full suite passes `1653` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh diff review pass.
+Implementation and provider-free verification of this cutover are complete. The affected focused suite passes `164`
+tests; the full suite passes `1645` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh diff
+review pass.
 Overall project closure is still **open** for two independent reasons already recorded by project policy:
 
 - BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
@@ -16,7 +17,7 @@ Overall project closure is still **open** for two independent reasons already re
 No live/provider benchmark was run or authorized for this cutover. Historical acceptance files under `evidence/` remain
 diagnostic records of the revisions they exercised; they do not define the current architecture.
 
-## Root cause of the R9 escalation
+## Root cause of the R9 escalation and repeated reads
 
 The original observed problem was small:
 
@@ -36,11 +37,22 @@ The repair is owner-first:
 - PydanticAI pairs that result with the original call ID;
 - other components may observe a receipt or digest, but cannot transform the result.
 
+The later live repetition had a separate immediate mechanism on that same overbuilt path. The provider port retained
+only one pending exchange. A turn could see the names returned by search, and a continuation turn could see the next
+page, but the following turn retained only the latest ToolReturn. The earlier names had disappeared even though
+`TaskGoal`, `GoalPlan`, and the fresh World were present and correct, so the model searched again.
+
+The positive repair is the SDK's ordinary conversation contract: keep a bounded sequence of completed typed
+`ToolCallPart -> ToolReturnPart` pairs, append the current pending call, and always supply the fresh World separately.
+Old World prompts are not retained. This replaces the one-slot exchange and the manual `remember_fact`/working-set
+path; it does not add an evidence store, memory subsystem, or cursor state machine.
+
 ## Normative production chain
 
 ```text
 TaskGoal + optional static GoalPlan + fresh WorldObservation
 -> compact current World + current ToolCatalog + bounded recent receipts
+   + bounded completed PydanticAI ToolCall/ToolReturn pairs
 -> PydanticAI ToolCall(tool_call_id, schema-valid arguments)
 -> Catalog resolver
    -> local read owner, or
@@ -77,6 +89,11 @@ Conceptually:
 
 The concrete result types remain `ReadRegionResult` and `SearchPageContentResult` because they express the local
 operation at the Runtime boundary. They do not create a second evidence algebra.
+
+For repeated DOM/AX structures, search returns the smallest complete enclosing repeated item, with compact role, text,
+label, and state fields. A matching child therefore carries its sibling fields (for example, one card's title and
+author) without copying internal evidence metadata or serializing the whole surrounding region. This rule is generic
+to the public tree shape and contains no site, task, phrase, or fixed-region branch.
 
 Pagination, when needed, is deliberately small:
 
@@ -120,19 +137,27 @@ authority.
 
 ### Call/result pairing
 
-PydanticAI owns tool schema transport, argument validation, `ToolCallPart`, call IDs, pending deferred calls, and
-call/result history pairing. The Runtime supplies exactly one committed result for the accepted call. It does not keep
-a second pending provider exchange in `ObservationDeliveryStore`.
+PydanticAI owns tool schema transport, argument validation, `ToolCallPart`, `ToolReturnPart`, call IDs, deferred-result
+resumption, and typed message history. `PydanticAIGroundedDecisionPort` retains only those SDK message objects between
+policy invocations. It does not retain old user/World prompts, invent a parallel history type, or keep a second pending
+exchange in `ObservationDeliveryStore`.
 
 The physical next request must contain:
 
 ```text
-accepted assistant ToolCallPart(call_id=X)
--> ToolReturnPart(call_id=X, content=owner_result)
+zero or more completed:
+  assistant ToolCallPart(call_id=A)
+  -> ToolReturnPart(call_id=A, content=owner_result)
+then current pending:
+  assistant ToolCallPart(call_id=X)
+  -> ToolReturnPart(call_id=X, content=current_committed_result)
 -> fresh current context
 ```
 
-Discarded extra provider calls never acquire a result or enter the physical history.
+Each call ID occurs in exactly one accepted call/result pair. Discarded extra provider calls never acquire a result or
+enter physical history. If the request budget is reached, the oldest complete pair is removed atomically; the current
+pending pair is never split. A terminal decision consumes the last result and clears the transport history so it
+cannot leak into another episode.
 
 ## Authority and owners
 
@@ -145,7 +170,7 @@ Discarded extra provider calls never acquire a result or enter the physical hist
 | private execution binding | Binder | model, read tools, Trace |
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
-| call/result correlation | PydanticAI boundary | Store, Monitor |
+| bounded typed call/result history and correlation | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | next Store reduction | `ObservationDeliveryStore.reduce` | provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
@@ -164,11 +189,12 @@ The model context contains only:
 - the fresh compact canonical World;
 - the current bounded ToolCatalog;
 - bounded recent semantic receipts and control feedback;
-- the immediately paired owner-produced ToolReturn when completing a call.
+- bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs and the current same-call ToolReturn.
 
-`TurnPacker` may fit current World/action presentation records to the request budget. It does not edit or rebuild the
-current ToolReturn. Completed older message pairs may later be compacted as history, but compaction is separate from
-tool execution and cannot create a new result authority.
+Old World/user prompts are excluded from transport history because the fresh World is the current-environment
+authority. `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or
+rebuild ToolReturn content. When capacity requires reduction, only an oldest complete call/result pair can be dropped;
+this is bounded SDK history retention, not semantic memory or evidence projection.
 
 `ObservationDeliveryStore` now retains only:
 
@@ -178,9 +204,9 @@ tool execution and cannot create a new result authority.
 It does not retain public result bodies, result prefixes, result cursors, action-query inventories, provider pending
 calls, or continuation capabilities.
 
-`AgentWorkspace` keeps bounded semantic receipts and explicitly remembered scalar facts. It is not evidence storage and
-does not receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it
-cannot decide how a ToolReturn is serialized.
+`AgentWorkspace` keeps bounded semantic receipts and activity summaries. It has no working-fact inventory and does not
+receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot
+decide how a ToolReturn is serialized or make information persist in model context.
 
 ## World, perception, and action boundaries
 
@@ -220,8 +246,9 @@ evidence ledger, a generic cursor state machine, a second provider-history owner
 
 ## Explicit non-goals
 
-- no World, SurfaceAdapter, BrowserGym, Binder, Executor, PydanticAI, Monitor, Workspace, GoalPlan, or evaluator redesign
-  for this cutover;
+- no World, SurfaceAdapter, BrowserGym, Binder, Executor, PydanticAI SDK, GoalPlan, or evaluator redesign for this
+  cutover; the provider adapter only adopts the SDK's existing typed message history, while obsolete Workspace/Monitor
+  working-fact coupling is removed;
 - no Manager/Worker hierarchy, RAG/memory platform, event sourcing, generic evidence ledger, second Runtime loop, or
   provider-specific state machine;
 - no site/task/fixture-specific extraction or action branches;
@@ -233,7 +260,8 @@ This cutover is implementation-complete only when all of the following agree:
 
 1. every registered local tool resolves to its declared decision subtype;
 2. every local read/search/list result is serialized within its owner bound before commit;
-3. a Recording FunctionModel receives the exact committed result under the original call ID;
+3. a Recording FunctionModel receives every retained committed result under its original call ID, without old World
+   prompts, and terminal completion clears the history;
 4. a same-tool cursor advances a finite page without creating Store result inventory;
 5. GUI dispatch still leads to the existing causal stable fresh-World path;
 6. production contains no generic result continuation/evidence inventory/reassembly path;

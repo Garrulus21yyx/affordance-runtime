@@ -19,8 +19,8 @@ from affordance_runtime.agent.context.world_transition import (
     PublicWorldDelta,
 )
 from affordance_runtime.agent.decisions import LocalToolResult
+from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
-from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import CurrentFinding
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution.contracts import DispatchStatus
