@@ -85,6 +85,36 @@ def test_unicode_fact_and_artifact_identity_is_canonicalized_without_failure() -
     assert all(item.startswith(("fact:", "artifact:")) and item.isascii() for item in index.refs)
 
 
+def test_world_evidence_index_covers_every_fact_and_artifact_in_an_accepted_world() -> None:
+    fact_count = 4_096
+    source = SurfaceObservation(
+        "surface:large",
+        "dom",
+        "revision:large",
+        ObservationSourceProfile.dom(),
+        targets=(SemanticTarget("target:large", "document", "Large document"),),
+        facts=tuple(
+            StateFact(
+                f"fact:large:{index}",
+                "target:large",
+                f"property:{index}",
+                index,
+                "surface:large",
+            )
+            for index in range(fact_count)
+        ),
+        artifacts={"snapshot": {"public_summary": "Current large document snapshot."}},
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+
+    index = WorldEvidenceIndex.from_observation(fused.observation)
+
+    assert len(index.refs) == fact_count + 1
+    assert index.resolve("fact:large:4095")
+    assert index.resolve("artifact:surface:large:snapshot")
+
+
 @pytest.mark.parametrize("refs", (("",), ("fact:after", "fact:after")))
 def test_action_outcome_rejects_blank_or_duplicate_evidence_refs(refs) -> None:
     with pytest.raises(ValueError, match="evidence"):

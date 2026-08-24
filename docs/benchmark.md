@@ -4,18 +4,20 @@
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
-recapture repair, and BrowserGym large-page liveness and viewport-grounded media repairs are implemented.
+recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear
+fresh-World projection repairs are implemented.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, and the full
-suite at `1665 passed / 19 skipped`; the BrowserGym/World/Core focused surface passes `247 / 18 skipped`. Ruff,
-compileall, `git diff --check`, negative-path searches, the run15 exact-World replay, and the bounded fresh review pass.
-This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
+Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, `218`
+large-World causal-surface tests, and the full suite at `1665 passed / 25 skipped`; the BrowserGym/World/Core focused
+surface passes `247 / 18 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, the run15 exact-World
+replay, the Task266 exact large-World replay, and the bounded fresh review pass. This is implementation evidence for
+the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- post-repair live validation of the BrowserGym large-page viewport-grounding repair;
+- post-repair live validation of the combined BrowserGym large-page capture/projection repairs;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
@@ -23,7 +25,8 @@ Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the n
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
 repair; Task44 run1 also accepted. Task266 run1 is a stopped, failed pre-repair diagnostic for the liveness defect
 described below; Task266 run2 live-validates liveness but is a failed pre-repair diagnostic for the subsequent media
-projection defect.
+projection defect. Task266 run3 crossed that repaired media boundary and is a failed pre-repair diagnostic for the
+subsequent public-identity capacity defect.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -180,6 +183,36 @@ execution diagnostic. This reuses the existing screenshot, geometry, media contr
 result cursor, screenshot paging, task heuristic, or alternate World. Task266 run2 is pre-repair evidence for this
 defect; a new explicitly authorized live run is required for acceptance.
 
+Task266 run3 then crossed screenshot projection. The trace contains completed query entry, submission, current-page
+reads, and selection of the intended article before sequence 22 recorded
+`ValueError: public reference capacity exceeded`. Formal status is
+`failed / harness_projection / case_projection_failed` after about 184.1 seconds. Heartbeats at approximately 30,
+65, 95, 128, and 184 seconds prove the process was schedulable; zeroed formal action/model metrics are unmeasured case
+projection output, not evidence that the preceding trace did not execute.
+
+The canonical owner had assigned separate public identities to a semantic target and its one linked structure
+occurrence. The repair aliases that unique occurrence to the existing semantic `E/N` ref, while preserving separate
+refs for unlinked structure and repeated real occurrences. The exact article now remains below every public ref-kind
+bound with `E=985`, `N=5,740`, `F=8,668`, and `R=335`.
+
+Held-out full-chain replay also found that the private `WorldEvidenceIndex` imposed a second 4,096-record threshold on
+an already accepted World containing 4,096 facts plus controlled artifacts. The threshold is removed: the index now
+resolves the current World's complete canonical fact/artifact set and publishes no result body or model-visible
+inventory. Sorted lookup replaces repeated linear membership checks.
+
+Finally, measured large-page stalls came from repeated derivation, not BrowserGym or provider waiting. World component
+validation and Fusion performed per-entity full scans, and automatic candidate ranking performed pairwise fuzzy
+matching across the full task instruction and all 1,923 actions. Local maps make the World derivations linear in their
+accepted inventories; automatic ranking uses lexical/structural signals and reserves fuzzy matching for an explicit
+bounded query. This changes no action authority, schema, World, or ToolReturn contract.
+
+The exact post-repair local chain now completes `BrowserGym capture -> Surface -> Fusion -> ActionSpace ->
+WorldDeliveryIndex -> CanonicalPublicWorldProjection -> ContextBuilder -> ModelTurnDelivery` in about 27.2 seconds,
+with stage times `10.1 / 4.3 / 5.2 / 0.3 / 4.2 / 1.0 / 1.9 / 0.1` seconds. It produces 6,001 targets, 1,923 actions,
+335 regions, 8,668 public fact records, 9,131 private resolver refs, 10 actually admitted manifest refs, and an
+85,257-byte bounded model delivery. No ref-cap increase, evidence side channel, fallback, retry, task branch, or cursor
+was introduced. Run3 remains pre-repair evidence; acceptance still requires a fresh authorized live run.
+
 The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
 while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
 model reads its region and follows visible GUI pagination instead of issuing synonym searches. Partial source
@@ -304,9 +337,8 @@ ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World 
 
 The post-action repair reuses this route. A failed normal acquisition now permits one independent read-only recapture
 for the same dispatch; tests prove a recovered fresh World reaches the receipt and next control state with one physical
-action. Task27 run2 supplies the live recapture witness. Task266 run2 closes the large-page liveness witness but
-reopens the complete route at screenshot projection; the viewport-grounding repair still requires a fresh live
-witness.
+action. Task27 run2 supplies the live recapture witness. Task266 runs 2 and 3 remain ordered pre-repair witnesses for
+media and public-identity projection; the complete repaired large-page route still requires a fresh live witness.
 
 The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
@@ -333,6 +365,17 @@ delivery. It does not allow TurnPacker or the provider bridge to ignore missing 
 
 Readable search is checked separately against structural pollution: DOM tag, class, and ID values cannot trigger or
 appear in a search result, while visible content with the same query still matches.
+
+### G9 — one public identity and bounded large-World derivation
+
+A unique source structure occurrence linked to a semantic target reuses that target's `E/N` ref. Unlinked structure
+and multiple real occurrences remain separately addressable. A scaled capacity property proves linked structure does
+not double public-ref consumption, while duplicate-occurrence and unlinked-node tests preserve ActorWorld uniqueness.
+
+`WorldEvidenceIndex` resolves every canonical fact and controlled artifact in an accepted World; it cannot impose an
+independent lower total-count contract. Large-World owner tests also verify reusable explicit-query fuzzy scores and
+that automatic ranking does not invoke pairwise fuzzy search over a full task instruction. The exact Portland replay
+is the integration witness for the complete current-World delivery, not benchmark acceptance evidence.
 
 ## Verification commands
 
@@ -369,7 +412,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1665 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1665 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This

@@ -32,6 +32,7 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world.public_refs import PublicRefCodec
 
 
 def _task() -> TaskGoal:
@@ -204,6 +205,88 @@ def test_duplicate_public_facts_preserve_multiplicity_and_unique_refs() -> None:
     )
     assert len(matching) == 3
     assert len({item.ref for item in matching}) == 3
+
+
+def test_unique_semantic_structure_reuses_target_public_ref() -> None:
+    world = _world("structure-alias")
+    projection, _actions, _index = _projection(world)
+    source = world.sources[0]
+    canonical_by_local = {
+        item.source_target_id: item.canonical_target_id
+        for item in world.entity_source_links
+        if item.source_observation_id == source.observation_id
+    }
+
+    for node in source.structure:
+        structure_ref = projection.private_structure_refs[(source.observation_id, node.structure_id)]
+        if node.semantic_target_id:
+            assert structure_ref == projection.target_refs[canonical_by_local[node.semantic_target_id]]
+        else:
+            assert structure_ref not in projection.target_refs.values()
+
+
+def test_duplicate_semantic_structure_occurrences_keep_unique_refs() -> None:
+    source_id = "source:duplicate-structure"
+    revision = "revision:duplicate-structure"
+    target_id = "target:duplicate-structure"
+    source = SurfaceObservation(
+        source_id,
+        "browser",
+        revision,
+        ObservationSourceProfile.dom(),
+        (SemanticTarget(target_id, "heading", "Repeated"),),
+        structure=(
+            ObservationStructureNode("first", "heading", "Repeated", semantic_target_id=target_id),
+            ObservationStructureNode("second", "heading", "Repeated", semantic_target_id=target_id),
+        ),
+        structure_total_count=2,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+
+    projection, _actions, _index = _projection(fused.observation)
+
+    refs = tuple(
+        projection.private_structure_refs[(source_id, structure_id)]
+        for structure_id in ("first", "second")
+    )
+    assert len(set(refs)) == 2
+
+
+def test_linked_structure_does_not_double_public_reference_capacity(monkeypatch) -> None:
+    monkeypatch.setattr(PublicRefCodec, "max_index", 9)
+    count = PublicRefCodec.max_index // 2 + 1
+    source_id = "source:large-linked-structure"
+    revision = "revision:large-linked-structure"
+    target_ids = tuple(f"target:{index}" for index in range(count))
+    source = SurfaceObservation(
+        source_id,
+        "browser",
+        revision,
+        ObservationSourceProfile.dom(),
+        tuple(
+            SemanticTarget(target_id, "StaticText", f"Item {index}")
+            for index, target_id in enumerate(target_ids)
+        ),
+        structure=tuple(
+            ObservationStructureNode(
+                f"structure:{index}",
+                "StaticText",
+                f"Item {index}",
+                semantic_target_id=target_id,
+            )
+            for index, target_id in enumerate(target_ids)
+        ),
+        structure_total_count=count,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+
+    projection, _actions, _index = _projection(fused.observation)
+
+    assert len(projection.ordered_target_records) == count
+    assert len(projection.private_structure_refs) == count
+    assert set(projection.private_structure_refs.values()) == set(projection.target_refs.values())
 
 
 def test_source_enumeration_permutation_preserves_public_projection() -> None:

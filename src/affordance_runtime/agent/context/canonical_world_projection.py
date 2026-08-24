@@ -13,7 +13,11 @@ from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGIS
 from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.contracts import (
+    CoverageState,
+    SourceEntityEndpoint,
+    WorldObservation,
+)
 from affordance_runtime.world.evidence_refs import canonical_fact_ref, canonical_public_text_ref
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -212,11 +216,30 @@ class CanonicalPublicWorldProjection:
             or action_space.observation_id != observation.observation_id
         ):
             raise ValueError("canonical public projection inputs are not current")
-        target_candidates = _target_candidates(observation, index, action_space)
+        (
+            target_candidates,
+            structure_aliases,
+            target_slots,
+            target_provenance,
+            target_structural_context,
+        ) = _target_candidates(
+            observation,
+            index,
+            action_space,
+        )
         _reject_ambiguous_executable_targets(target_candidates)
-        target_records, target_refs, structure_refs = _allocate_targets(target_candidates)
+        target_records, target_refs, structure_refs = _allocate_targets(
+            target_candidates,
+            structure_aliases,
+        )
         region_records, region_refs = _allocate_regions(observation, index)
-        fact_records, fact_refs = _allocate_facts(observation, index, target_refs)
+        fact_records, fact_refs = _allocate_facts(
+            observation,
+            target_refs,
+            target_slots,
+            target_provenance,
+            target_structural_context,
+        )
         public_digest = _digest(_public_document_payload(observation, region_records))
         private_digest = _digest((observation.observation_id, action_space.action_space_id, tuple(
             (item.target_id, item.ref) for item in target_records
@@ -270,8 +293,63 @@ class _TargetCandidate:
         ))
 
 
-def _target_candidates(observation, index, action_space) -> tuple[_TargetCandidate, ...]:
+def _target_candidates(
+    observation,
+    index,
+    action_space,
+) -> tuple[
+    tuple[_TargetCandidate, ...],
+    dict[tuple[str, str], str],
+    dict[str, tuple[str, ...]],
+    dict[str, PublicProvenance],
+    dict[str, tuple[str, ...]],
+]:
     targets = {item.target_id: item for item in observation.targets}
+    regions_by_key = {item.key: item for item in index.regions}
+    target_slots: dict[str, tuple[str, ...]] = {}
+    target_structural_context: dict[str, tuple[str, ...]] = {}
+    for target in observation.targets:
+        context = index.target_contexts.get(target.target_id)
+        region = regions_by_key.get(str(index.target_region_keys.get(target.target_id, "")))
+        path = tuple(index.target_functional_paths.get(target.target_id, ()))
+        if not path and region is not None:
+            path = region.scope_path
+        target_structural_context[target.target_id] = tuple(
+            item
+            for item in (
+                *path[:8],
+                region.heading if region is not None else "",
+                region.role if region is not None else "",
+            )
+            if item
+        )
+        target_slots[target.target_id] = (
+            (
+                context.container_kind.value,
+                *path[:8],
+                region.heading,
+                region.role,
+                str(context.public_order),
+            )
+            if context is not None and region is not None
+            else ()
+        )
+    manifests = {item.source_observation_id: item for item in observation.source_manifest}
+    source_ids_by_target: dict[str, list[str]] = defaultdict(list)
+    for link in observation.entity_source_links:
+        source_ids_by_target[link.canonical_target_id].append(link.source_observation_id)
+    target_provenance = {
+        target.target_id: _provenance(
+            manifests,
+            source_ids_by_target.get(target.target_id, ()),
+            target_structural_context[target.target_id],
+        )
+        for target in observation.targets
+    }
+    boxes_by_target: dict[str, list[tuple[int, int, int, int]]] = defaultdict(list)
+    for media in observation.media:
+        for region in media.media.grounding_regions:
+            boxes_by_target[region.target_id].append(region.bbox)
     offered = {
         target_id
         for option in action_space.options
@@ -289,29 +367,68 @@ def _target_candidates(observation, index, action_space) -> tuple[_TargetCandida
         result.append(_TargetCandidate(
             target.target_id,
             target.target_id in offered,
-            (*_target_slot(index, target.target_id), *_target_geometry(observation, target.target_id)),
+            (*target_slots[target.target_id], *_target_geometry(boxes_by_target.get(target.target_id, ()))),
             target.role,
             target.label,
             _public_mapping(target.state),
-            _public_relations(target.relations, targets, index),
+            _public_relations(target.relations, targets, target_slots),
             verbs,
-            _target_provenance(observation, index, target.target_id),
+            target_provenance[target.target_id],
         ))
+    canonical_by_endpoint = {
+        SourceEntityEndpoint(item.source_observation_id, item.source_target_id): item.canonical_target_id
+        for item in observation.entity_source_links
+    }
+    structure_occurrences: dict[str, int] = defaultdict(int)
+    canonical_for_structure: dict[tuple[str, str], str] = {}
     for source in observation.sources:
         for node in source.structure:
+            canonical = canonical_by_endpoint.get(
+                SourceEntityEndpoint(source.observation_id, node.semantic_target_id)
+            ) if node.semantic_target_id else None
+            if canonical is not None:
+                key = (source.observation_id, node.structure_id)
+                canonical_for_structure[key] = canonical
+                structure_occurrences[canonical] += 1
+    structure_aliases: dict[tuple[str, str], str] = {}
+    for source in observation.sources:
+        structure_slots = _structure_slots(source)
+        source_provenance = _provenance(
+            manifests,
+            (source.observation_id,),
+            (),
+        )
+        for node in source.structure:
+            structure_key = (source.observation_id, node.structure_id)
+            canonical = canonical_for_structure.get(structure_key)
+            if canonical is not None and structure_occurrences[canonical] == 1:
+                structure_aliases[structure_key] = canonical
+                continue
             private_key = f"{source.observation_id}\0{node.structure_id}"
+            slot = structure_slots[node.structure_id]
             result.append(_TargetCandidate(
                 private_key,
                 False,
-                _structure_slot(source, node.structure_id),
+                slot,
                 node.role,
                 node.label,
                 _public_mapping(node.state),
                 {},
                 (),
-                _provenance(observation, None, "", [source.observation_id], structural=_structure_slot(source, node.structure_id)),
+                PublicProvenance(
+                    source_provenance.surface_kind,
+                    source_provenance.modality,
+                    source_provenance.source_coverage,
+                    slot,
+                ),
             ))
-    return tuple(result)
+    return (
+        tuple(result),
+        structure_aliases,
+        target_slots,
+        target_provenance,
+        target_structural_context,
+    )
 
 
 def _reject_ambiguous_executable_targets(candidates: tuple[_TargetCandidate, ...]) -> None:
@@ -323,7 +440,7 @@ def _reject_ambiguous_executable_targets(candidates: tuple[_TargetCandidate, ...
         raise PublicGroundingAmbiguousError(PublicGroundingAmbiguousError.code)
 
 
-def _allocate_targets(candidates):
+def _allocate_targets(candidates, structure_aliases):
     ordered = sorted(candidates, key=lambda item: item.order_key)
     executable = readonly = 0
     records = []
@@ -344,34 +461,70 @@ def _allocate_targets(candidates):
     structure_refs = {
         tuple(key.split("\0", 1)): value for key, value in refs.items() if "\0" in key
     }
+    structure_refs.update({
+        key: target_refs[target_id]
+        for key, target_id in structure_aliases.items()
+    })
     return tuple(records), target_refs, structure_refs
 
 
 def _allocate_regions(observation, index):
-    candidates = sorted(index.regions, key=lambda item: _region_order_key(observation, item))
+    targets = {item.target_id: item for item in observation.targets}
+    facts = {item.fact_id: item for item in observation.facts}
+    manifests = {item.source_observation_id: item for item in observation.source_manifest}
+    sources = {item.observation_id: item for item in observation.sources}
+    structure_contexts = {
+        source_id: _structure_ordinal_context(source)
+        for source_id, source in sources.items()
+    }
+    candidates = []
+    for region in index.regions:
+        slot = _region_slot(
+            region,
+            manifests,
+            sources,
+            structure_contexts,
+        )
+        candidates.append((
+            _region_order_key(region, slot, targets, facts),
+            region,
+            slot,
+        ))
+    candidates.sort(key=lambda item: item[0])
     records = []
     refs = {}
-    for ordinal, region in enumerate(candidates, 1):
+    for ordinal, (_key, region, slot) in enumerate(candidates, 1):
         ref = PublicRefCodec.encode(PublicRefKind.REGION, ordinal)
         refs[region.key] = ref
         records.append(PublicRegionRecord(
             ref,
-            _region_slot(observation, region),
+            slot,
             region.heading,
             region.role,
             region.coverage,
-            _region_provenance(observation, region),
+            _provenance(manifests, (region.source_id,), region.scope_path),
             region.key,
         ))
     return tuple(records), refs
 
 
-def _allocate_facts(observation, index, target_refs):
+def _allocate_facts(
+    observation,
+    target_refs,
+    target_slots,
+    target_provenance,
+    target_structural_context,
+):
     candidates: list[tuple[str, str, str, tuple[str, ...], str, object, PublicProvenance]] = []
+    manifests = {item.source_observation_id: item for item in observation.source_manifest}
     for fact in observation.facts:
         canonical = canonical_fact_ref(fact.fact_id)
-        slot = _target_slot(index, fact.subject_id)
-        provenance = _fact_provenance(observation, index, fact.subject_id, fact.source_id)
+        slot = target_slots.get(fact.subject_id, ())
+        provenance = _provenance(
+            manifests,
+            (fact.source_id,) if fact.source_id else (),
+            target_structural_context.get(fact.subject_id, ()),
+        )
         if provenance.source_coverage in {"stale", "unavailable"}:
             continue
         candidates.append((
@@ -387,8 +540,8 @@ def _allocate_facts(observation, index, target_refs):
     for target in observation.targets:
         label = target.label.strip()
         if label:
-            slot = _target_slot(index, target.target_id)
-            provenance = _target_provenance(observation, index, target.target_id)
+            slot = target_slots[target.target_id]
+            provenance = target_provenance[target.target_id]
             if provenance.source_coverage in {"stale", "unavailable"}:
                 continue
             candidates.append((
@@ -412,74 +565,64 @@ def _allocate_facts(observation, index, target_refs):
     return tuple(records), refs
 
 
-def _target_slot(index: WorldDeliveryIndex, target_id: str) -> tuple[str, ...]:
-    context = index.functional_context_for_target(target_id)
-    region = index.region_for_target(target_id)
-    if context is None or region is None:
-        return ()
-    return (
-        context.container_kind.value,
-        *index.functional_path_for_target(target_id)[:8],
-        region.heading,
-        region.role,
-        str(context.public_order),
-    )
-
-
-def _target_geometry(observation, target_id: str) -> tuple[str, ...]:
-    boxes = tuple(sorted(
-        region.bbox
-        for media in observation.media
-        for region in media.media.grounding_regions
-        if region.target_id == target_id
-    ))
+def _target_geometry(values) -> tuple[str, ...]:
+    boxes = tuple(sorted(values))
     return (
         ("geometry:" + ",".join(f"{value:+012d}" for value in boxes[0])),
     ) if boxes else ("geometry:unmarked",)
 
 
-def _structure_slot(source, structure_id: str) -> tuple[str, ...]:
+def _structure_slots(source) -> dict[str, tuple[str, ...]]:
     nodes = {item.structure_id: item for item in source.structure}
-    lineage = []
-    current = nodes.get(structure_id)
-    seen = set()
-    while current is not None and current.structure_id not in seen:
-        seen.add(current.structure_id)
-        lineage.append(f"{current.role}:{current.label}")
-        current = nodes.get(current.parent_structure_id)
-    lineage.reverse()
-    if not lineage:
-        return ("structure",)
-    siblings = tuple(
-        item for item in source.structure
-        if item.parent_structure_id == nodes[structure_id].parent_structure_id
-    )
-    semantic = (nodes[structure_id].role, nodes[structure_id].label)
-    occurrence = sum(
-        (item.role, item.label) == semantic
-        for item in siblings[:siblings.index(nodes[structure_id])]
-    )
-    return ("structure", *lineage[:-1], f"{lineage[-1]}#{occurrence}")
+    occurrence_by_id: dict[str, int] = {}
+    occurrences: dict[tuple[str, str, str], int] = defaultdict(int)
+    for node in source.structure:
+        key = (node.parent_structure_id, node.role, node.label)
+        occurrence_by_id[node.structure_id] = occurrences[key]
+        occurrences[key] += 1
+    result = {}
+    for structure_id, node in nodes.items():
+        lineage = []
+        current = node
+        seen = set()
+        while current is not None and current.structure_id not in seen:
+            seen.add(current.structure_id)
+            lineage.append(f"{current.role}:{current.label}")
+            current = nodes.get(current.parent_structure_id)
+        lineage.reverse()
+        result[structure_id] = (
+            ("structure",)
+            if not lineage
+            else (
+                "structure",
+                *lineage[:-1],
+                f"{lineage[-1]}#{occurrence_by_id[structure_id]}",
+            )
+        )
+    return result
 
 
-def _region_slot(observation, region: WorldRegion) -> tuple[str, ...]:
-    manifest = next((item for item in observation.source_manifest if item.source_observation_id == region.source_id), None)
+def _region_slot(
+    region: WorldRegion,
+    manifests,
+    sources,
+    structure_contexts,
+) -> tuple[str, ...]:
+    manifest = manifests.get(region.source_id)
     source = (manifest.surface, manifest.modality, manifest.profile) if manifest is not None else ("world", "semantic", "")
-    source_observation = next(
-        (item for item in observation.sources if item.observation_id == region.source_id),
-        None,
-    )
+    source_observation = sources.get(region.source_id)
     structural_path = (
-        _structure_ordinal_path(source_observation, region.root_structure_id)
+        _structure_ordinal_path(
+            region.root_structure_id,
+            *structure_contexts[region.source_id],
+        )
         if source_observation is not None
         else ()
     )
     return (*source, *structural_path, region.role, region.heading, *region.scope_path)
 
 
-def _region_order_key(observation, region) -> str:
-    targets = {item.target_id: item for item in observation.targets}
-    facts = {item.fact_id: item for item in observation.facts}
+def _region_order_key(region, slot, targets, facts) -> str:
     member_targets = tuple(sorted(
         (
             (
@@ -504,7 +647,7 @@ def _region_order_key(observation, region) -> str:
         key=_stable_json,
     ))
     return _stable_json((
-        _region_slot(observation, region),
+        slot,
         region.direct_labels,
         region.coverage,
         member_targets,
@@ -512,38 +655,52 @@ def _region_order_key(observation, region) -> str:
     ))
 
 
-def _structure_ordinal_path(source: object, structure_id: str) -> tuple[str, ...]:
+def _structure_ordinal_context(source: object):
     nodes = {item.structure_id: item for item in getattr(source, "structure", ())}
-    if structure_id not in nodes:
-        return ()
-    roots = sorted(
+    roots = tuple(sorted(
         (item for item in nodes.values() if not item.parent_structure_id),
         key=lambda item: (item.role.casefold(), item.label.casefold(), item.role, item.label),
-    )
+    ))
+    root_ordinals = {item.structure_id: index for index, item in enumerate(roots)}
+    child_ordinals = {
+        child_id: index
+        for item in nodes.values()
+        for index, child_id in enumerate(item.child_structure_ids)
+    }
+    return nodes, root_ordinals, child_ordinals
+
+
+def _structure_ordinal_path(
+    structure_id: str,
+    nodes,
+    root_ordinals,
+    child_ordinals,
+) -> tuple[str, ...]:
+    if structure_id not in nodes:
+        return ()
     path = []
     current = nodes[structure_id]
     seen = set()
     while current.structure_id not in seen:
         seen.add(current.structure_id)
         if current.parent_structure_id and current.parent_structure_id in nodes:
-            parent = nodes[current.parent_structure_id]
-            path.append(parent.child_structure_ids.index(current.structure_id))
-            current = parent
+            path.append(child_ordinals[current.structure_id])
+            current = nodes[current.parent_structure_id]
         else:
-            path.append(roots.index(current))
+            path.append(root_ordinals[current.structure_id])
             break
     return tuple(f"ordinal:{item}" for item in reversed(path))
 
 
-def _public_relations(relations, targets, index):
+def _public_relations(relations, targets, target_slots):
     result = {}
     for key, value in relations.items():
         normalized = str(key).casefold()
         if normalized.endswith("parent_id") and isinstance(value, str):
-            result[str(key).removesuffix("_id")] = _related_semantics(targets.get(value), index)
+            result[str(key).removesuffix("_id")] = _related_semantics(targets.get(value), target_slots)
         elif normalized.endswith("child_ids") and isinstance(value, tuple | list):
             result[str(key).removesuffix("_ids")] = tuple(sorted(
-                (_related_semantics(targets.get(item), index) for item in value if isinstance(item, str)),
+                (_related_semantics(targets.get(item), target_slots) for item in value if isinstance(item, str)),
                 key=repr,
             ))
         elif not normalized.endswith("_id") and not normalized.endswith("_ids"):
@@ -551,8 +708,12 @@ def _public_relations(relations, targets, index):
     return result
 
 
-def _related_semantics(target, index):
-    return (target.role, target.label, _target_slot(index, target.target_id)) if target is not None else ("unknown", "", ())
+def _related_semantics(target, target_slots):
+    return (
+        (target.role, target.label, target_slots.get(target.target_id, ()))
+        if target is not None
+        else ("unknown", "", ())
+    )
 
 
 def _public_mapping(value):
@@ -575,34 +736,13 @@ def _private_key(key: str) -> bool:
     ))
 
 
-def _target_provenance(observation, index, target_id):
-    links = [item.source_observation_id for item in observation.entity_source_links if item.canonical_target_id == target_id]
-    return _provenance(observation, index, target_id, links)
-
-
-def _fact_provenance(observation, index, subject_id, source_id):
-    return _provenance(observation, index, subject_id, [source_id] if source_id else [])
-
-
-def _region_provenance(observation, region):
-    return _provenance(observation, None, "", [region.source_id], structural=region.scope_path)
-
-
-def _provenance(observation, index, subject_id, source_ids, *, structural=()):
-    manifests = {item.source_observation_id: item for item in observation.source_manifest}
+def _provenance(manifests, source_ids, structural):
     values = []
     for source_id in source_ids:
         manifest = manifests.get(source_id)
         if manifest is not None:
             values.append((manifest.surface, manifest.modality, _coverage(manifest.coverage)))
     surface, modality, coverage = min(values) if values else ("unified_world", "semantic", "complete")
-    if not structural and index is not None:
-        region = index.region_for_target(subject_id)
-        structural = (
-            *index.functional_path_for_target(subject_id)[:8],
-            region.heading if region is not None else "",
-            region.role if region is not None else "",
-        )
     return PublicProvenance(surface, modality, coverage, tuple(item for item in structural if item))
 
 

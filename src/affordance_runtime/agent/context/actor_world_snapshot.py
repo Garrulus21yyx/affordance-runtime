@@ -409,6 +409,7 @@ def project_actor_world_snapshot(
         entity_by_ref,
         facts_by_subject,
         evidence_by_subject,
+        memberships,
         max_structure_nodes,
         max_structure_bytes,
     )
@@ -664,6 +665,7 @@ def _structure_documents(
     entity_by_ref,
     facts_by_subject,
     evidence_by_subject,
+    memberships,
     max_structure_nodes: int | None,
     max_structure_bytes: int | None,
 ) -> tuple[ActorWorldDocumentView, ...]:
@@ -778,19 +780,7 @@ def _structure_documents(
                 evidence_by_subject.get(canonical_id or "", {}),
                 tuple(facts_by_subject.get(canonical_id or structure_id, ())),
                 _non_tree_relations(target, refs) if target is not None else {},
-                (
-                    tuple(
-                        source_refs[candidate_source.observation_id]
-                        for candidate_source in ordered_sources
-                        if any(
-                            link.source_observation_id == candidate_source.observation_id
-                            and link.canonical_target_id == canonical_id
-                            for link in observation.entity_source_links
-                        )
-                    )
-                    if target is not None
-                    else (source_ref,)
-                ),
+                memberships.get(canonical_id or "", (source_ref,)) if target is not None else (source_ref,),
                 entity.marked if entity is not None else False,
                 children,
                 item.parent_outside_structure

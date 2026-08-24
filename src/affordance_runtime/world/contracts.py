@@ -796,10 +796,11 @@ class WorldObservation:
             expected_components.add(frozenset(component))
 
         actual_by_canonical: dict[str, set[SourceEntityEndpoint]] = {}
+        links_by_endpoint: dict[SourceEntityEndpoint, EntitySourceLink] = {}
         for link in links:
-            actual_by_canonical.setdefault(link.canonical_target_id, set()).add(
-                SourceEntityEndpoint(link.source_observation_id, link.source_target_id)
-            )
+            endpoint = SourceEntityEndpoint(link.source_observation_id, link.source_target_id)
+            actual_by_canonical.setdefault(link.canonical_target_id, set()).add(endpoint)
+            links_by_endpoint[endpoint] = link
         actual_components = {frozenset(component) for component in actual_by_canonical.values()}
         if actual_components != expected_components:
             raise ValueError("entity source links must match accepted alignment decisions")
@@ -809,12 +810,7 @@ class WorldObservation:
                 if len(expected_component) > 1
                 else EntityAllocation.INDEPENDENT
             )
-            component_links = tuple(
-                link
-                for link in links
-                if SourceEntityEndpoint(link.source_observation_id, link.source_target_id)
-                in expected_component
-            )
+            component_links = tuple(links_by_endpoint[endpoint] for endpoint in expected_component)
             if any(link.allocation is not expected_allocation for link in component_links):
                 raise ValueError("entity link allocation contradicts its accepted component")
             if len(expected_component) > 1:

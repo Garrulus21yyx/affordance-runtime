@@ -144,6 +144,16 @@ class ActionReranker:
         explicit_query = canonical_action_query(query)
         intent = explicit_query or _normalize_text(" ".join((instruction, *objectives, *done_when)))
         intent_tokens = _tokens(intent)
+        token_cache: dict[str, frozenset[str]] = {intent: intent_tokens}
+        fuzzy_token_scores: dict[str, float] = {}
+
+        def tokens(value: str) -> frozenset[str]:
+            cached = token_cache.get(value)
+            if cached is None:
+                cached = _tokens(value)
+                token_cache[value] = cached
+            return cached
+
         scored: list[tuple[float, str, str, str, int, object, tuple[str, ...]]] = []
         for ordinal, option in enumerate(options):
             action_id = str(getattr(option, "action_id", ""))
@@ -158,9 +168,9 @@ class ActionReranker:
             reasons: list[str] = []
             score = 0.0
 
-            label_tokens = _tokens(label)
+            label_tokens = tokens(label)
             path_text = " ".join(path)
-            path_tokens = _tokens(path_text)
+            path_tokens = tokens(path_text)
             exact_label = bool(
                 label
                 and (label == explicit_query or (label in intent and label_tokens and label_tokens <= intent_tokens))
@@ -168,8 +178,19 @@ class ActionReranker:
             if exact_label:
                 score += 8.0
                 reasons.append("exact_label")
-            lexical = _lexical_score(intent_tokens, (*label_tokens, *_tokens(operation), *_tokens(role)))
-            fuzzy = _fuzzy_score(intent_tokens, label_tokens)
+            lexical = _lexical_score(intent_tokens, (*label_tokens, *tokens(operation), *tokens(role)))
+            # Fuzzy matching belongs to an explicit bounded action query.  A
+            # full task instruction is broad semantic context, not a request
+            # to compare every current control token pairwise.
+            fuzzy = (
+                _fuzzy_score(
+                    intent_tokens,
+                    label_tokens,
+                    token_scores=fuzzy_token_scores,
+                )
+                if explicit_query
+                else 0.0
+            )
             if lexical or fuzzy >= self.fuzzy_threshold:
                 score += lexical * 3.0 + fuzzy * 2.0
                 reasons.append("lexical_match")
@@ -808,10 +829,23 @@ def _lexical_score(intent: frozenset[str], candidate) -> float:
     return len(intent & values) / max(1, len(values))
 
 
-def _fuzzy_score(intent: frozenset[str], label: frozenset[str]) -> float:
+def _fuzzy_score(
+    intent: frozenset[str],
+    label: frozenset[str],
+    *,
+    token_scores: dict[str, float] | None = None,
+) -> float:
     if not intent or not label:
         return 0.0
-    return max(SequenceMatcher(None, wanted, actual).ratio() for wanted in intent for actual in label)
+    if token_scores is None:
+        return max(SequenceMatcher(None, wanted, actual).ratio() for wanted in intent for actual in label)
+    for actual in label:
+        if actual not in token_scores:
+            token_scores[actual] = max(
+                SequenceMatcher(None, wanted, actual).ratio()
+                for wanted in intent
+            )
+    return max(token_scores[actual] for actual in label)
 
 
 def _state_flag(state: Mapping[str, object], *names: str) -> bool:

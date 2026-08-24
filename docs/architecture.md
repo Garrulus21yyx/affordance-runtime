@@ -8,26 +8,29 @@ admitted prefix, or exposed through generic continuation tools.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
-large-page liveness and viewport-grounded media repairs is complete. Verification counts below are refreshed by the
-current review; live benchmark validation remains separately authorized. The repository-wide mypy command still
-reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
+large-page liveness, viewport-grounded media, canonical public-identity, and linear fresh-World projection repairs is
+complete. Verification counts below are refreshed by the current review; live benchmark validation remains separately
+authorized. The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and
+is not counted as a passing gate.
 
-Current provider-free verification: `323` focused owner/vertical tests and `63` readable-result tests pass; the full
-suite passes `1665` with `19` skipped; the BrowserGym/World/Core focused surface passes `247` with `18` skipped. Ruff,
-compileall, and diff checks pass. The fresh review found no remaining blocking owner, currentness, result-pairing,
-Manifest-conservation, readable-search, recovery-eligibility, or async-liveness defect in this bounded implementation.
+Current provider-free verification: `323` focused owner/vertical tests, `63` readable-result tests, and `218`
+large-World causal-surface tests pass; the full suite passes `1665` with `25` skipped; the BrowserGym/World/Core focused
+surface passes `247` with `18` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining
+blocking owner, currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World
+projection, recovery-eligibility, or async-liveness defect in this bounded implementation.
 
 Overall project closure is still **open**:
 
-- the BrowserGym large-page viewport-grounding repair still requires a post-repair Task266 live witness before its
-  separately scoped gate can close;
+- the combined BrowserGym large-page capture/projection repairs still require a post-repair Task266 live witness
+  before their separately scoped gate can close;
 - Planner lexical admission still has a known gap.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
 `done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action
 recapture path, and Task44 run1 independently completed with native `verified_success`.
 Task266 run2 live-verified the large-page liveness repair, then exposed the separate screenshot-grounding projection
-defect described below.
+defect described below. Run3 crossed that media boundary and exposed the subsequent public-identity capacity defect;
+it remains failed pre-repair evidence, not an accepted witness.
 
 A live W1b witness was run after the accepted-response repair. Run8 verified that bounded model-authored progress notes
 survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. Run10
@@ -255,6 +258,39 @@ bounded facts, 6,725 retained structure nodes out of 11,251, and 70 in-viewport 
 exceptions after dispatch also retain their existing typed reason and bounded owner diagnostic instead of collapsing
 to an unexplained capture failure. No page/site rule, image pagination, evidence path, or new fallback was added. A
 post-repair Task266 live witness is still required before this combined large-page gate closes.
+
+Task266 run3 confirmed that viewport grounding no longer rejected the article. The agent typed the query, submitted
+it, read the search results, and selected the intended article. The fresh article capture then reached canonical public
+projection and failed with `ValueError: public reference capacity exceeded`. The formal harness projected that as
+`failed / harness_projection / case_projection_failed` after about 184.1 seconds; its zeroed case metrics are a
+reporting consequence of case projection failure and do not mean that no browser actions ran. Heartbeats remained
+schedulable, so this was neither the earlier event-loop hang nor a missing observation fallback.
+
+The violated identity invariant was local and deterministic. `CanonicalPublicWorldProjection` allocated one `E/N`
+record for every semantic World target and then allocated another `N` record for its linked source structure node.
+On the article, 6,001 semantic targets plus 6,725 retained structure occurrences crossed the per-kind public-ref bound
+even though most pairs represented the same public entity. A unique structure occurrence now reuses its semantic
+target's existing ref. An unlinked structural node keeps its own `N` ref, and multiple genuine structure occurrences
+of one canonical target remain distinct so `ActorWorldSnapshot` node refs stay globally unique.
+
+Architecture-first replay then exposed the next arbitrary gate before another live run: the accepted World already
+contained 4,096 bounded facts plus controlled artifacts, while `WorldEvidenceIndex` separately rejected any total
+above 4,096. That private resolver now indexes every fact/artifact already accepted by the current World and retains
+only canonical validation; it does not publish an evidence inventory or add model context. Resolution uses the
+existing sorted records rather than a second state owner.
+
+The same replay measured three quadratic derivations that made a correct large World look stalled: component
+validation scanned all links for every component, Fusion scanned all source targets for every canonical target, and
+automatic Top-5 candidate ranking ran pairwise fuzzy matching between a full task instruction and every action token.
+They now use local lookup tables, while fuzzy matching is reserved for an explicit bounded action query. These are
+disposable computations over one fresh World, not cross-turn caches, fallbacks, cursors, or a new lifecycle.
+
+The exact post-repair Portland chain succeeds with 6,001 targets, 1,923 actions, 335 regions, 8,668 public fact
+records, 9,131 private current evidence refs, and an 85,257-byte bounded model delivery. End-to-end local time is about
+27.2 seconds: 10.1 seconds BrowserGym capture, 4.3 surface projection, 5.2 fusion, 4.2 delivery index, 1.0 canonical
+projection, 1.9 context construction, and 0.1 final delivery. The equivalent pre-optimization replay took about 87.9
+seconds and failed at two capacity gates. No ref-width increase, page heuristic, evidence Store, retry, or alternate
+World was added. A fresh explicitly authorized Task266 live run is still required for acceptance.
 
 ## Normative production chain
 
@@ -514,6 +550,8 @@ This cutover is implementation-complete only when all of the following agree:
 7. focused and full provider-free suites, Ruff, compileall, negative searches, and fresh diff review pass.
 8. every Manifest ref is present in the same admitted text/media for zero, partial, and full action-prefix selections;
 9. readable search cannot match or return DOM tag/class/ID scaffolding.
+10. a unique semantic/structure occurrence has one public identity, every accepted World fact/artifact remains
+    resolvable, and large-World derivation does not rescan complete entity/action inventories per item.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

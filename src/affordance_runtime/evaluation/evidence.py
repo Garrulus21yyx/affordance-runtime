@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -10,7 +11,6 @@ from affordance_runtime.evaluation.evidence_records import EvidenceRecord
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref, canonical_public_text_ref
 
-_MAX_REFS = 4096
 _MAX_REF_LENGTH = 512
 _FACT_REF = re.compile(r"^fact:[A-Za-z0-9][A-Za-z0-9._:-]{0,506}$")
 _ARTIFACT_REF = re.compile(r"^artifact:[A-Za-z0-9][A-Za-z0-9._:-]{1,502}$")
@@ -28,16 +28,18 @@ class WorldEvidenceIndex:
         records.extend(_artifact_record(observation, source, str(key)) for source in observation.sources for key in source.artifacts)
         refs = [record.evidence_ref for record in records]
         validated = validate_evidence_refs(tuple(refs), allow_empty=True)
-        if len(validated) > _MAX_REFS:
-            raise ValueError("world evidence index exceeds bounded reference count")
         ordered = tuple(sorted(records, key=lambda item: item.evidence_ref))
         return cls(observation.observation_id, tuple(sorted(validated)), ordered)
 
     def resolve(self, evidence_ref: str) -> bool:
-        return evidence_ref in self.refs
+        index = bisect_left(self.refs, evidence_ref)
+        return index < len(self.refs) and self.refs[index] == evidence_ref
 
     def resolve_record(self, evidence_ref: str) -> EvidenceRecord | None:
-        return next((item for item in self.records if item.evidence_ref == evidence_ref), None)
+        index = bisect_left(self.records, evidence_ref, key=lambda item: item.evidence_ref)
+        if index < len(self.records) and self.records[index].evidence_ref == evidence_ref:
+            return self.records[index]
+        return None
 
 
 def _fact_record(observation, fact) -> EvidenceRecord:

@@ -4,6 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import affordance_runtime.actions.paging as action_paging
 from affordance_runtime.actions import (
     ActionOption,
     ActionPager,
@@ -11,7 +12,11 @@ from affordance_runtime.actions import (
     ActionRisk,
     ActionSpace,
 )
-from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS, ActionRecallSet
+from affordance_runtime.actions.paging import (
+    PUBLIC_ACTION_LABEL_MAX_CHARS,
+    ActionRecallSet,
+    ActionReranker,
+)
 from affordance_runtime.schema_digest import schema_digest
 from tests.support.action_contracts import verification_kwargs
 
@@ -270,3 +275,44 @@ def test_query_bound_plus_one_fails_typed_without_slicing() -> None:
             ActionSpace("obs:1", (_option(0),)),
             query="x" * (PUBLIC_ACTION_LABEL_MAX_CHARS + 1),
         )
+
+
+def test_action_reranker_reuses_fuzzy_scores_for_repeated_public_tokens(monkeypatch) -> None:
+    options = tuple(_option(index) for index in range(100))
+    labels = {option.target_id: "Portland" for option in options}
+    calls = 0
+    original = action_paging.SequenceMatcher
+
+    def counting_sequence_matcher(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(action_paging, "SequenceMatcher", counting_sequence_matcher)
+
+    ranked = ActionReranker().rank(
+        options,
+        labels=labels,
+        query="Portlnd",
+    )
+
+    assert len(ranked) == len(options)
+    assert 0 < calls < 10
+
+
+def test_action_reranker_does_not_fuzzy_match_a_full_task_instruction(monkeypatch) -> None:
+    options = tuple(_option(index) for index in range(100))
+    labels = {option.target_id: f"Control {index}" for index, option in enumerate(options)}
+
+    def unexpected_sequence_matcher(*_args, **_kwargs):
+        raise AssertionError("automatic candidate ranking must not invoke fuzzy search")
+
+    monkeypatch.setattr(action_paging, "SequenceMatcher", unexpected_sequence_matcher)
+
+    ranked = ActionReranker().rank(
+        options,
+        labels=labels,
+        instruction="Open the relevant control and complete the task",
+    )
+
+    assert len(ranked) == len(options)

@@ -81,6 +81,10 @@ class WorldFusion:
         plan = _alignment_plan(ordered_sources)
         world_id = _world_id(ordered_sources)
         source_by_id = {source.observation_id: source for source in ordered_sources}
+        targets_by_source = {
+            source.observation_id: {target.target_id: target for target in source.targets}
+            for source in ordered_sources
+        }
         targets: list[SemanticTarget] = []
         facts: list[StateFact] = []
         conflicts: list[ObservationConflict] = []
@@ -93,11 +97,7 @@ class WorldFusion:
             endpoint_targets = tuple(
                 (
                     source_by_id[link.source_observation_id],
-                    next(
-                        target
-                        for target in source_by_id[link.source_observation_id].targets
-                        if target.target_id == link.source_target_id
-                    ),
+                    targets_by_source[link.source_observation_id][link.source_target_id],
                 )
                 for link in sorted(
                     links_by_canonical[canonical_id],
