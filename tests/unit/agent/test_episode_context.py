@@ -178,7 +178,7 @@ def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> 
     assert "expired-ref" not in encoded
 
 
-def test_rejected_action_workspace_keeps_semantics_not_ref_identity() -> None:
+def test_rejected_action_workspace_keeps_receipt_not_result_body_or_ref_identity() -> None:
     world = shared_world("observation:rejected", False)
     decision = ToolRejectedResult(
         "context:test",
@@ -200,11 +200,11 @@ def test_rejected_action_workspace_keeps_semantics_not_ref_identity() -> None:
         to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1))
     )
 
-    assert projected.semantic_summary["result"]["target"] == {
-        "role": "focused_context",
-        "label": "REPORTS",
-    }
-    assert "press_key" in encoded
+    assert "result" not in projected.semantic_summary
+    assert projected.semantic_summary["operation"] == "activate"
+    assert projected.semantic_summary["feedback_code"] == "tool_rejected"
+    assert "press_key" not in encoded
+    assert "REPORTS" not in encoded
     assert "E59" not in encoded
 
 

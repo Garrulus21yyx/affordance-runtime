@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -133,15 +134,14 @@ def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:
         WebArenaVerifiedFinalResponseCodec().normalize('{"status":"SUCCESS"}')
 
 
-@pytest.mark.asyncio
-async def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> None:
+def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> None:
     task = shared_task()
     world = shared_world("w1b-transition", False)
     context = ContextBuilder().build(
         task,
         world,
         ActionSpaceBuilder().build(task, world),
-        await SharedTaskEvaluator().evaluate(task, world),
+        asyncio.run(SharedTaskEvaluator().evaluate(task, world)),
     )
 
     diagnostic = _transition_delivery_diagnostic(task, world, context)

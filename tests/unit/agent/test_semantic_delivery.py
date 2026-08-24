@@ -11,7 +11,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
+from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent.context.action_candidate_projection import DeliveryObligationKind
 from affordance_runtime.agent.context.compact_world_renderer import (
     CapacityExceeded,
@@ -31,18 +31,23 @@ from affordance_runtime.agent.context.model_turn_delivery import build_model_tur
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
     ObservationDeliveryStore,
-    PendingToolCall,
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
-from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult
+from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult, SelectAction
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.benchmarks.webarena_verified import (
     DeliveryRetrievalProbe,
     _delivery_probe_item_diagnostic,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.execution import (
+    ActionResult,
+    DispatchStatus,
+    ExecutionCompletion,
+    ExecutionReceipt,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_tool_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import (
@@ -78,8 +83,7 @@ def _evaluation(task: TaskGoal, observation_id: str) -> TaskEvaluation:
 def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() -> None:
     task = _task()
     world = _world("typed-future-reader", False)
-    call = PendingToolCall("call:future-reader", "future_readonly_tool", "context:fixture")
-    store = ObservationDeliveryStore().with_pending_tool_call(call)
+    store = ObservationDeliveryStore()
     decision = SearchPageContentResult(
         "context:fixture",
         "future_readonly_tool",
@@ -93,7 +97,7 @@ def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() 
             },
             source_scope="current",
         ),
-        call.tool_call_id,
+        "call:future-reader",
     )
     transition = store.reduce(
         StepResult(
@@ -110,8 +114,6 @@ def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() 
     assert inventory is not None
     assert inventory.records[0].operation == "future_readonly_tool"
     assert inventory.records[0].public_value == decision.result.records[0]
-    assert transition.next_store.pending_tool_outcome is not None
-    assert transition.next_store.pending_tool_outcome.call == call
 
 
 def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_manifest() -> None:
@@ -525,32 +527,45 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
     before = _world("world:before", False)
     after = _world("world:after", True)
     delta = WorldTransitionProjector().project(before, after)
-    external_step = SimpleNamespace(
-        before_world=before,
-        after_world=after,
+    task = _task()
+    option = ActionSpaceBuilder().build(task, before).options[0]
+    selection = ActionSpaceBuilder().admit(option, {})
+    request = ActionBinder().bind(selection, before, "context:fixture", tool_call_id="call:effect")
+    execution_result = ActionResult(request.request_id, DispatchStatus.SENT, "fixture", True)
+    external_step = StepResult(
+        SelectAction("context:fixture", option.action_id, tool_call_id="call:effect"),
+        before,
+        after,
+        _evaluation(task, after.observation_id),
+        execution_receipts=ExecutionReceiptBatch(
+            (ExecutionReceipt(request, execution_result, before.observation_id, after.observation_id),),
+            ExecutionCompletion.COMPLETE,
+        ),
+        feedback="action_dispatched",
+        public_world_delta=delta,
         before_public_world=canonical_world(before),
         after_public_world=canonical_world(after),
-        public_world_delta=delta,
-        execution_receipts=SimpleNamespace(
-            receipts=(
-                SimpleNamespace(
-                    request=SimpleNamespace(
-                        intent=SimpleNamespace(
-                            semantic_action="activate",
-                            target_id=before.targets[0].target_id,
-                        )
-                    ),
-                    result=SimpleNamespace(dispatch_status=DispatchStatus.SENT),
-                ),
-            )
-        ),
     )
-    store = ObservationDeliveryStore().advance(external_step, step_index=1)
-    local_read = SimpleNamespace(execution_receipts=None, public_world_delta=delta)
+    store = ObservationDeliveryStore().reduce(external_step, step_index=1).next_store
+    local_read = StepResult(
+        SearchPageContentResult(
+            "context:fixture",
+            "future_readonly_tool",
+            {"query": "none"},
+            PublicEvidenceResult.from_value(
+                {"kind": "NoMatches", "items": ()},
+                source_scope="current",
+            ),
+        ),
+        after,
+        after,
+        _evaluation(task, after.observation_id),
+        feedback="local_tool_result",
+    )
 
-    assert store.advance(local_read, step_index=2) is store
+    local_store = store.reduce(local_read, step_index=2).next_store
+    assert local_store.latest_effect is store.latest_effect
 
-    task = _task()
     action_space = ActionSpaceBuilder().build(task, after)
     index = WorldDeliveryIndex.from_observation(
         after,
@@ -564,7 +579,7 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
         action_space,
         _evaluation(task, after.observation_id),
         region_index=index,
-        delivery_store=store,
+        delivery_store=local_store,
     )
     delivery = build_model_turn_delivery(context, include_images=False)
     rendered = delivery.view.text
@@ -936,7 +951,6 @@ def test_search_results_conserve_bounded_regions_into_next_turn_read_capability(
         world,
         _evaluation(task, world.observation_id),
         feedback="local_tool_result",
-        next_delivery_store=search_resolution.next_delivery_store,
     )
     transition = first.delivery_store.reduce(step, step_index=1)
     second = builder.build(
@@ -1001,7 +1015,6 @@ def test_paginated_search_keeps_every_latest_page_region_within_bounded_follow_u
         world,
         _evaluation(task, world.observation_id),
         feedback="local_tool_result",
-        next_delivery_store=first.next_delivery_store,
     )
     first_store = context.delivery_store.reduce(first_step, step_index=1).next_store
     context = builder.build(
@@ -1026,7 +1039,6 @@ def test_paginated_search_keeps_every_latest_page_region_within_bounded_follow_u
         world,
         _evaluation(task, world.observation_id),
         feedback="local_tool_result",
-        next_delivery_store=second.next_delivery_store,
     )
     second_store = context.delivery_store.reduce(second_step, step_index=2).next_store
     final = builder.build(
@@ -1070,12 +1082,23 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
             ToolCall("read_next_page", arguments),
             expected_context_id=first.context_id,
         )
+        continuation_step = StepResult(
+            continuation_resolution.decision,
+            world,
+            world,
+            _evaluation(task, world.observation_id),
+            feedback="local_tool_result",
+        )
+        continuation_store = first.delivery_store.reduce(
+            continuation_step,
+            step_index=1,
+        ).next_store
         first = builder.build(
             task,
             world,
             ActionSpace(world.observation_id, ()),
             _evaluation(task, world.observation_id),
-            delivery_store=continuation_resolution.next_delivery_store,
+            delivery_store=continuation_store,
         )
         _, first_catalog = catalog_for(first)
         available = next(item for item in first_catalog.specs if item.name == "read_region").input_schema[
@@ -1092,14 +1115,22 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
     assert opened.result["has_more"] is True
     assert "cursor" not in opened.result
     assert first.delivery_store.active_read is None
-    assert opened_resolution.next_delivery_store.active_read.next_cursor
+    opened_step = StepResult(
+        opened,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+    )
+    opened_store = first.delivery_store.reduce(opened_step, step_index=1).next_store
+    assert opened_store.active_read.next_cursor
     second = builder.build(
         task,
         world,
         ActionSpace(world.observation_id, ()),
         _evaluation(task, world.observation_id),
         region_index=first.region_index,
-        delivery_store=opened_resolution.next_delivery_store,
+        delivery_store=opened_store,
     )
     _, second_catalog = catalog_for(second)
     continuation = next(item for item in second_catalog.specs if item.name == "read_next_page")
@@ -1137,7 +1168,15 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
     assert opened.decision.result["has_more"] is True
     assert "cursor" not in opened.decision.arguments
     assert "cursor" not in opened.decision.result
-    assert opened.next_delivery_store.active_read.next_cursor
+    opened_step = StepResult(
+        opened.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+    )
+    opened_transition = context.delivery_store.reduce(opened_step, step_index=1)
+    assert opened_transition.next_store.active_read.next_cursor
     assert len(
         json.dumps(
             to_json_compatible(opened.decision.result),
@@ -1147,18 +1186,6 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         ).encode()
     ) <= 64 * 1024
 
-    opened_step = StepResult(
-        opened.decision,
-        world,
-        world,
-        _evaluation(task, world.observation_id),
-        feedback="local_tool_result",
-        next_delivery_store=opened.next_delivery_store,
-    )
-    opened_transition = context.delivery_store.reduce(
-        opened_step,
-        step_index=1,
-    )
     assert opened_transition.next_store.public_result_inventory is not None
 
     continued_context = builder.build(
@@ -1182,7 +1209,6 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         world,
         _evaluation(task, world.observation_id),
         feedback="local_tool_result",
-        next_delivery_store=continued.next_delivery_store,
     )
     transition = continued_context.delivery_store.reduce(
         continued_step,

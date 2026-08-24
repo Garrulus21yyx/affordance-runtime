@@ -6,13 +6,17 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, ClassVar, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
 from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.observation_needs import ObservationPurpose
+
+if TYPE_CHECKING:
+    from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
+    from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 
 _MAX_REASON = 500
 _AGENT_EVIDENCE_PURPOSES = frozenset(
@@ -246,6 +250,12 @@ class LocalToolResult:
     tool_call_id: str = ""
     working_fact: WorkingFact | None = field(default=None, repr=False, compare=False)
     rejected_attempt_signature: PublicAttemptSignature | None = field(default=None, repr=False, compare=False)
+    delivery_lens: WorldDeliveryLens | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
+    continuation: DeliveryContinuationCapability | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -277,6 +287,17 @@ class LocalToolResult:
             self.rejected_attempt_signature, PublicAttemptSignature
         ):
             raise TypeError("local tool rejected attempt signature must be typed")
+        from affordance_runtime.agent.context.observation_delivery import (
+            DeliveryContinuationCapability,
+        )
+        from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
+
+        if self.delivery_lens is not None and not isinstance(self.delivery_lens, WorldDeliveryLens):
+            raise TypeError("local tool delivery lens must be typed")
+        if self.continuation is not None and not isinstance(
+            self.continuation, DeliveryContinuationCapability
+        ):
+            raise TypeError("local tool continuation must be typed")
 
 
 @dataclass(frozen=True)

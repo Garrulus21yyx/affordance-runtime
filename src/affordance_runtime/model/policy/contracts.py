@@ -101,6 +101,9 @@ class ModelMetadata:
 class ModelDecisionRequest:
     request_id: str
     agent_context: AgentContext = field(repr=False, compare=False)
+    last_step: object | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         if _SAFE_METADATA.fullmatch(self.request_id) is None:
@@ -109,6 +112,8 @@ class ModelDecisionRequest:
             raise TypeError("model decision request AgentContext must be typed")
         if _SAFE_METADATA.fullmatch(self.agent_context.context_id) is None:
             raise ValueError("model decision request context identity is invalid")
+        if self.last_step is not None and type(self.last_step).__name__ != "StepResult":
+            raise TypeError("model decision request last step must be committed Runtime truth")
 
     @property
     def context_id(self) -> str:
@@ -120,15 +125,10 @@ class ResolvedModelDecision:
 
     decision: AgentDecision
     metadata: ModelMetadata = field(default_factory=ModelMetadata)
-    next_delivery_store: object | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("resolved model outcome requires one typed AgentDecision")
-        if self.next_delivery_store is not None and type(self.next_delivery_store).__name__ != "ObservationDeliveryStore":
-            raise TypeError("resolved local decision requires the delivery owner's next store")
 
 
 @dataclass(frozen=True)

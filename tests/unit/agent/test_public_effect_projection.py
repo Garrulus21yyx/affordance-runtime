@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from types import SimpleNamespace
 
 import pytest
 
+from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpaceBuilder
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
     PublicEffectProjector,
@@ -15,8 +15,18 @@ from affordance_runtime.agent.context.world_transition import (
     PublicChangeKind,
     WorldTransitionProjector,
 )
-from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult, SelectAction
+from affordance_runtime.agent.run_state import StepResult
+from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.execution import (
+    ActionResult,
+    DispatchStatus,
+    ExecutionCompletion,
+    ExecutionReceipt,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
     ObservationStructureNode,
@@ -56,6 +66,25 @@ def _world(
             StateFact(f"fact:{observation_id}:{index}", target_id, "value", value, source_id)
             for index, value in enumerate(fact_values)
         ),
+        bindings=(
+            ActionBinding(
+                f"binding:{observation_id}",
+                source_id,
+                source_id,
+                f"revision:{observation_id}",
+                f"fingerprint:{observation_id}",
+                target_id,
+                target_id,
+                "browser",
+                "fixture",
+                "activate",
+                "click",
+                "interaction",
+                (),
+                {"type": "object", "properties": {}, "additionalProperties": False},
+                {"selector": "#private"},
+            ),
+        ),
         structure=(
             ObservationStructureNode(
                 f"root:{observation_id}",
@@ -86,7 +115,14 @@ def _world(
     )
     result = WorldFusion().fuse((source,))
     assert result.observation is not None
-    return replace(result.observation, observation_id=observation_id)
+    return replace(
+        result.observation,
+        observation_id=observation_id,
+        bindings=tuple(
+            replace(item, world_observation_id=observation_id)
+            for item in result.observation.bindings
+        ),
+    )
 
 
 def _project(before, after):
@@ -100,25 +136,33 @@ def _project(before, after):
 
 
 def _external_step(before, after):
-    return SimpleNamespace(
-        before_world=before,
-        after_world=after,
+    task = TaskGoal(
+        "task:effect",
+        "Activate the control",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    option = ActionSpaceBuilder().build(task, before).options[0]
+    selection = ActionSpaceBuilder().admit(option, {})
+    request = ActionBinder().bind(selection, before, "context:effect", tool_call_id="call:effect")
+    result = ActionResult(request.request_id, DispatchStatus.SENT, "fixture", True)
+    return StepResult(
+        SelectAction("context:effect", option.action_id, tool_call_id="call:effect"),
+        before,
+        after,
+        TaskEvaluation(
+            "task:effect",
+            after.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "public effect fixture",
+        ),
+        execution_receipts=ExecutionReceiptBatch(
+            (ExecutionReceipt(request, result, before.observation_id, after.observation_id),),
+            ExecutionCompletion.COMPLETE,
+        ),
+        feedback="action_dispatched",
         before_public_world=canonical_world(before),
         after_public_world=canonical_world(after),
-        public_world_delta=WorldTransitionProjector().project(before, after),
-        execution_receipts=SimpleNamespace(
-            receipts=(
-                SimpleNamespace(
-                    request=SimpleNamespace(
-                        intent=SimpleNamespace(
-                            semantic_action="activate",
-                            target_id=before.targets[0].target_id,
-                        )
-                    ),
-                    result=SimpleNamespace(dispatch_status=DispatchStatus.SENT),
-                ),
-            )
-        ),
     )
 
 
@@ -261,16 +305,36 @@ def test_latest_external_effect_survives_local_operations_and_supersedes_once() 
     before = _world("world:before", state_value="before")
     after = _world("world:after", state_value="after")
     final = _world("world:final", state_value="final")
-    store = ObservationDeliveryStore().advance(_external_step(before, after), step_index=1)
+    store = ObservationDeliveryStore().reduce(_external_step(before, after), step_index=1).next_store
     assert store.latest_effect is not None
     first_identity = store.latest_effect.inventory.inventory_id
 
     for operation in ("read_region", "search_page_content", "find_controls"):
-        local = SimpleNamespace(execution_receipts=None, public_world_delta=None)
-        assert store.advance(local, step_index=2) is store
-        assert store.latest_effect.inventory.inventory_id == first_identity
+        local = StepResult(
+            SearchPageContentResult(
+                "context:effect",
+                operation,
+                {"query": "fixture"},
+                PublicEvidenceResult.from_value(
+                    {"kind": "NoMatches", "items": ()},
+                    source_scope="current",
+                ),
+            ),
+            after,
+            after,
+            TaskEvaluation(
+                "task:effect",
+                after.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "local effect-preservation fixture",
+            ),
+            feedback="local_tool_result",
+        )
+        next_store = store.reduce(local, step_index=2).next_store
+        assert next_store.latest_effect is store.latest_effect
+        assert next_store.latest_effect.inventory.inventory_id == first_identity
 
-    replaced = store.advance(_external_step(after, final), step_index=3)
+    replaced = store.reduce(_external_step(after, final), step_index=3).next_store
     assert replaced.latest_effect is not None
     assert replaced.latest_effect.step_index == 3
     assert replaced.latest_effect.inventory.inventory_id != first_identity

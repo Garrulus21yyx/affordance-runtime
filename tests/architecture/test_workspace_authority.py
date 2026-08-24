@@ -80,7 +80,7 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         assert removed not in monitor_source
     assert "current_findings_digest(result.after_world)" in core_source
     assert "working_facts_digest(state.workspace, pending_fact)" in core_source
-    assert ").visible_public_result_digest" in core_source
+    assert "delivery_transition.next_store.visible_public_result_digest" in core_source
     assert '"max_policy_decisions"' in core_source
     assert '"control_stalled"' in monitor_source
 

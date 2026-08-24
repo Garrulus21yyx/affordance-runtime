@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from affordance_runtime.agent.context.model_turn_delivery import (
@@ -66,7 +65,9 @@ class TurnPacker:
         call_profile: ActionPolicyCallProfile,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
-        history_messages: tuple[Mapping[str, object], ...] = (),
+        history_messages: tuple[object, ...] = (),
+        pending_tool_call_id: str = "",
+        pending_tool_name: str = "",
     ) -> PackedModelTurn:
         plan = request.agent_context.action_delivery_plan
         if plan is None:
@@ -92,6 +93,8 @@ class TurnPacker:
             backoff_count=0,
             request_budget=request_budget,
             history_messages=history_messages,
+            pending_tool_call_id=pending_tool_call_id,
+            pending_tool_name=pending_tool_name,
         )
         packing_budget = replace(
             request_budget,
@@ -129,6 +132,8 @@ class TurnPacker:
                 backoff_count=0,
                 request_budget=request_budget,
                 history_messages=history_messages,
+                pending_tool_call_id=pending_tool_call_id,
+                pending_tool_name=pending_tool_name,
             )
             admitted_counts = required
 
@@ -160,6 +165,8 @@ class TurnPacker:
                         backoff_count=0,
                         request_budget=packing_budget,
                         history_messages=history_messages,
+                        pending_tool_call_id=pending_tool_call_id,
+                        pending_tool_name=pending_tool_name,
                     )
                 except ModelRequestCapacityError:
                     blocked.add(kind)
@@ -190,6 +197,8 @@ class TurnPacker:
             backoff_count=backoffs,
             request_budget=request_budget,
             history_messages=history_messages,
+            pending_tool_call_id=pending_tool_call_id,
+            pending_tool_name=pending_tool_name,
         )
         delivery, catalog, admitted = accepted
         return PackedModelTurn(
@@ -214,13 +223,18 @@ class TurnPacker:
         admitted_records: dict[str, int],
         backoff_count: int,
         request_budget: ModelRequestBudget,
-        history_messages: tuple[Mapping[str, object], ...],
+        history_messages: tuple[object, ...],
+        pending_tool_call_id: str,
+        pending_tool_name: str,
     ) -> tuple[ModelTurnDelivery, GroundedToolCatalog, AdmittedProviderEnvelope]:
         delivery = build_model_turn_delivery(
             request.agent_context,
             include_images=include_images,
             admitted_records=admitted_records,
             packing_backoff_count=backoff_count,
+            committed_step=request.last_step,
+            pending_tool_call_id=pending_tool_call_id,
+            pending_tool_name=pending_tool_name,
         )
         catalog = compile_grounded_action_catalog(request.agent_context, delivery)
         envelope = binder.bind(

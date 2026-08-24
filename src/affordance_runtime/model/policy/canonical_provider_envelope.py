@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.context.model_turn_delivery import DeliveredMedia, ModelTurnDelivery
-from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.immutable import freeze_json, thaw_json_at_external_boundary, to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
@@ -104,6 +104,9 @@ class CanonicalProviderEnvelope:
     instructions: tuple[str, ...]
     user_text: str
     history_messages: tuple[Mapping[str, object], ...]
+    pydantic_history: tuple[object, ...] = field(
+        repr=False, compare=False, metadata={"serialize": False}
+    )
     tool_result: Mapping[str, object] | None
     tool_result_metadata: Mapping[str, object] = field(repr=False, compare=False)
     media: tuple[CanonicalMediaRecord, ...]
@@ -137,17 +140,20 @@ class CanonicalProviderEnvelope:
             raise ValueError("ActionPolicy canonical envelope requires exactly one instruction")
         if bool(self.history_messages) != bool(self.tool_result):
             raise ValueError("deferred tool result requires its bounded call history")
-        if self.history_messages and len(self.history_messages) != 2:
-            raise ValueError("ActionPolicy retains exactly one unresolved call exchange")
+        if bool(self.pydantic_history) != bool(self.history_messages):
+            raise ValueError("canonical history requires the exact admitted PydanticAI messages")
+        if self.pydantic_history and len(self.pydantic_history) != 1:
+            raise ValueError("ActionPolicy retains exactly one exact PydanticAI call message")
+        if self.history_messages and len(self.history_messages) != 1:
+            raise ValueError("ActionPolicy retains exactly one unresolved call message")
         if self.history_messages:
             try:
-                request_message, response_message = self.history_messages
+                response_message = self.history_messages[0]
                 prior_call = tuple(response_message["parts"])[0]
                 current_result = self.tool_result
                 assert current_result is not None
                 valid_exchange = (
-                    request_message["kind"] == "request"
-                    and response_message["kind"] == "response"
+                    response_message["kind"] == "response"
                     and prior_call["part_kind"] == "tool-call"
                     and prior_call["tool_call_id"] == current_result["tool_call_id"]
                     and prior_call["tool_name"] == current_result["tool_name"]
@@ -168,6 +174,7 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope tool order differs from Catalog")
         object.__setattr__(self, "instructions", tuple(self.instructions))
         object.__setattr__(self, "history_messages", tuple(freeze_json(item) for item in self.history_messages))
+        object.__setattr__(self, "pydantic_history", tuple(self.pydantic_history))
         if self.tool_result is not None:
             object.__setattr__(self, "tool_result", freeze_json(self.tool_result))
         object.__setattr__(self, "tool_result_metadata", freeze_json(self.tool_result_metadata))
@@ -194,43 +201,13 @@ class CanonicalProviderEnvelope:
                 for item in self.media
             ),
         )
-        history: list[Mapping[str, object]] = []
-        if self.history_messages:
-            prior_request, prior_response = self.history_messages
-            prior_prompt = tuple(prior_request["parts"])[0]
-            history.append(
-                {
-                    "kind": "request",
-                    "parts": (
-                        {
-                            "part_kind": "user-prompt",
-                            "content": (
-                                {"part_kind": "text", "content": prior_prompt["content"]},
-                            ),
-                        },
-                    ),
-                }
-            )
-            prior_call = tuple(prior_response["parts"])[0]
-            history.append(
-                {
-                    "kind": "response",
-                    "parts": (
-                        {
-                            "part_kind": "tool-call",
-                            "tool_name": prior_call["tool_name"],
-                            "arguments": to_json_compatible(prior_call["arguments"]),
-                            "tool_call_id": prior_call["tool_call_id"],
-                        },
-                    ),
-                }
-            )
+        history: list[Mapping[str, object]] = list(self.history_messages)
         result_part = (
             {
                 "part_kind": "tool-return",
                 "tool_call_id": self.tool_result["tool_call_id"],
                 "tool_name": self.tool_result["tool_name"],
-                "content": self.tool_result["return_value"],
+                "content": thaw_json_at_external_boundary(self.tool_result["return_value"]),
             }
             if self.tool_result is not None
             else None
@@ -308,7 +285,10 @@ class CanonicalProviderEnvelope:
 
         return {
             "instructions": self.instructions,
-            "messages": self.ordered_message_projection,
+            "messages": (
+                *_project_pydantic_history(self.pydantic_history),
+                self.ordered_message_projection[-1],
+            ),
             "function_tools": tuple(
                 {
                     "name": item.name,
@@ -343,7 +323,7 @@ class CanonicalProviderEnvelopeBinder:
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
         attempt_phase: str | None = None,
-        history_messages: tuple[Mapping[str, object], ...] = (),
+        history_messages: tuple[object, ...] = (),
     ) -> CanonicalProviderEnvelope:
         if delivery.context_id != request.context_id or catalog.delivery_id != delivery.delivery_id:
             raise ValueError("canonical provider envelope inputs are not current siblings")
@@ -406,7 +386,7 @@ class CanonicalProviderEnvelopeBinder:
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
         attempt_phase: str,
-        history_messages: tuple[Mapping[str, object], ...],
+        history_messages: tuple[object, ...],
     ) -> CanonicalProviderEnvelope:
         context = request.agent_context
         direct_refs = frozenset(delivery.manifest.executable_refs)
@@ -434,7 +414,8 @@ class CanonicalProviderEnvelopeBinder:
                 len(delivery.manifest.action_routes),
                 delivery.packing_backoff_count,
             ),
-            history_messages=history_messages,
+            history_messages=_project_pydantic_history(history_messages),
+            pydantic_history=history_messages,
             tool_result=delivery.tool_result,
         )
 
@@ -453,6 +434,7 @@ class CanonicalProviderEnvelopeBinder:
         attempt_phase: str,
         diagnostics: object,
         history_messages: tuple[Mapping[str, object], ...],
+        pydantic_history: tuple[object, ...] = (),
         tool_result: object | None,
     ) -> CanonicalProviderEnvelope:
         tools = tuple(
@@ -494,6 +476,7 @@ class CanonicalProviderEnvelopeBinder:
             instructions=instructions,
             user_text=user_text,
             history_messages=history_messages,
+            pydantic_history=pydantic_history,
             tool_result=(
                 {
                     "part_kind": "tool-return",
@@ -544,6 +527,36 @@ def _media_record(item: DeliveredMedia) -> CanonicalMediaRecord:
         variant="marked" if item.actual_marks else "raw",
         marks=tuple((mark.ref, mark.bbox) for mark in item.actual_marks),
         coordinate_space_lineage=item.coordinate_space_id,
+    )
+
+
+def _project_pydantic_history(
+    messages: tuple[object, ...],
+) -> tuple[Mapping[str, object], ...]:
+    """Mechanically project provider-visible parts from exact official messages."""
+
+    if not messages:
+        return ()
+    try:
+        from pydantic_ai.messages import ModelResponse, ToolCallPart
+    except ImportError as exc:  # pragma: no cover - guarded by the provider bridge
+        raise ValueError("PydanticAI messages are unavailable") from exc
+    if len(messages) != 1 or not isinstance(messages[0], ModelResponse):
+        raise ValueError("pending PydanticAI exchange must contain its exact call response")
+    response_parts = tuple(
+        {
+            "part_kind": "tool-call",
+            "tool_name": part.tool_name,
+            "arguments": to_json_compatible(part.args_as_dict()),
+            "tool_call_id": part.tool_call_id,
+        }
+        for part in messages[0].parts
+        if isinstance(part, ToolCallPart)
+    )
+    if len(response_parts) != 1:
+        raise ValueError("pending PydanticAI response must contain one tool call")
+    return (
+        {"kind": "response", "parts": response_parts},
     )
 
 

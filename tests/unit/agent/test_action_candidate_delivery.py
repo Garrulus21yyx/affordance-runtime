@@ -3,15 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic_ai.messages import ModelResponse, ToolCallPart
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.actions.schema_validation import validate_value
-from affordance_runtime.agent import DecisionKind, RequestActionPage
+from affordance_runtime.agent import DecisionKind, RequestActionPage, SelectAction
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionDeliveryPlan,
@@ -27,17 +27,20 @@ from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
-    PendingToolCall,
-    PendingToolOutcome,
-    PublicResultInventory,
-    PublicResultRecord,
 )
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.core_loop import CoreAgentLoop
-from affordance_runtime.agent.run_state import RunState
+from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult
+from affordance_runtime.agent.run_state import RunState, StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
-from affordance_runtime.execution import DispatchStatus
+from affordance_runtime.execution import (
+    ActionResult,
+    DispatchStatus,
+    ExecutionCompletion,
+    ExecutionReceipt,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
     CanonicalProviderEnvelopeBinder,
@@ -91,23 +94,17 @@ def _pack(request, *, binder=None, supports_multimodal=False, perception_profile
         binder = CanonicalProviderEnvelopeBinder()
     elif isinstance(binder, GroundedPolicyContextBinder):
         binder = CanonicalProviderEnvelopeBinder(context_binder=binder)
-    pending = request.agent_context.delivery_store.pending_tool_call
+    committed = request.last_step or request.agent_context.last_step
+    if request.last_step is None and committed is not None:
+        request = replace(request, last_step=committed)
+    decision = getattr(committed, "decision", None)
+    call_id = str(getattr(decision, "tool_call_id", ""))
+    tool_name = str(getattr(decision, "tool_name", ""))
     history_messages = (
         (
-            {"kind": "request", "parts": ({"part_kind": "user-prompt", "content": "prior"},)},
-            {
-                "kind": "response",
-                "parts": (
-                    {
-                        "part_kind": "tool-call",
-                        "tool_call_id": pending.tool_call_id,
-                        "tool_name": pending.tool_name,
-                        "arguments": {},
-                    },
-                ),
-            },
+            ModelResponse(parts=[ToolCallPart(tool_name, {}, call_id)]),
         )
-        if pending is not None and request.agent_context.delivery_store.pending_tool_outcome is not None
+        if call_id and tool_name
         else ()
     )
     return TurnPacker().pack(
@@ -118,6 +115,8 @@ def _pack(request, *, binder=None, supports_multimodal=False, perception_profile
         supports_multimodal=supports_multimodal,
         perception_profile=perception_profile,
         history_messages=history_messages,
+        pending_tool_call_id=call_id,
+        pending_tool_name=tool_name,
     )
 
 
@@ -298,28 +297,31 @@ def _context_with_public_results(
 ):
     task, world, _actions, evaluation, _ = _context()
     actions = ActionSpace(world.observation_id, ())
-    records = tuple(PublicResultRecord("read_region", "R2", value) for value in values)
-    pending_call = PendingToolCall("call:public-results", "read_region", "context:fixture")
-    store = ObservationDeliveryStore(
-        public_result_inventory=PublicResultInventory(
-            world.observation_id,
-            "sha256:" + "1" * 64,
-            records,
-        ),
-        pending_tool_call=pending_call,
-        pending_tool_outcome=PendingToolOutcome(
-            pending_call,
+    decision = SearchPageContentResult(
+        "context:fixture",
+        "read_region",
+        {"region_ref": "R2"},
+        PublicEvidenceResult.from_value(
             {"kind": "Opened", "items": values},
-            "sha256:" + "2" * 64,
-            "items",
+            source_scope="R2",
         ),
+        "call:public-results",
     )
+    committed = StepResult(
+        decision,
+        world,
+        world,
+        evaluation,
+        feedback="local_tool_result",
+    )
+    store = ObservationDeliveryStore().reduce(committed, step_index=1).next_store
     context = ContextBuilder().build(
         task,
         world,
         actions,
         evaluation,
         delivery_store=store,
+        last_step=committed,
     )
     public_obligation = context.action_delivery_plan.obligation(DeliveryObligationKind.PUBLIC_RESULT)
     assert public_obligation is not None
@@ -329,17 +331,11 @@ def _context_with_public_results(
         (public_obligation,),
         "public_result",
     )
-    isolated_store = ObservationDeliveryStore(
-        public_result_inventory=context.delivery_store.public_result_inventory,
-        pending_tool_call=context.delivery_store.pending_tool_call,
-        pending_tool_outcome=context.delivery_store.pending_tool_outcome,
-        inventories=(public_obligation.inventory,),
-    )
     return replace(
         context,
         action_delivery_plan=public_plan,
         action_candidates=public_plan.projection(),
-        delivery_store=isolated_store,
+        delivery_store=context.delivery_store,
     )
 
 
@@ -746,7 +742,7 @@ def test_query_owner_stores_complete_inventory_and_plan_pages_the_lossless_suffi
         task, state, actions, request
     )
     transition = state.delivery_store.reduce(step, step_index=1)
-    state.apply(step, next_delivery_store=transition.next_store)
+    state.apply(step, delivery_transition=transition)
     context = builder.build(
         task,
         world,
@@ -1157,29 +1153,30 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
     before_actions = ActionSpaceBuilder().build(task, before)
     after_actions = ActionSpaceBuilder().build(task, after)
     delta = WorldTransitionProjector().project(before, after)
-    store = ObservationDeliveryStore().advance(
-        SimpleNamespace(
-            before_world=before,
-            after_world=after,
-            before_public_world=canonical_world(before, before_actions),
-            after_public_world=canonical_world(after, after_actions),
-            public_world_delta=delta,
-            execution_receipts=SimpleNamespace(
-                receipts=(
-                    SimpleNamespace(
-                        request=SimpleNamespace(
-                            intent=SimpleNamespace(
-                                semantic_action="activate",
-                                target_id=before.targets[0].target_id,
-                            )
-                        ),
-                        result=SimpleNamespace(dispatch_status=DispatchStatus.SENT),
-                    ),
-                )
-            ),
+    option = before_actions.options[0]
+    selection = ActionSpaceBuilder().admit(option, {})
+    bound = ActionBinder().bind(selection, before, "context:fanout", tool_call_id="call:fanout")
+    action_result = ActionResult(bound.request_id, DispatchStatus.SENT, "fixture", True)
+    effect_step = StepResult(
+        SelectAction("context:fanout", option.action_id, tool_call_id="call:fanout"),
+        before,
+        after,
+        TaskEvaluation(
+            task.task_id,
+            after.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "generated fanout",
         ),
-        step_index=1,
+        execution_receipts=ExecutionReceiptBatch(
+            (ExecutionReceipt(bound, action_result, before.observation_id, after.observation_id),),
+            ExecutionCompletion.COMPLETE,
+        ),
+        feedback="action_dispatched",
+        public_world_delta=delta,
+        before_public_world=canonical_world(before, before_actions),
+        after_public_world=canonical_world(after, after_actions),
     )
+    store = ObservationDeliveryStore().reduce(effect_step, step_index=1).next_store
     context = ContextBuilder().build(
         task,
         after,
@@ -1325,7 +1322,7 @@ def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventor
 
 
 def test_zero_admitted_suffix_still_registers_unique_store_bound_continuation() -> None:
-    _task_value, _world_value, _actions, _evaluation, context = _context()
+    _task_value, world, _actions, evaluation, context = _context()
     plan = context.action_delivery_plan
     assert plan is not None
     empty = {item.kind.value: 0 for item in plan.obligations}
@@ -1351,9 +1348,16 @@ def test_zero_admitted_suffix_still_registers_unique_store_bound_continuation() 
     assert continuation.input_schema["properties"] == (
         {} if len(scopes) == 1 else continuation.input_schema["properties"]
     )
-    assert resolution.next_delivery_store is not None
-    assert resolution.next_delivery_store.requested_continuation_scope == scopes[0]
-    assert resolution.next_delivery_store.inventory(scopes[0]).offset == 0
+    committed = StepResult(
+        resolution.decision,
+        world,
+        world,
+        evaluation,
+        feedback="local_tool_result",
+    )
+    next_store = context.delivery_store.reduce(committed, step_index=1).next_store
+    assert next_store.requested_continuation_scope == scopes[0]
+    assert next_store.cursor(scopes[0]).offset == 0
 
 
 def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly() -> None:

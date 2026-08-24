@@ -25,8 +25,12 @@ from affordance_runtime.agent.context.context import (
 )
 from affordance_runtime.agent.context.observation_delivery import (
     DeliveryContinuationCapability,
-    PendingToolOutcome,
     PublicResultRecord,
+)
+from affordance_runtime.agent.tool_result_projection import (
+    committed_tool_call_id,
+    project_committed_tool_metadata,
+    project_committed_tool_return,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
@@ -197,6 +201,9 @@ def build_model_turn_delivery(
     include_images: bool,
     admitted_records: Mapping[str, int] | None = None,
     packing_backoff_count: int = 0,
+    committed_step: object | None = None,
+    pending_tool_call_id: str = "",
+    pending_tool_name: str = "",
 ) -> ModelTurnDelivery:
     """Build the one selected delivery for one current ActionPolicy call."""
 
@@ -211,10 +218,15 @@ def build_model_turn_delivery(
     selected_records = _selected_records(context.action_delivery_plan, selected_counts)
     public_results = tuple(item for item in selected_records if isinstance(item, PublicResultRecord))
     tool_result = _deferred_tool_delivery(
-        context.delivery_store.pending_tool_outcome,
+        committed_step,
+        pending_tool_call_id,
+        pending_tool_name,
         public_results,
     )
-    continuation_capabilities = context.delivery_store.continuation_capabilities(selected_counts)
+    continuation_capabilities = (
+        *context.action_delivery_plan.continuation_capabilities(selected_counts),
+        *context.delivery_store.active_read_continuation_capabilities(),
+    )
     effect_indices = {
         item.record_index
         for item in selected_records
@@ -344,22 +356,35 @@ def build_model_turn_delivery(
 
 
 def _deferred_tool_delivery(
-    outcome: PendingToolOutcome | None,
+    committed_step: object | None,
+    pending_tool_call_id: str,
+    pending_tool_name: str,
     records: tuple[PublicResultRecord, ...],
 ) -> DeferredToolDelivery | None:
-    if outcome is None:
+    if committed_step is None:
         return None
-    admitted = outcome.admitted_value(records)
+    if type(committed_step).__name__ != "StepResult":
+        raise TypeError("deferred tool delivery requires one committed StepResult")
+    call_id = committed_tool_call_id(committed_step)
+    if not call_id:
+        return None
+    if call_id != pending_tool_call_id or not pending_tool_name:
+        raise ValueError("committed step does not match the pending official call")
+    admitted = project_committed_tool_return(
+        committed_step,
+        admitted_evidence_records=tuple(item.public_value for item in records),
+    )
+    if admitted is None:
+        raise ValueError("pending official call requires one projected result")
     return DeferredToolDelivery(
-        outcome.call.tool_call_id,
-        outcome.call.tool_name,
+        call_id,
+        pending_tool_name,
         admitted,
-        {
-            "result_lineage": outcome.result_lineage,
-            "record_digests": tuple(item.digest for item in records),
-            "origin_context_id": outcome.call.origin_context_id,
-        },
-        outcome.failed,
+        project_committed_tool_metadata(
+            committed_step,
+            record_digests=tuple(item.digest for item in records),
+        ),
+        bool(getattr(committed_step, "runtime_failure", None)),
     )
 
 

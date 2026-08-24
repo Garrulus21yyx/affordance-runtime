@@ -281,7 +281,6 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             world,
             evaluation,
             feedback="local_tool_result",
-            next_delivery_store=first.output.next_delivery_store,
         )
         transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
@@ -290,8 +289,11 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             action_space,
             evaluation,
             delivery_store=transition.next_store,
+            last_step=step,
         )
-        second = await policy.port.generate(ModelDecisionRequest("request:read", second_context))
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:read", second_context, last_step=step)
+        )
 
         assert second.failure is None
         assert second.output is not None
@@ -304,7 +306,6 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             world,
             evaluation,
             feedback="local_tool_result",
-            next_delivery_store=second.output.next_delivery_store,
         )
         second_transition = second_context.delivery_store.reduce(second_step, step_index=2)
         third_context = builder.build(
@@ -313,8 +314,11 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             action_space,
             evaluation,
             delivery_store=second_transition.next_store,
+            last_step=second_step,
         )
-        third = await policy.port.generate(ModelDecisionRequest("request:answer", third_context))
+        third = await policy.port.generate(
+            ModelDecisionRequest("request:answer", third_context, last_step=second_step)
+        )
 
         assert third.failure is None
         assert third.output is not None
@@ -363,7 +367,6 @@ def test_list_regions_returns_standard_call_correlated_tool_result() -> None:
             world,
             evaluation,
             feedback="local_tool_result",
-            next_delivery_store=first.output.next_delivery_store,
         )
         transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
@@ -372,8 +375,11 @@ def test_list_regions_returns_standard_call_correlated_tool_result() -> None:
             actions,
             evaluation,
             delivery_store=transition.next_store,
+            last_step=step,
         )
-        second = await policy.port.generate(ModelDecisionRequest("request:list-regions-answer", second_context))
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:list-regions-answer", second_context, last_step=step)
+        )
 
         assert second.failure is None and second.output is not None
         assert isinstance(second.output.decision, FinalResponse)
@@ -556,7 +562,18 @@ def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> N
         )
 
         first = await policy.port.generate(ModelDecisionRequest("request:deliberate-1", context))
-        second = await policy.port.generate(ModelDecisionRequest("request:deliberate-2", context))
+        assert first.output is not None
+        committed = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="provider_free_committed_action",
+        )
+        next_context = replace(context, last_step=committed)
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:deliberate-2", next_context, last_step=committed)
+        )
 
         assert first.attempts[0].phase == "deliberate"
         assert first.attempts[0].trigger == "grounding_gap"
@@ -1026,7 +1043,7 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     )
     output = DeferredToolRequests(calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")])
 
-    decision, next_delivery_store, error, parsed = pydantic_bridge._resolve_deferred(
+    decision, error, parsed = pydantic_bridge._resolve_deferred(
         output,
         SimpleNamespace(
             catalog_id="grounded-catalog:test",
@@ -1037,7 +1054,6 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
 
     assert decision == normalized
     assert error is None
-    assert next_delivery_store is None
     assert parsed == (normalized,)
     assert captured["resolution"].decision == normalized
 

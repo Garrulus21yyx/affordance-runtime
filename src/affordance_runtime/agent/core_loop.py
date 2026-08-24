@@ -18,7 +18,6 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.observation_delivery import (
     DeliveryTransition,
-    InformationDelta,
     current_findings_digest,
 )
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -290,8 +289,8 @@ class CoreAgentLoop:
                 raise
             result = self._attach_canonical_worlds(task, state, result)
             delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count + 1))
-            result = self._apply_episode_monitor(result, state, delivery.information_delta)
-            self._commit_step(state, result, delivery_transition=delivery)
+            result = self._apply_episode_monitor(result, state, delivery)
+            self._commit_step(state, result)
         if state.terminal:
             self.trace_sink.run_finished(state)
         else:
@@ -418,7 +417,7 @@ class CoreAgentLoop:
         state.apply(
             result,
             consume_step=consume_step,
-            next_delivery_store=delivery_transition.next_store,
+            delivery_transition=delivery_transition,
         )
         state.workspace = workspace
         if result.task_evaluation is not None and (
@@ -481,7 +480,7 @@ class CoreAgentLoop:
         self,
         result: StepResult,
         state: RunState,
-        information_delta: InformationDelta | None = None,
+        delivery_transition: DeliveryTransition,
     ) -> StepResult:
         monitor = self.episode_monitor
         if monitor is None or result.task_evaluation is None or result.status_after in {
@@ -499,10 +498,8 @@ class CoreAgentLoop:
             result,
             current_findings_digest(result.after_world),
             working_facts_digest(state.workspace, pending_fact),
-            information_delta,
-            (
-                result.next_delivery_store or state.delivery_store
-            ).visible_public_result_digest,
+            delivery_transition.information_delta,
+            delivery_transition.next_store.visible_public_result_digest,
         )
         recommendation = getattr(transition, "recommendation", "")
         if str(recommendation) == "recover":
@@ -622,6 +619,7 @@ class CoreAgentLoop:
                 delivery_store=state.delivery_store,
                 control_feedback=_recovery_feedback(state.recovery_signal),
                 action_discovery=state.action_discovery,
+                last_step=state.last_step,
             )
         except PublicGroundingAmbiguousError:
             return StepResult(
@@ -773,8 +771,10 @@ class CoreAgentLoop:
             result,
             policy_observation=context.actor_world,
             policy_target_refs=context.grounding.target_refs,
-            next_delivery_store=getattr(
-                self.decision_ports.action_policy, "last_delivery_store", None
+            model_delivery=getattr(
+                getattr(self.decision_ports.action_policy, "port", None),
+                "last_model_delivery",
+                None,
             ),
         )
 

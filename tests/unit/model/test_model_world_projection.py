@@ -590,7 +590,6 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
             evaluation,
             RunStatus.RUNNING,
             feedback="local_tool_result",
-            next_delivery_store=opened_resolution.next_delivery_store,
         )
     )
 

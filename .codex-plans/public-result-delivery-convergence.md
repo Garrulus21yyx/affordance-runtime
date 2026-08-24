@@ -95,7 +95,7 @@ Live and cohort execution remain stopped.
    - Files: `src/affordance_runtime/agent/tool_result_projection.py`,
      `tests/unit/agent/test_tool_result_projection.py`.
 
-16. **stopped — Atomic production cutover falsified at the Store inventory owner**
+16. **completed — Atomic production cutover with snapshot/cursor ownership split**
    - Migrate policy, Catalog resolver, CoreLoop, StepResult, Store, RunState, Workspace/Monitor, TurnPacker, Envelope
      codec, and trace consumers together.
    - Delete whole-Store return fields, Store pending-call/outcome fields, manual mapping history reconstruction,
@@ -115,6 +115,13 @@ Live and cohort execution remain stopped.
      RunState consume that transition. The frozen contract does not state how the admitted per-turn inventory becomes
      an authoritative reducer input before currentness validation. No nearby fallback or guessed fix was added.
    - Evidence: `evidence/acceptance/provider-protocol-delivery-state-cutover-falsification-20260824.json`.
+   - Resolution supplied 2026-08-24: `ActionDeliveryPlan` owns the immutable per-turn inventory snapshot and admitted
+     continuation capabilities; `ObservationDeliveryStore` owns only persistent cursor progress and real temporal
+     evidence. Catalog binds a capability directly to the admitted Plan row, and the reducer validates its
+     inventory key/offset/World/action/result lineage before committing only cursor progress. ContextBuilder no longer
+     replaces the persistent Store with an `ActionDeliveryPlanningResult.store`, and the Catalog does not require
+     inventory installation in Store. Rebuilding the next Plan against fresh World/ActionSpace either reapplies the
+     cursor to matching lineage or fails typed stale/reset.
 
 17. **pending — Provider-free vertical acceptance and evidence commit**
    - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`

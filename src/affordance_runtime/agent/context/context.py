@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
     from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+    from affordance_runtime.agent.run_state import StepResult
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
     from affordance_runtime.world.contracts import WorldObservation
 
@@ -247,10 +248,18 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    last_step: StepResult | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
             raise ValueError("AgentContext requires opaque context identity")
+        if self.last_step is not None and type(self.last_step).__name__ != "StepResult":
+            raise TypeError("AgentContext last step must be committed Runtime truth")
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(
             not isinstance(item, VisualEvidenceFragment) for item in self.image_inputs

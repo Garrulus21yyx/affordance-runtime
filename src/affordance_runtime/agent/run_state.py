@@ -39,6 +39,8 @@ from affordance_runtime.world.contracts import WorldObservation
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
+    from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
+    from affordance_runtime.agent.context.observation_delivery import DeliveryTransition
     from affordance_runtime.agent.recovery import RecoverySignal
 
 
@@ -102,7 +104,7 @@ class StepResult:
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
     control_termination: ControlTermination | None = None
-    next_delivery_store: ObservationDeliveryStore | None = field(
+    model_delivery: ModelTurnDelivery | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
 
@@ -131,10 +133,11 @@ class StepResult:
                 raise TypeError("step control termination must be typed")
             if self.status_after not in {RunStatus.BLOCKED, RunStatus.CANCELLED, RunStatus.FAILED}:
                 raise ValueError("control termination requires a terminal run status")
-        if self.next_delivery_store is not None and not isinstance(
-            self.next_delivery_store, ObservationDeliveryStore
-        ):
-            raise TypeError("step delivery transition must come from the delivery owner")
+        if self.model_delivery is not None:
+            from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
+
+            if not isinstance(self.model_delivery, ModelTurnDelivery):
+                raise TypeError("step model delivery must be the admitted typed projection")
         if (self.before_public_world is None) != (self.after_public_world is None):
             raise ValueError("step canonical World projections must be supplied as a pair")
         if self.waited_ms < 0:
@@ -427,21 +430,23 @@ class RunState:
         result: StepResult,
         *,
         consume_step: bool = True,
-        next_delivery_store: ObservationDeliveryStore | None = None,
+        delivery_transition: DeliveryTransition | None = None,
     ) -> None:
         if self.status is not RunStatus.RUNNING:
             raise ValueError("only a running state can accept a step")
         if result.before_world.observation_id != self.current_world.observation_id:
             raise ValueError("step starts from a stale world")
         acquired_new_world = result.after_world.observation_id != result.before_world.observation_id
-        if next_delivery_store is None:
-            next_delivery_store = self.delivery_store.reduce(
+        if delivery_transition is None:
+            delivery_transition = self.delivery_store.reduce(
                 result,
                 step_index=max(1, self.step_count + int(consume_step)),
-            ).next_store
-        if not isinstance(next_delivery_store, ObservationDeliveryStore):
-            raise TypeError("run state requires the delivery owner's next store")
-        self.delivery_store = next_delivery_store
+            )
+        from affordance_runtime.agent.context.observation_delivery import DeliveryTransition
+
+        if not isinstance(delivery_transition, DeliveryTransition):
+            raise TypeError("run state requires one delivery transition")
+        self.delivery_store = delivery_transition.next_store
         self.current_world = result.after_world
         if result.after_public_world is not None:
             self.canonical_world = result.after_public_world

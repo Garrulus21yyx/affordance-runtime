@@ -23,6 +23,7 @@ from affordance_runtime.agent.context.contracts import (
     AgentDestinationView,
 )
 from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryContinuationCapability,
     DeliveryInventorySnapshot,
     ObservationDelivery,
     ObservationDeliveryStore,
@@ -403,17 +404,31 @@ class ActionDeliveryPlan:
             for item in self.obligations
         }
 
+    def continuation_capabilities(
+        self,
+        admitted_counts: Mapping[str, int],
+    ) -> tuple[DeliveryContinuationCapability, ...]:
+        """Bind opaque continuation credentials to this immutable snapshot."""
 
-@dataclass(frozen=True)
-class ActionDeliveryPlanningResult:
-    plan: ActionDeliveryPlan
-    store: ObservationDeliveryStore
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.plan, ActionDeliveryPlan) or not isinstance(
-            self.store, ObservationDeliveryStore
-        ):
-            raise TypeError("delivery planning result requires its typed owner values")
+        capabilities = []
+        for obligation in self.obligations:
+            inventory = obligation.inventory
+            admitted = admitted_counts.get(obligation.kind.value, 0)
+            capability = DeliveryContinuationCapability(
+                inventory.scope,
+                inventory.offset + admitted < len(inventory.records),
+                admitted,
+                len(inventory.records),
+                inventory.world_lineage,
+                inventory.action_lineage,
+                inventory.result_lineage,
+                inventory.order_digest,
+                inventory.offset,
+                inventory.kind,
+            )
+            if capability.continuation_available:
+                capabilities.append(capability)
+        return tuple(capabilities)
 
 
 def build_action_delivery_plan(
@@ -432,7 +447,7 @@ def build_action_delivery_plan(
     observation_delivery: ObservationDelivery | None = None,
     latest_effect: PublicEffectInventory | None = None,
     cursor_store: object | None = None,
-) -> ActionDeliveryPlanningResult:
+) -> ActionDeliveryPlan:
     """Build one bounded-family plan over complete current owner inventories."""
 
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
@@ -660,25 +675,45 @@ def build_action_delivery_plan(
             if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
             else "current"
         )
+        scope = scope_by_kind[kind]
+        incoming_offset = (
+            result_inventory.offset
+            if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
+            else 0
+        )
+        progress = (
+            cursor_store.cursor(scope)
+            if isinstance(cursor_store, ObservationDeliveryStore)
+            else None
+        )
+        if progress is not None and (
+            progress.kind,
+            progress.world_lineage,
+            progress.action_lineage,
+            progress.result_lineage,
+            progress.order_digest,
+        ) == (
+            kind.value,
+            world_observation_id,
+            "local_result" if kind is DeliveryObligationKind.PUBLIC_RESULT else action_space_id,
+            result_lineage or "current",
+            order_digest,
+        ):
+            incoming_offset = min(progress.offset, len(records))
         inventory_specs.append(
             DeliveryInventorySnapshot(
-                scope_by_kind[kind],
+                scope,
                 kind.value,
                 world_observation_id,
                 "local_result" if kind is DeliveryObligationKind.PUBLIC_RESULT else action_space_id,
                 result_lineage or "current",
                 order_digest,
                 tuple(records),
-                result_inventory.offset
-                if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
-                else 0,
+                incoming_offset,
             )
         )
-    owner_store = (
-        cursor_store if isinstance(cursor_store, ObservationDeliveryStore) else ObservationDeliveryStore()
-    ).install_inventories(tuple(inventory_specs))
     obligations = []
-    for inventory in owner_store.inventories:
+    for inventory in inventory_specs:
         kind = DeliveryObligationKind(inventory.kind)
         obligations.append(
             DeliveryObligation(
@@ -693,7 +728,16 @@ def build_action_delivery_plan(
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
-    requested_scope = owner_store.requested_continuation_scope
+    requested_scope = (
+        cursor_store.requested_continuation_scope
+        if isinstance(cursor_store, ObservationDeliveryStore)
+        and any(
+            item.continuation_scope == cursor_store.requested_continuation_scope
+            and item.remaining
+            for item in obligations
+        )
+        else None
+    )
     foreground = next(
         (
             item.continuation_scope
@@ -702,15 +746,12 @@ def build_action_delivery_plan(
         ),
         None,
     ) or next((item.continuation_scope for item in ordered if item.remaining), None)
-    return ActionDeliveryPlanningResult(
-        ActionDeliveryPlan(
-            action_space_id,
-            world_observation_id,
-            ordered,
-            foreground,
-            requested_scope=requested_scope,
-        ),
-        owner_store,
+    return ActionDeliveryPlan(
+        action_space_id,
+        world_observation_id,
+        ordered,
+        foreground,
+        requested_scope=requested_scope,
     )
 
 

@@ -40,6 +40,7 @@ from affordance_runtime.agent.context.world_projection import (
     project_model_world,
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import TaskEvaluation
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex, public_text_evidence_records
@@ -76,6 +77,7 @@ class ContextBuilder:
         delivery_store: ObservationDeliveryStore = ObservationDeliveryStore(),
         control_feedback: dict[str, object] | None = None,
         action_discovery: ActionDiscoveryResult | None = None,
+        last_step: StepResult | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -201,7 +203,7 @@ class ContextBuilder:
             recent_outcomes=history_items,
             top_k=5,
         )
-        delivery_planning = build_action_delivery_plan(
+        action_delivery_plan = build_action_delivery_plan(
             action_space_id=action_space.action_space_id,
             world_observation_id=observation.observation_id,
             base_actions=actions.options,
@@ -221,8 +223,6 @@ class ContextBuilder:
             ),
             cursor_store=delivery_store,
         )
-        action_delivery_plan = delivery_planning.plan
-        delivery_store = delivery_planning.store
         candidate_projection = action_delivery_plan.projection(action_delivery_plan.bounded_preview_counts())
         return _fit_context(
             identity.context_id,
@@ -247,6 +247,7 @@ class ContextBuilder:
             action_delivery_plan,
             delivery_store,
             observation_delivery,
+            last_step,
         )
 
     def page(
@@ -486,6 +487,7 @@ def _fit_context(
     action_delivery_plan,
     delivery_store: ObservationDeliveryStore,
     observation_delivery,
+    last_step: StepResult | None,
 ) -> AgentContext:
     evidence_index = _evidence_index(
         observation,
@@ -532,6 +534,7 @@ def _fit_context(
         observation_delivery,
         action_delivery_plan,
         delivery_store,
+        last_step,
     )
 
 

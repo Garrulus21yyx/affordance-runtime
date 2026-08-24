@@ -47,8 +47,11 @@ def test_removed_working_memory_contract_stays_absent() -> None:
 
 def test_model_request_and_agent_context_each_have_one_context_authority() -> None:
     assert {item.name for item in fields(ModelDecisionRequest)} == {
-        "request_id", "agent_context",
+        "request_id", "agent_context", "last_step",
     }
+    assert next(item for item in fields(ModelDecisionRequest) if item.name == "last_step").metadata[
+        "serialize"
+    ] is False
     assert "world" not in {item.name for item in fields(AgentContext)}
     assert "actor_world" in {item.name for item in fields(AgentContext)}
 

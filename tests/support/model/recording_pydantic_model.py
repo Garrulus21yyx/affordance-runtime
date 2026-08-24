@@ -131,6 +131,7 @@ class RecordingPydanticModel:
     scripted_phases: list[str] = field(default_factory=list)
     records: list[RecordedProviderInvocation] = field(default_factory=list, init=False)
     last_gui_call: tuple[str, dict[str, object]] | None = field(default=None, init=False)
+    last_gui_call_id: str = field(default="", init=False)
 
     @property
     def calls(self) -> int:
@@ -254,7 +255,14 @@ class RecordingPydanticModel:
             else:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
-            parts = [ToolCallPart(name, arguments, tool_call_id=f"recording-call:{ordinal}")]
+            call_id = (
+                self.last_gui_call_id
+                if scripted == "repeat_last_gui_call"
+                else f"recording-call:{ordinal}"
+            )
+            if scripted != "repeat_last_gui_call":
+                self.last_gui_call_id = call_id
+            parts = [ToolCallPart(name, arguments, tool_call_id=call_id)]
             if scripted == "multiple_gui_actions":
                 parts.append(
                     ToolCallPart(name, arguments, tool_call_id=f"recording-call:{ordinal}:second")

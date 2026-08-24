@@ -24,7 +24,6 @@ from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
 from affordance_runtime.agent.context.observation_delivery import (
     DeliveryContinuationCapability,
-    DeliveryContinuationOutcomeKind,
 )
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.decisions import (
@@ -105,11 +104,6 @@ class _ActionResultsNextPageBinding:
         if scope not in scopes or set(arguments).difference({"scope"}):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         capability = next(item for item in self.capabilities if item.scope == scope)
-        outcome = self.context.delivery_store.continue_delivery(capability)
-        if outcome.kind is DeliveryContinuationOutcomeKind.STALE:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-        if outcome.kind is not DeliveryContinuationOutcomeKind.READY or outcome.next_store is None:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return GroundedActionResolution(
             ContinueDeliveryResult(
                 context_id,
@@ -117,7 +111,7 @@ class _ActionResultsNextPageBinding:
                 {"scope": scope},
                 PublicEvidenceResult(
                     {
-                        "continuation_available": outcome.next_store.inventory(scope) is not None,
+                        "continuation_available": True,
                         "continuation_scope": scope,
                         "read_only": True,
                         "zero_browser_dispatch": True,
@@ -128,8 +122,8 @@ class _ActionResultsNextPageBinding:
                     reuse_inventory=True,
                 ),
                 tool_call_id,
+                continuation=capability,
             ),
-            outcome.next_store,
         )
 
 
@@ -388,11 +382,6 @@ class _WorldReadBinding:
             page_cursor,
             result,
         )
-        store = self.context.delivery_store
-        replace_active_read = getattr(store, "with_active_read", None)
-        if not callable(replace_active_read):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        next_store = replace_active_read(lens)
         public_arguments: Mapping[str, object]
         if tool_name == GroundedLocalToolName.READ_REGION.value:
             public_arguments = {"region_ref": region_ref}
@@ -420,8 +409,8 @@ class _WorldReadBinding:
                     append_to_inventory=bool(page_cursor),
                 ),
                 tool_call_id,
+                delivery_lens=lens,
             ),
-            next_store,
         )
 
     def _continue_obligation(
@@ -437,11 +426,6 @@ class _WorldReadBinding:
         )
         if capability is None:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        outcome = self.context.delivery_store.continue_delivery(capability)
-        if outcome.kind is DeliveryContinuationOutcomeKind.STALE:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-        if outcome.kind is not DeliveryContinuationOutcomeKind.READY or outcome.next_store is None:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         return GroundedActionResolution(
             ReadRegionResult(
                 context_id,
@@ -454,8 +438,8 @@ class _WorldReadBinding:
                     "continuation_scope": scope,
                 },
                 tool_call_id,
+                continuation=capability,
             ),
-            outcome.next_store,
         )
 
 

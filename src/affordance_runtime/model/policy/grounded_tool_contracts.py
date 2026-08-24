@@ -105,13 +105,10 @@ class GroundedActionResolution:
     """One current action/control decision resolved from a clean action tool."""
 
     decision: AgentDecision
-    next_delivery_store: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision, AgentDecision):
             raise TypeError("grounded action resolution requires a typed decision")
-        if self.next_delivery_store is not None and type(self.next_delivery_store).__name__ != "ObservationDeliveryStore":
-            raise TypeError("grounded action resolution requires the delivery owner's next store")
 
 
 class GroundedToolResolutionError(ValueError):

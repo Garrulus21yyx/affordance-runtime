@@ -44,7 +44,6 @@ class ModelBackedAgentPolicy:
         default=None, init=False, compare=False
     )
     last_fallback_count: int = field(default=0, init=False, compare=False)
-    last_delivery_store: object | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not 0 < self.call_timeout_s <= 300:
@@ -76,7 +75,6 @@ class ModelBackedAgentPolicy:
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_fallback_count", 0)
-        object.__setattr__(self, "last_delivery_store", None)
         try:
             request = _build_request(context)
         except Exception:
@@ -113,9 +111,7 @@ class ModelBackedAgentPolicy:
         if invocation.failure is not None:
             return _policy_failure(invocation.failure)
         outcome = invocation.output
-        object.__setattr__(self, "last_delivery_store", outcome.next_delivery_store)
         if outcome.decision.context_id != context.context_id:
-            object.__setattr__(self, "last_delivery_store", None)
             return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
         return outcome.decision
 
@@ -125,6 +121,7 @@ def _build_request(context: AgentContext) -> ModelDecisionRequest:
     return ModelDecisionRequest(
         request_id=f"model-request:{suffix}",
         agent_context=context,
+        last_step=context.last_step,
     )
 
 

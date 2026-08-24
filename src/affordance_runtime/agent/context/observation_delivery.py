@@ -20,7 +20,8 @@ from affordance_runtime.agent.context.world_transition import (
     PublicChangeKind,
     PublicWorldDelta,
 )
-from affordance_runtime.agent.decisions import PublicEvidenceResult
+from affordance_runtime.agent.runtime_failure import RuntimeFailure
+from affordance_runtime.agent.tool_result_projection import committed_public_evidence
 from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import CurrentFinding
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -114,13 +115,10 @@ class DeliveryContinuationCapability:
 @dataclass(frozen=True)
 class DeliveryContinuationOutcome:
     kind: DeliveryContinuationOutcomeKind
-    next_store: "ObservationDeliveryStore | None" = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, DeliveryContinuationOutcomeKind):
             raise TypeError("delivery continuation outcome must be typed")
-        if (self.kind is DeliveryContinuationOutcomeKind.READY) != (self.next_store is not None):
-            raise ValueError("delivery continuation outcome/store mismatch")
 
 
 class InformationDeltaKind(StrEnum):
@@ -250,58 +248,6 @@ class PublicResultInventory:
 
 
 @dataclass(frozen=True)
-class PendingToolCall:
-    """One unresolved external call identity awaiting a paired typed result."""
-
-    tool_call_id: str
-    tool_name: str
-    origin_context_id: str = field(repr=False, compare=False, metadata={"serialize": False})
-
-    def __post_init__(self) -> None:
-        if (
-            not self.tool_call_id.strip()
-            or not self.tool_name.strip()
-            or not self.origin_context_id.startswith("context:")
-        ):
-            raise ValueError("pending external tool call identity is invalid")
-
-
-@dataclass(frozen=True)
-class PendingToolOutcome:
-    """Typed public outcome paired to one pending external call."""
-
-    call: PendingToolCall
-    public_value: Mapping[str, object]
-    result_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
-    record_field: str = ""
-    failed: bool = False
-
-    def __post_init__(self) -> None:
-        value = freeze_json(dict(self.public_value))
-        if (
-            not isinstance(self.call, PendingToolCall)
-            or not self.result_lineage.startswith("sha256:")
-            or self.record_field not in {"", "items", "matches"}
-            or type(self.failed) is not bool
-        ):
-            raise ValueError("pending external tool outcome is invalid")
-        object.__setattr__(self, "public_value", value)
-
-    def admitted_value(
-        self,
-        records: tuple[PublicResultRecord, ...],
-    ) -> Mapping[str, object]:
-        if not self.record_field:
-            return self.public_value
-        return freeze_json(
-            {
-                **dict(self.public_value),
-                self.record_field: tuple(item.public_value for item in records),
-            }
-        )
-
-
-@dataclass(frozen=True)
 class LocalDeliveryRecord:
     operation: str
     world_digest: str
@@ -327,6 +273,17 @@ class LocalDeliveryRecord:
 class DeliveryTransition:
     next_store: "ObservationDeliveryStore"
     information_delta: InformationDelta | None
+    runtime_failure: RuntimeFailure | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.next_store, ObservationDeliveryStore):
+            raise TypeError("delivery transition requires the reducer-owned next Store")
+        if self.information_delta is not None and not isinstance(
+            self.information_delta, InformationDelta
+        ):
+            raise TypeError("delivery transition information delta must be typed")
+        if self.runtime_failure is not None and not isinstance(self.runtime_failure, RuntimeFailure):
+            raise TypeError("delivery transition Runtime failure must be typed")
 
 
 @dataclass(frozen=True)
@@ -722,14 +679,8 @@ class ObservationDeliveryStore:
     public_result_inventory: PublicResultInventory | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
-    pending_tool_call: PendingToolCall | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
-    pending_tool_outcome: PendingToolOutcome | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
     active_read: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
-    inventories: tuple[DeliveryInventorySnapshot, ...] = field(
+    cursor_progress: tuple[DeliveryContinuationCapability, ...] = field(
         default=(), repr=False, compare=False, metadata={"serialize": False}
     )
     action_query: StoredActionQuery | None = field(default=None, repr=False, compare=False)
@@ -751,25 +702,16 @@ class ObservationDeliveryStore:
             self.public_result_inventory, PublicResultInventory
         ):
             raise TypeError("observation delivery public results must be a typed inventory")
-        if self.pending_tool_call is not None and not isinstance(
-            self.pending_tool_call, PendingToolCall
-        ):
-            raise TypeError("observation delivery pending call must be typed")
-        if self.pending_tool_outcome is not None and (
-            not isinstance(self.pending_tool_outcome, PendingToolOutcome)
-            or self.pending_tool_call is None
-            or self.pending_tool_outcome.call != self.pending_tool_call
-        ):
-            raise TypeError("observation delivery pending outcome must match its call")
         if self.active_read is not None and not isinstance(self.active_read, WorldDeliveryLens):
             raise TypeError("observation delivery active read must be a private typed cursor")
-        inventories = tuple(self.inventories)
+        cursor_progress = tuple(self.cursor_progress)
         if (
-            any(not isinstance(item, DeliveryInventorySnapshot) for item in inventories)
-            or len({item.scope for item in inventories}) != len(inventories)
+            any(not isinstance(item, DeliveryContinuationCapability) for item in cursor_progress)
+            or len({item.scope for item in cursor_progress}) != len(cursor_progress)
+            or any(item.admitted_count != 0 for item in cursor_progress)
         ):
-            raise ValueError("observation delivery inventories are invalid")
-        object.__setattr__(self, "inventories", inventories)
+            raise ValueError("observation delivery cursor progress is invalid")
+        object.__setattr__(self, "cursor_progress", cursor_progress)
         if self.action_query is not None and not isinstance(self.action_query, StoredActionQuery):
             raise TypeError("observation delivery action query must be private typed inventory")
         search_follow_ups = tuple(self.search_follow_ups)
@@ -792,28 +734,8 @@ class ObservationDeliveryStore:
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             public_result_inventory=self.public_result_inventory,
-            pending_tool_call=self.pending_tool_call,
-            pending_tool_outcome=self.pending_tool_outcome,
             active_read=lens,
-            inventories=self.inventories,
-            action_query=self.action_query,
-            search_follow_ups=self.search_follow_ups,
-            requested_continuation_scope=self.requested_continuation_scope,
-        )
-
-    def with_pending_tool_call(self, call: PendingToolCall) -> "ObservationDeliveryStore":
-        """Install the sole unresolved provider call without changing delivery inventories."""
-
-        if not isinstance(call, PendingToolCall):
-            raise TypeError("pending provider call must be typed")
-        return ObservationDeliveryStore(
-            latest_effect=self.latest_effect,
-            local_deliveries=self.local_deliveries,
-            public_result_inventory=self.public_result_inventory,
-            pending_tool_call=call,
-            pending_tool_outcome=None,
-            active_read=self.active_read,
-            inventories=self.inventories,
+            cursor_progress=self.cursor_progress,
             action_query=self.action_query,
             search_follow_ups=self.search_follow_ups,
             requested_continuation_scope=self.requested_continuation_scope,
@@ -846,10 +768,8 @@ class ObservationDeliveryStore:
                 inventory,
                 visible_record_digests=tuple(item.digest for item in selected),
             ),
-            pending_tool_call=self.pending_tool_call,
-            pending_tool_outcome=self.pending_tool_outcome,
             active_read=self.active_read,
-            inventories=self.inventories,
+            cursor_progress=self.cursor_progress,
             action_query=self.action_query,
             search_follow_ups=self.search_follow_ups,
             requested_continuation_scope=self.requested_continuation_scope,
@@ -880,100 +800,41 @@ class ObservationDeliveryStore:
             and public_results is self.public_result_inventory
         ):
             return self
-        inventories = tuple(
-            item for item in self.inventories if public_results is not None or item.scope != "public_result"
+        cursor_progress = tuple(
+            item for item in self.cursor_progress if item.world_lineage == world_observation_id
         )
         return ObservationDeliveryStore(
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             public_result_inventory=public_results,
-            pending_tool_call=self.pending_tool_call,
-            pending_tool_outcome=self.pending_tool_outcome,
             active_read=active_read,
-            inventories=inventories,
+            cursor_progress=cursor_progress,
             action_query=self.action_query,
             search_follow_ups=search_follow_ups,
             requested_continuation_scope=(
                 None
-                if public_results is None and self.requested_continuation_scope == "public_result"
+                if (
+                    self.requested_continuation_scope == "public_result"
+                    and public_results is None
+                )
+                or (
+                    self.requested_continuation_scope not in {"public_result", "active_read"}
+                    and not any(
+                        item.scope == self.requested_continuation_scope
+                        for item in cursor_progress
+                    )
+                )
                 else self.requested_continuation_scope
             ),
         )
 
-    def install_inventories(
+    def cursor(self, scope: str) -> DeliveryContinuationCapability | None:
+        return next((item for item in self.cursor_progress if item.scope == scope), None)
+
+    def active_read_continuation_capabilities(
         self,
-        inventories: tuple[DeliveryInventorySnapshot, ...],
-    ) -> "ObservationDeliveryStore":
-        """Install fresh immutable inventories while conserving current exact offsets."""
-
-        current = {item.scope: item for item in self.inventories}
-        installed = []
-        for incoming in inventories:
-            prior = current.get(incoming.scope)
-            same_inventory = prior is not None and (
-                prior.world_lineage,
-                prior.action_lineage,
-                prior.result_lineage,
-                prior.order_digest,
-            ) == (
-                incoming.world_lineage,
-                incoming.action_lineage,
-                incoming.result_lineage,
-                incoming.order_digest,
-            )
-            installed.append(
-                DeliveryInventorySnapshot(
-                    incoming.scope,
-                    incoming.kind,
-                    incoming.world_lineage,
-                    incoming.action_lineage,
-                    incoming.result_lineage,
-                    incoming.order_digest,
-                    incoming.records,
-                    min(prior.offset, len(incoming.records)) if same_inventory else incoming.offset,
-                )
-            )
-        return ObservationDeliveryStore(
-            latest_effect=self.latest_effect,
-            local_deliveries=self.local_deliveries,
-            public_result_inventory=self.public_result_inventory,
-            pending_tool_call=self.pending_tool_call,
-            pending_tool_outcome=self.pending_tool_outcome,
-            active_read=self.active_read,
-            inventories=tuple(installed),
-            action_query=self.action_query,
-            search_follow_ups=self.search_follow_ups,
-            requested_continuation_scope=(
-                self.requested_continuation_scope
-                if any(item.scope == self.requested_continuation_scope for item in installed)
-                else None
-            ),
-        )
-
-    def inventory(self, scope: str) -> DeliveryInventorySnapshot | None:
-        return next((item for item in self.inventories if item.scope == scope), None)
-
-    def continuation_capabilities(
-        self,
-        admitted_counts: Mapping[str, int],
     ) -> tuple[DeliveryContinuationCapability, ...]:
         capabilities = []
-        for inventory in self.inventories:
-            admitted = admitted_counts.get(inventory.kind, 0)
-            capability = DeliveryContinuationCapability(
-                inventory.scope,
-                inventory.offset + admitted < len(inventory.records),
-                admitted,
-                len(inventory.records),
-                inventory.world_lineage,
-                inventory.action_lineage,
-                inventory.result_lineage,
-                inventory.order_digest,
-                inventory.offset,
-                inventory.kind,
-            )
-            if capability.continuation_available:
-                capabilities.append(capability)
         if self.active_read is not None and self.active_read.next_cursor:
             lens_digest = _public_digest(
                 (
@@ -1007,61 +868,77 @@ class ObservationDeliveryStore:
         if capability.scope == "active_read":
             if self.active_read is None or not self.active_read.next_cursor:
                 return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
-            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.READY, self)
-        inventory = self.inventory(capability.scope)
-        if inventory is None:
-            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.UNSUPPORTED)
-        if (
-            inventory.world_lineage,
-            inventory.action_lineage,
-            inventory.result_lineage,
-            inventory.order_digest,
-            inventory.offset,
-        ) != (
-            capability.world_lineage,
-            capability.action_lineage,
-            capability.result_lineage,
-            capability.order_digest,
-            capability.offset,
-        ):
-            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
-        next_offset = inventory.offset + capability.admitted_count
-        if next_offset >= len(inventory.records):
+            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.READY)
+        if capability.scope == "public_result":
+            inventory = self.public_result_inventory
+            if inventory is None:
+                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.UNSUPPORTED)
+            if (
+                inventory.world_observation_id,
+                inventory.result_lineage,
+                inventory.order_digest,
+                inventory.offset,
+            ) != (
+                capability.world_lineage,
+                capability.result_lineage,
+                capability.order_digest,
+                capability.offset,
+            ):
+                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
+        else:
+            progress = self.cursor(capability.scope)
+            if progress is not None and (
+                progress.world_lineage,
+                progress.action_lineage,
+                progress.result_lineage,
+                progress.order_digest,
+            ) == (
+                capability.world_lineage,
+                capability.action_lineage,
+                capability.result_lineage,
+                capability.order_digest,
+            ) and progress.offset != capability.offset:
+                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
+        next_offset = capability.offset + capability.admitted_count
+        if next_offset >= capability.inventory_size:
             return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.EXHAUSTED)
-        next_inventories = tuple(
-            replace(item, offset=next_offset) if item.scope == inventory.scope else item
-            for item in self.inventories
-        )
-        return DeliveryContinuationOutcome(
-            DeliveryContinuationOutcomeKind.READY,
-            ObservationDeliveryStore(
-                latest_effect=self.latest_effect,
-                local_deliveries=self.local_deliveries,
-                public_result_inventory=(
-                    replace(self.public_result_inventory, offset=next_offset)
-                    if self.public_result_inventory is not None and capability.scope == "public_result"
-                    else self.public_result_inventory
-                ),
-                pending_tool_call=self.pending_tool_call,
-                pending_tool_outcome=self.pending_tool_outcome,
-                active_read=self.active_read,
-                inventories=next_inventories,
-                action_query=self.action_query,
-                search_follow_ups=self.search_follow_ups,
-                requested_continuation_scope=capability.scope,
-            ),
-        )
+        return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.READY)
 
     def reduce(self, step: object, *, step_index: int) -> DeliveryTransition:
-        committed_store = getattr(step, "next_delivery_store", None)
-        if committed_store is not None and not isinstance(committed_store, ObservationDeliveryStore):
-            raise TypeError("committed delivery transition must be a typed Store")
-        external = committed_store or self.advance(step, step_index=step_index)
+        if type(step).__name__ != "StepResult":
+            raise TypeError("delivery reducer requires one committed StepResult")
+        external = self
+        model_delivery = getattr(step, "model_delivery", None)
+        if model_delivery is not None:
+            external = external.with_visible_public_results(
+                tuple(getattr(model_delivery, "public_results", ()))
+            )
+        after_world = getattr(step, "after_world", None)
+        world_observation_id = str(getattr(after_world, "observation_id", ""))
+        external = external.for_world(world_observation_id)
+        external = external._apply_effect(step, step_index=step_index)
         decision = getattr(step, "decision", None)
+        continuation = getattr(decision, "continuation", None)
+        if continuation is not None:
+            admitted_capabilities = tuple(
+                getattr(model_delivery, "continuation_capabilities", ())
+            )
+            if model_delivery is not None and continuation not in admitted_capabilities:
+                raise ValueError("committed continuation was not admitted by the exact model turn")
+            if continuation.world_lineage != world_observation_id:
+                raise ValueError("committed continuation belongs to a stale World")
+            outcome = external.continue_delivery(continuation)
+            if outcome.kind is not DeliveryContinuationOutcomeKind.READY:
+                raise ValueError(f"committed continuation is {outcome.kind.value}")
+            external = external._apply_continuation(continuation)
+        delivery_lens = getattr(decision, "delivery_lens", None)
+        if delivery_lens is not None:
+            if delivery_lens.world_observation_id != world_observation_id:
+                raise ValueError("committed local read belongs to a stale World")
+            external = external.with_active_read(delivery_lens)
         operation = str(getattr(decision, "tool_name", ""))
         arguments = getattr(decision, "arguments", None)
-        raw_result = getattr(decision, "result", None)
-        evidence = raw_result if isinstance(raw_result, PublicEvidenceResult) else None
+        evidence = committed_public_evidence(step)
         discovery = getattr(step, "action_page_result", None)
         if not operation and discovery is not None:
             operation = "find_controls"
@@ -1070,15 +947,9 @@ class ObservationDeliveryStore:
                 "continuation_scope": getattr(decision, "continuation_scope", ""),
             }
 
-        pending_outcome = _pending_outcome(step, external.pending_tool_call, evidence)
         if evidence is None:
             if discovery is None:
-                if pending_outcome is None:
-                    return DeliveryTransition(external, None)
-                return DeliveryTransition(
-                    replace(external, pending_tool_outcome=pending_outcome),
-                    None,
-                )
+                return DeliveryTransition(external, None, getattr(step, "runtime_failure", None))
             result = discovery.to_public_value()
         else:
             result = evidence.value
@@ -1086,7 +957,13 @@ class ObservationDeliveryStore:
         world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
         arguments_digest = _public_digest(arguments or {})
         result_digest = _public_digest(result)
-        items = evidence.records if evidence is not None else ()
+        items = (
+            evidence.records
+            if evidence is not None
+            else tuple(result.get("matches", ()))
+            if discovery is not None
+            else ()
+        )
         effective_operation = operation
         source_scope = evidence.source_scope if evidence is not None else "action_query"
         current_inventory = external.public_result_inventory
@@ -1115,12 +992,7 @@ class ObservationDeliveryStore:
                 arguments_digest,
                 result_digest,
             )
-            return DeliveryTransition(
-                replace(external, pending_tool_outcome=pending_outcome)
-                if pending_outcome is not None
-                else external,
-                delta,
-            )
+            return DeliveryTransition(external, delta, getattr(step, "runtime_failure", None))
 
         delivered = {
             digest
@@ -1211,19 +1083,52 @@ class ObservationDeliveryStore:
             latest_effect=external.latest_effect,
             local_deliveries=(*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
             public_result_inventory=public_inventory,
-            pending_tool_call=external.pending_tool_call,
-            pending_tool_outcome=pending_outcome or external.pending_tool_outcome,
             active_read=external.active_read,
-            inventories=external.inventories,
+            cursor_progress=external.cursor_progress,
             action_query=query_inventory,
             search_follow_ups=search_follow_ups,
             requested_continuation_scope=(
                 None if discovery is not None else external.requested_continuation_scope
             ),
         )
-        return DeliveryTransition(next_store, delta)
+        return DeliveryTransition(next_store, delta, getattr(step, "runtime_failure", None))
 
-    def advance(self, step: object, *, step_index: int) -> "ObservationDeliveryStore":
+    def _apply_continuation(
+        self,
+        capability: DeliveryContinuationCapability,
+    ) -> "ObservationDeliveryStore":
+        if capability.scope == "active_read":
+            return replace(self, requested_continuation_scope=capability.scope)
+        next_offset = capability.offset + capability.admitted_count
+        progress = DeliveryContinuationCapability(
+            capability.scope,
+            next_offset < capability.inventory_size,
+            0,
+            capability.inventory_size,
+            capability.world_lineage,
+            capability.action_lineage,
+            capability.result_lineage,
+            capability.order_digest,
+            next_offset,
+            capability.kind,
+        )
+        next_progress = tuple(
+            item for item in self.cursor_progress if item.scope != capability.scope
+        )
+        if capability.scope != "public_result":
+            next_progress = (*next_progress, progress)
+        return replace(
+            self,
+            public_result_inventory=(
+                replace(self.public_result_inventory, offset=next_offset)
+                if self.public_result_inventory is not None and capability.scope == "public_result"
+                else self.public_result_inventory
+            ),
+            cursor_progress=next_progress,
+            requested_continuation_scope=capability.scope,
+        )
+
+    def _apply_effect(self, step: object, *, step_index: int) -> "ObservationDeliveryStore":
         batch = getattr(step, "execution_receipts", None)
         receipts = tuple(getattr(batch, "receipts", ()))
         delta = getattr(step, "public_world_delta", None)
@@ -1255,62 +1160,10 @@ class ObservationDeliveryStore:
             before_projection,
             after_projection,
         )
-        return ObservationDeliveryStore(
+        return replace(
+            self,
             latest_effect=LatestEffect(step_index, cause[:240], dispatch, delta, inventory),
-            local_deliveries=self.local_deliveries,
-            public_result_inventory=self.public_result_inventory,
-            pending_tool_call=self.pending_tool_call,
-            pending_tool_outcome=self.pending_tool_outcome,
-            active_read=self.active_read,
-            inventories=self.inventories,
-            action_query=self.action_query,
-            search_follow_ups=self.search_follow_ups,
-            requested_continuation_scope=self.requested_continuation_scope,
         )
-
-
-def _pending_outcome(
-    step: object,
-    pending: PendingToolCall | None,
-    evidence: PublicEvidenceResult | None,
-) -> PendingToolOutcome | None:
-    """Project one completed Runtime step back to its unresolved provider call."""
-
-    if pending is None:
-        return None
-    decision = getattr(step, "decision", None)
-    decision_call_id = str(getattr(decision, "tool_call_id", ""))
-    if not decision_call_id:
-        return None
-    if decision_call_id != pending.tool_call_id:
-        raise ValueError("completed Runtime step does not match its pending provider call")
-    if evidence is not None:
-        value = evidence.value
-        record_field = evidence.record_field
-    else:
-        discovery = getattr(step, "action_page_result", None)
-        if discovery is not None:
-            value = discovery.to_public_value()
-        else:
-            value = freeze_json(
-                {
-                    "status": str(getattr(step, "status_after", "running")),
-                    "feedback": str(getattr(step, "feedback", "completed")) or "completed",
-                }
-            )
-        record_field = ""
-    failed = str(getattr(step, "status_after", "")).casefold() in {
-        "blocked",
-        "failed",
-        "cancelled",
-    }
-    return PendingToolOutcome(
-        pending,
-        value,
-        _public_digest(value),
-        record_field,
-        failed,
-    )
 
 
 def _unique_public_result_records(

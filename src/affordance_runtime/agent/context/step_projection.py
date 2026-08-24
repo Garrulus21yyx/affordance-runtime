@@ -85,8 +85,6 @@ def project_step_result(
     if information_delta is not None:
         summary["information_delta"] = information_delta.kind.value
         summary["new_information_count"] = information_delta.new_information_count
-    if result.tool_result is not None and information_delta is None:
-        summary["result"] = project_public_value(result.tool_result)
     if (
         isinstance(decision, RequestActionPage)
         and result.action_page_result is not None
