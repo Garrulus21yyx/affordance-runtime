@@ -15,6 +15,7 @@ provider-protocol and delivery-state convergence provider-free acceptance falsif
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
 authorized held-out rerun falsified multiple-call pending-exchange conservation /
 accepted-tool-exchange owner repair provider-free verified; independent fresh-context review passed /
+authorized held-out rerun falsified effect-continuation result typing /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -366,6 +367,18 @@ were clean and no provider/live/BrowserGym run occurred. Evidence:
 [`accepted-tool-exchange-fresh-review-20260824.json`](../evidence/acceptance/accepted-tool-exchange-fresh-review-20260824.json).
 Overall remains non-closed. The next eligible step is only to request explicit authorization for one held-out Task21
 witness; the bounded cohort remains stopped.
+
+Authorized Task21 rerun falsification (revision `52082718`, run5): search→R9, direct R9 reads, and active-read paging
+all worked, and twelve provider calls returned twelve valid tool calls with no retry or rate limit. The terminal failure
+occurred locally before another provider attempt after DeepSeek validly selected `read_next_page(scope="effect")`.
+`_WorldReadBinding._continue_obligation` produced a `ReadRegionResult` for that non-evidence continuation receipt;
+the closed decision constructor therefore wrapped its scalar mapping as `PublicEvidenceResult`. When the next physical
+ToolReturn projected the zero admitted evidence-record prefix, scalar `with_records(())` deterministically raised
+`ValueError: scalar evidence result requires its one complete record`. The supported algebra already has
+`ContinueDeliveryResult` for this receipt; this is one producer subtype mismatch, not a provider, page, continuation
+lineage, accepted-exchange, or reporting failure. Evidence:
+[`task21-effect-continuation-result-falsification-20260824.json`](../evidence/acceptance/task21-effect-continuation-result-falsification-20260824.json).
+Live and cohort execution stop; work returns only to the ToolCatalog continuation-result subtype owner.
 
 #### Reuse boundary and remaining custom surface
 

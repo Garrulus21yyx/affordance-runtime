@@ -15,6 +15,7 @@ provider-protocol and delivery-state convergence provider-free acceptance falsif
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
 authorized held-out rerun falsified multiple-call pending-exchange conservation /
 accepted-tool-exchange owner repair provider-free verified; independent fresh-context review passed /
+authorized held-out rerun falsified effect-continuation result typing /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -268,6 +269,15 @@ It independently verified `40` bridge FunctionModel tests, `1689` collected test
 `1670 passed / 19 skipped` suite, static/negative checks, and exact revision/tree-hash agreement. No provider/live or
 BrowserGym run occurred. Overall remains non-closed; only an explicit authorization may start one held-out Task21
 witness, and the bounded cohort remains stopped.
+
+The authorized Task21 run5 is recorded in
+[`task21-effect-continuation-result-falsification-20260824.json`](../evidence/acceptance/task21-effect-continuation-result-falsification-20260824.json).
+It completed reporting and cleanup after twelve valid provider tool calls with zero retries. Search→R9, R9 reading, and
+active-read paging remained functional. The failure was a zero-provider-attempt local projection error after the valid
+`read_next_page(scope="effect")` call: the Catalog producer returned `ReadRegionResult`, which automatically became a
+scalar `PublicEvidenceResult`, while the next ToolReturn attempted to project an empty admitted evidence prefix. This
+reopens only the effect/page-directory continuation result subtype producer. Further live execution and the bounded
+cohort are stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 

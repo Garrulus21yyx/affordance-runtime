@@ -1,0 +1,61 @@
+{
+  "schema": "task21-effect-continuation-result-falsification.v1",
+  "date": "2026-08-24",
+  "revision": "52082718dd527833efeda2d5a99553e72faf320f",
+  "case_id": "webarena-verified-w1b-task-21",
+  "run_directory": "evidence/live/w1b-task-21-deepseek-v4-flash-heldout-20260824-run5",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "live": true,
+  "result": "falsified",
+  "overall_status": "reopened_non_closed",
+  "primary_failure": {
+    "origin": "local_runtime_pre_provider",
+    "kind": "internal_error",
+    "exception_class": "ValueError",
+    "detail": "scalar evidence result requires its one complete record",
+    "provider_attempts_at_failure": 0,
+    "rate_limited": false
+  },
+  "run_facts": {
+    "provider_attempts": 12,
+    "valid_tool_calls": 12,
+    "provider_retries": 0,
+    "multiple_tool_call_count": 0,
+    "effectful_executions": 1,
+    "observations": 2,
+    "reporting_completed": true,
+    "cleanup_succeeded": true
+  },
+  "established_progress": {
+    "search_to_R9_conserved": true,
+    "read_region_R9_succeeded": true,
+    "active_read_continuation_succeeded": true,
+    "canonical_pending_exchange_refuted": false,
+    "continuation_lineage_refuted": false
+  },
+  "mechanism": {
+    "accepted_call": "read_next_page(scope=effect)",
+    "producer": "_WorldReadBinding._continue_obligation",
+    "produced_subtype": "ReadRegionResult",
+    "declared_operation": "read_next_page",
+    "automatic_conversion": "ReadRegionResult scalar mapping -> PublicEvidenceResult(record_field='')",
+    "consumer": "project_committed_tool_return with admitted_evidence_records=()",
+    "failure": "PublicEvidenceResult.with_records requires one record for a scalar evidence value"
+  },
+  "classification": {
+    "owner": "ToolCatalog effect/page-directory continuation result subtype",
+    "violated_invariant": "a non-evidence continuation receipt must use ContinueDeliveryResult and must not enter complete-evidence prefix packing",
+    "provider_failure": false,
+    "rate_limit": false,
+    "page_failure": false,
+    "accepted_exchange_failure": false,
+    "reporting_failure": false
+  },
+  "trace_witnesses": {
+    "accepted_effect_continuation": "trace.jsonl sequence 30",
+    "committed_local_result": "trace.jsonl sequence 31",
+    "pre_provider_failure": "trace.jsonl sequence 32"
+  },
+  "next_step": "stop live and cohort; return only to the ToolCatalog continuation-result subtype owner"
+}

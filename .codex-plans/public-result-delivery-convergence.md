@@ -175,9 +175,15 @@ Live and cohort execution remain stopped.
    - Read-only reconcile the committed owner/consumer graph, generated vertical property, full/static evidence, docs,
      and revision/tree hashes. Any falsification stops before provider/live execution.
 
-24. **pending — Request one held-out Task21 witness authorization**
+24. **completed — Run one authorized held-out Task21 witness**
    - Do not start provider/live execution without explicit authorization. The bounded cohort remains stopped until the
      single held-out witness passes.
+
+25. **pending — Return only to continuation-result subtype owner**
+   - Run5 falsified `_WorldReadBinding._continue_obligation`: it emits `ReadRegionResult` for
+     `read_next_page(scope=effect|page_directory)`, causing a scalar continuation receipt to enter evidence-prefix
+     packing and fail on a zero admitted prefix. Record the falsification, stop live/cohort, and do not modify unrelated
+     Store, continuation lineage, World, route, Catalog schema, TurnPacker, Envelope, or CoreLoop paths.
 
 ## Explicit non-goals
 
