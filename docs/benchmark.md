@@ -52,6 +52,13 @@ effectful query-entry dispatch, and zero invalid tool arguments. Its `find_contr
 ToolReturn contained alphabetical background links such as Africa and Agriculture because the shared role token alone
 qualified them. Two identical `read_region(R13)` results followed; Monitor emitted one recovery and then blocked the
 control stall. Run7 is failed pre-repair evidence for explicit control recall, not acceptance.
+Task266 run8 crossed the repaired recall path, activated the exact article, recovered the official coordinates, and
+then used `goto` for an unauthorized external API instead of switching to the benchmark-provided map in tab 0.
+BrowserGym correctly terminated the task at that dispatch; the later `stale_binding` report was a downstream
+`task_done` symptom. The run's fresh World contained both open tab routes and the active index, while the physical
+model input contained only the folded `Browser navigation` region heading. This is failed pre-repair evidence for the
+compact browser-context projection, not acceptance. The renderer now keeps that current public state in the sole
+compact World; it does not relax WebArena URL authorization or add task/site-specific routing.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -554,6 +561,8 @@ The final read-only review for this cutover must answer:
 16. Does SDK history compact before hard overflow while pinning the newest progress response and exact pending pair?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
+18. When a browser profile publishes tab operations, does the same compact current World expose the authoritative
+    active tab and public index-to-route mapping without a second browser-state channel?
 
 ## Exit statement
 

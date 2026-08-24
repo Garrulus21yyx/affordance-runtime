@@ -124,12 +124,12 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
 
 
 def test_explicit_browser_profile_projects_navigation_without_page_identity_inference() -> None:
-    raw = raw_observation(ax_node("search", "textbox", "Search"), url="https://example.test/start")
+    raw = raw_observation(ax_node("search", "textbox", "Search"), url="https://docs.example.test/guide")
     raw["open_pages_urls"] = np.asarray((
         "https://example.test/start?private=1",
         "https://docs.example.test/guide",
     ))
-    raw["active_page_index"] = np.asarray([0])
+    raw["active_page_index"] = np.asarray([1])
     common = {
         "observation_id": "obs:navigation",
         "source_revision": "revision:navigation",
@@ -150,7 +150,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
 
     assert all(item.role != "browser_context" for item in miniwob.world.targets)
     browser = next(item for item in webarena.world.targets if item.role == "browser_context")
-    assert browser.state["active_tab_index"] == 0
+    assert browser.state["active_tab_index"] == 1
     assert browser.state["open_tabs"][0]["route"] == "https://example.test/start"
     task = TaskGoal(
         "task:navigation",
@@ -165,7 +165,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
         if item.target_id == browser.target_id
     }
     assert set(actions) == {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
-    assert actions["tab_focus"].parameter_schema["properties"]["index"]["enum"] == (1,)
+    assert actions["tab_focus"].parameter_schema["properties"]["index"]["enum"] == (0,)
 
     evaluation = TaskEvaluation(
         task.task_id,
@@ -175,6 +175,10 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     )
     context = ContextBuilder().build(task, webarena.world, action_space, evaluation)
     delivery = build_model_turn_delivery(context, include_images=False)
+    assert 'BrowserContext label="Browser navigation"' in delivery.view.text
+    assert '"active_tab_index":1' in delivery.view.text
+    assert '"index":0,"route":"https://example.test/start"' in delivery.view.text
+    assert '"index":1,"route":"https://docs.example.test/guide"' in delivery.view.text
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
     browser_specs = {
         item.name: item

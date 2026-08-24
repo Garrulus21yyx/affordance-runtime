@@ -37,6 +37,14 @@ target-term coverage but are not collapsed to one Runtime-guessed subgoal. A rol
 control when unmatched target terms remain. An empty executable-control result stays empty and does not redirect to
 readable-content search. This is deterministic retrieval over the complete current `ActionSpace`; it adds no keyword
 table, site/task branch, semantic index, model ranker, or alternate action authority.
+Task266 run8 crossed that repaired recall boundary, activated the intended article, and read the official coordinates.
+It then navigated to an unauthorized external API even though the benchmark-provided map was already open in tab 0.
+BrowserGym correctly terminated the WebArena task, so the following currentness result was the expected
+`task_done/stale`, not a stale-ref regression. The authoritative fresh World already contained `active_tab_index` and
+the public `index -> route` mapping, but indexed compact rendering reduced the browser context to a region heading and
+discarded that state. The compact World owner now preserves the current public `browser_context` state before the
+folded page directory. Browser schemas, ActionSpace resolution, Binder, BrowserGym authorization, and lifecycle
+handling remain unchanged; no task, site, or route inference was added.
 Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
@@ -493,7 +501,9 @@ profile (the WebArena runner does so), the adapter projects one current `browser
 BrowserGym primitives
 `goto`, `go_back`, `go_forward`, `new_tab`, `tab_focus`, and `tab_close`. `tab_focus` is offered only with a current
 alternative tab; its public schema accepts a non-negative index and the current resolver enforces the exact available
-tab domain. The other actions are offered by the profile and validated by their ordinary schemas. MiniWoB receives no browser-global additions. These are ordinary ActionSpace options that
+tab domain. The same compact current World exposes the browser-context target's public active-tab and tab-route state,
+so the model can choose those dynamic parameters without a second state channel. The other actions are offered by the
+profile and validated by their ordinary schemas. MiniWoB receives no browser-global additions. These are ordinary ActionSpace options that
 pass through Catalog, Binder, currentness probing, Executor, stable capture, and fresh World—not local-tool shortcuts.
 The adapter never infers this capability from task text or a benchmark/task ID; unsupported or duplicate profile
 entries fail before World projection.

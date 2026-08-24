@@ -429,6 +429,7 @@ def _render_page_map(
         "projection=page_map public_content=folded recovery=read_region/search_page_content/find_controls",
         f"{page_identity} coverage={_index_coverage(index)}",
     ]
+    lines.extend(_render_browser_context(observation))
     exact_region_keys = set(selected_region_keys)
     exact_region_keys.update(
         region.key for region in index.regions if _region_public_refs(region, grounding).intersection(expanded_refs)
@@ -554,6 +555,23 @@ def _render_page_map(
         WorldDeliveryView(text, "page_map", coverage),
         manifest.build(),
     )
+
+
+def _render_browser_context(observation: WorldObservation) -> list[str]:
+    """Keep browser-global action parameters visible in the one current World.
+
+    Browser actions intentionally have no page-grounding ref, so their current
+    tab domain cannot be recovered from ActionCandidates or a folded page
+    region.  The SurfaceAdapter already owns and publishes this state on the
+    browser-context target; this renderer only preserves that authoritative
+    public state in the compact model view.
+    """
+
+    return [
+        f"BrowserContext label={_value(target.label)} state={_value(_model_state(target.state, interactive=True))}"
+        for target in observation.targets
+        if target.role.casefold() == "browser_context"
+    ]
 
 
 def inspect_actor_world(
