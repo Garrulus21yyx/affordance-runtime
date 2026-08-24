@@ -12,7 +12,7 @@ byte-bounded region-read repair provider-free verified / fresh-context review pa
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
-complete-key continuation repair provider-free verified; independent fresh-context review pending /
+complete-key continuation repair provider-free verified; independent fresh-context review passed /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -327,8 +327,12 @@ Generated Store-field combinations and production ContextBuilder mutations prove
 same-World continuation preserves its offset. Focused `184 passed` and full `1669 passed / 19 skipped` verification,
 Ruff, compileall, diff and negative searches pass with zero provider/live attempts. Evidence:
 [`continuation-lineage-provider-free-20260824.json`](../evidence/acceptance/continuation-lineage-provider-free-20260824.json).
-This remains provider-free implementation evidence pending an independent fresh-context review; Overall is non-closed
-and the bounded cohort remains stopped.
+The independent read-only review of `f894ea8a` passed with no falsification. It independently ran `148` continuation/
+Store/context tests and `22` Recording-provider/tool-result vertical tests, plus Ruff, compileall, diff and negative
+searches; the implementation/source/test hashes reconcile exactly. Evidence:
+[`continuation-lineage-fresh-review-20260824.json`](../evidence/acceptance/continuation-lineage-fresh-review-20260824.json).
+Overall remains non-closed and the bounded cohort remains stopped; the next step requires explicit authorization for
+one held-out Task21 witness.
 
 #### Reuse boundary and remaining custom surface
 

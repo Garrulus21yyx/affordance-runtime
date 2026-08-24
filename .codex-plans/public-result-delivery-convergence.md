@@ -134,7 +134,7 @@ Live and cohort execution remain stopped.
      vertical witnesses. No live/provider execution.
    - Implementation `8cec21db`; focused `184 passed`, full `1669 passed / 19 skipped`, Ruff, compileall, diff and
      negative searches pass. Provider/live attempts are zero. Evidence is
-     `evidence/acceptance/continuation-lineage-provider-free-20260824.json`; independent fresh review remains pending.
+     `evidence/acceptance/continuation-lineage-provider-free-20260824.json`.
 
 18. **completed — Provider-free vertical acceptance and evidence commit**
    - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`
@@ -142,11 +142,14 @@ Live and cohort execution remain stopped.
    - Run focused/full/Ruff/compileall/diff and production negative searches; persist a revision-bound evidence artifact.
    - Commit verification/status independently from implementation.
 
-18. **pending — Independent fresh-context exit review**
-   - Read-only review from the committed revision. Any falsification stops immediately, records its owner and witness,
-     and leaves live/cohort stopped.
+19. **completed — Independent continuation-lineage fresh-context exit review**
+   - Fresh read-only reviewer fixed HEAD `f894ea8a` and found no falsification across complete-key identity, total
+     World normalization, exact Plan promotion, stale handling, production properties, diff scope, and evidence hashes.
+   - Independent checks: `148 passed` continuation/Store/context, `22 passed` Recording-provider/tool-result vertical,
+     Ruff, compileall, diff and negative searches. No files, provider, BrowserGym, or live run were touched. Evidence:
+     `evidence/acceptance/continuation-lineage-fresh-review-20260824.json`.
 
-19. **pending — Request authorization for one held-out witness**
+20. **pending — Request authorization for one held-out witness**
    - Eligible only after steps 15–18 pass. One Task 21 witness precedes any bounded cohort.
 
 ## Explicit non-goals

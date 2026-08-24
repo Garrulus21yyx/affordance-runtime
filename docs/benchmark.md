@@ -12,7 +12,7 @@ byte-bounded region-read repair provider-free verified / fresh-context review pa
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
-complete-key continuation repair provider-free verified; independent fresh-context review pending /
+complete-key continuation repair provider-free verified; independent fresh-context review passed /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -234,8 +234,12 @@ requires exact key equality. Generated Store-field compositions, production Cont
 and same-World/changed-World witnesses pass. Focused verification is `184 passed`; full verification is
 `1669 passed / 19 skipped`, plus Ruff, compileall, diff and negative searches. Evidence:
 [`continuation-lineage-provider-free-20260824.json`](../evidence/acceptance/continuation-lineage-provider-free-20260824.json).
-Provider/live/Task21 attempts are zero. This is provider-free implementation evidence, not closure; independent fresh
-review is pending and the cohort remains stopped.
+Provider/live/Task21 attempts are zero. This is provider-free implementation evidence, not closure. The independent
+read-only review of `f894ea8a` passed with no falsification after `148` continuation/Store/context tests, `22`
+Recording-provider/tool-result vertical tests, static checks, and exact revision/tree-hash reconciliation. Evidence:
+[`continuation-lineage-fresh-review-20260824.json`](../evidence/acceptance/continuation-lineage-fresh-review-20260824.json).
+Overall remains non-closed. The next step is to request explicit authorization for one held-out Task21 witness; the
+bounded cohort remains stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 
