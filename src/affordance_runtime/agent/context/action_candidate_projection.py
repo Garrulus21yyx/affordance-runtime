@@ -23,6 +23,7 @@ from affordance_runtime.agent.context.contracts import (
     AgentDestinationView,
 )
 from affordance_runtime.agent.context.observation_delivery import (
+    ContinuationKey,
     DeliveryContinuationCapability,
     DeliveryInventorySnapshot,
     ObservationDelivery,
@@ -307,7 +308,7 @@ class ActionDeliveryPlan:
     obligations: tuple[DeliveryObligation, ...]
     foreground_scope: str | None
     plan_id: str = ""
-    requested_scope: str | None = field(
+    requested_key: ContinuationKey | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
 
@@ -325,10 +326,12 @@ class ActionDeliveryPlan:
                 item.continuation_scope or item.kind.value
                 for item in obligations
                 if item.remaining
-                and (item.continuation_scope or item.kind.value) == self.requested_scope
+                and item.inventory.key == self.requested_key
             ),
             None,
         )
+        if self.requested_key is not None and requested is None:
+            raise ValueError("requested delivery foreground must match one current inventory key")
         expected_foreground = requested or next(
             (item.continuation_scope or item.kind.value for item in obligations if item.remaining), None
         )
@@ -681,37 +684,25 @@ def build_action_delivery_plan(
             if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
             else 0
         )
-        progress = (
-            cursor_store.cursor(scope)
-            if isinstance(cursor_store, ObservationDeliveryStore)
-            else None
-        )
-        if progress is not None and (
-            progress.kind,
-            progress.world_lineage,
-            progress.action_lineage,
-            progress.result_lineage,
-            progress.order_digest,
-        ) == (
+        inventory = DeliveryInventorySnapshot(
+            scope,
             kind.value,
             world_observation_id,
             "local_result" if kind is DeliveryObligationKind.PUBLIC_RESULT else action_space_id,
             result_lineage or "current",
             order_digest,
-        ):
-            incoming_offset = min(progress.offset, len(records))
-        inventory_specs.append(
-            DeliveryInventorySnapshot(
-                scope,
-                kind.value,
-                world_observation_id,
-                "local_result" if kind is DeliveryObligationKind.PUBLIC_RESULT else action_space_id,
-                result_lineage or "current",
-                order_digest,
-                tuple(records),
-                incoming_offset,
-            )
+            tuple(records),
+            incoming_offset,
         )
+        progress = (
+            cursor_store.cursor(inventory.key)
+            if isinstance(cursor_store, ObservationDeliveryStore)
+            else None
+        )
+        if progress is not None:
+            incoming_offset = min(progress.offset, len(records))
+            inventory = replace(inventory, offset=incoming_offset)
+        inventory_specs.append(inventory)
     obligations = []
     for inventory in inventory_specs:
         kind = DeliveryObligationKind(inventory.kind)
@@ -728,11 +719,11 @@ def build_action_delivery_plan(
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
-    requested_scope = (
-        cursor_store.requested_continuation_scope
+    requested_key = (
+        cursor_store.foreground_request
         if isinstance(cursor_store, ObservationDeliveryStore)
         and any(
-            item.continuation_scope == cursor_store.requested_continuation_scope
+            item.inventory.key == cursor_store.foreground_request
             and item.remaining
             for item in obligations
         )
@@ -742,7 +733,7 @@ def build_action_delivery_plan(
         (
             item.continuation_scope
             for item in ordered
-            if item.remaining and item.continuation_scope == requested_scope
+            if item.remaining and item.inventory.key == requested_key
         ),
         None,
     ) or next((item.continuation_scope for item in ordered if item.remaining), None)
@@ -751,7 +742,7 @@ def build_action_delivery_plan(
         world_observation_id,
         ordered,
         foreground,
-        requested_scope=requested_scope,
+        requested_key=requested_key,
     )
 
 

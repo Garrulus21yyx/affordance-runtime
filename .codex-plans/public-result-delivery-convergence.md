@@ -123,7 +123,17 @@ Live and cohort execution remain stopped.
      inventory installation in Store. Rebuilding the next Plan against fresh World/ActionSpace either reapplies the
      cursor to matching lineage or fails typed stale/reset.
 
-17. **completed — Provider-free vertical acceptance and evidence commit**
+17. **in_progress — Normalize continuation identity with one complete key**
+   - Replace the unlineaged `requested_continuation_scope` duplicate with a typed complete continuation key shared by
+     cursor progress and foreground request.
+   - Make `for_world` total over every lineaged Store field before any identity return, and clear foreground whenever
+     its keyed cursor does not survive.
+   - Promote a Plan obligation only when its complete inventory key equals the requested foreground key; any
+     world/action/result/order change starts at offset zero and normal priority.
+   - Verify with generated Store-field normalization/key mutation properties plus same-World and changed-World
+     vertical witnesses. No live/provider execution.
+
+18. **completed — Provider-free vertical acceptance and evidence commit**
    - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`
      paths for the generated composition matrix.
    - Run focused/full/Ruff/compileall/diff and production negative searches; persist a revision-bound evidence artifact.

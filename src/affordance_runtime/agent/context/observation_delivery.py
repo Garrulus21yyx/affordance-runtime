@@ -46,6 +46,32 @@ class DeliveryContinuationOutcomeKind(StrEnum):
 
 
 @dataclass(frozen=True)
+class ContinuationKey:
+    """Complete private identity of one immutable delivery inventory."""
+
+    scope: str
+    kind: str
+    world_lineage: str = field(repr=False, metadata={"serialize": False})
+    action_lineage: str = field(repr=False, metadata={"serialize": False})
+    result_lineage: str = field(repr=False, metadata={"serialize": False})
+    order_digest: str = field(repr=False, metadata={"serialize": False})
+
+    def __post_init__(self) -> None:
+        if any(
+            not value.strip()
+            for value in (
+                self.scope,
+                self.kind,
+                self.world_lineage,
+                self.action_lineage,
+                self.result_lineage,
+                self.order_digest,
+            )
+        ):
+            raise ValueError("continuation key is incomplete")
+
+
+@dataclass(frozen=True)
 class DeliveryInventorySnapshot:
     """One immutable current inventory owned by the delivery Store."""
 
@@ -81,6 +107,17 @@ class DeliveryInventorySnapshot:
     def remaining(self) -> tuple[object, ...]:
         return self.records[self.offset :]
 
+    @property
+    def key(self) -> ContinuationKey:
+        return ContinuationKey(
+            self.scope,
+            self.kind,
+            self.world_lineage,
+            self.action_lineage,
+            self.result_lineage,
+            self.order_digest,
+        )
+
 
 @dataclass(frozen=True)
 class DeliveryContinuationCapability:
@@ -110,6 +147,17 @@ class DeliveryContinuationCapability:
             != (self.offset + self.admitted_count < self.inventory_size)
         ):
             raise ValueError("delivery continuation capability is invalid")
+
+    @property
+    def key(self) -> ContinuationKey:
+        return ContinuationKey(
+            self.scope,
+            self.kind,
+            self.world_lineage,
+            self.action_lineage,
+            self.result_lineage,
+            self.order_digest,
+        )
 
 
 @dataclass(frozen=True)
@@ -687,7 +735,7 @@ class ObservationDeliveryStore:
     search_follow_ups: tuple[LocalSearchHit, ...] = field(
         default=(), repr=False, compare=False, metadata={"serialize": False}
     )
-    requested_continuation_scope: str | None = field(
+    foreground_request: ContinuationKey | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
 
@@ -707,7 +755,7 @@ class ObservationDeliveryStore:
         cursor_progress = tuple(self.cursor_progress)
         if (
             any(not isinstance(item, DeliveryContinuationCapability) for item in cursor_progress)
-            or len({item.scope for item in cursor_progress}) != len(cursor_progress)
+            or len({item.key for item in cursor_progress}) != len(cursor_progress)
             or any(item.admitted_count != 0 for item in cursor_progress)
         ):
             raise ValueError("observation delivery cursor progress is invalid")
@@ -722,8 +770,11 @@ class ObservationDeliveryStore:
         ):
             raise ValueError("local search follow-up inventory is invalid")
         object.__setattr__(self, "search_follow_ups", search_follow_ups)
-        if self.requested_continuation_scope is not None and not self.requested_continuation_scope.strip():
-            raise ValueError("requested continuation scope must be private and nonblank")
+        if self.foreground_request is not None and (
+            not isinstance(self.foreground_request, ContinuationKey)
+            or not any(item.key == self.foreground_request for item in cursor_progress)
+        ):
+            raise ValueError("foreground continuation must identify a surviving cursor")
 
     def with_active_read(self, lens: WorldDeliveryLens | None) -> "ObservationDeliveryStore":
         """Replace only the active local-read cursor; effects/directories survive."""
@@ -738,7 +789,7 @@ class ObservationDeliveryStore:
             cursor_progress=self.cursor_progress,
             action_query=self.action_query,
             search_follow_ups=self.search_follow_ups,
-            requested_continuation_scope=self.requested_continuation_scope,
+            foreground_request=self.foreground_request,
         )
 
     def with_visible_public_results(
@@ -772,7 +823,7 @@ class ObservationDeliveryStore:
             cursor_progress=self.cursor_progress,
             action_query=self.action_query,
             search_follow_ups=self.search_follow_ups,
-            requested_continuation_scope=self.requested_continuation_scope,
+            foreground_request=self.foreground_request,
         )
 
     @property
@@ -781,7 +832,7 @@ class ObservationDeliveryStore:
         return inventory.visible_digest if inventory is not None else _public_digest(())
 
     def for_world(self, world_observation_id: str) -> "ObservationDeliveryStore":
-        """Invalidate private local-read capabilities that do not belong to this World."""
+        """Normalize every World-lineaged Store field before retaining identity."""
 
         if not world_observation_id.strip():
             raise ValueError("current World identity is required")
@@ -794,42 +845,40 @@ class ObservationDeliveryStore:
         public_results = self.public_result_inventory
         if public_results is not None and public_results.world_observation_id != world_observation_id:
             public_results = None
+        cursor_progress = tuple(
+            item for item in self.cursor_progress if item.world_lineage == world_observation_id
+        )
+        cursor_keys = {item.key for item in cursor_progress}
+        foreground_request = (
+            self.foreground_request if self.foreground_request in cursor_keys else None
+        )
+        action_query = self.action_query
+        if action_query is not None and action_query.world_lineage != world_observation_id:
+            action_query = None
         if (
             active_read is self.active_read
             and search_follow_ups == self.search_follow_ups
             and public_results is self.public_result_inventory
+            and cursor_progress == self.cursor_progress
+            and foreground_request is self.foreground_request
+            and action_query is self.action_query
         ):
             return self
-        cursor_progress = tuple(
-            item for item in self.cursor_progress if item.world_lineage == world_observation_id
-        )
         return ObservationDeliveryStore(
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             public_result_inventory=public_results,
             active_read=active_read,
             cursor_progress=cursor_progress,
-            action_query=self.action_query,
+            action_query=action_query,
             search_follow_ups=search_follow_ups,
-            requested_continuation_scope=(
-                None
-                if (
-                    self.requested_continuation_scope == "public_result"
-                    and public_results is None
-                )
-                or (
-                    self.requested_continuation_scope not in {"public_result", "active_read"}
-                    and not any(
-                        item.scope == self.requested_continuation_scope
-                        for item in cursor_progress
-                    )
-                )
-                else self.requested_continuation_scope
-            ),
+            foreground_request=foreground_request,
         )
 
-    def cursor(self, scope: str) -> DeliveryContinuationCapability | None:
-        return next((item for item in self.cursor_progress if item.scope == scope), None)
+    def cursor(self, key: ContinuationKey) -> DeliveryContinuationCapability | None:
+        if not isinstance(key, ContinuationKey):
+            raise TypeError("continuation cursor lookup requires a complete key")
+        return next((item for item in self.cursor_progress if item.key == key), None)
 
     def active_read_continuation_capabilities(
         self,
@@ -864,7 +913,13 @@ class ObservationDeliveryStore:
     def continue_delivery(
         self,
         capability: DeliveryContinuationCapability,
+        *,
+        world_observation_id: str,
     ) -> DeliveryContinuationOutcome:
+        if not world_observation_id.strip():
+            raise ValueError("continuation current World identity is required")
+        if capability.world_lineage != world_observation_id:
+            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
         if capability.scope == "active_read":
             if self.active_read is None or not self.active_read.next_cursor:
                 return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
@@ -886,7 +941,7 @@ class ObservationDeliveryStore:
             ):
                 return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
         else:
-            progress = self.cursor(capability.scope)
+            progress = self.cursor(capability.key)
             if progress is not None and (
                 progress.world_lineage,
                 progress.action_lineage,
@@ -925,9 +980,10 @@ class ObservationDeliveryStore:
             )
             if model_delivery is not None and continuation not in admitted_capabilities:
                 raise ValueError("committed continuation was not admitted by the exact model turn")
-            if continuation.world_lineage != world_observation_id:
-                raise ValueError("committed continuation belongs to a stale World")
-            outcome = external.continue_delivery(continuation)
+            outcome = external.continue_delivery(
+                continuation,
+                world_observation_id=world_observation_id,
+            )
             if outcome.kind is not DeliveryContinuationOutcomeKind.READY:
                 raise ValueError(f"committed continuation is {outcome.kind.value}")
             external = external._apply_continuation(continuation)
@@ -1087,9 +1143,7 @@ class ObservationDeliveryStore:
             cursor_progress=external.cursor_progress,
             action_query=query_inventory,
             search_follow_ups=search_follow_ups,
-            requested_continuation_scope=(
-                None if discovery is not None else external.requested_continuation_scope
-            ),
+            foreground_request=None if discovery is not None else external.foreground_request,
         )
         return DeliveryTransition(next_store, delta, getattr(step, "runtime_failure", None))
 
@@ -1098,7 +1152,7 @@ class ObservationDeliveryStore:
         capability: DeliveryContinuationCapability,
     ) -> "ObservationDeliveryStore":
         if capability.scope == "active_read":
-            return replace(self, requested_continuation_scope=capability.scope)
+            return self
         next_offset = capability.offset + capability.admitted_count
         progress = DeliveryContinuationCapability(
             capability.scope,
@@ -1115,8 +1169,7 @@ class ObservationDeliveryStore:
         next_progress = tuple(
             item for item in self.cursor_progress if item.scope != capability.scope
         )
-        if capability.scope != "public_result":
-            next_progress = (*next_progress, progress)
+        next_progress = (*next_progress, progress)
         return replace(
             self,
             public_result_inventory=(
@@ -1125,7 +1178,7 @@ class ObservationDeliveryStore:
                 else self.public_result_inventory
             ),
             cursor_progress=next_progress,
-            requested_continuation_scope=capability.scope,
+            foreground_request=progress.key,
         )
 
     def _apply_effect(self, step: object, *, step_index: int) -> "ObservationDeliveryStore":

@@ -26,6 +26,7 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryContinuationCapability,
     ObservationDeliveryStore,
 )
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
@@ -1356,8 +1357,56 @@ def test_zero_admitted_suffix_still_registers_unique_store_bound_continuation() 
         feedback="local_tool_result",
     )
     next_store = context.delivery_store.reduce(committed, step_index=1).next_store
-    assert next_store.requested_continuation_scope == scopes[0]
-    assert next_store.cursor(scopes[0]).offset == 0
+    assert resolution.decision.continuation is not None
+    assert next_store.foreground_request == resolution.decision.continuation.key
+    assert next_store.cursor(resolution.decision.continuation.key).offset == 0
+
+
+@given(changed_field=st.sampled_from(("world", "action", "result", "order")))
+def test_plan_never_reuses_same_scope_cursor_when_complete_lineage_changes(
+    changed_field: str,
+) -> None:
+    task, world, actions, evaluation, context = _context()
+    obligation = context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+    assert obligation is not None
+    inventory = obligation.inventory
+    lineages = {
+        "world_lineage": inventory.world_lineage,
+        "action_lineage": inventory.action_lineage,
+        "result_lineage": inventory.result_lineage,
+        "order_digest": inventory.order_digest,
+    }
+    key_field = f"{changed_field}_lineage" if changed_field != "order" else "order_digest"
+    lineages[key_field] = f"{changed_field}:other"
+    progress = DeliveryContinuationCapability(
+        inventory.scope,
+        True,
+        0,
+        len(inventory.records),
+        lineages["world_lineage"],
+        lineages["action_lineage"],
+        lineages["result_lineage"],
+        lineages["order_digest"],
+        1,
+        inventory.kind,
+    )
+    store = ObservationDeliveryStore(
+        cursor_progress=(progress,),
+        foreground_request=progress.key,
+    )
+
+    rebuilt = ContextBuilder().build(
+        task,
+        world,
+        actions,
+        evaluation,
+        delivery_store=store,
+    )
+    rebuilt_base = rebuilt.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+
+    assert rebuilt_base is not None
+    assert rebuilt_base.inventory.offset == 0
+    assert rebuilt.action_delivery_plan.requested_key is None
 
 
 def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly() -> None:

@@ -438,7 +438,10 @@ def test_committed_step_reducer_composes_effect_evidence_continuation_and_failur
     assert (() if inventory is None else inventory.records) == tuple(
         transition.next_store.local_deliveries[-1].records
     )
-    progress = transition.next_store.cursor("query")
+    progress = next(
+        (item for item in transition.next_store.cursor_progress if item.scope == "query"),
+        None,
+    )
     assert (None if progress is None else progress.offset) == admitted_count
     tool_return = project_committed_tool_return(step)
     assert tool_return is not None

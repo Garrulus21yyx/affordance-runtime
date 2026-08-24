@@ -131,11 +131,11 @@ def test_explicit_private_continuation_scope_becomes_next_foreground() -> None:
         "world:test",
         obligations,
         selected_kind.value,
-        requested_scope=selected_kind.value,
+        requested_key=obligations[1].inventory.key,
     )
 
     assert plan.foreground_scope == selected_kind.value
-    assert "requested_scope" not in json.dumps(to_json_compatible(plan))
+    assert "requested_key" not in json.dumps(to_json_compatible(plan))
 
 
 @pytest.mark.parametrize("capacity, expected_total", ((3, 3), (2, 2)))

@@ -125,8 +125,8 @@ def test_private_continuation_store_commits_only_after_policy_core_step() -> Non
 
         assert state.delivery_store is prior_store
         loop._commit_step(state, result)
-        assert state.delivery_store.requested_continuation_scope == "effect"
-        assert state.delivery_store.cursor("effect").offset == 1
+        assert state.delivery_store.foreground_request == capability.key
+        assert state.delivery_store.cursor(capability.key).offset == 1
         assert state.last_step is result
 
     asyncio.run(scenario())

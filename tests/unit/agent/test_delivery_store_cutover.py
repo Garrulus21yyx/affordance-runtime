@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from affordance_runtime.agent import ContinueDeliveryResult
 from affordance_runtime.agent.context.action_candidate_projection import (
@@ -11,10 +13,14 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     DeliveryObligationKind,
 )
 from affordance_runtime.agent.context.observation_delivery import (
+    DeliveryContinuationCapability,
     DeliveryContinuationOutcomeKind,
     DeliveryInventorySnapshot,
+    LocalSearchHit,
     ObservationDeliveryStore,
+    PublicResultInventory,
     PublicResultRecord,
+    StoredActionQuery,
 )
 from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.run_state import StepResult
@@ -41,22 +47,10 @@ def _plan(
 ) -> ActionDeliveryPlan:
     obligations = []
     for priority, incoming in enumerate(inventories):
-        progress = store.cursor(incoming.scope)
+        progress = store.cursor(incoming.key)
         inventory = (
             replace(incoming, offset=progress.offset)
             if progress is not None
-            and (
-                progress.world_lineage,
-                progress.action_lineage,
-                progress.result_lineage,
-                progress.order_digest,
-            )
-            == (
-                incoming.world_lineage,
-                incoming.action_lineage,
-                incoming.result_lineage,
-                incoming.order_digest,
-            )
             else incoming
         )
         kind = DeliveryObligationKind(inventory.kind)
@@ -69,12 +63,19 @@ def _plan(
                 inventory.scope,
             )
         )
-    requested = store.requested_continuation_scope
+    requested = (
+        store.foreground_request
+        if any(
+            item.inventory.key == store.foreground_request and item.remaining
+            for item in obligations
+        )
+        else None
+    )
     foreground = next(
         (
             item.continuation_scope
             for item in obligations
-            if item.continuation_scope == requested and item.remaining
+            if item.inventory.key == requested and item.remaining
         ),
         None,
     ) or next((item.continuation_scope for item in obligations if item.remaining), None)
@@ -83,7 +84,7 @@ def _plan(
         inventories[0].world_lineage,
         tuple(obligations),
         foreground,
-        requested_scope=requested,
+        requested_key=requested,
     )
 
 
@@ -131,11 +132,14 @@ def test_zero_prefix_suffix_is_callable_and_becomes_foreground_without_advancing
         {DeliveryObligationKind.PUBLIC_EFFECT.value: 0}
     )[0]
 
-    assert store.continue_delivery(capability).kind is DeliveryContinuationOutcomeKind.READY
+    assert store.continue_delivery(
+        capability,
+        world_observation_id=world.observation_id,
+    ).kind is DeliveryContinuationOutcomeKind.READY
     next_store = _commit(store, capability, world, step_index=1)
 
-    assert next_store.cursor("effect").offset == 0
-    assert next_store.requested_continuation_scope == "effect"
+    assert next_store.cursor(capability.key).offset == 0
+    assert next_store.foreground_request == capability.key
     resumed = _plan((inventory,), next_store)
     assert resumed.obligations[0].remaining == inventory.records
     assert resumed.foreground_scope == "effect"
@@ -200,5 +204,105 @@ def test_finite_multi_scope_sequence_conserves_suffixes_and_stales_old_capabilit
     }
 
     fresh_world = _world("cursor-fresh-world", False)
-    with pytest.raises(ValueError, match="stale World"):
+    assert store.continue_delivery(
+        effect_capability,
+        world_observation_id=fresh_world.observation_id,
+    ).kind is DeliveryContinuationOutcomeKind.STALE
+    with pytest.raises(ValueError, match="committed continuation is stale"):
         _commit(store, effect_capability, fresh_world, step_index=step_index)
+
+
+@given(
+    retained=st.booleans(),
+    requested=st.booleans(),
+    offset=st.integers(min_value=0, max_value=8),
+    stale_active_read=st.booleans(),
+    stale_search=st.booleans(),
+    stale_results=st.booleans(),
+    stale_query=st.booleans(),
+)
+def test_for_world_totally_normalizes_cursor_and_foreground_state(
+    retained: bool,
+    requested: bool,
+    offset: int,
+    stale_active_read: bool,
+    stale_search: bool,
+    stale_results: bool,
+    stale_query: bool,
+) -> None:
+    current_world = "world:B"
+    cursor_world = current_world if retained else "world:A"
+    active_world = "world:A" if stale_active_read else current_world
+    hit_world = "world:A" if stale_search else current_world
+    result_world = "world:A" if stale_results else current_world
+    query_world = "world:A" if stale_query else current_world
+    result_record = PublicResultRecord("read_region", "R1", {"label": "one"})
+    progress = DeliveryContinuationCapability(
+        "action_base",
+        True,
+        0,
+        16,
+        cursor_world,
+        f"actions:{cursor_world}",
+        "result:base",
+        "order:base",
+        offset,
+        DeliveryObligationKind.BASE_ACTIONS.value,
+    )
+    store = ObservationDeliveryStore(
+        public_result_inventory=PublicResultInventory(
+            result_world,
+            "sha256:" + "1" * 64,
+            (result_record,),
+        ),
+        active_read=WorldDeliveryLens(active_world),
+        cursor_progress=(progress,),
+        action_query=StoredActionQuery("query", query_world, f"actions:{query_world}", ()),
+        search_follow_ups=(LocalSearchHit(hit_world, "N1", "R1"),),
+        foreground_request=progress.key if requested else None,
+    )
+
+    normalized = store.for_world(current_world)
+
+    assert all(item.world_lineage == current_world for item in normalized.cursor_progress)
+    assert normalized.foreground_request is None or any(
+        item.key == normalized.foreground_request for item in normalized.cursor_progress
+    )
+    assert normalized.cursor_progress == ((progress,) if retained else ())
+    assert normalized.foreground_request == (progress.key if retained and requested else None)
+    assert (normalized.active_read is None) is stale_active_read
+    assert (not normalized.search_follow_ups) is stale_search
+    assert (normalized.public_result_inventory is None) is stale_results
+    assert (normalized.action_query is None) is stale_query
+
+
+def test_same_world_continuation_survives_but_same_scope_new_world_restarts() -> None:
+    world_a = _world("cursor-world-a", False)
+    inventory_a = _inventory(
+        "action_base",
+        DeliveryObligationKind.BASE_ACTIONS.value,
+        ("a1", "a2", "a3"),
+        world=world_a.observation_id,
+    )
+    capability = _plan((inventory_a,), ObservationDeliveryStore()).continuation_capabilities(
+        {DeliveryObligationKind.BASE_ACTIONS.value: 1}
+    )[0]
+    store_a = _commit(ObservationDeliveryStore(), capability, world_a, step_index=1)
+
+    same_world_plan = _plan((inventory_a,), store_a.for_world(world_a.observation_id))
+    assert same_world_plan.obligations[0].inventory.offset == 1
+    assert same_world_plan.requested_key == capability.key
+
+    world_b = _world("cursor-world-b", False)
+    inventory_b = _inventory(
+        "action_base",
+        DeliveryObligationKind.BASE_ACTIONS.value,
+        ("b1", "b2"),
+        world=world_b.observation_id,
+    )
+    store_b = store_a.for_world(world_b.observation_id)
+    changed_world_plan = _plan((inventory_b,), store_b)
+    assert store_b.cursor_progress == ()
+    assert store_b.foreground_request is None
+    assert changed_world_plan.obligations[0].inventory.offset == 0
+    assert changed_world_plan.requested_key is None
