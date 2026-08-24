@@ -287,7 +287,6 @@ def test_context_consumers_share_one_supplied_projection_and_create_no_unknown_r
 
     consumer_refs = {
         *(item.ref for item in context.grounding.entities),
-        *(item.evidence_ref for item in context.observation_delivery.current_findings),
         *(item.target_ref for item in context.action_candidates.candidates),
         *(item.region_ref for item in context.action_candidates.candidates),
         *re.findall(

@@ -21,6 +21,7 @@ from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGIS
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.context.failures import ModelFailureKind
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -553,11 +554,11 @@ def test_gate_3_representation_repair_has_its_own_admitted_exact_envelope() -> N
     asyncio.run(scenario())
 
 
-def test_gate_2_gui_action_uses_current_catalog_without_delivery_continuation() -> None:
+def test_gui_action_next_turn_uses_only_fresh_world_without_effect_side_channel() -> None:
     async def scenario() -> None:
         before = _fanout_world("gate-2-fanout-before", False)
         after = _fanout_world("gate-2-fanout-after", True)
-        recorder = RecordingPydanticModel(["first_gui_action"])
+        recorder = RecordingPydanticModel(["first_gui_action", "first_gui_action"])
         environment = ScriptedEnvironment(
             initial_observation=before,
             post_observations=(after,),
@@ -565,21 +566,29 @@ def test_gate_2_gui_action_uses_current_catalog_without_delivery_continuation() 
         )
         policy = _policy(recorder)
 
-        state = await _runtime(policy).run_task(environment, shared_task())
+        state = await _runtime(policy, evaluator=_IncompleteTaskEvaluator()).run_task(
+            environment, shared_task()
+        )
 
-        assert state.status is RunStatus.DONE
-        assert state.execution_count == 1
-        assert state.delivery_store.latest_effect is not None
-        assert recorder.calls == 1
-        assert "action_results_next_page" not in recorder.offered_tools[0]
+        assert state.status is RunStatus.FAILED
+        assert state.execution_count == 2
+        assert state.delivery_store == ObservationDeliveryStore()
+        assert recorder.calls == 2
+        assert all("action_results_next_page" not in tools for tools in recorder.offered_tools)
         first = json.loads(_actual_public_text(recorder.records[0]))["observation"]
+        second = json.loads(_actual_public_text(recorder.records[1]))["observation"]
         assert set(re.findall(r"rank=\d+ \[(E\d+)\]", first))
+        assert "PageMap regions=" in second
+        assert all(
+            marker not in second
+            for marker in ("LatestEffect", "CurrentFindings", "ChangedRegions", "new_document")
+        )
         envelopes = policy.port.envelope_history
-        assert len(envelopes) == 1
+        assert len(envelopes) == 2
         assert tuple(normalize_recorded_provider_input(item) for item in recorder.records) == tuple(
             item.model_boundary_projection() for item in envelopes
         )
-        assert policy.port.last_generation_attempts[0].envelope_id == envelopes[0].envelope_id
+        assert policy.port.last_generation_attempts[0].envelope_id == envelopes[-1].envelope_id
         assert recorder.calls == len(envelopes)
         recorded_public = "\n".join(
             _actual_public_text(record)

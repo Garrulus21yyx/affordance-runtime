@@ -29,10 +29,6 @@ from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
 )
-from affordance_runtime.agent.context.observation_delivery import (
-    ObservationDeliveryStore,
-    project_observation_delivery,
-)
 from affordance_runtime.agent.context.projection import project_action_page, project_action_space
 from affordance_runtime.agent.context.task_projection import project_task
 from affordance_runtime.agent.context.world_projection import (
@@ -74,14 +70,12 @@ class ContextBuilder:
         runtime_controls: tuple[str, ...] = (),
         region_index: WorldDeliveryIndex | None = None,
         canonical_world: CanonicalPublicWorldProjection | None = None,
-        delivery_store: ObservationDeliveryStore = ObservationDeliveryStore(),
         control_feedback: dict[str, object] | None = None,
         action_discovery: ActionDiscoveryResult | None = None,
         last_step: StepResult | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
-        delivery_store = delivery_store.for_world(observation.observation_id)
         current_region_index = region_index or WorldDeliveryIndex.from_observation(
             observation,
             action_space.options,
@@ -178,17 +172,6 @@ class ContextBuilder:
             grounding.index,
             context_id=identity.context_id,
         )
-        delivery_evidence_index = _evidence_index(
-            observation,
-            include_public_text=self.include_public_text_evidence,
-        )
-        observation_delivery = project_observation_delivery(
-            observation,
-            current_region_index,
-            canonical_world,
-            delivery_evidence_index,
-            delivery_store,
-        )
         base_candidate_projection = project_action_candidates(
             complete_page.options,
             action_space_id=action_space.action_space_id,
@@ -209,16 +192,9 @@ class ContextBuilder:
             automatic=base_candidate_projection,
             region_index=current_region_index,
             region_refs=canonical_world.region_refs,
-            target_structural_slots=canonical_world.target_structural_slots,
             discovery=action_discovery,
             action_space_issues=action_space.issues,
             target_refs=grounding.index.target_refs,
-            observation_delivery=observation_delivery,
-            latest_effect=(
-                delivery_store.latest_effect.inventory
-                if delivery_store.latest_effect is not None
-                else None
-            ),
         )
         candidate_projection = action_delivery_plan.projection(action_delivery_plan.bounded_preview_counts())
         return _fit_context(
@@ -242,8 +218,6 @@ class ContextBuilder:
             action_space.action_space_id,
             candidate_projection,
             action_delivery_plan,
-            delivery_store,
-            observation_delivery,
             last_step,
         )
 
@@ -459,8 +433,6 @@ def _fit_context(
     action_space_id: str,
     action_candidates,
     action_delivery_plan,
-    delivery_store: ObservationDeliveryStore,
-    observation_delivery,
     last_step: StepResult | None,
 ) -> AgentContext:
     evidence_index = _evidence_index(
@@ -505,9 +477,7 @@ def _fit_context(
         complete_actions,
         action_space_id,
         action_candidates,
-        observation_delivery,
         action_delivery_plan,
-        delivery_store,
         last_step,
     )
 

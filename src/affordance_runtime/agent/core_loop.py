@@ -406,12 +406,6 @@ class CoreAgentLoop:
             projected,
             max(1, state.step_count + int(consume_step)),
             information_delta=information_delta,
-            public_effect=(
-                delivery_transition.next_store.latest_effect.inventory
-                if result.execution_receipts is not None
-                and delivery_transition.next_store.latest_effect is not None
-                else None
-            ),
         )
         state.apply(
             result,
@@ -612,7 +606,6 @@ class CoreAgentLoop:
                 runtime_controls=self.runtime_controls,
                 region_index=region_index,
                 canonical_world=state.canonical_world,
-                delivery_store=state.delivery_store,
                 control_feedback=_recovery_feedback(state.recovery_signal),
                 action_discovery=state.action_discovery,
                 last_step=state.last_step,

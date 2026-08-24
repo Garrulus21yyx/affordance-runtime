@@ -378,12 +378,12 @@ def compile_grounded_tool_catalog(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.SEARCH_PAGE_CONTENT.value,
-                    "Find readable text, values, or facts in the complete current World; no browser action.",
+                    "Locate an exact text substring in current readable records; returns bounded exact-match pages, not semantic retrieval or proof that a collection was fully reviewed; no browser action.",
                     _object_schema(
                         {
                             "query": {
                                 "type": "string",
-                                "description": "text to find in the current World",
+                                "description": "exact text substring to locate in current readable records",
                                 "minLength": 1,
                                 "maxLength": 120,
                             },

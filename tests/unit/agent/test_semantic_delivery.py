@@ -586,7 +586,7 @@ def test_functional_partition_uses_landmarks_headings_lists_and_merges_empty_ico
     assert set(index.target_region_keys) == {item.target_id for item in world.targets}
 
 
-def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> None:
+def test_fresh_world_remains_the_only_current_gui_state_after_local_reads() -> None:
     before = _world("world:before", False)
     after = _world("world:after", True)
     delta = WorldTransitionProjector().project(before, after)
@@ -623,8 +623,9 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
         feedback="local_tool_result",
     )
 
+    assert store == ObservationDeliveryStore()
     local_store = store.reduce(local_read, step_index=2).next_store
-    assert local_store.latest_effect is store.latest_effect
+    assert local_store.local_deliveries
 
     action_space = ActionSpaceBuilder().build(task, after)
     index = WorldDeliveryIndex.from_observation(
@@ -639,25 +640,19 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
         action_space,
         _evaluation(task, after.observation_id),
         region_index=index,
-        delivery_store=local_store,
     )
     delivery = build_model_turn_delivery(context, include_images=False)
     rendered = delivery.view.text
 
-    headings = (
-        "LatestEffect",
-        "CurrentFindings",
-        "ChangedRegions",
-        "ActionCandidates",
-        "PageOutline",
-        "RecoveryDirectory",
-    )
-    positions = tuple(rendered.index(item) for item in headings)
-    assert positions == tuple(sorted(positions))
+    assert "PageMap regions=" in rendered
+    assert "ActionCandidates" in rendered
+    assert "LatestEffect" not in rendered
+    assert "CurrentFindings" not in rendered
+    assert "ChangedRegions" not in rendered
+    assert "new_document" not in rendered
     assert "EvidenceCandidates" not in rendered
-    assert "value=true" in rendered
-    assert store.latest_effect is not None
-    assert store.latest_effect.inventory.inventory_id.startswith("public-effect:")
+    assert context.current_observation is not None
+    assert context.current_observation.observation_id == after.observation_id
     assert set(delivery.manifest.executable_refs) <= set(context.grounding.target_refs.values())
 
 
@@ -1015,7 +1010,6 @@ def test_search_result_region_ref_is_immediately_accepted_by_read_region() -> No
         expected_context_id=first.context_id,
     )
     assert opened.decision.result["kind"] == "Opened"
-    assert not hasattr(first.delivery_store, "search_follow_ups")
 
 
 def test_paginated_search_reuses_the_same_tool_with_its_returned_cursor() -> None:
@@ -1081,7 +1075,6 @@ def test_world_read_paging_is_tool_local_and_reuses_read_region() -> None:
     assert continued.result["items"]
     assert continued.arguments["cursor"] == cursor
     assert "read_next_page" not in {item.name for item in first_catalog.specs}
-    assert not hasattr(first.delivery_store, "active_read")
 
 
 def test_byte_bounded_region_pages_are_direct_results_and_store_keeps_only_digests() -> None:
@@ -1113,7 +1106,7 @@ def test_byte_bounded_region_pages_are_direct_results_and_store_keeps_only_diges
         _evaluation(task, world.observation_id),
         feedback="local_tool_result",
     )
-    opened_transition = context.delivery_store.reduce(opened_step, step_index=1)
+    opened_transition = ObservationDeliveryStore().reduce(opened_step, step_index=1)
     assert len(
         json.dumps(
             to_json_compatible(opened.decision.result),

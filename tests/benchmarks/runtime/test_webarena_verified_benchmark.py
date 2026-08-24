@@ -153,8 +153,11 @@ def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> 
         "max_recoveries_per_stall": 1,
     }
     assert diagnostic["serialized_snapshot_matches_delta"] is True
-    assert diagnostic["latest_effect_exact_value_visible"] is True
-    assert diagnostic["local_delivery_preserved_latest_effect"] is True
+    assert diagnostic["fresh_world_is_current"] is True
+    assert diagnostic["single_current_world_projection"] is True
+    assert diagnostic["changed_value_in_authoritative_world"] is True
+    assert diagnostic["gui_action_did_not_create_delivery_state"] is True
+    assert diagnostic["local_delivery_does_not_reproject_gui_effect"] is True
     assert diagnostic["step_delta_shared"] is True
     assert diagnostic["workspace_reduced"] is True
     assert diagnostic["monitor_recommendation"] == "continue"

@@ -898,8 +898,16 @@ def test_search_page_content_offers_one_runtime_evidence_ref_for_exact_public_sc
     visual: bool,
 ) -> None:
     context = _evidence_handoff_context(visual=visual)
+    catalog = _compile_catalog(context)
+    search_spec = next(item for item in catalog.specs if item.name == "search_page_content")
+    assert "exact text substring" in search_spec.description
+    assert "not semantic retrieval" in search_spec.description
+    assert "or proof that a collection was fully reviewed" in search_spec.description
+    assert search_spec.input_schema["properties"]["query"]["description"] == (
+        "exact text substring to locate in current readable records"
+    )
     found = _resolve_catalog_call(
-        _compile_catalog(context),
+        catalog,
         ToolCall("search_page_content", {"query": "33 units"}, "provider-call:find-alpha"),
         expected_context_id=context.context_id,
     ).decision

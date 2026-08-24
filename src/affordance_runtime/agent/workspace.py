@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
@@ -15,30 +15,10 @@ from affordance_runtime.agent.context.contracts import (
 )
 from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.context.world_transition import PublicWorldDelta
-from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.contracts import CoverageState
-
-if TYPE_CHECKING:
-    from affordance_runtime.agent.context.observation_delivery import PublicEffectInventory
+from affordance_runtime.immutable import to_json_compatible
 
 MAX_WORKSPACE_RECENT_STEPS = 4
 MAX_WORKSPACE_SEMANTIC_EVENTS = 24
-
-
-@dataclass(frozen=True)
-class CurrentFinding:
-    evidence_ref: str
-    predicate: str
-    exact_value: object
-    source_context: str
-    coverage: CoverageState
-
-    def __post_init__(self) -> None:
-        if not all(value.strip() for value in (self.evidence_ref, self.predicate, self.source_context)):
-            raise ValueError("current finding requires public evidence identity and context")
-        if not isinstance(self.coverage, CoverageState):
-            raise TypeError("current finding coverage must be typed")
-        object.__setattr__(self, "exact_value", freeze_json(self.exact_value))
 
 
 class SemanticEventKind(StrEnum):
@@ -145,9 +125,7 @@ class WorkspaceReducer(Protocol):
         step: object,
         detailed_step: AgentTurnView | None,
         step_index: int,
-        current_findings: tuple[CurrentFinding, ...] = (),
         information_delta: object | None = None,
-        public_effect: PublicEffectInventory | None = None,
     ) -> AgentWorkspace: ...
 
     def fit(self, workspace: AgentWorkspace, allocation_bytes: int) -> AgentWorkspace: ...
@@ -167,9 +145,7 @@ class DefaultWorkspaceReducer:
         step: object,
         detailed_step: AgentTurnView | None,
         step_index: int,
-        current_findings: tuple[CurrentFinding, ...] = (),
         information_delta: object | None = None,
-        public_effect: PublicEffectInventory | None = None,
     ) -> AgentWorkspace:
         if not isinstance(previous, AgentWorkspace):
             raise TypeError("workspace reducer requires typed previous state")

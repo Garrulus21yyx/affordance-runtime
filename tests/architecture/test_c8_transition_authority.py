@@ -30,7 +30,6 @@ def test_frozen_contracts_have_one_declared_owner_each() -> None:
     ownership = {
         "PublicWorldDelta": "src/affordance_runtime/agent/context/world_transition.py",
         "RegionVersion": "src/affordance_runtime/agent/context/world_region_index.py",
-        "CurrentFinding": "src/affordance_runtime/agent/workspace.py",
         "SemanticEvent": "src/affordance_runtime/agent/workspace.py",
         "ActivitySummary": "src/affordance_runtime/agent/workspace.py",
         "AgentWorkspace": "src/affordance_runtime/agent/workspace.py",

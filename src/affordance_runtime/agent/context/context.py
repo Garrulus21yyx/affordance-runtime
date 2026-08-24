@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     )
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
     from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
-    from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.agent.run_state import StepResult
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -230,19 +229,7 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
-    observation_delivery: ObservationDelivery | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-        metadata={"serialize": False},
-    )
     action_delivery_plan: ActionDeliveryPlan | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-        metadata={"serialize": False},
-    )
-    delivery_store: object | None = field(
         default=None,
         repr=False,
         compare=False,
@@ -301,17 +288,6 @@ class AgentContext:
             ActionDeliveryPlan,
         )
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
-        from affordance_runtime.agent.context.observation_delivery import ObservationDelivery
-
-        if self.observation_delivery is not None:
-            if not isinstance(self.observation_delivery, ObservationDelivery):
-                raise TypeError("AgentContext observation delivery must be typed")
-            if (
-                self.current_observation is not None
-                and self.observation_delivery.world_observation_id
-                != self.current_observation.observation_id
-            ):
-                raise ValueError("AgentContext observation delivery belongs to another World")
         from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
         from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
         from affordance_runtime.world.contracts import WorldObservation

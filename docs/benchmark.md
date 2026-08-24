@@ -2,11 +2,11 @@
 
 ## Current status
 
-The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair, and
-readable-AX completeness repair are implemented and provider-free verified. The new readable-result focused suite
-passes `62` tests; the full suite passes `1656` tests with `24` skipped. Ruff, compileall, and diff checks pass. The
-repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules. A fresh-context
-review remains part of the final gate.
+The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
+readable-AX completeness repair, and single-current-World cutover are implemented. The focused owner/vertical suite
+passes `322` tests, the readable-result suite passes `62`, and the full suite passes `1651` with `19` skipped. Ruff,
+compileall, and diff checks pass. The repository-wide mypy command still reports its pre-existing baseline errors in
+unchanged modules. The bounded fresh-review authority gate passes with no blocking finding.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -65,11 +65,25 @@ five valid calls and no argument failures, but the model submitted only the two 
 reasoning explicitly said Catso and Michelle semantically imply small ear cups, then discarded them as non-literal.
 That is an ActionPolicy semantic-admission defect, not renewed observation or history loss.
 
-The bounded general repair is in the existing ActionPolicy prompt: search results are recall candidates; records count
-when their meaning clearly entails/paraphrases the requested condition, without requiring identical words, and
-incidental keyword overlap remains insufficient. Partial source coverage, visible pagination, or a displayed total
-larger than inspected records keeps an exhaustive retrieval open while the current GUI can inspect it. No reviewer,
-task phrase, site, expected answer, second model, or Runtime semantic branch is encoded.
+Run13 then failed for a different, fully traced reason. Page 2 was stable and the same request already contained
+Michelle Davis's full completed ToolReturn, but the model-visible current observation also contained the previous GUI
+receipt as `LatestEffect transition=new_document`, plus `ActionCandidates empty`. That state came from a retained
+Store projection, not BrowserGym navigation. The repeated `wait` calls were therefore a rational response to
+contradictory context, not missing task text, lost evidence, insufficient search, or failure to refresh after the GUI
+action.
+
+The current repair deletes that second current-state path. Fresh World/PageMap is the only model-visible GUI state;
+completed actions remain historical receipts; Store is confined to bounded Monitor digests in `RunState` and is absent
+from `AgentContext`. A Recording FunctionModel vertical gate executes a GUI action, reaches a second policy call over
+the fresh post-action World, and verifies that `LatestEffect`, `CurrentFindings`, `ChangedRegions`, and `new_document`
+are absent. No replacement effect channel or lifecycle was introduced.
+
+The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
+while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
+model reads its region and follows visible GUI pagination instead of issuing synonym searches. Partial source
+coverage, visible pagination, or a displayed total larger than inspected records keeps an exhaustive retrieval open
+while the current GUI can inspect it. No reviewer, task phrase, site, expected answer, BM25/dense index, second model,
+or Runtime semantic branch is encoded.
 
 Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
 currentness, producer, and Store-composition failures all arose on that shared path.
@@ -189,6 +203,9 @@ ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World 
 This cutover does not claim the separately reopened live BrowserGym transition is closed; it only proves no local-result
 change bypassed or replaced that route.
 
+The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
+that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
+
 ### G7 — deletion and non-specialization gates
 
 Production negative searches must find no:
@@ -198,6 +215,7 @@ Production negative searches must find no:
 - `read_next_page` or `action_results_next_page`;
 - admitted-evidence prefix or copied `latest_public_results` transport;
 - Store-owned result body/cursor/pending provider exchange;
+- model-visible `LatestEffect`/`ChangedRegions` or Store/effect input in `AgentContext`;
 - `content_fragment`/fragment offset/reassembly path;
 - `remember_fact`, `WorkingFact`, or Workspace working-set result-retention path;
 - Task21, R9, reviewer-name, site, selector, or benchmark-case production specialization.
@@ -215,7 +233,7 @@ pytest -q \
   tests/unit/agent/test_action_delivery_plan_properties.py
 ```
 
-Result: `324 passed`.
+Result: `322 passed`.
 
 Readable AX owner/vertical suite:
 
@@ -237,7 +255,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1656 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1651 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This

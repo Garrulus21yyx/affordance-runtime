@@ -1100,23 +1100,12 @@ def _transition_delivery_diagnostic(
         ),
     )
     store = ObservationDeliveryStore().reduce(transition_step, step_index=1).next_store
-    bootstrap_context = ContextBuilder().build(
-        task,
-        after,
-        after_action_space,
-        evaluation,
-        current_step_index=1,
-        region_index=after_index,
-        canonical_world=transition_step.after_public_world,
-        delivery_store=store,
-    )
     reducer = DefaultWorkspaceReducer()
     workspace = reducer.reduce(
         AgentWorkspace(),
         transition_step,
         project_step_result(transition_step),
         1,
-        bootstrap_context.observation_delivery.current_findings,
     )
     after_context = ContextBuilder().build(
         task,
@@ -1127,7 +1116,6 @@ def _transition_delivery_diagnostic(
         current_step_index=1,
         region_index=after_index,
         canonical_world=transition_step.after_public_world,
-        delivery_store=store,
     )
     monitor = EpisodeMonitor()
     monitor.start_episode(before, before_context.task.evaluation)
@@ -1166,7 +1154,6 @@ def _transition_delivery_diagnostic(
         local_step,
         project_step_result(local_step),
         2,
-        after_context.observation_delivery.current_findings,
         information_delta=local_transition.information_delta,
     )
     local_monitor = monitor.evaluate(
@@ -1182,7 +1169,6 @@ def _transition_delivery_diagnostic(
         current_step_index=2,
         context_generation=1,
         region_index=after_index,
-        delivery_store=local_store,
     )
     local_request = ModelDecisionRequest(
         request_id=f"diagnostic:local:{local_context.context_id}",
@@ -1223,23 +1209,33 @@ def _transition_delivery_diagnostic(
         and before_index.version_for(key).version == after_index.version_for(key).version
         and before_index.version_for(key).cached_outline == after_index.version_for(key).cached_outline
     )
-    latest_values = tuple(after_context.observation_delivery.latest_effect_values)
-    exact_effect_visible = any(item.exact_value == changed_value for item in latest_values)
-    local_effect_preserved = (
-        local_store.latest_effect is not None
-        and local_store.latest_effect.public_world_delta == delta
+    fresh_world_is_current = (
+        after_context.current_observation is not None
+        and after_context.current_observation.observation_id == after.observation_id
+        and local_context.current_observation is not None
+        and local_context.current_observation.observation_id == after.observation_id
+    )
+    stale_effect_markers = ("LatestEffect", "CurrentFindings", "ChangedRegions", "new_document")
+    single_current_world_projection = all(
+        marker not in delivery.view.text and marker not in local_delivery.view.text
+        for marker in stale_effect_markers
+    ) and "PageMap regions=" in delivery.view.text and "PageMap regions=" in local_delivery.view.text
+    gui_action_did_not_create_delivery_state = store == ObservationDeliveryStore()
+    local_delivery_does_not_reproject_gui_effect = (
+        local_store.local_deliveries
+        and tuple(item.name for item in fields(local_store)) == ("local_deliveries",)
     )
     errors = []
     if public_diff != delta_keys:
         errors.append("transition:serialized_snapshot_delta_mismatch")
-    if not exact_effect_visible:
-        errors.append("transition:latest_effect_exact_value_missing")
-    if not after_context.observation_delivery.changed_regions:
-        errors.append("transition:changed_region_missing")
+    if not fresh_world_is_current:
+        errors.append("transition:fresh_world_not_current")
     if unchanged_keys and len(reused) != len(unchanged_keys):
         errors.append("transition:unchanged_region_cache_not_reused")
-    if not local_effect_preserved:
-        errors.append("transition:local_delivery_cleared_latest_effect")
+    if not gui_action_did_not_create_delivery_state:
+        errors.append("transition:gui_action_created_second_current_state")
+    if not local_delivery_does_not_reproject_gui_effect:
+        errors.append("transition:local_delivery_reprojected_gui_effect")
     if transition_step.public_world_delta != delta:
         errors.append("transition:step_delta_lineage_mismatch")
     if not workspace.recent_steps or not workspace.semantic_events:
@@ -1253,8 +1249,8 @@ def _transition_delivery_diagnostic(
         or local_admitted.token_breakdown.estimated_input_tokens <= 0
     ):
         errors.append("transition:post_transition_request_not_admitted")
-    if "LatestEffect" not in delivery.view.text or "CurrentFindings" not in delivery.view.text:
-        errors.append("transition:change_first_order_missing")
+    if not single_current_world_projection:
+        errors.append("transition:model_context_has_conflicting_current_state")
     if transition_leaks:
         errors.append(f"transition:private_model_input_leaks:{len(transition_leaks)}")
     if local_leaks:
@@ -1272,11 +1268,15 @@ def _transition_delivery_diagnostic(
         },
         "serialized_snapshot_diff_count": len(public_diff),
         "serialized_snapshot_matches_delta": public_diff == delta_keys,
-        "latest_effect_exact_value_visible": exact_effect_visible,
-        "changed_region_count": len(after_context.observation_delivery.changed_regions),
+        "fresh_world_is_current": fresh_world_is_current,
+        "single_current_world_projection": single_current_world_projection,
+        "changed_value_in_authoritative_world": any(
+            item.value == changed_value for item in after_context.current_observation.facts
+        ),
         "unchanged_region_count": len(unchanged_keys),
         "unchanged_region_reused_count": len(reused),
-        "local_delivery_preserved_latest_effect": local_effect_preserved,
+        "gui_action_did_not_create_delivery_state": gui_action_did_not_create_delivery_state,
+        "local_delivery_does_not_reproject_gui_effect": local_delivery_does_not_reproject_gui_effect,
         "step_delta_shared": transition_step.public_world_delta == delta,
         "workspace_reduced": bool(workspace.recent_steps and workspace.semantic_events),
         "monitor_recommendation": transition_monitor.recommendation.value,
@@ -1412,21 +1412,6 @@ def _delivery_probe_diagnostic(
             region_index=context.region_index,
             canonical_world=context.canonical_world,
         )
-        discovery_step = StepResult(
-            request,
-            observation,
-            observation,
-            TaskEvaluation(
-                task.task_id,
-                observation.observation_id,
-                TaskEvaluationStatus.INCOMPLETE,
-                "w1b-world action discovery probe",
-            ),
-            action_page=base_page,
-            action_page_result=discovery,
-            feedback="action_page_ready",
-        )
-        delivery_store = ObservationDeliveryStore().reduce(discovery_step, step_index=1).next_store
         discovery_matches = list(discovery.matches)
         next_context = builder.build(
             task,
@@ -1441,7 +1426,6 @@ def _delivery_probe_diagnostic(
             action_page=base_page,
             region_index=context.region_index,
             action_discovery=discovery,
-            delivery_store=delivery_store,
         )
         packed = _diagnostic_pack(
             ModelDecisionRequest(
@@ -1727,6 +1711,7 @@ def _recoverability_diagnostic(
     query = _recoverability_query(sample_region, sample_target, observation)
     working_context = context
     working_catalog = catalog
+    monitor_store = ObservationDeliveryStore()
     directory_pages = 1
     try:
         read_spec = next(item for item in working_catalog.specs if item.name == "read_region")
@@ -1738,7 +1723,7 @@ def _recoverability_diagnostic(
         checks["directory_tail_ref"] = True
         checks["directory_pages"] = directory_pages
     except Exception as exc:
-        return _recoverability_failure("page_directory", exc)
+        return _recoverability_failure("region_directory", exc)
     try:
         opened_resolution = resolve_grounded_tool_call(
             working_catalog,
@@ -1759,7 +1744,7 @@ def _recoverability_diagnostic(
             errors.append("recoverability:read_region_empty")
         if sample_target is not None and sample_target.label and sample_target.label not in open_content:
             errors.append("recoverability:read_region_missing_target_label")
-        opened_transition = working_context.delivery_store.reduce(
+        opened_transition = monitor_store.reduce(
             StepResult(
                 opened,
                 observation,
@@ -1774,6 +1759,7 @@ def _recoverability_diagnostic(
             ),
             step_index=directory_pages + 1,
         )
+        monitor_store = opened_transition.next_store
         open_cursor = str(opened.result.get("next_cursor") or "")
         checks["tool_local_cursor"] = bool(opened.result.get("has_more")) == bool(open_cursor)
         if not checks["tool_local_cursor"]:
@@ -1809,7 +1795,7 @@ def _recoverability_diagnostic(
         )
         viewed = viewed_resolution.decision
         regions = tuple(viewed.result.get("items", ()))
-        working_context.delivery_store.reduce(
+        monitor_store = monitor_store.reduce(
             StepResult(
                 viewed,
                 observation,
@@ -1823,7 +1809,7 @@ def _recoverability_diagnostic(
                 feedback="local_tool_result",
             ),
             step_index=directory_pages + 1,
-        )
+        ).next_store
         next_cursor = str(viewed.result.get("next_cursor") or "")
         checks["view_all"] = any(
             isinstance(item, Mapping) and item.get("region_ref") == sample_region_ref for item in regions
@@ -1847,7 +1833,7 @@ def _recoverability_diagnostic(
         return _recoverability_failure("view_all", exc)
     checks["store_has_no_result_cursor"] = tuple(
         item.name for item in fields(opened_transition.next_store)
-    ) == ("latest_effect", "local_deliveries")
+    ) == ("local_deliveries",)
     if not checks["store_has_no_result_cursor"]:
         errors.append("recoverability:store_result_cursor_present")
     try:

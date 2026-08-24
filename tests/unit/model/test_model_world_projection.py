@@ -594,14 +594,12 @@ def test_read_region_returns_directly_without_changing_next_context_action_autho
     )
 
     assert opened.result["kind"] == "Opened"
-    assert not hasattr(first.delivery_store, "active_read")
     second = builder.build(
         task,
         observation,
         action_space,
         evaluation,
         context_generation=state.next_context_generation(),
-        delivery_store=state.delivery_store,
     )
     _, second_catalog = catalog_for(second)
     rendered = render_compact_actor_world(
@@ -615,7 +613,6 @@ def test_read_region_returns_directly_without_changing_next_context_action_autho
     )
     activate = next(item for item in second_catalog.specs if item.name == "activate")
 
-    assert not hasattr(second.delivery_store, "active_read")
     assert any(projection in rendered for projection in ("projection=page_map", "projection=full"))
     branches = activate.input_schema.get("oneOf", (activate.input_schema,))
     assert {

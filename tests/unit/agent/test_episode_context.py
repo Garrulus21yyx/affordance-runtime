@@ -11,7 +11,6 @@ from hypothesis import strategies as st
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
-    PublicEffectProjector,
 )
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
@@ -32,7 +31,6 @@ from affordance_runtime.agent.workspace import (
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from tests.support.agent.core_loop_support import shared_world
-from tests.support.canonical_world import canonical_world
 
 
 def _evaluation(observation_id: str) -> TaskEvaluation:
@@ -126,11 +124,6 @@ def test_workspace_keeps_gui_effect_summary_without_copying_exact_values() -> No
         effect,
         AgentTurnView("select_action", "activate", reason="changed"),
         1,
-        public_effect=PublicEffectProjector().project(
-            delta,
-            canonical_world(before),
-            canonical_world(after),
-        ),
     )
     ordinary = SimpleNamespace(
         public_world_delta=WorldTransitionProjector().project(after, after),

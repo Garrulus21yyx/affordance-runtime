@@ -20,7 +20,6 @@ from affordance_runtime.agent.workspace import (
     ActivityFamily,
     ActivitySummary,
     AgentWorkspace,
-    CurrentFinding,
     SemanticEvent,
     SemanticEventKind,
 )
@@ -33,7 +32,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.world import CoverageState, SemanticTarget, StateFact
+from affordance_runtime.world import SemanticTarget, StateFact
 from tests.support.world import fused_world
 
 
@@ -258,12 +257,12 @@ def test_runtime_consumers_share_one_delta_instance_or_exact_serialization() -> 
 
 
 def test_frozen_later_stage_contracts_close_types_and_lifecycle_bounds() -> None:
-    finding = CurrentFinding("fact:a", "value", "exact", "Results", CoverageState.COMPLETE)
     event = SemanticEvent(
         1,
         SemanticEventKind.PUBLIC_RESULT,
         "public result appeared",
-        ({"predicate": finding.predicate, "value": finding.exact_value},),
+        "read_region",
+        "sha256:result",
     )
     activity = ActivitySummary(ActivityFamily.READ_REGION, "digest", 3, 0, "unchanged")
     workspace = AgentWorkspace(

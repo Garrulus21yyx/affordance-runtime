@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 
-from hypothesis import given
-from hypothesis import strategies as st
-
+from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
     ObservationDeliveryStore,
@@ -40,9 +38,14 @@ def _step(result: dict[str, object], *, suffix: str = "one") -> StepResult:
 
 def test_store_has_no_result_body_or_generic_cursor_authority() -> None:
     assert tuple(item.name for item in fields(ObservationDeliveryStore)) == (
-        "latest_effect",
         "local_deliveries",
     )
+
+
+def test_agent_context_has_no_store_or_historical_effect_input() -> None:
+    context_fields = {item.name for item in fields(AgentContext)}
+    assert "delivery_store" not in context_fields
+    assert "observation_delivery" not in context_fields
     store = ObservationDeliveryStore()
     assert not any(
         hasattr(store, name)
@@ -84,7 +87,7 @@ def test_store_reducer_keeps_only_monitor_digests_and_detects_replay() -> None:
     assert replay.next_store is first.next_store
 
 
-@given(st.text(min_size=1).filter(str.strip))
-def test_for_world_never_creates_world_lineaged_cursor_state(world_id: str) -> None:
+def test_store_has_no_world_lineage_or_cursor_lifecycle() -> None:
     store = ObservationDeliveryStore()
-    assert store.for_world(world_id) is store
+    assert not hasattr(store, "for_world")
+    assert not hasattr(store, "cursor")

@@ -8,11 +8,11 @@ import pytest
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionDeliveryPlan,
     ActionRouteIssueFragment,
+    DeliveryInventorySnapshot,
     DeliveryObligation,
     DeliveryObligationKind,
 )
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
-from affordance_runtime.agent.context.observation_delivery import DeliveryInventorySnapshot
 from affordance_runtime.model.policy.request_admission import ModelRequestCapacityError
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 
@@ -258,12 +258,12 @@ def test_oversized_optional_head_blocks_only_its_group(
 
 @pytest.mark.parametrize("count", (1, 2, 16, 84, 167, 500))
 @pytest.mark.parametrize("capacity", (1, 5))
-def test_run21_fanout_shape_keeps_one_foreground_minimum_and_bounded_cost(
+def test_large_current_action_group_keeps_one_foreground_minimum_and_bounded_cost(
     monkeypatch: pytest.MonkeyPatch,
     count: int,
     capacity: int,
 ) -> None:
-    kind = DeliveryObligationKind.PUBLIC_EFFECT
+    kind = DeliveryObligationKind.BASE_ACTIONS
     plan = ActionDeliveryPlan(
         "actions:test",
         "world:test",

@@ -12,7 +12,6 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     ActionCandidateProjection,
     ActionDeliveryPlan,
     ActionRouteIssueFragment,
-    WorldDeliveryRecord,
 )
 from affordance_runtime.agent.context.compact_world_renderer import (
     DeliveryManifest,
@@ -202,43 +201,6 @@ def build_model_turn_delivery(
         pending_tool_call_id,
         pending_tool_name,
     )
-    effect_indices = {
-        item.record_index
-        for item in selected_records
-        if isinstance(item, WorldDeliveryRecord) and item.record_kind == "effect"
-    }
-    directory_indices = {
-        item.record_index
-        for item in selected_records
-        if isinstance(item, WorldDeliveryRecord) and item.record_kind == "page_directory"
-    }
-    selected_effect_header = context.observation_delivery.effect_header
-    delivered_action_refs = {
-        ref
-        for candidate in selected_candidates.candidates
-        for ref in (
-            candidate.target_ref,
-            *(item.target_ref for item in candidate.destinations),
-        )
-    }
-    selected_observation_delivery = replace(
-        context.observation_delivery,
-        effect_header=selected_effect_header,
-        latest_effect_values=tuple(
-            replace(item, public_ref="")
-            if item.public_ref.startswith("E") and item.public_ref not in delivered_action_refs
-            else item
-            for index, item in enumerate(context.observation_delivery.latest_effect_values)
-            if index in effect_indices
-        ),
-        recovery_directory=tuple(
-            item
-            for index, item in enumerate(context.observation_delivery.recovery_directory)
-            if index in directory_indices
-        ),
-        page_outline=(),
-        changed_regions=(),
-    )
     selected_issues = tuple(
         item for item in selected_records if isinstance(item, ActionRouteIssueFragment)
     )
@@ -254,7 +216,6 @@ def build_model_turn_delivery(
         action_route_issues=selected_issues,
         public_fact_bindings=context.private_fact_bindings,
         evidence_index=context.evidence_index,
-        observation_delivery=selected_observation_delivery,
     )
     view = replace(
         rendered.view,
@@ -291,7 +252,6 @@ def build_model_turn_delivery(
         "action_delivery_plan": context.action_delivery_plan.plan_id,
         "admitted_record_counts": tuple(sorted(selected_counts.items())),
         "packing_backoff_count": packing_backoff_count,
-        "public_effect": tuple(to_json_compatible(item) for item in selected_observation_delivery.latest_effect_values),
         "tool_result": (
             {
                 "tool_call_id": tool_result.tool_call_id,

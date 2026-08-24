@@ -31,6 +31,7 @@ from affordance_runtime.actions import ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
+from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.decisions import (
     FinalResponse,
     ReadRegionResult,
@@ -324,13 +325,11 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
         )
         assert step.decision is first.output.decision
         assert step.decision.tool_call_id == "recording-call:1"
-        transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
             task,
             world,
             actions,
             evaluation,
-            delivery_store=transition.next_store,
             last_step=step,
         )
         second = await policy.port.generate(
@@ -426,13 +425,11 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
             evaluation,
             feedback="local_tool_result",
         )
-        transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
             task,
             world,
             actions,
             evaluation,
-            delivery_store=transition.next_store,
             last_step=step,
         )
         second = await policy.port.generate(
@@ -498,13 +495,11 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             evaluation,
             feedback="local_tool_result",
         )
-        transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
             task,
             world,
             action_space,
             evaluation,
-            delivery_store=transition.next_store,
             last_step=step,
         )
         second = await policy.port.generate(
@@ -523,13 +518,11 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             evaluation,
             feedback="local_tool_result",
         )
-        second_transition = second_context.delivery_store.reduce(second_step, step_index=2)
         third_context = builder.build(
             task,
             world,
             action_space,
             evaluation,
-            delivery_store=second_transition.next_store,
             last_step=second_step,
         )
         third = await policy.port.generate(
@@ -565,7 +558,6 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             for message in recorded["messages"][:-1]
             for part in message["parts"]
         )
-        assert not hasattr(third_context.delivery_store, "public_result_inventory")
         user_text = recorded["messages"][-1]["parts"][1]["content"][0]["content"]
         payload = json.loads(user_text)
         assert "latest_public_results" not in payload
@@ -650,7 +642,7 @@ def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_resu
             evaluation,
             feedback="local_tool_result",
         )
-        first_transition = first_context.delivery_store.reduce(first_step, step_index=1)
+        first_transition = ObservationDeliveryStore().reduce(first_step, step_index=1)
         assert not hasattr(first_transition.next_store, "public_result_inventory")
         scripted.decisions.extend(
             [
@@ -666,7 +658,6 @@ def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_resu
             world,
             ActionSpace(world.observation_id, ()),
             evaluation,
-            delivery_store=first_transition.next_store,
             last_step=first_step,
         )
         second = await policy.port.generate(
@@ -685,7 +676,7 @@ def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_resu
             evaluation,
             feedback="local_tool_result",
         )
-        second_transition = second_context.delivery_store.reduce(second_step, step_index=2)
+        second_transition = first_transition.next_store.reduce(second_step, step_index=2)
         assert len(second_transition.next_store.local_deliveries) == 2
         assert all(not hasattr(item, "records") for item in second_transition.next_store.local_deliveries)
         third_context = builder.build(
@@ -693,7 +684,6 @@ def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_resu
             world,
             ActionSpace(world.observation_id, ()),
             evaluation,
-            delivery_store=second_transition.next_store,
             last_step=second_step,
         )
         third = await policy.port.generate(
@@ -742,13 +732,11 @@ def test_list_regions_returns_standard_call_correlated_tool_result() -> None:
             evaluation,
             feedback="local_tool_result",
         )
-        transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
             task,
             world,
             actions,
             evaluation,
-            delivery_store=transition.next_store,
             last_step=step,
         )
         second = await policy.port.generate(
@@ -933,13 +921,11 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
             evaluation,
             feedback="local_tool_result",
         )
-        transition = first_context.delivery_store.reduce(step, step_index=1)
         second_context = builder.build(
             task,
             world,
             actions,
             evaluation,
-            delivery_store=transition.next_store,
             last_step=step,
         )
         history_before = policy.port.message_history
@@ -966,7 +952,6 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
         assert scripted.calls == 1
         assert policy.port.message_history is history_before
         assert policy.port.message_history == history_before
-        assert transition.next_store is second_context.delivery_store
 
     asyncio.run(scenario())
 

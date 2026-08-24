@@ -22,11 +22,6 @@ from affordance_runtime.agent.context.contracts import (
     AgentActionPageView,
     AgentDestinationView,
 )
-from affordance_runtime.agent.context.observation_delivery import (
-    DeliveryInventorySnapshot,
-    ObservationDelivery,
-    PublicEffectInventory,
-)
 from affordance_runtime.agent.context.world_region_index import (
     FunctionalContainerKind,
     WorldDeliveryIndex,
@@ -46,6 +41,38 @@ _FOCUS_CONTAINER_SOURCE_ROLES = frozenset(
         "textbox",
     }
 )
+
+
+@dataclass(frozen=True)
+class DeliveryInventorySnapshot:
+    """One immutable current-turn inventory owned by action request packing."""
+
+    scope: str
+    kind: str
+    world_lineage: str = field(repr=False, compare=False)
+    action_lineage: str = field(repr=False, compare=False)
+    result_lineage: str = field(repr=False, compare=False)
+    order_digest: str = field(repr=False, compare=False)
+    records: tuple[object, ...] = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.scope,
+                self.kind,
+                self.world_lineage,
+                self.action_lineage,
+                self.result_lineage,
+                self.order_digest,
+            )
+        ):
+            raise ValueError("delivery inventory snapshot is invalid")
+        object.__setattr__(self, "records", tuple(self.records))
+
+    @property
+    def remaining(self) -> tuple[object, ...]:
+        return self.records
 
 
 @dataclass(frozen=True)
@@ -224,35 +251,13 @@ class ActionRouteIssueFragment:
 
 class DeliveryObligationKind(StrEnum):
     EXPLICIT_QUERY = "query"
-    PUBLIC_EFFECT = "effect_actions"
     INTERACTION = "interaction"
     BASE_ACTIONS = "base"
-    PAGE_DIRECTORY = "page_directory"
     DESTINATION_ROUTES = "destinations"
     ROUTE_ISSUES = "issues"
 
 
-@dataclass(frozen=True)
-class WorldDeliveryRecord:
-    """One atomic record already owned by ObservationDelivery."""
-
-    record_kind: str
-    record_index: int
-    rendered_cost_bytes: int
-    route_fragments: tuple[ActionRouteFragment, ...] = ()
-
-    def __post_init__(self) -> None:
-        if (
-            self.record_kind not in {"effect", "page_directory"}
-            or type(self.record_index) is not int
-            or self.record_index < 0
-            or self.rendered_cost_bytes < 0
-        ):
-            raise ValueError("World delivery record is invalid")
-        object.__setattr__(self, "route_fragments", tuple(self.route_fragments))
-
-
-DeliveryAtomicRecord = ActionRouteFragment | ActionRouteIssueFragment | WorldDeliveryRecord
+DeliveryAtomicRecord = ActionRouteFragment | ActionRouteIssueFragment
 
 
 @dataclass(frozen=True)
@@ -345,13 +350,7 @@ class ActionDeliveryPlan:
             if not 0 <= count <= len(obligation.remaining):
                 raise ValueError("admitted obligation prefix is invalid")
             for record in obligation.remaining[:count]:
-                route_fragments = (
-                    (record,)
-                    if isinstance(record, ActionRouteFragment)
-                    else record.route_fragments
-                    if isinstance(record, WorldDeliveryRecord)
-                    else ()
-                )
+                route_fragments = (record,) if isinstance(record, ActionRouteFragment) else ()
                 for fragment in route_fragments:
                     if fragment.public_route in seen_routes:
                         continue
@@ -372,16 +371,7 @@ class ActionDeliveryPlan:
         """Bounded non-authoritative preview for non-provider diagnostics."""
 
         return {
-            item.kind.value: min(
-                len(item.remaining),
-                1
-                if item.kind
-                in {
-                    DeliveryObligationKind.PUBLIC_EFFECT,
-                    DeliveryObligationKind.PAGE_DIRECTORY,
-                }
-                else 5,
-            )
+            item.kind.value: min(len(item.remaining), 5)
             for item in self.obligations
         }
 
@@ -394,12 +384,9 @@ def build_action_delivery_plan(
     automatic: ActionCandidateProjection,
     region_index: WorldDeliveryIndex,
     region_refs: Mapping[str, str],
-    target_structural_slots: Mapping[str, tuple[str, ...]],
     discovery: ActionDiscoveryResult | None = None,
     action_space_issues: tuple[ActionSpaceIssue, ...] = (),
     target_refs: Mapping[str, str] | None = None,
-    observation_delivery: ObservationDelivery | None = None,
-    latest_effect: PublicEffectInventory | None = None,
 ) -> ActionDeliveryPlan:
     """Build one bounded-family plan over complete current owner inventories."""
 
@@ -477,11 +464,6 @@ def build_action_delivery_plan(
                 "action discovery result must close every returned route over the current ActionSpace"
             )
 
-    effect_slots = set(latest_effect.changed_target_slot_keys if latest_effect is not None else ())
-    for option in sorted(complete_actions, key=_public_option_view_order):
-        if target_structural_slots.get(option.target_id, ()) in effect_slots:
-            append(option, kind=DeliveryObligationKind.PUBLIC_EFFECT, reason="public_effect")
-
     options_by_target = {item.target_id: item for item in complete_actions}
     focused_containers = {
         target_context.primary_region_key
@@ -552,58 +534,18 @@ def build_action_delivery_plan(
             )
         )
     groups[DeliveryObligationKind.ROUTE_ISSUES].extend(issue_fragments)
-    if observation_delivery is not None:
-        effect_routes = tuple(
-            item
-            for item in groups[DeliveryObligationKind.PUBLIC_EFFECT]
-            if isinstance(item, ActionRouteFragment)
-        )
-        groups[DeliveryObligationKind.PUBLIC_EFFECT] = [
-            WorldDeliveryRecord(
-                "effect",
-                index,
-                len(json.dumps(to_json_compatible(item), ensure_ascii=False).encode()),
-                tuple(
-                    route
-                    for route in effect_routes
-                    if route.candidate.target_ref == item.public_ref
-                ),
-            )
-            for index, item in enumerate(observation_delivery.latest_effect_values)
-        ]
-        routed_effect_refs = {
-            route.candidate.target_ref
-            for record in groups[DeliveryObligationKind.PUBLIC_EFFECT]
-            if isinstance(record, WorldDeliveryRecord)
-            for route in record.route_fragments
-        }
-        groups[DeliveryObligationKind.PUBLIC_EFFECT].extend(
-            route for route in effect_routes if route.candidate.target_ref not in routed_effect_refs
-        )
-        groups[DeliveryObligationKind.PAGE_DIRECTORY].extend(
-            WorldDeliveryRecord(
-                "page_directory",
-                index,
-                len(json.dumps(to_json_compatible(item), ensure_ascii=False).encode()),
-            )
-            for index, item in enumerate(observation_delivery.recovery_directory)
-        )
 
     priorities = {
-        DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 7,
-        DeliveryObligationKind.PUBLIC_EFFECT: 2,
-        DeliveryObligationKind.INTERACTION: 3,
-        DeliveryObligationKind.BASE_ACTIONS: 4,
-        DeliveryObligationKind.PAGE_DIRECTORY: 5,
-        DeliveryObligationKind.DESTINATION_ROUTES: 6,
-        DeliveryObligationKind.ROUTE_ISSUES: 7,
+        DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 6,
+        DeliveryObligationKind.INTERACTION: 2,
+        DeliveryObligationKind.BASE_ACTIONS: 3,
+        DeliveryObligationKind.DESTINATION_ROUTES: 4,
+        DeliveryObligationKind.ROUTE_ISSUES: 5,
     }
     scope_by_kind = {
         DeliveryObligationKind.EXPLICIT_QUERY: "query",
-        DeliveryObligationKind.PUBLIC_EFFECT: "effect",
         DeliveryObligationKind.INTERACTION: "interaction",
         DeliveryObligationKind.BASE_ACTIONS: "base",
-        DeliveryObligationKind.PAGE_DIRECTORY: "page_directory",
         DeliveryObligationKind.DESTINATION_ROUTES: "destinations",
         DeliveryObligationKind.ROUTE_ISSUES: "issues",
     }
@@ -619,9 +561,7 @@ def build_action_delivery_plan(
             ).encode()
         ).hexdigest()
         result_lineage = (
-            latest_effect.raw_delta_lineage
-            if kind is DeliveryObligationKind.PUBLIC_EFFECT and latest_effect is not None
-            else discovery.query
+            discovery.query
             if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
             else "current"
         )
@@ -783,14 +723,7 @@ def _public_record_value(record: DeliveryAtomicRecord) -> Mapping[str, object]:
         return _public_fragment_value(record)
     if isinstance(record, ActionRouteIssueFragment):
         return freeze_json(to_json_compatible(record))
-    return freeze_json(
-        {
-            "record_kind": record.record_kind,
-            "record_index": record.record_index,
-            "rendered_cost_bytes": record.rendered_cost_bytes,
-            "route_fragments": tuple(_public_fragment_value(item) for item in record.route_fragments),
-        }
-    )
+    raise TypeError("unsupported action delivery record")
 
 
 def _public_obligation_value(obligation: DeliveryObligation) -> Mapping[str, object]:

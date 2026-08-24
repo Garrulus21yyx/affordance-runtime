@@ -6,10 +6,14 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
-Implementation and provider-free verification of the thin result/history cutover, action-discovery closure repair,
-and readable-AX completeness repair are complete. The readable-result focused suite passes `62` tests; the full suite
-passes `1656` tests with `24` skipped. Ruff, compileall, and diff checks pass. The repository-wide mypy command still
-reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
+Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
+and single-current-World cutover is complete. Verification counts below are refreshed by the current review; live
+benchmark validation remains separately authorized. The repository-wide mypy command still reports its pre-existing
+baseline errors in unchanged modules and is not counted as a passing gate.
+
+Current provider-free verification: `322` focused owner/vertical tests and `62` readable-result tests pass; the full
+suite passes `1651` with `19` skipped. Ruff, compileall, and diff checks pass. The bounded fresh-review authority audit
+found no blocking owner, currentness, result-pairing, or search-contract defect in this cutover.
 Overall project closure is still **open**:
 
 - BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
@@ -89,11 +93,30 @@ records and all same-World routes remained valid. Its final provider call timed 
 then completed STOP and native evaluation but exposed a separate ActionPolicy interpretation defect: the model
 explicitly recognized that the two indirect descriptions entail undersized ear cups, then chose only the two records
 containing literal `ear cup` wording as the “safest” answer. The World, task, completed call/result history, and full
-records were present. The positive policy contract is therefore semantic and generic: content search supplies recall
-candidates; relevance follows clear entailment/paraphrase rather than exact token overlap, while incidental lexical
-matches remain excluded. Exhaustive retrieval also remains open while visible counts, pagination, or partial source
+records were present. The positive policy contract is therefore semantic and generic: `search_page_content` is a thin
+exact-substring locator, while the model judges the complete records it returns by entailment/paraphrase rather than
+exact token overlap. For a known collection, the model reads its region and follows visible UI pagination instead of
+issuing synonym searches. Exhaustive retrieval remains open while visible counts, pagination, or partial source
 coverage expose inspectable records. This is one prompt-owner correction in the existing ActionPolicy, not a Runtime
-rule, benchmark extractor, verifier model, or new state.
+rule, BM25/dense index, benchmark extractor, verifier model, or new state.
+
+Run13 exposed a different context-authority defect after the records themselves were complete. The Page 2
+`search_page_content` ToolReturn already contained Michelle Davis's full record, and BrowserGym had returned a stable
+fresh post-action observation. The same physical request nevertheless rendered the previous Page 2 click as
+`LatestEffect ... transition=new_document`, because a changed public document signature had been mislabeled as a
+current navigation state and retained across later local reads. The model followed the documented hierarchy, trusted
+that false current-state block, and repeatedly called `wait`.
+
+The repair restores one currentness authority:
+
+- fresh `WorldObservation` is the only current GUI state supplied to the model;
+- a completed GUI action remains only in its `StepResult`, bounded recent receipt, and SDK call/result history;
+- `AgentContext`, `ContextBuilder`, action packing, and the renderer have no Store/effect projection input;
+- `ObservationDeliveryStore` lives only in `RunState` and retains bounded local-result digests for Monitor novelty;
+- the fresh `PageMap` is always rendered directly from the current `WorldDeliveryIndex`.
+
+No replacement effect channel, transition state machine, cursor protocol, summary model, or retrieval system was
+added.
 
 ## Normative production chain
 
@@ -236,7 +259,7 @@ cannot leak into another episode.
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
 | bounded typed call/result history, correlation, and model-authored progress note | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
-| next Store reduction | `ObservationDeliveryStore.reduce` | provider bridge, resolver |
+| local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
 
 Projections are never authorities. Trace and benchmark artifacts observe owner-produced facts; they cannot rebuild a
@@ -257,7 +280,8 @@ The model context contains only:
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs and the current same-call ToolReturn.
 
 Old World/user prompts are excluded from transport history because the fresh World is the current-environment
-authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its one tool call.
+authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its one tool call,
+including exact supported output values and inspected/total scope when known instead of a vague count.
 The PydanticAI boundary retains that visible `TextPart` with the accepted normalized `ToolCallPart`, hard-bounds a
 misbehaving response at 800 characters with an explicit truncation marker, and excludes hidden `ThinkingPart` content
 and discarded extra calls from future model input. Raw provider output remains in Trace. This is same-actor trajectory
@@ -270,11 +294,11 @@ note can carry forward model conclusions before an older exchange leaves the win
 
 `ObservationDeliveryStore` now retains only:
 
-- the latest reconciled GUI effect needed by the current view/action recall;
 - a bounded sequence of local-result digests used for Monitor novelty/repetition.
 
-It does not retain public result bodies, result prefixes, result cursors, action-query inventories, provider pending
-calls, or continuation capabilities.
+It is owned by `RunState` and is absent from `AgentContext`. It does not retain public result bodies, result prefixes,
+result cursors, action-query inventories, provider pending calls, or continuation capabilities, and it never retains
+or projects GUI effects.
 
 `AgentWorkspace` keeps bounded semantic receipts and activity summaries. It has no working-fact inventory and does not
 receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot

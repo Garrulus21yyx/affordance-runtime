@@ -64,6 +64,7 @@ from affordance_runtime.model.policy.reasoning_policy import (
 )
 from affordance_runtime.model.policy.request_admission import (
     ModelRequestBudget,
+    ModelRequestCapacityError,
     estimate_canonical_envelope,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
@@ -310,13 +311,11 @@ def _context_with_direct_result(
         evaluation,
         feedback="local_tool_result",
     )
-    store = ObservationDeliveryStore().reduce(committed, step_index=1).next_store
     context = ContextBuilder().build(
         task,
         world,
         actions,
         evaluation,
-        delivery_store=store,
         last_step=committed,
     )
     return context
@@ -733,7 +732,6 @@ def test_find_controls_returns_one_owner_bounded_page_without_store_inventory() 
         evaluation,
         action_page=state.action_page,
         action_discovery=state.action_discovery,
-        delivery_store=state.delivery_store,
     )
     query = context.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
 
@@ -1237,7 +1235,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
 
 
 @pytest.mark.parametrize("count", (1, 2, 16, 84, 167, 500))
-def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(count: int) -> None:
+def test_changed_action_fanout_uses_only_the_fresh_world_projection(count: int) -> None:
     task = TaskGoal(
         "generated-fanout",
         "Activate a generated control",
@@ -1283,11 +1281,13 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
             TaskEvaluationStatus.INCOMPLETE,
             "generated fanout",
         ),
-        delivery_store=store,
     )
-    effect = context.action_delivery_plan.obligation(DeliveryObligationKind.PUBLIC_EFFECT)
-    assert effect is not None
-    assert len(effect.records) >= count
+    assert store == ObservationDeliveryStore()
+    assert context.current_observation is not None
+    assert context.current_observation.observation_id == after.observation_id
+    assert {item.kind.value for item in context.action_delivery_plan.obligations}.isdisjoint(
+        {"effect_actions", "page_directory"}
+    )
 
     packed = _pack(
         ModelDecisionRequest(f"request:fanout:{count}", context),
@@ -1296,12 +1296,11 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
         perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
     )
 
-    admitted = dict(packed.admitted_record_counts)[DeliveryObligationKind.PUBLIC_EFFECT.value]
-    assert admitted >= 1
-    assert admitted <= len(effect.records)
-    if count >= 84:
-        assert admitted < len(effect.records)
-        assert "read_next_page" not in {item.name for item in packed.catalog.specs}
+    assert "PageMap regions=" in packed.delivery.view.text
+    assert "LatestEffect" not in packed.delivery.view.text
+    assert "ChangedRegions" not in packed.delivery.view.text
+    assert "new_document" not in packed.delivery.view.text
+    assert "read_next_page" not in {item.name for item in packed.catalog.specs}
     assert (
         packed.admitted_envelope.token_breakdown.estimated_input_tokens
         <= ModelRequestBudget().soft_target_tokens
@@ -1311,9 +1310,6 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
         packed.admitted_envelope.token_breakdown.complete_request_tokens
         <= ModelRequestBudget().model_context_window
     )
-    assert (*effect.records[:admitted], *effect.records[admitted:]) == effect.records
-    changes = {item.change.value for item in store.latest_effect.inventory.atoms}
-    assert {"added", "removed", "modified"} <= changes
 
 
 def test_complete_query_capability_set_is_admitted_before_other_groups(
@@ -1474,7 +1470,6 @@ def test_owner_bounded_result_reaches_physical_request_without_store_projection(
     assert packed.delivery.tool_result is not None
     assert tuple(packed.delivery.tool_result.return_value["items"]) == values
     assert not hasattr(packed.delivery, "public_results")
-    assert not hasattr(context.delivery_store, "public_result_inventory")
     assert "[TRUNCATED]" not in packed.admitted_envelope.envelope.user_text
 
 
@@ -1540,10 +1535,8 @@ def test_current_tool_result_is_never_structurally_backed_off_by_turn_packer() -
     exact = _pack(request, binder=exact_fit)
     assert exact.delivery.tool_result is not None
     assert tuple(exact.delivery.tool_result.return_value["items"]) == values
-    reduced = _pack(request, binder=one_token_short)
-    assert reduced.delivery.tool_result is not None
-    assert tuple(reduced.delivery.tool_result.return_value["items"]) == values
-    assert reduced.admitted_envelope.token_breakdown.estimated_input_tokens <= two_record_tokens - 1
+    with pytest.raises(ModelRequestCapacityError):
+        _pack(request, binder=one_token_short)
 
 
 def test_observation_and_source_id_permutation_preserves_public_page_manifest_catalog_and_cost() -> None:
