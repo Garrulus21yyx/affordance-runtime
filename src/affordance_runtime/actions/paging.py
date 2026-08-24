@@ -312,7 +312,7 @@ class ActionRecallSet:
             return ActionRecallPartition(tuple(options), ())
         roles = roles or {}
         functional_paths = functional_paths or {}
-        query_tokens = _tokens(normalized_query)
+        query_tokens = _literal_tokens(normalized_query)
         prioritized: list[tuple[int, object]] = []
         remainder: list[object] = []
         for option in options:
@@ -321,29 +321,17 @@ class ActionRecallSet:
             label = _normalize_text(labels.get(target_id, ""))
             role = _normalize_text(roles.get(target_id, ""))
             path = tuple(_normalize_text(item) for item in functional_paths.get(target_id, ()))
-            label_tokens = _tokens(label)
-            role_tokens = _tokens(role)
-            operation_tokens = _tokens(operation)
-            path_tokens = _tokens(" ".join(path))
-            exact = bool(
-                label
-                and (
-                    label == normalized_query
-                    or label in normalized_query
-                    or normalized_query in label
-                )
-            )
+            label_tokens = _literal_tokens(label)
+            role_tokens = _literal_tokens(role)
+            operation_tokens = _literal_tokens(operation)
+            path_tokens = _literal_tokens(" ".join(path))
+            exact = bool(label and _bounded_phrase_match(label, normalized_query))
             operation_or_role = normalized_query in {operation, role}
             lexical = bool(
                 query_tokens
                 & frozenset((*label_tokens, *role_tokens, *operation_tokens, *path_tokens))
             )
-            fuzzy = bool(
-                query_tokens
-                and label_tokens
-                and _fuzzy_score(query_tokens, label_tokens) >= ActionReranker().fuzzy_threshold
-            )
-            if exact or operation_or_role or lexical or fuzzy:
+            if exact or operation_or_role or lexical:
                 structural_priority = (
                     0
                     if target_id in focused_target_ids
@@ -798,14 +786,43 @@ def _tokens(value: str) -> frozenset[str]:
         if len(item) >= 2 and item not in _LEXICAL_STOPWORDS:
             values.add(item)
             values.add(_stem(item))
-        if len(item) >= 8:
-            values.update((item[:4], item[-4:]))
     for size in (2, 3):
         for index in range(0, len(raw) - size + 1):
             joined = "".join(raw[index : index + size])
             if 4 <= len(joined) <= 24:
                 values.add(_stem(joined))
     return frozenset(item for item in values if len(item) >= 3)
+
+
+def _literal_tokens(value: str) -> frozenset[str]:
+    """Token-boundary recall for explicit control discovery queries."""
+
+    return frozenset(
+        item
+        for item in _TOKEN.findall(value)
+        if len(item) >= 2 and item not in _LEXICAL_STOPWORDS
+    )
+
+
+def _bounded_phrase_match(left: str, right: str) -> bool:
+    """Match an exact label/query phrase without substring leakage across words."""
+
+    if left == right:
+        return True
+    for needle, haystack in ((left, right), (right, left)):
+        start = haystack.find(needle)
+        while start >= 0:
+            end = start + len(needle)
+            left_boundary = not needle[0].isalnum() or start == 0 or not haystack[start - 1].isalnum()
+            right_boundary = (
+                not needle[-1].isalnum()
+                or end == len(haystack)
+                or not haystack[end].isalnum()
+            )
+            if left_boundary and right_boundary:
+                return True
+            start = haystack.find(needle, start + 1)
+    return False
 
 
 def _stem(value: str) -> str:

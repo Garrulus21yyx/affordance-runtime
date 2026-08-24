@@ -16,12 +16,20 @@ keeps task-ranked current actions ahead of incidental browser focus when only a 
 current action-boundary repair also makes that rank purely presentational: registry-owned action tools use stable
 E-ref-shaped schemas, while the existing complete current `ActionSpace` resolver alone validates the selected ref,
 operation, destination, parameters, and private action identity.
+Task266 run6 crossed that repaired boundary, activated the intended article, and recovered Portland's official
+coordinates. It then exposed a narrower browser-profile mismatch: the generic tool compiler still required an `E-ref`
+for `goto/go_back/go_forward/new_tab/tab_focus/tab_close`, even though BrowserGym's official navigation primitives are
+target-less browser operations. The compiler now binds the single current `browser_context` privately and publishes
+only each primitive's business parameters. Page controls retain explicit current `E-ref` grounding. Explicit
+`find_controls` recall is literal token/phrase bounded; the former hand-written prefix/suffix and fuzzy expansion no
+longer turns substrings such as `ion` into navigation matches. This adds no browser state, site detection, action
+authority, or retrieval service.
 Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused action-schema/resolver/delivery/PydanticAI surface passes `178`
-tests; the full suite passes `1684` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
+Current provider-free verification: the focused browser-profile/action-schema/resolver/delivery surface passes `169`
+tests; the full suite passes `1687` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
 currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
 recovery-eligibility, or async-liveness defect in this bounded implementation.
 
@@ -340,6 +348,22 @@ or materially change route, while an exact read/search replay points to the same
 relevant region, `find_controls`, or browser navigation. No new action authority, retrieval index, cursor type,
 history store, recovery state, or model role was introduced. Run5 remains failed pre-repair evidence; a fresh live
 witness is required.
+
+Task266 run6 live-verified that the intended `Portland, Maine` result remained callable outside the bounded
+presentation prefix: the model typed the query, submitted it, used `find_controls`, activated the exact current `E2`
+route, and read the article infobox containing `43°39′36″N 70°15′18″W`. It then tried to navigate to the next source.
+Although the model-visible catalog contained `goto`, its schema still required an undisplayed current browser-context
+ref. The compact World showed only `[R1] Browser navigation`, so the model searched for an address-bar control. The old
+query matcher expanded long tokens with four-character prefixes/suffixes, causing `navigation` to collide with large
+numbers of unrelated page controls. Monitor correctly blocked the resulting discovery/read loop after nine policy
+calls; run6 is failed pre-repair evidence, not acceptance.
+
+The owner contract now follows BrowserGym's published action shape: browser primitives resolve the unique current
+browser-context action without a public target argument, while page primitives continue to resolve an explicit
+current `E-ref`. `find_controls` remains an optional current-page lookup and uses bounded literal word/phrase matches,
+not stemming, prefix/suffix expansion, fuzzy recall, BM25, dense retrieval, or a benchmark-specific vocabulary. See
+[BrowserGym action space](https://browsergym.readthedocs.io/latest/core/action_space.html) and
+[AgentOccam](https://arxiv.org/abs/2410.13825). A fresh authorized live witness is still required.
 
 ## Normative production chain
 

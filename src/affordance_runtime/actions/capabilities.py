@@ -265,7 +265,7 @@ class InteractionCapabilityRegistry:
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 2_048,
-                        "pattern": r"^https?://",
+                        "pattern": r"^https?://.+",
                     }
                 },
                 ("url",),

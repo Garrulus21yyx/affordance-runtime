@@ -8,6 +8,12 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
+from affordance_runtime.model.policy.grounded_tool_catalog import (
+    compile_grounded_tool_catalog,
+    resolve_grounded_tool_call,
+)
+from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.surfaces.browsergym import projection as projection_module
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
@@ -146,21 +152,48 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     browser = next(item for item in webarena.world.targets if item.role == "browser_context")
     assert browser.state["active_tab_index"] == 0
     assert browser.state["open_tabs"][0]["route"] == "https://example.test/start"
+    task = TaskGoal(
+        "task:navigation",
+        "Navigate",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    action_space = ActionSpaceBuilder().build(task, webarena.world)
     actions = {
         item.semantic_action: item
-        for item in ActionSpaceBuilder().build(
-            TaskGoal(
-                "task:navigation",
-                "Navigate",
-                allowed_effects=("external_ui_interaction",),
-                risk_profile=RiskProfile.LOW,
-            ),
-            webarena.world,
-        ).options
+        for item in action_space.options
         if item.target_id == browser.target_id
     }
     assert set(actions) == {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
     assert actions["tab_focus"].parameter_schema["properties"]["index"]["enum"] == (1,)
+
+    evaluation = TaskEvaluation(
+        task.task_id,
+        webarena.world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
+    )
+    context = ContextBuilder().build(task, webarena.world, action_space, evaluation)
+    delivery = build_model_turn_delivery(context, include_images=False)
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
+    browser_specs = {
+        item.name: item
+        for item in catalog.specs
+        if item.name in {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
+    }
+    assert set(browser_specs) == set(actions)
+    assert all("target" not in item.input_schema["properties"] for item in browser_specs.values())
+    goto = next(item for item in catalog.specs if item.name == "goto")
+    assert tuple(goto.input_schema["required"]) == ("url",)
+    assert "target" not in goto.input_schema["properties"]
+    resolved = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("goto", {"url": "https://docs.example.test/guide"}, "call:goto"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+    assert resolved.decision.action_id == actions["goto"].action_id
+    assert resolved.decision.parameters == {"url": "https://docs.example.test/guide"}
 
     with pytest.raises(ValueError, match="browser-action profile"):
         project_browsergym_observation(

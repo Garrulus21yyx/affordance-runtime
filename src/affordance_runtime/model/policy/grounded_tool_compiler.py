@@ -10,6 +10,7 @@ from enum import StrEnum
 
 from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
+    InteractionSubjectKind,
     ParameterContractKind,
 )
 from affordance_runtime.actions.schema_validation import validate_value
@@ -29,6 +30,7 @@ _RESERVED_NAMES = frozenset({"target", "source", "destination"})
 class SelectorMode(StrEnum):
     CURRENT_TARGET = "current_target"
     CURRENT_ENDPOINTS = "current_endpoints"
+    CURRENT_BROWSER_CONTEXT = "current_browser_context"
 
 
 @dataclass(frozen=True)
@@ -237,6 +239,18 @@ def _current_reference_selectors(
     tuple[Mapping[str, object], ...],
     SelectorMode,
 ]:
+    browser_context_rows = tuple(
+        row
+        for row in rows
+        if row.option.subject_kind == InteractionSubjectKind.BROWSER_CONTEXT.value
+    )
+    if browser_context_rows:
+        if len(browser_context_rows) != len(rows) or len(rows) != 1 or rows[0].destination is not None:
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+        # Browser-level primitives have one current browser-context owner.
+        # The model supplies only the operation's business parameters; the
+        # disposable catalog binds the unique current private action.
+        return (), ({},), SelectorMode.CURRENT_BROWSER_CONTEXT
     if rows[0].destination is None:
         field = CompiledSelectorField(
             "target",
@@ -362,6 +376,11 @@ def _description(
     rows: tuple[ConcreteActionCandidateRow, ...],
     fields: tuple[CompiledSelectorField, ...],
 ) -> str:
+    if not fields:
+        return (
+            f"Use {operation} on the current browser context. "
+            "Current URL and tab state come from the fresh World."
+        )
     endpoints = " and ".join(field.public_name for field in fields)
     return (
         f"Use {operation} on current executable {endpoints} from the current World "

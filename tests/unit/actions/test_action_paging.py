@@ -288,6 +288,25 @@ def test_query_include_returns_matches_not_the_private_remainder() -> None:
     assert tuple(item.action_id for item in included) == ("action:00",)
 
 
+def test_query_does_not_match_short_substrings_inside_unrelated_labels() -> None:
+    options = (_option(0), _option(1))
+    partition = ActionRecallSet().partition(
+        options,
+        labels={
+            "target:00": "ION",
+            "target:01": "Browser navigation",
+        },
+        roles={
+            "target:00": "link",
+            "target:01": "browser_context",
+        },
+        query="address bar URL navigation",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:01",)
+    assert tuple(item.action_id for item in partition.remainder) == ("action:00",)
+
+
 def test_query_bound_plus_one_fails_typed_without_slicing() -> None:
     with pytest.raises(ValueError, match="bound"):
         ActionPager().page(

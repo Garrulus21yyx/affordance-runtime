@@ -70,6 +70,8 @@ def _candidate(
     context_id: str = _CONTEXT,
     mode: str = "forbidden",
     destinations: tuple[AgentDestinationView, ...] = (),
+    subject_kind: str = "entity",
+    target_role: str = "button",
 ) -> AgentActionOptionView:
     return AgentActionOptionView(
         action_id=f"action:{index}",
@@ -86,12 +88,13 @@ def _candidate(
         effect_category="interaction",
         operation=operation,
         target_ref=ref or f"E{index}",
-        target_semantics={"role": "button", "label": f"Target {index}", "state": state or {}},
-        target_role="button",
+        target_semantics={"role": target_role, "label": f"Target {index}", "state": state or {}},
+        target_role=target_role,
         target_state=state or {},
         target_marked=False,
         destination_mode=mode,
         grounding_context_id=context_id,
+        subject_kind=subject_kind,
     )
 
 
@@ -127,6 +130,63 @@ def test_single_target_uses_stable_operation_and_explicit_target() -> None:
         "description": "current executable E-ref",
         "pattern": "^(E)([1-9][0-9]{0,3})$",
     }
+
+
+def test_unique_browser_context_operation_uses_business_parameters_without_grounding_ref() -> None:
+    goto_schema = {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048,
+                "pattern": "^https?://.+",
+            },
+        },
+        "required": ["url"],
+        "additionalProperties": False,
+    }
+    tool = _compile(
+        _candidate(
+            1,
+            operation="goto",
+            schema=goto_schema,
+            subject_kind="browser_context",
+            target_role="browser_context",
+        )
+    )[0]
+
+    assert tool.selector_mode is SelectorMode.CURRENT_BROWSER_CONTEXT
+    assert tool.selector_fields == ()
+    assert tool.public_spec.input_schema["required"] == ("url",)
+    assert "target" not in tool.public_spec.input_schema["properties"]
+    outcome = resolve_catalog_call(
+        _catalog(tool),
+        ToolCall("goto", {"url": "https://example.test/docs"}),
+        expected_context_id=_CONTEXT,
+    )
+    assert outcome.decision.action_id == "action:1"
+    assert outcome.decision.parameters == {"url": "https://example.test/docs"}
+
+
+def test_browser_context_operation_rejects_ambiguous_current_owner() -> None:
+    with pytest.raises(GroundedToolResolutionError) as failure:
+        _compile(
+            _candidate(
+                1,
+                operation="go_back",
+                subject_kind="browser_context",
+                target_role="browser_context",
+            ),
+            _candidate(
+                2,
+                operation="go_back",
+                subject_kind="browser_context",
+                target_role="browser_context",
+            ),
+        )
+
+    assert failure.value.code is GroundedToolResolutionCode.CATALOG_INVALID
 
 
 def test_one_stable_tool_contains_all_current_targets() -> None:

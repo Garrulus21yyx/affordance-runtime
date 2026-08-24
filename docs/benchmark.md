@@ -12,11 +12,15 @@ model-visible action prefix by the existing task-aware rank before incidental fo
 producer-specific recovery guidance for action discovery versus local-result replay. The current owner repair further
 decouples action callability from that prefix: stable registry action schemas accept current E-ref syntax and the
 existing complete current `ActionSpace` resolver performs exact route/domain validation.
+Task266 run6 crossed the run5 failure and exposed the remaining browser-profile selector mismatch. Browser-level
+primitives now follow BrowserGym's target-less public shape and bind the unique fresh `browser_context` privately;
+page-control primitives still require current `E-ref` grounding. Explicit `find_controls` recall is limited to literal
+token/phrase boundaries and no longer uses hand-written prefix/suffix or fuzzy expansion.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `178` focused action-schema/resolver/delivery/PydanticAI tests, and the
-full suite at `1684 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
+Current provider-free verification passes `169` focused browser-profile/action-schema/resolver/delivery tests, and the
+full suite at `1687 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
 pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
@@ -33,6 +37,10 @@ projection defect. Task266 run3 crossed that repaired media boundary and is a fa
 subsequent public-identity capacity defect. Task266 run5 crossed those large-page boundaries and failed normally at a
 later action-delivery ordering defect: the complete current ActionSpace contained the correct ranked result link, but
 the bounded model catalog exposed an incidental focus route instead. Run5 is pre-repair evidence, not acceptance.
+Task266 run6 crossed that action-callability boundary, activated the intended article, and recovered the official city
+coordinates. It then failed normally after the model searched twice for an address-bar control because `goto` still
+required a browser-context `E-ref` absent from the compact observation; Monitor blocked the loop. Run6 is also
+pre-repair evidence, not acceptance.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
