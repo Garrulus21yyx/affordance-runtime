@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,6 +8,10 @@ import pytest
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.run_state import RunStatus
+from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.webarena_verified import (
     WA_HARD_SUBSET_SHA256,
     WA_W1_SMOKE_CASES,
@@ -20,12 +25,32 @@ from affordance_runtime.benchmarks.webarena_verified import (
     evaluate_webarena_verified_manifest,
     inspect_webarena_verified_w0_readiness,
     load_webarena_verified_tasks,
+    open_webarena_verified_case,
     select_stratified_webarena_subset,
     webarena_gym_task_id,
     write_webarena_verified_subset,
     write_webarena_verified_w0_manifest,
 )
-from tests.support.agent.core_loop_support import SharedTaskEvaluator, shared_task, shared_world
+from affordance_runtime.goals import NotRequiredGoalCompiler
+from tests.support.agent.core_loop_support import (
+    SharedActionOutcomeProjector,
+    SharedTaskEvaluator,
+    shared_task,
+    shared_world,
+)
+from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+    FakeBrowserGym,
+    ax_node,
+    raw_observation,
+)
+
+
+@dataclass
+class _FinalResponsePolicy:
+    content: str
+
+    async def decide(self, context):
+        return FinalResponse(context.context_id, self.content)
 
 
 def _dataset(path: Path, *, count: int = 36) -> Path:
@@ -134,6 +159,48 @@ def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:
         WebArenaVerifiedFinalResponseCodec().normalize('{"status":"SUCCESS"}')
 
 
+def test_webarena_final_response_is_stop_payload_not_a_world_requested_output() -> None:
+    pytest.importorskip("webarena_verified")
+    final_response = json.dumps(
+        {
+            "task_type": "RETRIEVE",
+            "status": "SUCCESS",
+            "retrieved_data": ["Dibbins", "Catso", "Anglebert Dinkherhump", "Michelle Davis"],
+            "error_details": None,
+        }
+    )
+    raw = raw_observation(
+        ax_node("button", "button", "Reviews"),
+        goal="Return the requested names using the official FinalAgentResponse format.",
+    )
+    browsergym = FakeBrowserGym(raw)
+    environment, task, evaluator = open_webarena_verified_case(
+        WA_W1_SMOKE_CASES[0],
+        gym_factory=lambda *_args, **_kwargs: browsergym,
+    )
+    runtime = TargetRuntime(
+        AgentDecisionPorts(_FinalResponsePolicy(final_response)),
+        SharedActionOutcomeProjector(),
+        evaluator,
+        goal_compiler=NotRequiredGoalCompiler("webarena_final_response_test"),
+    )
+
+    try:
+        state = asyncio.run(runtime.run_task(environment, task))
+    finally:
+        asyncio.run(environment.close())
+
+    assert task.requested_outputs == ()
+    assert state.status is RunStatus.DONE
+    assert state.current_task_evaluation is not None
+    assert state.current_task_evaluation.outputs == ()
+    assert browsergym.final_messages == [WebArenaVerifiedFinalResponseCodec().normalize(final_response)]
+    assert state.finalization is not None
+    assert state.finalization.stop_send_count == 1
+    assert state.finalization.post_stop_capture_count == 1
+    assert state.finalization.native_evaluator_count == 1
+
+
 def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> None:
     task = shared_task()
     world = shared_world("w1b-transition", False)
@@ -225,6 +292,7 @@ def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp
     ]
     assert manifest["timeout_frozen"] is True
     assert manifest["site_environment_frozen"] is True
+    assert "final_output_id" not in manifest
     serialized = json.dumps(manifest)
     assert "must-not-leak" not in serialized
     assert "user:pass" not in serialized

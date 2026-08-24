@@ -129,7 +129,6 @@ def _diagnostic_pack(request: ModelDecisionRequest, binder: CanonicalProviderEnv
     )
 WA_DEFAULT_TIMEOUT_S = 0.0
 WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
-WA_FINAL_OUTPUT_ID = "webarena_final_response"
 WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
 WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
@@ -596,7 +595,6 @@ def open_webarena_verified_case(
                     allowed_effects=("external_ui_interaction",),
                     forbidden_effects=("credential_use",),
                     constraints=("Provide exactly one final response matching the public task format when ready.",),
-                    requested_outputs=(WA_FINAL_OUTPUT_ID,),
                     risk_profile=RiskProfile.LOW,
                     loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
                 ),
@@ -658,7 +656,6 @@ def write_webarena_verified_w0_manifest(
         "selection_seed": WA_SELECTION_SEED,
         "case_timeout_s": timeout_s,
         "timeout_frozen": timeout_s > 0,
-        "final_output_id": WA_FINAL_OUTPUT_ID,
         "registration_module": WA_REGISTRATION_MODULE,
         "smoke_cases": [case.public_payload() for case in WA_W1_SMOKE_CASES],
         "proof_cohort_cases": [case.public_payload() for case in WA_W2_COHORT_CASES],

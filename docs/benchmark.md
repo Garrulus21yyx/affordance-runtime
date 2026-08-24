@@ -8,7 +8,7 @@ Verification counts below are refreshed only after the current full provider-fre
 command still reports its pre-existing baseline errors in unchanged modules.
 
 Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, and the full
-suite at `1655 passed / 19 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, the run15 exact-World
+suite at `1656 passed / 19 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, the run15 exact-World
 replay, and the bounded fresh review pass. This is implementation evidence for the bounded cutover, not a successful
 live benchmark result.
 
@@ -16,7 +16,7 @@ Overall project status remains **reopened / non-closed**. This cutover does not 
 
 - the BrowserGym `dispatch -> causal stable fresh World -> StepResult` gate;
 - the Planner lexical-admission gap;
-- post-fix live benchmark validation of the readable-AX repair;
+- post-repair live validation of the run16 terminal output-ownership repair;
 - any broader live provider/benchmark gate.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
@@ -106,6 +106,23 @@ the tool advertised `searched_domain=readable_content`. Search matching and retu
 normal public semantic values, and human-facing title/alt/placeholder/ARIA attributes while excluding structural DOM,
 appearance, layout, and internal bookkeeping fields. This fixes the advertised boundary without adding search DSL,
 BM25, dense retrieval, a summarizer, or a benchmark-specific extractor.
+
+The authorized run16 trace passed the agent-side task. It made 16 valid policy/tool calls, issued no invalid arguments,
+returned the four correct names in a schema-valid official final response, sent one STOP, captured one post-STOP World,
+and invoked the native evaluator once. The native snapshot classified success, but the Runtime ended with
+`task_evaluator_validation_failed: COMPLETE task evaluation is missing a requested output`.
+
+That failure was an acceptance-contract half-migration. W1b still declared the model's final STOP payload as
+`requested_outputs=("webarena_final_response",)`. The generic validator therefore correctly required a corresponding
+current-World `EvaluatedOutput`, while the current WebArena path correctly treated the same value as the
+environment-codec-normalized payload already sent to BrowserGym. The serial cutover had removed the old public response
+schema path but had not removed this stale output declaration or its W0 manifest field.
+
+The repair deletes those two obsolete declarations and does not weaken `validate_required_outputs`. A new production
+vertical test opens the W1b composition over fake BrowserGym, supplies a valid official response, and proves
+codec-normalized content -> exactly one STOP -> post-STOP capture -> native success -> `RunStatus.DONE`, while
+`TaskEvaluation.outputs` remains empty. No response artifact, evaluator projection, Store, or additional terminal state
+was added. Run16 remains diagnostic evidence, not post-repair benchmark acceptance.
 
 The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
 while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
@@ -293,7 +310,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1655 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1656 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This

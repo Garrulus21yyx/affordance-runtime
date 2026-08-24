@@ -12,15 +12,15 @@ by the current review; live benchmark validation remains separately authorized. 
 reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
 
 Current provider-free verification: `323` focused owner/vertical tests and `63` readable-result tests pass; the full
-suite passes `1655` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining
+suite passes `1656` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining
 blocking owner, currentness, result-pairing, Manifest-conservation, or readable-search defect in this bounded cutover.
 
 Overall project closure is still **open**:
 
 - BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
 - Planner lexical admission still has a known gap.
-- The readable-AX repair still needs a post-fix agent benchmark witness; a real-page Chromium AX diagnostic is not a
-  benchmark result.
+- Run16 live-verified the readable-AX/agent answer path, but the terminal output-ownership repair below still needs a
+  post-repair live benchmark witness.
 
 A live W1b witness was run after the accepted-response repair. Run8 verified that bounded model-authored progress notes
 survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. Run10
@@ -142,6 +142,25 @@ human-readable labels/text, normal public semantic fact/state values, and title/
 excluding appearance, layout, internal truncation, DOM tag/class/ID, and other structural fields. The excluded fields
 are neither match triggers nor returned search state. This remains a deterministic substring locator; it is not BM25,
 dense retrieval, or a semantic-search subsystem.
+
+Run16 reached the intended terminal path. The model returned the four correct names in a valid official
+`FinalAgentResponse`, Runtime sent one STOP, captured the post-STOP World, and the BrowserGym snapshot classified as
+native success. Validation then rejected the proposed `COMPLETE` evaluation because W1b still declared
+`requested_outputs=("webarena_final_response",)`, although no current-World artifact with that ID existed.
+
+This was a stale half-migration, not missing agent information. The earlier public-final-response design had treated
+the answer as a requested output. The later serial cutover correctly moved representation ownership to the
+environment's pinned WebArena codec and retained the official goal verbatim, but left the old requested-output and W0
+manifest declarations behind. In the current contract these are different things: `requested_outputs` names
+World-backed artifacts that `TaskEvaluation.outputs` must resolve, while the WebArena response is the already
+validated payload of the one native STOP action. Duplicating that payload into World or evaluator output would create
+a second authority solely to satisfy a stale declaration.
+
+The owner repair removes the obsolete W1b requested-output/manifest declarations. The generic requested-output
+validator remains strict for real World-backed deliverables. A fake-BrowserGym vertical gate now exercises the exact
+positive path: official codec normalization -> one STOP -> post-STOP capture -> native success -> validated
+`TaskEvaluation(COMPLETE)` -> `RunStatus.DONE`, with no output artifact, response Store, or projection side channel.
+Run16 remains a failed pre-repair witness; a post-repair live witness is still required.
 
 ## Normative production chain
 
