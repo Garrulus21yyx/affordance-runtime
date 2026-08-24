@@ -509,12 +509,14 @@ def _discovery_match_kinds(
         return ("inventory",)
     normalized_label = canonical_action_query(label) if len(label) <= 240 else ""
     kinds: list[str] = []
-    if normalized_label and (normalized_label == query or normalized_label in query):
+    if normalized_label and (
+        normalized_label == query or normalized_label in query or query in normalized_label
+    ):
         kinds.append("exact_label")
     if query == role.casefold():
         kinds.append("role")
     if query == operation.casefold():
         kinds.append("operation")
     if not kinds:
-        kinds.append("semantic")
+        kinds.append("lexical")
     return tuple(kinds)

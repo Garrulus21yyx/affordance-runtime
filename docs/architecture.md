@@ -9,15 +9,18 @@ admitted prefix, or exposed through generic continuation tools.
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
 large-page liveness, viewport-grounded media, canonical public-identity, and linear fresh-World projection repairs is
-complete. Verification counts below are refreshed by the current review; live benchmark validation remains separately
-authorized. The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and
-is not counted as a passing gate.
+complete. The current convergence patch additionally makes control discovery a real filter, publishes BrowserGym's
+official global navigation actions only for WebArena-family profiles, counts same-World discovery loops in Monitor,
+applies proactive SDK-history processing, and byte-bounds the PageMap directory without shrinking current World.
+Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
+The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
+as a passing gate.
 
-Current provider-free verification: `323` focused owner/vertical tests, `63` readable-result tests, and `218`
-large-World causal-surface tests pass; the full suite passes `1665` with `25` skipped; the BrowserGym/World/Core focused
-surface passes `247` with `18` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining
-blocking owner, currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World
-projection, recovery-eligibility, or async-liveness defect in this bounded implementation.
+Current provider-free verification: `324` focused owner/vertical tests, `63` readable-result tests, and `275` focused
+tests for the current control/navigation/Monitor/history/PageMap convergence surface pass with `3` skipped; the full
+suite passes `1676` with `25` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
+currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
+recovery-eligibility, or async-liveness defect in this bounded implementation.
 
 Overall project closure is still **open**:
 
@@ -141,11 +144,17 @@ The positive projection contract is now:
 
 - a public ref enters `DeliveryManifest` if and only if the same delivery contains that ref in admitted text or exact
   media;
-- every PageMap region always emits a minimal `[R] kind/source-coverage/membership/recovery` descriptor; headings,
-  labels, counts, and state are optional additions within the descriptor budget;
+- every emitted PageMap region has a minimal `[R] kind/source-coverage/membership/recovery` descriptor; headings,
+  labels, counts, and state are optional additions within the per-descriptor budget;
 - a hidden or de-duplicated node cannot register its state/fact refs;
 - every legal `ActionDeliveryPlan` prefix, including the initial zero-candidate prefix, is validated by the unchanged
   `ModelTurnDelivery` conservation gate before catalog construction or provider invocation.
+
+For a large current page, PageMap itself is now a bounded directory projection. It prioritizes explicitly selected,
+current candidate, focused/changed, and functional landmark regions until one aggregate descriptor-token limit. The
+header truthfully reports `shown/total` and `coverage=partial`; the complete immutable `WorldDeliveryIndex` remains the
+Runtime authority, and the existing `list_regions`, `read_region`, and `search_page_content` tools recover omitted
+directory entries. No per-node 240-character cap, hidden PageMap inventory, new cursor, or second World is introduced.
 
 Run15 also showed that exact search for `small` matched DOM scaffolding such as an HTML `small` tag. Search now admits
 human-readable labels/text, normal public semantic fact/state values, and title/alt/placeholder/ARIA attributes while
@@ -363,9 +372,11 @@ removed. GUI benchmark work does not need arbitrary 100 KiB DOM strings reconstr
 
 ### Action discovery
 
-`find_controls(query)` returns one owner-bounded ranked page from the complete current `ActionSpace`. It has no generic
-continuation tool and no private full-result inventory. If the result coverage is partial, the model issues a narrower
-natural-language query. Action discovery never executes a control and never turns readable `N/F/R` refs into
+`find_controls(query)` applies one deterministic lexical/fuzzy filter to the complete current `ActionSpace`, then
+returns only the bounded matching routes. Focus and viewport affect the order of matches; they do not turn unrelated
+controls into matches, and the remaining ActionSpace is not appended behind the query result. It has no generic
+continuation tool and no private public-result inventory. If matching routes exceed the page bound, the model issues a
+narrower natural-language query. Action discovery never executes a control and never turns readable `N/F/R` refs into
 executable `E` refs.
 
 The returned page and the next same-World catalog share one route contract:
@@ -396,6 +407,16 @@ The post-action World, not an evidence continuation, is the authority for the ne
 describes the local UI effect. `TaskEvaluator` or the benchmark-native verifier remains the only task-termination
 authority.
 
+Browser-global navigation uses that same route. When the caller explicitly selects a BrowserGym web-navigation
+profile (the WebArena runner does so), the adapter projects one current `browser_context` subject and the official
+BrowserGym primitives
+`goto`, `go_back`, `go_forward`, `new_tab`, `tab_focus`, and `tab_close`. `tab_focus` is offered only with a current
+alternative tab and its schema enumerates current indices; the other actions are offered by the profile and validated
+by their ordinary schemas. MiniWoB receives no browser-global additions. These are ordinary ActionSpace options that
+pass through Catalog, Binder, currentness probing, Executor, stable capture, and fresh World—not local-tool shortcuts.
+The adapter never infers this capability from task text or a benchmark/task ID; unsupported or duplicate profile
+entries fail before World projection.
+
 ### Call/result pairing
 
 PydanticAI owns tool schema transport, argument validation, `ToolCallPart`, `ToolReturnPart`, call IDs, deferred-result
@@ -416,9 +437,11 @@ then current pending:
 ```
 
 Each call ID occurs in exactly one accepted call/result pair. Discarded extra provider calls never acquire a result or
-enter physical history. If the request budget is reached, the oldest complete pair is removed atomically; the current
-pending pair is never split. A terminal decision consumes the last result and clears the transport history so it
-cannot leak into another episode.
+enter physical history. PydanticAI's `ProcessHistory` capability proactively removes oldest complete exchanges when
+estimated history exceeds the existing soft target; TurnPacker repeats the same pair-atomic reduction before a packed
+request can remain above that target, with hard-capacity failure as a final guard. The newest model response and current
+pending pair are pinned, so the latest cumulative progress note is not discarded independently of its call. A terminal
+decision consumes the last result and clears the transport history so it cannot leak into another episode.
 
 ## Authority and owners
 
@@ -463,9 +486,10 @@ and discarded extra calls from future model input. Raw provider output remains i
 context, not a Runtime fact authority, Workspace memory, or a separate summarizer model.
 
 `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
-ToolReturn content. When capacity requires reduction, only an oldest complete response/call/result exchange can be
-dropped; this is bounded SDK history retention, not semantic memory or evidence projection. A newer cumulative progress
-note can carry forward model conclusions before an older exchange leaves the window.
+ToolReturn content. The SDK history processor acts before admission rather than waiting for a hard overflow; only an
+oldest complete response/call/result exchange can be dropped. This is bounded SDK history retention, not semantic
+memory or evidence projection. The newest cumulative progress note is pinned and carries durable conclusions before an
+older exchange leaves the window. No separate summarizer model is used.
 
 `ObservationDeliveryStore` now retains only:
 
@@ -477,7 +501,10 @@ or projects GUI effects.
 
 `AgentWorkspace` keeps bounded semantic receipts and activity summaries. It has no working-fact inventory and does not
 receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot
-decide how a ToolReturn is serialized or make information persist in model context.
+decide how a ToolReturn is serialized or make information persist in model context. Control discovery is capability
+lookup, not task evidence, so `ObservationDeliveryStore` emits no novelty delta for it. Monitor allows one same-World
+discovery step, recovers on the second consecutive discovery, and blocks another discovery after recovery unless a
+fresh World, real information result, or operational GUI result resets the loop.
 
 ## World, perception, and action boundaries
 
@@ -504,7 +531,8 @@ Current primary sources converge on a thin loop rather than a result-conservatio
   agent action -> environment step -> next observation, with BrowserGym delegating browser execution to Playwright and
   exposing standardized observation/action spaces. BrowserGym preserves raw DOM/AX observations with minimal
   alteration; AgentLab applies configurable token fitting at prompt-component/page scope rather than silently clipping
-  every readable node at a control-label limit.
+  every readable node at a control-label limit. This project reuses BrowserGym's installed `nav`/`tab` primitives
+  instead of inventing navigation tools.
 - [FocusAgent](https://arxiv.org/html/2510.03204) selects task-relevant AXTree line ranges from the preserved tree and
   inserts explicit placeholders for omitted ranges. Its recall-biased soft retrieval is evidence for visible,
   structure-aware reduction rather than unmarked per-node prefix loss.
@@ -552,6 +580,12 @@ This cutover is implementation-complete only when all of the following agree:
 9. readable search cannot match or return DOM tag/class/ID scaffolding.
 10. a unique semantic/structure occurrence has one public identity, every accepted World fact/artifact remains
     resolvable, and large-World derivation does not rescan complete entity/action inventories per item.
+11. queried control discovery returns only query-qualified current routes, and same-World discovery loops cannot create
+    information novelty that clears Monitor.
+12. WebArena-family browser navigation is published only through the existing ActionSpace/BrowserGym route, while
+    MiniWoB remains unchanged.
+13. proactive SDK history processing preserves exact call/result pairs and the newest cumulative progress note, and a
+    partial PageMap remains aggregate-bounded and recoverable through the existing read tools.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

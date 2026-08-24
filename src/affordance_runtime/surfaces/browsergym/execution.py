@@ -10,6 +10,7 @@ from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragBinding,
     BrowserGymElementBinding,
     BrowserGymFocusedContextBinding,
+    BrowserGymNavigationBinding,
     BrowserGymPrivateBinding,
     BrowserGymViewportBinding,
     BrowserGymVisualBinding,
@@ -19,6 +20,22 @@ from affordance_runtime.surfaces.visual.execution import integer_click_point
 
 def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBinding) -> str:
     primitive = request.binding.primitive_action
+    if isinstance(private, BrowserGymNavigationBinding):
+        if primitive != private.supported_primitive:
+            raise ValueError("BrowserGym navigation primitive changed after binding")
+        if primitive == "goto":
+            url = request.intent.parameters.get("url")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                raise ValueError("goto requires one HTTP(S) URL")
+            return f"goto({json.dumps(url, ensure_ascii=False)})"
+        if primitive == "tab_focus":
+            index = request.intent.parameters.get("index")
+            if type(index) is not int or not 0 <= index < len(private.open_pages_urls):
+                raise ValueError("tab_focus index is outside the current tab domain")
+            return f"tab_focus({index})"
+        if request.intent.parameters:
+            raise ValueError("parameterless browser navigation received arguments")
+        return f"{primitive}()"
     if isinstance(private, BrowserGymVisualBinding):
         if primitive != "point_activate":
             raise ValueError("BrowserGym visual binding uses an unsupported primitive")

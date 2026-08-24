@@ -26,6 +26,7 @@ from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragBinding,
     BrowserGymElementBinding,
     BrowserGymFocusedContextBinding,
+    BrowserGymNavigationBinding,
     BrowserGymViewportBinding,
     BrowserGymVisualBinding,
 )
@@ -122,6 +123,8 @@ def _may_navigate(request: BoundActionRequest, private: object) -> bool:
     """Closed mechanical hint for actions whose causal lease includes navigation."""
 
     key = request.intent.parameters.get("key")
+    if isinstance(private, BrowserGymNavigationBinding):
+        return True
     if isinstance(private, BrowserGymFocusedContextBinding):
         return private.navigation_potential and key == "Enter"
     if not isinstance(private, BrowserGymElementBinding):
@@ -134,6 +137,16 @@ def _may_navigate(request: BoundActionRequest, private: object) -> bool:
         private.supported_primitive == "click"
         or (private.supported_primitive == "press" and key == "Enter")
     )
+
+
+def _probe_open_pages(raw: dict[str, object]) -> tuple[str, ...]:
+    values = raw.get("open_pages_urls")
+    if hasattr(values, "tolist"):
+        values = values.tolist()
+    if isinstance(values, tuple | list):
+        return tuple(item for item in values if isinstance(item, str) and item)
+    current = raw.get("url")
+    return (current,) if isinstance(current, str) and current else ()
 
 
 @dataclass(frozen=True)
@@ -206,6 +219,7 @@ class BrowserGymSurfaceAdapter:
     _prepared_task_info: dict[str, object]
     _page_identity: str
     _episode_identity: str
+    browser_action_primitives: tuple[str, ...] = ()
     visual_region_proposer: VisualRegionProposerPort | None = field(default=None, repr=False)
     visual_point_grounder: VisualGrounderPort | None = field(default=None, repr=False)
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = field(
@@ -346,6 +360,7 @@ class BrowserGymSurfaceAdapter:
         visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
         marked_candidate_policy_available: bool = False,
         registration_modules: tuple[str, ...] = ("browsergym.miniwob",),
+        browser_action_primitives: tuple[str, ...] = (),
     ) -> BrowserGymSurfaceAdapter:
         if not task_id.strip():
             raise ValueError("BrowserGym task ID must be nonempty")
@@ -374,6 +389,7 @@ class BrowserGymSurfaceAdapter:
                 _prepared_task_info=prepared_info,
                 _page_identity=page_identity(raw),
                 _episode_identity=episode_identity(prepared_info, fallback=task_run_id),
+                browser_action_primitives=tuple(browser_action_primitives),
                 visual_region_proposer=visual_region_proposer,
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
@@ -814,6 +830,7 @@ class BrowserGymSurfaceAdapter:
                 episode_identity=self._episode_identity,
                 task_state=self._pending_snapshot,
                 entity_identity=self.entity_identity,
+                browser_global_primitives=self.browser_action_primitives,
             )
         except BrowserGymSemanticError as exc:
             raise RuntimeError(f"browsergym_semantic_{exc.code.value}") from exc
@@ -1054,7 +1071,12 @@ class BrowserGymSurfaceAdapter:
         self.probe_calls += 1
         if isinstance(private, BrowserGymVisualBinding):
             return self._probe_visual_currentness(request, private)
-        if isinstance(private, BrowserGymViewportBinding | BrowserGymFocusedContextBinding):
+        if isinstance(
+            private,
+            BrowserGymViewportBinding
+            | BrowserGymFocusedContextBinding
+            | BrowserGymNavigationBinding,
+        ):
             return self._probe_context_currentness(request, private)
         assert isinstance(private, BrowserGymElementBinding | BrowserGymDragBinding)
         try:
@@ -1118,7 +1140,11 @@ class BrowserGymSurfaceAdapter:
     def _probe_context_currentness(
         self,
         request: BoundActionRequest,
-        private: BrowserGymViewportBinding | BrowserGymFocusedContextBinding,
+        private: (
+            BrowserGymViewportBinding
+            | BrowserGymFocusedContextBinding
+            | BrowserGymNavigationBinding
+        ),
     ) -> tuple[ActionError | None, int]:
         try:
             raw, probe = self.gym_environment.capture_current()
@@ -1148,6 +1174,13 @@ class BrowserGymSurfaceAdapter:
             and isinstance(private, BrowserGymFocusedContextBinding)
             and private.focused_private_element_id
             and not _focused_bid_is_current(raw, private.focused_private_element_id)
+        ):
+            reason = BrowserGymCurrentnessReason.STATE_CHANGED
+        if (
+            reason is None
+            and isinstance(private, BrowserGymNavigationBinding)
+            and private.supported_primitive == "tab_focus"
+            and _probe_open_pages(raw) != private.open_pages_urls
         ):
             reason = BrowserGymCurrentnessReason.STATE_CHANGED
         if reason is None:

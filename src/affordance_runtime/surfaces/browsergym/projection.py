@@ -24,6 +24,7 @@ from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragDestination,
     BrowserGymElementBinding,
     BrowserGymFocusedContextBinding,
+    BrowserGymNavigationBinding,
     BrowserGymPrivateBinding,
     BrowserGymViewportBinding,
 )
@@ -31,6 +32,7 @@ from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
 from affordance_runtime.surfaces.browsergym.interaction_profile import (
+    BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
     BROWSERGYM_INTERACTION_CAPABILITIES,
     informational_browsergym_roles,
 )
@@ -87,6 +89,7 @@ def project_browsergym_observation(
     episode_identity: str,
     task_state: BrowserGymTaskStateSnapshot,
     entity_identity: BrowserGymEntityIdentityMap,
+    browser_global_primitives: tuple[str, ...] = (),
 ) -> BrowserGymProjection:
     analysis = analyze_browsergym_semantics(raw)
     candidates = list(analysis.controls)
@@ -184,6 +187,20 @@ def project_browsergym_observation(
     targets.append(viewport_target)
     bindings.append(viewport_public)
     private.append(viewport_private)
+    browser_context = _browser_context_subject(
+        raw,
+        observation_id,
+        source_revision,
+        page_identity,
+        episode_identity,
+        browser_global_primitives,
+    )
+    if browser_context is not None:
+        browser_target, browser_structure, browser_pairs = browser_context
+        targets.append(browser_target)
+        for browser_public, browser_private in browser_pairs:
+            bindings.append(browser_public)
+            private.append(browser_private)
     for ordinal, node in enumerate(projected):
         target_id = target_ids[node.private_node_id]
         state: dict[str, object] = dict(node.public_state)
@@ -297,7 +314,7 @@ def project_browsergym_observation(
         artifacts["screenshot_semantic_state"] = {
             "public_summary": "Current screenshot state for bounded before/after effect comparison.",
         }
-    derived_subject_count = 1 + int(focused is not None)
+    derived_subject_count = 1 + int(focused is not None) + int(browser_context is not None)
     actionable_target_count = len({binding.target_id for binding in bindings})
     projected_target_count = len(targets)
     recognized_target_count = analysis.inventory.recognized_target_count + derived_subject_count
@@ -338,8 +355,18 @@ def project_browsergym_observation(
         screenshot_media,
         entity_inventory,
         acquisition_root_id=observation_id,
-        structure=(*structure, viewport_structure, *((focused_structure,) if focused is not None else ())),
-        structure_total_count=len(analysis.structure) + 1 + int(focused is not None),
+        structure=(
+            *structure,
+            viewport_structure,
+            *((browser_structure,) if browser_context is not None else ()),
+            *((focused_structure,) if focused is not None else ()),
+        ),
+        structure_total_count=(
+            len(analysis.structure)
+            + 1
+            + int(browser_context is not None)
+            + int(focused is not None)
+        ),
     )
     return BrowserGymProjection(
         source,
@@ -422,6 +449,122 @@ def _public_page_route(value: object) -> str:
     if parsed.port is not None:
         host = f"{host}:{parsed.port}"
     return urlunsplit((parsed.scheme, host, parsed.path or "/", "", ""))[:1_000]
+
+
+def _browser_context_subject(
+    raw: dict[str, object],
+    observation_id: str,
+    revision: str,
+    page_identity: str,
+    episode_identity: str,
+    primitives: tuple[str, ...],
+) -> tuple[
+    SemanticTarget,
+    ObservationStructureNode,
+    tuple[tuple[ActionBinding, BrowserGymNavigationBinding], ...],
+] | None:
+    supported = tuple(primitives)
+    if len(set(supported)) != len(supported) or any(
+        item not in BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES for item in supported
+    ):
+        raise ValueError("BrowserGym browser-action profile is invalid")
+    if not supported:
+        return None
+    raw_urls = _string_sequence(raw.get("open_pages_urls"))
+    if not raw_urls:
+        current = raw.get("url")
+        raw_urls = (current,) if isinstance(current, str) and current else ()
+    active_index = _active_page_index(raw.get("active_page_index"), len(raw_urls))
+    public_tabs = tuple(
+        {
+            "index": index,
+            "route": _public_page_route(url) or "opaque",
+            "active": index == active_index,
+        }
+        for index, url in enumerate(raw_urls)
+    )
+    target_id = "browser-context:current"
+    state: dict[str, object] = {
+        "subject.kind": "browser_context",
+        "open_tabs": public_tabs,
+        "active_tab_index": active_index,
+    }
+    target = SemanticTarget(target_id, "browser_context", "Browser navigation", state, {})
+    structure = ObservationStructureNode(
+        "structure:browser-context:current",
+        "browser_context",
+        "Browser navigation",
+        state,
+        "",
+        (),
+        target_id,
+        False,
+    )
+    fingerprint = _public_fingerprint(("browser_context", tuple(public_tabs), active_index))
+    pairs: list[tuple[ActionBinding, BrowserGymNavigationBinding]] = []
+    for primitive in supported:
+        if primitive == "tab_focus":
+            available_indexes = [index for index in range(len(raw_urls)) if index != active_index]
+            if not available_indexes:
+                continue
+            schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+                primitive,
+                current_value_schema={"type": "integer", "enum": available_indexes},
+            )
+        else:
+            schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(primitive)
+        binding_id = f"binding:{observation_id}:browser-context:{primitive}"
+        public = ActionBinding(
+            binding_id,
+            observation_id,
+            observation_id,
+            revision,
+            fingerprint,
+            target_id,
+            target_id,
+            "browsergym",
+            "browsergym",
+            primitive,
+            primitive,
+            "local_reversible",
+            ("external_ui_interaction",),
+            schema,
+            {},
+            observation_barrier=True,
+            risk=ActionRisk.LOW,
+            verification_family=VerificationFamily.NAVIGATION_CONTEXT.value,
+        )
+        private = BrowserGymNavigationBinding(
+            binding_id,
+            observation_id,
+            revision,
+            page_identity,
+            episode_identity,
+            target_id,
+            primitive,
+            raw_urls,
+        )
+        pairs.append((public, private))
+    return target, structure, tuple(pairs)
+
+
+def _string_sequence(value: object) -> tuple[str, ...]:
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, tuple | list):
+        return tuple(item for item in value if isinstance(item, str) and item)
+    return ()
+
+
+def _active_page_index(value: object, tab_count: int) -> int:
+    if tab_count <= 0:
+        return 0
+    raw = value
+    if hasattr(raw, "tolist"):
+        raw = raw.tolist()
+    if isinstance(raw, tuple | list) and len(raw) == 1:
+        raw = raw[0]
+    return raw if type(raw) is int and 0 <= raw < tab_count else 0
 
 
 def _focused_context_subject(

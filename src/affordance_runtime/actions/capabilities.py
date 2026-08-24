@@ -16,6 +16,7 @@ class InteractionSubjectKind(StrEnum):
     ENTITY = "entity"
     VIEWPORT = "viewport"
     FOCUSED_CONTEXT = "focused_context"
+    BROWSER_CONTEXT = "browser_context"
 
 
 class DestinationMode(StrEnum):
@@ -31,6 +32,8 @@ class ParameterContractKind(StrEnum):
     SCROLL = "scroll"
     KEY = "key"
     NATIVE_VALUE = "native_value"
+    URL = "url"
+    TAB_INDEX = "tab_index"
 
 
 class VerificationFamily(StrEnum):
@@ -101,6 +104,8 @@ class SemanticActionDefinition:
             ParameterContractKind.SCROLL: ("direction", "extent"),
             ParameterContractKind.KEY: ("key",),
             ParameterContractKind.NATIVE_VALUE: ("value",),
+            ParameterContractKind.URL: ("url",),
+            ParameterContractKind.TAB_INDEX: ("index",),
         }[self.parameter_contract]
 
 
@@ -253,6 +258,30 @@ class InteractionCapabilityRegistry:
                 },
                 ("key",),
             )
+        elif definition.parameter_contract is ParameterContractKind.URL:
+            schema = _object_schema(
+                {
+                    "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2_048,
+                        "pattern": r"^https?://",
+                    }
+                },
+                ("url",),
+            )
+        elif definition.parameter_contract is ParameterContractKind.TAB_INDEX:
+            value_schema = {
+                key: value
+                for key, value in value_schema.items()
+                if key in {"type", "enum", "minimum", "maximum"}
+            }
+            if not value_schema:
+                raise InteractionCapabilityError(
+                    InteractionCapabilityIssueCode.SCHEMA_CONTRACT_MISMATCH,
+                    semantic_action,
+                )
+            schema = _object_schema({"index": value_schema}, ("index",))
         else:  # pragma: no cover - closed enum guard
             raise AssertionError(definition.parameter_contract)
         self.validate_parameter_schema(semantic_action, schema)
@@ -441,6 +470,12 @@ def _validate_parameter_family(
     elif family is ParameterContractKind.KEY:
         expected_names = ("key",)
         _require_type(properties, "key", {"string"})
+    elif family is ParameterContractKind.URL:
+        expected_names = ("url",)
+        _require_type(properties, "url", {"string"})
+    elif family is ParameterContractKind.TAB_INDEX:
+        expected_names = ("index",)
+        _require_type(properties, "index", {"integer"})
     else:  # pragma: no cover - closed enum guard
         raise AssertionError(family)
     if tuple(properties) != expected_names or required != expected_names:
@@ -460,7 +495,7 @@ def _require_type(
 
 
 INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
-    "interaction-capabilities.v1",
+    "interaction-capabilities.v2",
     (
         SemanticActionDefinition(
             "activate", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
@@ -510,6 +545,30 @@ INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
             "hover", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN,
             (VerificationFamily.TARGET_STATE, VerificationFamily.SEMANTIC),
+        ),
+        SemanticActionDefinition(
+            "goto", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.URL,
+            DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+        ),
+        SemanticActionDefinition(
+            "go_back", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
+            DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+        ),
+        SemanticActionDefinition(
+            "go_forward", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
+            DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+        ),
+        SemanticActionDefinition(
+            "new_tab", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
+            DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+        ),
+        SemanticActionDefinition(
+            "tab_focus", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.TAB_INDEX,
+            DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+        ),
+        SemanticActionDefinition(
+            "tab_close", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
+            DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
         ),
     ),
 )

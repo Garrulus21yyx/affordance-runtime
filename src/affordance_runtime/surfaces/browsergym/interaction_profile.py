@@ -93,7 +93,22 @@ _PRIMITIVE_EXECUTION_REQUIREMENTS = {
     "press": ("attached", "visible", "enabled", "focusable"),
     "scroll": (),
     "keyboard_press": (),
+    "goto": (),
+    "go_back": (),
+    "go_forward": (),
+    "new_tab": (),
+    "tab_focus": (),
+    "tab_close": (),
 }
+
+BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES = (
+    "goto",
+    "go_back",
+    "go_forward",
+    "new_tab",
+    "tab_focus",
+    "tab_close",
+)
 
 _ROLE_SPECS = {
     "button": _role(
@@ -177,6 +192,14 @@ BROWSERGYM_INTERACTION_PROFILE = AdapterInteractionProfile(
             ("press", "keyboard_press"),
             (InteractionSubjectKind.ENTITY, InteractionSubjectKind.FOCUSED_CONTEXT),
         ),
+        *(
+            AdapterCapabilitySupport(
+                primitive,
+                (primitive,),
+                (InteractionSubjectKind.BROWSER_CONTEXT,),
+            )
+            for primitive in BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES
+        ),
     ),
 )
 
@@ -188,6 +211,7 @@ BROWSERGYM_PRIMITIVE_TRANSLATORS = (
     PrimitiveTranslator("scroll", "scroll"),
     PrimitiveTranslator("press_key", "press"),
     PrimitiveTranslator("press_key", "keyboard_press"),
+    *(PrimitiveTranslator(primitive, primitive) for primitive in BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES),
 )
 
 BROWSERGYM_INTERACTION_CAPABILITIES = CapabilityComposer(

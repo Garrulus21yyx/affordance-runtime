@@ -5,15 +5,16 @@
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear
-fresh-World projection repairs are implemented.
+fresh-World projection repairs are implemented. The current convergence patch additionally filters control discovery,
+publishes only profile-supported BrowserGym navigation, detects same-World discovery loops, proactively processes SDK
+history, and bounds the PageMap directory while retaining the complete recoverable region index.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, `218`
-large-World causal-surface tests, and the full suite at `1665 passed / 25 skipped`; the BrowserGym/World/Core focused
-surface passes `247 / 18 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, the run15 exact-World
-replay, the Task266 exact large-World replay, and the bounded fresh review pass. This is implementation evidence for
-the bounded changes, not a live witness for the Task266 repair.
+Current provider-free verification passes `324` focused owner/vertical tests, `63` readable-result tests, `275` focused
+tests for the current control/navigation/Monitor/history/PageMap convergence surface with `3` skipped, and the full suite at
+`1676 passed / 25 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, and the bounded fresh review
+pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -104,11 +105,16 @@ The exact missing ref was `R11`, the review form region. `TurnPacker` starts fro
 descriptor budget. Default/full candidate selections happened to print `R11` elsewhere and masked the producer bug.
 The renderer had the same algebraic defect for facts on nodes hidden by duplicate-text suppression.
 
-The owner repair makes PageMap/Manifest construction atomic. Every region always has one minimal descriptor; optional
+The owner repair makes PageMap/Manifest construction atomic. Every emitted region has one minimal descriptor; optional
 descriptor fields are admitted individually. Hidden nodes cannot register facts. The existing `ModelTurnDelivery`
 gate remains strict and rejects any future non-atomic projection before provider invocation. Replaying run15's exact
 656-target fresh observation with 137 current actions and the zero-candidate selection now builds a 15-region delivery,
 keeps `R11` in both text and Manifest, and compiles the current tool catalog.
+
+The large-page follow-up now bounds the aggregate PageMap directory instead of emitting every descriptor indefinitely.
+Selected/candidate/salient/landmark regions are prioritized; a reduced map reports `shown/total`, `coverage=partial`,
+and its existing recovery tools. `WorldDeliveryIndex` remains complete, and `list_regions` can enumerate every omitted
+region. This is current-view token fitting, not content-prefix clipping, evidence storage, or a new cursor protocol.
 
 Run15 also showed a separate search-contract pollution: query `small` matched HTML tag/class/ID scaffolding even though
 the tool advertised `searched_domain=readable_content`. Search matching and returned state now use visible labels/text,
@@ -259,6 +265,17 @@ If history prevents hard admission, the existing PydanticAI-boundary history com
 and repacks; no partial query result is advertised. No cursor, Store body, evidence inventory, or new state machine is
 introduced.
 
+The query owner now also enforces the missing filter invariant: only exact/role/operation/lexical/fuzzy-qualified
+current controls enter a `find_controls` result. Focus and viewport rank those matches but never admit unrelated
+controls. Because this result is capability discovery rather than task evidence, Store produces no information novelty
+for it; Monitor recovers on a second consecutive same-World discovery and blocks another post-recovery discovery loop.
+
+The WebArena runner now explicitly selects BrowserGym's installed `goto`, `go_back`, `go_forward`, `new_tab`,
+`tab_focus`, and `tab_close` primitives as ordinary current `browser_context` actions. The adapter does not infer this
+from task text or benchmark/task ID. They traverse the existing
+Catalog/Binder/Executor/stable-capture route; MiniWoB receives none of these global actions. `tab_focus` is present only
+when another current tab exists and enumerates its current tab index.
+
 ## Provider-free acceptance gates
 
 ### G1 — exhaustive local-tool producer algebra
@@ -309,6 +326,10 @@ call; its matching ToolReturn follows under the same call ID. Hidden reasoning a
 in the raw transcript but are absent from future model context. An overlong visible note retains a bounded prefix and
 conclusion suffix with an explicit truncation marker.
 
+A history-pressure gate invokes the official PydanticAI `ProcessHistory` capability before hard overflow. It proves
+that oldest complete response/result exchanges leave atomically, exact call IDs remain paired, and the newest response
+with its cumulative progress note remains present. No summary model or reconstructed ToolReturn is involved.
+
 ### G4 — R-ref follow-up
 
 The `read_region` schema accepts the public `R` syntax for the current canonical World, and the resolver validates the
@@ -319,13 +340,18 @@ Search results continue to return a direct `read_region(region_ref)` follow-up f
 
 ### G5 — action discovery remains bounded and separate
 
-`find_controls(query)` returns a bounded current result and never dispatches a browser action. It has no public generic
-continuation capability and no private full-result inventory. Partial coverage tells the model to refine the query.
+`find_controls(query)` returns only bounded query-qualified current matches and never dispatches a browser action. It
+has no public generic continuation capability and no private public-result inventory. Partial coverage tells the model
+to refine the query.
 Every `(operation, E-ref[, destination])` route returned in that result is admitted to the next same-World frozen
 catalog as one bounded capability set. A vertical gate forces the soft target to one token, verifies that every returned
 route still appears in the manifest/catalog, and resolves every route through the real catalog resolver. A second gate
 corrupts one returned ref and verifies fail-closed behavior before provider invocation. Only current `E` refs in the
 frozen catalog can reach Binder/Executor.
+
+Property and Monitor gates prove that focused/unrelated controls remain excluded, permutations do not change match
+membership, discovery creates no `InformationDelta`, and the second consecutive same-World discovery produces typed
+recovery rather than an unbounded query loop.
 
 ### G6 — GUI route remains unchanged
 
@@ -342,6 +368,9 @@ media and public-identity projection; the complete repaired large-page route sti
 
 The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
+
+Browser-global action gates verify profile isolation and the official BrowserGym action strings for all six navigation
+operations. They do not add a local navigation tool or bypass normal currentness and capture.
 
 ### G7 — deletion and non-specialization gates
 
@@ -365,6 +394,10 @@ delivery. It does not allow TurnPacker or the provider bridge to ignore missing 
 
 Readable search is checked separately against structural pollution: DOM tag, class, and ID values cannot trigger or
 appear in a search result, while visible content with the same query still matches.
+
+A large-directory property separately verifies aggregate PageMap descriptor tokens stay within `DeliveryLimits`, the
+partial marker is honest, every emitted R-ref remains atomic with Manifest, and `list_regions` still recovers the full
+unchanged region count.
 
 ### G9 — one public identity and bounded large-World derivation
 
@@ -390,7 +423,7 @@ pytest -q \
   tests/unit/agent/test_action_delivery_plan_properties.py
 ```
 
-Result: `323 passed`.
+Result: `324 passed`.
 
 Readable AX owner/vertical suite:
 
@@ -412,7 +445,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1665 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1676 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -482,6 +515,13 @@ The final read-only review for this cutover must answer:
     calls off the asyncio loop, and reject fallback immediately after an owner timeout?
 13. Does screenshot grounding include only regions present in the captured viewport, clip regions to the image,
     preserve executable priority within the media owner's bound, and leave structural targets and bindings intact?
+14. Does `find_controls` exclude unrelated controls, and can repeated discovery avoid both false Store novelty and an
+    unbounded same-World loop?
+15. Are browser-global actions offered only by the WebArena-family profile and executed through BrowserGym's existing
+    ActionSpace/Binder/Executor path?
+16. Does SDK history compact before hard overflow while pinning the newest progress response and exact pending pair?
+17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
+    tool recovers the complete current region index?
 
 ## Exit statement
 

@@ -19,7 +19,7 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
 from affordance_runtime.agent.context.world_region_index import (
-    DELIVERY_LIMITS_V1,
+    DELIVERY_LIMITS_V2,
     DeliveryLimits,
     WorldDeliveryIndex,
     WorldRegion,
@@ -327,7 +327,7 @@ def render_compact_actor_world(
     public_fact_bindings: Mapping[str, str] | None = None,
     evidence_index: WorldEvidenceIndex | None = None,
     force_region_delivery: bool = False,
-    limits: DeliveryLimits = DELIVERY_LIMITS_V1,
+    limits: DeliveryLimits = DELIVERY_LIMITS_V2,
 ) -> RenderedWorldDelivery:
     """Render text and its exact ref manifest atomically.
 
@@ -457,8 +457,23 @@ def _render_page_map(
         )
     lines.extend(_render_action_route_issues(action_route_issues, manifest))
 
-    lines.append(f"PageMap regions={len(index.regions)}")
-    for region in index.regions:
+    page_map_regions = _bounded_page_map_regions(
+        index,
+        canonical_world,
+        exact_region_keys=frozenset(exact_region_keys),
+        action_candidates=action_candidates,
+        observation=observation,
+        limits=limits,
+    )
+    page_map_complete = len(page_map_regions) == len(index.regions)
+    if page_map_complete:
+        lines.append(f"PageMap regions={len(page_map_regions)} coverage=complete")
+    else:
+        lines.append(
+            f"PageMap regions={len(page_map_regions)}/{len(index.regions)} coverage=partial "
+            "recovery=list_regions/search_page_content"
+        )
+    for region in page_map_regions:
         region_ref = canonical_world.region_refs[region.key]
         manifest.region(region_ref)
         lines.append("  " + _region_descriptor_text(region, region_ref, limits))
@@ -493,6 +508,7 @@ def _render_page_map(
         if not region_lines:
             continue
         lines.extend(region_lines)
+        candidate_manifest.region(canonical_world.region_refs[region_key])
         manifest = candidate_manifest
         rendered_any = True
         rendered_region_count += 1
@@ -509,6 +525,7 @@ def _render_page_map(
         if not region_lines:
             continue
         lines.extend(region_lines)
+        candidate_manifest.region(canonical_world.region_refs[region_key])
         manifest = candidate_manifest
         rendered_any = True
         rendered_region_count += 1
@@ -525,12 +542,14 @@ def _render_page_map(
         )
         if fallback_lines:
             lines.extend(fallback_lines)
+            candidate_manifest.region(canonical_world.region_refs[ordered_region_keys[0]])
             manifest = candidate_manifest
             rendered_region_count = 1
 
     text = "\n".join(lines)
     coverage = {
-        "page_map": "complete",
+        "page_map": "complete" if page_map_complete else "partial",
+        "page_map_regions": f"{len(page_map_regions)}/{len(index.regions)}",
         "active_view": "selected_exact",
         "expanded_regions": rendered_region_count,
         "folded_regions": max(0, len(index.regions) - rendered_region_count),
@@ -1217,9 +1236,8 @@ def _bounded_region(region: WorldRegion, limits: DeliveryLimits) -> bool:
 
 
 def _region_descriptor_text(region: WorldRegion, region_ref: str, limits: DeliveryLimits) -> str:
-    # Every indexed region is a model-recoverable capability.  Keep its exact
-    # ref and recovery route even when optional descriptive text is too large
-    # for the PageMap descriptor budget.
+    # A selected directory row is a model-recoverable capability. Keep its
+    # exact ref and recovery route while bounding optional descriptive text.
     parts = [
         f"[{region_ref}]",
         f"kind={_value(region.role or 'region')}",
@@ -1250,6 +1268,66 @@ def _region_descriptor_text(region: WorldRegion, region_ref: str, limits: Delive
         if _estimate_tokens(" ".join((*parts, detail))) <= limits.descriptor_tokens:
             parts.append(detail)
     return " ".join(parts)
+
+
+def _bounded_page_map_regions(
+    index: WorldDeliveryIndex,
+    canonical_world: CanonicalPublicWorldProjection,
+    *,
+    exact_region_keys: frozenset[str],
+    action_candidates: ActionCandidateProjection | None,
+    observation: WorldObservation,
+    limits: DeliveryLimits,
+) -> tuple[WorldRegion, ...]:
+    """Project a bounded current directory without shrinking the authoritative index."""
+
+    candidate_refs = {
+        item.region_ref
+        for item in (action_candidates.candidates if action_candidates is not None else ())
+    }
+    candidate_keys = {
+        key for key, ref in canonical_world.region_refs.items() if ref in candidate_refs
+    }
+    salient_keys = {
+        region.key
+        for region in index.regions
+        if _region_has_current_salience(region, observation)
+    }
+    landmark_order = {
+        role: rank
+        for rank, role in enumerate(
+            ("dialog", "search", "form", "navigation", "main", "table", "grid", "list")
+        )
+    }
+    source_order = {region.key: position for position, region in enumerate(index.regions)}
+    ordered = sorted(
+        index.regions,
+        key=lambda region: (
+            0
+            if region.key in exact_region_keys
+            else 1
+            if region.key in candidate_keys
+            else 2
+            if region.key in salient_keys
+            else 3,
+            landmark_order.get(region.role.casefold(), len(landmark_order)),
+            source_order[region.key],
+        ),
+    )
+    selected: list[WorldRegion] = []
+    used_tokens = 0
+    for region in ordered:
+        descriptor = _region_descriptor_text(
+            region,
+            canonical_world.region_refs[region.key],
+            limits,
+        )
+        descriptor_tokens = _estimate_tokens("  " + descriptor + "\n")
+        if used_tokens + descriptor_tokens > limits.page_map_tokens:
+            continue
+        selected.append(region)
+        used_tokens += descriptor_tokens
+    return tuple(selected)
 
 
 def _page_title(observation: WorldObservation) -> str:

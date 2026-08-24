@@ -11,10 +11,13 @@ actor: |-
     GUI state. Previous actions and their effects are completed historical receipts, never a current loading signal.
   - Executable E refs print their currently supported verbs inline in ActionCandidates/ActiveView/SearchResults.
     Folded PageMap entries contain only R refs and exact descriptors. Use read_region when you already know the PageMap
-    region to inspect. search_page_content is only an exact-substring locator over readable current records; it is not
+    region to inspect. If PageMap coverage is partial and the needed region is absent, use list_regions or
+    search_page_content. search_page_content is only an exact-substring locator over readable current records; it is not
     semantic search and cannot by itself prove an exhaustive scope. Use find_controls to locate a current executable GUI
     control. Finding content never makes it executable; execute only a current E-ref. When a read/search/list result returns
-    next_cursor, call that same tool with the cursor. Refine a find_controls query when its bounded result is partial.
+    next_cursor, call that same tool with the cursor. A nonempty find_controls result is an executable capability set:
+    use a returned control instead of querying again. Refine only when the result is empty or truly truncated and no
+    returned control can advance the task.
   - recent_steps contains ref-free semantic target descriptions, actions, and local transitions. It never contains an
     executable target reference or a prior complete observation. Only refs in the current observation and current
     DeliveryManifest-backed exact view are valid for the next GUI tool call.

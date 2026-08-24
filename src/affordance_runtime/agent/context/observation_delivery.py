@@ -138,9 +138,10 @@ class ObservationDeliveryStore:
             arguments = decision.arguments
             result = decision.result
         elif discovery is not None:
-            operation = "find_controls"
-            arguments = {"query": getattr(decision, "query", "")}
-            result = discovery.to_public_value()
+            # Action discovery exposes current capabilities.  Its rows are not
+            # task evidence and must not reset the information-progress
+            # Monitor merely because another query returned different controls.
+            return DeliveryTransition(self, None, getattr(step, "runtime_failure", None))
         else:
             return DeliveryTransition(self, None, getattr(step, "runtime_failure", None))
 

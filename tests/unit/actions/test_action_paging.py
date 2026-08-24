@@ -162,15 +162,15 @@ def test_destination_routes_are_paged_without_truncation_or_overlap(destination_
     assert len(seen) == len(set(seen))
 
 
-def test_false_positive_query_preserves_finite_inventory_reachability() -> None:
+def test_false_positive_query_returns_empty_without_hiding_unqueried_inventory() -> None:
     space = ActionSpace("obs:1", (_option(0),))
     page = ActionPager(page_size=1).page(
         space,
         query="definitely absent operation",
     )
 
-    assert page.visible_action_ids == ("action:00",)
-    assert page.total_count == 1
+    assert page.visible_action_ids == ()
+    assert page.total_count == 0
     assert not page.has_more and not page.next_cursor
     assert ActionPager(page_size=1).page(space).visible_action_ids == ("action:00",)
 
@@ -213,7 +213,7 @@ def test_exact_public_labels_are_mandatory_query_inclusions(label: str) -> None:
     assert page.visible_action_ids == ("action:00",)
 
 
-def test_empty_and_duplicate_labels_remain_finitely_cursor_reachable() -> None:
+def test_query_pages_only_matching_duplicate_labels() -> None:
     space = ActionSpace("obs:1", tuple(_option(index) for index in range(3)))
     labels = {"target:00": "", "target:01": "Duplicate", "target:02": "Duplicate"}
     pager = ActionPager(page_size=1)
@@ -229,7 +229,6 @@ def test_empty_and_duplicate_labels_remain_finitely_cursor_reachable() -> None:
     assert {action for page in pages for action in page.visible_action_ids} == {
         "action:01",
         "action:02",
-        "action:00",
     }
     assert ActionPager(page_size=3).page(space).visible_action_ids == (
         "action:00",
@@ -257,7 +256,7 @@ def test_prioritized_membership_and_leading_order_ignore_unrelated_permutation_a
     assert page.visible_action_ids == ("action:06",)
 
 
-def test_empty_label_is_not_exact_but_focus_recovery_is_prioritized() -> None:
+def test_focus_alone_does_not_turn_a_nonmatch_into_a_query_result() -> None:
     options = (_option(0), _option(1))
     partition = ActionRecallSet().partition(
         options,
@@ -266,7 +265,27 @@ def test_empty_label_is_not_exact_but_focus_recovery_is_prioritized() -> None:
         focused_target_ids=frozenset({"target:00"}),
     )
 
-    assert tuple(item.action_id for item in partition.prioritized) == ("action:00",)
+    assert partition.prioritized == ()
+    assert tuple(item.action_id for item in partition.remainder) == (
+        "action:00",
+        "action:01",
+    )
+
+
+def test_query_include_returns_matches_not_the_private_remainder() -> None:
+    options = (_option(0), _option(1), _option(2))
+
+    included = ActionRecallSet().include(
+        options,
+        labels={
+            "target:00": "Open settings",
+            "target:01": "Submit order",
+            "target:02": "Cancel",
+        },
+        query="settings",
+    )
+
+    assert tuple(item.action_id for item in included) == ("action:00",)
 
 
 def test_query_bound_plus_one_fails_typed_without_slicing() -> None:

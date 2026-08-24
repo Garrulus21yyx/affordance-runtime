@@ -269,8 +269,18 @@ def reset_task_state(observation_id: str, *, task_run_id: str = "run:opaque"):
     )
 
 
-def open_fake(fake: FakeBrowserGym, task_id="browsergym/miniwob.click-button"):
-    return open_surface(task_id, 7, gym_factory=lambda *_args, **_kwargs: fake)
+def open_fake(
+    fake: FakeBrowserGym,
+    task_id="browsergym/miniwob.click-button",
+    *,
+    browser_action_primitives: tuple[str, ...] = (),
+):
+    return open_surface(
+        task_id,
+        7,
+        gym_factory=lambda *_args, **_kwargs: fake,
+        browser_action_primitives=browser_action_primitives,
+    )
 
 
 class BrowserGymTestEnvironment:

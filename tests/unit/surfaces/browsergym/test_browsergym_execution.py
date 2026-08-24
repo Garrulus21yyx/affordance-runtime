@@ -16,6 +16,9 @@ from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
 )
 from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
+    BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
+)
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
 )
@@ -456,6 +459,46 @@ def test_scroll_dispatches_viewport_browsergym_scroll_without_element_route() ->
     assert environment.scroll_calls == 1
     assert environment.keyboard_press_calls == environment.press_calls == 0
     assert environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
+@pytest.mark.parametrize(
+    ("semantic_action", "parameters", "expected"),
+    (
+        ("goto", {"url": "https://example.test/docs"}, 'goto("https://example.test/docs")'),
+        ("go_back", {}, "go_back()"),
+        ("go_forward", {}, "go_forward()"),
+        ("new_tab", {}, "new_tab()"),
+        ("tab_focus", {"index": 1}, "tab_focus(1)"),
+        ("tab_close", {}, "tab_close()"),
+    ),
+)
+def test_explicit_browser_profile_globals_dispatch_official_actions(
+    semantic_action,
+    parameters,
+    expected,
+) -> None:
+    raw = raw_observation(ax_node("1", "button", "okay"), url="https://example.test/start")
+    raw["open_pages_urls"] = (
+        "https://example.test/start",
+        "https://example.test/other",
+    )
+    raw["active_page_index"] = [0]
+    fake = FakeBrowserGym(raw, raw)
+    environment, task = open_fake(
+        fake,
+        "browsergym/arbitrary-real-page",
+        browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
+    )
+    world = start_environment(environment, task)
+    request = request_for(world, task, semantic_action, parameters)
+    fake.probe_task = {}
+
+    outcome = asyncio.run(environment.execute(request))
+
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == [expected]
+    assert fake.navigation_expectations == [True]
     asyncio.run(environment.close())
 
 

@@ -584,6 +584,27 @@ def test_compact_sdk_history_drops_only_the_oldest_complete_pair() -> None:
     )
 
 
+def test_proactive_sdk_history_compaction_preserves_latest_progress_and_pair_integrity() -> None:
+    history = (
+        ModelResponse(parts=[TextPart("old conclusion"), ToolCallPart("first", {}, "call:1")]),
+        ModelRequest(parts=[ToolReturnPart("first", {"body": "old" * 2_000}, "call:1")]),
+        ModelResponse(parts=[TextPart("new conclusion"), ToolCallPart("second", {}, "call:2")]),
+        ModelRequest(parts=[ToolReturnPart("second", {"body": "new" * 2_000}, "call:2")]),
+        ModelResponse(parts=[TextPart("latest cumulative progress"), ToolCallPart("third", {}, "call:3")]),
+    )
+
+    compacted = pydantic_bridge._process_pydantic_history(
+        history,
+        max_estimated_tokens=50,
+    )
+
+    assert compacted == (history[-1],)
+    assert compacted[0].parts[0].content == "latest cumulative progress"
+    assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
+        "third", {}, "call:3"
+    )
+
+
 def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_result() -> None:
     async def scenario() -> None:
         source_id = "source:long-reviews"

@@ -3,8 +3,15 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpaceBuilder
-from affordance_runtime.agent import SearchPageContentResult, SelectAction
+from affordance_runtime.actions import (
+    ActionBinder,
+    ActionBinding,
+    ActionDiscoveryMatch,
+    ActionDiscoveryResult,
+    ActionRisk,
+    ActionSpaceBuilder,
+)
+from affordance_runtime.agent import RequestActionPage, SearchPageContentResult, SelectAction
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
     ObservationDeliveryStore,
@@ -143,6 +150,70 @@ def _search_with_items(world) -> StepResult:
         _evaluation(world),
         feedback="local_tool_result",
     )
+
+
+def _control_discovery_step(world, query: str, label: str) -> StepResult:
+    return StepResult(
+        RequestActionPage("context:test", query),
+        world,
+        world,
+        _evaluation(world),
+        feedback="action_page",
+        action_page_result=ActionDiscoveryResult(
+            (
+                ActionDiscoveryMatch(
+                    "E1",
+                    label,
+                    "textbox",
+                    "type_text",
+                    match_kinds=("lexical",),
+                ),
+            ),
+            query,
+            "complete",
+            "complete",
+        ),
+    )
+
+
+def test_control_discovery_is_not_task_information_and_second_query_recovers() -> None:
+    world = _world("observation:control-discovery")
+    monitor = EpisodeMonitor()
+    monitor.start_episode(world, _evaluation(world))
+    store = ObservationDeliveryStore()
+
+    first_step = _control_discovery_step(world, "search", "Search Wikipedia")
+    first = store.reduce(first_step, step_index=1)
+    first_monitor = monitor.evaluate(
+        first_step,
+        current_findings_digest(world),
+        first.information_delta,
+    )
+    second_step = _control_discovery_step(world, "address bar", "Search Wikipedia")
+    second = first.next_store.reduce(second_step, step_index=2)
+    recovery = monitor.evaluate(
+        second_step,
+        current_findings_digest(world),
+        second.information_delta,
+    )
+    third_step = _control_discovery_step(world, "navigation", "Search Wikipedia")
+    third = second.next_store.reduce(third_step, step_index=3)
+    blocked = monitor.evaluate(
+        third_step,
+        current_findings_digest(world),
+        third.information_delta,
+    )
+
+    assert first.information_delta is None
+    assert second.information_delta is None
+    assert first.next_store is store
+    assert second.next_store is store
+    assert first_monitor.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert "do not continue discovering controls" in recovery.recovery_signal.human_instruction
+    assert third.information_delta is None
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
 
 
 def test_exact_local_result_replay_recovers_then_stalls() -> None:

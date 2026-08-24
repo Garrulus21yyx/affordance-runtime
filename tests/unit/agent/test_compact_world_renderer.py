@@ -21,7 +21,11 @@ from affordance_runtime.agent.context.context import (
     AgentGroundingEntityView,
     AgentGroundingIndexView,
 )
-from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex, WorldRegion
+from affordance_runtime.agent.context.world_region_index import (
+    DeliveryLimits,
+    WorldDeliveryIndex,
+    WorldRegion,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import SemanticTarget
 from tests.support.canonical_world import canonical_world_with_regions
@@ -168,6 +172,50 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
     assert "R1" in rendered.manifest.region_refs
     assert "Post 1" in rendered
     assert "R15" in rendered.manifest.region_refs
+
+
+def test_large_page_map_is_bounded_without_shrinking_recoverable_region_index() -> None:
+    count = 40
+    snapshot = _snapshot(tuple(_post(index) for index in range(1, count + 1)))
+    grounding = _grounding(post_count=count, include_submit=False)
+    observation = _observation(count)
+    region_index = _region_index(count, observation.observation_id)
+    projection = canonical_world_with_regions(
+        _canonical_world(observation), observation, region_index
+    )
+    limits = DeliveryLimits(page_map_tokens=160)
+
+    rendered = render_compact_actor_world(
+        snapshot,
+        grounding,
+        include_images=False,
+        region_index=region_index,
+        canonical_world=projection,
+        observation=observation,
+        limits=limits,
+    )
+
+    descriptor_lines = tuple(
+        line for line in rendered.view.text.splitlines() if line.startswith("  [R")
+    )
+    descriptor_tokens = sum((len((line + "\n").encode("utf-8")) + 3) // 4 for line in descriptor_lines)
+    assert descriptor_tokens <= limits.page_map_tokens
+    assert rendered.coverage["page_map"] == "partial"
+    assert rendered.coverage["page_map_regions"] != f"{count}/{count}"
+    assert "recovery=list_regions/search_page_content" in rendered.view.text
+
+    recovered = inspect_actor_world(
+        snapshot,
+        grounding,
+        region_index=region_index,
+        canonical_world=projection,
+        observation=observation,
+        action="view_all",
+        page_size=count,
+    )
+    assert isinstance(recovered, Page)
+    assert len(recovered.items) == count
+    assert len(region_index.regions) == count
 
 
 def test_page_map_keeps_every_region_ref_when_optional_descriptor_text_is_oversized() -> None:

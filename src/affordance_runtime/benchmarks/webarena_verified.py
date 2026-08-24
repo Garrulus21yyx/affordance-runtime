@@ -79,7 +79,10 @@ from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.surfaces.browsergym.environment import BrowserGymSurfaceAdapter
-from affordance_runtime.surfaces.browsergym.interaction_profile import BROWSERGYM_INTERACTION_PROFILE
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
+    BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
+    BROWSERGYM_INTERACTION_PROFILE,
+)
 from affordance_runtime.surfaces.browsergym.task_state import (
     BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
     BrowserGymTaskStateSnapshot,
@@ -585,6 +588,7 @@ def open_webarena_verified_case(
         seed,
         gym_factory=gym_factory,
         registration_modules=(WA_REGISTRATION_MODULE,),
+        browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
     )
     try:
         intake = ThinTaskIntake().compile(

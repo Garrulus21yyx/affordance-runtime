@@ -17,17 +17,32 @@ from affordance_runtime.world.contracts import CoverageState, WorldObservation
 
 @dataclass(frozen=True)
 class DeliveryLimits:
-    """Frozen v1 semantic-delivery limits (estimated text tokens)."""
+    """Frozen v2 semantic-delivery limits (estimated text tokens)."""
 
     exact_region_tokens: int = 4_000
     repeated_items: int = 20
     top_navigation_controls: int = 24
     top_navigation_tokens: int = 1_500
     descriptor_tokens: int = 160
-    version: str = "delivery-limits.v1"
+    page_map_tokens: int = 4_000
+    version: str = "delivery-limits.v2"
+
+    def __post_init__(self) -> None:
+        numeric_limits = (
+            self.exact_region_tokens,
+            self.repeated_items,
+            self.top_navigation_controls,
+            self.top_navigation_tokens,
+            self.descriptor_tokens,
+            self.page_map_tokens,
+        )
+        if any(type(value) is not int or value < 1 for value in numeric_limits):
+            raise ValueError("delivery limits must be positive integers")
+        if not self.version.strip():
+            raise ValueError("delivery limits require a version")
 
 
-DELIVERY_LIMITS_V1 = DeliveryLimits()
+DELIVERY_LIMITS_V2 = DeliveryLimits()
 
 _BOUNDARY_ROLES = frozenset(
     {
@@ -270,7 +285,7 @@ class WorldDeliveryIndex:
         observation: WorldObservation,
         action_options: Sequence[object] = (),
         *,
-        limits: DeliveryLimits = DELIVERY_LIMITS_V1,
+        limits: DeliveryLimits = DELIVERY_LIMITS_V2,
         public_world_delta: object | None = None,
         previous_index: "WorldDeliveryIndex | None" = None,
     ) -> "WorldDeliveryIndex":

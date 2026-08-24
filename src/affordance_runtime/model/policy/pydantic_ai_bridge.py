@@ -186,6 +186,7 @@ class PydanticAIGroundedDecisionPort:
     last_tool_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_tool_resolution_detail: str = field(default="", init=False, compare=False)
     last_discarded_protocol_call_count: int = field(default=0, init=False, compare=False)
+    last_history_compaction_count: int = field(default=0, init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
@@ -237,6 +238,7 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_request_breakdowns", ())
         object.__setattr__(self, "last_admitted_envelopes", ())
         object.__setattr__(self, "last_local_failure", {})
+        object.__setattr__(self, "last_history_compaction_count", 0)
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_model_delivery", None)
         call_profile = self.reasoning_policy.select(
@@ -260,6 +262,7 @@ class PydanticAIGroundedDecisionPort:
                 ToolDefinition,
                 ToolReturn,
             )
+            from pydantic_ai.capabilities import ProcessHistory
             from pydantic_ai.exceptions import (
                 ModelAPIError,
                 UnexpectedModelBehavior,
@@ -286,7 +289,15 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_tool_resolution_code", None)
         object.__setattr__(self, "last_tool_resolution_detail", "")
         object.__setattr__(self, "last_discarded_protocol_call_count", 0)
-        history_messages = self.message_history
+        history_messages = _process_pydantic_history(
+            self.message_history,
+            max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
+        )
+        object.__setattr__(
+            self,
+            "last_history_compaction_count",
+            max(0, (len(self.message_history) - len(history_messages)) // 2),
+        )
         pending_call: ToolCall | None = None
         if history_messages:
             try:
@@ -325,12 +336,30 @@ class PydanticAIGroundedDecisionPort:
                         pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
                         pending_tool_name=pending_call.name if pending_call is not None else "",
                     )
+                    if (
+                        packed.admitted_envelope.token_breakdown.history_tokens
+                        > self.envelope_binder.request_budget.soft_target_tokens
+                    ):
+                        compacted = _drop_oldest_completed_exchange(history_messages)
+                        if compacted != history_messages:
+                            history_messages = compacted
+                            object.__setattr__(
+                                self,
+                                "last_history_compaction_count",
+                                self.last_history_compaction_count + 1,
+                            )
+                            continue
                     break
                 except ModelRequestCapacityError:
                     compacted = _drop_oldest_completed_exchange(history_messages)
                     if compacted == history_messages:
                         raise
                     history_messages = compacted
+                    object.__setattr__(
+                        self,
+                        "last_history_compaction_count",
+                        self.last_history_compaction_count + 1,
+                    )
             delivery = packed.delivery
             catalog = packed.catalog
             admitted = packed.admitted_envelope
@@ -354,6 +383,18 @@ class PydanticAIGroundedDecisionPort:
                 instructions=instructions,
                 output_type=[str, DeferredToolRequests],
                 retries=0,
+                capabilities=[
+                    ProcessHistory(
+                        lambda messages: list(
+                            _process_pydantic_history(
+                                tuple(messages),
+                                max_estimated_tokens=(
+                                    self.envelope_binder.request_budget.soft_target_tokens
+                                ),
+                            )
+                        )
+                    )
+                ],
             )
             usage = RunUsage()
             # One semantic decision may make one explicit transport retry.
@@ -426,6 +467,18 @@ class PydanticAIGroundedDecisionPort:
                     instructions=repair_instructions,
                     output_type=[str, DeferredToolRequests],
                     retries=0,
+                    capabilities=[
+                        ProcessHistory(
+                            lambda messages: list(
+                                _process_pydantic_history(
+                                    tuple(messages),
+                                    max_estimated_tokens=(
+                                        self.envelope_binder.request_budget.soft_target_tokens
+                                    ),
+                                )
+                            )
+                        )
+                    ],
                 )
                 repair_result = await self._run_provider_call(
                     lambda: repair_agent.run(
@@ -1303,9 +1356,69 @@ def _accepted_message_history(
 def _drop_oldest_completed_exchange(messages: tuple[object, ...]) -> tuple[object, ...]:
     """Drop one oldest completed call/result pair while preserving the pending suffix."""
 
-    if len(messages) <= 1:
+    if len(messages) <= 2:
         return messages
-    return messages[2:]
+    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+
+    response_indexes = tuple(
+        index
+        for index, message in enumerate(messages)
+        if isinstance(message, ModelResponse)
+        and any(isinstance(part, ToolCallPart) for part in message.parts)
+    )
+    # The newest model-authored progress response is always pinned.  An older
+    # response can leave only with its exact ToolReturn request.
+    if len(response_indexes) < 2:
+        return messages
+    response_index = response_indexes[0]
+    result_index = response_index + 1
+    if result_index >= len(messages):
+        return messages
+    response = messages[response_index]
+    result = messages[result_index]
+    if not isinstance(response, ModelResponse) or not isinstance(result, ModelRequest):
+        return messages
+    calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
+    returns = tuple(part for part in result.parts if isinstance(part, ToolReturnPart))
+    if (
+        len(calls) != 1
+        or len(returns) != 1
+        or calls[0].tool_call_id != returns[0].tool_call_id
+        or calls[0].tool_name != returns[0].tool_name
+        or len(result.parts) != 1
+    ):
+        return messages
+    return (*messages[:response_index], *messages[result_index + 1 :])
+
+
+def _process_pydantic_history(
+    messages: tuple[object, ...],
+    *,
+    max_estimated_tokens: int,
+) -> tuple[object, ...]:
+    """Bound official completed exchanges while retaining the latest progress suffix."""
+
+    if max_estimated_tokens < 1:
+        raise ValueError("history soft target must be positive")
+    values = tuple(messages)
+    while (
+        _estimated_history_tokens(values) > max_estimated_tokens
+        and _drop_oldest_completed_exchange(values) != values
+    ):
+        values = _drop_oldest_completed_exchange(values)
+    return values
+
+
+def _estimated_history_tokens(messages: tuple[object, ...]) -> int:
+    if not messages:
+        return 0
+    encoded = json.dumps(
+        to_json_compatible(messages),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return max(1, (len(encoded) + 2) // 3)
 
 
 def _repair_preserves_rejected_semantics(

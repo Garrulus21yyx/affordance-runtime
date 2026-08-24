@@ -34,6 +34,8 @@ from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
+_MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
+
 
 @dataclass
 class EpisodeMonitor:
@@ -83,6 +85,7 @@ class EpisodeMonitor:
             )
         )
         gui_dispatched = _gui_dispatched(result)
+        control_discovery = isinstance(result.decision, RequestActionPage)
 
         self.world_digest = next_world_digest
         self.current_findings_digest = findings_digest
@@ -115,6 +118,7 @@ class EpisodeMonitor:
             self.observation_only_streak = 0
             signature = _gui_attempt_signature(result)
             if _gui_has_operational_result(result) or signature is None:
+                self.recovery_count = 0
                 self.latest_attempt_signature = None
                 self.same_attempt_streak = 0
                 return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
@@ -137,6 +141,36 @@ class EpisodeMonitor:
                 return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
             self.recovery_count += 1
             signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.CONTROL_STALL.value,
+                signal,
+            )
+
+        if control_discovery:
+            self.no_progress_count += 1
+            self.observation_only_streak += 1
+            if self.recovery_count:
+                signal = _control_stall_signal(
+                    result,
+                    self,
+                    recovery_attempt=self.recovery_count,
+                )
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
+            if self.observation_only_streak < _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS:
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys(events)),
+                    EpisodeMonitorRecommendation.CONTINUE,
+                )
+            self.recovery_count = 1
+            self.observation_only_streak = 0
+            signal = _control_stall_signal(result, self, recovery_attempt=1)
             return EpisodeMonitorTransition(
                 tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
                 EpisodeMonitorRecommendation.RECOVER,
@@ -238,7 +272,10 @@ def _control_stall_signal(
         },
         attempted_modes=(_attempted_mode(result),),
         prohibited_attempt_signature=prohibited_attempt_signature,
-        human_instruction="Change strategy or dispatch a grounded GUI action; another observation without new information will stall.",
+        human_instruction=(
+            "Use a returned current control, read relevant page content, or use an offered browser navigation action; "
+            "do not continue discovering controls on the unchanged World."
+        ),
         recovery_attempt=recovery_attempt,
     )
 

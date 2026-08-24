@@ -248,7 +248,7 @@ class ActionReranker:
 
 @dataclass(frozen=True)
 class ActionRecallPartition:
-    """High-priority recall followed by the complete non-vetoed remainder."""
+    """Query matches plus the excluded current non-match inventory."""
 
     prioritized: tuple[object, ...] = ()
     remainder: tuple[object, ...] = ()
@@ -272,7 +272,7 @@ class ActionRecallPartition:
 
 @dataclass(frozen=True)
 class ActionRecallSet:
-    """Complete high-recall inventory over the current ActionSpace."""
+    """Deterministic query filter over the complete current ActionSpace."""
 
     def include(
         self,
@@ -285,7 +285,7 @@ class ActionRecallSet:
         focused_target_ids: frozenset[str] = frozenset(),
         viewport_target_ids: frozenset[str] = frozenset(),
     ) -> tuple[object, ...]:
-        return self.partition(
+        partition = self.partition(
             options,
             labels=labels,
             roles=roles,
@@ -293,7 +293,8 @@ class ActionRecallSet:
             query=query,
             focused_target_ids=focused_target_ids,
             viewport_target_ids=viewport_target_ids,
-        ).ordered
+        )
+        return partition.prioritized if canonical_action_query(query) else partition.ordered
 
     def partition(
         self,
@@ -311,19 +312,7 @@ class ActionRecallSet:
             return ActionRecallPartition(tuple(options), ())
         roles = roles or {}
         functional_paths = functional_paths or {}
-        direct_target_ids: set[str] = set()
-        for option in options:
-            target_id = str(getattr(option, "target_id", ""))
-            operation = _normalize_text(getattr(option, "operation", "") or getattr(option, "semantic_action", ""))
-            label = _normalize_text(labels.get(target_id, ""))
-            role = _normalize_text(roles.get(target_id, ""))
-            if label == normalized_query or normalized_query in {operation, role}:
-                direct_target_ids.add(target_id)
-        direct_containers = {
-            tuple(functional_paths.get(target_id, ()))[:-1]
-            for target_id in direct_target_ids
-            if functional_paths.get(target_id, ())
-        }
+        query_tokens = _tokens(normalized_query)
         prioritized: list[tuple[int, object]] = []
         remainder: list[object] = []
         for option in options:
@@ -331,17 +320,40 @@ class ActionRecallSet:
             operation = _normalize_text(getattr(option, "operation", "") or getattr(option, "semantic_action", ""))
             label = _normalize_text(labels.get(target_id, ""))
             role = _normalize_text(roles.get(target_id, ""))
-            path = tuple(functional_paths.get(target_id, ()))
-            exact = bool(label and (label == normalized_query or label in normalized_query))
-            structural = target_id in focused_target_ids
+            path = tuple(_normalize_text(item) for item in functional_paths.get(target_id, ()))
+            label_tokens = _tokens(label)
+            role_tokens = _tokens(role)
+            operation_tokens = _tokens(operation)
+            path_tokens = _tokens(" ".join(path))
+            exact = bool(
+                label
+                and (
+                    label == normalized_query
+                    or label in normalized_query
+                    or normalized_query in label
+                )
+            )
             operation_or_role = normalized_query in {operation, role}
-            same_container = bool(path and path[:-1] in direct_containers)
-            if exact or operation_or_role or structural or same_container:
-                priority = 0 if (exact or operation_or_role) else 1 if structural else 2
+            lexical = bool(
+                query_tokens
+                & frozenset((*label_tokens, *role_tokens, *operation_tokens, *path_tokens))
+            )
+            fuzzy = bool(
+                query_tokens
+                and label_tokens
+                and _fuzzy_score(query_tokens, label_tokens) >= ActionReranker().fuzzy_threshold
+            )
+            if exact or operation_or_role or lexical or fuzzy:
+                structural_priority = (
+                    0
+                    if target_id in focused_target_ids
+                    else 1
+                    if target_id in viewport_target_ids
+                    else 2
+                )
+                priority = 0 if exact else 1 if operation_or_role else 2 + structural_priority
                 prioritized.append((priority, option))
                 continue
-            # Query recall is additive. Semantic/viewport signals affect only
-            # ordering; the complete base inventory remains behind the cursor.
             remainder.append(option)
         return ActionRecallPartition(
             tuple(
@@ -752,29 +764,13 @@ def _ranked_options(
         )
         prioritized_ids = tuple(str(getattr(item, "action_id", "")) for item in partition.prioritized)
         remainder_ids = {str(getattr(item, "action_id", "")) for item in partition.remainder}
-        shared_order = ActionReranker().rank(
-            partition.remainder,
-            labels=labels,
-            roles=roles,
-            states=states,
-            functional_paths=functional_paths,
-            query=query,
-        )
-        optional_order = {item.action_id: item.rank for item in shared_order}
         by_id = {item[1].action_id: item for item in ranked}
         prioritized = [by_id[action_id] for action_id in prioritized_ids]
-        remainder = [item for item in ranked if item[1].action_id in remainder_ids]
-        if objective is not None:
-            remainder.sort(
-                key=lambda item: (
-                    _ROLE_ORDER[item[2].role],
-                    -item[2].score,
-                    optional_order[item[1].action_id],
-                )
-            )
-        else:
-            remainder.sort(key=lambda item: optional_order[item[1].action_id])
-        return [*prioritized, *remainder]
+        # ``find_controls`` is a filter, not a query-biased full inventory.
+        # Non-matches stay private in the current ActionSpace and are available
+        # to a later, materially different query.
+        assert remainder_ids.isdisjoint(prioritized_ids)
+        return prioritized
     if objective is not None:
         ranked.sort(key=lambda item: (_ROLE_ORDER[item[2].role], -item[2].score, item[0]))
     return ranked

@@ -44,7 +44,7 @@ def _walk(node):
         yield from _walk(child)
 
 
-_RUNTIME_ROLES = {"viewport", "focused_context"}
+_RUNTIME_ROLES = {"viewport", "focused_context", "browser_context"}
 
 
 def _page_targets(world):
@@ -115,6 +115,59 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     assert retained.status is EntityInventoryStatus.COMPLETE
     assert (retained.entity_count, retained.entity_total_count) == (5, 5)
     assert (retained.option_value_count, retained.option_value_total_count) == (2, 2)
+
+
+def test_explicit_browser_profile_projects_navigation_without_page_identity_inference() -> None:
+    raw = raw_observation(ax_node("search", "textbox", "Search"), url="https://example.test/start")
+    raw["open_pages_urls"] = np.asarray((
+        "https://example.test/start?private=1",
+        "https://docs.example.test/guide",
+    ))
+    raw["active_page_index"] = np.asarray([0])
+    common = {
+        "observation_id": "obs:navigation",
+        "source_revision": "revision:navigation",
+        "page_identity": "page:navigation",
+        "episode_identity": "0",
+        "task_state": reset_task_state("obs:navigation"),
+        "entity_identity": BrowserGymEntityIdentityMap(b"browser-navigation-profile"),
+    }
+
+    miniwob = project_browsergym_observation(raw, **common)
+    webarena = project_browsergym_observation(
+        raw,
+        browser_global_primitives=(
+            "goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close",
+        ),
+        **common,
+    )
+
+    assert all(item.role != "browser_context" for item in miniwob.world.targets)
+    browser = next(item for item in webarena.world.targets if item.role == "browser_context")
+    assert browser.state["active_tab_index"] == 0
+    assert browser.state["open_tabs"][0]["route"] == "https://example.test/start"
+    actions = {
+        item.semantic_action: item
+        for item in ActionSpaceBuilder().build(
+            TaskGoal(
+                "task:navigation",
+                "Navigate",
+                allowed_effects=("external_ui_interaction",),
+                risk_profile=RiskProfile.LOW,
+            ),
+            webarena.world,
+        ).options
+        if item.target_id == browser.target_id
+    }
+    assert set(actions) == {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
+    assert actions["tab_focus"].parameter_schema["properties"]["index"]["enum"] == (1,)
+
+    with pytest.raises(ValueError, match="browser-action profile"):
+        project_browsergym_observation(
+            raw,
+            browser_global_primitives=("invented_navigation",),
+            **common,
+        )
 
 
 def test_screenshot_grounding_is_viewport_bounded_and_prioritizes_actions() -> None:

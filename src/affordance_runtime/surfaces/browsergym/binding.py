@@ -157,12 +157,55 @@ class BrowserGymFocusedContextBinding:
             raise TypeError("BrowserGym focused-context navigation hint must be boolean")
 
 
+@dataclass(frozen=True)
+class BrowserGymNavigationBinding:
+    """Runtime-private current browser-context route for BrowserGym globals."""
+
+    binding_id: str
+    source_observation_id: str
+    source_revision: str
+    page_identity: str
+    episode_identity: str
+    semantic_target_id: str
+    supported_primitive: str
+    open_pages_urls: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.binding_id,
+                self.source_observation_id,
+                self.source_revision,
+                self.page_identity,
+                self.episode_identity,
+                self.semantic_target_id,
+                self.supported_primitive,
+            )
+        ):
+            raise ValueError("BrowserGym navigation binding requires current identity")
+        if self.supported_primitive not in {
+            "goto",
+            "go_back",
+            "go_forward",
+            "new_tab",
+            "tab_focus",
+            "tab_close",
+        }:
+            raise ValueError("BrowserGym navigation binding primitive is unsupported")
+        urls = tuple(self.open_pages_urls)
+        if any(not isinstance(item, str) or not item for item in urls):
+            raise ValueError("BrowserGym navigation binding tab identities are invalid")
+        object.__setattr__(self, "open_pages_urls", urls)
+
+
 BrowserGymPrivateBinding = (
     BrowserGymElementBinding
     | BrowserGymDragBinding
     | BrowserGymVisualBinding
     | BrowserGymViewportBinding
     | BrowserGymFocusedContextBinding
+    | BrowserGymNavigationBinding
 )
 
 

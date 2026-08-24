@@ -64,7 +64,10 @@ from tests.support.model_delivery import resolve_catalog_call
 from tests.support.world import fused_world
 
 _ROOT = Path(__file__).resolve().parents[3]
-_CURRENT_ACTIONS = {"activate", "type_text", "select_option", "read"}
+_BROWSER_GLOBAL_ACTIONS = {
+    "goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close",
+}
+_CURRENT_ACTIONS = {"activate", "type_text", "select_option", "read", *_BROWSER_GLOBAL_ACTIONS}
 _FUTURE_ACTIONS = {"scroll", "press_key", "focus", "drag_to", "set_value", "hover"}
 
 
@@ -113,8 +116,8 @@ def test_registry_is_closed_unique_and_code_versioned() -> None:
     definitions = INTERACTION_CAPABILITY_REGISTRY.definitions
     names = tuple(item.semantic_action for item in definitions)
 
-    assert INTERACTION_CAPABILITY_REGISTRY.registry_id == "interaction-capabilities.v1"
-    assert len(names) == len(set(names)) == 10
+    assert INTERACTION_CAPABILITY_REGISTRY.registry_id == "interaction-capabilities.v2"
+    assert len(names) == len(set(names)) == 16
     assert set(names) == _CURRENT_ACTIONS | _FUTURE_ACTIONS
     with pytest.raises(InteractionCapabilityError) as unsupported:
         INTERACTION_CAPABILITY_REGISTRY.require("click_button")
@@ -152,7 +155,7 @@ def test_each_profile_action_and_primitive_has_one_composed_owner(profile, compo
     )
 
 
-def test_browsergym_t1_capabilities_are_installed_without_future_operations() -> None:
+def test_browsergym_capabilities_include_official_web_navigation_primitives() -> None:
     support = {item.semantic_action: item for item in BROWSERGYM_INTERACTION_PROFILE.capabilities}
 
     assert set(support) == {
@@ -162,6 +165,7 @@ def test_browsergym_t1_capabilities_are_installed_without_future_operations() ->
         "drag_to",
         "scroll",
         "press_key",
+        *_BROWSER_GLOBAL_ACTIONS,
     }
     assert support["scroll"].primitive_actions == ("scroll",)
     assert support["scroll"].subject_kinds == (InteractionSubjectKind.VIEWPORT,)
@@ -169,6 +173,11 @@ def test_browsergym_t1_capabilities_are_installed_without_future_operations() ->
     assert support["press_key"].subject_kinds == (
         InteractionSubjectKind.ENTITY,
         InteractionSubjectKind.FOCUSED_CONTEXT,
+    )
+    assert all(
+        support[action].subject_kinds == (InteractionSubjectKind.BROWSER_CONTEXT,)
+        and support[action].primitive_actions == (action,)
+        for action in _BROWSER_GLOBAL_ACTIONS
     )
     assert {"hover", "focus", "set_value"}.isdisjoint(support)
 
@@ -220,7 +229,9 @@ def test_browsergym_select_option_is_one_closed_observation_barrier_composite() 
     assert capability.semantic_definition.parameter_contract is ParameterContractKind.OPTION_VALUE
     assert capability.support.primitive_actions == ("select_option",)
     assert tuple(item.primitive_action for item in capability.translators) == ("select_option",)
-    assert "navigate_to" not in {item.semantic_action for item in BROWSERGYM_INTERACTION_PROFILE.capabilities}
+    assert _BROWSER_GLOBAL_ACTIONS <= {
+        item.semantic_action for item in BROWSERGYM_INTERACTION_PROFILE.capabilities
+    }
 
 
 def test_composer_and_schema_contracts_fail_closed_with_typed_issues() -> None:
