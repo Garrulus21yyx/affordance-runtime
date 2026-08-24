@@ -16,11 +16,17 @@ Task266 run6 crossed the run5 failure and exposed the remaining browser-profile 
 primitives now follow BrowserGym's target-less public shape and bind the unique fresh `browser_context` privately;
 page-control primitives still require current `E-ref` grounding. Explicit `find_controls` recall is limited to literal
 token/phrase boundaries and no longer uses hand-written prefix/suffix or fuzzy expansion.
+Task266 run7 crossed that repaired navigation boundary, found the real Wikipedia search textbox, entered the query,
+and received a stable fresh World. It then exposed a separate explicit-recall algebra defect: `link` in
+`Portland (Maine) link` matched the role of every background link even when `Portland` and `Maine` matched neither its
+label nor path. The autocomplete rows themselves were honestly projected as non-executable `StaticText`; no action was
+missing from the catalog. The recall owner now requires remaining target terms to match label/path, ranks all genuine
+matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `169` focused browser-profile/action-schema/resolver/delivery tests, and the
-full suite at `1687 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
+Current provider-free verification passes `136` focused action-recall/delivery/catalog tests, and the full suite at
+`1692 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
 pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
@@ -41,6 +47,11 @@ Task266 run6 crossed that action-callability boundary, activated the intended ar
 coordinates. It then failed normally after the model searched twice for an address-bar control because `goto` still
 required a browser-context `E-ref` absent from the compact observation; Monitor blocked the loop. Run6 is also
 pre-repair evidence, not acceptance.
+Task266 run7 crossed the target-less browser-navigation repair and failed normally after six valid policy calls, one
+effectful query-entry dispatch, and zero invalid tool arguments. Its `find_controls("Portland (Maine) link")`
+ToolReturn contained alphabetical background links such as Africa and Agriculture because the shared role token alone
+qualified them. Two identical `read_region(R13)` results followed; Monitor emitted one recovery and then blocked the
+control stall. Run7 is failed pre-repair evidence for explicit control recall, not acceptance.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -278,10 +289,12 @@ If history prevents hard admission, the existing PydanticAI-boundary history com
 and repacks; no partial query result is advertised. No cursor, Store body, evidence inventory, or new state machine is
 introduced.
 
-The query owner now also enforces the missing filter invariant: only exact/role/operation/lexical/fuzzy-qualified
-current controls enter a `find_controls` result. Focus and viewport rank those matches but never admit unrelated
-controls. Because this result is capability discovery rather than task evidence, Store produces no information novelty
-for it; Monitor recovers on a second consecutive same-World discovery and blocks another post-recovery discovery loop.
+The query owner now also enforces the missing filter invariant: role/operation terms may constrain a candidate, but
+cannot qualify it while remaining target terms match neither its label nor functional path. Genuine matches remain a
+bounded ranked set for the model rather than a Runtime-selected singleton. Focus and viewport break equal ordering but
+never admit unrelated controls. Because this result is capability discovery rather than task evidence, Store produces
+no information novelty for it; Monitor recovers on a second consecutive same-World discovery and blocks another
+post-recovery discovery loop.
 
 The WebArena runner now explicitly selects BrowserGym's installed `goto`, `go_back`, `go_forward`, `new_tab`,
 `tab_focus`, and `tab_close` primitives as ordinary current `browser_context` actions. The adapter does not infer this

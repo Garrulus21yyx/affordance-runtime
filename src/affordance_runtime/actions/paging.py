@@ -9,6 +9,7 @@ import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from fractions import Fraction
 
 from affordance_runtime.actions.admission import (
     AdmissionContractOwner,
@@ -313,7 +314,20 @@ class ActionRecallSet:
         roles = roles or {}
         functional_paths = functional_paths or {}
         query_tokens = _literal_tokens(normalized_query)
-        prioritized: list[tuple[int, object]] = []
+        role_terms = query_tokens & frozenset(
+            token
+            for option in options
+            for token in _literal_tokens(roles.get(str(getattr(option, "target_id", "")), ""))
+        )
+        operation_terms = query_tokens & frozenset(
+            token
+            for option in options
+            for token in _literal_tokens(
+                getattr(option, "operation", "") or getattr(option, "semantic_action", "")
+            )
+        )
+        target_terms = query_tokens - role_terms - operation_terms
+        prioritized: list[tuple[tuple[Fraction, int, int, int], int, object]] = []
         remainder: list[object] = []
         for option in options:
             target_id = str(getattr(option, "target_id", ""))
@@ -326,31 +340,56 @@ class ActionRecallSet:
             operation_tokens = _literal_tokens(operation)
             path_tokens = _literal_tokens(" ".join(path))
             exact = bool(label and _bounded_phrase_match(label, normalized_query))
-            operation_or_role = normalized_query in {operation, role}
-            lexical = bool(
-                query_tokens
-                & frozenset((*label_tokens, *role_tokens, *operation_tokens, *path_tokens))
-            )
-            if exact or operation_or_role or lexical:
-                structural_priority = (
-                    0
-                    if target_id in focused_target_ids
-                    else 1
-                    if target_id in viewport_target_ids
-                    else 2
-                )
-                priority = 0 if exact else 1 if operation_or_role else 2 + structural_priority
-                prioritized.append((priority, option))
+            # Current ActionSpace role/operation vocabulary supplies dynamic
+            # query facets; no task/site keyword table is involved.  Remaining
+            # target words must hit public label/path.  Keep every genuine
+            # match so explicit recall does not become a Runtime subgoal selector.
+            if not role_terms <= role_tokens or not operation_terms <= operation_tokens:
+                remainder.append(option)
                 continue
-            remainder.append(option)
+            target_tokens = label_tokens | path_tokens
+            target_overlap = target_terms & target_tokens
+            if target_terms:
+                if not target_overlap:
+                    remainder.append(option)
+                    continue
+                coverage = Fraction(len(target_overlap), len(target_terms))
+            elif role_terms or operation_terms or exact:
+                coverage = Fraction(1, 1)
+            else:
+                remainder.append(option)
+                continue
+            structural_priority = (
+                0
+                if target_id in focused_target_ids
+                else 1
+                if target_id in viewport_target_ids
+                else 2
+            )
+            prioritized.append(
+                (
+                    (
+                        coverage,
+                        int(exact),
+                        len(target_overlap),
+                        len(role_terms) + len(operation_terms),
+                    ),
+                    structural_priority,
+                    option,
+                )
+            )
         return ActionRecallPartition(
             tuple(
                 item
-                for _, item in sorted(
+                for _, _, item in sorted(
                     prioritized,
                     key=lambda pair: (
-                        pair[0],
-                        _public_option_order(pair[1], labels, roles, functional_paths),
+                        -pair[0][0],
+                        -pair[0][1],
+                        -pair[0][2],
+                        -pair[0][3],
+                        pair[1],
+                        _public_option_order(pair[2], labels, roles, functional_paths),
                     ),
                 )
             ),

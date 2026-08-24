@@ -24,12 +24,25 @@ only each primitive's business parameters. Page controls retain explicit current
 `find_controls` recall is literal token/phrase bounded; the former hand-written prefix/suffix and fuzzy expansion no
 longer turns substrings such as `ion` into navigation matches. This adds no browser state, site detection, action
 authority, or retrieval service.
+Task266 run7 crossed that browser-profile boundary: the first discovery returned the real Wikipedia search textbox,
+the model entered `Portland, Maine`, BrowserGym captured the fresh value, and every tool call remained valid. The
+fresh World then exposed the autocomplete rows as readable `StaticText`, not executable controls. When the model
+asked `find_controls("Portland (Maine) link")`, the remaining recall algebra admitted every page link because `link`
+matched the role even when none of the target words matched. Alphabetical background links displaced the requested
+target, the model replayed the readable region, and Monitor correctly blocked the same-World control stall.
+
+The explicit-query owner now treats each current action's existing role/operation tokens as control constraints for
+that candidate and requires any remaining query terms to match its label or functional path. Matches are ordered by
+target-term coverage but are not collapsed to one Runtime-guessed subgoal. A role/operation-only hit cannot admit a
+control when unmatched target terms remain. An empty executable-control result stays empty and does not redirect to
+readable-content search. This is deterministic retrieval over the complete current `ActionSpace`; it adds no keyword
+table, site/task branch, semantic index, model ranker, or alternate action authority.
 Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused browser-profile/action-schema/resolver/delivery surface passes `169`
-tests; the full suite passes `1687` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
+Current provider-free verification: the focused action recall/delivery/catalog surface passes `136` tests; the full
+suite passes `1692` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
 currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
 recovery-eligibility, or async-liveness defect in this bounded implementation.
 
@@ -436,12 +449,14 @@ removed. GUI benchmark work does not need arbitrary 100 KiB DOM strings reconstr
 
 ### Action discovery
 
-`find_controls(query)` applies one deterministic lexical/fuzzy filter to the complete current `ActionSpace`, then
-returns only the bounded matching routes. Focus and viewport affect the order of matches; they do not turn unrelated
-controls into matches, and the remaining ActionSpace is not appended behind the query result. It has no generic
-continuation tool and no private public-result inventory. If matching routes exceed the page bound, the model issues a
-narrower natural-language query. Action discovery never executes a control and never turns readable `N/F/R` refs into
-executable `E` refs.
+`find_controls(query)` applies one deterministic explicit-query filter to the complete current `ActionSpace`, then
+returns only bounded matching routes. For each candidate, tokens already expressed by its real role/operation describe
+the requested control kind; remaining query terms must overlap its public label or functional path. Target-term
+coverage orders the matches, while the model still chooses among the bounded relevant set. Focus and viewport break
+otherwise equal ordering; they do not turn unrelated controls into matches, and the remaining ActionSpace is not
+appended behind the query result. It has no generic continuation tool and no private public-result inventory. If
+matching routes exceed the page bound, the model issues a narrower natural-language query. Action discovery never
+executes a control and never turns readable `N/F/R` refs into executable `E` refs.
 
 The returned page and the next same-World catalog share one current-World contract:
 

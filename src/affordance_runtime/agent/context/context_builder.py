@@ -335,7 +335,7 @@ class ContextBuilder:
             coverage,
             "empty" if not matches else "partial" if page.has_more else "complete",
             (),
-            "search_page_content" if query and not matches else "",
+            "",
         )
 
 def _context_identity(

@@ -307,6 +307,79 @@ def test_query_does_not_match_short_substrings_inside_unrelated_labels() -> None
     assert tuple(item.action_id for item in partition.remainder) == ("action:00",)
 
 
+def test_target_terms_outweigh_role_and_operation_terms_in_explicit_control_query() -> None:
+    options = (
+        _option(0),
+        _option(1),
+        _option(2),
+    )
+    partition = ActionRecallSet().partition(
+        options,
+        labels={
+            "target:00": "Africa",
+            "target:01": "Portland (Maine)",
+            "target:02": "Portland (Maine)",
+        },
+        roles={
+            "target:00": "link",
+            "target:01": "link",
+            "target:02": "textbox",
+        },
+        query="Portland (Maine) link activate",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:01",)
+    assert {item.action_id for item in partition.remainder} == {"action:00", "action:02"}
+
+
+def test_explicit_control_query_returns_empty_when_only_role_matches() -> None:
+    options = (_option(0), _option(1))
+    partition = ActionRecallSet().partition(
+        options,
+        labels={"target:00": "Africa", "target:01": "Agriculture"},
+        roles={"target:00": "link", "target:01": "link"},
+        query="Portland (Maine) link",
+    )
+
+    assert partition.prioritized == ()
+    assert {item.action_id for item in partition.remainder} == {"action:00", "action:01"}
+
+
+def test_explicit_control_query_orders_all_matches_by_target_term_coverage() -> None:
+    options = (_option(0), _option(1))
+    partition = ActionRecallSet().partition(
+        options,
+        labels={"target:00": "Wikipedia", "target:01": "Search Wikipedia"},
+        roles={"target:00": "link", "target:01": "textbox"},
+        query="search wikipedia input",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == (
+        "action:01",
+        "action:00",
+    )
+    assert partition.remainder == ()
+
+
+@given(st.permutations(tuple(range(8))))
+def test_role_heavy_unrelated_controls_cannot_displace_best_target_match(
+    permutation: list[int],
+) -> None:
+    options = tuple(_option(index) for index in permutation)
+    labels = {f"target:{index:02}": f"Unrelated link {index}" for index in range(8)}
+    labels["target:06"] = "Portland (Maine)"
+    roles = {f"target:{index:02}": "link" for index in range(8)}
+
+    partition = ActionRecallSet().partition(
+        options,
+        labels=labels,
+        roles=roles,
+        query="Portland (Maine) link activate",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:06",)
+
+
 def test_query_bound_plus_one_fails_typed_without_slicing() -> None:
     with pytest.raises(ValueError, match="bound"):
         ActionPager().page(

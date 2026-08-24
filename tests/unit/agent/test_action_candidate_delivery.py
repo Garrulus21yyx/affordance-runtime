@@ -810,6 +810,23 @@ def test_find_controls_prioritizes_exact_result_without_replacing_base_inventory
     )
 
 
+def test_find_controls_empty_result_does_not_redirect_to_readable_content_search() -> None:
+    _task, world, actions, _evaluation, context = _context()
+    builder = ContextBuilder()
+    page = builder.page(actions, world, query="Portland Maine link activate")
+    discovery = builder.discovery_result(
+        actions,
+        world,
+        page,
+        canonical_world=context.canonical_world,
+    )
+
+    assert discovery.matches == ()
+    assert discovery.result_coverage == "empty"
+    assert discovery.to_public_value()["searched_domain"] == "executable_controls"
+    assert discovery.suggested_next == ""
+
+
 def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog() -> None:
     task, world, actions, evaluation, context = _context()
     builder = ContextBuilder()
