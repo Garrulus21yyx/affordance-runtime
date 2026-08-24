@@ -1,0 +1,36 @@
+{
+  "kind": "provider_free_acceptance",
+  "implementation_revision": "a20fce29f0d7108467a514f4eec980cfce2c4db2",
+  "source_tree": "4e136daad41c04fd1bd99222c29094235da1ba61",
+  "test_tree": "0f22ddfd98f70fc2037749d8bd730a66f622f150",
+  "live": false,
+  "provider_attempts": 0,
+  "contracts": {
+    "original_tool_call_id_conserved": "passed",
+    "standard_pydantic_deferred_tool_result": "passed",
+    "typed_public_evidence_ingestion_without_operation_allowlist": "passed",
+    "store_owned_complete_record_inventory": "passed",
+    "turn_packer_atomic_prefix_and_suffix": "passed",
+    "canonical_envelope_counts_call_result_and_fresh_prompt": "passed",
+    "tool_return_metadata_excluded_from_physical_request": "passed",
+    "workspace_receipt_only": "passed",
+    "ordinary_latest_public_results_injection_deleted": "passed",
+    "list_regions_and_generated_future_reader": "passed",
+    "read_region_search_and_continuation": "passed",
+    "action_discovery_gui_and_control_receipts": "passed",
+    "recording_function_model_next_turn_final_response": "passed",
+    "generated_deep_long_unicode_1_2_16_32": "passed",
+    "exact_fit_and_one_token_short": "passed",
+    "no_second_store_packer_envelope_or_loop": true
+  },
+  "verification": {
+    "focused": "146 passed",
+    "full_pytest": "1637 passed, 24 skipped",
+    "collected": 1661,
+    "ruff": "passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "negative_searches": "passed"
+  },
+  "status": "provider_free_passed_fresh_review_pending"
+}

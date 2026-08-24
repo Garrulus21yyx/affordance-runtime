@@ -10,6 +10,7 @@ held-out Task 21 falsified local-search follow-up conservation and multiple-call
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
+standard call-correlated result repair provider-free verified / fresh-context review pending /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -199,6 +200,18 @@ typed tool output reuse PydanticAI. The prior ordinary `latest_public_results` i
 exact-result recent-trajectory fallback, and any Envelope-blind deferred history are deletion targets. browser-use's
 current message manager also makes extraction results visible in the next `read_state`, but its simple character
 truncation is not an atomic-evidence guarantee and is not adopted here.
+
+Provider-free standard-result checkpoint (implementation revision `a20fce29`, 2026-08-24): the focused owner/vertical
+set passes `146 passed`; the complete suite passes `1637 passed / 24 skipped` from `1661` collected tests. Ruff,
+compileall, diff checks, and negative searches for the ordinary result injection, exact Workspace values,
+operation-name Store allowlists, uncounted history, and task/content specialization pass. Recording FunctionModel
+proves the prior assistant call and following `ToolReturnPart` retain the same call ID; `read_region`, search,
+`list_regions`, generated future readers, action discovery, and result continuation use the same typed path. Private
+result lineage/digests remain ToolReturn metadata and are absent from physical content. No provider, BrowserGym, or
+live case ran. Evidence:
+[`call-correlated-tool-results-provider-free-20260824.json`](../evidence/acceptance/call-correlated-tool-results-provider-free-20260824.json).
+This is implementation acceptance only. Overall remains non-closed, the cohort remains stopped, and an independent
+fresh-context review is required before requesting one held-out rerun.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the

@@ -10,6 +10,7 @@ held-out Task 21 falsified local-search follow-up conservation and multiple-call
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
+standard call-correlated result repair provider-free verified / fresh-context review pending /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -118,6 +119,16 @@ type rather than a list of tool names:
 
 Implementation completion will remain provider-free evidence only. No held-out witness or cohort run is authorized
 until the revised acceptance and an independent fresh-context review both pass.
+
+The standard deferred-result provider-free acceptance is recorded in
+[`call-correlated-tool-results-provider-free-20260824.json`](../evidence/acceptance/call-correlated-tool-results-provider-free-20260824.json),
+bound to implementation revision `a20fce29`: focused `146 passed`, full `1637 passed / 24 skipped` from `1661`
+collected, plus Ruff, compileall, diff checks, and negative searches. It verifies same-call-ID assistant call/tool
+result pairing at the real PydanticAI FunctionModel boundary, type-driven evidence ingestion including `list_regions`
+and a generated future reader, atomic Store/Packer prefixes and continuation suffixes, Envelope/RequestAdmission
+counting, private ToolReturn metadata exclusion, and direct next-turn final response. Provider attempts are zero.
+This acceptance does not authorize live; independent fresh-context review remains pending and the bounded cohort is
+stopped.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).

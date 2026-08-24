@@ -5,9 +5,9 @@ Goal: replace both lossy result paths with one standard call-correlated tool-res
 PydanticAI ToolReturn/DeferredToolResults under the original tool_call_id -> physical provider request`, while keeping
 one Store, one packer, one Envelope, and one CoreAgentLoop. Workspace retains receipts only.
 
-Status: active and non-closed; the prior ordinary-context `ModelTurnDelivery.public_results` design is superseded.
-Architecture/API verification for standard call-correlated tool-result transport is in progress. Live and cohort
-execution remain stopped.
+Status: implementation and provider-free acceptance passed at `a20fce29`; independent fresh-context review is pending.
+The prior ordinary-context `ModelTurnDelivery.public_results` transport is deleted. Live and cohort execution remain
+stopped.
 
 ## Steps
 
@@ -58,17 +58,17 @@ execution remain stopped.
    - Define `PublicEvidenceResult | ExecutionReceipt | ToolFailed | FinalResponse` ownership and unsupported outcomes.
    - Delete tool-name classification and ordinary `latest_public_results` user-context injection from the target design.
 
-11. **in_progress — Implement standard call-correlated result return**
+11. **done — Implement standard call-correlated result return**
    - Store/Packer retain project-specific inventory/currentness/atomic selection.
    - Bridge returns admitted public records as ToolReturn/DeferredToolResults paired to the original call ID; private
      cursor/lineage/digests remain metadata.
    - Workspace and recent trajectory retain only receipt/summary lineage.
 
-12. **pending — Reverify all producer types and physical requests**
+12. **done — Reverify all producer types and physical requests**
    - Generated producer-completeness properties, call-ID conservation, typed failures, pagination/currentness,
      exact records/capacity, Recording FunctionModel, full/static/negative checks.
 
-13. **pending — Separate evidence/status and independent fresh review**
+13. **in_progress — Separate evidence/status and independent fresh review**
    - No live before both pass; any falsification stops and returns to its owner.
 
 ## Explicit non-goals
@@ -89,3 +89,4 @@ execution remain stopped.
 - `src/affordance_runtime/agent/monitor.py` — model-visible admitted-prefix novelty identity.
 - `evidence/acceptance/public-result-turn-packing-provider-free-20260824.json` — revision-bound provider-free acceptance.
 - `evidence/acceptance/public-result-fresh-review-falsification-20260824.json` — independent `list_regions` ingestion falsification; returns work to the Store owner.
+- `evidence/acceptance/call-correlated-tool-results-provider-free-20260824.json` — revision-bound standard deferred-result acceptance.
