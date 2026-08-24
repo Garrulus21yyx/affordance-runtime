@@ -84,6 +84,17 @@ The observation contract is now positive and owner-specific:
 - pagination advances only across records in the same read owner. There is no fragment protocol, evidence inventory,
   second summarizer, or new cursor state machine.
 
+Run11 live-verified this observation contract: Catso's and Michelle's full bodies appeared as complete ToolReturn
+records and all same-World routes remained valid. Its final provider call timed out before producing a decision. Run12
+then completed STOP and native evaluation but exposed a separate ActionPolicy interpretation defect: the model
+explicitly recognized that the two indirect descriptions entail undersized ear cups, then chose only the two records
+containing literal `ear cup` wording as the “safest” answer. The World, task, completed call/result history, and full
+records were present. The positive policy contract is therefore semantic and generic: content search supplies recall
+candidates; relevance follows clear entailment/paraphrase rather than exact token overlap, while incidental lexical
+matches remain excluded. Exhaustive retrieval also remains open while visible counts, pagination, or partial source
+coverage expose inspectable records. This is one prompt-owner correction in the existing ActionPolicy, not a Runtime
+rule, benchmark extractor, verifier model, or new state.
+
 ## Normative production chain
 
 ```text

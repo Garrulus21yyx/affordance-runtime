@@ -58,6 +58,19 @@ the prefixes and reasonably excluded them; its retained progress note then calle
 The failure was observation loss plus a dishonest completeness label, not missing TaskGoal, World identity, history
 compression, cursor state, or a need for another summarizer model.
 
+Run11 verified the readable-AX repair in the live agent chain: search/read returned full complete records for all four
+relevant descriptions, with ten valid tool calls and no argument failures. The last provider request then timed out
+before returning any final decision, so no native evaluation occurred. Run12 reached STOP and native evaluation with
+five valid calls and no argument failures, but the model submitted only the two literal `ear cup` matches. Its recorded
+reasoning explicitly said Catso and Michelle semantically imply small ear cups, then discarded them as non-literal.
+That is an ActionPolicy semantic-admission defect, not renewed observation or history loss.
+
+The bounded general repair is in the existing ActionPolicy prompt: search results are recall candidates; records count
+when their meaning clearly entails/paraphrases the requested condition, without requiring identical words, and
+incidental keyword overlap remains insufficient. Partial source coverage, visible pagination, or a displayed total
+larger than inspected records keeps an exhaustive retrieval open while the current GUI can inspect it. No reviewer,
+task phrase, site, expected answer, second model, or Runtime semantic branch is encoded.
+
 Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
 currentness, producer, and Store-composition failures all arose on that shared path.
 

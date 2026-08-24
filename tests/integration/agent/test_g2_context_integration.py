@@ -133,6 +133,11 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "Treat final=true only as an ordering hint" in system
     assert "dependencies express semantic order, not an action gate" in system
     assert "Outcomes need not remain simultaneously visible" in system
+    assert "Treat content search as candidate recall, not as a literal answer filter" in system
+    assert "a clear paraphrase or" in system
+    assert "incidental keyword overlap does not" in system
+    assert "Partial source coverage" in system
+    assert "displayed total larger than the inspected records" in system
     assert "earliest dependency-ready" not in system
     assert "visibly satisfied" not in system
     assert "exactly one" in system
