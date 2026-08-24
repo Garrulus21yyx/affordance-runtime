@@ -33,6 +33,7 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     ContinueDeliveryResult,
     FinalResponse,
+    PublicEvidenceResult,
     ReadRegionResult,
     RememberFactResult,
     RequestActionPage,
@@ -114,12 +115,18 @@ class _ActionResultsNextPageBinding:
                 context_id,
                 GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
                 {"scope": scope},
-                {
-                    "continuation_available": outcome.next_store.inventory(scope) is not None,
-                    "continuation_scope": scope,
-                    "read_only": True,
-                    "zero_browser_dispatch": True,
-                },
+                PublicEvidenceResult(
+                    {
+                        "continuation_available": outcome.next_store.inventory(scope) is not None,
+                        "continuation_scope": scope,
+                        "read_only": True,
+                        "zero_browser_dispatch": True,
+                        "items": (),
+                    },
+                    scope,
+                    "items",
+                    reuse_inventory=True,
+                ),
                 tool_call_id,
             ),
             outcome.next_store,
@@ -239,7 +246,10 @@ class _CountChildrenBinding:
             context_id,
             GroundedLocalToolName.COUNT_CHILDREN.value,
             {"containers": container_refs},
-            {"counts": counts, "total": sum(counts.values())},
+            PublicEvidenceResult(
+                {"counts": counts, "total": sum(counts.values())},
+                "current_world",
+            ),
             tool_call_id,
         )
 
@@ -393,6 +403,7 @@ class _WorldReadBinding:
         else:
             public_arguments = {}
         public_result = dict(inspect_outcome_public(result))
+        source_scope = region_ref or ("search" if query else "page_directory")
         result_type = (
             SearchPageContentResult
             if tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value
@@ -403,7 +414,11 @@ class _WorldReadBinding:
                 context_id,
                 tool_name,
                 public_arguments,
-                public_result,
+                PublicEvidenceResult.from_value(
+                    public_result,
+                    source_scope=source_scope,
+                    append_to_inventory=bool(page_cursor),
+                ),
                 tool_call_id,
             ),
             next_store,

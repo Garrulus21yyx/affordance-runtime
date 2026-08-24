@@ -25,6 +25,7 @@ from affordance_runtime.agent.context.context import (
 )
 from affordance_runtime.agent.context.observation_delivery import (
     DeliveryContinuationCapability,
+    PendingToolOutcome,
     PublicResultRecord,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -80,6 +81,25 @@ class DeliveredMedia:
 
 
 @dataclass(frozen=True)
+class DeferredToolDelivery:
+    """One admitted public return paired to its original external call."""
+
+    tool_call_id: str
+    tool_name: str
+    return_value: Mapping[str, object]
+    metadata: Mapping[str, object] = field(
+        repr=False, compare=False, metadata={"serialize": False}
+    )
+    failed: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.tool_call_id.strip() or not self.tool_name.strip():
+            raise ValueError("deferred tool delivery requires one call identity")
+        object.__setattr__(self, "return_value", to_json_compatible(self.return_value))
+        object.__setattr__(self, "metadata", to_json_compatible(self.metadata))
+
+
+@dataclass(frozen=True)
 class ModelTurnDelivery:
     """The sole observation/manifest identity for one model turn.
 
@@ -100,6 +120,7 @@ class ModelTurnDelivery:
     action_delivery_plan_id: str
     media: tuple[DeliveredMedia, ...] = ()
     public_results: tuple[PublicResultRecord, ...] = ()
+    tool_result: DeferredToolDelivery | None = None
     admitted_record_counts: tuple[tuple[str, int], ...] = ()
     packing_backoff_count: int = 0
     continuation_capabilities: tuple[DeliveryContinuationCapability, ...] = field(
@@ -145,6 +166,8 @@ class ModelTurnDelivery:
         public_results = tuple(self.public_results)
         if any(not isinstance(item, PublicResultRecord) for item in public_results):
             raise TypeError("model turn public results must be exact Store-owned records")
+        if self.tool_result is not None and not isinstance(self.tool_result, DeferredToolDelivery):
+            raise TypeError("model turn deferred result must be typed")
         route_refs = {
             ref
             for route in self.manifest.action_routes
@@ -187,6 +210,10 @@ def build_model_turn_delivery(
     selected_candidates = context.action_delivery_plan.projection(selected_counts)
     selected_records = _selected_records(context.action_delivery_plan, selected_counts)
     public_results = tuple(item for item in selected_records if isinstance(item, PublicResultRecord))
+    tool_result = _deferred_tool_delivery(
+        context.delivery_store.pending_tool_outcome,
+        public_results,
+    )
     continuation_capabilities = context.delivery_store.continuation_capabilities(selected_counts)
     effect_indices = {
         item.record_index
@@ -286,6 +313,16 @@ def build_model_turn_delivery(
         "packing_backoff_count": packing_backoff_count,
         "public_effect": tuple(to_json_compatible(item) for item in selected_observation_delivery.latest_effect_values),
         "public_results": tuple(item.to_public_value() for item in public_results),
+        "tool_result": (
+            {
+                "tool_call_id": tool_result.tool_call_id,
+                "tool_name": tool_result.tool_name,
+                "return_value": tool_result.return_value,
+                "failed": tool_result.failed,
+            }
+            if tool_result is not None
+            else None
+        ),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -299,9 +336,30 @@ def build_model_turn_delivery(
         action_delivery_plan_id=context.action_delivery_plan.plan_id,
         media=media,
         public_results=public_results,
+        tool_result=tool_result,
         admitted_record_counts=tuple(sorted(selected_counts.items())),
         packing_backoff_count=packing_backoff_count,
         continuation_capabilities=continuation_capabilities,
+    )
+
+
+def _deferred_tool_delivery(
+    outcome: PendingToolOutcome | None,
+    records: tuple[PublicResultRecord, ...],
+) -> DeferredToolDelivery | None:
+    if outcome is None:
+        return None
+    admitted = outcome.admitted_value(records)
+    return DeferredToolDelivery(
+        outcome.call.tool_call_id,
+        outcome.call.tool_name,
+        admitted,
+        {
+            "result_lineage": outcome.result_lineage,
+            "record_digests": tuple(item.digest for item in records),
+            "origin_context_id": outcome.call.origin_context_id,
+        },
+        outcome.failed,
     )
 
 

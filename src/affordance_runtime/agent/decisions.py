@@ -77,6 +77,79 @@ def _require_collection(values: tuple[str, ...], field_name: str, *, item_limit:
 
 
 @dataclass(frozen=True)
+class PublicEvidenceResult(Mapping[str, object]):
+    """Typed exact read-only result; operation names do not control delivery."""
+
+    value: Mapping[str, object]
+    source_scope: str
+    record_field: str = ""
+    append_to_inventory: bool = False
+    reuse_inventory: bool = False
+
+    def __post_init__(self) -> None:
+        value = freeze_json(dict(self.value))
+        if (
+            not self.source_scope.strip()
+            or self.record_field not in {"", "items", "matches"}
+            or type(self.append_to_inventory) is not bool
+            or type(self.reuse_inventory) is not bool
+            or (self.reuse_inventory and not self.record_field)
+        ):
+            raise ValueError("public evidence result metadata is invalid")
+        records = value.get(self.record_field, ()) if self.record_field else (value,)
+        if (
+            not isinstance(records, tuple)
+            or len(records) > _MAX_COLLECTION
+            or any(not isinstance(item, Mapping) for item in records)
+        ):
+            raise TypeError("public evidence records must be complete mappings")
+        object.__setattr__(self, "value", value)
+
+    @classmethod
+    def from_value(
+        cls,
+        value: Mapping[str, object],
+        *,
+        source_scope: str,
+        append_to_inventory: bool = False,
+        reuse_inventory: bool = False,
+    ) -> "PublicEvidenceResult":
+        record_field = next(
+            (
+                field_name
+                for field_name in ("items", "matches")
+                if isinstance(value.get(field_name), (tuple, list))
+            ),
+            "",
+        )
+        return cls(value, source_scope, record_field, append_to_inventory, reuse_inventory)
+
+    @property
+    def records(self) -> tuple[Mapping[str, object], ...]:
+        if not self.record_field:
+            return (self.value,)
+        records = self.value[self.record_field]
+        assert isinstance(records, tuple)
+        return records
+
+    def with_records(self, records: tuple[Mapping[str, object], ...]) -> Mapping[str, object]:
+        if not self.record_field:
+            if len(records) != 1:
+                raise ValueError("scalar evidence result requires its one complete record")
+            return records[0]
+        return freeze_json({**dict(self.value), self.record_field: tuple(records)})
+
+    def __getitem__(self, key: str) -> object:
+        return self.value[key]
+
+    def __iter__(self):
+        return iter(self.value)
+
+    def __len__(self) -> int:
+        return len(self.value)
+
+
+@dataclass(frozen=True)
 class SelectAction:
     kind: ClassVar[DecisionKind] = DecisionKind.SELECT_ACTION
     context_id: str
@@ -169,7 +242,7 @@ class LocalToolResult:
     context_id: str
     tool_name: str
     arguments: Mapping[str, object]
-    result: Mapping[str, object]
+    result: Mapping[str, object] | PublicEvidenceResult
     tool_call_id: str = ""
     working_fact: WorkingFact | None = field(default=None, repr=False, compare=False)
     rejected_attempt_signature: PublicAttemptSignature | None = field(default=None, repr=False, compare=False)
@@ -184,7 +257,20 @@ class LocalToolResult:
         if not self.result:
             raise ValueError("local tool result cannot be empty")
         object.__setattr__(self, "arguments", freeze_json(self.arguments))
-        object.__setattr__(self, "result", freeze_json(self.result))
+        result = self.result
+        if not isinstance(result, PublicEvidenceResult) and self.kind in {
+            DecisionKind.READ_REGION,
+            DecisionKind.SEARCH_PAGE_CONTENT,
+        }:
+            result = PublicEvidenceResult.from_value(
+                result,
+                source_scope="current_world",
+            )
+        object.__setattr__(
+            self,
+            "result",
+            result if isinstance(result, PublicEvidenceResult) else freeze_json(result),
+        )
         if self.working_fact is not None and not isinstance(self.working_fact, WorkingFact):
             raise TypeError("local tool state effect must be a typed working fact")
         if self.rejected_attempt_signature is not None and not isinstance(

@@ -170,8 +170,7 @@ def _fanout_world(observation_id: str, enabled: bool, *, count: int = 84):
 
 
 def _actual_public_text(record) -> str:
-    assert len(record.messages) == 1
-    request = record.messages[0]
+    request = next(item for item in reversed(record.messages) if isinstance(item, ModelRequest))
     assert isinstance(request, ModelRequest)
     user_parts = [part for part in request.parts if isinstance(part, UserPromptPart)]
     assert len(user_parts) == 1

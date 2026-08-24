@@ -409,10 +409,9 @@ class CorePolicy:
                 )
             step = context.workspace.recent_steps[-1]
             assert step.semantic_action == "count_children"
-            assert step.semantic_summary["result"] == {
-                "counts": {},
-                "total": 5,
-            }
+            assert step.semantic_summary["information_delta"] == "new_information"
+            assert step.semantic_summary["new_information_count"] == 1
+            assert "result" not in step.semantic_summary
             return Abort(context.context_id, "count observed", AbortCategory.USER_REQUEST)
         if self.choice == "confirm_once":
             if self.turns == 1:
@@ -1262,10 +1261,8 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
         assert state.status is RunStatus.CANCELLED
         assert state.execution_count == 0
         assert state.observation_count == 1
-        assert state.workspace.recent_steps[0].semantic_summary["result"] == {
-            "counts": {},
-            "total": 5,
-        }
+        assert state.workspace.recent_steps[0].semantic_summary["information_delta"] == "new_information"
+        assert "result" not in state.workspace.recent_steps[0].semantic_summary
 
     asyncio.run(scenario())
 

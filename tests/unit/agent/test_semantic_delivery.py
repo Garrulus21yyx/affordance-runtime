@@ -28,9 +28,14 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
-from affordance_runtime.agent.context.observation_delivery import InformationDeltaKind, ObservationDeliveryStore
+from affordance_runtime.agent.context.observation_delivery import (
+    InformationDeltaKind,
+    ObservationDeliveryStore,
+    PendingToolCall,
+)
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
+from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.benchmarks.webarena_verified import (
     DeliveryRetrievalProbe,
@@ -68,6 +73,45 @@ def _evaluation(task: TaskGoal, observation_id: str) -> TaskEvaluation:
         TaskEvaluationStatus.INCOMPLETE,
         "semantic delivery fixture",
     )
+
+
+def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() -> None:
+    task = _task()
+    world = _world("typed-future-reader", False)
+    call = PendingToolCall("call:future-reader", "future_readonly_tool", "context:fixture")
+    store = ObservationDeliveryStore().with_pending_tool_call(call)
+    decision = SearchPageContentResult(
+        "context:fixture",
+        "future_readonly_tool",
+        {"subject": "current"},
+        PublicEvidenceResult.from_value(
+            {
+                "kind": "Evidence",
+                "items": (
+                    {"identity": {"name": "Reader 界🙂"}, "content": {"text": "complete"}},
+                ),
+            },
+            source_scope="current",
+        ),
+        call.tool_call_id,
+    )
+    transition = store.reduce(
+        StepResult(
+            decision,
+            world,
+            world,
+            _evaluation(task, world.observation_id),
+            feedback="local_tool_result",
+        ),
+        step_index=1,
+    )
+
+    inventory = transition.next_store.public_result_inventory
+    assert inventory is not None
+    assert inventory.records[0].operation == "future_readonly_tool"
+    assert inventory.records[0].public_value == decision.result.records[0]
+    assert transition.next_store.pending_tool_outcome is not None
+    assert transition.next_store.pending_tool_outcome.call == call
 
 
 def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_manifest() -> None:

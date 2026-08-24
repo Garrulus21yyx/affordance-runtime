@@ -239,6 +239,8 @@ class _LegacyContextBinder:
             ),
             attempt_phase="initial",
             diagnostics=(delivery.view.projection, 0, 0, 0, 0, 0, 0, 0, len(delivery.manifest.action_routes), 0),
+            history_messages=(),
+            tool_result=None,
         )
         outcome = RequestAdmission().admit(envelope, budget=request_budget)
         if isinstance(outcome, RejectedProviderEnvelope):

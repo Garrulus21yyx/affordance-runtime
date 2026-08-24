@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from affordance_runtime.agent.context.model_turn_delivery import (
@@ -65,6 +66,7 @@ class TurnPacker:
         call_profile: ActionPolicyCallProfile,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
+        history_messages: tuple[Mapping[str, object], ...] = (),
     ) -> PackedModelTurn:
         plan = request.agent_context.action_delivery_plan
         if plan is None:
@@ -89,6 +91,7 @@ class TurnPacker:
             admitted_records=admitted_counts,
             backoff_count=0,
             request_budget=request_budget,
+            history_messages=history_messages,
         )
         packing_budget = replace(
             request_budget,
@@ -125,6 +128,7 @@ class TurnPacker:
                 admitted_records=required,
                 backoff_count=0,
                 request_budget=request_budget,
+                history_messages=history_messages,
             )
             admitted_counts = required
 
@@ -155,6 +159,7 @@ class TurnPacker:
                         admitted_records=tentative,
                         backoff_count=0,
                         request_budget=packing_budget,
+                        history_messages=history_messages,
                     )
                 except ModelRequestCapacityError:
                     blocked.add(kind)
@@ -184,6 +189,7 @@ class TurnPacker:
             admitted_records=admitted_counts,
             backoff_count=backoffs,
             request_budget=request_budget,
+            history_messages=history_messages,
         )
         delivery, catalog, admitted = accepted
         return PackedModelTurn(
@@ -208,6 +214,7 @@ class TurnPacker:
         admitted_records: dict[str, int],
         backoff_count: int,
         request_budget: ModelRequestBudget,
+        history_messages: tuple[Mapping[str, object], ...],
     ) -> tuple[ModelTurnDelivery, GroundedToolCatalog, AdmittedProviderEnvelope]:
         delivery = build_model_turn_delivery(
             request.agent_context,
@@ -227,6 +234,7 @@ class TurnPacker:
                 + request_budget.protocol_reserve_tokens
                 + request_budget.safety_margin_tokens
             ),
+            history_messages=history_messages,
         )
         outcome = RequestAdmission().admit(envelope, budget=request_budget)
         if isinstance(outcome, RejectedProviderEnvelope):

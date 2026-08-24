@@ -23,6 +23,7 @@ from affordance_runtime.agent.context.failures import (
     ProviderFailureCode,
 )
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
+from affordance_runtime.agent.context.observation_delivery import PendingToolCall
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
@@ -135,6 +136,9 @@ class PydanticAIGroundedDecisionPort:
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
+    pending_exchange: tuple[Mapping[str, object], ...] = field(
+        default=(), init=False, compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
@@ -196,14 +200,17 @@ class PydanticAIGroundedDecisionPort:
                 Agent,
                 BinaryContent,
                 DeferredToolRequests,
+                DeferredToolResults,
                 ExternalToolset,
                 ToolDefinition,
+                ToolReturn,
             )
             from pydantic_ai.exceptions import (
                 ModelAPIError,
                 UnexpectedModelBehavior,
                 UsageLimitExceeded,
             )
+            from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
             from pydantic_ai.usage import RunUsage, UsageLimits
         except ImportError:
             return self._invocation_failure(
@@ -225,6 +232,25 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_tool_resolution_code", None)
         object.__setattr__(self, "last_tool_resolution_detail", "")
         object.__setattr__(self, "last_discarded_protocol_call_count", 0)
+        pending = request.agent_context.delivery_store.pending_tool_call
+        outcome = request.agent_context.delivery_store.pending_tool_outcome
+        history_messages: tuple[Mapping[str, object], ...] = ()
+        if outcome is not None:
+            if (
+                pending is None
+                or not self.pending_exchange
+                or _exchange_call_id(self.pending_exchange) != pending.tool_call_id
+            ):
+                return self._invocation_failure(
+                    _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_exchange_unavailable"),
+                    request,
+                )
+            history_messages = self.pending_exchange
+        elif pending is not None:
+            return self._invocation_failure(
+                _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
+                request,
+            )
         try:
             packed = TurnPacker().pack(
                 request,
@@ -238,6 +264,7 @@ class PydanticAIGroundedDecisionPort:
                 call_profile=call_profile,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
+                history_messages=history_messages,
             )
             delivery = packed.delivery
             catalog = packed.catalog
@@ -248,11 +275,17 @@ class PydanticAIGroundedDecisionPort:
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
             object.__setattr__(self, "last_image_input_count", len(envelope.media))
             self._append_admitted_envelope(admitted)
-            instructions, user_prompt, toolset = _pydantic_model_boundary_codec(
+            instructions, user_prompt, toolset, message_history, deferred_results = _pydantic_model_boundary_codec(
                 envelope,
                 BinaryContent,
+                DeferredToolResults,
                 ExternalToolset,
+                ModelRequest,
+                ModelResponse,
+                ToolCallPart,
+                ToolReturn,
                 ToolDefinition,
+                UserPromptPart,
             )
             agent = Agent(
                 self.model,
@@ -273,12 +306,16 @@ class PydanticAIGroundedDecisionPort:
                     usage=usage,
                     usage_limits=limits,
                     model_settings=dict(envelope.model_settings),
+                    message_history=message_history,
+                    deferred_tool_results=deferred_results,
                 ),
                 phase=call_profile.phase.value,
                 envelope=envelope,
                 provider_error_type=ModelAPIError,
             )
             resolution_error = None
+            accepted_calls = initial_calls = ()
+            accepted_envelope = envelope
             decision, next_delivery_store, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
                 catalog,
@@ -313,11 +350,23 @@ class PydanticAIGroundedDecisionPort:
                 if isinstance(repair_admission, InvalidProviderEnvelope):
                     raise ValueError(f"{repair_admission.reason}: {repair_admission.detail}")
                 self._append_admitted_envelope(repair_admission)
-                repair_instructions, repair_user_prompt, repair_toolset = _pydantic_model_boundary_codec(
+                (
+                    repair_instructions,
+                    repair_user_prompt,
+                    repair_toolset,
+                    repair_history,
+                    repair_deferred,
+                ) = _pydantic_model_boundary_codec(
                     repair_envelope,
                     BinaryContent,
+                    DeferredToolResults,
                     ExternalToolset,
+                    ModelRequest,
+                    ModelResponse,
+                    ToolCallPart,
+                    ToolReturn,
                     ToolDefinition,
+                    UserPromptPart,
                 )
                 repair_agent = Agent(
                     self.model,
@@ -333,6 +382,8 @@ class PydanticAIGroundedDecisionPort:
                         usage=RunUsage(),
                         usage_limits=UsageLimits(request_limit=2),
                         model_settings=dict(repair_envelope.model_settings),
+                        message_history=repair_history,
+                        deferred_tool_results=repair_deferred,
                     ),
                     phase=repair_profile.phase.value,
                     envelope=repair_envelope,
@@ -363,6 +414,11 @@ class PydanticAIGroundedDecisionPort:
                     )
                 resolution_error = repair_error
                 self._set_tool_resolution(repair_error, accepted=decision is not None)
+                if decision is not None:
+                    accepted_calls = repaired_calls
+                    accepted_envelope = repair_envelope
+            elif decision is not None:
+                accepted_calls = initial_calls
             if decision is None:
                 return self._invocation_failure(
                     _tool_resolution_failure(resolution_error),
@@ -482,6 +538,17 @@ class PydanticAIGroundedDecisionPort:
         next_delivery_store = delivery_store.with_visible_public_results(
             delivery.public_results if delivery is not None else ()
         )
+        if len(accepted_calls) != 1 or accepted_envelope is None:
+            return self._invocation_failure(
+                _failure(ModelFailureKind.INTERNAL_ERROR, "accepted_call_identity_unavailable"),
+                request,
+                delivery,
+            )
+        accepted_call = accepted_calls[0]
+        next_delivery_store = next_delivery_store.with_pending_tool_call(
+            PendingToolCall(accepted_call.call_id, accepted_call.name, request.context_id)
+        )
+        object.__setattr__(self, "pending_exchange", _pending_exchange(accepted_envelope, accepted_call))
         invocation = ModelInvocationResult(
             output=ResolvedModelDecision(decision, metadata, next_delivery_store),
             metadata=metadata,
@@ -1160,8 +1227,14 @@ def _tool_resolution_failure(error: GroundedToolResolutionError | None) -> Model
 def _pydantic_model_boundary_codec(
     envelope: CanonicalProviderEnvelope,
     binary_content_type,
+    deferred_tool_results_type,
     external_toolset_type,
+    model_request_type,
+    model_response_type,
+    tool_call_part_type,
+    tool_return_type,
     tool_definition_type,
+    user_prompt_part_type,
 ):
     """Losslessly convert one admitted envelope to PydanticAI typed values."""
 
@@ -1190,7 +1263,70 @@ def _pydantic_model_boundary_codec(
         ],
         id=envelope.catalog.catalog_id,
     )
-    return envelope.instructions[0], prompt, toolset
+    message_history = []
+    if envelope.history_messages:
+        request_message, response_message = envelope.history_messages
+        request_part = tuple(request_message["parts"])[0]
+        response_part = tuple(response_message["parts"])[0]
+        message_history = [
+            model_request_type(
+                parts=[user_prompt_part_type(content=request_part["content"])]
+            ),
+            model_response_type(
+                parts=[
+                    tool_call_part_type(
+                        response_part["tool_name"],
+                        dict(response_part["arguments"]),
+                        response_part["tool_call_id"],
+                    )
+                ]
+            ),
+        ]
+    deferred_results = None
+    if envelope.tool_result is not None:
+        call_id = str(envelope.tool_result["tool_call_id"])
+        deferred_results = deferred_tool_results_type(
+            calls={
+                call_id: tool_return_type(
+                    return_value=to_json_compatible(envelope.tool_result["return_value"]),
+                    metadata=to_json_compatible(envelope.tool_result_metadata),
+                )
+            }
+        )
+    return envelope.instructions[0], prompt, toolset, message_history, deferred_results
+
+
+def _pending_exchange(
+    envelope: CanonicalProviderEnvelope,
+    call: ToolCall,
+) -> tuple[Mapping[str, object], ...]:
+    """Retain only the bounded request/call pair required by deferred results."""
+
+    return (
+        {
+            "kind": "request",
+            "parts": ({"part_kind": "user-prompt", "content": envelope.user_text},),
+        },
+        {
+            "kind": "response",
+            "parts": (
+                {
+                    "part_kind": "tool-call",
+                    "tool_call_id": call.call_id,
+                    "tool_name": call.name,
+                    "arguments": call.arguments,
+                },
+            ),
+        },
+    )
+
+
+def _exchange_call_id(exchange: tuple[Mapping[str, object], ...]) -> str:
+    try:
+        part = tuple(exchange[1]["parts"])[0]
+        return str(part["tool_call_id"])
+    except (IndexError, KeyError, TypeError):
+        return ""
 
 
 def _attempt_token_delta(

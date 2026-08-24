@@ -320,13 +320,75 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
         assert third.output is not None
         assert isinstance(third.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[2])
-        user_text = recorded["messages"][-1]["parts"][0]["content"][0]["content"]
-        payload = json.loads(user_text)
-        assert payload["latest_public_results"] == [
-            item.to_public_value()
+        response_part = recorded["messages"][-2]["parts"][0]
+        result_part = recorded["messages"][-1]["parts"][0]
+        assert result_part["part_kind"] == "tool-return"
+        assert result_part["tool_call_id"] == response_part["tool_call_id"]
+        assert tuple(result_part["content"]["items"]) == tuple(
+            item.public_value
             for item in third_context.delivery_store.public_result_inventory.records
-        ]
+        )
+        user_text = recorded["messages"][-1]["parts"][1]["content"][0]["content"]
+        payload = json.loads(user_text)
+        assert "latest_public_results" not in payload
         assert scripted.calls == 3
+
+    asyncio.run(scenario())
+
+
+def test_list_regions_returns_standard_call_correlated_tool_result() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("list-regions-tool-return", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                (
+                    "submit_final_response",
+                    {"content": "Region inventory received.", "evidence_refs": []},
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(ModelDecisionRequest("request:list-regions", first_context))
+        assert first.failure is None and first.output is not None
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+            next_delivery_store=first.output.next_delivery_store,
+        )
+        transition = first_context.delivery_store.reduce(step, step_index=1)
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            delivery_store=transition.next_store,
+        )
+        second = await policy.port.generate(ModelDecisionRequest("request:list-regions-answer", second_context))
+
+        assert second.failure is None and second.output is not None
+        assert isinstance(second.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        call_part = recorded["messages"][-2]["parts"][0]
+        return_part = recorded["messages"][-1]["parts"][0]
+        assert call_part["tool_name"] == "list_regions"
+        assert return_part["tool_call_id"] == call_part["tool_call_id"]
+        assert return_part["content"]["kind"] == "Page"
+        current_prompt = recorded["messages"][-1]["parts"][1]["content"][0]["content"]
+        assert "latest_public_results" not in json.loads(current_prompt)
+        physical = json.dumps(policy.port.envelope_history[1].physical_content(), default=str)
+        assert "result_lineage" not in physical
+        assert "record_digests" not in physical
+        assert "origin_context_id" not in physical
 
     asyncio.run(scenario())
 

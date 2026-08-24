@@ -16,7 +16,15 @@ from enum import Enum
 from typing import TypeAlias
 
 from pydantic_ai import BinaryContent
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from affordance_runtime.immutable import to_json_compatible
@@ -300,12 +308,36 @@ def normalize_recorded_provider_input(record: RecordedProviderInvocation) -> Map
 
 
 def _normalize_message(message: ModelMessage) -> Mapping[str, object]:
+    if isinstance(message, ModelResponse):
+        return {
+            "kind": "response",
+            "parts": tuple(
+                {
+                    "part_kind": "tool-call",
+                    "tool_name": part.tool_name,
+                    "arguments": _thaw(part.args_as_dict()),
+                    "tool_call_id": part.tool_call_id,
+                }
+                for part in message.parts
+                if isinstance(part, ToolCallPart)
+            ),
+        }
     if not isinstance(message, ModelRequest):
-        raise TypeError("Gate 3 recorder expected a PydanticAI ModelRequest")
+        raise TypeError("recorder expected a PydanticAI model message")
     parts = []
     for part in message.parts:
+        if isinstance(part, ToolReturnPart):
+            parts.append(
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": part.tool_name,
+                    "tool_call_id": part.tool_call_id,
+                    "content": _thaw(part.content),
+                }
+            )
+            continue
         if not isinstance(part, UserPromptPart):
-            raise TypeError("Gate 3 recorder expected only user prompt request parts")
+            raise TypeError("recorder expected user prompt or tool return request parts")
         content = part.content
         items = (content,) if isinstance(content, str) else tuple(content)
         normalized = []

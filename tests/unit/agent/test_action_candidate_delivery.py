@@ -27,6 +27,8 @@ from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
+    PendingToolCall,
+    PendingToolOutcome,
     PublicResultInventory,
     PublicResultRecord,
 )
@@ -89,6 +91,25 @@ def _pack(request, *, binder=None, supports_multimodal=False, perception_profile
         binder = CanonicalProviderEnvelopeBinder()
     elif isinstance(binder, GroundedPolicyContextBinder):
         binder = CanonicalProviderEnvelopeBinder(context_binder=binder)
+    pending = request.agent_context.delivery_store.pending_tool_call
+    history_messages = (
+        (
+            {"kind": "request", "parts": ({"part_kind": "user-prompt", "content": "prior"},)},
+            {
+                "kind": "response",
+                "parts": (
+                    {
+                        "part_kind": "tool-call",
+                        "tool_call_id": pending.tool_call_id,
+                        "tool_name": pending.tool_name,
+                        "arguments": {},
+                    },
+                ),
+            },
+        )
+        if pending is not None and request.agent_context.delivery_store.pending_tool_outcome is not None
+        else ()
+    )
     return TurnPacker().pack(
         request,
         binder=binder,
@@ -96,6 +117,7 @@ def _pack(request, *, binder=None, supports_multimodal=False, perception_profile
         call_profile=_PROFILE,
         supports_multimodal=supports_multimodal,
         perception_profile=perception_profile,
+        history_messages=history_messages,
     )
 
 
@@ -277,12 +299,20 @@ def _context_with_public_results(
     task, world, _actions, evaluation, _ = _context()
     actions = ActionSpace(world.observation_id, ())
     records = tuple(PublicResultRecord("read_region", "R2", value) for value in values)
+    pending_call = PendingToolCall("call:public-results", "read_region", "context:fixture")
     store = ObservationDeliveryStore(
         public_result_inventory=PublicResultInventory(
             world.observation_id,
             "sha256:" + "1" * 64,
             records,
-        )
+        ),
+        pending_tool_call=pending_call,
+        pending_tool_outcome=PendingToolOutcome(
+            pending_call,
+            {"kind": "Opened", "items": values},
+            "sha256:" + "2" * 64,
+            "items",
+        ),
     )
     context = ContextBuilder().build(
         task,
@@ -301,6 +331,8 @@ def _context_with_public_results(
     )
     isolated_store = ObservationDeliveryStore(
         public_result_inventory=context.delivery_store.public_result_inventory,
+        pending_tool_call=context.delivery_store.pending_tool_call,
+        pending_tool_outcome=context.delivery_store.pending_tool_outcome,
         inventories=(public_obligation.inventory,),
     )
     return replace(
@@ -1369,14 +1401,11 @@ def test_store_public_result_atoms_reach_physical_request_without_field_projecti
         ModelDecisionRequest(f"request:public-results-{count}", context),
         binder=GroundedPolicyContextBinder(),
     )
-    physical = json.loads(packed.admitted_envelope.envelope.user_text)
-    delivered = tuple(physical["latest_public_results"])
+    physical = packed.admitted_envelope.envelope.physical_content()
+    delivered = tuple(physical["messages"][-1]["parts"][0]["return_value"]["items"])
     admitted = dict(packed.admitted_record_counts)[DeliveryObligationKind.PUBLIC_RESULT.value]
 
-    assert delivered == tuple(
-        {"operation": "read_region", "source": "R2", "value": value}
-        for value in values[:admitted]
-    )
+    assert delivered == values[:admitted]
     assert tuple(item.public_value for item in packed.delivery.public_results) == values[:admitted]
     assert "[TRUNCATED]" not in packed.admitted_envelope.envelope.user_text
 
@@ -1402,13 +1431,10 @@ def test_generated_public_result_shapes_remain_atomic_through_physical_request(
     context = _context_with_public_results(values)
     packed = _pack(ModelDecisionRequest(f"request:generated-results-{count}-{depth}", context))
     admitted = len(packed.delivery.public_results)
-    physical = json.loads(packed.admitted_envelope.envelope.user_text)
+    physical = packed.admitted_envelope.envelope.physical_content()
 
     assert admitted >= 1
-    assert physical["latest_public_results"] == [
-        {"operation": "read_region", "source": "R2", "value": value}
-        for value in values[:admitted]
-    ]
+    assert physical["messages"][-1]["parts"][0]["return_value"]["items"] == values[:admitted]
 
 
 def test_public_result_budget_backoff_removes_only_whole_suffix_records() -> None:

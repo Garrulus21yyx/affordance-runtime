@@ -104,6 +104,8 @@ class CanonicalProviderEnvelope:
     instructions: tuple[str, ...]
     user_text: str
     history_messages: tuple[Mapping[str, object], ...]
+    tool_result: Mapping[str, object] | None
+    tool_result_metadata: Mapping[str, object] = field(repr=False, compare=False)
     media: tuple[CanonicalMediaRecord, ...]
     function_tools: tuple[CanonicalFunctionTool, ...]
     model_settings: Mapping[str, object]
@@ -133,8 +135,27 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope lineage is invalid")
         if len(self.instructions) != 1 or not self.instructions[0].strip():
             raise ValueError("ActionPolicy canonical envelope requires exactly one instruction")
+        if bool(self.history_messages) != bool(self.tool_result):
+            raise ValueError("deferred tool result requires its bounded call history")
+        if self.history_messages and len(self.history_messages) != 2:
+            raise ValueError("ActionPolicy retains exactly one unresolved call exchange")
         if self.history_messages:
-            raise ValueError("ActionPolicy history must be embedded in canonical user text")
+            try:
+                request_message, response_message = self.history_messages
+                prior_call = tuple(response_message["parts"])[0]
+                current_result = self.tool_result
+                assert current_result is not None
+                valid_exchange = (
+                    request_message["kind"] == "request"
+                    and response_message["kind"] == "response"
+                    and prior_call["part_kind"] == "tool-call"
+                    and prior_call["tool_call_id"] == current_result["tool_call_id"]
+                    and prior_call["tool_name"] == current_result["tool_name"]
+                )
+            except (AssertionError, IndexError, KeyError, TypeError):
+                valid_exchange = False
+            if not valid_exchange:
+                raise ValueError("deferred tool result does not match its prior call")
         if not self.user_text:
             raise ValueError("canonical provider envelope user text is empty")
         if self.parallel_tool_calls or self.model_settings.get("parallel_tool_calls") is not False:
@@ -147,6 +168,11 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope tool order differs from Catalog")
         object.__setattr__(self, "instructions", tuple(self.instructions))
         object.__setattr__(self, "history_messages", tuple(freeze_json(item) for item in self.history_messages))
+        if self.tool_result is not None:
+            object.__setattr__(self, "tool_result", freeze_json(self.tool_result))
+        object.__setattr__(self, "tool_result_metadata", freeze_json(self.tool_result_metadata))
+        if bool(self.tool_result) != bool(self.tool_result_metadata):
+            raise ValueError("deferred public return and private metadata must be paired")
         object.__setattr__(self, "media", tuple(self.media))
         object.__setattr__(self, "function_tools", tuple(self.function_tools))
         object.__setattr__(self, "model_settings", freeze_json(self.model_settings))
@@ -168,7 +194,52 @@ class CanonicalProviderEnvelope:
                 for item in self.media
             ),
         )
-        return ({"kind": "request", "parts": ({"part_kind": "user-prompt", "content": user_parts},)},)
+        history: list[Mapping[str, object]] = []
+        if self.history_messages:
+            prior_request, prior_response = self.history_messages
+            prior_prompt = tuple(prior_request["parts"])[0]
+            history.append(
+                {
+                    "kind": "request",
+                    "parts": (
+                        {
+                            "part_kind": "user-prompt",
+                            "content": (
+                                {"part_kind": "text", "content": prior_prompt["content"]},
+                            ),
+                        },
+                    ),
+                }
+            )
+            prior_call = tuple(prior_response["parts"])[0]
+            history.append(
+                {
+                    "kind": "response",
+                    "parts": (
+                        {
+                            "part_kind": "tool-call",
+                            "tool_name": prior_call["tool_name"],
+                            "arguments": to_json_compatible(prior_call["arguments"]),
+                            "tool_call_id": prior_call["tool_call_id"],
+                        },
+                    ),
+                }
+            )
+        result_part = (
+            {
+                "part_kind": "tool-return",
+                "tool_call_id": self.tool_result["tool_call_id"],
+                "tool_name": self.tool_result["tool_name"],
+                "content": self.tool_result["return_value"],
+            }
+            if self.tool_result is not None
+            else None
+        )
+        current_parts: tuple[Mapping[str, object], ...] = (
+            *((result_part,) if result_part is not None else ()),
+            {"part_kind": "user-prompt", "content": user_parts},
+        )
+        return (*history, {"kind": "request", "parts": current_parts})
 
     def physical_content(self) -> Mapping[str, object]:
         """Stable physical semantics; excludes Runtime-only lineage and object identity."""
@@ -183,9 +254,11 @@ class CanonicalProviderEnvelope:
             },
             "instructions": self.instructions,
             "messages": (
+                *self.history_messages,
                 {
                     "kind": "request",
                     "parts": (
+                        *((self.tool_result,) if self.tool_result is not None else ()),
                         {"part_kind": "user-prompt", "content": self.user_text},
                         *(
                             {
@@ -270,6 +343,7 @@ class CanonicalProviderEnvelopeBinder:
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
         attempt_phase: str | None = None,
+        history_messages: tuple[Mapping[str, object], ...] = (),
     ) -> CanonicalProviderEnvelope:
         if delivery.context_id != request.context_id or catalog.delivery_id != delivery.delivery_id:
             raise ValueError("canonical provider envelope inputs are not current siblings")
@@ -289,6 +363,7 @@ class CanonicalProviderEnvelopeBinder:
             call_profile=call_profile,
             output_token_reserve=output_token_reserve,
             attempt_phase=attempt_phase or call_profile.phase.value,
+            history_messages=history_messages,
         )
 
     def bind_representation_repair(
@@ -315,6 +390,8 @@ class CanonicalProviderEnvelopeBinder:
             output_token_reserve=output_token_reserve,
             attempt_phase=call_profile.phase.value,
             diagnostics=base,
+            history_messages=(),
+            tool_result=None,
         )
 
     def _create(
@@ -329,6 +406,7 @@ class CanonicalProviderEnvelopeBinder:
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
         attempt_phase: str,
+        history_messages: tuple[Mapping[str, object], ...],
     ) -> CanonicalProviderEnvelope:
         context = request.agent_context
         direct_refs = frozenset(delivery.manifest.executable_refs)
@@ -356,6 +434,8 @@ class CanonicalProviderEnvelopeBinder:
                 len(delivery.manifest.action_routes),
                 delivery.packing_backoff_count,
             ),
+            history_messages=history_messages,
+            tool_result=delivery.tool_result,
         )
 
     @staticmethod
@@ -372,6 +452,8 @@ class CanonicalProviderEnvelopeBinder:
         output_token_reserve: int,
         attempt_phase: str,
         diagnostics: object,
+        history_messages: tuple[Mapping[str, object], ...],
+        tool_result: object | None,
     ) -> CanonicalProviderEnvelope:
         tools = tuple(
             CanonicalFunctionTool(
@@ -411,7 +493,19 @@ class CanonicalProviderEnvelopeBinder:
             identity=identity,
             instructions=instructions,
             user_text=user_text,
-            history_messages=(),
+            history_messages=history_messages,
+            tool_result=(
+                {
+                    "part_kind": "tool-return",
+                    "tool_call_id": tool_result.tool_call_id,
+                    "tool_name": tool_result.tool_name,
+                    "return_value": tool_result.return_value,
+                    "failed": tool_result.failed,
+                }
+                if tool_result is not None
+                else None
+            ),
+            tool_result_metadata=(tool_result.metadata if tool_result is not None else {}),
             media=media,
             function_tools=tools,
             model_settings=settings,

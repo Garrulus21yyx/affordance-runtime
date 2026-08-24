@@ -20,6 +20,7 @@ from affordance_runtime.agent.context.world_transition import (
     PublicChangeKind,
     PublicWorldDelta,
 )
+from affordance_runtime.agent.decisions import PublicEvidenceResult
 from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import CurrentFinding
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -246,6 +247,58 @@ class PublicResultInventory:
     @property
     def visible_digest(self) -> str:
         return _public_digest(self.visible_record_digests)
+
+
+@dataclass(frozen=True)
+class PendingToolCall:
+    """One unresolved external call identity awaiting a paired typed result."""
+
+    tool_call_id: str
+    tool_name: str
+    origin_context_id: str = field(repr=False, compare=False, metadata={"serialize": False})
+
+    def __post_init__(self) -> None:
+        if (
+            not self.tool_call_id.strip()
+            or not self.tool_name.strip()
+            or not self.origin_context_id.startswith("context:")
+        ):
+            raise ValueError("pending external tool call identity is invalid")
+
+
+@dataclass(frozen=True)
+class PendingToolOutcome:
+    """Typed public outcome paired to one pending external call."""
+
+    call: PendingToolCall
+    public_value: Mapping[str, object]
+    result_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
+    record_field: str = ""
+    failed: bool = False
+
+    def __post_init__(self) -> None:
+        value = freeze_json(dict(self.public_value))
+        if (
+            not isinstance(self.call, PendingToolCall)
+            or not self.result_lineage.startswith("sha256:")
+            or self.record_field not in {"", "items", "matches"}
+            or type(self.failed) is not bool
+        ):
+            raise ValueError("pending external tool outcome is invalid")
+        object.__setattr__(self, "public_value", value)
+
+    def admitted_value(
+        self,
+        records: tuple[PublicResultRecord, ...],
+    ) -> Mapping[str, object]:
+        if not self.record_field:
+            return self.public_value
+        return freeze_json(
+            {
+                **dict(self.public_value),
+                self.record_field: tuple(item.public_value for item in records),
+            }
+        )
 
 
 @dataclass(frozen=True)
@@ -669,6 +722,12 @@ class ObservationDeliveryStore:
     public_result_inventory: PublicResultInventory | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
+    pending_tool_call: PendingToolCall | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
+    pending_tool_outcome: PendingToolOutcome | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
     active_read: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
     inventories: tuple[DeliveryInventorySnapshot, ...] = field(
         default=(), repr=False, compare=False, metadata={"serialize": False}
@@ -692,6 +751,16 @@ class ObservationDeliveryStore:
             self.public_result_inventory, PublicResultInventory
         ):
             raise TypeError("observation delivery public results must be a typed inventory")
+        if self.pending_tool_call is not None and not isinstance(
+            self.pending_tool_call, PendingToolCall
+        ):
+            raise TypeError("observation delivery pending call must be typed")
+        if self.pending_tool_outcome is not None and (
+            not isinstance(self.pending_tool_outcome, PendingToolOutcome)
+            or self.pending_tool_call is None
+            or self.pending_tool_outcome.call != self.pending_tool_call
+        ):
+            raise TypeError("observation delivery pending outcome must match its call")
         if self.active_read is not None and not isinstance(self.active_read, WorldDeliveryLens):
             raise TypeError("observation delivery active read must be a private typed cursor")
         inventories = tuple(self.inventories)
@@ -723,7 +792,27 @@ class ObservationDeliveryStore:
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             public_result_inventory=self.public_result_inventory,
+            pending_tool_call=self.pending_tool_call,
+            pending_tool_outcome=self.pending_tool_outcome,
             active_read=lens,
+            inventories=self.inventories,
+            action_query=self.action_query,
+            search_follow_ups=self.search_follow_ups,
+            requested_continuation_scope=self.requested_continuation_scope,
+        )
+
+    def with_pending_tool_call(self, call: PendingToolCall) -> "ObservationDeliveryStore":
+        """Install the sole unresolved provider call without changing delivery inventories."""
+
+        if not isinstance(call, PendingToolCall):
+            raise TypeError("pending provider call must be typed")
+        return ObservationDeliveryStore(
+            latest_effect=self.latest_effect,
+            local_deliveries=self.local_deliveries,
+            public_result_inventory=self.public_result_inventory,
+            pending_tool_call=call,
+            pending_tool_outcome=None,
+            active_read=self.active_read,
             inventories=self.inventories,
             action_query=self.action_query,
             search_follow_ups=self.search_follow_ups,
@@ -757,6 +846,8 @@ class ObservationDeliveryStore:
                 inventory,
                 visible_record_digests=tuple(item.digest for item in selected),
             ),
+            pending_tool_call=self.pending_tool_call,
+            pending_tool_outcome=self.pending_tool_outcome,
             active_read=self.active_read,
             inventories=self.inventories,
             action_query=self.action_query,
@@ -796,6 +887,8 @@ class ObservationDeliveryStore:
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             public_result_inventory=public_results,
+            pending_tool_call=self.pending_tool_call,
+            pending_tool_outcome=self.pending_tool_outcome,
             active_read=active_read,
             inventories=inventories,
             action_query=self.action_query,
@@ -844,6 +937,8 @@ class ObservationDeliveryStore:
             latest_effect=self.latest_effect,
             local_deliveries=self.local_deliveries,
             public_result_inventory=self.public_result_inventory,
+            pending_tool_call=self.pending_tool_call,
+            pending_tool_outcome=self.pending_tool_outcome,
             active_read=self.active_read,
             inventories=tuple(installed),
             action_query=self.action_query,
@@ -947,6 +1042,8 @@ class ObservationDeliveryStore:
                     if self.public_result_inventory is not None and capability.scope == "public_result"
                     else self.public_result_inventory
                 ),
+                pending_tool_call=self.pending_tool_call,
+                pending_tool_outcome=self.pending_tool_outcome,
                 active_read=self.active_read,
                 inventories=next_inventories,
                 action_query=self.action_query,
@@ -963,27 +1060,44 @@ class ObservationDeliveryStore:
         decision = getattr(step, "decision", None)
         operation = str(getattr(decision, "tool_name", ""))
         arguments = getattr(decision, "arguments", None)
-        result = getattr(decision, "result", None)
-        if not operation and getattr(step, "action_page_result", None):
+        raw_result = getattr(decision, "result", None)
+        evidence = raw_result if isinstance(raw_result, PublicEvidenceResult) else None
+        discovery = getattr(step, "action_page_result", None)
+        if not operation and discovery is not None:
             operation = "find_controls"
             arguments = {
                 "query": getattr(decision, "query", ""),
                 "continuation_scope": getattr(decision, "continuation_scope", ""),
             }
-            result = getattr(step, "action_page_result").to_public_value()
-        if operation not in {"read_region", "search_page_content", "read_next_page", "find_controls"} or not isinstance(
-            result, Mapping
-        ):
-            return DeliveryTransition(external, None)
-        if operation == "read_next_page" and result.get("kind") not in {"Opened", "Matches", "Page"}:
-            return DeliveryTransition(external, None)
+
+        pending_outcome = _pending_outcome(step, external.pending_tool_call, evidence)
+        if evidence is None:
+            if discovery is None:
+                if pending_outcome is None:
+                    return DeliveryTransition(external, None)
+                return DeliveryTransition(
+                    replace(external, pending_tool_outcome=pending_outcome),
+                    None,
+                )
+            result = discovery.to_public_value()
+        else:
+            result = evidence.value
 
         world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
         arguments_digest = _public_digest(arguments or {})
         result_digest = _public_digest(result)
-        items = _public_result_items(result)
-        effective_operation = _public_result_operation(operation, external)
-        source_scope = _public_result_source_scope(operation, arguments, items, external)
+        items = evidence.records if evidence is not None else ()
+        effective_operation = operation
+        source_scope = evidence.source_scope if evidence is not None else "action_query"
+        current_inventory = external.public_result_inventory
+        if (
+            evidence is not None
+            and (evidence.append_to_inventory or evidence.reuse_inventory)
+            and current_inventory is not None
+            and current_inventory.records
+        ):
+            effective_operation = current_inventory.records[0].operation
+            source_scope = current_inventory.records[0].source_scope
         result_records = tuple(PublicResultRecord(effective_operation, source_scope, item) for item in items)
         exact = next(
             (
@@ -1001,9 +1115,13 @@ class ObservationDeliveryStore:
                 arguments_digest,
                 result_digest,
             )
-            return DeliveryTransition(external, delta)
+            return DeliveryTransition(
+                replace(external, pending_tool_outcome=pending_outcome)
+                if pending_outcome is not None
+                else external,
+                delta,
+            )
 
-        current_inventory = external.public_result_inventory
         delivered = {
             digest
             for record in external.local_deliveries
@@ -1023,7 +1141,8 @@ class ObservationDeliveryStore:
         else:
             kind = InformationDeltaKind.NO_NEW_INFORMATION
         append_page = (
-            operation == "read_next_page"
+            evidence is not None
+            and evidence.append_to_inventory
             and current_inventory is not None
             and current_inventory.world_observation_id == str(getattr(getattr(step, "after_world", None), "observation_id", ""))
             and current_inventory.records
@@ -1031,6 +1150,9 @@ class ObservationDeliveryStore:
             and current_inventory.records[0].source_scope == source_scope
         )
         inventory_records = (
+            current_inventory.records
+            if evidence is not None and evidence.reuse_inventory and current_inventory is not None
+            else
             _unique_public_result_records((*current_inventory.records, *result_records))
             if append_page and current_inventory is not None
             else result_records
@@ -1047,12 +1169,12 @@ class ObservationDeliveryStore:
                 if append_page and current_inventory is not None
                 else (),
             )
-            if inventory_records
+            if inventory_records and not (evidence is not None and evidence.reuse_inventory)
             else current_inventory
-            if operation == "read_next_page"
+            if evidence is not None and evidence.reuse_inventory
             else None
         )
-        if operation == "find_controls":
+        if discovery is not None:
             public_inventory = current_inventory
         delta = InformationDelta(
             kind,
@@ -1065,8 +1187,7 @@ class ObservationDeliveryStore:
         )
         record = LocalDeliveryRecord(operation, world_digest, arguments_digest, result_digest, result_records)
         query_inventory = external.action_query
-        discovery = getattr(step, "action_page_result", None)
-        if operation == "find_controls" and discovery is not None and discovery.query:
+        if discovery is not None and discovery.query:
             query_inventory = StoredActionQuery(
                 discovery.query,
                 discovery.private_world_lineage,
@@ -1074,7 +1195,7 @@ class ObservationDeliveryStore:
                 discovery.private_inventory,
             )
         search_follow_ups = external.search_follow_ups
-        if operation in {"search_page_content", "read_next_page"} and result.get("kind") == "Matches":
+        if evidence is not None and result.get("kind") == "Matches":
             world_observation_id = (
                 external.active_read.world_observation_id
                 if external.active_read is not None
@@ -1090,12 +1211,14 @@ class ObservationDeliveryStore:
             latest_effect=external.latest_effect,
             local_deliveries=(*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
             public_result_inventory=public_inventory,
+            pending_tool_call=external.pending_tool_call,
+            pending_tool_outcome=pending_outcome or external.pending_tool_outcome,
             active_read=external.active_read,
             inventories=external.inventories,
             action_query=query_inventory,
             search_follow_ups=search_follow_ups,
             requested_continuation_scope=(
-                None if operation == "find_controls" else external.requested_continuation_scope
+                None if discovery is not None else external.requested_continuation_scope
             ),
         )
         return DeliveryTransition(next_store, delta)
@@ -1136,66 +1259,58 @@ class ObservationDeliveryStore:
             latest_effect=LatestEffect(step_index, cause[:240], dispatch, delta, inventory),
             local_deliveries=self.local_deliveries,
             public_result_inventory=self.public_result_inventory,
+            pending_tool_call=self.pending_tool_call,
+            pending_tool_outcome=self.pending_tool_outcome,
+            active_read=self.active_read,
+            inventories=self.inventories,
+            action_query=self.action_query,
+            search_follow_ups=self.search_follow_ups,
+            requested_continuation_scope=self.requested_continuation_scope,
         )
 
 
-def _public_result_items(result: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
-    raw = result.get("items", result.get("matches", ()))
-    if not isinstance(raw, (tuple, list)):
-        return ()
-    if len(raw) > _MAX_LOCAL_INFORMATION_ITEMS:
-        raise ValueError("local result owner exceeded its complete-record page bound")
-    items: list[Mapping[str, object]] = []
-    for value in raw:
-        items.append(dict(value) if isinstance(value, Mapping) else {"value": value})
-    return tuple(items)
+def _pending_outcome(
+    step: object,
+    pending: PendingToolCall | None,
+    evidence: PublicEvidenceResult | None,
+) -> PendingToolOutcome | None:
+    """Project one completed Runtime step back to its unresolved provider call."""
 
-
-def _public_result_operation(operation: str, store: ObservationDeliveryStore) -> str:
-    if operation != "read_next_page":
-        return operation
-    current_inventory = store.public_result_inventory
-    if current_inventory is not None and current_inventory.records:
-        return current_inventory.records[0].operation
-    lens = store.active_read
-    return {
-        "region": "read_region",
-        "find": "search_page_content",
-        "view_all": "list_regions",
-    }.get(lens.kind if lens is not None else "", operation)
-
-
-def _public_result_source_scope(
-    operation: str,
-    arguments: object,
-    items: tuple[Mapping[str, object], ...],
-    store: ObservationDeliveryStore,
-) -> str:
-    public_arguments = arguments if isinstance(arguments, Mapping) else {}
-    current_inventory = store.public_result_inventory
-    if operation == "read_next_page" and current_inventory is not None and current_inventory.records:
-        return current_inventory.records[0].source_scope
-    if operation == "read_region":
-        region_ref = str(public_arguments.get("region_ref", "")).strip()
-        if region_ref:
-            return region_ref
-    region_refs = tuple(
-        dict.fromkeys(
-            str(item.get("region_ref", "")).strip()
-            for item in items
-            if str(item.get("region_ref", "")).strip()
-        )
+    if pending is None:
+        return None
+    decision = getattr(step, "decision", None)
+    decision_call_id = str(getattr(decision, "tool_call_id", ""))
+    if not decision_call_id:
+        return None
+    if decision_call_id != pending.tool_call_id:
+        raise ValueError("completed Runtime step does not match its pending provider call")
+    if evidence is not None:
+        value = evidence.value
+        record_field = evidence.record_field
+    else:
+        discovery = getattr(step, "action_page_result", None)
+        if discovery is not None:
+            value = discovery.to_public_value()
+        else:
+            value = freeze_json(
+                {
+                    "status": str(getattr(step, "status_after", "running")),
+                    "feedback": str(getattr(step, "feedback", "completed")) or "completed",
+                }
+            )
+        record_field = ""
+    failed = str(getattr(step, "status_after", "")).casefold() in {
+        "blocked",
+        "failed",
+        "cancelled",
+    }
+    return PendingToolOutcome(
+        pending,
+        value,
+        _public_digest(value),
+        record_field,
+        failed,
     )
-    if len(region_refs) == 1:
-        return region_refs[0]
-    if operation == "search_page_content":
-        return "query"
-    if operation == "find_controls":
-        return "action_query"
-    lens = store.active_read
-    if operation == "read_next_page" and lens is not None:
-        return "active_read"
-    return operation
 
 
 def _unique_public_result_records(
