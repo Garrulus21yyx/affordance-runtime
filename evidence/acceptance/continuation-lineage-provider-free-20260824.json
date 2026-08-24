@@ -1,0 +1,58 @@
+{
+  "schema": "continuation-lineage-provider-free.v1",
+  "date": "2026-08-24",
+  "falsified_revision": "0ec7bae2",
+  "implementation_revision": "8cec21db0f66990efad5118215f6d60c7d9b02ec",
+  "source_tree": "e0589e6ae9786a8a6bc8662b1487e9ff1891e5a6",
+  "test_tree": "20c89f45682ca1f6c1c61cb93e1d738ae3dbf926",
+  "status": "provider_free_passed_fresh_review_pending",
+  "overall_status": "reopened_non_closed",
+  "execution_profile": {
+    "python": "/home/yang/.venvs/affordance-browsergym-py312/bin/python",
+    "provider_attempts": 0,
+    "live_provider_run": false,
+    "live_benchmark_run": false,
+    "task21_replay": false,
+    "bounded_cohort": "stopped"
+  },
+  "falsification": {
+    "trigger": "World changes while cursor_progress and naked requested scope are the only changing Store fields",
+    "mechanism": "for_world returned before cursor normalization; same-name scope could promote a different inventory",
+    "shared_root": "continuation identity was duplicated as a lineaged cursor and an unlineaged foreground scope"
+  },
+  "owner_contract": {
+    "continuation_key": [
+      "scope",
+      "kind",
+      "world_lineage",
+      "action_lineage",
+      "result_lineage",
+      "order_digest"
+    ],
+    "cursor_progress": "ContinuationKey -> offset",
+    "foreground_request": "ContinuationKey | None",
+    "world_transition": "ObservationDeliveryStore.for_world normalizes every lineaged field before identity return",
+    "plan_projection": "foreground iff current DeliveryInventorySnapshot.key equals Store.foreground_request"
+  },
+  "properties": {
+    "naked_requested_scope_deleted": "passed",
+    "complete_key_cursor_lookup_only": "passed",
+    "total_world_normalization_generated_field_compositions": "passed",
+    "foreground_implies_surviving_cursor": "passed",
+    "same_world_offset_and_foreground_survive": "passed",
+    "same_scope_new_world_restarts_at_zero": "passed",
+    "world_action_result_order_mutation_never_reuses_cursor": "passed through production ContextBuilder and ActionDeliveryPlan",
+    "old_world_capability_returns_typed_stale": "passed",
+    "stale_commit_fails_closed": "passed",
+    "no_task_site_ref_or_comment_specialization": "passed"
+  },
+  "verification": {
+    "focused": "184 passed",
+    "full_pytest": "1669 passed, 19 skipped",
+    "ruff": "passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "production_negative_searches": "passed"
+  },
+  "next_step": "independent fresh-context read-only review; no provider/live/Task21 execution"
+}

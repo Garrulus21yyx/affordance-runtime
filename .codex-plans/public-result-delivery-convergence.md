@@ -123,7 +123,7 @@ Live and cohort execution remain stopped.
      inventory installation in Store. Rebuilding the next Plan against fresh World/ActionSpace either reapplies the
      cursor to matching lineage or fails typed stale/reset.
 
-17. **in_progress — Normalize continuation identity with one complete key**
+17. **completed — Normalize continuation identity with one complete key**
    - Replace the unlineaged `requested_continuation_scope` duplicate with a typed complete continuation key shared by
      cursor progress and foreground request.
    - Make `for_world` total over every lineaged Store field before any identity return, and clear foreground whenever
@@ -132,6 +132,9 @@ Live and cohort execution remain stopped.
      world/action/result/order change starts at offset zero and normal priority.
    - Verify with generated Store-field normalization/key mutation properties plus same-World and changed-World
      vertical witnesses. No live/provider execution.
+   - Implementation `8cec21db`; focused `184 passed`, full `1669 passed / 19 skipped`, Ruff, compileall, diff and
+     negative searches pass. Provider/live attempts are zero. Evidence is
+     `evidence/acceptance/continuation-lineage-provider-free-20260824.json`; independent fresh review remains pending.
 
 18. **completed — Provider-free vertical acceptance and evidence commit**
    - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`

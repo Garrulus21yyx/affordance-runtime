@@ -11,7 +11,8 @@ owner repair provider-free verified / fresh-context review passed / held-out rer
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
-provider-protocol and delivery-state convergence implemented and provider-free verified; independent fresh-context review pending /
+provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
+complete-key continuation repair provider-free verified; independent fresh-context review pending /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -316,6 +317,18 @@ The cutover deletes the production fields and paths that encode the old shared s
 
 Generic lossy projection remains available only for explicitly diagnostic/private views. It is never an admissible
 path for typed public evidence or provider call/result messages.
+
+The continuation-currentness review of status revision `0ec7bae2` falsified one lifecycle detail in the first
+provider-free convergence checkpoint: Store still represented foreground twice, as a lineaged cursor plus a naked
+scope, and `for_world` could return before cursor normalization. The owner repair at `8cec21db` makes
+`ContinuationKey(scope, kind, World, ActionSpace, result, order)` the shared identity for cursor progress and foreground,
+normalizes every lineaged Store field before identity reuse, and requires exact inventory-key equality in Plan.
+Generated Store-field combinations and production ContextBuilder mutations prove reset on each lineage change, while
+same-World continuation preserves its offset. Focused `184 passed` and full `1669 passed / 19 skipped` verification,
+Ruff, compileall, diff and negative searches pass with zero provider/live attempts. Evidence:
+[`continuation-lineage-provider-free-20260824.json`](../evidence/acceptance/continuation-lineage-provider-free-20260824.json).
+This remains provider-free implementation evidence pending an independent fresh-context review; Overall is non-closed
+and the bounded cohort remains stopped.
 
 #### Reuse boundary and remaining custom surface
 
@@ -706,7 +719,7 @@ World, loop, planner, workflow graph, memory system, or state machine.
 | `WorldDeliveryIndex` | derive one unnumbered structural/container/region index from that World | model refs, presentation order, continuation state, prompt selection |
 | complete `ActionSpace` | enumerate current legal semantic action routes and private bindings | model visibility, ranking, pagination, execution |
 | `CanonicalPublicWorldProjection` | allocate public `E/N/F/R` refs and one stable public order exactly once | legality, temporal state, prompt capacity |
-| `ObservationDeliveryStore` | own current effect/local inventories, private cursors, requested scope, staleness, and cursor transitions | ranking, rendering, token fitting, tool schemas |
+| `ObservationDeliveryStore` | own current effect/local inventories, complete-key private cursors/foreground, staleness, and cursor transitions | ranking, rendering, token fitting, tool schemas |
 | `ActionRecallSet` + `ActionDeliveryPlan` | preserve complete recall and express one immutable per-turn priority/obligation plan | deleting legal routes, mutating cursors, declaring prompt admission |
 | `TurnPacker` | choose bounded World records, complete atomic action-route fragments, and independent visual evidence under the supplied request profile | full-World truth, cross-turn state, semantic action legality, provider transport |
 | `DeliveryManifest` | record exactly the complete `ActionRouteFragment` records admitted from the DeliveryPlan | inferring or authorizing routes from media marks or refs after rendering |
@@ -868,18 +881,19 @@ true local-result inventories, and every persistent private cursor transition. C
 belong only to the immutable per-turn `ActionDeliveryPlan`:
 
 ```text
-DeliveryInventoryKey =
-  World/ActionSpace/effect-or-local-result lineage
-  + obligation kind
+ContinuationKey =
+  public scope + obligation kind
+  + World lineage + ActionSpace lineage
+  + effect-or-local-result lineage
   + deterministic order digest
 
-DeliveryCursorState = DeliveryInventoryKey + offset
+DeliveryCursorState = ContinuationKey + offset
 
 ObservationDeliveryStore =
   latest_effect
   true local result inventories / active_read
-  small cursor progress by bounded public scope
-  requested_foreground_scope | None
+  cursor_progress: ContinuationKey → offset
+  foreground_request: ContinuationKey | None
   currentness/staleness rules
 ```
 
@@ -901,7 +915,7 @@ suffix_exists = next_offset < inventory_size
 ```
 
 If `suffix_exists`, the capability is present even when `admitted_count == 0`. Resolving a zero-prefix continuation
-keeps the offset unchanged, records that scope as `requested_foreground_scope`, and returns an immutable next Store.
+keeps the offset unchanged, records its complete key as `foreground_request`, and returns an immutable next Store.
 Only the committed local `StepResult` may install it through `Store.reduce` and `RunState.apply`. On the next turn that
 eligible scope is the derived foreground and its first atomic record is required; failure to fit it returns typed
 `context_capacity`. A positive admitted count advances by exactly that count. Fresh World/ActionSpace/effect/local
@@ -911,7 +925,7 @@ clear effect or page-directory continuations.
 | Current path | Cutover |
 |---|---|
 | Store exposes generic `cursor_offset`/`with_advanced_cursor` while Plan reconstructs cursor meaning | Plan owns the immutable action inventory snapshot; Store validates and commits only typed cursor progress |
-| Plan copies `requested_continuation_scope` and separately derives foreground | pure projection consumes matching persisted cursor/requested scope; fresh lineage resets or fails typed stale |
+| Plan copies a naked requested scope and separately derives foreground | pure projection consumes one matching complete cursor/foreground key; any lineage change resets or fails typed stale |
 | Catalog checks `0 < admitted < len(remaining)` and resolver repeats the check | delete both interpretations; Catalog consumes frozen capabilities and resolver applies their Store-owned transition |
 | separate world/action continuation bindings derive offsets | both bind the same `DeliveryContinuationCapability` algebra; only public tool vocabulary differs |
 | policy/bridge carries an untyped `next_delivery_store`; a committed snapshot can suppress an independent same-step GUI effect | policy returns only an immutable call-correlated typed decision; every local/GUI result is committed in `StepResult`, and `ObservationDeliveryStore.reduce(previous, step)` alone constructs the next Store |

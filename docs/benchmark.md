@@ -11,7 +11,8 @@ owner repair provider-free verified / fresh-context review passed / held-out rer
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
-provider-protocol and delivery-state convergence provider-free verified; independent fresh-context review pending /
+provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
+complete-key continuation repair provider-free verified; independent fresh-context review pending /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -223,6 +224,18 @@ verification is `155 passed`; full verification is `1666 passed / 19 skipped`, p
 production negative searches. PydanticAI Slim is `2.33.0`; provider/live/Task21 attempts are zero. This is implementation
 completion, not closure: Overall remains reopened/non-closed, independent fresh-context review is pending, and the
 bounded cohort remains stopped.
+
+The subsequent continuation-currentness review falsified only the continuation lifecycle portion of that checkpoint.
+At revision `0ec7bae2`, Store retained both a lineaged cursor and a naked requested scope; `for_world` could return before
+normalizing the cursor, after which a same-name scope in a fresh World could become foreground. The complete-key repair
+at `8cec21db` removes the duplicate scope truth: cursor progress and foreground now share
+`(scope, kind, World, ActionSpace, result, order)` identity, World transition normalization is total, and Plan promotion
+requires exact key equality. Generated Store-field compositions, production ContextBuilder mutations of each lineage,
+and same-World/changed-World witnesses pass. Focused verification is `184 passed`; full verification is
+`1669 passed / 19 skipped`, plus Ruff, compileall, diff and negative searches. Evidence:
+[`continuation-lineage-provider-free-20260824.json`](../evidence/acceptance/continuation-lineage-provider-free-20260824.json).
+Provider/live/Task21 attempts are zero. This is provider-free implementation evidence, not closure; independent fresh
+review is pending and the cohort remains stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 
