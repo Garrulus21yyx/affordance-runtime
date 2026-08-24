@@ -1130,11 +1130,9 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert all(ref.startswith("E") for ref in actionable_refs)
 
     activate_spec = next(item for item in catalog.specs if item.name == "activate")
-    branches = activate_spec.input_schema.get("oneOf", (activate_spec.input_schema,))
+    activate_binding = catalog.bindings[catalog.specs.index(activate_spec)]
     admitted_refs = {
-        ref
-        for branch in branches
-        for ref in branch["properties"]["target"]["enum"]
+        item.selector_values["target"] for item in activate_binding.private_resolutions
     }
     assert admitted_refs == {close_ref, *actionable_refs}
 
@@ -1155,7 +1153,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     initial = ToolCall("activate", {"target": "E114"}, "call:initial")
     with pytest.raises(GroundedToolResolutionError) as captured:
         _resolve_catalog_call(catalog, initial, expected_context_id=context.context_id)
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    assert captured.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
     feedback = grounded_tool_rejection_decision(
         captured.value,
@@ -1164,7 +1162,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
         context,
     )
     assert isinstance(feedback, LocalToolResult)
-    assert feedback.result["failure_kind"] == "invalid_tool_arguments"
+    assert feedback.result["failure_kind"] == "tool_grounding_gap"
     assert feedback.result["dispatch"] == "not_sent"
     assert feedback.result["world_changed"] is False
     assert feedback.result["supported_operations"] == ()
@@ -1828,7 +1826,7 @@ def test_single_target_action_still_requires_the_current_public_reference() -> N
     activate = next(item for item in catalog.specs if item.name == "activate")
 
     assert to_json_compatible(activate.input_schema)["required"] == ["target"]
-    assert to_json_compatible(activate.input_schema)["properties"]["target"]["enum"] == ["E3"]
+    assert "enum" not in to_json_compatible(activate.input_schema)["properties"]["target"]
     outcome = _resolve_catalog_call(
         catalog,
         ToolCall("activate", {"target": "E3"}),

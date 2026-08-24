@@ -251,6 +251,7 @@ class RecordingPydanticModel:
                 "last_schema_action",
             }:
                 name, arguments = _select_schema_action(
+                    messages,
                     info,
                     last=scripted == "last_schema_action",
                 )
@@ -263,7 +264,7 @@ class RecordingPydanticModel:
                 )
                 self.last_gui_call = (name, dict(arguments))
             elif scripted == "continue_until_action":
-                name, arguments = _select_schema_action(info)
+                name, arguments = _select_schema_action(messages, info)
                 self.last_gui_call = (name, dict(arguments))
             elif scripted == "repeat_last_gui_call":
                 assert self.last_gui_call is not None
@@ -427,33 +428,56 @@ def _select_current_tool_call(
 
 
 def _select_schema_action(
+    messages: list[ModelMessage],
     info: AgentInfo,
     *,
     last: bool = False,
 ) -> tuple[str, dict[str, object]]:
-    """Choose one action solely from the actual provider-visible schema."""
+    """Choose one visible current ref and apply the fixed public action schema."""
 
-    tools = reversed(info.function_tools) if last else info.function_tools
-    for tool in tools:
-        schema = tool.parameters_json_schema
-        if not _schema_has_action_operand(schema):
+    tools = {tool.name: tool for tool in info.function_tools}
+    routes = _visible_action_routes(messages)
+    for operation, source_ref, destination_ref in reversed(routes) if last else routes:
+        tool = tools.get(operation)
+        if tool is None:
             continue
-        value = _schema_example(schema, last=last)
-        if isinstance(value, dict):
-            return tool.name, value
-    raise AssertionError("actual PydanticAI request offered no schema-described action route")
+        arguments = _schema_example_for_operand_ref(
+            tool.parameters_json_schema,
+            source_ref,
+        )
+        if arguments is None:
+            continue
+        if destination_ref:
+            arguments["destination"] = destination_ref
+        return tool.name, arguments
+    raise AssertionError("actual PydanticAI request offered no visible current action route")
 
 
-def _schema_has_action_operand(schema: Mapping[str, object]) -> bool:
-    properties = schema.get("properties", {})
-    if isinstance(properties, Mapping) and ({"target", "source"} & set(properties)):
-        return True
-    return any(
-        isinstance(branch, Mapping) and _schema_has_action_operand(branch)
-        for keyword in ("oneOf", "anyOf")
-        for branch in schema.get(keyword, ())
-        if isinstance(schema.get(keyword), Sequence)
-    )
+def _visible_action_routes(
+    messages: list[ModelMessage],
+) -> tuple[tuple[str, str, str], ...]:
+    public_payload = json.loads(_latest_public_text(messages))
+    observation = str(public_payload["observation"])
+    routes = []
+    for line in observation.splitlines():
+        match = re.search(
+            r"^\s*rank=[0-9]+\s+\[(E[1-9][0-9]{0,3})\]\s+([a-z][a-z0-9_]*)\b",
+            line,
+        )
+        if match is None:
+            continue
+        destination = re.search(
+            r'destinations=.*?"target"\s*:\s*"(E[1-9][0-9]{0,3})"',
+            line,
+        )
+        routes.append(
+            (
+                match.group(2),
+                match.group(1),
+                destination.group(1) if destination is not None else "",
+            )
+        )
+    return tuple(routes)
 
 
 def _select_schema_action_for_label(
@@ -502,6 +526,10 @@ def _schema_example_for_operand_ref(
             and (
                 properties[name].get("const") == ref
                 or ref in properties[name].get("enum", ())
+                or (
+                    isinstance(properties[name].get("pattern"), str)
+                    and re.fullmatch(str(properties[name]["pattern"]), ref) is not None
+                )
             )
         ),
         None,

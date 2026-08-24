@@ -377,7 +377,11 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
 
     tool = next(item for item in catalog.specs if item.name == "select_option")
     target_ref = context.actions.options[0].target_ref
-    assert tool.input_schema["properties"]["target"]["enum"] == (target_ref,)
+    assert "enum" not in tool.input_schema["properties"]["target"]
+    assert any(
+        item.selector_values["target"] == target_ref
+        for item in catalog.bindings[catalog.specs.index(tool)].private_resolutions
+    )
     assert target_ref not in rendered.manifest.executable_refs
     actor_nodes = {
         node.ref: node
@@ -614,11 +618,9 @@ def test_read_region_returns_directly_without_changing_next_context_action_autho
     activate = next(item for item in second_catalog.specs if item.name == "activate")
 
     assert any(projection in rendered for projection in ("projection=page_map", "projection=full"))
-    branches = activate.input_schema.get("oneOf", (activate.input_schema,))
+    activate_binding = second_catalog.bindings[second_catalog.specs.index(activate)]
     assert {
-        ref
-        for branch in branches
-        for ref in branch["properties"]["target"]["enum"]
+        item.selector_values["target"] for item in activate_binding.private_resolutions
     } == {
         item.target_ref for item in second.complete_actions if item.operation == "activate"
     }

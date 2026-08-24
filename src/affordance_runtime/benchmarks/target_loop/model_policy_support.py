@@ -25,9 +25,13 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
             def do_POST(self):  # noqa: N802
                 owner.http_requests += 1
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                option = body["tools"][0]["function"]
+                option = next(
+                    item["function"]
+                    for item in body["tools"]
+                    if _action_properties(item["function"]["parameters"])
+                )
                 schema = option["parameters"]
-                properties = schema["properties"]
+                properties = _action_properties(schema)
                 arguments = {
                     name: properties[name]["enum"][0]
                     for name in schema.get("required", ())
@@ -35,12 +39,9 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                 }
                 if "target" in schema.get("required", ()) and "target" not in arguments:
                     operation = re.escape(option["name"])
-                    context_text = "\n".join(
-                        str(message.get("content", ""))
-                        for message in body["messages"]
-                    )
+                    context_text = "\n".join(_public_text_fragments(body["messages"]))
                     matches = re.findall(
-                        rf"\[([^\]\n]+)\][^\n]*verbs=[^\n]*\b{operation}\b",
+                        rf"\[(E[1-9][0-9]{{0,3}})\][^\n]*verbs=[^\n]*\b{operation}\b",
                         context_text,
                     )
                     target_ref = next(
@@ -125,3 +126,37 @@ def local_http_policy(environment: ModelPolicyHttpEnvironment) -> ModelBackedAge
         },
         call_timeout_s=2.0,
     )
+
+
+def _action_properties(schema: object) -> dict[str, object]:
+    if not isinstance(schema, dict):
+        return {}
+    properties = schema.get("properties")
+    if isinstance(properties, dict) and ({"target", "source"} & set(properties)):
+        return properties
+    for keyword in ("oneOf", "anyOf"):
+        branches = schema.get(keyword, ())
+        if isinstance(branches, list):
+            for branch in branches:
+                found = _action_properties(branch)
+                if found:
+                    return found
+    return {}
+
+
+def _public_text_fragments(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, dict):
+        return tuple(
+            fragment
+            for item in value.values()
+            for fragment in _public_text_fragments(item)
+        )
+    if isinstance(value, list):
+        return tuple(
+            fragment
+            for item in value
+            for fragment in _public_text_fragments(item)
+        )
+    return ()

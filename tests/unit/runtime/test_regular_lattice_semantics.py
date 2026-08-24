@@ -149,11 +149,9 @@ def test_projection_publishes_generic_grid_facts_without_model_objective_constru
     assert "grid_coordinate_confidence=" not in observation
 
     activate = next(spec for spec in action_catalog.specs if spec.name == "activate")
-    branches = activate.input_schema.get("oneOf", (activate.input_schema,))
+    activate_binding = action_catalog.bindings[action_catalog.specs.index(activate)]
     delivered_refs = {
-        ref
-        for branch in branches
-        for ref in branch["properties"]["target"]["enum"]
+        item.selector_values["target"] for item in activate_binding.private_resolutions
     }
     assert delivered_refs
     assert delivered_refs <= {item.target_ref for item in context.complete_actions}

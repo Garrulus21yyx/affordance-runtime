@@ -12,13 +12,16 @@ large-page liveness, viewport-grounded media, canonical public-identity, and lin
 complete. The current convergence patch additionally makes control discovery a real filter, publishes BrowserGym's
 official global navigation actions only for WebArena-family profiles, counts same-World discovery loops in Monitor,
 applies proactive SDK-history processing, byte-bounds the PageMap directory without shrinking current World, and
-keeps task-ranked current actions ahead of incidental browser focus when only a bounded action prefix fits.
+keeps task-ranked current actions ahead of incidental browser focus when only a bounded action prefix fits. The
+current action-boundary repair also makes that rank purely presentational: registry-owned action tools use stable
+E-ref-shaped schemas, while the existing complete current `ActionSpace` resolver alone validates the selected ref,
+operation, destination, parameters, and private action identity.
 Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused action-delivery/Monitor/PydanticAI surface passes `156` tests with
-`3` skipped; the full suite passes `1677` with `25` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
+Current provider-free verification: the focused action-schema/resolver/delivery/PydanticAI surface passes `178`
+tests; the full suite passes `1684` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
 currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
 recovery-eligibility, or async-liveness defect in this bounded implementation.
 
@@ -319,15 +322,19 @@ the provider did not hang.
 The owner-level contract is now:
 
 ```text
-explicit find_controls result, when present
--> complete same-World query capability set
-otherwise
--> task-ranked automatic current-action prefix
--> incidental focus/container routes
--> remaining current inventory recoverable through find_controls
+complete fresh ActionSpace
+-> private current resolver for every supported operation
+
+task-ranked prefix + incidental focus/container routes
+-> bounded model-visible observation only
+
+find_controls(query)
+-> bounded current E-ref matches when the visible prefix is insufficient
 ```
 
 Focus remains visible state and an executable route; it is no longer entitled to displace the task-ranked prefix.
+Neither focus nor the ranker can remove a legal current action from the resolver. A syntactically valid but unavailable
+or stale E-ref fails as a typed grounding gap before Binder/Executor.
 Monitor also renders recovery from the typed producer: action-discovery loops tell the model to use a returned control
 or materially change route, while an exact read/search replay points to the same tool's `next_cursor`, a different
 relevant region, `find_controls`, or browser navigation. No new action authority, retrieval index, cursor type,
@@ -412,23 +419,25 @@ continuation tool and no private public-result inventory. If matching routes exc
 narrower natural-language query. Action discovery never executes a control and never turns readable `N/F/R` refs into
 executable `E` refs.
 
-The returned page and the next same-World catalog share one route contract:
+The returned page and the next same-World catalog share one current-World contract:
 
 ```text
 find_controls ToolReturn contains (verb, E-ref[, destination])
--> ActionDeliveryPlan closes that exact route over current ActionSpace
--> TurnPacker admits the complete bounded query capability set
--> next ToolCatalog accepts every returned route
+-> registry-owned action tool accepts the stable E-ref argument shape
+-> current complete ActionSpace resolver validates the exact operation/route/domain
+-> SelectAction carries the existing private action identity to Binder
 ```
 
-The soft packing target may reduce unrelated base/effect/interaction inventory, but it cannot turn an already returned
-control into a visible but uncallable ref. Hard capacity remains the only reason this whole bounded set can be rejected.
+The soft packing target may reduce the visible candidate prefix, but it cannot change the action tool shape or current
+resolver membership. `ActionDeliveryPlan` and `DeliveryManifest` therefore describe what the model was shown; they are
+not a second action-authority or allowlist.
 
 ### GUI actions
 
 ```text
 current E-ref + semantic operation
--> Catalog resolver
+-> stable registry tool schema
+-> complete current ActionSpace resolver
 -> Binder resolves private current BrowserGym binding
 -> Executor dispatches once
 -> stable post-action capture
@@ -444,11 +453,17 @@ Browser-global navigation uses that same route. When the caller explicitly selec
 profile (the WebArena runner does so), the adapter projects one current `browser_context` subject and the official
 BrowserGym primitives
 `goto`, `go_back`, `go_forward`, `new_tab`, `tab_focus`, and `tab_close`. `tab_focus` is offered only with a current
-alternative tab and its schema enumerates current indices; the other actions are offered by the profile and validated
-by their ordinary schemas. MiniWoB receives no browser-global additions. These are ordinary ActionSpace options that
+alternative tab; its public schema accepts a non-negative index and the current resolver enforces the exact available
+tab domain. The other actions are offered by the profile and validated by their ordinary schemas. MiniWoB receives no browser-global additions. These are ordinary ActionSpace options that
 pass through Catalog, Binder, currentness probing, Executor, stable capture, and fresh World—not local-tool shortcuts.
 The adapter never infers this capability from task text or a benchmark/task ID; unsupported or duplicate profile
 entries fail before World projection.
+
+This boundary matches the mature BrowserGym/AgentLab shape: the current observation carries element identifiers while
+the action vocabulary remains a small fixed set such as `click(bid)` and `fill(bid, text)`. AgentOccam likewise improves
+performance by aligning and pruning observations/actions and selectively replaying useful history, not by requiring a
+task ranker to authorize each control. In this project E-refs are the public observation identifiers, the capability
+registry owns the fixed verbs, and the current resolver is the fail-closed execution boundary.
 
 ### Call/result pairing
 

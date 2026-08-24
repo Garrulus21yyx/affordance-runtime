@@ -122,7 +122,11 @@ def test_single_target_uses_stable_operation_and_explicit_target() -> None:
     assert tool.public_spec.name == "activate"
     assert tool.selector_mode is SelectorMode.CURRENT_TARGET
     assert tool.public_spec.input_schema["required"] == ("target",)
-    assert tool.public_spec.input_schema["properties"]["target"]["enum"] == ("E1",)
+    assert tool.public_spec.input_schema["properties"]["target"] == {
+        "type": "string",
+        "description": "current executable E-ref",
+        "pattern": "^(E)([1-9][0-9]{0,3})$",
+    }
 
 
 def test_one_stable_tool_contains_all_current_targets() -> None:
@@ -130,25 +134,24 @@ def test_one_stable_tool_contains_all_current_targets() -> None:
 
     assert len(tools) == 1
     assert tools[0].public_spec.name == "activate"
+    assert "enum" not in tools[0].public_spec.input_schema["properties"]["target"]
     assert {
-        ref
-        for branch in _branches(tools[0])
-        for ref in branch["properties"]["target"]["enum"]
+        item.selector_values["target"] for item in tools[0].private_resolutions
     } == {"E1", "E2", "E3"}
     assert len(tools[0].private_resolutions) == 3
 
 
 @given(st.integers(min_value=1, max_value=64))
-def test_unary_selector_schema_is_referentially_closed(count: int) -> None:
+def test_unary_selector_schema_is_stable_while_private_resolution_is_closed(count: int) -> None:
     tool = _compile(*(_candidate(index) for index in range(1, count + 1)))[0]
     catalog = _catalog(tool)
     offered = tuple(item.selector_values["target"] for item in tool.private_resolutions)
 
-    assert {
-        ref
-        for branch in _branches(tool)
-        for ref in branch["properties"]["target"]["enum"]
-    } == set(offered)
+    assert validate_value(
+        {"target": "E9999"},
+        tool.public_spec.input_schema,
+        path="command",
+    ) is None
     assert len(set(offered)) == len(offered)
     for resolution in tool.private_resolutions:
         target = resolution.selector_values["target"]
@@ -196,11 +199,7 @@ def test_business_enums_merge_publicly_but_remain_exact_per_target() -> None:
     )[0]
     catalog = _catalog(tool)
 
-    enum_by_target = {
-        branch["properties"]["target"]["enum"][0]: tuple(branch["properties"]["value"]["enum"])
-        for branch in _branches(tool)
-    }
-    assert enum_by_target == {"E1": ("A", "B"), "E2": ("B", "C")}
+    assert tool.public_spec.input_schema["properties"]["value"] == {"type": "string"}
     accepted = resolve_catalog_call(
         catalog,
         ToolCall("select_option", {"target": "E2", "value": "C"}),
@@ -231,13 +230,13 @@ def test_required_destination_uses_source_and_destination_and_resolves_exact_pai
     assert tool.selector_mode is SelectorMode.CURRENT_ENDPOINTS
     pairs = {
         (
-            branch["properties"]["source"]["enum"][0],
-            branch["properties"]["destination"]["enum"][0],
+            item.selector_values["source"],
+            item.selector_values["destination"],
         )
-        for branch in _branches(tool)
+        for item in tool.private_resolutions
     }
     assert pairs == {("E1", "E8"), ("E2", "E9")}
-    assert all(tuple(branch["required"]) == ("source", "destination") for branch in _branches(tool))
+    assert tuple(tool.public_spec.input_schema["required"]) == ("source", "destination")
     outcome = resolve_catalog_call(
         catalog,
         ToolCall("drag_to", {"source": "E2", "destination": "E9"}),
@@ -300,7 +299,8 @@ def test_factorized_sparse_relation_matches_rows_and_unique_resolver(
                 )
             except GroundedToolResolutionError:
                 resolves = False
-            assert schema_accepts == resolves == ((f"E{source}", f"E{destination}") in expected)
+            assert schema_accepts
+            assert resolves == ((f"E{source}", f"E{destination}") in expected)
             if resolves:
                 accepted.add((f"E{source}", f"E{destination}"))
     assert accepted == expected
@@ -315,7 +315,7 @@ def test_invalid_or_stale_reference_never_resolves() -> None:
             ToolCall("activate", {"target": "E99"}),
             expected_context_id=_CONTEXT,
         )
-    assert invalid.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    assert invalid.value.code is GroundedToolResolutionCode.GROUNDING_GAP
     with pytest.raises(GroundedToolResolutionError) as stale:
         resolve_catalog_call(
             catalog,

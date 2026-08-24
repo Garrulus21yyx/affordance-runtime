@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
 
 from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
-from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import (
-    DeliveryManifest,
     inspect_actor_world,
     inspect_outcome_public,
 )
@@ -70,25 +68,6 @@ class _FindControlsBinding:
             query,
             tool_call_id=tool_call_id,
         )
-
-
-@dataclass(frozen=True)
-class _ManifestBoundAction:
-    inner: object
-    manifest: DeliveryManifest
-
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision | GroundedActionResolution:
-        for name in ("target", "source", "destination"):
-            value = arguments.get(name)
-            if isinstance(value, str) and not self.manifest.admits_executable(value):
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.GROUNDING_GAP,
-                    f"{name} is not exact in the current DeliveryManifest",
-                )
-        resolver = getattr(self.inner, "resolve", None)
-        if not callable(resolver):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        return resolver(arguments, context_id, tool_call_id)
 
 
 @dataclass(frozen=True)
@@ -309,10 +288,10 @@ def compile_grounded_tool_catalog(
     registered.extend(
         RegisteredGroundedTool(
             item.public_spec,
-            _ManifestBoundAction(item, delivery.manifest),
+            item,
         )
         for item in GroundedToolCompiler().compile(
-            _delivered_action_options(delivery.manifest),
+            context.complete_actions,
             context_id=context.context_id,
         )
     )
@@ -580,38 +559,6 @@ def _catalog_from_registrations(
         registered,
         encoded_bytes,
     )
-
-
-def _delivered_action_options(manifest: DeliveryManifest):
-    delivered = []
-    for route in manifest.action_routes:
-        option = route.private_option
-        if (
-            option is None
-            or getattr(option, "action_id", "") != route.private_action_id
-            or (getattr(option, "operation", ""), getattr(option, "target_ref", ""))
-            != (route.operation, route.source_ref)
-        ):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-        if option.destination_required:
-            destinations = tuple(
-                item
-                for item in option.destinations.items
-                if item.grounding_ref == route.destination_ref
-            )
-            if len(destinations) != 1:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-            delivered.append(
-                replace(
-                    option,
-                    destinations=BoundedSection(destinations, 1, False),
-                )
-            )
-        elif not route.destination_ref:
-            delivered.append(option)
-        else:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-    return tuple(delivered)
 
 
 def compile_grounded_action_catalog(

@@ -632,9 +632,9 @@ def test_sparse_public_schema_acceptance_equals_one_private_resolver_row() -> No
                 for row in sparse.private_resolutions
                 if dict(row.selector_values) == arguments
             )
-            assert schema_accepts is ((source_ref, destination_ref) in expected)
-            assert schema_accepts is (len(matches) == 1)
-            if schema_accepts:
+            assert schema_accepts
+            assert (len(matches) == 1) is ((source_ref, destination_ref) in expected)
+            if matches:
                 assert sparse.resolve(arguments, drag_context.context_id, "call:sparse").action_id == matches[0].action_id
             else:
                 with pytest.raises(GroundedToolResolutionError):
@@ -704,9 +704,9 @@ def test_sparse_public_schema_acceptance_equals_one_private_resolver_row() -> No
             except ValueError:
                 continue
             matches.append(row)
-        assert accepted is expected_acceptance
-        assert accepted is (len(matches) == 1)
-        if accepted:
+        assert accepted
+        assert (len(matches) == 1) is expected_acceptance
+        if matches:
             decision = select.resolve(arguments, unary_context.context_id, "call:business-domain")
             assert decision.action_id == matches[0].action_id
         else:
@@ -1213,6 +1213,37 @@ def test_only_admitted_action_route_fragments_enter_manifest_and_rank_cannot_exp
 
     assert mandatory_only.view.coverage["expanded_regions"] == 0
     assert mandatory_only.view.coverage["candidate_region_expansion_reason"] == "none"
+
+
+def test_packed_candidate_prefix_cannot_remove_a_current_action_from_the_catalog() -> None:
+    _task, _world, _actions, _evaluation, context = _context()
+    plan = context.action_delivery_plan
+    assert plan is not None
+    empty_counts = {item.kind.value: 0 for item in plan.obligations}
+    hidden_delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records=empty_counts,
+    )
+    visible_delivery = build_model_turn_delivery(context, include_images=False)
+    assert hidden_delivery.manifest.action_routes == ()
+
+    hidden_catalog = compile_grounded_action_catalog(context, hidden_delivery)
+    visible_catalog = compile_grounded_action_catalog(context, visible_delivery)
+    hidden_activate = next(item for item in hidden_catalog.specs if item.name == "activate")
+    visible_activate = next(item for item in visible_catalog.specs if item.name == "activate")
+    assert hidden_activate.input_schema == visible_activate.input_schema
+    assert "enum" not in hidden_activate.input_schema["properties"]["target"]
+
+    current = next(item for item in context.complete_actions if item.operation == "activate")
+    assert current.target_ref not in hidden_delivery.manifest.executable_refs
+    selected = resolve_grounded_tool_call(
+        hidden_catalog,
+        ToolCall("activate", {"target": current.target_ref}, "call:hidden-current-action"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=hidden_delivery.delivery_id,
+    ).decision
+    assert selected.action_id == current.action_id
 
 
 def test_manifest_ref_conservation_for_zero_partial_and_full_prefixes_with_oversized_region() -> None:

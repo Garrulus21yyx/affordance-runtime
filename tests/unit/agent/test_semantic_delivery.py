@@ -1279,7 +1279,7 @@ def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action
     )
     schemas = json.dumps([to_json_compatible(item.input_schema) for item in catalog.specs])
 
-    assert '"enum": ["E' in schemas
+    assert PublicRefCodec.pattern(PublicRefKind.EXECUTABLE) in schemas
     assert '"enum": ["F' in schemas
     assert PublicRefCodec.pattern(PublicRefKind.REGION) in schemas
     assert all(ref in {item.target_ref for item in context.complete_actions} for ref in view.manifest.executable_refs)
@@ -1552,7 +1552,7 @@ def test_nonmanifest_ref_is_grounding_gap_and_new_world_rejects_old_delivery() -
             ToolCall("activate", {"target": "E999"}),
             expected_context_id=before_context.context_id,
         )
-    assert gap.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    assert gap.value.code is GroundedToolResolutionCode.GROUNDING_GAP
 
     with pytest.raises(GroundedToolResolutionError) as stale:
         compile_grounded_tool_catalog(

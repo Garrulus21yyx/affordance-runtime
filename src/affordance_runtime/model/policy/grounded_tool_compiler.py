@@ -8,7 +8,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
+from affordance_runtime.actions.capabilities import (
+    INTERACTION_CAPABILITY_REGISTRY,
+    ParameterContractKind,
+)
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.contracts import AgentActionOptionView, AgentDestinationView
 from affordance_runtime.agent.decisions import AgentDecision, SelectAction
@@ -79,9 +82,14 @@ class CompiledGroundedTool:
             for item in self.private_resolutions
             if dict(item.selector_values) == selector_values
         )
+        if not matches:
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.GROUNDING_GAP,
+                "executable reference is unavailable for this operation in the current World",
+            )
         if len(matches) != 1:
             raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS
+                GroundedToolResolutionCode.CATALOG_INVALID
             )
         match = matches[0]
         parameters = {
@@ -159,9 +167,9 @@ class GroundedToolCompiler:
         ):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         self._validate_current_refs(rows, context_id)
+        self._validate_private_parameter_contracts(operation, rows)
         fields, selector_values, mode = _current_reference_selectors(rows)
-        branches = _factorized_route_schemas(rows, selector_values)
-        schema = branches[0] if len(branches) == 1 else {"oneOf": list(branches)}
+        schema = _public_operation_schema(operation, fields)
         resolutions = tuple(
             PrivateResolutionEntry(
                 selector,
@@ -199,6 +207,27 @@ class GroundedToolCompiler:
                 raise GroundedToolResolutionError(
                     GroundedToolResolutionCode.GROUNDING_FALLBACK_UNAVAILABLE
                 )
+
+    @staticmethod
+    def _validate_private_parameter_contracts(
+        operation: str,
+        rows: tuple[ConcreteActionCandidateRow, ...],
+    ) -> None:
+        for row in rows:
+            properties, _required = _business_schema(row.option.parameter_schema)
+            if set(properties).intersection(_RESERVED_NAMES):
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.CATALOG_INVALID
+                )
+            try:
+                INTERACTION_CAPABILITY_REGISTRY.validate_parameter_schema(
+                    operation,
+                    row.option.parameter_schema,
+                )
+            except ValueError as exc:
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.CATALOG_INVALID
+                ) from exc
 
 
 def _current_reference_selectors(
@@ -257,74 +286,56 @@ def _current_reference_selectors(
     )
 
 
-def _factorized_route_schemas(
-    rows: tuple[ConcreteActionCandidateRow, ...],
-    selector_values: tuple[Mapping[str, object], ...],
-) -> tuple[dict[str, object], ...]:
-    """Factor only rows with identical business schema and exact adjacency."""
-
-    grouped: dict[str, list[tuple[ConcreteActionCandidateRow, Mapping[str, object]]]] = defaultdict(list)
-    for row, selector in zip(rows, selector_values, strict=True):
-        key = json.dumps(
-            to_json_compatible(row.option.parameter_schema),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        grouped[key].append((row, selector))
-
-    branches: list[dict[str, object]] = []
-    for schema_key in sorted(grouped):
-        members = grouped[schema_key]
-        if members[0][0].destination is None:
-            targets = tuple(sorted(str(selector["target"]) for _, selector in members))
-            branches.append(_factorized_branch(members[0][0], {"target": targets}))
-            continue
-
-        destinations_by_source: dict[str, set[str]] = defaultdict(set)
-        for _, selector in members:
-            destinations_by_source[str(selector["source"])].add(str(selector["destination"]))
-        sources_by_adjacency: dict[tuple[str, ...], list[str]] = defaultdict(list)
-        for source, destinations in destinations_by_source.items():
-            sources_by_adjacency[tuple(sorted(destinations))].append(source)
-        for destinations in sorted(sources_by_adjacency):
-            branches.append(
-                _factorized_branch(
-                    members[0][0],
-                    {
-                        "source": tuple(sorted(sources_by_adjacency[destinations])),
-                        "destination": destinations,
-                    },
-                )
-            )
-    return tuple(branches)
+def _public_operation_schema(
+    operation: str,
+    fields: tuple[CompiledSelectorField, ...],
+) -> Mapping[str, object]:
+    branches = tuple(
+        _public_operation_branch(schema, fields)
+        for schema in _public_business_schemas(operation)
+    )
+    return branches[0] if len(branches) == 1 else {"anyOf": list(branches)}
 
 
-def _factorized_branch(
-    row: ConcreteActionCandidateRow,
-    selectors: Mapping[str, tuple[str, ...]],
+def _public_operation_branch(
+    parameter_schema: Mapping[str, object],
+    fields: tuple[CompiledSelectorField, ...],
 ) -> dict[str, object]:
-    properties, required = _business_schema(row.option.parameter_schema)
+    properties, required = _business_schema(parameter_schema)
     if set(properties).intersection(_RESERVED_NAMES):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    selector_properties: dict[str, object] = {}
-    for name, values in selectors.items():
-        if not values or any(
-            not PublicRefCodec.accepts(value, expected=PublicRefKind.EXECUTABLE)
-            for value in values
-        ):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        selector_properties[name] = {
-            "type": "string",
-            "description": "current executable E-ref",
-            "enum": list(values),
-        }
+    selector_properties = {
+        field.public_name: to_json_compatible(field.input_schema)
+        for field in fields
+    }
     return {
         "type": "object",
         "properties": {**selector_properties, **properties},
-        "required": [*selectors, *required],
+        "required": [*(field.public_name for field in fields), *required],
         "additionalProperties": False,
     }
+
+
+def _public_business_schemas(operation: str) -> tuple[Mapping[str, object], ...]:
+    """Return the stable public parameter family; exact domains stay private."""
+
+    definition = INTERACTION_CAPABILITY_REGISTRY.require(operation)
+    if definition.parameter_contract is ParameterContractKind.NATIVE_VALUE:
+        return tuple(
+            INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+                operation,
+                current_value_schema={"type": schema_type},
+            )
+            for schema_type in ("boolean", "integer", "number", "string")
+        )
+    if definition.parameter_contract is ParameterContractKind.TAB_INDEX:
+        return (
+            INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+                operation,
+                current_value_schema={"type": "integer", "minimum": 0},
+            ),
+        )
+    return (INTERACTION_CAPABILITY_REGISTRY.parameter_schema(operation),)
 
 
 def _business_schema(schema: Mapping[str, object]) -> tuple[dict[str, object], list[str]]:
@@ -352,7 +363,10 @@ def _description(
     fields: tuple[CompiledSelectorField, ...],
 ) -> str:
     endpoints = " and ".join(field.public_name for field in fields)
-    return f"Use {operation} on current executable {endpoints}."
+    return (
+        f"Use {operation} on current executable {endpoints} from the current World "
+        "or a same-World find_controls result."
+    )
 
 
 def _row_order(row: ConcreteActionCandidateRow) -> tuple[str, str]:

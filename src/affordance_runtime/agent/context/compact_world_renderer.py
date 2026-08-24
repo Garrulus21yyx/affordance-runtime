@@ -121,10 +121,6 @@ class DeliveryManifest:
     def exact_refs(self) -> frozenset[str]:
         return frozenset((*self.executable_refs, *self.readonly_refs, *self.fact_refs))
 
-    def admits_executable(self, ref: str) -> bool:
-        return ref in self.executable_refs
-
-
 @dataclass(frozen=True)
 class WorldDeliveryView:
     text: str

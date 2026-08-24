@@ -9,12 +9,14 @@ fresh-World projection repairs are implemented. The current convergence patch ad
 publishes only profile-supported BrowserGym navigation, detects same-World discovery loops, proactively processes SDK
 history, bounds the PageMap directory while retaining the complete recoverable region index, orders the ordinary
 model-visible action prefix by the existing task-aware rank before incidental focus, and gives Monitor
-producer-specific recovery guidance for action discovery versus local-result replay.
+producer-specific recovery guidance for action discovery versus local-result replay. The current owner repair further
+decouples action callability from that prefix: stable registry action schemas accept current E-ref syntax and the
+existing complete current `ActionSpace` resolver performs exact route/domain validation.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `156` focused action-delivery/Monitor/PydanticAI tests with `3` skipped, and
-the full suite at `1677 passed / 25 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
+Current provider-free verification passes `178` focused action-schema/resolver/delivery/PydanticAI tests, and the
+full suite at `1684 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
 pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
@@ -346,20 +348,19 @@ Search results continue to return a direct `read_region(region_ref)` follow-up f
 `find_controls(query)` returns only bounded query-qualified current matches and never dispatches a browser action. It
 has no public generic continuation capability and no private public-result inventory. Partial coverage tells the model
 to refine the query.
-Every `(operation, E-ref[, destination])` route returned in that result is admitted to the next same-World frozen
-catalog as one bounded capability set. A vertical gate forces the soft target to one token, verifies that every returned
-route still appears in the manifest/catalog, and resolves every route through the real catalog resolver. A second gate
-corrupts one returned ref and verifies fail-closed behavior before provider invocation. Only current `E` refs in the
-frozen catalog can reach Binder/Executor.
+Every `(operation, E-ref[, destination])` route returned in that result is resolved against the next same-World
+complete current `ActionSpace`. The public schema stays independent of result count and candidate packing; exact
+operation membership, destination adjacency, target-specific parameter domains, and private action identity remain in
+the existing resolver. A corrupted, unavailable, or stale ref fails closed before Binder/Executor.
 
 Property and Monitor gates prove that focused/unrelated controls remain excluded, permutations do not change match
 membership, discovery creates no `InformationDelta`, and the second consecutive same-World discovery produces typed
 recovery rather than an unbounded query loop.
 
-For an ordinary turn without an explicit discovery result, a separate vertical gate gives the action delivery only
-one admitted route and proves that the first task-ranked automatic candidate—not an incidental focused-context route—
-enters the Manifest, compiled ToolCatalog, and real resolver. Explicit `find_controls` results remain the higher
-foreground obligation and retain their existing all-routes callable invariant. Monitor gates separately prove that
+For an ordinary turn without an explicit discovery result, one vertical gate gives the action delivery only one
+visible route and proves that the first task-ranked automatic candidate—not an incidental focused-context route—enters
+the Manifest. A second gate gives the delivery zero visible routes and proves that its action schema is unchanged and
+that every exact current route remains resolvable through the same Catalog resolver. Monitor gates separately prove that
 control-discovery recovery and exact local-result replay publish producer-appropriate next routes; the latter points to
 same-tool `next_cursor`, a different relevant region, a current executable control, or browser navigation.
 
