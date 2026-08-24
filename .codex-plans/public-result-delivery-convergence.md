@@ -86,14 +86,16 @@ Live and cohort execution remain stopped.
    - Record the complete deletion map, reuse boundary, composition matrix, and non-goals in the two current authority
      docs. This plan tracks work only and does not override them.
 
-15. **pending — Close the existing call/result algebra and reducer composition properties**
+15. **done — Close the existing call/result algebra and reducer composition properties**
    - Reuse AgentDecision.tool_call_id, StepResult, existing typed local results/receipts/failures, and official
      PydanticAI message/deferred-result types; add only an exhaustive pure projection function where required.
    - Add generated legal combinations of pending exchange, GUI effect, public evidence, continuation, discovery, and
      typed failure. Keep production behavior unchanged until the cutover can remain green.
    - Commit this verified scaffold independently.
+   - Files: `src/affordance_runtime/agent/tool_result_projection.py`,
+     `tests/unit/agent/test_tool_result_projection.py`.
 
-16. **pending — Atomic production cutover and deletion**
+16. **in_progress — Atomic production cutover and deletion**
    - Migrate policy, Catalog resolver, CoreLoop, StepResult, Store, RunState, Workspace/Monitor, TurnPacker, Envelope
      codec, and trace consumers together.
    - Delete whole-Store return fields, Store pending-call/outcome fields, manual mapping history reconstruction,
