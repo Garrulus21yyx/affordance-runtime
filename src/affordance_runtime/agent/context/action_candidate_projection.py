@@ -461,6 +461,21 @@ def build_action_delivery_plan(
     for option, exact in query_options:
         if not exact:
             append(option, kind=DeliveryObligationKind.EXPLICIT_QUERY, reason="query_semantic")
+    if discovery is not None and discovery.query:
+        returned_routes = {
+            (match.operation, match.target_ref, destination_ref)
+            for match in query_matches
+            for destination_ref in (match.destination_refs or ("",))
+        }
+        delivered_routes = {
+            record.public_route
+            for record in groups[DeliveryObligationKind.EXPLICIT_QUERY]
+            if isinstance(record, ActionRouteFragment)
+        }
+        if returned_routes != delivered_routes:
+            raise ValueError(
+                "action discovery result must close every returned route over the current ActionSpace"
+            )
 
     effect_slots = set(latest_effect.changed_target_slot_keys if latest_effect is not None else ())
     for option in sorted(complete_actions, key=_public_option_view_order):

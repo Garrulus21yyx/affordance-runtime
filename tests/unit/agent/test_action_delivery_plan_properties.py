@@ -141,13 +141,49 @@ def test_foreground_is_derived_from_priority_without_private_request_state() -> 
     assert not hasattr(plan, "requested_key")
 
 
+@pytest.mark.parametrize("count", (1, 2, _BOUND, 4 * _BOUND))
+def test_explicit_query_result_is_one_hard_admitted_capability_set(
+    monkeypatch: pytest.MonkeyPatch,
+    count: int,
+) -> None:
+    query = _obligation(DeliveryObligationKind.EXPLICIT_QUERY, count, 0)
+    base = _obligation(DeliveryObligationKind.BASE_ACTIONS, 2, 1)
+    plan = ActionDeliveryPlan(
+        "actions:test",
+        "world:test",
+        (query, base),
+        query.scope,
+    )
+    calls: list[dict[str, int]] = []
+
+    def attempt(_request, **kwargs):
+        counts = dict(kwargs["admitted_records"])
+        calls.append(counts)
+        return _packed_artifacts(counts, kwargs["backoff_count"])
+
+    monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(attempt))
+    packed = TurnPacker().pack(
+        SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
+        binder=_fake_binder(),
+        identity=None,
+        call_profile=_fake_profile(),
+        supports_multimodal=False,
+        perception_profile=SimpleNamespace(),
+    )
+
+    query_kind = DeliveryObligationKind.EXPLICIT_QUERY.value
+    first_query_attempt = next(call[query_kind] for call in calls if call[query_kind])
+    assert first_query_attempt == count
+    assert dict(packed.admitted_record_counts)[query_kind] == count
+
+
 @pytest.mark.parametrize("capacity, expected_total", ((3, 3), (2, 2)))
 def test_depth_round_packer_obeys_exact_fit_and_one_unit_under(
     monkeypatch: pytest.MonkeyPatch,
     capacity: int,
     expected_total: int,
 ) -> None:
-    kinds = tuple(DeliveryObligationKind)[:3]
+    kinds = tuple(DeliveryObligationKind)[1:4]
     plan = ActionDeliveryPlan(
         "actions:test",
         "world:test",
@@ -186,7 +222,7 @@ def test_depth_round_packer_obeys_exact_fit_and_one_unit_under(
 def test_oversized_optional_head_blocks_only_its_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    foreground_kind, oversized_kind, small_kind = tuple(DeliveryObligationKind)[:3]
+    foreground_kind, oversized_kind, small_kind = tuple(DeliveryObligationKind)[1:4]
     plan = ActionDeliveryPlan(
         "actions:test",
         "world:test",

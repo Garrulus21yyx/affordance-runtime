@@ -2,18 +2,22 @@
 
 ## Current status
 
-The thin tool-result/history cutover and the follow-up accepted-response repair are implemented and provider-free
-verified. The affected focused suite passes `166` tests; the full suite passes `1652` tests with `19` skipped. Ruff,
-compileall, diff/negative searches, and fresh diff review pass.
+The thin tool-result/history cutover, accepted-response repair, and the owner-level action-discovery/catalog repair are
+implemented and provider-free verified. The affected focused suite passes `324` tests; the full suite passes `1653`
+tests with `24` skipped. Ruff, compileall, and diff checks pass. A fresh-context review remains part of the final gate.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
 - the BrowserGym `dispatch -> causal stable fresh World -> StepResult` gate;
 - the Planner lexical-admission gap;
+- post-fix live validation of the action-discovery/catalog contract;
 - any live provider/benchmark gate.
 
-No live model or BrowserGym benchmark was run for this cutover. A live run still requires explicit user authorization.
-The untracked `output/` directory is unrelated user data and is not an acceptance artifact.
+The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
+retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
+an `E25` route returned by `find_controls` but the next `activate` schema admitted only `E53`. A post-fix live rerun
+still requires explicit user authorization. The untracked `output/` directory is unrelated user data and is not an
+acceptance artifact.
 
 Official success remains the benchmark-native evaluator's or `TaskEvaluator`'s post-capture result. A model final
 answer, local action receipt, GoalPlan item, or Monitor classification cannot declare a GUI task successful.
@@ -37,6 +41,13 @@ turn. Retaining the full hidden reasoning would make the already growing context
 short, model-authored, visible progress note plus one accepted call. No second summarizer model or Runtime evidence
 memory is introduced.
 
+The authorized run8 trace verified that repair: later `llm.input_messages` contained the earlier bounded progress notes,
+accepted calls, and matching ToolReturns. It then exposed a distinct capability-publication defect. The
+`find_controls` ToolReturn contained `E25` and `activate`; the next ToolCatalog admitted only the first query route,
+`E53`, because remaining query routes were treated as soft-target optional inventory. The model selected `E25` from
+the immediately preceding result and the call failed schema validation. This was not a World, task, GoalPlan, or model
+comprehension failure.
+
 Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
 currentness, producer, and Store-composition failures all arose on that shared path.
 
@@ -55,6 +66,19 @@ local ToolCall(call_id)
 Read/search/list pagination is optional and local to the same tool. Search returns the smallest complete enclosing
 repeated item so ordinary record lookup does not require reading an entire large region. GUI effects and action
 discovery do not use the read cursor.
+
+Action discovery now has one explicit bounded invariant:
+
+```text
+find_controls same-World ToolReturn routes
+== routes admitted to the next same-World ToolCatalog
+```
+
+The ActionDeliveryPlan fails closed if a returned route cannot be closed over the current `ActionSpace`. TurnPacker
+admits the complete bounded query capability set against the hard request limit before soft-target optional inventory.
+If history prevents hard admission, the existing PydanticAI-boundary history compactor drops oldest complete exchanges
+and repacks; no partial query result is advertised. No cursor, Store body, evidence inventory, or new state machine is
+introduced.
 
 ## Provider-free acceptance gates
 
@@ -116,7 +140,11 @@ Search results continue to return a direct `read_region(region_ref)` follow-up f
 
 `find_controls(query)` returns a bounded current result and never dispatches a browser action. It has no public generic
 continuation capability and no private full-result inventory. Partial coverage tells the model to refine the query.
-Only current `E` refs in the frozen catalog can reach Binder/Executor.
+Every `(operation, E-ref[, destination])` route returned in that result is admitted to the next same-World frozen
+catalog as one bounded capability set. A vertical gate forces the soft target to one token, verifies that every returned
+route still appears in the manifest/catalog, and resolves every route through the real catalog resolver. A second gate
+corrupts one returned ref and verifies fail-closed behavior before provider invocation. Only current `E` refs in the
+frozen catalog can reach Binder/Executor.
 
 ### G6 — GUI route remains unchanged
 
@@ -148,18 +176,14 @@ Focused owner/vertical suite:
 
 ```bash
 pytest -q \
-  tests/architecture/test_workspace_authority.py \
-  tests/architecture/test_single_action_policy_convergence.py \
-  tests/unit/agent/test_runtime_algebra.py \
-  tests/unit/agent/test_tool_result_projection.py \
-  tests/unit/agent/test_episode_context.py \
-  tests/unit/agent/test_semantic_delivery.py \
-  tests/unit/agent/test_operational_progress_monitor.py \
+  tests/unit/model \
+  tests/integration/model \
   tests/benchmarks/model/test_grounded_tools_v2.py \
-  tests/integration/model/test_pydantic_ai_spike.py
+  tests/unit/agent/test_action_candidate_delivery.py \
+  tests/unit/agent/test_action_delivery_plan_properties.py
 ```
 
-Result: `166 passed`.
+Result: `324 passed`.
 
 Full and static verification:
 
@@ -170,7 +194,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1652 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1653 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 No live provider command belongs in this provider-free acceptance sequence.
@@ -224,8 +248,11 @@ The final read-only review for this cutover must answer:
    same-call result, exclude old World prompts, and clear on terminal completion?
 6. Does each retained response contain at most one bounded visible progress note and exactly one accepted call, while
    hidden reasoning and discarded calls remain absent from later provider input?
-7. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
-7. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
+7. Does every route in a same-World `find_controls` ToolReturn appear in the next frozen catalog, including when the
+   soft target cannot admit unrelated optional inventory?
+8. Does a discovery/current-ActionSpace route mismatch fail closed before provider invocation?
+9. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
+10. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
    state?
 
 ## Exit statement

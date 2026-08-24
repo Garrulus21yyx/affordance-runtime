@@ -808,6 +808,118 @@ def test_find_controls_prioritizes_exact_result_without_replacing_base_inventory
     )
 
 
+def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog() -> None:
+    task, world, actions, evaluation, context = _context()
+    builder = ContextBuilder()
+    initial_delivery, initial_catalog = _catalog(context)
+    request = resolve_grounded_tool_call(
+        initial_catalog,
+        ToolCall("find_controls", {"query": "Settings"}, "call:find-settings"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=initial_delivery.delivery_id,
+    ).decision
+    state = RunState(world, evaluation, 1, action_page=builder.page(actions, world))
+    state.install_canonical_world(context.canonical_world)
+    step = CoreAgentLoop(None, None, None, context_builder=builder)._action_page(
+        task,
+        state,
+        actions,
+        request,
+    )
+    assert step.action_page_result is not None
+    assert len(step.action_page_result.matches) > 1
+    found = builder.build(
+        task,
+        world,
+        actions,
+        evaluation,
+        canonical_world=context.canonical_world,
+        action_discovery=step.action_page_result,
+    )
+    packed = TurnPacker().pack(
+        ModelDecisionRequest("request:find-settings-result", found, step),
+        binder=CanonicalProviderEnvelopeBinder(
+            request_budget=ModelRequestBudget(soft_target_tokens=1),
+        ),
+        identity=_IDENTITY,
+        call_profile=_PROFILE,
+        supports_multimodal=False,
+        perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+        history_messages=(
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "find_controls",
+                        {"query": "Settings"},
+                        "call:find-settings",
+                    )
+                ]
+            ),
+        ),
+        pending_tool_call_id="call:find-settings",
+        pending_tool_name="find_controls",
+    )
+    query = found.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
+    assert query is not None
+    assert dict(packed.admitted_record_counts)[DeliveryObligationKind.EXPLICIT_QUERY.value] == len(
+        query.records
+    )
+    assert packed.delivery.tool_result is not None
+    assert to_json_compatible(packed.delivery.tool_result.return_value) == to_json_compatible(
+        step.action_page_result.to_public_value()
+    )
+
+    offered_routes = {
+        (route.operation, route.source_ref, route.destination_ref)
+        for route in packed.delivery.manifest.action_routes
+    }
+    returned_routes = {
+        (match.operation, match.target_ref, destination_ref)
+        for match in step.action_page_result.matches
+        for destination_ref in (match.destination_refs or ("",))
+    }
+    assert returned_routes <= offered_routes
+    for operation, source_ref, destination_ref in returned_routes:
+        arguments = (
+            {"source": source_ref, "destination": destination_ref}
+            if destination_ref
+            else {"target": source_ref}
+        )
+        resolution = resolve_grounded_tool_call(
+            packed.catalog,
+            ToolCall(operation, arguments, f"call:returned:{source_ref}:{destination_ref or 'none'}"),
+            expected_context_id=found.context_id,
+            expected_delivery_id=packed.delivery.delivery_id,
+        )
+        assert resolution.decision.tool_call_id.startswith("call:returned:")
+
+
+def test_action_delivery_fails_closed_if_a_discovery_route_is_not_current() -> None:
+    task, world, actions, evaluation, context = _context()
+    builder = ContextBuilder()
+    page = builder.page(actions, world, query="Settings")
+    discovery = builder.discovery_result(
+        actions,
+        world,
+        page,
+        canonical_world=context.canonical_world,
+    )
+    corrupted = replace(
+        discovery,
+        matches=(replace(discovery.matches[0], target_ref="E999"), *discovery.matches[1:]),
+    )
+
+    with pytest.raises(ValueError, match="must close every returned route"):
+        builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            canonical_world=context.canonical_world,
+            action_discovery=corrupted,
+        )
+
+
 def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_fanout() -> None:
     task, world, _actions, evaluation, _context_value = _context()
     focused_world = replace(
@@ -1204,7 +1316,7 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
     assert {"added", "removed", "modified"} <= changes
 
 
-def test_foreground_required_atom_does_not_receive_second_attempt_before_other_groups(
+def test_complete_query_capability_set_is_admitted_before_other_groups(
     monkeypatch,
 ) -> None:
     task, world, actions, evaluation, context_value = _context()
@@ -1237,9 +1349,16 @@ def test_foreground_required_atom_does_not_receive_second_attempt_before_other_g
     )
 
     query_kind = DeliveryObligationKind.EXPLICIT_QUERY.value
-    required_index = next(index for index, counts in enumerate(attempts) if counts.get(query_kind) == 1)
+    query_record_count = len(
+        context.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY).records
+    )
+    required_index = next(
+        index
+        for index, counts in enumerate(attempts)
+        if counts.get(query_kind) == query_record_count
+    )
     first_extension = attempts[required_index + 1]
-    assert first_extension[query_kind] == 1
+    assert first_extension[query_kind] == query_record_count
     assert any(count for kind, count in first_extension.items() if kind != query_kind)
 
 

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from affordance_runtime.agent.context.action_candidate_projection import (
+    DeliveryObligationKind,
+)
 from affordance_runtime.agent.context.model_turn_delivery import (
     ModelTurnDelivery,
     build_model_turn_delivery,
@@ -116,10 +119,17 @@ class TurnPacker:
         )
         if foreground is not None and foreground.remaining:
             kind = foreground.kind.value
-            attempted_counts[kind] = 1
+            required_count = (
+                len(foreground.remaining)
+                if foreground.kind is DeliveryObligationKind.EXPLICIT_QUERY
+                else 1
+            )
+            attempted_counts[kind] = required_count
             required = dict(admitted_counts)
-            required[kind] = 1
-            # A non-representable foreground atom is the one record-level capacity failure.
+            required[kind] = required_count
+            # A bounded find_controls result is one capability set: every
+            # returned route must be callable in this same-World catalog.
+            # Other foreground inventories retain their one-record minimum.
             accepted = self._attempt(
                 request,
                 binder=binder,

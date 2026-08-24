@@ -6,16 +6,19 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
-Implementation and provider-free verification of this cutover are complete. The affected focused suite passes `164`
-tests; the full suite passes `1645` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh diff
-review pass.
-Overall project closure is still **open** for two independent reasons already recorded by project policy:
+Implementation and provider-free verification of the thin result/history cutover and the action-discovery closure
+repair are complete. The affected focused suite passes `324` tests; the full suite passes `1653` tests with `24`
+skipped. Ruff, compileall, and diff checks pass. The action-discovery repair has not yet had a post-fix live rerun.
+Overall project closure is still **open**:
 
 - BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
 - Planner lexical admission still has a known gap.
+- The action-discovery/catalog repair is provider-free verified but not yet revalidated by a post-fix live witness.
 
-No live/provider benchmark was run or authorized for this cutover. Historical acceptance files under `evidence/` remain
-diagnostic records of the revisions they exercised; they do not define the current architecture.
+A live W1b witness was run after the accepted-response repair. It verified that bounded model-authored progress notes
+survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. That
+failed run remains diagnostic evidence under
+`evidence/live/w1b-task-21-deepseek-v4-flash-progress-note-20260824-run8/`; it is not post-fix acceptance evidence.
 
 ## Root cause of the R9 escalation and repeated reads
 
@@ -46,6 +49,19 @@ The positive repair is the SDK's ordinary conversation contract: keep a bounded 
 `ToolCallPart -> ToolReturnPart` pairs, append the current pending call, and always supply the fresh World separately.
 Old World prompts are not retained. This replaces the one-slot exchange and the manual `remember_fact`/working-set
 path; it does not add an evidence store, memory subsystem, or cursor state machine.
+
+The live witness then exposed a separate action-capability mismatch. `find_controls` returned `E25` with verb
+`activate`, but the next physical `activate` schema admitted only `E53`. The model selected the just-returned `E25`, so
+the failure was not missing task context or discarded reasoning. `TurnPacker` had treated the query result as ordinary
+optional route inventory: it hard-admitted only its first route, then allowed the soft request target to exclude the
+rest even though the complete request was far below the hard context limit.
+
+The positive repair is bounded and owner-local: one same-World `find_controls` result is one capability set. Every
+returned `(operation, E-ref[, destination])` route must close over the current `ActionSpace` and be admitted to the
+next catalog together. A mapping gap fails closed before provider invocation. Optional unrelated routes still obey the
+soft packing target. If the complete bounded query set cannot fit the hard limit with retained history, the existing
+PydanticAI-boundary history compactor removes oldest completed call/result pairs and repacks; the query result is never
+exposed partially. This adds no result store, cursor, memory, or new state transition.
 
 ## Normative production chain
 
@@ -118,6 +134,18 @@ removed. GUI benchmark work does not need arbitrary 100 KiB DOM strings reconstr
 continuation tool and no private full-result inventory. If the result coverage is partial, the model issues a narrower
 natural-language query. Action discovery never executes a control and never turns readable `N/F/R` refs into
 executable `E` refs.
+
+The returned page and the next same-World catalog share one route contract:
+
+```text
+find_controls ToolReturn contains (verb, E-ref[, destination])
+-> ActionDeliveryPlan closes that exact route over current ActionSpace
+-> TurnPacker admits the complete bounded query capability set
+-> next ToolCatalog accepts every returned route
+```
+
+The soft packing target may reduce unrelated base/effect/interaction inventory, but it cannot turn an already returned
+control into a visible but uncallable ref. Hard capacity remains the only reason this whole bounded set can be rejected.
 
 ### GUI actions
 
