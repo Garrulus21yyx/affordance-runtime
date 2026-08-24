@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -710,6 +709,8 @@ def test_region_read_pages_long_records_by_final_payload_bytes_without_loss() ->
 
     assert len(pages) >= 2
     assert delivered == complete.items
+    assert all(item.get("content_truncated") is not True for item in delivered)
+    assert all(item.get("kind") != "partial_item" for item in delivered)
     assert len({json.dumps(to_json_compatible(item), sort_keys=True) for item in delivered}) == len(delivered)
     assert all(item.get("kind") != "content_fragment" for item in delivered)
 
@@ -755,6 +756,7 @@ def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -
     delivered = tuple(item for page in pages for item in page.items)
 
     assert len(delivered) == 2
+    assert delivered[0]["kind"] == "partial_item"
     assert delivered[0]["content_truncated"] is True
     assert len(delivered[0]["content"][0]["text"]) <= 2_048
     assert all(item.get("kind") != "content_fragment" for item in delivered)
@@ -768,7 +770,7 @@ def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -
         max_size=25,
     ).map(tuple)
 )
-def test_region_read_byte_pages_generated_exactly_cover_public_inventory(lengths) -> None:
+def test_region_read_byte_pages_generated_preserve_or_explicitly_mark_each_record(lengths) -> None:
     world = _long_record_world(lengths, suffix=f"generated-{sum(lengths)}-{len(lengths)}")
     task = TaskGoal("generated-byte-paging", "Inspect all records")
     context = ContextBuilder().build(
@@ -790,23 +792,18 @@ def test_region_read_byte_pages_generated_exactly_cover_public_inventory(lengths
     assert isinstance(complete, Opened)
 
     pages = _read_complete_region(context, region_ref, hard_limit=4096)
-    reconstructed = []
-    fragments: list[Mapping[str, object]] = []
-    for page in pages:
-        for item in page.items:
-            if item.get("kind") == "content_fragment":
-                fragments.append(item)
-                if item["fragment_final"]:
-                    reconstructed.append(
-                        json.loads("".join(str(part["content_json"]) for part in fragments))
-                    )
-                    fragments = []
-            else:
-                assert not fragments
-                reconstructed.append(item)
+    delivered = tuple(item for page in pages for item in page.items)
 
-    assert not fragments
-    assert to_json_compatible(reconstructed) == to_json_compatible(complete.items)
+    assert len(delivered) == len(complete.items)
+    assert all(item.get("kind") != "content_fragment" for item in delivered)
+    for actual, expected in zip(delivered, complete.items, strict=True):
+        if actual.get("content_truncated") is True:
+            assert actual["kind"] == "partial_item"
+            assert len(json.dumps(to_json_compatible(actual))) < len(
+                json.dumps(to_json_compatible(expected))
+            )
+        else:
+            assert to_json_compatible(actual) == to_json_compatible(expected)
 
 
 def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:

@@ -12,6 +12,8 @@ from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
 from affordance_runtime.surfaces.browsergym.semantics import (
+    ACCESSIBLE_NAME_TRUNCATED_STATE_KEY,
+    MAX_SEMANTIC_TEXT,
     PRIVATE_CONTROL_PROPERTIES_KEY,
     BrowserGymSemanticError,
     BrowserGymSemanticErrorCode,
@@ -150,6 +152,30 @@ def test_ax_name_remains_authoritative_while_dom_semantics_are_preserved() -> No
         "semantic.dom.attribute.aria-label": "conflicting DOM label",
         "semantic.dom.attribute.class_tokens": ("primary", "action"),
     }
+
+
+def test_informational_ax_text_is_not_reduced_to_the_control_label_limit() -> None:
+    body = "long readable review " * 80
+    analysis = analyze_browsergym_semantics(
+        raw_observation(ax_node("body", "StaticText", body))
+    )
+    node = next(item for item in analysis.structure if item.role == "StaticText")
+
+    assert len(body) > MAX_SEMANTIC_TEXT
+    assert node.accessible_name == body
+    assert ACCESSIBLE_NAME_TRUNCATED_STATE_KEY not in dict(node.public_state)
+
+
+def test_executable_ax_label_bound_is_explicit() -> None:
+    label = "action label " * 80
+    control = canonical_control_for_bid(
+        raw_observation(ax_node("control", "button", label)),
+        "control",
+    )
+
+    assert control is not None
+    assert control.accessible_name == label[:MAX_SEMANTIC_TEXT]
+    assert dict(control.public_state)[ACCESSIBLE_NAME_TRUNCATED_STATE_KEY] is True
 
 
 @given(st.permutations(("class", "title", "type")))

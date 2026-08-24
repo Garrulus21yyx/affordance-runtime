@@ -51,6 +51,7 @@ _PUBLIC_DOM_STATE_FIELDS = frozenset(
 _TOOL_RESULT_TEXT_MAX_CHARS = 2_048
 _TOOL_RESULT_COLLECTION_MAX_ITEMS = 64
 _TOOL_RESULT_MAX_DEPTH = 6
+_SOURCE_TEXT_TRUNCATION_FIELD = "semantic.accessible_name.truncated"
 
 
 @dataclass(frozen=True)
@@ -696,13 +697,10 @@ def inspect_actor_world(
                     raise KeyError(region_ref)
             except KeyError:
                 return InvalidRegion(region_ref)
-            items = tuple(
-                _bounded_tool_record(item)
-                for item in _region_items(
-                    region,
-                    canonical_world,
-                    observation,
-                )
+            items = _region_items(
+                region,
+                canonical_world,
+                observation,
             )
             return _page_region_items(
                 items,
@@ -715,17 +713,14 @@ def inspect_actor_world(
         if action == "find":
             if not query.strip():
                 return Empty("", _index_coverage(region_index), ("provide non-empty public text",))
-            matches = tuple(
-                _bounded_tool_record(item)
-                for item in _find_matches(
-                    region_index,
-                    canonical_world,
-                    query,
-                    observation,
-                    grounding,
-                    public_fact_bindings=public_fact_bindings or {},
-                    evidence_index=evidence_index,
-                )
+            matches = _find_matches(
+                region_index,
+                canonical_world,
+                query,
+                observation,
+                grounding,
+                public_fact_bindings=public_fact_bindings or {},
+                evidence_index=evidence_index,
             )
             if not matches:
                 return Empty(
@@ -747,9 +742,7 @@ def inspect_actor_world(
             )
         if action == "view_all":
             items = tuple(
-                _bounded_tool_record(
-                    _region_item(region, canonical_world.region_refs[region.key])
-                )
+                _region_item(region, canonical_world.region_refs[region.key])
                 for region in region_index.regions
             )
             offset = _decode_simple_cursor(cursor, len(items))
@@ -1633,11 +1626,20 @@ def _repeated_item_records(
             if (compact := _compact_repeated_target(targets[target_id])) is not None
         )
         record: dict[str, object] = {
-            "kind": "complete_item",
+            "kind": (
+                "partial_item"
+                if any(
+                    targets[target_id].state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True
+                    for target_id in target_ids
+                )
+                else "complete_item"
+            ),
             "region_ref": region_ref,
             "role": nodes[root_id].role,
             "content": content,
         }
+        if record["kind"] == "partial_item":
+            record["content_truncated"] = True
         if nodes[root_id].label:
             record["label"] = nodes[root_id].label
         grouped.append(record)
@@ -1687,6 +1689,8 @@ def _bounded_tool_record(item: Mapping[str, object]) -> Mapping[str, object]:
         raise TypeError("tool record must remain an object")
     result = dict(bounded)
     if truncated:
+        if result.get("kind") == "complete_item":
+            result["kind"] = "partial_item"
         result["content_truncated"] = True
     return result
 
@@ -1760,7 +1764,19 @@ def _page_region_items(
             if _inspect_outcome_bytes(admitted) <= hard_limit:
                 return admitted
             return CapacityExceeded(_inspect_outcome_bytes(admitted), hard_limit)
-        return CapacityExceeded(_inspect_outcome_bytes(outcome), hard_limit)
+        bounded = _bounded_tool_record(items[index])
+        bounded_outcome = Opened(
+            (bounded,),
+            candidate_cursor,
+            source_coverage,
+            region_membership,
+            _region_result_page(offset, candidate_end, len(items)),
+        )
+        if _inspect_outcome_bytes(bounded_outcome) <= hard_limit:
+            page.append(bounded)
+            index = candidate_end
+            continue
+        return CapacityExceeded(_inspect_outcome_bytes(bounded_outcome), hard_limit)
     next_cursor = str(index) if index < len(items) else ""
     return Opened(
         tuple(page),
@@ -1792,7 +1808,13 @@ def _page_read_items(
             index = candidate_end
             continue
         if not page:
-            return CapacityExceeded(_inspect_outcome_bytes(outcome), hard_limit)
+            bounded = _bounded_tool_record(items[index])
+            bounded_outcome = outcome_factory((bounded,), candidate_cursor)
+            if _inspect_outcome_bytes(bounded_outcome) <= hard_limit:
+                page.append(bounded)
+                index = candidate_end
+                continue
+            return CapacityExceeded(_inspect_outcome_bytes(bounded_outcome), hard_limit)
         break
     next_cursor = str(index) if index < len(items) else ""
     admitted = outcome_factory(tuple(page), next_cursor)

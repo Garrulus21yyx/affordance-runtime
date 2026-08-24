@@ -6,19 +6,22 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
-Implementation and provider-free verification of the thin result/history cutover and the action-discovery closure
-repair are complete. The affected focused suite passes `324` tests; the full suite passes `1653` tests with `24`
-skipped. Ruff, compileall, and diff checks pass. The action-discovery repair has not yet had a post-fix live rerun.
+Implementation and provider-free verification of the thin result/history cutover, action-discovery closure repair,
+and readable-AX completeness repair are complete. The readable-result focused suite passes `62` tests; the full suite
+passes `1656` tests with `24` skipped. Ruff, compileall, and diff checks pass. The repository-wide mypy command still
+reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
 Overall project closure is still **open**:
 
 - BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
 - Planner lexical admission still has a known gap.
-- The action-discovery/catalog repair is provider-free verified but not yet revalidated by a post-fix live witness.
+- The readable-AX repair still needs a post-fix agent benchmark witness; a real-page Chromium AX diagnostic is not a
+  benchmark result.
 
-A live W1b witness was run after the accepted-response repair. It verified that bounded model-authored progress notes
-survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. That
-failed run remains diagnostic evidence under
-`evidence/live/w1b-task-21-deepseek-v4-flash-progress-note-20260824-run8/`; it is not post-fix acceptance evidence.
+A live W1b witness was run after the accepted-response repair. Run8 verified that bounded model-authored progress notes
+survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. Run10
+revalidated the subsequent catalog repair: all five model calls were contract-valid and the earlier `E25` mismatch did
+not recur. It then exposed the separate readable-AX truncation defect described below. Neither failed run is benchmark
+acceptance evidence.
 
 ## Root cause of the R9 escalation and repeated reads
 
@@ -63,6 +66,24 @@ soft packing target. If the complete bounded query set cannot fit the hard limit
 PydanticAI-boundary history compactor removes oldest completed call/result pairs and repacks; the query result is never
 exposed partially. This adds no result store, cursor, memory, or new state transition.
 
+Run10 then reached the correct review region and returned a formally complete page, but only two of four expected
+reviewers. The trace showed the actual information loss before the read owner: every AX accessible name had already
+been sliced by `SurfaceAdapter` to the first 240 characters. The omitted Catso and Michelle conclusions occurred after
+that boundary, while each downstream record was still labelled `complete_item`. The model's progress note therefore
+preserved an honestly reasoned but incomplete conclusion; no history compressor or summarizer can reconstruct text
+that never entered World.
+
+The observation contract is now positive and owner-specific:
+
+- BrowserGym informational AX text is preserved in canonical World; the 240-character defensive limit applies only
+  to executable/option labels and publishes `semantic.accessible_name.truncated=true` when used;
+- read/search operate on the preserved text and first try complete enclosing records against the final serialized
+  ToolReturn byte limit;
+- an individual record is bounded only when it cannot fit on an otherwise empty result page, and then becomes
+  `partial_item` with `content_truncated=true`;
+- pagination advances only across records in the same read owner. There is no fragment protocol, evidence inventory,
+  second summarizer, or new cursor state machine.
+
 ## Normative production chain
 
 ```text
@@ -86,7 +107,7 @@ invent tool schemas, bind private BrowserGym targets, project World semantics, o
 
 ### Local read/search/list
 
-`read_region`, `search_page_content`, and `list_regions` return one already bounded JSON mapping from their owner. That
+`read_region`, `search_page_content`, and `list_regions` return one byte-bounded JSON mapping from their owner. That
 mapping is stored in `LocalToolResult.result`, committed in `StepResult`, and projected unchanged as the PydanticAI
 `ToolReturn` under the original `tool_call_id`.
 
@@ -106,10 +127,12 @@ Conceptually:
 The concrete result types remain `ReadRegionResult` and `SearchPageContentResult` because they express the local
 operation at the Runtime boundary. They do not create a second evidence algebra.
 
-For repeated DOM/AX structures, search returns the smallest complete enclosing repeated item, with compact role, text,
-label, and state fields. A matching child therefore carries its sibling fields (for example, one card's title and
-author) without copying internal evidence metadata or serializing the whole surrounding region. This rule is generic
-to the public tree shape and contains no site, task, phrase, or fixed-region branch.
+For repeated DOM/AX structures, search returns the smallest enclosing repeated item, with compact role, text, label,
+and state fields. A matching child therefore carries its sibling fields (for example, one card's title and author)
+without copying internal evidence metadata or serializing the whole surrounding region. The item is
+`complete_item` only when its content is complete; any source or owner truncation changes it to `partial_item` and
+sets `content_truncated=true`. This rule is generic to the public tree shape and contains no site, task, phrase, or
+fixed-region branch.
 
 Pagination, when needed, is deliberately small:
 
@@ -124,8 +147,10 @@ The cursor is only a bounded offset understood by that same read owner. It is no
 Workspace state, evidence cursor, GUI-effect cursor, or action-result cursor. The current catalog and resolver still
 own current-World and current-ref validation. An invalid offset returns `InvalidCursor` deterministically.
 
-An individually oversized string/collection is bounded at the tool owner and marked `content_truncated=true`. The
-former `content_fragment`, record digest, fragment offset, lossless reassembly, and hidden admitted/suffix protocol are
+The read owner packs complete records first against the final serialized ToolReturn limit. It does not pre-truncate
+every field before calculating that total. Only a record that cannot fit on an empty page uses the individual
+string/collection safety bound, becomes `partial_item`, and receives `content_truncated=true`. The former
+`content_fragment`, record digest, fragment offset, lossless reassembly, and hidden admitted/suffix protocol are
 removed. GUI benchmark work does not need arbitrary 100 KiB DOM strings reconstructed exactly by the model.
 
 ### Action discovery
@@ -267,7 +292,12 @@ Current primary sources converge on a thin loop rather than a result-conservatio
 
 - [BrowserGym/AgentLab](https://arxiv.org/abs/2412.05467) defines the research interaction as current observation ->
   agent action -> environment step -> next observation, with BrowserGym delegating browser execution to Playwright and
-  exposing standardized observation/action spaces.
+  exposing standardized observation/action spaces. BrowserGym preserves raw DOM/AX observations with minimal
+  alteration; AgentLab applies configurable token fitting at prompt-component/page scope rather than silently clipping
+  every readable node at a control-label limit.
+- [FocusAgent](https://arxiv.org/html/2510.03204) selects task-relevant AXTree line ranges from the preserved tree and
+  inserts explicit placeholders for omitted ranges. Its recall-biased soft retrieval is evidence for visible,
+  structure-aware reduction rather than unmarked per-node prefix loss.
 - [OpenAI computer use](https://developers.openai.com/api/docs/guides/tools-computer-use) specifies a loop of
   `computer_call` -> ordered harness execution -> updated screenshot as `computer_call_output` under the same
   `call_id` -> repeat.
@@ -295,7 +325,8 @@ evidence ledger, a generic cursor state machine, a second provider-history owner
 This cutover is implementation-complete only when all of the following agree:
 
 1. every registered local tool resolves to its declared decision subtype;
-2. every local read/search/list result is serialized within its owner bound before commit;
+2. every local read/search/list result is serialized within its owner bound before commit, with every fitting record
+   complete and every non-fitting record explicitly partial;
 3. a Recording FunctionModel receives every retained committed result under its original call ID, without old World
    prompts, and terminal completion clears the history;
 4. a same-tool cursor advances a finite page without creating Store result inventory;

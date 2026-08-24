@@ -20,6 +20,7 @@ from affordance_runtime.surfaces.browsergym.interaction_profile import (
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
+ACCESSIBLE_NAME_TRUNCATED_STATE_KEY = "semantic.accessible_name.truncated"
 MAX_DOM_ATTRIBUTE_TOKENS = 32
 MIN_DOM_CLICKABLE_AREA = 20.0
 SemanticScalar: TypeAlias = str | bool | int | float | None
@@ -318,13 +319,23 @@ def _ax_records(raw: dict[str, object]) -> tuple[_AxRecord, ...]:
         )
         spec = browsergym_role_spec(role)
         state = _role_state(node, spec) if spec is not None else _option_state(node, role)
+        name = _typed_string(node.get("name"))
+        # BrowserGym's AX tree is the readable source.  Preserve informational
+        # text for the observation/tool owners to project and bound.  The
+        # compact control-label bound only protects executable routing labels.
+        if (spec is not None and spec.executable) or role == "option":
+            bounded_name = name[:MAX_SEMANTIC_TEXT]
+            if len(name) > MAX_SEMANTIC_TEXT:
+                state = (*state, (ACCESSIBLE_NAME_TRUNCATED_STATE_KEY, True))
+        else:
+            bounded_name = name
         record = _AxRecord(
             node_id,
             parent_id,
             child_ids,
             bid,
             role,
-            _typed_string(node.get("name"))[:MAX_SEMANTIC_TEXT],
+            bounded_name,
             state,
         )
         signature = _record_signature(record)

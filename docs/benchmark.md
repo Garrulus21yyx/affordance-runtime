@@ -2,22 +2,25 @@
 
 ## Current status
 
-The thin tool-result/history cutover, accepted-response repair, and the owner-level action-discovery/catalog repair are
-implemented and provider-free verified. The affected focused suite passes `324` tests; the full suite passes `1653`
-tests with `24` skipped. Ruff, compileall, and diff checks pass. A fresh-context review remains part of the final gate.
+The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair, and
+readable-AX completeness repair are implemented and provider-free verified. The new readable-result focused suite
+passes `62` tests; the full suite passes `1656` tests with `24` skipped. Ruff, compileall, and diff checks pass. The
+repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules. A fresh-context
+review remains part of the final gate.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
 - the BrowserGym `dispatch -> causal stable fresh World -> StepResult` gate;
 - the Planner lexical-admission gap;
-- post-fix live validation of the action-discovery/catalog contract;
-- any live provider/benchmark gate.
+- post-fix live benchmark validation of the readable-AX repair;
+- any broader live provider/benchmark gate.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
-an `E25` route returned by `find_controls` but the next `activate` schema admitted only `E53`. A post-fix live rerun
-still requires explicit user authorization. The untracked `output/` directory is unrelated user data and is not an
-acceptance artifact.
+an `E25` route returned by `find_controls` but the next `activate` schema admitted only `E53`. Run10 revalidated that
+catalog repair with five valid model tool calls and zero invalid arguments, then failed the native evaluator because
+readable AX text had been silently truncated upstream. The untracked `output/` directory is unrelated user data and is
+not an acceptance artifact.
 
 Official success remains the benchmark-native evaluator's or `TaskEvaluator`'s post-capture result. A model final
 answer, local action receipt, GoalPlan item, or Monitor classification cannot declare a GUI task successful.
@@ -48,6 +51,13 @@ accepted calls, and matching ToolReturns. It then exposed a distinct capability-
 the immediately preceding result and the call failed schema validation. This was not a World, task, GoalPlan, or model
 comprehension failure.
 
+The authorized run10 trace verified the route repair and then exposed the next shared owner defect. `read_region`
+reported a complete item inventory, but `SurfaceAdapter` had sliced every AX accessible name to 240 characters before
+World construction. Catso's and Michelle's relevant conclusions were after character 240, so the model received only
+the prefixes and reasonably excluded them; its retained progress note then called the incomplete observation complete.
+The failure was observation loss plus a dishonest completeness label, not missing TaskGoal, World identity, history
+compression, cursor state, or a need for another summarizer model.
+
 Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
 currentness, producer, and Store-composition failures all arose on that shared path.
 
@@ -66,6 +76,13 @@ local ToolCall(call_id)
 Read/search/list pagination is optional and local to the same tool. Search returns the smallest complete enclosing
 repeated item so ordinary record lookup does not require reading an entire large region. GUI effects and action
 discovery do not use the read cursor.
+
+BrowserGym informational AX text is now preserved into World. The read owner packs whole repeated records against the
+final ToolReturn byte budget; it does not cap every body at 240 or 2048 before computing that total. Only a record that
+cannot fit alone is safety-bounded and returned as `partial_item` with `content_truncated=true`. A real-page Chromium
+AX diagnostic confirmed that the four relevant bodies (327, 660, 1112, and 906 characters) survive the semantic owner,
+including the two conclusions beyond character 240. This diagnostic supports the owner repair but is not a benchmark
+acceptance run.
 
 Action discovery now has one explicit bounded invariant:
 
@@ -99,9 +116,11 @@ Properties cover:
 - final serialized ToolReturn byte fitting;
 - finite same-tool numeric page progress;
 - invalid cursor as a typed result;
-- oversized individual content bounded with `content_truncated=true`;
+- complete records packed first against the final serialized result limit;
+- oversized individual content returned as `partial_item` with `content_truncated=true`;
 - absence of `content_fragment`/digest/reassembly protocol;
-- no loss or duplication among the already bounded public item inventory.
+- no loss or duplication across records, with every fitting record exact and every non-fitting record explicitly
+  partial.
 
 The byte bound belongs to the read/search/list owner, not Store or request packing.
 
@@ -185,6 +204,17 @@ pytest -q \
 
 Result: `324 passed`.
 
+Readable AX owner/vertical suite:
+
+```bash
+pytest -q \
+  tests/unit/surfaces/browsergym/test_browsergym_canonical_semantics.py \
+  tests/unit/agent/test_semantic_delivery.py \
+  tests/integration/agent/test_browsergym_read_delivery.py
+```
+
+Result: `62 passed`.
+
 Full and static verification:
 
 ```bash
@@ -194,8 +224,11 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1653 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1656 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
+
+`mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
+repair adds no mypy suppression and does not claim that baseline as passing.
 
 No live provider command belongs in this provider-free acceptance sequence.
 
@@ -251,7 +284,8 @@ The final read-only review for this cutover must answer:
 7. Does every route in a same-World `find_controls` ToolReturn appear in the next frozen catalog, including when the
    soft target cannot admit unrelated optional inventory?
 8. Does a discovery/current-ActionSpace route mismatch fail closed before provider invocation?
-9. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
+9. Is the BrowserGym change limited to preserving informational AX text and explicitly marking bounded control labels,
+   without changing Binder, Executor, GoalPlan, evaluator, or benchmark semantics?
 10. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
    state?
 
