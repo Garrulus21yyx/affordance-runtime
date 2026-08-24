@@ -225,6 +225,57 @@ def test_unstable_causal_post_state_is_typed_and_not_admitted(status) -> None:
     asyncio.run(environment.close())
 
 
+def test_unstable_post_state_allows_one_read_only_recovery() -> None:
+    fake, environment, task, world = _fixture()
+    fake.step_stability_status = BrowserGymStabilityStatus.ACQUISITION_UNSTABLE
+    request = request_for(world, task, "activate")
+
+    outcome = asyncio.run(environment.execute(request))
+    recovery = asyncio.run(
+        environment.world.recover_execution_observation(
+            request,
+            WorldObservationRequest(
+                ObservationRequestKind.POST_ACTION_FALLBACK,
+                "recover unstable post state",
+                request.verification_needs,
+            ),
+        )
+    )
+
+    assert outcome.post_acquisition is not None
+    assert outcome.post_acquisition.status is AcquisitionStatus.FAILED
+    assert recovery.acquisition.status is AcquisitionStatus.ACQUIRED
+    assert recovery.acquisition.observation is not None
+    assert fake.capture_count == environment.capture_calls == 1
+    assert len(fake.actions) == environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_navigation_pending_cannot_be_admitted_by_current_page_recovery() -> None:
+    fake, environment, task, world = _fixture()
+    fake.step_stability_status = BrowserGymStabilityStatus.NAVIGATION_PENDING
+    request = request_for(world, task, "activate")
+
+    outcome = asyncio.run(environment.execute(request))
+    recovery = asyncio.run(
+        environment.world.recover_execution_observation(
+            request,
+            WorldObservationRequest(
+                ObservationRequestKind.POST_ACTION_FALLBACK,
+                "do not snapshot an uncommitted navigation",
+                request.verification_needs,
+            ),
+        )
+    )
+
+    assert outcome.post_acquisition is not None
+    assert outcome.post_acquisition.status is AcquisitionStatus.FAILED
+    assert recovery.acquisition.status is AcquisitionStatus.FAILED
+    assert fake.capture_count == environment.capture_calls == 0
+    assert len(fake.actions) == environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
 def test_missing_native_task_globals_use_lifecycle_fallback_for_element_dispatch() -> None:
     fake, environment, task, world = _fixture()
     fake.probe_task = {}

@@ -458,14 +458,27 @@ class BrowserGymSurfaceAdapter:
         started = perf_counter()
         try:
             if self._pending_error_code in {"navigation_pending", "acquisition_unstable"}:
-                return tuple(
-                    SelectedObservationResult.failed(
-                        request,
-                        SourceAcquisitionStatus.FAILED,
-                        self._pending_error_code,
-                    )
-                    for request in requests
+                # The causal step owns the first post-action acquisition.  A
+                # later acquisition id is the runtime's single read-only
+                # recovery attempt. An unstable post-state may be recaptured
+                # without replaying the action; an uncommitted navigation may
+                # not be admitted by a generic current-page snapshot.
+                recovery_allowed = bool(
+                    self._pending_error_code == "acquisition_unstable"
+                    and self._pending_acquisition_id
+                    and self._pending_acquisition_id != acquisition_id
                 )
+                if not self._pending_acquisition_id:
+                    self._pending_acquisition_id = acquisition_id
+                if not recovery_allowed:
+                    return tuple(
+                        SelectedObservationResult.failed(
+                            request,
+                            SourceAcquisitionStatus.FAILED,
+                            self._pending_error_code,
+                        )
+                        for request in requests
+                    )
             if self._pending_raw is not None and not self._pending_acquisition_id:
                 self._pending_acquisition_id = acquisition_id
             elif self._pending_acquisition_id != acquisition_id:

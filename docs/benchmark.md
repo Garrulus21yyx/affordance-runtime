@@ -3,21 +3,24 @@
 ## Current status
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
-readable-AX completeness repair, single-current-World cutover, and atomic PageMap/Manifest repair are implemented.
+readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
+recapture repair are implemented.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
 Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, and the full
-suite at `1656 passed / 19 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, the run15 exact-World
-replay, and the bounded fresh review pass. This is implementation evidence for the bounded cutover, not a successful
-live benchmark result.
+suite at `1659 passed / 19 skipped`; the BrowserGym/World/Core focused surface passes `237 / 18 skipped`. Ruff,
+compileall, `git diff --check`, negative-path searches, the run15 exact-World replay, and the bounded fresh review pass.
+This is implementation evidence for the bounded changes, not a live witness for the Task27 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- the BrowserGym `dispatch -> causal stable fresh World -> StepResult` gate;
+- post-repair live validation of the BrowserGym recapture repair;
 - the Planner lexical-admission gap;
-- post-repair live validation of the run16 terminal output-ownership repair;
 - any broader live provider/benchmark gate.
+
+Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
+`verified_success`. Task27 run1 is a failed pre-repair diagnostic for the post-action recapture defect described below.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -122,7 +125,21 @@ The repair deletes those two obsolete declarations and does not weaken `validate
 vertical test opens the W1b composition over fake BrowserGym, supplies a valid official response, and proves
 codec-normalized content -> exactly one STOP -> post-STOP capture -> native success -> `RunStatus.DONE`, while
 `TaskEvaluation.outputs` remains empty. No response artifact, evaluator projection, Store, or additional terminal state
-was added. Run16 remains diagnostic evidence, not post-repair benchmark acceptance.
+was added. Run16 remains diagnostic evidence; run18 is the accepted post-repair live witness.
+
+Task27 run1 failed after the model correctly selected and BrowserGym dispatched the Forums link exactly once. The
+transition trace records `/ -> /forums`, navigation start and commit, and document epoch `1 -> 2`, but the bounded
+post-action DOM-quiet gate returned `acquisition_unstable` before capture. `CoreAgentLoop` did not invoke the existing
+independent recapture because that path was restricted to `sent_unknown`; BrowserGym would also have rejected the
+recapture because the instability code remained sticky.
+
+The repair generalizes the already-bounded execution contract: any dispatched action whose normal post acquisition is
+not acquired may receive one independent read-only recovery acquisition. BrowserGym permits that second acquisition
+for `acquisition_unstable`, using its existing `capture_current()` path, while `navigation_pending` remains typed and
+fail-closed. The action is never replayed, a successful recovery becomes the same receipt's after-observation, and a
+failed recovery cannot reach another policy turn with stale World. No action retry, timer loop, transition framework,
+cursor, evidence path, or benchmark-specific branch was added. Task27 run1 remains a pre-repair failed witness; a new
+explicitly authorized live run is required for acceptance.
 
 The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
 while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
@@ -246,8 +263,9 @@ Existing provider-free integration tests continue to verify:
 ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World -> StepResult
 ```
 
-This cutover does not claim the separately reopened live BrowserGym transition is closed; it only proves no local-result
-change bypassed or replaced that route.
+The post-action repair reuses this route. A failed normal acquisition now permits one independent read-only recapture
+for the same dispatch; tests prove a recovered fresh World reaches the receipt and next control state with one physical
+action. This provider-free evidence does not close the live BrowserGym transition until a post-repair witness passes.
 
 The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
@@ -310,7 +328,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1656 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1659 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -373,11 +391,13 @@ The final read-only review for this cutover must answer:
 9. Is the BrowserGym change limited to preserving informational AX text and explicitly marking bounded control labels,
    without changing Binder, Executor, GoalPlan, evaluator, or benchmark semantics?
 10. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
-   state?
+    state?
+11. Does a failed normal post-action acquisition receive at most one read-only recapture, preserve one physical
+    dispatch, admit only the recovered fresh World, and keep `navigation_pending` fail-closed?
 
 ## Exit statement
 
-Passing this document's provider-free gates permits describing the thin result cutover as verified. It does not permit
-describing the whole GUI agent, BrowserGym causal transition, Planner admission, or benchmark campaign as closed. Those
-statuses change only when their own falsifiable gates and, where required, an explicitly authorized live benchmark
-pass without case-specific production branches.
+Passing this document's provider-free gates permits describing the thin result cutover and bounded recapture
+implementation as verified. It does not permit describing the whole GUI agent, BrowserGym causal transition, Planner
+admission, or benchmark campaign as closed. Those statuses change only when their own falsifiable gates and, where
+required, an explicitly authorized live benchmark pass without case-specific production branches.

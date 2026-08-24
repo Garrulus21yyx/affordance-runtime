@@ -7,20 +7,24 @@ longer part of the architecture: local tool results are not copied into a Store-
 admitted prefix, or exposed through generic continuation tools.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
-single-current-World cutover, and atomic PageMap/Manifest repair is complete. Verification counts below are refreshed
-by the current review; live benchmark validation remains separately authorized. The repository-wide mypy command still
-reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
+single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action recapture repair is complete.
+Verification counts below are refreshed by the current review; live benchmark validation remains separately
+authorized. The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and
+is not counted as a passing gate.
 
 Current provider-free verification: `323` focused owner/vertical tests and `63` readable-result tests pass; the full
-suite passes `1656` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining
-blocking owner, currentness, result-pairing, Manifest-conservation, or readable-search defect in this bounded cutover.
+suite passes `1659` with `19` skipped; the BrowserGym/World/Core focused surface passes `237` with `18` skipped. Ruff,
+compileall, and diff checks pass. The fresh review found no remaining blocking owner, currentness, result-pairing,
+Manifest-conservation, readable-search, or recovery-eligibility defect in this bounded implementation.
 
 Overall project closure is still **open**:
 
-- BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
+- the BrowserGym post-action recapture repair still requires a post-repair live witness before its separately scoped
+  gate can close;
 - Planner lexical admission still has a known gap.
-- Run16 live-verified the readable-AX/agent answer path, but the terminal output-ownership repair below still needs a
-  post-repair live benchmark witness.
+
+Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
+`done`, and the native evaluator returned `verified_success`.
 
 A live W1b witness was run after the accepted-response repair. Run8 verified that bounded model-authored progress notes
 survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. Run10
@@ -160,7 +164,35 @@ The owner repair removes the obsolete W1b requested-output/manifest declarations
 validator remains strict for real World-backed deliverables. A fake-BrowserGym vertical gate now exercises the exact
 positive path: official codec normalization -> one STOP -> post-STOP capture -> native success -> validated
 `TaskEvaluation(COMPLETE)` -> `RunStatus.DONE`, with no output artifact, response Store, or projection side channel.
-Run16 remains a failed pre-repair witness; a post-repair live witness is still required.
+Run16 remains a failed pre-repair witness. Run18 is the post-repair accepted live witness.
+
+Task27 run1 then exposed the still-open BrowserGym causal-transition gate. The model correctly selected the Forums
+link; BrowserGym recorded one `sent` dispatch, a URL change from `/` to `/forums`, navigation start and commit, and a
+new document epoch. The first post-action capture nevertheless returned `acquisition_unstable` after its bounded DOM
+quiet wait, so `post_capture_started` and `post_capture_completed` were absent. Runtime then blocked without a fresh
+World. This was not a policy, task, World projection, ToolReturn, or action-binding failure.
+
+The shared root cause was a half-connected existing recovery contract. `CoreAgentLoop` allowed its one bounded
+read-only post-dispatch recapture only for `sent_unknown`, although a known `sent` action can also lose its normal
+post-action acquisition. The BrowserGym adapter also made `acquisition_unstable` sticky across every later acquisition,
+so the existing `capture_current()` port could never recover it.
+
+The positive contract is now:
+
+```text
+one dispatch
+-> normal causal post-action acquisition
+-> if missing/failed, at most one independent read-only recapture
+-> fresh World -> StepResult
+```
+
+The recovery never replays the action. BrowserGym admits that recapture only for `acquisition_unstable`; an uncommitted
+`navigation_pending` state remains fail-closed because a generic current-page snapshot cannot prove which document it
+belongs to. A failed second acquisition remains typed and terminal for the step. The existing execution outcome,
+independent-capture port, fresh-World projection, receipt lineage, and policy loop are reused; no retry state machine,
+effect channel, cursor, evidence store, or new observation authority was added. Provider-free owner and vertical tests
+prove one step, one recapture, recovered after-observation lineage, and no action replay. A post-repair live witness is
+still required before this separately reopened gate can be called closed.
 
 ## Normative production chain
 
@@ -414,11 +446,12 @@ This cutover is implementation-complete only when all of the following agree:
 3. a Recording FunctionModel receives every retained committed result under its original call ID, without old World
    prompts, and terminal completion clears the history;
 4. a same-tool cursor advances a finite page without creating Store result inventory;
-5. GUI dispatch still leads to the existing causal stable fresh-World path;
+5. GUI dispatch leads to one normal causal acquisition and, when that acquisition fails, at most one read-only
+   recapture before a fresh World is admitted; the action is never replayed;
 6. production contains no generic result continuation/evidence inventory/reassembly path;
 7. focused and full provider-free suites, Ruff, compileall, negative searches, and fresh diff review pass.
 8. every Manifest ref is present in the same admitted text/media for zero, partial, and full action-prefix selections;
 9. readable search cannot match or return DOM tag/class/ID scaffolding.
 
-These gates prove this bounded architectural cutover. They do not close the separately reopened BrowserGym transition,
-Planner lexical admission, or live benchmark gates.
+These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
+live witness, Planner lexical admission, or the broader benchmark campaign.

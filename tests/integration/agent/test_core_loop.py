@@ -1080,6 +1080,34 @@ def test_sent_unknown_gets_one_bounded_fresh_recapture_before_control_recovery()
     asyncio.run(scenario())
 
 
+def test_sent_with_failed_post_acquisition_gets_one_bounded_fresh_recapture() -> None:
+    async def scenario() -> None:
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("sent_dispatch_recapture_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            post_observations=(),
+            independent_observations=(_world("recovered", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.DONE
+        assert state.current_world.observation_id == "recovered"
+        assert environment.execute_calls == 1
+        assert environment.capture_calls == 1
+        assert state.last_step is not None
+        assert state.last_step.execution_receipts is not None
+        assert state.last_step.execution_receipts.receipts[-1].after_observation_id == "recovered"
+
+    asyncio.run(scenario())
+
+
 def test_sent_unknown_is_committed_once_without_automatic_replay() -> None:
     async def scenario() -> None:
         task = TaskGoal(

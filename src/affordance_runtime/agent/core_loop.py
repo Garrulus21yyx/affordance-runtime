@@ -1334,7 +1334,7 @@ class CoreAgentLoop:
 
         post = execution.post_acquisition
         if (
-            execution.result.dispatch_status is not DispatchStatus.SENT_UNKNOWN
+            execution.result.dispatch_status is DispatchStatus.NOT_SENT
             or post is None
             or post.status is AcquisitionStatus.ACQUIRED
             or execution.recovery_acquisitions
@@ -1342,7 +1342,7 @@ class CoreAgentLoop:
             return execution
         observation_request = WorldObservationRequest(
             ObservationRequestKind.POST_ACTION_FALLBACK,
-            "recover uncertain dispatch observation",
+            "recover missing post-action observation",
             execution.request.verification_needs,
         )
         recover = getattr(environment, "recover_execution_observation", None)

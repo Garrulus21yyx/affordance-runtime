@@ -509,11 +509,11 @@ def _validate_execution_attempt(
     ):
         raise ValueError("execution recovery permits one independent fresh capture")
     if recovery and (
-        result.dispatch_status is not DispatchStatus.SENT_UNKNOWN
+        result.dispatch_status is DispatchStatus.NOT_SENT
         or post_acquisition is None
         or post_acquisition.status.value == "acquired"
     ):
-        raise ValueError("execution recovery requires SENT_UNKNOWN with a failed normal post acquisition")
+        raise ValueError("execution recovery requires a dispatched action with a failed normal post acquisition")
 
 
 class ActionDispatchCancelled(asyncio.CancelledError):
