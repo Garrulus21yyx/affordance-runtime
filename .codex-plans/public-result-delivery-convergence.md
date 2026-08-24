@@ -95,13 +95,26 @@ Live and cohort execution remain stopped.
    - Files: `src/affordance_runtime/agent/tool_result_projection.py`,
      `tests/unit/agent/test_tool_result_projection.py`.
 
-16. **in_progress — Atomic production cutover and deletion**
+16. **stopped — Atomic production cutover falsified at the Store inventory owner**
    - Migrate policy, Catalog resolver, CoreLoop, StepResult, Store, RunState, Workspace/Monitor, TurnPacker, Envelope
      codec, and trace consumers together.
    - Delete whole-Store return fields, Store pending-call/outcome fields, manual mapping history reconstruction,
      caller-side merges, and generic result-body projections.
    - Do not add a replacement state machine, Store, packer, provider transport, or benchmark/site branch.
    - Commit only after focused production-path and existing suites are green.
+   - Falsification witness: the first admitted `action_results_next_page` capability is produced from the
+     `AgentContext` delivery-planning Store, while `RunState.delivery_store` still has no corresponding inventory.
+     The committed reducer therefore returns `unsupported` for a capability that the exact admitted Catalog accepted.
+   - Observed: provider-free vertical test
+     `test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_routes` failed in
+     `ObservationDeliveryStore.reduce` with `committed continuation is unsupported` after 883 passing tests and 18
+     skips in the same run. Expected: every continuation accepted from the exact admitted turn is reducible exactly
+     once against the authoritative previous Store without a whole-Store handoff.
+   - Producer/owner/consumer gap: `ContextBuilder/build_action_delivery_plan` produces the inventory/capability for
+     `ModelTurnDelivery` and Catalog resolution; `ObservationDeliveryStore.reduce` owns the next Store; CoreLoop and
+     RunState consume that transition. The frozen contract does not state how the admitted per-turn inventory becomes
+     an authoritative reducer input before currentness validation. No nearby fallback or guessed fix was added.
+   - Evidence: `evidence/acceptance/provider-protocol-delivery-state-cutover-falsification-20260824.json`.
 
 17. **pending — Provider-free vertical acceptance and evidence commit**
    - Run the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel`

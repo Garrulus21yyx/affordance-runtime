@@ -1,0 +1,46 @@
+{
+  "schema": "provider-protocol-delivery-state-falsification.v1",
+  "date": "2026-08-24",
+  "starting_revision": "90bff9293137c67d499dae69718ed34fa874f0f5",
+  "scaffold_revision": "dccf6a0c",
+  "status": "stopped_owner_contract_falsified",
+  "overall_status": "reopened_non_closed",
+  "execution_profile": {
+    "python": "/home/yang/.venvs/affordance-browsergym-py312/bin/python",
+    "pydantic_ai_slim": "2.33.0",
+    "provider_attempts": 0,
+    "live_provider_run": false,
+    "live_benchmark_run": false,
+    "task21_replay": false
+  },
+  "witness": {
+    "test": "tests/integration/model/test_recording_provider_gate.py::test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_routes",
+    "command": "PYTHONPATH=src:tests /home/yang/.venvs/affordance-browsergym-py312/bin/python -m pytest -q -x -k 'not test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff'",
+    "progress_before_failure": {
+      "passed": 883,
+      "skipped": 18,
+      "deselected": 1
+    },
+    "exception": "ValueError: committed continuation is unsupported",
+    "failure_site": "ObservationDeliveryStore.reduce continuation currentness validation"
+  },
+  "observed": "The exact first-turn Catalog admitted action_results_next_page from an AgentContext delivery-planning inventory. The committed StepResult carried that typed continuation and the admitted ModelTurnDelivery, but the authoritative RunState.delivery_store still lacked the inventory, so its sole reducer classified the admitted capability as unsupported.",
+  "expected": "A continuation accepted from the exact admitted turn must be reducible exactly once against the authoritative previous Store, preserve every independent transition, and require neither a whole-Store policy handoff nor a caller-side merge.",
+  "producer": [
+    "ContextBuilder.build_action_delivery_plan derives the per-turn inventory-backed AgentContext Store",
+    "TurnPacker/ModelTurnDelivery publishes the admitted continuation capability",
+    "Catalog resolver returns the typed continuation on the existing LocalToolResult"
+  ],
+  "owner": [
+    "ObservationDeliveryStore owns retained evidence and continuation currentness",
+    "ObservationDeliveryStore.reduce(previous_store, committed_step) owns the sole next Store transition"
+  ],
+  "consumer": [
+    "CoreAgentLoop submits the committed StepResult",
+    "RunState.apply commits DeliveryTransition.next_store",
+    "the next TurnPacker consumes the advanced continuation inventory"
+  ],
+  "violated_invariant": "Every typed continuation admitted by the exact current Catalog has one authoritative inventory/currentness lineage available to the sole committed-step reducer.",
+  "contract_gap": "The frozen contract does not specify how the admitted per-turn delivery inventory becomes an authoritative reducer input before the reducer validates a continuation selected from that same turn.",
+  "stop_action": "No nearby branch, compatibility fallback, Store merge, live run, or benchmark specialization was added. Atomic cutover remains uncommitted and work stopped at the owner boundary."
+}
