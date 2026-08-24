@@ -4,25 +4,26 @@
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
-recapture repair, and BrowserGym large-page liveness repair are implemented.
+recapture repair, and BrowserGym large-page liveness and viewport-grounded media repairs are implemented.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
 Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, and the full
-suite at `1663 passed / 19 skipped`; the BrowserGym/World/Core focused surface passes `245 / 18 skipped`. Ruff,
+suite at `1665 passed / 19 skipped`; the BrowserGym/World/Core focused surface passes `247 / 18 skipped`. Ruff,
 compileall, `git diff --check`, negative-path searches, the run15 exact-World replay, and the bounded fresh review pass.
 This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- post-repair live validation of the BrowserGym large-page liveness repair;
+- post-repair live validation of the BrowserGym large-page viewport-grounding repair;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
 repair; Task44 run1 also accepted. Task266 run1 is a stopped, failed pre-repair diagnostic for the liveness defect
-described below.
+described below; Task266 run2 live-validates liveness but is a failed pre-repair diagnostic for the subsequent media
+projection defect.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -162,7 +163,22 @@ step, capture, finalization, and health calls execute off the asyncio loop. A ha
 session and rejects later capture immediately rather than queueing behind uninterruptible work; no action replay is
 allowed. The exact Portland page now completes BrowserGym extraction in about 1.55 seconds and bulk enrichment in
 about 1.0 second for all 3,397 BIDs. This is a general page-size invariant, not a Wiki/Task266 threshold or branch.
-Task266 run1 remains pre-repair evidence; a new explicitly authorized live run is required for acceptance.
+Task266 run1 remains pre-repair evidence.
+
+Task266 run2 completed normally in about 164.5 seconds with heartbeat continuously schedulable. The model again chose
+the correct article, and BrowserGym returned `stable_navigation` with post-capture complete at about 7.0 seconds. The
+run then ended `blocked / post_action_acquisition_failed`: screenshot projection copied 2,413 page-wide boxes into one
+1280×720 media record even though its existing contract admits at most 512 grounding regions. Exact replay measured
+5,999 valid structural controls but only 70 boxes intersecting the current viewport; off-screen boxes extended to
+about y=27,512.
+
+The media owner now retains only viewport-intersecting boxes, clips them to the captured image, and prioritizes
+executable controls if a viewport itself exceeds the existing bound. Structural targets and bindings remain complete;
+the exact page projects 6,001 total targets, 1,923 bindings, 4,096 bounded facts, and 70 valid screenshot regions.
+Post-action projection exceptions now also preserve a typed `post_action_projection_failed` reason plus the bounded
+execution diagnostic. This reuses the existing screenshot, geometry, media contract, and recovery route; it adds no
+result cursor, screenshot paging, task heuristic, or alternate World. Task266 run2 is pre-repair evidence for this
+defect; a new explicitly authorized live run is required for acceptance.
 
 The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
 while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
@@ -288,8 +304,9 @@ ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World 
 
 The post-action repair reuses this route. A failed normal acquisition now permits one independent read-only recapture
 for the same dispatch; tests prove a recovered fresh World reaches the receipt and next control state with one physical
-action. Task27 run2 supplies the live recapture witness. Large-page liveness remains open until Task266 is rerun after
-the batch/off-loop repair.
+action. Task27 run2 supplies the live recapture witness. Task266 run2 closes the large-page liveness witness but
+reopens the complete route at screenshot projection; the viewport-grounding repair still requires a fresh live
+witness.
 
 The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
@@ -352,7 +369,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1663 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1665 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -420,6 +437,8 @@ The final read-only review for this cutover must answer:
     dispatch, admit only the recovered fresh World, and keep `navigation_pending` fail-closed?
 12. Does BrowserGym enrich one captured BID inventory in O(frames) Playwright round trips, keep synchronous physical
     calls off the asyncio loop, and reject fallback immediately after an owner timeout?
+13. Does screenshot grounding include only regions present in the captured viewport, clip regions to the image,
+    preserve executable priority within the media owner's bound, and leave structural targets and bindings intact?
 
 ## Exit statement
 

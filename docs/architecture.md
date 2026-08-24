@@ -8,24 +8,26 @@ admitted prefix, or exposed through generic continuation tools.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
-large-page liveness repair is complete. Verification counts below are refreshed by the current review; live benchmark
-validation remains separately authorized. The repository-wide mypy command still reports its pre-existing baseline
-errors in unchanged modules and is not counted as a passing gate.
+large-page liveness and viewport-grounded media repairs is complete. Verification counts below are refreshed by the
+current review; live benchmark validation remains separately authorized. The repository-wide mypy command still
+reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
 
 Current provider-free verification: `323` focused owner/vertical tests and `63` readable-result tests pass; the full
-suite passes `1663` with `19` skipped; the BrowserGym/World/Core focused surface passes `245` with `18` skipped. Ruff,
+suite passes `1665` with `19` skipped; the BrowserGym/World/Core focused surface passes `247` with `18` skipped. Ruff,
 compileall, and diff checks pass. The fresh review found no remaining blocking owner, currentness, result-pairing,
 Manifest-conservation, readable-search, recovery-eligibility, or async-liveness defect in this bounded implementation.
 
 Overall project closure is still **open**:
 
-- the BrowserGym large-page liveness repair still requires a post-repair Task266 live witness before its separately
-  scoped gate can close;
+- the BrowserGym large-page viewport-grounding repair still requires a post-repair Task266 live witness before its
+  separately scoped gate can close;
 - Planner lexical admission still has a known gap.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
 `done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action
 recapture path, and Task44 run1 independently completed with native `verified_success`.
+Task266 run2 live-verified the large-page liveness repair, then exposed the separate screenshot-grounding projection
+defect described below.
 
 A live W1b witness was run after the accepted-response repair. Run8 verified that bounded model-authored progress notes
 survived into later physical provider inputs, then failed on an independent action-discovery/catalog mismatch. Run10
@@ -237,7 +239,22 @@ cursor, evidence path, or task/site branch.
 The exact Portland diagnostic now enriches all 3,397 BIDs in about 1.0 second after BrowserGym's approximately
 1.55-second DOM/AX extraction. Provider-free tests prove one batch for a 2,000-control inventory, real-Chromium bulk
 semantics, event-loop heartbeat progress during a blocked physical probe, and immediate rejection of recovery after an
-owner timeout. A post-repair Task266 live witness is still required before this liveness gate closes.
+owner timeout.
+
+Task266 run2 live-verified that liveness repair: heartbeat remained schedulable, the model selected the same article,
+and BrowserGym returned a typed `stable_navigation` snapshot in about 7.0 seconds. The run then blocked at the next
+boundary with `post_action_acquisition_failed`. Exact local replay proved that structural semantics had already
+accepted 5,999 controls, but screenshot projection attempted to attach every one of the page's 2,413 boxed controls as
+a region on the current 1280×720 screenshot. The media contract correctly rejects more than 512 regions, and only 70
+of those boxes actually intersected the captured viewport; the furthest page box started around y=27,512.
+
+Screenshot projection now grounds only controls geometrically present in the current image, clips partial edge boxes,
+and gives executable controls stable priority within the existing media bound. It does not remove any structural
+target or binding. The same Portland snapshot now produces one valid source with 6,001 targets, 1,923 bindings, 4,096
+bounded facts, 6,725 retained structure nodes out of 11,251, and 70 in-viewport screenshot regions. Projection
+exceptions after dispatch also retain their existing typed reason and bounded owner diagnostic instead of collapsing
+to an unexplained capture failure. No page/site rule, image pagination, evidence path, or new fallback was added. A
+post-repair Task266 live witness is still required before this combined large-page gate closes.
 
 ## Normative production chain
 

@@ -17,6 +17,7 @@ from affordance_runtime.surfaces.browsergym.semantics import (
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
+    MAX_OBSERVATION_GROUNDING_REGIONS,
     CoverageState,
     EntityInventoryIssueCode,
     EntityInventoryStatus,
@@ -114,6 +115,32 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     assert retained.status is EntityInventoryStatus.COMPLETE
     assert (retained.entity_count, retained.entity_total_count) == (5, 5)
     assert (retained.option_value_count, retained.option_value_total_count) == (2, 2)
+
+
+def test_screenshot_grounding_is_viewport_bounded_and_prioritizes_actions() -> None:
+    nodes = tuple(
+        ax_node(f"text-{index}", "StaticText", f"Text {index}")
+        for index in range(MAX_OBSERVATION_GROUNDING_REGIONS + 100)
+    )
+    raw = raw_observation(
+        *nodes,
+        ax_node("action", "button", "Act"),
+        ax_node("offscreen", "button", "Below viewport"),
+    )
+    raw["screenshot"] = np.zeros((240, 320, 3), dtype=np.uint8)
+    for bid, physical in raw[PRIVATE_CONTROL_PROPERTIES_KEY].items():
+        physical["bbox"] = [10, 10, 20, 20]
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["action"]["bbox"] = [310, 230, 20, 20]
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["offscreen"]["bbox"] = [10, 1_000, 20, 20]
+
+    projected = _project(raw)
+
+    media = projected.world.sources[0].media[0]
+    targets = {item.label: item.target_id for item in projected.world.targets}
+    regions = {item.target_id: item for item in media.grounding_regions}
+    assert len(regions) == MAX_OBSERVATION_GROUNDING_REGIONS
+    assert regions[targets["Act"]].bbox == (310, 230, 10, 10)
+    assert targets["Below viewport"] not in regions
 
 
 def test_hidden_native_select_keeps_one_semantic_binding_on_existing_projection_path() -> None:

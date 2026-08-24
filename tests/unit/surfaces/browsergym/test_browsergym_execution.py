@@ -10,6 +10,7 @@ from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
 from affordance_runtime.execution import ActionError, DispatchStatus, ExecutionDiagnosticPhase
 from affordance_runtime.surfaces.browsergym import backend as browsergym_backend
+from affordance_runtime.surfaces.browsergym import environment as browsergym_environment
 from affordance_runtime.surfaces.browsergym.backend import _with_stable_private_control_properties
 from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessReason,
@@ -308,6 +309,34 @@ def test_unstable_post_state_allows_one_read_only_recovery() -> None:
     assert recovery.acquisition.observation is not None
     assert fake.capture_count == environment.capture_calls == 1
     assert len(fake.actions) == environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
+def test_post_action_projection_failure_keeps_owner_diagnostic(monkeypatch) -> None:
+    fake, environment, task, world = _fixture()
+    request = request_for(world, task, "activate")
+
+    def fail_projection(*args, **kwargs):
+        del args, kwargs
+        raise ValueError("projection witness")
+
+    monkeypatch.setattr(
+        browsergym_environment,
+        "project_browsergym_observation",
+        fail_projection,
+    )
+
+    outcome = asyncio.run(environment.execute(request))
+
+    assert outcome.post_acquisition is not None
+    assert outcome.post_acquisition.status is AcquisitionStatus.FAILED
+    assert any(
+        source.reason_code == "post_action_projection_failed"
+        for source in outcome.post_acquisition.source_results
+    )
+    assert outcome.result.diagnostics[-1].exception_type == "ValueError"
+    assert outcome.result.diagnostics[-1].safe_message == "projection witness"
+    assert outcome.result.diagnostics[-1].traceback_ref.startswith("traceback:sha256:")
     asyncio.run(environment.close())
 
 

@@ -44,6 +44,7 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     BrowserGymTaskStateSnapshot,
 )
 from affordance_runtime.world import (
+    MAX_OBSERVATION_GROUNDING_REGIONS,
     CoverageState,
     EntityInventoryIssueCode,
     EntityInventoryStatus,
@@ -290,15 +291,7 @@ def project_browsergym_observation(
     screenshot_media = _screenshot_media(
         raw,
         observation_id,
-        tuple(
-            ObservationGroundingRegion(
-                target_ids[node.private_node_id],
-                node.private_bbox,
-                coordinate_space_id="browsergym:viewport_pixels",
-            )
-            for node in projected
-            if node.private_bbox is not None
-        ),
+        _screenshot_grounding_regions(raw, tuple(projected), target_ids),
     )
     if screenshot_media:
         artifacts["screenshot_semantic_state"] = {
@@ -905,3 +898,41 @@ def _screenshot_media(
         )
     except (AttributeError, TypeError, ValueError, OSError) as exc:
         raise ValueError("BrowserGym screenshot could not be encoded") from exc
+
+
+def _screenshot_grounding_regions(
+    raw: dict[str, object],
+    controls: tuple[CanonicalBrowserControl, ...],
+    target_ids: dict[str, str],
+) -> tuple[ObservationGroundingRegion, ...]:
+    """Ground only controls that the current viewport screenshot contains."""
+
+    width, height = _viewport_dimensions(raw)
+    executable: list[ObservationGroundingRegion] = []
+    contextual: list[ObservationGroundingRegion] = []
+    for control in controls:
+        bbox = _clip_to_viewport(control.private_bbox, width, height)
+        if bbox is None:
+            continue
+        region = ObservationGroundingRegion(
+            target_ids[control.private_node_id],
+            bbox,
+            coordinate_space_id="browsergym:viewport_pixels",
+        )
+        (executable if control.executable else contextual).append(region)
+    return tuple((*executable, *contextual)[:MAX_OBSERVATION_GROUNDING_REGIONS])
+
+
+def _clip_to_viewport(
+    bbox: tuple[int, int, int, int] | None,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int] | None:
+    if bbox is None:
+        return None
+    x, y, box_width, box_height = bbox
+    right = min(width, x + box_width)
+    bottom = min(height, y + box_height)
+    if x >= width or y >= height or right <= x or bottom <= y:
+        return None
+    return x, y, right - x, bottom - y

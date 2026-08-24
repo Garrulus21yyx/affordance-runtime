@@ -508,6 +508,12 @@ class BrowserGymSurfaceAdapter:
             self._pending_acquisition_id = acquisition_id
             return self._project_requests(requests)
         except Exception as exc:
+            if (
+                not self._pending_error_code
+                and self._pending_snapshot is not None
+                and self._pending_snapshot.source is BrowserGymTaskStateSource.POST_ACTION
+            ):
+                self._pending_error_code = "post_action_projection_failed"
             if self._pending_error_code in {
                 "step_failed_after_dispatch",
                 "post_action_projection_failed",

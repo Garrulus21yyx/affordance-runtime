@@ -25,6 +25,7 @@ from affordance_runtime.world.acquisition import (
     selected_observation_requests,
 )
 from affordance_runtime.world.contracts import (
+    MAX_OBSERVATION_GROUNDING_REGIONS,
     CanonicalObservationMedia,
     CoverageState,
     EntityAlignmentBasis,
@@ -81,6 +82,7 @@ from affordance_runtime.world.vision_escalation import (
 )
 
 __all__ = [
+    "MAX_OBSERVATION_GROUNDING_REGIONS",
     "MAX_SEMANTIC_INVENTORY_COUNT",
     "AcquisitionCost",
     "AcquisitionOrigin",

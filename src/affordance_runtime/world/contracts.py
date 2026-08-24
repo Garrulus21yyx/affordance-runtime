@@ -71,6 +71,9 @@ class ObservationMediaVariant(StrEnum):
     CROP = "crop"
 
 
+MAX_OBSERVATION_GROUNDING_REGIONS = 512
+
+
 @dataclass(frozen=True, order=True)
 class SourceEntityEndpoint:
     source_observation_id: str
@@ -312,7 +315,9 @@ class ObservationMedia:
             raise ValueError("observation media is invalid or exceeds its bound")
         object.__setattr__(self, "sha256", hashlib.sha256(self.data).hexdigest())
         regions = tuple(self.grounding_regions)
-        if len(regions) > 512 or any(not isinstance(item, ObservationGroundingRegion) for item in regions):
+        if len(regions) > MAX_OBSERVATION_GROUNDING_REGIONS or any(
+            not isinstance(item, ObservationGroundingRegion) for item in regions
+        ):
             raise TypeError("observation grounding regions must be bounded and typed")
         if len({item.target_id for item in regions}) != len(regions):
             raise ValueError("observation grounding regions must have unique targets")
