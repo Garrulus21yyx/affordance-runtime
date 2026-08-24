@@ -3,10 +3,14 @@
 ## Current status
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
-readable-AX completeness repair, and single-current-World cutover are implemented. The focused owner/vertical suite
-passes `322` tests, the readable-result suite passes `62`, and the full suite passes `1651` with `19` skipped. Ruff,
-compileall, and diff checks pass. The repository-wide mypy command still reports its pre-existing baseline errors in
-unchanged modules. The bounded fresh-review authority gate passes with no blocking finding.
+readable-AX completeness repair, single-current-World cutover, and atomic PageMap/Manifest repair are implemented.
+Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
+command still reports its pre-existing baseline errors in unchanged modules.
+
+Current provider-free verification passes `323` focused owner/vertical tests, `63` readable-result tests, and the full
+suite at `1655 passed / 19 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, the run15 exact-World
+replay, and the bounded fresh review pass. This is implementation evidence for the bounded cutover, not a successful
+live benchmark result.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -77,6 +81,31 @@ completed actions remain historical receipts; Store is confined to bounded Monit
 from `AgentContext`. A Recording FunctionModel vertical gate executes a GUI action, reaches a second policy call over
 the fresh post-action World, and verifies that `LatestEffect`, `CurrentFindings`, `ChangedRegions`, and `new_document`
 are absent. No replacement effect channel or lifecycle was introduced.
+
+The authorized run15 trace revalidated that cutover and exposed the next acceptance gap. It made 12 policy turns with
+zero `wait` calls, clicked the Reviews tab once, and BrowserGym captured a fresh second observation containing the full
+review records. The following turn failed locally with zero provider attempts:
+
+```text
+ValueError: delivery Manifest contains a ref absent from admitted text/media
+```
+
+The exact missing ref was `R11`, the review form region. `TurnPacker` starts from the legal zero-candidate prefix;
+`PageMap` registered every region ref but returned an empty descriptor when `R11`'s optional heading exceeded the
+descriptor budget. Default/full candidate selections happened to print `R11` elsewhere and masked the producer bug.
+The renderer had the same algebraic defect for facts on nodes hidden by duplicate-text suppression.
+
+The owner repair makes PageMap/Manifest construction atomic. Every region always has one minimal descriptor; optional
+descriptor fields are admitted individually. Hidden nodes cannot register facts. The existing `ModelTurnDelivery`
+gate remains strict and rejects any future non-atomic projection before provider invocation. Replaying run15's exact
+656-target fresh observation with 137 current actions and the zero-candidate selection now builds a 15-region delivery,
+keeps `R11` in both text and Manifest, and compiles the current tool catalog.
+
+Run15 also showed a separate search-contract pollution: query `small` matched HTML tag/class/ID scaffolding even though
+the tool advertised `searched_domain=readable_content`. Search matching and returned state now use visible labels/text,
+normal public semantic values, and human-facing title/alt/placeholder/ARIA attributes while excluding structural DOM,
+appearance, layout, and internal bookkeeping fields. This fixes the advertised boundary without adding search DSL,
+BM25, dense retrieval, a summarizer, or a benchmark-specific extractor.
 
 The bounded general repair is in the existing ActionPolicy prompt: `search_page_content` is an exact-substring locator,
 while the complete records it returns are judged by the model for entailment/paraphrase. For a known collection the
@@ -220,6 +249,15 @@ Production negative searches must find no:
 - `remember_fact`, `WorkingFact`, or Workspace working-set result-retention path;
 - Task21, R9, reviewer-name, site, selector, or benchmark-case production specialization.
 
+### G8 — atomic current delivery
+
+Every `DeliveryManifest` ref must occur in the same admitted text or exact media. The gate covers oversized optional
+region descriptions, hidden/de-duplicated node facts, zero-candidate delivery, partial prefixes, and ordinary full
+delivery. It does not allow TurnPacker or the provider bridge to ignore missing refs.
+
+Readable search is checked separately against structural pollution: DOM tag, class, and ID values cannot trigger or
+appear in a search result, while visible content with the same query still matches.
+
 ## Verification commands
 
 Focused owner/vertical suite:
@@ -233,7 +271,7 @@ pytest -q \
   tests/unit/agent/test_action_delivery_plan_properties.py
 ```
 
-Result: `322 passed`.
+Result: `323 passed`.
 
 Readable AX owner/vertical suite:
 
@@ -244,7 +282,7 @@ pytest -q \
   tests/integration/agent/test_browsergym_read_delivery.py
 ```
 
-Result: `62 passed`.
+Result: `63 passed`.
 
 Full and static verification:
 
@@ -255,7 +293,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1651 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1655 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This

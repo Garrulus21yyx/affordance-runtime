@@ -7,13 +7,14 @@ longer part of the architecture: local tool results are not copied into a Store-
 admitted prefix, or exposed through generic continuation tools.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
-and single-current-World cutover is complete. Verification counts below are refreshed by the current review; live
-benchmark validation remains separately authorized. The repository-wide mypy command still reports its pre-existing
-baseline errors in unchanged modules and is not counted as a passing gate.
+single-current-World cutover, and atomic PageMap/Manifest repair is complete. Verification counts below are refreshed
+by the current review; live benchmark validation remains separately authorized. The repository-wide mypy command still
+reports its pre-existing baseline errors in unchanged modules and is not counted as a passing gate.
 
-Current provider-free verification: `322` focused owner/vertical tests and `62` readable-result tests pass; the full
-suite passes `1651` with `19` skipped. Ruff, compileall, and diff checks pass. The bounded fresh-review authority audit
-found no blocking owner, currentness, result-pairing, or search-contract defect in this cutover.
+Current provider-free verification: `323` focused owner/vertical tests and `63` readable-result tests pass; the full
+suite passes `1655` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining
+blocking owner, currentness, result-pairing, Manifest-conservation, or readable-search defect in this bounded cutover.
+
 Overall project closure is still **open**:
 
 - BrowserGym `dispatch -> causal stable fresh World -> StepResult` still requires its separately scoped closure.
@@ -117,6 +118,30 @@ The repair restores one currentness authority:
 
 No replacement effect channel, transition state machine, cursor protocol, summary model, or retrieval system was
 added.
+
+Run15 verified that the stale-effect path was gone: the model issued no `wait`, BrowserGym captured the fresh Reviews
+World, and that World contained the complete review records. The next policy turn then failed locally before any
+provider call. `TurnPacker` correctly began with a zero-candidate prefix, but `PageMap` registered `R11` in its
+`DeliveryManifest` and dropped the entire `R11` descriptor because optional heading text exceeded the descriptor
+budget. `ModelTurnDelivery` rejected the contradictory projection. The same renderer also registered fact refs from
+nodes that were subsequently hidden by duplicate-text suppression. This was not another currentness, cursor,
+PydanticAI, or model-comprehension failure; it was one projection owner violating atomic delivery.
+
+The positive projection contract is now:
+
+- a public ref enters `DeliveryManifest` if and only if the same delivery contains that ref in admitted text or exact
+  media;
+- every PageMap region always emits a minimal `[R] kind/source-coverage/membership/recovery` descriptor; headings,
+  labels, counts, and state are optional additions within the descriptor budget;
+- a hidden or de-duplicated node cannot register its state/fact refs;
+- every legal `ActionDeliveryPlan` prefix, including the initial zero-candidate prefix, is validated by the unchanged
+  `ModelTurnDelivery` conservation gate before catalog construction or provider invocation.
+
+Run15 also showed that exact search for `small` matched DOM scaffolding such as an HTML `small` tag. Search now admits
+human-readable labels/text, normal public semantic fact/state values, and title/alt/placeholder/ARIA attributes while
+excluding appearance, layout, internal truncation, DOM tag/class/ID, and other structural fields. The excluded fields
+are neither match triggers nor returned search state. This remains a deterministic substring locator; it is not BM25,
+dense retrieval, or a semantic-search subsystem.
 
 ## Normative production chain
 
@@ -257,6 +282,7 @@ cannot leak into another episode.
 | private execution binding | Binder | model, read tools, Trace |
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
+| delivery text/Manifest atomicity | compact World renderer | TurnPacker, provider bridge, Trace |
 | bounded typed call/result history, correlation, and model-authored progress note | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
@@ -340,6 +366,10 @@ Current primary sources converge on a thin loop rather than a result-conservatio
   client/Playwright execution -> fresh screenshot in the corresponding function result.
 - [PydanticAI deferred tools](https://pydantic.dev/docs/ai/tools-toolsets/deferred-tools/) owns pending call IDs,
   validated deferred results, and message-history resumption.
+- [PydanticAI message history](https://pydantic.dev/docs/ai/core-concepts/message-history/) keeps provider-valid message
+  history and supports history processors at the SDK boundary rather than requiring a second result ledger.
+- [OSWorld](https://arxiv.org/abs/2404.07972) evaluates agents over a task, current screenshot/AX observation, action,
+  and next observation trajectory. Its agent history is trajectory context, not a second authoritative desktop state.
 
 Inference for this project: SOTA does require a harness, current observation projection, action schema, private binding,
 safe execution, result pairing, and fresh observation. It does not require one tool result to become a durable public
@@ -368,6 +398,8 @@ This cutover is implementation-complete only when all of the following agree:
 5. GUI dispatch still leads to the existing causal stable fresh-World path;
 6. production contains no generic result continuation/evidence inventory/reassembly path;
 7. focused and full provider-free suites, Ruff, compileall, negative searches, and fresh diff review pass.
+8. every Manifest ref is present in the same admitted text/media for zero, partial, and full action-prefix selections;
+9. readable search cannot match or return DOM tag/class/ID scaffolding.
 
 These gates prove this bounded architectural cutover. They do not close the separately reopened BrowserGym transition,
 Planner lexical admission, or live benchmark gates.

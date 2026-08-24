@@ -47,6 +47,15 @@ _PUBLIC_DOM_STATE_FIELDS = frozenset(
         "semantic.dom.attribute.aria-description",
     }
 )
+_SEARCHABLE_DOM_STATE_FIELDS = frozenset(
+    {
+        "semantic.dom.attribute.title",
+        "semantic.dom.attribute.alt",
+        "semantic.dom.attribute.placeholder",
+        "semantic.dom.attribute.aria-label",
+        "semantic.dom.attribute.aria-description",
+    }
+)
 _TOOL_RESULT_TEXT_MAX_CHARS = 2_048
 _TOOL_RESULT_COLLECTION_MAX_ITEMS = 64
 _TOOL_RESULT_MAX_DEPTH = 6
@@ -721,26 +730,28 @@ def _render_node(node, verbs, manifest, *, depth: int, parent_label: str) -> lis
             line = f"{'  ' * depth}{prefix}{'group' if role.casefold() == 'generic' else role}"
         if line and label:
             line += f" {_value(label)}"
-        attributes: list[str] = []
-        for key, value in state.items():
-            field = _short_field(key)
-            evidence_ref = node.state_evidence.get(key)
-            if evidence_ref:
-                manifest.fact(evidence_ref)
-                field = f"{field}[{evidence_ref}]"
-            attributes.append(f"{field}={_value(value)}")
-        if node.state_truncated:
-            attributes.append(f"state_coverage={len(node.state)}/{node.state_total_count}")
-        if current_verbs and prefix:
-            attributes.append(f"verbs={_value(current_verbs)}")
-        elif prefix and PublicRefCodec.accepts(public_ref, expected=PublicRefKind.NODE):
-            attributes.append("read_only=true")
-        for item in node.facts:
-            manifest.fact(item.evidence_ref)
-            attributes.append(f"fact.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}")
-        if line and attributes:
-            line += " " + " ".join(attributes)
         if line:
+            attributes: list[str] = []
+            for key, value in state.items():
+                field = _short_field(key)
+                evidence_ref = node.state_evidence.get(key)
+                if evidence_ref:
+                    manifest.fact(evidence_ref)
+                    field = f"{field}[{evidence_ref}]"
+                attributes.append(f"{field}={_value(value)}")
+            if node.state_truncated:
+                attributes.append(f"state_coverage={len(node.state)}/{node.state_total_count}")
+            if current_verbs and prefix:
+                attributes.append(f"verbs={_value(current_verbs)}")
+            elif prefix and PublicRefCodec.accepts(public_ref, expected=PublicRefKind.NODE):
+                attributes.append("read_only=true")
+            for item in node.facts:
+                manifest.fact(item.evidence_ref)
+                attributes.append(
+                    f"fact.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}"
+                )
+            if attributes:
+                line += " " + " ".join(attributes)
             lines.append(line)
             next_depth += 1
     child_parent = label or parent_label
@@ -1206,35 +1217,39 @@ def _bounded_region(region: WorldRegion, limits: DeliveryLimits) -> bool:
 
 
 def _region_descriptor_text(region: WorldRegion, region_ref: str, limits: DeliveryLimits) -> str:
-    labels = tuple(item for item in (region.heading, *region.direct_labels) if item)
-    if region.role == "generic" and not labels:
-        return ""
-    parts = [f"[{region_ref}]", f"kind={_value(region.role or 'region')}"]
+    # Every indexed region is a model-recoverable capability.  Keep its exact
+    # ref and recovery route even when optional descriptive text is too large
+    # for the PageMap descriptor budget.
+    parts = [
+        f"[{region_ref}]",
+        f"kind={_value(region.role or 'region')}",
+        f"source_coverage={region.source_coverage}",
+        f"region_membership={region.region_membership}",
+        "recovery=read_region",
+    ]
+    optional = []
     if region.heading:
-        parts.append(f"heading={_value(region.heading)}")
+        optional.append(f"heading={_value(region.heading)}")
     if region.direct_labels:
-        parts.append(f"labels={_value(region.direct_labels)}")
+        optional.append(f"labels={_value(region.direct_labels)}")
     if region.scope_path:
-        parts.append(f"context={_value(region.scope_path)}")
-    parts.extend(
+        optional.append(f"context={_value(region.scope_path)}")
+    optional.extend(
         (
             f"items={region.counts.get('items', 0)}",
             f"targets={region.counts.get('targets', 0)}",
             f"facts={region.counts.get('facts', 0)}",
             f"actions={region.counts.get('actions', 0)}",
-            f"source_coverage={region.source_coverage}",
-            f"region_membership={region.region_membership}",
         )
     )
     if region.role in {"table", "grid"}:
-        parts.append(f"available_filter_controls={region.counts.get('filter_controls', 0)}")
+        optional.append(f"available_filter_controls={region.counts.get('filter_controls', 0)}")
     if region.state_badges:
-        parts.append(f"state={_value(region.state_badges)}")
-    parts.append("recovery=read_region")
-    while _estimate_tokens(" ".join(parts)) > limits.descriptor_tokens and "labels=" in " ".join(parts):
-        parts = [item for item in parts if not item.startswith("labels=")]
-    text = " ".join(parts)
-    return text if _estimate_tokens(text) <= limits.descriptor_tokens else ""
+        optional.append(f"state={_value(region.state_badges)}")
+    for detail in optional:
+        if _estimate_tokens(" ".join((*parts, detail))) <= limits.descriptor_tokens:
+            parts.append(detail)
+    return " ".join(parts)
 
 
 def _page_title(observation: WorldObservation) -> str:
@@ -1256,10 +1271,6 @@ def _page_route(observation: WorldObservation) -> str:
         ),
         "",
     )
-
-
-def _region_search_text(region: WorldRegion) -> str:
-    return " ".join((region.role, region.heading, *region.direct_labels))
 
 
 def _region_public_refs(region, grounding) -> frozenset[str]:
@@ -1299,7 +1310,7 @@ def _find_matches(
     for target in observation.targets:
         if target.target_id in repeated_target_ids:
             continue
-        values = [target.role, target.label, *(str(value) for value in target.state.values())]
+        values = _readable_target_search_values(target)
         if needle not in " ".join(values).casefold():
             continue
         region_ref, node_ref = locations.get(target.target_id, ("", ""))
@@ -1309,8 +1320,10 @@ def _find_matches(
             "role": target.role,
             "label": target.label,
             "structural_context": region_ref,
-            "state": target.state,
         }
+        state = _readable_state_projection(target.state)
+        if state:
+            match["state"] = state
         record = _target_match_record(
             target,
             needle,
@@ -1340,8 +1353,7 @@ def _find_matches(
     for fact in observation.facts:
         if fact.subject_id in repeated_target_ids:
             continue
-        values = [fact.predicate, str(fact.value)]
-        if needle not in " ".join(values).casefold():
+        if not _searchable_public_fact(fact.predicate) or needle not in str(fact.value).casefold():
             continue
         region = index.region_for_fact(fact.fact_id)
         region_ref = canonical_world.region_refs.get(region.key, "") if region else ""
@@ -1398,7 +1410,7 @@ def _target_match_record(target, needle, observation, evidence_index):
             and item.predicate == "public.label" and item.value == target.label
         ), None)
     for predicate, value in target.state.items():
-        if needle not in str(value).casefold():
+        if not _searchable_public_fact(predicate) or needle not in str(value).casefold():
             continue
         record = next(
             (
@@ -1522,7 +1534,50 @@ def _compact_repeated_target(target) -> Mapping[str, object] | None:
 
 
 def _tool_record_search_text(item: Mapping[str, object]) -> str:
-    return json.dumps(to_json_compatible(item), ensure_ascii=False, separators=(",", ":")).casefold()
+    values: list[str] = []
+    label = item.get("label")
+    if isinstance(label, str):
+        values.append(label)
+    content = item.get("content")
+    if isinstance(content, tuple | list):
+        for current in content:
+            if not isinstance(current, Mapping):
+                continue
+            text = current.get("text")
+            if isinstance(text, str):
+                values.append(text)
+            state = current.get("state")
+            if isinstance(state, Mapping):
+                values.extend(_readable_state_search_values(state))
+    return " ".join(values).casefold()
+
+
+def _readable_target_search_values(target) -> list[str]:
+    values = [target.label] if target.label else []
+    values.extend(_readable_state_search_values(target.state))
+    return values
+
+
+def _readable_state_search_values(state: Mapping[str, object]) -> list[str]:
+    return [str(value) for value in _readable_state_projection(state).values()]
+
+
+def _readable_state_projection(state: Mapping[str, object]) -> Mapping[str, object]:
+    return {
+        key: value
+        for key, value in _model_state(state, interactive=False).items()
+        if _searchable_public_fact(key)
+    }
+
+
+def _searchable_public_fact(predicate: str) -> bool:
+    if predicate.startswith("semantic.dom."):
+        return predicate in _SEARCHABLE_DOM_STATE_FIELDS
+    return (
+        predicate != _SOURCE_TEXT_TRUNCATION_FIELD
+        and predicate not in _DROPPED_STATE_FIELDS
+        and not any(predicate.startswith(prefix) for prefix in _DROPPED_STATE_PREFIXES)
+    )
 
 
 def _target_item(region_ref, target) -> Mapping[str, object]:

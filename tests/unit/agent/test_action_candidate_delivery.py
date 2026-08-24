@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,9 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     DeliveryObligationKind,
 )
 from affordance_runtime.agent.context.budgets import BoundedSection, ContextProjectionBudget
+from affordance_runtime.agent.context.canonical_world_projection import (
+    CanonicalPublicWorldProjection,
+)
 from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
     inspect_outcome_public,
@@ -1138,6 +1142,50 @@ def test_only_admitted_action_route_fragments_enter_manifest_and_rank_cannot_exp
 
     assert mandatory_only.view.coverage["expanded_regions"] == 0
     assert mandatory_only.view.coverage["candidate_region_expansion_reason"] == "none"
+
+
+def test_manifest_ref_conservation_for_zero_partial_and_full_prefixes_with_oversized_region() -> None:
+    task, world, actions, evaluation, context = _context()
+    index = context.region_index
+    assert index is not None and index.regions
+    oversized_index = replace(
+        index,
+        regions=(
+            replace(index.regions[0], heading="Oversized current region " + "detail " * 2_000),
+            *index.regions[1:],
+        ),
+    )
+    canonical_world = CanonicalPublicWorldProjection.build(world, oversized_index, actions)
+    context = ContextBuilder().build(
+        task,
+        world,
+        actions,
+        evaluation,
+        region_index=oversized_index,
+        canonical_world=canonical_world,
+    )
+    plan = context.action_delivery_plan
+    assert plan is not None
+    selections = tuple(
+        dict(zip((item.kind.value for item in plan.obligations), counts, strict=True))
+        for counts in product(
+            *(range(len(item.remaining) + 1) for item in plan.obligations)
+        )
+    )
+
+    for counts in selections:
+        delivery = build_model_turn_delivery(
+            context,
+            include_images=False,
+            admitted_records=counts,
+        )
+        manifest_refs = (
+            *delivery.manifest.executable_refs,
+            *delivery.manifest.readonly_refs,
+            *delivery.manifest.fact_refs,
+            *delivery.manifest.region_refs,
+        )
+        assert all(f"[{ref}]" in delivery.view.text for ref in manifest_refs)
 
 
 def test_recent_action_target_does_not_implicitly_expand_its_current_region() -> None:

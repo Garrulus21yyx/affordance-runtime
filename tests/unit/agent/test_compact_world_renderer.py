@@ -4,6 +4,7 @@ import json
 
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldDocumentView,
+    ActorWorldFactView,
     ActorWorldNodeView,
     ActorWorldSnapshot,
     ActorWorldSourceView,
@@ -84,6 +85,39 @@ def test_compact_world_discloses_partial_node_state() -> None:
     assert "state_coverage=2/5" in rendered
 
 
+def test_hidden_duplicate_node_does_not_register_undelivered_fact_refs() -> None:
+    snapshot = _snapshot(
+        (
+            ActorWorldNodeView(
+                "N1",
+                "group",
+                "Repeated label",
+                children=(
+                    ActorWorldNodeView(
+                        "N2",
+                        "StaticText",
+                        "Repeated label",
+                        facts=(ActorWorldFactView("F1", "value", "hidden"),),
+                    ),
+                ),
+            ),
+        )
+    )
+    grounding = AgentGroundingIndexView(
+        (
+            AgentGroundingEntityView("N1", "group", "Repeated label"),
+            AgentGroundingEntityView("N2", "StaticText", "Repeated label"),
+        ),
+        {"parent": "N1", "duplicate": "N2"},
+    )
+
+    rendered = render_compact_actor_world(snapshot, grounding, include_images=False)
+
+    assert "[N2]" not in rendered.view.text
+    assert "F1" not in rendered.manifest.fact_refs
+    assert "F1" not in rendered.view.text
+
+
 def test_executable_and_readonly_refs_render_with_separate_contracts() -> None:
     snapshot = _snapshot(
         (
@@ -134,6 +168,44 @@ def test_region_delivery_folds_with_recoverable_directory() -> None:
     assert "R1" in rendered.manifest.region_refs
     assert "Post 1" in rendered
     assert "R15" in rendered.manifest.region_refs
+
+
+def test_page_map_keeps_every_region_ref_when_optional_descriptor_text_is_oversized() -> None:
+    snapshot = _snapshot((_post(1),))
+    grounding = _grounding(post_count=1, include_submit=False)
+    observation = _observation(1)
+    region_index = WorldDeliveryIndex(
+        observation.observation_id,
+        (
+            WorldRegion(
+                key="region:oversized",
+                source_id="S1",
+                root_structure_id="post:1",
+                member_target_ids=("entity:1", "entity:2", "entity:3"),
+                heading="Review form " + "oversized " * 2_000,
+                role="form",
+                counts={"targets": 3, "facts": 0, "actions": 1},
+                coverage="complete",
+            ),
+        ),
+    )
+    projection = canonical_world_with_regions(
+        _canonical_world(observation), observation, region_index
+    )
+
+    rendered = render_compact_actor_world(
+        snapshot,
+        grounding,
+        include_images=False,
+        region_index=region_index,
+        canonical_world=projection,
+        observation=observation,
+    )
+
+    assert rendered.manifest.region_refs == ("R1",)
+    assert "[R1] kind=\"form\"" in rendered.view.text
+    assert "recovery=read_region" in rendered.view.text
+    assert all(f"[{ref}]" in rendered.view.text for ref in rendered.manifest.region_refs)
 
 
 def test_inspect_actor_world_recovers_folded_regions_and_exact_find_results() -> None:

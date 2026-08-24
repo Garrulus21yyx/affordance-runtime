@@ -739,6 +739,114 @@ def test_search_returns_the_smallest_complete_repeated_item_not_a_leaf_snippet()
     assert "Review by Morgan" not in texts
 
 
+def test_search_matches_visible_text_but_not_dom_tag_class_or_id_values() -> None:
+    targets = (
+        SemanticTarget(
+            "structural:small",
+            "generic",
+            "",
+            {
+                "semantic.dom.tag": "small",
+                "semantic.dom.attribute.class_tokens": ("small",),
+                "semantic.dom.attribute.id": "small",
+            },
+        ),
+        SemanticTarget(
+            "content:small-ears",
+            "StaticText",
+            "The ear cups are small for me.",
+            {
+                "semantic.dom.tag": "span",
+                "semantic.dom.attribute.class_tokens": ("review-copy",),
+                "semantic.dom.attribute.id": "review-copy",
+                "semantic.dom.attribute.type": "text",
+                "semantic.dom.attribute.role": "note",
+                "semantic.dom.attribute.title": "Compact-fit review",
+            },
+        ),
+    )
+    nodes = (
+        ObservationStructureNode(
+            "root",
+            "document",
+            "Product reviews",
+            child_structure_ids=("structural:small", "content:small-ears"),
+        ),
+        ObservationStructureNode(
+            "structural:small",
+            "generic",
+            "",
+            {
+                "semantic.dom.tag": "small",
+                "semantic.dom.attribute.class_tokens": ("small",),
+                "semantic.dom.attribute.id": "small",
+            },
+            parent_structure_id="root",
+            semantic_target_id="structural:small",
+        ),
+        ObservationStructureNode(
+            "content:small-ears",
+            "StaticText",
+            "The ear cups are small for me.",
+            {
+                "semantic.dom.tag": "span",
+                "semantic.dom.attribute.class_tokens": ("review-copy",),
+                "semantic.dom.attribute.id": "review-copy",
+                "semantic.dom.attribute.type": "text",
+                "semantic.dom.attribute.role": "note",
+                "semantic.dom.attribute.title": "Compact-fit review",
+            },
+            parent_structure_id="root",
+            semantic_target_id="content:small-ears",
+        ),
+    )
+    fused = WorldFusion().fuse(
+        (
+            SurfaceObservation(
+                "source:searchable-content",
+                "browser",
+                "revision:searchable-content",
+                ObservationSourceProfile.dom(),
+                targets,
+                structure=nodes,
+                structure_total_count=len(nodes),
+            ),
+        )
+    )
+    assert fused.observation is not None
+    world = fused.observation
+    task = TaskGoal("readable-search", "Find visible mentions of small")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+    )
+
+    outcome = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="find",
+        query="small",
+    )
+
+    assert isinstance(outcome, Matches)
+    assert {item.get("label") for item in outcome.items} == {
+        "The ear cups are small for me."
+    }
+    assert all(item.get("label") != "semantic.dom.tag" for item in outcome.items)
+    public_result = json.dumps(to_json_compatible(inspect_outcome_public(outcome)))
+    assert "semantic.dom.tag" not in public_result
+    assert "semantic.dom.attribute.class_tokens" not in public_result
+    assert '"semantic.dom.attribute.id"' not in public_result
+    assert '"semantic.dom.attribute.type"' not in public_result
+    assert '"semantic.dom.attribute.role"' not in public_result
+    assert "semantic.dom.attribute.title" in public_result
+
+
 def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -> None:
     world = _long_record_world((100_000, 100), suffix="bounded")
     task = TaskGoal("bounded-record", "Inspect all reviews")
