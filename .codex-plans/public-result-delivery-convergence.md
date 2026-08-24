@@ -149,8 +149,16 @@ Live and cohort execution remain stopped.
      Ruff, compileall, diff and negative searches. No files, provider, BrowserGym, or live run were touched. Evidence:
      `evidence/acceptance/continuation-lineage-fresh-review-20260824.json`.
 
-20. **pending — Request authorization for one held-out witness**
-   - Eligible only after steps 15–18 pass. One Task 21 witness precedes any bounded cohort.
+20. **completed — Authorized single held-out witness: falsified**
+   - Run4 at revision `43961f9a` conserved two R9 search matches but failed locally before the next provider call.
+   - The accepted first call and Store result were singular, while pending official history retained both provider
+     tool calls; canonical history projection rejected the mismatch. No rate limit or provider retry caused the failure.
+   - Evidence: `evidence/acceptance/task21-pending-exchange-multicall-falsification-20260824.json`.
+
+21. **pending — Return only to multiple-call pending-exchange owner**
+   - Reconcile mechanical first-call canonicalization with the official pending call/result history without changing
+     Store, continuation, World, route, Catalog, TurnPacker capacity, CoreLoop, Monitor, or benchmark semantics.
+   - No further live run or bounded cohort is authorized.
 
 ## Explicit non-goals
 

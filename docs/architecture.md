@@ -13,6 +13,7 @@ held-out rerun falsified structured-result Workspace projection / convergence ow
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
+authorized held-out rerun falsified multiple-call pending-exchange conservation /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -331,8 +332,20 @@ The independent read-only review of `f894ea8a` passed with no falsification. It 
 Store/context tests and `22` Recording-provider/tool-result vertical tests, plus Ruff, compileall, diff and negative
 searches; the implementation/source/test hashes reconcile exactly. Evidence:
 [`continuation-lineage-fresh-review-20260824.json`](../evidence/acceptance/continuation-lineage-fresh-review-20260824.json).
-Overall remains non-closed and the bounded cohort remains stopped; the next step requires explicit authorization for
-one held-out Task21 witness.
+At that fresh-review checkpoint, Overall remained non-closed and the bounded cohort remained stopped; only one
+explicitly authorized held-out Task21 witness could run next.
+
+Authorized Task21 rerun falsification (revision `43961f9a`, run4): the continuation repair was not re-falsified. After
+the Reviews dispatch, DeepSeek emitted `search_page_content("ear cup")` plus one extra `read_next_page` call. Runtime
+mechanically selected the first schema-valid call, recorded one discarded protocol extra, and obtained two current R9
+matches. The next turn failed before any provider attempt because `pending_exchange` retained the original PydanticAI
+`ModelResponse` with both `ToolCallPart` values while the canonical physical-history projection requires exactly one
+call paired to the accepted result. The deterministic error was
+`ValueError: pending PydanticAI response must contain one tool call`. This is a consumer-migration gap between existing
+multiple-call canonicalization and pending official exchange projection; it is not rate limiting, provider transport,
+R9 follow-up, byte paging, or continuation lineage. Evidence:
+[`task21-pending-exchange-multicall-falsification-20260824.json`](../evidence/acceptance/task21-pending-exchange-multicall-falsification-20260824.json).
+Live and cohort execution stop; work returns only to the PydanticAI canonicalization/pending-exchange owner.
 
 #### Reuse boundary and remaining custom surface
 

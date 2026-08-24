@@ -1,0 +1,51 @@
+{
+  "schema": "task21-pending-exchange-multicall-falsification.v1",
+  "date": "2026-08-24",
+  "revision": "43961f9a75a350fae050bb67df721759e306bcaf",
+  "case_id": "webarena-verified-w1b-task-21",
+  "run_directory": "evidence/live/w1b-task-21-deepseek-v4-flash-heldout-20260824-run4",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "live": true,
+  "result": "falsified",
+  "overall_status": "reopened_non_closed",
+  "primary_failure": {
+    "origin": "local_runtime_pre_provider",
+    "kind": "internal_error",
+    "exception_class": "ValueError",
+    "detail": "pending PydanticAI response must contain one tool call",
+    "provider_attempts_at_failure": 0,
+    "rate_limited": false
+  },
+  "established_progress": {
+    "reviews_tab_dispatched": true,
+    "search_page_content_executed": true,
+    "search_query": "ear cup",
+    "result_kind": "Matches",
+    "result_count": 2,
+    "result_regions": ["R9", "R9"],
+    "follow_up_region_conserved": true
+  },
+  "mechanism": {
+    "provider_response_tool_calls": 2,
+    "selected_call": "search_page_content",
+    "discarded_protocol_call_count": 1,
+    "decision_canonicalization": "kept first schema-valid offered call",
+    "pending_exchange_state": "retained original ModelResponse containing both ToolCallPart values",
+    "next_turn_projection": "CanonicalProviderEnvelope rejected the pending response because its single-call result pairing requires exactly one ToolCallPart"
+  },
+  "classification": {
+    "continuation_lineage_repair_refuted": false,
+    "search_to_R9_follow_up_refuted": false,
+    "read_region_byte_paging_refuted": false,
+    "provider_rate_limit": false,
+    "provider_transport_failure": false,
+    "owner": "PydanticAI multiple-call canonicalization -> pending official exchange projection",
+    "violated_invariant": "the canonical accepted decision and the pending call/result history must describe the same single accepted tool call"
+  },
+  "trace_witnesses": {
+    "search_result": "traces/webarena-verified-w1b-task-21/trace.jsonl sequence 10",
+    "pre_provider_failure": "traces/webarena-verified-w1b-task-21/trace.jsonl sequence 12"
+  },
+  "next_step": "stop live and cohort; return only to the PydanticAI canonicalization/pending-exchange owner"
+}

@@ -13,6 +13,7 @@ held-out rerun falsified structured-result Workspace projection / convergence ow
 standard call-correlated result repair provider-free acceptance falsified by fresh review /
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
+authorized held-out rerun falsified multiple-call pending-exchange conservation /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -238,8 +239,19 @@ Provider/live/Task21 attempts are zero. This is provider-free implementation evi
 read-only review of `f894ea8a` passed with no falsification after `148` continuation/Store/context tests, `22`
 Recording-provider/tool-result vertical tests, static checks, and exact revision/tree-hash reconciliation. Evidence:
 [`continuation-lineage-fresh-review-20260824.json`](../evidence/acceptance/continuation-lineage-fresh-review-20260824.json).
-Overall remains non-closed. The next step is to request explicit authorization for one held-out Task21 witness; the
-bounded cohort remains stopped.
+At that fresh-review checkpoint Overall remained non-closed; the only eligible next action was to request explicit
+authorization for one held-out Task21 witness, while the bounded cohort remained stopped.
+
+The authorized Task21 rerun at revision `43961f9a` stopped on a local pre-provider falsification after two successful
+provider calls. DeepSeek's second response offered `search_page_content("ear cup")` and one extra continuation call;
+the existing mechanical rule selected search, discarded the extra, and returned two R9 matches. On the next turn the
+decision adapter made zero provider attempts and failed with
+`pending PydanticAI response must contain one tool call`: pending official history still contained both original tool
+calls although the accepted decision/result algebra contained only search. Evidence:
+[`task21-pending-exchange-multicall-falsification-20260824.json`](../evidence/acceptance/task21-pending-exchange-multicall-falsification-20260824.json).
+This does not refute search→R9, byte paging, or complete-key continuation. It reopens only
+`multiple-call canonicalization → pending official exchange → same-call ToolReturn`. Bounded cohort and further live
+execution remain stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 
