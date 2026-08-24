@@ -5,7 +5,6 @@ import pytest
 from affordance_runtime.agent import (
     Abort,
     AskUser,
-    ContinueDeliveryResult,
     DecisionKind,
     ReadRegionResult,
     RememberFactResult,
@@ -64,7 +63,6 @@ def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(
         AskUser("context:test", "Which value?"),
         ReadRegionResult("context:test", "read_region", {}, {"items": ()}),
         SearchPageContentResult("context:test", "search_page_content", {}, {"items": ()}),
-        ContinueDeliveryResult("context:test", "read_next_page", {}, {"continued": True}),
         RememberFactResult("context:test", "remember_fact", {}, {"pinned": True}),
         ToolRejectedResult("context:test", "tool_rejected", {}, {"rejected": True}),
         FinalResponse("context:test", "done", ("evidence:test",)),

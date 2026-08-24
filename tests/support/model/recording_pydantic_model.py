@@ -258,23 +258,8 @@ class RecordingPydanticModel:
                 )
                 self.last_gui_call = (name, dict(arguments))
             elif scripted == "continue_until_action":
-                continuation = next(
-                    (
-                        tool
-                        for tool in info.function_tools
-                        if tool.name == "action_results_next_page"
-                    ),
-                    None,
-                )
-                if continuation is not None:
-                    name = continuation.name
-                    sampled = _schema_example(continuation.parameters_json_schema)
-                    assert isinstance(sampled, dict)
-                    arguments = sampled
-                    self.decisions.insert(0, scripted)
-                else:
-                    name, arguments = _select_schema_action(info)
-                    self.last_gui_call = (name, dict(arguments))
+                name, arguments = _select_schema_action(info)
+                self.last_gui_call = (name, dict(arguments))
             elif scripted == "repeat_last_gui_call":
                 assert self.last_gui_call is not None
                 name, remembered_arguments = self.last_gui_call

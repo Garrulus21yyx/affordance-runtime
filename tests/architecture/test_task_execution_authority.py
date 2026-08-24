@@ -223,6 +223,7 @@ def test_named_local_tool_semantics_remain_catalog_owned() -> None:
 
 def test_normative_architecture_contains_the_single_authority_map() -> None:
     architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    normalized = " ".join(architecture.split())
 
     assert "## Authority" in architecture
     assert "| current GUI truth | fresh `WorldObservation` |" in architecture
@@ -230,8 +231,10 @@ def test_normative_architecture_contains_the_single_authority_map() -> None:
         "| public records, `E/N/F/R` refs, and public order | one immutable "
         "`CanonicalPublicWorldProjection` |"
     ) in architecture
-    assert "World Gate 1 implementation checkpoint" in architecture
-    assert "Delivery and Envelope cutovers remain pending" in architecture
+    assert "PydanticAI owns tool schema transport" in architecture
+    assert "It does not retain public result bodies" in architecture
+    assert "generic evidence-delivery system" in architecture
+    assert "no longer part of the architecture" in normalized
     convergence = (ROOT / "docs" / "single-action-policy-convergence.md").read_text(encoding="utf-8")
     assert "| official completion | native evaluator after one STOP |" in convergence
     assert "one `CoreAgentLoop`" in convergence

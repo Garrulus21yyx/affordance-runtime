@@ -12,7 +12,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
-from affordance_runtime.agent.context.action_candidate_projection import DeliveryObligationKind
 from affordance_runtime.agent.context.compact_world_renderer import (
     CapacityExceeded,
     Empty,
@@ -34,7 +33,7 @@ from affordance_runtime.agent.context.observation_delivery import (
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
-from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult, SelectAction
+from affordance_runtime.agent.decisions import SearchPageContentResult, SelectAction
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.benchmarks.webarena_verified import (
     DeliveryRetrievalProbe,
@@ -66,6 +65,7 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 from tests.support.agent.core_loop_support import _task, _world
 from tests.support.canonical_world import canonical_world
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
@@ -88,15 +88,12 @@ def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() 
         "context:fixture",
         "future_readonly_tool",
         {"subject": "current"},
-        PublicEvidenceResult.from_value(
-            {
-                "kind": "Evidence",
-                "items": (
-                    {"identity": {"name": "Reader 界🙂"}, "content": {"text": "complete"}},
-                ),
-            },
-            source_scope="current",
-        ),
+        {
+            "kind": "Evidence",
+            "items": (
+                {"identity": {"name": "Reader 界🙂"}, "content": {"text": "complete"}},
+            ),
+        },
         "call:future-reader",
     )
     transition = store.reduce(
@@ -110,10 +107,10 @@ def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() 
         step_index=1,
     )
 
-    inventory = transition.next_store.public_result_inventory
-    assert inventory is not None
-    assert inventory.records[0].operation == "future_readonly_tool"
-    assert inventory.records[0].public_value == decision.result.records[0]
+    receipt = transition.next_store.local_deliveries[-1]
+    assert receipt.operation == "future_readonly_tool"
+    assert receipt.item_digests
+    assert not hasattr(receipt, "records")
 
 
 def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_manifest() -> None:
@@ -552,10 +549,7 @@ def test_change_first_delivery_keeps_latest_gui_result_across_local_reads() -> N
             "context:fixture",
             "future_readonly_tool",
             {"query": "none"},
-            PublicEvidenceResult.from_value(
-                {"kind": "NoMatches", "items": ()},
-                source_scope="current",
-            ),
+            {"kind": "NoMatches", "items": ()},
         ),
         after,
         after,
@@ -653,45 +647,21 @@ def test_region_read_pages_long_records_by_final_payload_bytes_without_loss() ->
     assert all(item.get("kind") != "content_fragment" for item in delivered)
 
 
-def test_single_oversized_region_record_uses_lossless_typed_fragments() -> None:
-    world = _long_record_world((100_000, 100), suffix="fragment")
-    task = TaskGoal("fragment-paging", "Inspect all reviews")
+def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -> None:
+    world = _long_record_world((100_000, 100), suffix="bounded")
+    task = TaskGoal("bounded-record", "Inspect all reviews")
     context = ContextBuilder().build(
         task, world, ActionSpace(world.observation_id, ()), _evaluation(task, world.observation_id)
     )
     region = next(item for item in context.region_index.regions if item.role == "list")
     region_ref = context.canonical_world.region_refs[region.key]
-    complete = inspect_actor_world(
-        context.actor_world,
-        context.grounding,
-        region_index=context.region_index,
-        canonical_world=context.canonical_world,
-        observation=world,
-        action="read_region",
-        region_ref=region_ref,
-        page_size=1000,
-        hard_limit=10 * 1024 * 1024,
-    )
-    assert isinstance(complete, Opened)
-
     pages = _read_complete_region(context, region_ref, hard_limit=64 * 1024)
-    fragments = tuple(
-        item for page in pages for item in page.items if item.get("kind") == "content_fragment"
-    )
-    ordinary = tuple(
-        item for page in pages for item in page.items if item.get("kind") != "content_fragment"
-    )
-    reconstructed = json.loads("".join(str(item["content_json"]) for item in fragments))
+    delivered = tuple(item for page in pages for item in page.items)
 
-    assert len(fragments) >= 2
-    assert len({item["record_digest"] for item in fragments}) == 1
-    assert tuple(item["fragment_offset"] for item in fragments) == tuple(
-        sum(len(str(prior["content_json"])) for prior in fragments[:index])
-        for index in range(len(fragments))
-    )
-    assert fragments[-1]["fragment_final"] is True
-    assert reconstructed == to_json_compatible(complete.items[0])
-    assert to_json_compatible(ordinary) == to_json_compatible(complete.items[1:])
+    assert len(delivered) == 2
+    assert delivered[0]["content_truncated"] is True
+    assert len(delivered[0]["targets"][0]["label"]) <= 2_048
+    assert all(item.get("kind") != "content_fragment" for item in delivered)
 
 
 @settings(max_examples=10, deadline=None)
@@ -913,7 +883,7 @@ def test_inspect_world_closed_outcome_algebra_and_currentness() -> None:
     )
 
 
-def test_search_results_conserve_bounded_regions_into_next_turn_read_capability() -> None:
+def test_search_result_region_ref_is_immediately_accepted_by_read_region() -> None:
     world = _many_region_world(count=16)
     task = TaskGoal("search-follow-up", "Inspect matching content")
     builder = ContextBuilder()
@@ -923,14 +893,15 @@ def test_search_results_conserve_bounded_regions_into_next_turn_read_capability(
         ActionSpace(world.observation_id, ()),
         _evaluation(task, world.observation_id),
     )
-    first_delivery, first_catalog = catalog_for(first)
+    _, first_catalog = catalog_for(first)
     target_region = first.region_index.region_for_target("content:15")
     assert target_region is not None
     target_region_ref = first.canonical_world.region_refs[target_region.key]
-    initial_regions = next(
+    region_schema = next(
         item for item in first_catalog.specs if item.name == "read_region"
-    ).input_schema["properties"]["region_ref"]["enum"]
-    assert target_region_ref not in initial_regions
+    ).input_schema["properties"]["region_ref"]
+    assert "enum" not in region_schema
+    assert region_schema["pattern"].startswith("^")
 
     search_resolution = resolve_catalog_call(
         first_catalog,
@@ -945,55 +916,16 @@ def test_search_results_conserve_bounded_regions_into_next_turn_read_capability(
         "operation": "read_region",
         "region_ref": target_region_ref,
     }
-    step = StepResult(
-        search_resolution.decision,
-        world,
-        world,
-        _evaluation(task, world.observation_id),
-        feedback="local_tool_result",
-    )
-    transition = first.delivery_store.reduce(step, step_index=1)
-    second = builder.build(
-        task,
-        world,
-        ActionSpace(world.observation_id, ()),
-        _evaluation(task, world.observation_id),
-        delivery_store=transition.next_store,
-    )
-    second_delivery, second_catalog = catalog_for(second)
-    available_regions = next(
-        item for item in second_catalog.specs if item.name == "read_region"
-    ).input_schema["properties"]["region_ref"]["enum"]
-
-    assert target_region_ref in available_regions
-    assert len(second.delivery_store.search_follow_ups) == 16
-    assert len({item.region_ref for item in second.delivery_store.search_follow_ups}) == 16
-    assert f"follow_up=read_region({target_region_ref})" in second_delivery.view.text
     opened = resolve_catalog_call(
-        second_catalog,
+        first_catalog,
         ToolCall("read_region", {"region_ref": target_region_ref}),
-        expected_context_id=second.context_id,
+        expected_context_id=first.context_id,
     )
     assert opened.decision.result["kind"] == "Opened"
-
-    fresh_world = _many_region_world(count=16, suffix="fresh")
-    fresh = builder.build(
-        task,
-        fresh_world,
-        ActionSpace(fresh_world.observation_id, ()),
-        _evaluation(task, fresh_world.observation_id),
-        delivery_store=transition.next_store,
-    )
-    fresh_delivery, fresh_catalog = catalog_for(fresh)
-    fresh_regions = next(
-        item for item in fresh_catalog.specs if item.name == "read_region"
-    ).input_schema["properties"]["region_ref"]["enum"]
-    assert fresh.delivery_store.search_follow_ups == ()
-    assert "SearchFollowUps" not in fresh_delivery.view.text
-    assert target_region_ref not in fresh_regions
+    assert not hasattr(first.delivery_store, "search_follow_ups")
 
 
-def test_paginated_search_keeps_every_latest_page_region_within_bounded_follow_ups() -> None:
+def test_paginated_search_reuses_the_same_tool_with_its_returned_cursor() -> None:
     world = _many_region_world(count=40, suffix="paged")
     task = TaskGoal("search-follow-up-pages", "Inspect matching content")
     builder = ContextBuilder()
@@ -1009,56 +941,23 @@ def test_paginated_search_keeps_every_latest_page_region_within_bounded_follow_u
         ToolCall("search_page_content", {"query": "Needle"}),
         expected_context_id=context.context_id,
     )
-    first_step = StepResult(
-        first.decision,
-        world,
-        world,
-        _evaluation(task, world.observation_id),
-        feedback="local_tool_result",
-    )
-    first_store = context.delivery_store.reduce(first_step, step_index=1).next_store
-    context = builder.build(
-        task,
-        world,
-        ActionSpace(world.observation_id, ()),
-        _evaluation(task, world.observation_id),
-        delivery_store=first_store,
-    )
-    _, catalog = catalog_for(context)
+    cursor = first.decision.result["next_cursor"]
+    assert cursor
     second = resolve_catalog_call(
         catalog,
-        ToolCall("read_next_page", {"scope": "active_read"}),
+        ToolCall("search_page_content", {"query": "Needle", "cursor": cursor}),
         expected_context_id=context.context_id,
     )
-    latest_page_regions = {
-        item["region_ref"] for item in second.decision.result["items"]
-    }
-    second_step = StepResult(
-        second.decision,
-        world,
-        world,
-        _evaluation(task, world.observation_id),
-        feedback="local_tool_result",
-    )
-    second_store = context.delivery_store.reduce(second_step, step_index=2).next_store
-    final = builder.build(
-        task,
-        world,
-        ActionSpace(world.observation_id, ()),
-        _evaluation(task, world.observation_id),
-        delivery_store=second_store,
-    )
-    _, final_catalog = catalog_for(final)
-    available_regions = set(next(
-        item for item in final_catalog.specs if item.name == "read_region"
-    ).input_schema["properties"]["region_ref"]["enum"])
-
-    assert latest_page_regions <= available_regions
-    assert len(second_store.search_follow_ups) == 32
-    assert len({item.region_ref for item in second_store.search_follow_ups}) == 32
+    first_regions = {item["region_ref"] for item in first.decision.result["items"]}
+    second_regions = {item["region_ref"] for item in second.decision.result["items"]}
+    assert first_regions
+    assert second_regions
+    assert first_regions.isdisjoint(second_regions)
+    assert second.decision.arguments == {"query": "Needle", "cursor": cursor}
+    assert "read_next_page" not in {item.name for item in catalog.specs}
 
 
-def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument() -> None:
+def test_world_read_paging_is_tool_local_and_reuses_read_region() -> None:
     world = _functional_world(rows=80)
     task = TaskGoal("read-pages", "Inspect products")
     builder = ContextBuilder()
@@ -1071,40 +970,6 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
     _, first_catalog = catalog_for(first)
     desired_region = max(first.region_index.regions, key=lambda region: len(region.member_target_ids))
     desired_region_ref = first.canonical_world.region_refs[desired_region.key]
-    available = next(item for item in first_catalog.specs if item.name == "read_region").input_schema[
-        "properties"
-    ]["region_ref"]["enum"]
-    while desired_region_ref not in available:
-        continuation = next(item for item in first_catalog.specs if item.name == "read_next_page")
-        arguments = {"scope": "page_directory"} if continuation.input_schema["properties"] else {}
-        continuation_resolution = resolve_catalog_call(
-            first_catalog,
-            ToolCall("read_next_page", arguments),
-            expected_context_id=first.context_id,
-        )
-        continuation_step = StepResult(
-            continuation_resolution.decision,
-            world,
-            world,
-            _evaluation(task, world.observation_id),
-            feedback="local_tool_result",
-        )
-        continuation_store = first.delivery_store.reduce(
-            continuation_step,
-            step_index=1,
-        ).next_store
-        first = builder.build(
-            task,
-            world,
-            ActionSpace(world.observation_id, ()),
-            _evaluation(task, world.observation_id),
-            delivery_store=continuation_store,
-        )
-        _, first_catalog = catalog_for(first)
-        available = next(item for item in first_catalog.specs if item.name == "read_region").input_schema[
-            "properties"
-        ]["region_ref"]["enum"]
-
     opened_resolution = resolve_catalog_call(
         first_catalog,
         ToolCall("read_region", {"region_ref": desired_region_ref}),
@@ -1113,40 +978,20 @@ def test_world_paging_is_runtime_owned_and_continues_without_a_cursor_argument()
     opened = opened_resolution.decision
 
     assert opened.result["has_more"] is True
-    assert "cursor" not in opened.result
-    assert first.delivery_store.active_read is None
-    opened_step = StepResult(
-        opened,
-        world,
-        world,
-        _evaluation(task, world.observation_id),
-        feedback="local_tool_result",
-    )
-    opened_store = first.delivery_store.reduce(opened_step, step_index=1).next_store
-    assert opened_store.active_read.next_cursor
-    second = builder.build(
-        task,
-        world,
-        ActionSpace(world.observation_id, ()),
-        _evaluation(task, world.observation_id),
-        region_index=first.region_index,
-        delivery_store=opened_store,
-    )
-    _, second_catalog = catalog_for(second)
-    continuation = next(item for item in second_catalog.specs if item.name == "read_next_page")
-    arguments = {"scope": "active_read"} if continuation.input_schema["properties"] else {}
-
+    cursor = opened.result["next_cursor"]
+    assert cursor
     continued = resolve_catalog_call(
-        second_catalog,
-        ToolCall("read_next_page", arguments),
-        expected_context_id=second.context_id,
+        first_catalog,
+        ToolCall("read_region", {"region_ref": desired_region_ref, "cursor": cursor}),
+        expected_context_id=first.context_id,
     ).decision
     assert continued.result["items"]
-    assert "cursor" not in continued.arguments
-    assert "cursor" not in continued.result
+    assert continued.arguments["cursor"] == cursor
+    assert "read_next_page" not in {item.name for item in first_catalog.specs}
+    assert not hasattr(first.delivery_store, "active_read")
 
 
-def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale() -> None:
+def test_byte_bounded_region_pages_are_direct_results_and_store_keeps_only_digests() -> None:
     world = _long_record_world((4000,) * 25, suffix="catalog-continuation")
     task = TaskGoal("catalog-byte-paging", "Inspect all reviews")
     builder = ContextBuilder()
@@ -1167,7 +1012,7 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
 
     assert opened.decision.result["has_more"] is True
     assert "cursor" not in opened.decision.arguments
-    assert "cursor" not in opened.decision.result
+    assert opened.decision.result["next_cursor"]
     opened_step = StepResult(
         opened.decision,
         world,
@@ -1176,7 +1021,6 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         feedback="local_tool_result",
     )
     opened_transition = context.delivery_store.reduce(opened_step, step_index=1)
-    assert opened_transition.next_store.active_read.next_cursor
     assert len(
         json.dumps(
             to_json_compatible(opened.decision.result),
@@ -1185,23 +1029,19 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
             separators=(",", ":"),
         ).encode()
     ) <= 64 * 1024
+    assert not hasattr(opened_transition.next_store, "public_result_inventory")
+    assert not hasattr(opened_transition.next_store.local_deliveries[-1], "records")
 
-    assert opened_transition.next_store.public_result_inventory is not None
-
-    continued_context = builder.build(
-        task,
-        world,
-        ActionSpace(world.observation_id, ()),
-        _evaluation(task, world.observation_id),
-        delivery_store=opened_transition.next_store,
-    )
-    _, continued_catalog = catalog_for(continued_context)
-    continuation = next(item for item in continued_catalog.specs if item.name == "read_next_page")
-    assert "active_read" in continuation.input_schema["properties"]["scope"]["enum"]
     continued = resolve_catalog_call(
-        continued_catalog,
-        ToolCall("read_next_page", {"scope": "active_read"}),
-        expected_context_id=continued_context.context_id,
+        catalog,
+        ToolCall(
+            "read_region",
+            {
+                "region_ref": region_ref,
+                "cursor": opened.decision.result["next_cursor"],
+            },
+        ),
+        expected_context_id=context.context_id,
     )
     continued_step = StepResult(
         continued.decision,
@@ -1210,55 +1050,19 @@ def test_byte_bounded_region_continuation_is_store_private_and_fresh_world_stale
         _evaluation(task, world.observation_id),
         feedback="local_tool_result",
     )
-    transition = continued_context.delivery_store.reduce(
+    transition = opened_transition.next_store.reduce(
         continued_step,
         step_index=2,
     )
     assert transition.information_delta is not None
     assert transition.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
-    inventory = transition.next_store.public_result_inventory
-    assert inventory is not None
     opened_values = tuple(opened.decision.result["items"])
     continued_values = tuple(continued.decision.result["items"])
-    expected_values = tuple(
-        value
-        for index, value in enumerate((*opened_values, *continued_values))
-        if value not in (*opened_values, *continued_values)[:index]
-    )
-    assert tuple(item.public_value for item in inventory.records) == expected_values
-    assert len({item.digest for item in inventory.records}) == len(inventory.records)
-    assert inventory.offset == 0
-
-    packed_context = builder.build(
-        task,
-        world,
-        ActionSpace(world.observation_id, ()),
-        _evaluation(task, world.observation_id),
-        delivery_store=transition.next_store,
-    )
-    result_obligation = packed_context.action_delivery_plan.obligation(
-        DeliveryObligationKind.PUBLIC_RESULT
-    )
-    assert result_obligation is not None
-    assert result_obligation.records == inventory.records
-
-    fresh_world = _long_record_world((4000,) * 25, suffix="catalog-fresh")
-    fresh_context = builder.build(
-        task,
-        fresh_world,
-        ActionSpace(fresh_world.observation_id, ()),
-        _evaluation(task, fresh_world.observation_id),
-        delivery_store=transition.next_store,
-    )
-    assert fresh_context.delivery_store.active_read is None
-    assert fresh_context.delivery_store.public_result_inventory is None
-    _, fresh_catalog = catalog_for(fresh_context)
-    fresh_continuation = next(
-        (item for item in fresh_catalog.specs if item.name == "read_next_page"),
-        None,
-    )
-    if fresh_continuation is not None and fresh_continuation.input_schema["properties"]:
-        assert "active_read" not in fresh_continuation.input_schema["properties"]["scope"]["enum"]
+    assert opened_values
+    assert continued_values
+    assert opened_values != continued_values
+    assert len(transition.next_store.local_deliveries) == 2
+    assert "read_next_page" not in {item.name for item in catalog.specs}
 
 
 def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action_space() -> None:
@@ -1283,7 +1087,7 @@ def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action
 
     assert '"enum": ["E' in schemas
     assert '"enum": ["F' in schemas
-    assert '"enum": ["R' in schemas
+    assert PublicRefCodec.pattern(PublicRefKind.REGION) in schemas
     assert all(ref in {item.target_ref for item in context.complete_actions} for ref in view.manifest.executable_refs)
     assert catalog.serialized_bytes < 8_000
 

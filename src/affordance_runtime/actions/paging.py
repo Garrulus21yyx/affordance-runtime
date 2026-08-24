@@ -7,7 +7,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from affordance_runtime.actions.admission import (
@@ -482,38 +482,17 @@ class ActionDiscoveryResult:
     query: str
     source_coverage: str
     result_coverage: str
-    continuation_available: bool
-    continuation_scope: str = ""
     unmatched_terms: tuple[str, ...] = ()
     suggested_next: str = ""
-    private_inventory: tuple[ActionDiscoveryMatch, ...] = field(
-        default=(), repr=False, compare=False, metadata={"serialize": False}
-    )
-    private_world_lineage: str = field(
-        default="", repr=False, compare=False, metadata={"serialize": False}
-    )
-    private_action_lineage: str = field(
-        default="", repr=False, compare=False, metadata={"serialize": False}
-    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "matches", tuple(self.matches))
-        inventory = tuple(self.private_inventory)
-        if any(not isinstance(item, ActionDiscoveryMatch) for item in inventory):
-            raise TypeError("discovery private inventory must contain typed matches")
-        if inventory and (
-            not self.private_world_lineage.strip() or not self.private_action_lineage.strip()
-        ):
-            raise ValueError("discovery private inventory requires current authority lineage")
-        object.__setattr__(self, "private_inventory", inventory)
         if self.query != canonical_action_query(self.query):
             raise ValueError("discovery query must be canonical")
         if self.source_coverage not in {"complete", "partial", "unavailable"}:
             raise ValueError("discovery source coverage is invalid")
         if self.result_coverage not in {"complete", "partial", "empty"}:
             raise ValueError("discovery result coverage is invalid")
-        if bool(self.continuation_scope) != self.continuation_available:
-            raise ValueError("discovery continuation is inconsistent")
         object.__setattr__(self, "unmatched_terms", tuple(self.unmatched_terms))
 
     def to_public_value(self) -> dict[str, object]:
@@ -526,8 +505,6 @@ class ActionDiscoveryResult:
             "result_scope": "query" if self.query else "base_inventory",
             "result_coverage": self.result_coverage,
             "query": self.query,
-            "continuation_available": self.continuation_available,
-            "continuation_scope": self.continuation_scope,
             "unmatched_terms": self.unmatched_terms,
             "suggested_next": self.suggested_next,
         }

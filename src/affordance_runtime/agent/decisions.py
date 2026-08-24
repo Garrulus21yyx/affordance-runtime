@@ -6,17 +6,13 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
+from typing import Any, ClassVar, TypeAlias
 
 from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.working_facts import WorkingFact
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.observation_needs import ObservationPurpose
-
-if TYPE_CHECKING:
-    from affordance_runtime.agent.context.observation_delivery import DeliveryContinuationCapability
-    from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 
 _MAX_REASON = 500
 _AGENT_EVIDENCE_PURPOSES = frozenset(
@@ -50,7 +46,6 @@ class DecisionKind(StrEnum):
     READ_REGION = "read_region"
     FIND_CONTROLS = "find_controls"
     SEARCH_PAGE_CONTENT = "search_page_content"
-    CONTINUE_DELIVERY = "continue_delivery"
     REMEMBER_FACT = "remember_fact"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
@@ -78,79 +73,6 @@ def _require_bounded(value: str, limit: int, field_name: str) -> None:
 def _require_collection(values: tuple[str, ...], field_name: str, *, item_limit: int = 512) -> None:
     if len(values) > _MAX_COLLECTION or any(not item.strip() or len(item) > item_limit for item in values):
         raise ValueError(f"{field_name} exceeds structured decision bounds")
-
-
-@dataclass(frozen=True)
-class PublicEvidenceResult(Mapping[str, object]):
-    """Typed exact read-only result; operation names do not control delivery."""
-
-    value: Mapping[str, object]
-    source_scope: str
-    record_field: str = ""
-    append_to_inventory: bool = False
-    reuse_inventory: bool = False
-
-    def __post_init__(self) -> None:
-        value = freeze_json(dict(self.value))
-        if (
-            not self.source_scope.strip()
-            or self.record_field not in {"", "items", "matches"}
-            or type(self.append_to_inventory) is not bool
-            or type(self.reuse_inventory) is not bool
-            or (self.reuse_inventory and not self.record_field)
-        ):
-            raise ValueError("public evidence result metadata is invalid")
-        records = value.get(self.record_field, ()) if self.record_field else (value,)
-        if (
-            not isinstance(records, tuple)
-            or len(records) > _MAX_COLLECTION
-            or any(not isinstance(item, Mapping) for item in records)
-        ):
-            raise TypeError("public evidence records must be complete mappings")
-        object.__setattr__(self, "value", value)
-
-    @classmethod
-    def from_value(
-        cls,
-        value: Mapping[str, object],
-        *,
-        source_scope: str,
-        append_to_inventory: bool = False,
-        reuse_inventory: bool = False,
-    ) -> "PublicEvidenceResult":
-        record_field = next(
-            (
-                field_name
-                for field_name in ("items", "matches")
-                if isinstance(value.get(field_name), (tuple, list))
-            ),
-            "",
-        )
-        return cls(value, source_scope, record_field, append_to_inventory, reuse_inventory)
-
-    @property
-    def records(self) -> tuple[Mapping[str, object], ...]:
-        if not self.record_field:
-            return (self.value,)
-        records = self.value[self.record_field]
-        assert isinstance(records, tuple)
-        return records
-
-    def with_records(self, records: tuple[Mapping[str, object], ...]) -> Mapping[str, object]:
-        if not self.record_field:
-            if len(records) != 1:
-                raise ValueError("scalar evidence result requires its one complete record")
-            return records[0]
-        return freeze_json({**dict(self.value), self.record_field: tuple(records)})
-
-    def __getitem__(self, key: str) -> object:
-        return self.value[key]
-
-    def __iter__(self):
-        return iter(self.value)
-
-    def __len__(self) -> int:
-        return len(self.value)
 
 
 @dataclass(frozen=True)
@@ -209,7 +131,6 @@ class RequestActionPage:
     kind: ClassVar[DecisionKind] = DecisionKind.FIND_CONTROLS
     context_id: str
     query: str = ""
-    continuation_scope: str = ""
     tool_call_id: str = ""
 
     def __post_init__(self) -> None:
@@ -217,10 +138,6 @@ class RequestActionPage:
         _require_tool_call_id(self.tool_call_id)
         if len(self.query) > PUBLIC_ACTION_LABEL_MAX_CHARS:
             raise ValueError("action page request exceeds bounded fields")
-        if self.continuation_scope not in {"", "base", "query", "effect", "interaction", "destinations", "issues"}:
-            raise ValueError("action page continuation scope is invalid")
-        if self.query and self.continuation_scope:
-            raise ValueError("action page request selects query or continuation scope")
 
 
 @dataclass(frozen=True)
@@ -246,16 +163,10 @@ class LocalToolResult:
     context_id: str
     tool_name: str
     arguments: Mapping[str, object]
-    result: Mapping[str, object] | PublicEvidenceResult
+    result: Mapping[str, object]
     tool_call_id: str = ""
     working_fact: WorkingFact | None = field(default=None, repr=False, compare=False)
     rejected_attempt_signature: PublicAttemptSignature | None = field(default=None, repr=False, compare=False)
-    delivery_lens: WorldDeliveryLens | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
-    continuation: DeliveryContinuationCapability | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -267,37 +178,13 @@ class LocalToolResult:
         if not self.result:
             raise ValueError("local tool result cannot be empty")
         object.__setattr__(self, "arguments", freeze_json(self.arguments))
-        result = self.result
-        if not isinstance(result, PublicEvidenceResult) and self.kind in {
-            DecisionKind.READ_REGION,
-            DecisionKind.SEARCH_PAGE_CONTENT,
-        }:
-            result = PublicEvidenceResult.from_value(
-                result,
-                source_scope="current_world",
-            )
-        object.__setattr__(
-            self,
-            "result",
-            result if isinstance(result, PublicEvidenceResult) else freeze_json(result),
-        )
+        object.__setattr__(self, "result", freeze_json(self.result))
         if self.working_fact is not None and not isinstance(self.working_fact, WorkingFact):
             raise TypeError("local tool state effect must be a typed working fact")
         if self.rejected_attempt_signature is not None and not isinstance(
             self.rejected_attempt_signature, PublicAttemptSignature
         ):
             raise TypeError("local tool rejected attempt signature must be typed")
-        from affordance_runtime.agent.context.observation_delivery import (
-            DeliveryContinuationCapability,
-        )
-        from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
-
-        if self.delivery_lens is not None and not isinstance(self.delivery_lens, WorldDeliveryLens):
-            raise TypeError("local tool delivery lens must be typed")
-        if self.continuation is not None and not isinstance(
-            self.continuation, DeliveryContinuationCapability
-        ):
-            raise TypeError("local tool continuation must be typed")
 
 
 @dataclass(frozen=True)
@@ -308,11 +195,6 @@ class ReadRegionResult(LocalToolResult):
 @dataclass(frozen=True)
 class SearchPageContentResult(LocalToolResult):
     kind: ClassVar[DecisionKind] = DecisionKind.SEARCH_PAGE_CONTENT
-
-
-@dataclass(frozen=True)
-class ContinueDeliveryResult(LocalToolResult):
-    kind: ClassVar[DecisionKind] = DecisionKind.CONTINUE_DELIVERY
 
 
 @dataclass(frozen=True)
@@ -384,7 +266,6 @@ AgentDecision: TypeAlias = (
     | AskUser
     | ReadRegionResult
     | SearchPageContentResult
-    | ContinueDeliveryResult
     | RememberFactResult
     | ToolRejectedResult
     | FinalResponse

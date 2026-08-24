@@ -14,25 +14,16 @@ from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNode
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.compact_world_renderer import (
     DeliveryManifest,
-    Matches,
-    Opened,
-    Page,
     inspect_actor_world,
     inspect_outcome_public,
 )
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
-from affordance_runtime.agent.context.observation_delivery import (
-    DeliveryContinuationCapability,
-)
-from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
     AskUser,
-    ContinueDeliveryResult,
     FinalResponse,
-    PublicEvidenceResult,
     ReadRegionResult,
     RememberFactResult,
     RequestActionPage,
@@ -72,8 +63,6 @@ class GroundedLocalToolName(StrEnum):
     SEARCH_PAGE_CONTENT = "search_page_content"
     LIST_REGIONS = "list_regions"
     FIND_CONTROLS = "find_controls"
-    READ_NEXT_PAGE = "read_next_page"
-    ACTION_RESULTS_NEXT_PAGE = "action_results_next_page"
     SUBMIT_FINAL_RESPONSE = "submit_final_response"
     ASK_USER = "ask_user"
     WAIT = "wait"
@@ -88,42 +77,6 @@ class _FindControlsBinding:
             context_id,
             query,
             tool_call_id=tool_call_id,
-        )
-
-
-@dataclass(frozen=True)
-class _ActionResultsNextPageBinding:
-    context: AgentContext
-    capabilities: tuple[DeliveryContinuationCapability, ...]
-
-    def resolve(self, arguments, context_id: str, tool_call_id: str) -> GroundedActionResolution:
-        scope = str(arguments.get("scope", "")) if arguments else ""
-        scopes = tuple(item.scope for item in self.capabilities)
-        if not scope and len(scopes) == 1:
-            scope = scopes[0]
-        if scope not in scopes or set(arguments).difference({"scope"}):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        capability = next(item for item in self.capabilities if item.scope == scope)
-        return GroundedActionResolution(
-            ContinueDeliveryResult(
-                context_id,
-                GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
-                {"scope": scope},
-                PublicEvidenceResult(
-                    {
-                        "continuation_available": True,
-                        "continuation_scope": scope,
-                        "read_only": True,
-                        "zero_browser_dispatch": True,
-                        "items": (),
-                    },
-                    scope,
-                    "items",
-                    reuse_inventory=True,
-                ),
-                tool_call_id,
-                continuation=capability,
-            ),
         )
 
 
@@ -240,10 +193,7 @@ class _CountChildrenBinding:
             context_id,
             GroundedLocalToolName.COUNT_CHILDREN.value,
             {"containers": container_refs},
-            PublicEvidenceResult(
-                {"counts": counts, "total": sum(counts.values())},
-                "current_world",
-            ),
+            {"counts": counts, "total": sum(counts.values())},
             tool_call_id,
         )
 
@@ -308,14 +258,12 @@ class _RememberFactBinding:
 class _WorldReadBinding:
     context: AgentContext
     kind: str
-    continuation_scopes: tuple[str, ...] = ()
-    delivery: ModelTurnDelivery | None = None
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision | GroundedActionResolution:
         observation, region_index = _current_world_read_authority(self.context)
         region_ref = ""
         query = ""
-        page_cursor = ""
+        page_cursor = str(arguments.get("cursor", "") or "")
         if self.kind == "region":
             tool_name = GroundedLocalToolName.READ_REGION.value
             action = "read_region"
@@ -327,35 +275,6 @@ class _WorldReadBinding:
         elif self.kind == "view_all":
             tool_name = GroundedLocalToolName.LIST_REGIONS.value
             action = "view_all"
-        elif self.kind == "continue":
-            scope = str(arguments.get("scope", "")) if arguments else ""
-            if not scope and len(self.continuation_scopes) == 1:
-                scope = self.continuation_scopes[0]
-            if scope not in self.continuation_scopes or set(arguments).difference({"scope"}):
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            if scope in {"effect", "page_directory"}:
-                return self._continue_obligation(scope, context_id, tool_call_id)
-            lens = getattr(self.context.delivery_store, "active_read", None)
-            if lens is None or not lens.next_cursor:
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.INVALID_ARGUMENTS,
-                    "no current World read has another page",
-                )
-            tool_name = GroundedLocalToolName.READ_NEXT_PAGE.value
-            page_cursor = lens.next_cursor
-            if lens.kind == "region":
-                action = "read_region"
-                region = region_index.get(lens.selected_region_key)
-                if region is None:
-                    raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-                region_ref = self.context.canonical_world.region_refs[region.key]
-            elif lens.kind == "find":
-                action = "find"
-                query = lens.query
-            elif lens.kind == "view_all":
-                action = "view_all"
-            else:
-                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         else:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
 
@@ -372,27 +291,14 @@ class _WorldReadBinding:
             public_fact_bindings=self.context.private_fact_bindings,
             evidence_index=self.context.evidence_index,
         )
-        lens = _next_world_delivery_lens(
-            observation.observation_id,
-            region_index,
-            self.context.canonical_world,
-            action,
-            region_ref,
-            query,
-            page_cursor,
-            result,
-        )
         public_arguments: Mapping[str, object]
         if tool_name == GroundedLocalToolName.READ_REGION.value:
-            public_arguments = {"region_ref": region_ref}
+            public_arguments = {"region_ref": region_ref, **({"cursor": page_cursor} if page_cursor else {})}
         elif tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value:
-            public_arguments = {"query": query}
-        elif tool_name == GroundedLocalToolName.READ_NEXT_PAGE.value:
-            public_arguments = {"scope": "active_read"}
+            public_arguments = {"query": query, **({"cursor": page_cursor} if page_cursor else {})}
         else:
-            public_arguments = {}
+            public_arguments = {"cursor": page_cursor} if page_cursor else {}
         public_result = dict(inspect_outcome_public(result))
-        source_scope = region_ref or ("search" if query else "page_directory")
         result_type = (
             SearchPageContentResult
             if tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value
@@ -403,42 +309,8 @@ class _WorldReadBinding:
                 context_id,
                 tool_name,
                 public_arguments,
-                PublicEvidenceResult.from_value(
-                    public_result,
-                    source_scope=source_scope,
-                    append_to_inventory=bool(page_cursor),
-                ),
+                public_result,
                 tool_call_id,
-                delivery_lens=lens,
-            ),
-        )
-
-    def _continue_obligation(
-        self, scope: str, context_id: str, tool_call_id: str
-    ) -> GroundedActionResolution:
-        plan = self.context.action_delivery_plan
-        delivery = self.delivery
-        if plan is None or delivery is None:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-        capability = next(
-            (item for item in delivery.continuation_capabilities if item.scope == scope),
-            None,
-        )
-        if capability is None:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        return GroundedActionResolution(
-            ReadRegionResult(
-                context_id,
-                GroundedLocalToolName.READ_NEXT_PAGE.value,
-                {"scope": scope},
-                {
-                    "read_only": True,
-                    "zero_browser_dispatch": True,
-                    "continuation_available": True,
-                    "continuation_scope": scope,
-                },
-                tool_call_id,
-                continuation=capability,
             ),
         )
 
@@ -450,49 +322,6 @@ def _current_world_read_authority(context: AgentContext):
             "World reading requires a current observation and region index",
         )
     return context.current_observation, context.region_index
-
-
-def _next_world_delivery_lens(
-    observation_id,
-    region_index,
-    canonical_world,
-    action,
-    region_ref,
-    query,
-    page_cursor,
-    result,
-):
-    if isinstance(result, Opened):
-        region = region_index.get(canonical_world.resolve_region_ref(region_ref))
-        if region is None:
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.STALE_CATALOG)
-        return WorldDeliveryLens(
-            observation_id,
-            "region",
-            region.key,
-            "",
-            page_cursor,
-            result.next_cursor,
-        )
-    if isinstance(result, Matches) and result.items:
-            return WorldDeliveryLens(
-                observation_id,
-                "find",
-                "",
-                query,
-                page_cursor,
-                result.next_cursor,
-            )
-    if isinstance(result, Page):
-        return WorldDeliveryLens(
-            observation_id,
-            "view_all",
-            "",
-            "",
-            page_cursor,
-            result.next_cursor,
-        )
-    return None
 
 
 def compile_grounded_tool_catalog(
@@ -630,7 +459,7 @@ def compile_grounded_tool_catalog(
                 )
             )
 
-    if delivery.manifest.region_refs:
+    if context.canonical_world.region_refs:
         registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
@@ -640,9 +469,14 @@ def compile_grounded_tool_catalog(
                         {
                             "region_ref": {
                                 "type": "string",
-                                "description": "current PageMap R-ref",
-                                "enum": sorted(delivery.manifest.region_refs),
-                            }
+                                "description": "current PageMap R-ref returned by the World view or a read/search tool",
+                                "pattern": PublicRefCodec.pattern(PublicRefKind.REGION),
+                            },
+                            "cursor": {
+                                "type": "string",
+                                "description": "optional next_cursor returned by this same tool",
+                                "maxLength": 512,
+                            },
                         },
                         ("region_ref",),
                     ),
@@ -663,7 +497,12 @@ def compile_grounded_tool_catalog(
                                 "description": "text to find in the current World",
                                 "minLength": 1,
                                 "maxLength": 120,
-                            }
+                            },
+                            "cursor": {
+                                "type": "string",
+                                "description": "optional next_cursor returned by this same tool",
+                                "maxLength": 512,
+                            },
                         },
                         ("query",),
                     ),
@@ -674,7 +513,15 @@ def compile_grounded_tool_catalog(
                 ToolSpec(
                     GroundedLocalToolName.LIST_REGIONS.value,
                     "List current PageMap region records; no browser action.",
-                    _object_schema({}),
+                    _object_schema(
+                        {
+                            "cursor": {
+                                "type": "string",
+                                "description": "optional next_cursor returned by this same tool",
+                                "maxLength": 512,
+                            }
+                        }
+                    ),
                 ),
                 _WorldReadBinding(context, "view_all"),
             ),
@@ -698,60 +545,6 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
-    capabilities = delivery.continuation_capabilities
-    read_capabilities = tuple(
-        item for item in capabilities if item.scope in {"effect", "page_directory", "active_read"}
-    )
-    read_scopes = [item.scope for item in read_capabilities]
-    if read_scopes:
-        properties = (
-            {
-                "scope": {
-                    "type": "string",
-                    "description": "which bounded current World delivery to continue",
-                    "enum": read_scopes,
-                }
-            }
-            if len(read_scopes) > 1
-            else {}
-        )
-        registered.append(
-            RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.READ_NEXT_PAGE.value,
-                    "Continue a current World delivery page; Runtime owns paging.",
-                    _object_schema(properties, ("scope",) if properties else ()),
-                ),
-                _WorldReadBinding(context, "continue", tuple(read_scopes), delivery),
-            )
-        )
-    action_capabilities = tuple(
-        item for item in capabilities if item.scope not in {"effect", "page_directory", "active_read"}
-    )
-    continuation_scopes = tuple(item.scope for item in action_capabilities)
-    if continuation_scopes:
-        properties = (
-            {
-                "scope": {
-                    "type": "string",
-                    "description": "which independent action result cursor to continue",
-                    "enum": continuation_scopes,
-                }
-            }
-            if len(continuation_scopes) > 1
-            else {}
-        )
-        registered.append(
-            RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.ACTION_RESULTS_NEXT_PAGE.value,
-                    "Continue current action results; Runtime owns paging.",
-                    _object_schema(properties, ("scope",) if properties else ()),
-                ),
-                _ActionResultsNextPageBinding(context, action_capabilities),
-            )
-        )
-
     final_evidence = {
         public: canonical
         for public, canonical in context.private_fact_bindings.items()

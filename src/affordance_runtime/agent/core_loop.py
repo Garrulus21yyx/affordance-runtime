@@ -499,7 +499,6 @@ class CoreAgentLoop:
             current_findings_digest(result.after_world),
             working_facts_digest(state.workspace, pending_fact),
             delivery_transition.information_delta,
-            delivery_transition.next_store.visible_public_result_digest,
         )
         recommendation = getattr(transition, "recommendation", "")
         if str(recommendation) == "recover":
@@ -731,7 +730,6 @@ class CoreAgentLoop:
             case (
                 DecisionKind.READ_REGION
                 | DecisionKind.SEARCH_PAGE_CONTENT
-                | DecisionKind.CONTINUE_DELIVERY
                 | DecisionKind.REMEMBER_FACT
                 | DecisionKind.TOOL_REJECTED
             ):
@@ -965,22 +963,12 @@ class CoreAgentLoop:
             )
 
     def _action_page(self, task, state, action_space, decision: RequestActionPage) -> StepResult:
-        cursor = ""
         query = decision.query
-        if decision.continuation_scope:
-            if decision.continuation_scope != "base":
-                return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_scope_stale")
-            current = state.action_page
-            if current is None or not current.next_cursor:
-                return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_scope_stale")
-            cursor = current.next_cursor
-            query = current.query
         try:
             page = self.context_builder.page(
                 action_space,
                 state.current_world,
                 query=query,
-                cursor=cursor,
             )
         except ValueError:
             return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_invalid")

@@ -542,7 +542,7 @@ def test_gate_4_unselected_mark_does_not_authorize_route_and_find_controls_recov
     asyncio.run(scenario())
 
 
-def test_gate_4_production_continuation_pages_conserve_owner_route_inventory(
+def test_gate_4_current_turn_packing_selects_a_valid_owner_route_without_continuation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario() -> None:
@@ -572,7 +572,7 @@ def test_gate_4_production_continuation_pages_conserve_owner_route_inventory(
 
         assert state.status is RunStatus.DONE
         assert len(packed_turns) == recorder.calls == len(policy.port.envelope_history)
-        assert len(packed_turns) >= 2
+        assert len(packed_turns) == 1
         owner_candidates = plans[0].projection().candidates
         owner_routes = tuple(
             (
@@ -592,12 +592,8 @@ def test_gate_4_production_continuation_pages_conserve_owner_route_inventory(
         delivered_routes = tuple(route for page in delivered_pages for route in page)
         assert all(delivered_pages)
         assert len(delivered_routes) == len(set(delivered_routes))
-        assert delivered_routes == owner_routes
-        assert all(
-            "action_results_next_page" in recorder.offered_tools[index]
-            for index in range(len(recorder.records) - 1)
-        )
-        assert "action_results_next_page" not in recorder.offered_tools[-1]
+        assert set(delivered_routes) <= set(owner_routes)
+        assert all("action_results_next_page" not in tools for tools in recorder.offered_tools)
         assert all(
             normalize_recorded_provider_input(record) == envelope.model_boundary_projection()
             for record, envelope in zip(
@@ -611,7 +607,8 @@ def test_gate_4_production_continuation_pages_conserve_owner_route_inventory(
             default=str,
             ensure_ascii=False,
         )
-        assert "cursor" not in physical
+        assert "action_results_next_page" not in physical
+        assert "read_next_page" not in physical
         assert before.observation_id not in physical
         assert all(
             item.action_id not in physical

@@ -110,7 +110,7 @@ class TurnPacker:
             (
                 item
                 for item in plan.obligations
-                if (item.continuation_scope or item.kind.value) == plan.foreground_scope
+                if (item.scope or item.kind.value) == plan.foreground_scope
             ),
             None,
         )

@@ -23,10 +23,6 @@ from affordance_runtime.agent.context.context import (
     AgentContext,
     VisualEvidenceFragment,
 )
-from affordance_runtime.agent.context.observation_delivery import (
-    DeliveryContinuationCapability,
-    PublicResultRecord,
-)
 from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
     project_committed_tool_metadata,
@@ -123,13 +119,9 @@ class ModelTurnDelivery:
     )
     action_delivery_plan_id: str
     media: tuple[DeliveredMedia, ...] = ()
-    public_results: tuple[PublicResultRecord, ...] = ()
     tool_result: DeferredToolDelivery | None = None
     admitted_record_counts: tuple[tuple[str, int], ...] = ()
     packing_backoff_count: int = 0
-    continuation_capabilities: tuple[DeliveryContinuationCapability, ...] = field(
-        default=(), repr=False, compare=False, metadata={"serialize": False}
-    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.view, WorldDeliveryView):
@@ -149,13 +141,6 @@ class ModelTurnDelivery:
             raise ValueError("model turn admitted obligation prefix is invalid")
         if self.packing_backoff_count < 0:
             raise ValueError("model turn packing backoff count is invalid")
-        capabilities = tuple(self.continuation_capabilities)
-        if (
-            any(not isinstance(item, DeliveryContinuationCapability) for item in capabilities)
-            or len({item.scope for item in capabilities}) != len(capabilities)
-        ):
-            raise ValueError("model turn continuation capabilities are invalid")
-        object.__setattr__(self, "continuation_capabilities", capabilities)
         if any(item.target_ref not in self.manifest.executable_refs for item in self.action_candidates.candidates):
             raise ValueError("every action candidate must enter the same DeliveryManifest")
         if any(
@@ -167,9 +152,6 @@ class ModelTurnDelivery:
         media = tuple(self.media)
         if any(not isinstance(item, DeliveredMedia) for item in media):
             raise TypeError("model turn media must contain exact admitted image records")
-        public_results = tuple(self.public_results)
-        if any(not isinstance(item, PublicResultRecord) for item in public_results):
-            raise TypeError("model turn public results must be exact Store-owned records")
         if self.tool_result is not None and not isinstance(self.tool_result, DeferredToolDelivery):
             raise TypeError("model turn deferred result must be typed")
         route_refs = {
@@ -192,7 +174,6 @@ class ModelTurnDelivery:
         if not manifest_refs.issubset(visible_refs):
             raise ValueError("delivery Manifest contains a ref absent from admitted text/media")
         object.__setattr__(self, "media", media)
-        object.__setattr__(self, "public_results", public_results)
 
 
 def build_model_turn_delivery(
@@ -216,16 +197,10 @@ def build_model_turn_delivery(
     )
     selected_candidates = context.action_delivery_plan.projection(selected_counts)
     selected_records = _selected_records(context.action_delivery_plan, selected_counts)
-    public_results = tuple(item for item in selected_records if isinstance(item, PublicResultRecord))
     tool_result = _deferred_tool_delivery(
         committed_step,
         pending_tool_call_id,
         pending_tool_name,
-        public_results,
-    )
-    continuation_capabilities = (
-        *context.action_delivery_plan.continuation_capabilities(selected_counts),
-        *context.delivery_store.active_read_continuation_capabilities(),
     )
     effect_indices = {
         item.record_index
@@ -238,11 +213,6 @@ def build_model_turn_delivery(
         if isinstance(item, WorldDeliveryRecord) and item.record_kind == "page_directory"
     }
     selected_effect_header = context.observation_delivery.effect_header
-    if selected_effect_header is not None:
-        selected_effect_header = replace(
-            selected_effect_header,
-            continuation_available=any(item.scope == "effect" for item in continuation_capabilities),
-        )
     delivered_action_refs = {
         ref
         for candidate in selected_candidates.candidates
@@ -292,8 +262,6 @@ def build_model_turn_delivery(
             **dict(rendered.view.coverage),
             "candidate_region_expansion_reason": "none",
             "admitted_obligations": tuple(sorted(selected_counts.items())),
-            "continuation_available": bool(continuation_capabilities),
-            "continuation_scopes": tuple(item.scope for item in continuation_capabilities),
             "packing_backoff_count": packing_backoff_count,
         },
     )
@@ -324,7 +292,6 @@ def build_model_turn_delivery(
         "admitted_record_counts": tuple(sorted(selected_counts.items())),
         "packing_backoff_count": packing_backoff_count,
         "public_effect": tuple(to_json_compatible(item) for item in selected_observation_delivery.latest_effect_values),
-        "public_results": tuple(item.to_public_value() for item in public_results),
         "tool_result": (
             {
                 "tool_call_id": tool_result.tool_call_id,
@@ -347,11 +314,9 @@ def build_model_turn_delivery(
         action_candidates=selected_candidates,
         action_delivery_plan_id=context.action_delivery_plan.plan_id,
         media=media,
-        public_results=public_results,
         tool_result=tool_result,
         admitted_record_counts=tuple(sorted(selected_counts.items())),
         packing_backoff_count=packing_backoff_count,
-        continuation_capabilities=continuation_capabilities,
     )
 
 
@@ -359,7 +324,6 @@ def _deferred_tool_delivery(
     committed_step: object | None,
     pending_tool_call_id: str,
     pending_tool_name: str,
-    records: tuple[PublicResultRecord, ...],
 ) -> DeferredToolDelivery | None:
     if committed_step is None:
         return None
@@ -370,20 +334,14 @@ def _deferred_tool_delivery(
         return None
     if call_id != pending_tool_call_id or not pending_tool_name:
         raise ValueError("committed step does not match the pending official call")
-    admitted = project_committed_tool_return(
-        committed_step,
-        admitted_evidence_records=tuple(item.public_value for item in records),
-    )
+    admitted = project_committed_tool_return(committed_step)
     if admitted is None:
         raise ValueError("pending official call requires one projected result")
     return DeferredToolDelivery(
         call_id,
         pending_tool_name,
         admitted,
-        project_committed_tool_metadata(
-            committed_step,
-            record_digests=tuple(item.digest for item in records),
-        ),
+        project_committed_tool_metadata(committed_step),
         bool(getattr(committed_step, "runtime_failure", None)),
     )
 

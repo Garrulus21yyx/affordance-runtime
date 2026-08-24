@@ -257,11 +257,10 @@ def test_local_delivery_records_stay_in_store_and_workspace_keeps_only_lineage()
     assert workspace.semantic_events[-1].kind is SemanticEventKind.PUBLIC_RESULT
     assert workspace.semantic_events[-1].operation == "search_page_content"
     assert workspace.semantic_events[-1].result_lineage == first.information_delta.inventory_digest
-    assert first.next_store.public_result_inventory is not None
-    assert tuple(
-        item.to_public_value()["value"]
-        for item in first.next_store.public_result_inventory.records
-    ) == decision.result["items"]
+    receipt = first.next_store.local_deliveries[-1]
+    assert len(receipt.item_digests) == len(decision.result["items"])
+    assert not hasattr(receipt, "records")
+    assert "Airport" not in repr(receipt)
     assert "exact_public_values" not in vars(workspace.semantic_events[-1])
     assert workspace.activities[-1].new_finding_count == 2
     assert workspace.activities[-1].last_outcome == "new_information"

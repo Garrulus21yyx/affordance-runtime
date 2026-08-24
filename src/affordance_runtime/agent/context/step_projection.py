@@ -219,10 +219,7 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
             "reason": _bounded(decision.reason),
         }
     if isinstance(decision, RequestActionPage):
-        return {
-            "query": decision.query,
-            "continuation_scope": decision.continuation_scope,
-        }
+        return {"query": decision.query}
     if isinstance(decision, AskUser):
         return {"question": decision.question, "requested_fields": decision.requested_fields}
     if isinstance(decision, LocalToolResult):

@@ -14,7 +14,6 @@ from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import DecisionKind, RequestActionPage, SelectAction
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import (
-    ActionDeliveryPlan,
     ActionRouteFragment,
     DeliveryObligationKind,
 )
@@ -26,12 +25,11 @@ from affordance_runtime.agent.context.compact_world_renderer import (
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import (
-    DeliveryContinuationCapability,
     ObservationDeliveryStore,
 )
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.core_loop import CoreAgentLoop
-from affordance_runtime.agent.decisions import PublicEvidenceResult, SearchPageContentResult
+from affordance_runtime.agent.decisions import SearchPageContentResult
 from affordance_runtime.agent.run_state import RunState, StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
@@ -293,7 +291,7 @@ def _context():
     )
 
 
-def _context_with_public_results(
+def _context_with_direct_result(
     values: tuple[dict[str, object], ...],
 ):
     task, world, _actions, evaluation, _ = _context()
@@ -302,10 +300,7 @@ def _context_with_public_results(
         "context:fixture",
         "read_region",
         {"region_ref": "R2"},
-        PublicEvidenceResult.from_value(
-            {"kind": "Opened", "items": values},
-            source_scope="R2",
-        ),
+        {"kind": "Opened", "items": values, "next_cursor": None},
         "call:public-results",
     )
     committed = StepResult(
@@ -324,20 +319,7 @@ def _context_with_public_results(
         delivery_store=store,
         last_step=committed,
     )
-    public_obligation = context.action_delivery_plan.obligation(DeliveryObligationKind.PUBLIC_RESULT)
-    assert public_obligation is not None
-    public_plan = ActionDeliveryPlan(
-        context.action_space_id,
-        world.observation_id,
-        (public_obligation,),
-        "public_result",
-    )
-    return replace(
-        context,
-        action_delivery_plan=public_plan,
-        action_candidates=public_plan.projection(),
-        delivery_store=context.delivery_store,
-    )
+    return context
 
 
 def _changed_action_world(observation_id: str, count: int, phase: str):
@@ -729,7 +711,7 @@ def test_sparse_public_schema_acceptance_equals_one_private_resolver_row() -> No
                 select.resolve(arguments, unary_context.context_id, "call:wrong-domain")
 
 
-def test_query_owner_stores_complete_inventory_and_plan_pages_the_lossless_suffix() -> None:
+def test_find_controls_returns_one_owner_bounded_page_without_store_inventory() -> None:
     task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     page = builder.page(actions, world, query="Zulu control")
@@ -755,10 +737,11 @@ def test_query_owner_stores_complete_inventory_and_plan_pages_the_lossless_suffi
     )
     query = context.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
 
-    assert discovery.continuation_available is True
+    assert discovery.result_coverage == "partial"
     assert len(discovery.matches) == 1
-    assert len(state.delivery_store.action_query.matches) == len(actions.options)
-    assert len(query.records) == len(actions.options)
+    assert not hasattr(state.delivery_store, "action_query")
+    assert query is not None
+    assert len(query.records) == len(discovery.matches)
 
 
 def test_duplicate_label_path_match_survives_base_page_packing() -> None:
@@ -1081,7 +1064,7 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
     request = ModelDecisionRequest("request:packing-property", context)
     wide = CanonicalProviderEnvelopeBinder()
 
-    foreground = next(item for item in plan.obligations if item.continuation_scope == plan.foreground_scope)
+    foreground = next(item for item in plan.obligations if item.scope == plan.foreground_scope)
 
     def total(record_count: int) -> int:
         counts = {item.kind.value: 0 for item in plan.obligations}
@@ -1206,7 +1189,7 @@ def test_changed_action_and_fact_fanout_remains_bounded_and_cursor_conserved(cou
     assert admitted <= len(effect.records)
     if count >= 84:
         assert admitted < len(effect.records)
-        assert any(item.scope == "effect" for item in packed.delivery.continuation_capabilities)
+        assert "read_next_page" not in {item.name for item in packed.catalog.specs}
     assert (
         packed.admitted_envelope.token_breakdown.estimated_input_tokens
         <= ModelRequestBudget().soft_target_tokens
@@ -1307,7 +1290,6 @@ def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventor
     forbidden_fields = {
         "private_cursor",
         "page_cursor",
-        "next_cursor",
         "source_count",
         "matched_target_count",
         "action_variant_count",
@@ -1320,93 +1302,6 @@ def test_provider_bound_delivery_contains_no_private_cursor_identity_or_inventor
     assert all(value not in physical for value in private_values)
     assert all(value not in physical for value in forbidden_fields)
     assert "browsergym-observation:" not in physical
-
-
-def test_zero_admitted_suffix_still_registers_unique_store_bound_continuation() -> None:
-    _task_value, world, _actions, evaluation, context = _context()
-    plan = context.action_delivery_plan
-    assert plan is not None
-    empty = {item.kind.value: 0 for item in plan.obligations}
-    delivery = build_model_turn_delivery(context, include_images=False, admitted_records=empty)
-    catalog = compile_grounded_action_catalog(context, delivery)
-    continuation = next(
-        spec for spec in catalog.specs if spec.name == "action_results_next_page"
-    )
-    scopes = tuple(
-        item.scope
-        for item in delivery.continuation_capabilities
-        if item.scope not in {"effect", "page_directory", "active_read"}
-    )
-    arguments = {} if len(scopes) == 1 else {"scope": scopes[0]}
-
-    resolution = resolve_grounded_tool_call(
-        catalog,
-        ToolCall("action_results_next_page", arguments, "call:zero-prefix"),
-        expected_context_id=context.context_id,
-        expected_delivery_id=delivery.delivery_id,
-    )
-
-    assert continuation.input_schema["properties"] == (
-        {} if len(scopes) == 1 else continuation.input_schema["properties"]
-    )
-    committed = StepResult(
-        resolution.decision,
-        world,
-        world,
-        evaluation,
-        feedback="local_tool_result",
-    )
-    next_store = context.delivery_store.reduce(committed, step_index=1).next_store
-    assert resolution.decision.continuation is not None
-    assert next_store.foreground_request == resolution.decision.continuation.key
-    assert next_store.cursor(resolution.decision.continuation.key).offset == 0
-
-
-@given(changed_field=st.sampled_from(("world", "action", "result", "order")))
-def test_plan_never_reuses_same_scope_cursor_when_complete_lineage_changes(
-    changed_field: str,
-) -> None:
-    task, world, actions, evaluation, context = _context()
-    obligation = context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
-    assert obligation is not None
-    inventory = obligation.inventory
-    lineages = {
-        "world_lineage": inventory.world_lineage,
-        "action_lineage": inventory.action_lineage,
-        "result_lineage": inventory.result_lineage,
-        "order_digest": inventory.order_digest,
-    }
-    key_field = f"{changed_field}_lineage" if changed_field != "order" else "order_digest"
-    lineages[key_field] = f"{changed_field}:other"
-    progress = DeliveryContinuationCapability(
-        inventory.scope,
-        True,
-        0,
-        len(inventory.records),
-        lineages["world_lineage"],
-        lineages["action_lineage"],
-        lineages["result_lineage"],
-        lineages["order_digest"],
-        1,
-        inventory.kind,
-    )
-    store = ObservationDeliveryStore(
-        cursor_progress=(progress,),
-        foreground_request=progress.key,
-    )
-
-    rebuilt = ContextBuilder().build(
-        task,
-        world,
-        actions,
-        evaluation,
-        delivery_store=store,
-    )
-    rebuilt_base = rebuilt.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
-
-    assert rebuilt_base is not None
-    assert rebuilt_base.inventory.offset == 0
-    assert rebuilt.action_delivery_plan.requested_key is None
 
 
 def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly() -> None:
@@ -1438,7 +1333,7 @@ def test_provider_binder_preserves_typed_task_public_inputs_and_criteria_exactly
 
 
 @pytest.mark.parametrize("count", (1, 2, 16, 32))
-def test_store_public_result_atoms_reach_physical_request_without_field_projection(count: int) -> None:
+def test_owner_bounded_result_reaches_physical_request_without_store_projection(count: int) -> None:
     values = tuple(
         {
             "identity": {"display": f"Reader {index} 界🙂"},
@@ -1449,17 +1344,18 @@ def test_store_public_result_atoms_reach_physical_request_without_field_projecti
         }
         for index in range(count)
     )
-    context = _context_with_public_results(values)
+    context = _context_with_direct_result(values)
     packed = _pack(
         ModelDecisionRequest(f"request:public-results-{count}", context),
         binder=GroundedPolicyContextBinder(),
     )
     physical = packed.admitted_envelope.envelope.physical_content()
     delivered = tuple(physical["messages"][-1]["parts"][0]["return_value"]["items"])
-    admitted = dict(packed.admitted_record_counts)[DeliveryObligationKind.PUBLIC_RESULT.value]
-
-    assert delivered == values[:admitted]
-    assert tuple(item.public_value for item in packed.delivery.public_results) == values[:admitted]
+    assert delivered == values
+    assert packed.delivery.tool_result is not None
+    assert tuple(packed.delivery.tool_result.return_value["items"]) == values
+    assert not hasattr(packed.delivery, "public_results")
+    assert not hasattr(context.delivery_store, "public_result_inventory")
     assert "[TRUNCATED]" not in packed.admitted_envelope.envelope.user_text
 
 
@@ -1481,16 +1377,14 @@ def test_generated_public_result_shapes_remain_atomic_through_physical_request(
         {"record": nested, "ordinal": index, "pair": {"left": f"L{index}", "right": text_value}}
         for index in range(count)
     )
-    context = _context_with_public_results(values)
+    context = _context_with_direct_result(values)
     packed = _pack(ModelDecisionRequest(f"request:generated-results-{count}-{depth}", context))
-    admitted = len(packed.delivery.public_results)
     physical = packed.admitted_envelope.envelope.physical_content()
 
-    assert admitted >= 1
-    assert physical["messages"][-1]["parts"][0]["return_value"]["items"] == values[:admitted]
+    assert physical["messages"][-1]["parts"][0]["return_value"]["items"] == values
 
 
-def test_public_result_budget_backoff_removes_only_whole_suffix_records() -> None:
+def test_current_tool_result_is_never_structurally_backed_off_by_turn_packer() -> None:
     values = tuple(
         {
             "author": f"Reader {index}",
@@ -1498,12 +1392,13 @@ def test_public_result_budget_backoff_removes_only_whole_suffix_records() -> Non
         }
         for index in range(2)
     )
-    context = _context_with_public_results(values)
+    context = _context_with_direct_result(values)
     request = ModelDecisionRequest("request:public-result-boundary", context)
     plan = context.action_delivery_plan
     assert plan is not None
     unconstrained = _pack(request)
-    assert len(unconstrained.delivery.public_results) == 2
+    assert unconstrained.delivery.tool_result is not None
+    assert tuple(unconstrained.delivery.tool_result.return_value["items"]) == values
     two_record_tokens = unconstrained.admitted_envelope.token_breakdown.estimated_input_tokens
     exact_fit = CanonicalProviderEnvelopeBinder(
         request_budget=ModelRequestBudget(
@@ -1524,20 +1419,12 @@ def test_public_result_budget_backoff_removes_only_whole_suffix_records() -> Non
         ),
     )
     exact = _pack(request, binder=exact_fit)
+    assert exact.delivery.tool_result is not None
+    assert tuple(exact.delivery.tool_result.return_value["items"]) == values
     reduced = _pack(request, binder=one_token_short)
-
-    assert exact.delivery.public_results == context.delivery_store.public_result_inventory.records
-    assert reduced.delivery.public_results == exact.delivery.public_results[:1]
-    assert tuple(item.public_value for item in reduced.delivery.public_results) == values[:1]
-    inventory = context.delivery_store.public_result_inventory
-    assert inventory is not None
-    assert inventory.records == (*reduced.delivery.public_results, *inventory.records[1:])
-    visible = context.delivery_store.with_visible_public_results(reduced.delivery.public_results)
-    assert visible.public_result_inventory is not None
-    assert visible.public_result_inventory.visible_record_digests == (
-        reduced.delivery.public_results[0].digest,
-    )
-    assert inventory.records[1].digest not in visible.public_result_inventory.visible_record_digests
+    assert reduced.delivery.tool_result is not None
+    assert tuple(reduced.delivery.tool_result.return_value["items"]) == values
+    assert reduced.admitted_envelope.token_breakdown.estimated_input_tokens <= two_record_tokens - 1
 
 
 def test_observation_and_source_id_permutation_preserves_public_page_manifest_catalog_and_cost() -> None:
@@ -1575,7 +1462,7 @@ def test_observation_and_source_id_permutation_preserves_public_page_manifest_ca
     assert packed_a.delivery.admitted_record_counts == packed_b.delivery.admitted_record_counts
 
 
-def test_private_inventory_enumeration_permutation_preserves_public_delivery() -> None:
+def test_action_delivery_permutation_preserves_public_delivery() -> None:
     task, world_a, actions_a, evaluation_a, context_a = _context()
     world_b = replace(
         world_a,

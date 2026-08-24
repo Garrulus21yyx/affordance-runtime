@@ -12,10 +12,8 @@ from typing import TYPE_CHECKING, assert_never
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
-    ContinueDeliveryResult,
     FinalResponse,
     LocalToolResult,
-    PublicEvidenceResult,
     ReadRegionResult,
     RememberFactResult,
     RequestActionPage,
@@ -47,7 +45,6 @@ def committed_tool_call_id(step: StepResult) -> str:
             AskUser,
             ReadRegionResult,
             SearchPageContentResult,
-            ContinueDeliveryResult,
             RememberFactResult,
             ToolRejectedResult,
             Wait,
@@ -60,40 +57,12 @@ def committed_tool_call_id(step: StepResult) -> str:
     assert_never(decision)
 
 
-def committed_public_evidence(step: StepResult) -> PublicEvidenceResult | None:
-    """Select typed public evidence by result type, never by operation name."""
-
-    decision = step.decision
-    if isinstance(decision, LocalToolResult):
-        result = decision.result
-        return result if isinstance(result, PublicEvidenceResult) else None
-    if isinstance(
-        decision,
-        (
-            SelectAction,
-            RequestObservation,
-            RequestActionPage,
-            AskUser,
-            FinalResponse,
-            Wait,
-            Abort,
-            PolicyFailure,
-        ),
-    ):
-        return None
-    assert_never(decision)
-
-
-def project_committed_tool_return(
-    step: StepResult,
-    *,
-    admitted_evidence_records: tuple[Mapping[str, object], ...] | None = None,
-) -> Mapping[str, object] | None:
+def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | None:
     """Project one public ``ToolReturn.return_value`` from committed typed facts.
 
     ``None`` means the step did not originate from an accepted external tool
-    call.  Supplying ``admitted_evidence_records`` selects an exact complete
-    prefix; an empty tuple is a legal zero-prefix result.
+    call. Local tools own and bound the exact mapping before the step commits;
+    this projection never edits or reconstructs that mapping.
     """
 
     call_id = committed_tool_call_id(step)
@@ -152,11 +121,7 @@ def project_committed_tool_return(
         common.update({"kind": "needs_input", "requested_fields": decision.requested_fields})
         return freeze_json(common)
     if isinstance(decision, LocalToolResult):
-        result = decision.result
-        if isinstance(result, PublicEvidenceResult):
-            records = result.records if admitted_evidence_records is None else admitted_evidence_records
-            return freeze_json(result.with_records(tuple(records)))
-        return freeze_json(result)
+        return freeze_json(decision.result)
     if isinstance(decision, Wait):
         common.update({"kind": "wait", "waited_ms": step.waited_ms})
         return freeze_json(common)
@@ -166,11 +131,7 @@ def project_committed_tool_return(
     assert_never(decision)
 
 
-def project_committed_tool_metadata(
-    step: StepResult,
-    *,
-    record_digests: tuple[str, ...] = (),
-) -> Mapping[str, object]:
+def project_committed_tool_metadata(step: StepResult) -> Mapping[str, object]:
     """Project Runtime-private ToolReturn metadata from the same committed step."""
 
     call_id = committed_tool_call_id(step)
@@ -182,7 +143,6 @@ def project_committed_tool_metadata(
         {
             "tool_call_id": call_id,
             "tool_name": getattr(decision, "tool_name", decision.kind.value),
-            "record_digests": tuple(record_digests),
             "before_world": step.before_world.observation_id,
             "after_world": step.after_world.observation_id,
             "runtime_failure": (

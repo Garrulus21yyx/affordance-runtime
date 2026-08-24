@@ -548,7 +548,7 @@ def test_search_page_content_reports_partial_world_coverage() -> None:
     assert resolution.decision.result["coverage"] == "partial"
 
 
-def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> None:
+def test_read_region_returns_directly_without_changing_next_context_action_authority() -> None:
     targets = tuple(SemanticTarget(f"target:{index}", "button", f"Button {index}") for index in range(1, 6))
     observation = fused_world("world:lens", targets, surface="dom")
     options = tuple(
@@ -593,7 +593,8 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
         )
     )
 
-    assert first.delivery_store.active_read is None
+    assert opened.result["kind"] == "Opened"
+    assert not hasattr(first.delivery_store, "active_read")
     second = builder.build(
         task,
         observation,
@@ -614,8 +615,7 @@ def test_read_region_lens_expands_next_context_and_direct_catalog_actions() -> N
     )
     activate = next(item for item in second_catalog.specs if item.name == "activate")
 
-    assert second.delivery_store.active_read.world_observation_id == observation.observation_id
-    assert second.delivery_store.active_read.selected_region_key
+    assert not hasattr(second.delivery_store, "active_read")
     assert any(projection in rendered for projection in ("projection=page_map", "projection=full"))
     branches = activate.input_schema.get("oneOf", (activate.input_schema,))
     assert {

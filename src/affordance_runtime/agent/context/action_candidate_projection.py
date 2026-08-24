@@ -23,13 +23,9 @@ from affordance_runtime.agent.context.contracts import (
     AgentDestinationView,
 )
 from affordance_runtime.agent.context.observation_delivery import (
-    ContinuationKey,
-    DeliveryContinuationCapability,
     DeliveryInventorySnapshot,
     ObservationDelivery,
-    ObservationDeliveryStore,
     PublicEffectInventory,
-    PublicResultRecord,
 )
 from affordance_runtime.agent.context.world_region_index import (
     FunctionalContainerKind,
@@ -227,7 +223,6 @@ class ActionRouteIssueFragment:
 
 
 class DeliveryObligationKind(StrEnum):
-    PUBLIC_RESULT = "public_result"
     EXPLICIT_QUERY = "query"
     PUBLIC_EFFECT = "effect_actions"
     INTERACTION = "interaction"
@@ -257,9 +252,7 @@ class WorldDeliveryRecord:
         object.__setattr__(self, "route_fragments", tuple(self.route_fragments))
 
 
-DeliveryAtomicRecord = (
-    ActionRouteFragment | ActionRouteIssueFragment | WorldDeliveryRecord | PublicResultRecord
-)
+DeliveryAtomicRecord = ActionRouteFragment | ActionRouteIssueFragment | WorldDeliveryRecord
 
 
 @dataclass(frozen=True)
@@ -274,7 +267,7 @@ class DeliveryObligation:
         compare=False,
         metadata={"serialize": False},
     )
-    continuation_scope: str = ""
+    scope: str = ""
     source_coverage: str = "complete"
     result_coverage: str = "complete"
     public_provenance: tuple[str, ...] = ()
@@ -296,7 +289,7 @@ class DeliveryObligation:
 
     @property
     def remaining(self) -> tuple[DeliveryAtomicRecord, ...]:
-        return self.records[self.inventory.offset :]
+        return self.records
 
 
 @dataclass(frozen=True)
@@ -308,9 +301,6 @@ class ActionDeliveryPlan:
     obligations: tuple[DeliveryObligation, ...]
     foreground_scope: str | None
     plan_id: str = ""
-    requested_key: ContinuationKey | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
 
     def __post_init__(self) -> None:
         obligations = tuple(sorted(self.obligations, key=lambda item: (item.priority, item.kind.value)))
@@ -321,19 +311,8 @@ class ActionDeliveryPlan:
             or any(not isinstance(item, DeliveryObligation) for item in obligations)
         ):
             raise ValueError("action delivery plan is invalid")
-        requested = next(
-            (
-                item.continuation_scope or item.kind.value
-                for item in obligations
-                if item.remaining
-                and item.inventory.key == self.requested_key
-            ),
-            None,
-        )
-        if self.requested_key is not None and requested is None:
-            raise ValueError("requested delivery foreground must match one current inventory key")
-        expected_foreground = requested or next(
-            (item.continuation_scope or item.kind.value for item in obligations if item.remaining), None
+        expected_foreground = next(
+            (item.scope or item.kind.value for item in obligations if item.remaining), None
         )
         if self.foreground_scope != expected_foreground:
             raise ValueError("delivery foreground must be mechanically derived")
@@ -398,7 +377,6 @@ class ActionDeliveryPlan:
                 1
                 if item.kind
                 in {
-                    DeliveryObligationKind.PUBLIC_RESULT,
                     DeliveryObligationKind.PUBLIC_EFFECT,
                     DeliveryObligationKind.PAGE_DIRECTORY,
                 }
@@ -406,33 +384,6 @@ class ActionDeliveryPlan:
             )
             for item in self.obligations
         }
-
-    def continuation_capabilities(
-        self,
-        admitted_counts: Mapping[str, int],
-    ) -> tuple[DeliveryContinuationCapability, ...]:
-        """Bind opaque continuation credentials to this immutable snapshot."""
-
-        capabilities = []
-        for obligation in self.obligations:
-            inventory = obligation.inventory
-            admitted = admitted_counts.get(obligation.kind.value, 0)
-            capability = DeliveryContinuationCapability(
-                inventory.scope,
-                inventory.offset + admitted < len(inventory.records),
-                admitted,
-                len(inventory.records),
-                inventory.world_lineage,
-                inventory.action_lineage,
-                inventory.result_lineage,
-                inventory.order_digest,
-                inventory.offset,
-                inventory.kind,
-            )
-            if capability.continuation_available:
-                capabilities.append(capability)
-        return tuple(capabilities)
-
 
 def build_action_delivery_plan(
     *,
@@ -449,15 +400,11 @@ def build_action_delivery_plan(
     target_refs: Mapping[str, str] | None = None,
     observation_delivery: ObservationDelivery | None = None,
     latest_effect: PublicEffectInventory | None = None,
-    cursor_store: object | None = None,
 ) -> ActionDeliveryPlan:
     """Build one bounded-family plan over complete current owner inventories."""
 
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
     groups: dict[DeliveryObligationKind, list[DeliveryAtomicRecord]] = defaultdict(list)
-    result_inventory = getattr(cursor_store, "public_result_inventory", None)
-    if result_inventory is not None:
-        groups[DeliveryObligationKind.PUBLIC_RESULT].extend(result_inventory.records)
     def append(option: AgentActionOptionView, *, kind: DeliveryObligationKind, reason: str) -> None:
         candidate = _candidate_from_option(
             option, region_index, region_refs, rank=1, reasons=(reason,)
@@ -484,18 +431,7 @@ def build_action_delivery_plan(
                 groups[kind].append(fragment)
 
     query_options: list[tuple[AgentActionOptionView, bool]] = []
-    stored_query = getattr(cursor_store, "action_query", None)
-    query_matches = (
-        stored_query.matches
-        if discovery is not None
-        and stored_query is not None
-        and stored_query.query == discovery.query
-        and stored_query.world_lineage == world_observation_id
-        and stored_query.action_space_lineage == action_space_id
-        else discovery.matches
-        if discovery is not None
-        else ()
-    )
+    query_matches = discovery.matches if discovery is not None else ()
     if discovery is not None and discovery.query:
         for match in query_matches:
             option = complete_by_public.get((match.target_ref, match.operation))
@@ -639,7 +575,6 @@ def build_action_delivery_plan(
         )
 
     priorities = {
-        DeliveryObligationKind.PUBLIC_RESULT: 0,
         DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 7,
         DeliveryObligationKind.PUBLIC_EFFECT: 2,
         DeliveryObligationKind.INTERACTION: 3,
@@ -649,7 +584,6 @@ def build_action_delivery_plan(
         DeliveryObligationKind.ROUTE_ISSUES: 7,
     }
     scope_by_kind = {
-        DeliveryObligationKind.PUBLIC_RESULT: "public_result",
         DeliveryObligationKind.EXPLICIT_QUERY: "query",
         DeliveryObligationKind.PUBLIC_EFFECT: "effect",
         DeliveryObligationKind.INTERACTION: "interaction",
@@ -670,38 +604,22 @@ def build_action_delivery_plan(
             ).encode()
         ).hexdigest()
         result_lineage = (
-            result_inventory.result_lineage
-            if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
-            else latest_effect.raw_delta_lineage
+            latest_effect.raw_delta_lineage
             if kind is DeliveryObligationKind.PUBLIC_EFFECT and latest_effect is not None
             else discovery.query
             if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
             else "current"
         )
         scope = scope_by_kind[kind]
-        incoming_offset = (
-            result_inventory.offset
-            if kind is DeliveryObligationKind.PUBLIC_RESULT and result_inventory is not None
-            else 0
-        )
         inventory = DeliveryInventorySnapshot(
             scope,
             kind.value,
             world_observation_id,
-            "local_result" if kind is DeliveryObligationKind.PUBLIC_RESULT else action_space_id,
+            action_space_id,
             result_lineage or "current",
             order_digest,
             tuple(records),
-            incoming_offset,
         )
-        progress = (
-            cursor_store.cursor(inventory.key)
-            if isinstance(cursor_store, ObservationDeliveryStore)
-            else None
-        )
-        if progress is not None:
-            incoming_offset = min(progress.offset, len(records))
-            inventory = replace(inventory, offset=incoming_offset)
         inventory_specs.append(inventory)
     obligations = []
     for inventory in inventory_specs:
@@ -719,30 +637,12 @@ def build_action_delivery_plan(
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
-    requested_key = (
-        cursor_store.foreground_request
-        if isinstance(cursor_store, ObservationDeliveryStore)
-        and any(
-            item.inventory.key == cursor_store.foreground_request
-            and item.remaining
-            for item in obligations
-        )
-        else None
-    )
-    foreground = next(
-        (
-            item.continuation_scope
-            for item in ordered
-            if item.remaining and item.inventory.key == requested_key
-        ),
-        None,
-    ) or next((item.continuation_scope for item in ordered if item.remaining), None)
+    foreground = next((item.scope for item in ordered if item.remaining), None)
     return ActionDeliveryPlan(
         action_space_id,
         world_observation_id,
         ordered,
         foreground,
-        requested_key=requested_key,
     )
 
 
@@ -864,8 +764,6 @@ def _public_fragment_value(fragment: ActionRouteFragment) -> dict[str, object]:
 
 
 def _public_record_value(record: DeliveryAtomicRecord) -> Mapping[str, object]:
-    if isinstance(record, PublicResultRecord):
-        return freeze_json(record.to_public_value())
     if isinstance(record, ActionRouteFragment):
         return _public_fragment_value(record)
     if isinstance(record, ActionRouteIssueFragment):
@@ -886,7 +784,7 @@ def _public_obligation_value(obligation: DeliveryObligation) -> Mapping[str, obj
             "kind": obligation.kind.value,
             "records": tuple(_public_record_value(item) for item in obligation.records),
             "priority": obligation.priority,
-            "continuation_scope": obligation.continuation_scope,
+            "scope": obligation.scope,
             "source_coverage": obligation.source_coverage,
             "result_coverage": obligation.result_coverage,
             "public_provenance": obligation.public_provenance,

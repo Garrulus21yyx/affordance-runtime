@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 from itertools import product
 
 import pytest
 
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpaceBuilder
 from affordance_runtime.agent.context.observation_delivery import (
-    DeliveryContinuationCapability,
     InformationDeltaKind,
     ObservationDeliveryStore,
     PublicEffectProjector,
@@ -19,8 +18,6 @@ from affordance_runtime.agent.context.world_transition import (
     WorldTransitionProjector,
 )
 from affordance_runtime.agent.decisions import (
-    ContinueDeliveryResult,
-    PublicEvidenceResult,
     SearchPageContentResult,
     SelectAction,
 )
@@ -325,10 +322,7 @@ def test_latest_external_effect_survives_local_operations_and_supersedes_once() 
                 "context:effect",
                 operation,
                 {"query": "fixture"},
-                PublicEvidenceResult.from_value(
-                    {"kind": "NoMatches", "items": ()},
-                    source_scope="current",
-                ),
+                {"kind": "NoMatches", "items": ()},
             ),
             after,
             after,
@@ -348,16 +342,18 @@ def test_latest_external_effect_survives_local_operations_and_supersedes_once() 
     assert replaced.latest_effect is not None
     assert replaced.latest_effect.step_index == 3
     assert replaced.latest_effect.inventory.inventory_id != first_identity
-    assert replaced.active_read is None
+    assert tuple(item.name for item in fields(replaced)) == (
+        "latest_effect",
+        "local_deliveries",
+    )
 
 
 @pytest.mark.parametrize(
-    ("evidence_count", "admitted_count", "failed"),
-    tuple(product((0, 2), (None, 0, 1), (False, True))),
+    ("evidence_count", "failed"),
+    tuple(product((0, 2), (False, True))),
 )
-def test_committed_step_reducer_composes_effect_evidence_continuation_and_failure(
+def test_committed_step_reducer_composes_effect_result_digest_and_failure(
     evidence_count: int,
-    admitted_count: int | None,
     failed: bool,
 ) -> None:
     """Adding any legal transition leaves every independent transition conserved."""
@@ -369,44 +365,25 @@ def test_committed_step_reducer_composes_effect_evidence_continuation_and_failur
     ).next_store
     assert store.latest_effect is not None
     effect_identity = store.latest_effect.inventory.inventory_id
-    evidence = PublicEvidenceResult.from_value(
-        {
-            "kind": "Page",
-            "items": tuple(
-                {"ordinal": index, "nested": {"text": f"完整🙂-{index}"}}
-                for index in range(evidence_count)
-            ),
-        },
-        source_scope="matrix",
-    )
-    capability = (
-        DeliveryContinuationCapability(
-            "query",
-            True,
-            admitted_count,
-            3,
-            current.observation_id,
-            "actions:matrix",
-            "result:matrix",
-            "order:matrix",
-            0,
-            "explicit_query",
-        )
-        if admitted_count is not None
-        else None
-    )
+    evidence = {
+        "kind": "Page",
+        "items": tuple(
+            {"ordinal": index, "nested": {"text": f"完整🙂-{index}"}}
+            for index in range(evidence_count)
+        ),
+        "next_cursor": None,
+    }
     failure = (
         RuntimeFailure(FailureStage.SESSION, FailureKind.CALL_FAILED, "matrix.failure")
         if failed
         else None
     )
-    decision = ContinueDeliveryResult(
+    decision = SearchPageContentResult(
         "context:matrix",
-        "action_results_next_page",
-        {"scope": "query"},
+        "search_page_content",
+        {"query": "matrix"},
         evidence,
         "call:matrix",
-        continuation=capability,
     )
     step = StepResult(
         decision,
@@ -434,19 +411,11 @@ def test_committed_step_reducer_composes_effect_evidence_continuation_and_failur
         if evidence_count
         else InformationDeltaKind.NO_MATCHES
     )
-    inventory = transition.next_store.public_result_inventory
-    assert (() if inventory is None else inventory.records) == tuple(
-        transition.next_store.local_deliveries[-1].records
-    )
-    progress = next(
-        (item for item in transition.next_store.cursor_progress if item.scope == "query"),
-        None,
-    )
-    assert (None if progress is None else progress.offset) == admitted_count
+    receipt = transition.next_store.local_deliveries[-1]
+    assert len(receipt.item_digests) == evidence_count
+    assert not hasattr(receipt, "records")
     tool_return = project_committed_tool_return(step)
     assert tool_return is not None
-    assert tuple(tool_return["items"]) == evidence.records
+    assert tuple(tool_return["items"]) == evidence["items"]
     physical_result = json.dumps(to_json_compatible(tool_return), ensure_ascii=False)
-    assert "actions:matrix" not in physical_result
-    assert "result:matrix" not in physical_result
-    assert "order:matrix" not in physical_result
+    assert "完整🙂" in physical_result if evidence_count else "完整🙂" not in physical_result

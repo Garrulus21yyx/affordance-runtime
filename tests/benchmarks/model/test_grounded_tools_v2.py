@@ -18,9 +18,12 @@ from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent import (
     Abort,
     AskUser,
+    FinalResponse,
     LocalToolResult,
     ReadRegionResult,
+    RememberFactResult,
     RequestActionPage,
+    RequestObservation,
     SearchPageContentResult,
     SelectAction,
     Wait,
@@ -53,6 +56,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_catalog import (
+    GroundedLocalToolName,
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
@@ -105,6 +109,7 @@ from tests.support.legacy_compact_json_decision_port import (
     ProtocolFeedback,
     ProtocolFeedbackKind,
 )
+from tests.support.model.recording_pydantic_model import _schema_example
 from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
 from tests.support.surfaces.browsergym.projection_support import project_browsergym_observation
 from tests.support.world import fused_world
@@ -484,12 +489,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "remember_fact",
         "read_region",
         "search_page_content",
-            "list_regions",
-            "read_next_page",
-            "find_controls",
-            "action_results_next_page",
-            "submit_final_response",
-            "ask_user",
+        "list_regions",
+        "find_controls",
+        "submit_final_response",
+        "ask_user",
         "wait",
         "abort",
     }
@@ -780,7 +783,6 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "search",
             "find",
                 "list",
-            "action",
         "ask",
         "wait",
             "abort",
@@ -1319,13 +1321,13 @@ def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> Non
     assert invalid_failure.reason.startswith("invalid_tool_arguments")
 
 
-def test_find_controls_has_one_natural_language_input_and_only_truthful_continuation() -> None:
+def test_find_controls_has_one_natural_language_input_and_no_generic_continuation() -> None:
     context = _context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "find_controls")
 
     assert set(spec.input_schema["properties"]) == {"query"}
-    assert "action_results_next_page" in {item.name for item in catalog.specs}
+    assert "action_results_next_page" not in {item.name for item in catalog.specs}
     resolution = _resolve_catalog_call(
         catalog,
         ToolCall("find_controls", {"query": "like"}),
@@ -1333,7 +1335,48 @@ def test_find_controls_has_one_natural_language_input_and_only_truthful_continua
     )
     assert isinstance(resolution.decision, RequestActionPage)
     assert resolution.decision.query == "like"
-    assert resolution.decision.continuation_scope == ""
+    assert not hasattr(resolution.decision, "continuation_scope")
+
+
+def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:
+    context = _context()
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    expected = {
+        GroundedLocalToolName.REQUEST_EVIDENCE.value: RequestObservation,
+        GroundedLocalToolName.COUNT_CHILDREN.value: ReadRegionResult,
+        GroundedLocalToolName.REMEMBER_FACT.value: RememberFactResult,
+        GroundedLocalToolName.READ_REGION.value: ReadRegionResult,
+        GroundedLocalToolName.SEARCH_PAGE_CONTENT.value: SearchPageContentResult,
+        GroundedLocalToolName.LIST_REGIONS.value: ReadRegionResult,
+        GroundedLocalToolName.FIND_CONTROLS.value: RequestActionPage,
+        GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value: FinalResponse,
+        GroundedLocalToolName.ASK_USER.value: AskUser,
+        GroundedLocalToolName.WAIT.value: Wait,
+        GroundedLocalToolName.ABORT.value: Abort,
+    }
+    registered = tuple(spec for spec in catalog.specs if spec.name in expected)
+
+    assert registered
+    assert "read_next_page" not in {item.name for item in catalog.specs}
+    assert "action_results_next_page" not in {item.name for item in catalog.specs}
+    region_ref = next(iter(context.canonical_world.region_refs.values()))
+    for index, spec in enumerate(registered):
+        arguments = _schema_example(spec.input_schema)
+        assert isinstance(arguments, dict)
+        if spec.name == GroundedLocalToolName.READ_REGION.value:
+            arguments["region_ref"] = region_ref
+        elif spec.name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value:
+            arguments["query"] = "shared"
+        elif spec.name == GroundedLocalToolName.FIND_CONTROLS.value:
+            arguments["query"] = "like"
+        resolution = _resolve_catalog_call(
+            catalog,
+            ToolCall(spec.name, arguments, f"producer-contract:{index}"),
+            expected_context_id=context.context_id,
+        )
+        assert type(resolution.decision) is expected[spec.name]
+        if isinstance(resolution.decision, LocalToolResult):
+            assert resolution.decision.result
 
 
 def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> None:
@@ -1451,7 +1494,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     assert search_step.feedback == "action_page_ready"
     assert search_step.action_page == base_page
     assert search_step.action_page_result.result_coverage == "complete"
-    assert search_step.action_page_result.continuation_available is False
+    assert not hasattr(search_step.action_page_result, "continuation_available")
     assert readonly_ref not in {
         item.target_ref for item in search_step.action_page_result.matches
     }

@@ -20,7 +20,7 @@ import affordance_runtime.model.policy.canonical_provider_envelope as canonical_
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 import affordance_runtime.model.policy.request_admission as request_admission_module
 import affordance_runtime.model.policy.turn_packer as turn_packer_module
-from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.actions import ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
@@ -34,7 +34,11 @@ from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
-from affordance_runtime.evaluation import EvaluatedOutput
+from affordance_runtime.evaluation import (
+    EvaluatedOutput,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
@@ -58,6 +62,13 @@ from affordance_runtime.model.policy.request_admission import (
     ModelRequestCapacityError,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.task import TaskGoal
+from affordance_runtime.world import (
+    ObservationSourceProfile,
+    SemanticTarget,
+    SurfaceObservation,
+    WorldFusion,
+)
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
     SharedTaskEvaluator,
@@ -433,13 +444,133 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
         result_part = recorded["messages"][-1]["parts"][0]
         assert result_part["part_kind"] == "tool-return"
         assert result_part["tool_call_id"] == response_part["tool_call_id"]
-        assert tuple(result_part["content"]["items"]) == tuple(
-            item.public_value
-            for item in third_context.delivery_store.public_result_inventory.records
-        )
+        assert tuple(result_part["content"]["items"]) == tuple(second.output.decision.result["items"])
+        assert not hasattr(third_context.delivery_store, "public_result_inventory")
         user_text = recorded["messages"][-1]["parts"][1]["content"][0]["content"]
         payload = json.loads(user_text)
         assert "latest_public_results" not in payload
+        assert scripted.calls == 3
+
+    asyncio.run(scenario())
+
+
+def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_result() -> None:
+    async def scenario() -> None:
+        source_id = "source:long-reviews"
+        targets = tuple(
+            SemanticTarget(
+                f"review:{index}",
+                "listitem",
+                f"Reviewer {index}: " + "深🙂" * 500,
+            )
+            for index in range(25)
+        )
+        fused = WorldFusion().fuse(
+            (
+                SurfaceObservation(
+                    source_id,
+                    "dom",
+                    "revision:long-reviews",
+                    ObservationSourceProfile.dom(),
+                    targets,
+                    (),
+                ),
+            )
+        )
+        assert fused.observation is not None
+        world = fused.observation
+        task = TaskGoal("read-long-reviews", "Inspect every review")
+        evaluation = TaskEvaluation(
+            task.task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "more review pages remain",
+        )
+        builder = ContextBuilder()
+        first_context = builder.build(
+            task,
+            world,
+            ActionSpace(world.observation_id, ()),
+            evaluation,
+        )
+        assert first_context.region_index.regions
+        region = first_context.region_index.regions[0]
+        region_ref = first_context.canonical_world.region_refs[region.key]
+        scripted = ScriptedModel([("read_region", {"region_ref": region_ref})])
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(ModelDecisionRequest("request:long-page-1", first_context))
+
+        assert first.failure is None and first.output is not None
+        assert isinstance(first.output.decision, ReadRegionResult)
+        cursor = str(first.output.decision.result["next_cursor"])
+        assert cursor
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        first_transition = first_context.delivery_store.reduce(first_step, step_index=1)
+        assert not hasattr(first_transition.next_store, "public_result_inventory")
+        scripted.decisions.extend(
+            [
+                ("read_region", {"region_ref": region_ref, "cursor": cursor}),
+                (
+                    "submit_final_response",
+                    {"content": "Review pages inspected.", "evidence_refs": []},
+                ),
+            ]
+        )
+        second_context = builder.build(
+            task,
+            world,
+            ActionSpace(world.observation_id, ()),
+            evaluation,
+            delivery_store=first_transition.next_store,
+            last_step=first_step,
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:long-page-2", second_context, last_step=first_step)
+        )
+
+        assert second.failure is None and second.output is not None
+        assert isinstance(second.output.decision, ReadRegionResult)
+        assert second.output.decision.arguments == {"region_ref": region_ref, "cursor": cursor}
+        assert second.output.decision.result["items"]
+        assert second.output.decision.result["items"] != first.output.decision.result["items"]
+        second_step = StepResult(
+            second.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_transition = second_context.delivery_store.reduce(second_step, step_index=2)
+        assert len(second_transition.next_store.local_deliveries) == 2
+        assert all(not hasattr(item, "records") for item in second_transition.next_store.local_deliveries)
+        third_context = builder.build(
+            task,
+            world,
+            ActionSpace(world.observation_id, ()),
+            evaluation,
+            delivery_store=second_transition.next_store,
+            last_step=second_step,
+        )
+        third = await policy.port.generate(
+            ModelDecisionRequest("request:long-finish", third_context, last_step=second_step)
+        )
+
+        assert third.failure is None and third.output is not None
+        assert isinstance(third.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[2])
+        call = recorded["messages"][-2]["parts"][0]
+        returned = recorded["messages"][-1]["parts"][0]
+        assert call["part_kind"] == "tool-call"
+        assert returned["part_kind"] == "tool-return"
+        assert returned["tool_call_id"] == call["tool_call_id"]
+        assert tuple(returned["content"]["items"]) == tuple(second.output.decision.result["items"])
         assert scripted.calls == 3
 
     asyncio.run(scenario())

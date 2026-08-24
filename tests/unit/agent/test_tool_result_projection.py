@@ -5,8 +5,6 @@ import pytest
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
-    ContinueDeliveryResult,
-    PublicEvidenceResult,
     ReadRegionResult,
     RememberFactResult,
     RequestActionPage,
@@ -17,7 +15,6 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.tool_result_projection import (
-    committed_public_evidence,
     committed_tool_call_id,
     project_committed_tool_return,
 )
@@ -64,63 +61,45 @@ def test_supported_nonlocal_decisions_have_one_call_correlated_public_projection
 
     assert committed_tool_call_id(step) == decision.tool_call_id
     assert project_committed_tool_return(step) is not None
-    assert committed_public_evidence(step) is None
 
 
 @pytest.mark.parametrize(
     "result_type",
-    (
-        ReadRegionResult,
-        SearchPageContentResult,
-        ContinueDeliveryResult,
-        RememberFactResult,
-        ToolRejectedResult,
-    ),
+    (ReadRegionResult, SearchPageContentResult, RememberFactResult, ToolRejectedResult),
 )
-def test_closed_local_result_algebra_projects_without_operation_name_classification(result_type) -> None:
-    evidence = PublicEvidenceResult.from_value(
-        {
-            "kind": "Evidence",
-            "items": (
-                {"nested": {"text": "完整🙂", "ordinal": 1}},
-                {"nested": {"text": "suffix", "ordinal": 2}},
-            ),
-        },
-        source_scope="current",
-    )
+def test_closed_local_result_algebra_projects_the_owner_mapping_unchanged(result_type) -> None:
+    result = {
+        "kind": "Evidence",
+        "items": (
+            {"nested": {"text": "完整🙂", "ordinal": 1}},
+            {"nested": {"text": "suffix", "ordinal": 2}},
+        ),
+        "next_cursor": "2",
+    }
     decision = result_type(
         "context:fixture",
         "future_operation",
         {"public": "argument"},
-        evidence,
+        result,
         "call:local",
     )
-    step = _step(decision)
 
-    assert committed_public_evidence(step) is evidence
-    assert project_committed_tool_return(
-        step,
-        admitted_evidence_records=(evidence.records[0],),
-    )["items"] == (evidence.records[0],)
-    assert project_committed_tool_return(step, admitted_evidence_records=())["items"] == ()
+    projected = project_committed_tool_return(_step(decision))
+
+    assert projected == decision.result
+    assert projected["items"] == decision.result["items"]
+    assert projected["next_cursor"] == "2"
 
 
-def test_public_result_prefix_selection_never_mutates_the_committed_result() -> None:
-    evidence = PublicEvidenceResult.from_value(
-        {"items": ({"value": "一"}, {"value": "二"})},
-        source_scope="generated",
-    )
+def test_projection_has_no_prefix_selection_api() -> None:
     decision = SearchPageContentResult(
-        "context:fixture", "future_reader", {}, evidence, "call:prefix"
+        "context:fixture",
+        "search_page_content",
+        {},
+        {"items": ({"value": "一"}, {"value": "二"}), "next_cursor": None},
+        "call:direct",
     )
-    step = _step(decision)
-    original = decision.result
-
-    projected = project_committed_tool_return(
-        step,
-        admitted_evidence_records=(evidence.records[0],),
-    )
-
-    assert projected["items"] == (evidence.records[0],)
-    assert decision.result is original
-    assert decision.result["items"] == evidence.value["items"]
+    with pytest.raises(TypeError):
+        project_committed_tool_return(  # type: ignore[call-arg]
+            _step(decision), admitted_evidence_records=()
+        )

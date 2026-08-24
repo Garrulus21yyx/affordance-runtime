@@ -82,7 +82,6 @@ class ContextBuilder:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
         delivery_store = delivery_store.for_world(observation.observation_id)
-        active_read = delivery_store.active_read
         current_region_index = region_index or WorldDeliveryIndex.from_observation(
             observation,
             action_space.options,
@@ -171,7 +170,6 @@ class ContextBuilder:
                 world,
                 grounding,
                 runtime_controls,
-                active_read_available=bool(active_read is not None and active_read.next_cursor),
             ),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
@@ -221,7 +219,6 @@ class ContextBuilder:
                 if delivery_store.latest_effect is not None
                 else None
             ),
-            cursor_store=delivery_store,
         )
         candidate_projection = action_delivery_plan.projection(action_delivery_plan.bounded_preview_counts())
         return _fit_context(
@@ -353,21 +350,6 @@ class ContextBuilder:
             return tuple(values)
 
         matches = page_matches(page)
-        inventory = list(matches)
-        continuation = page
-        seen_cursors: set[str] = set()
-        while continuation.has_more:
-            if continuation.next_cursor in seen_cursors:
-                raise ValueError("action discovery cursor cycle")
-            seen_cursors.add(continuation.next_cursor)
-            continuation = self.page(
-                action_space,
-                observation,
-                query=page.query,
-                cursor=continuation.next_cursor,
-                region_index=current_index,
-            )
-            inventory.extend(page_matches(continuation))
         coverage = (
             "complete"
             if all(source.coverage is CoverageState.COMPLETE for source in observation.sources)
@@ -378,13 +360,8 @@ class ContextBuilder:
             query,
             coverage,
             "empty" if not matches else "partial" if page.has_more else "complete",
-            page.has_more,
-            "query" if page.has_more else "",
             (),
             "search_page_content" if query and not matches else "",
-            tuple(inventory),
-            observation.observation_id,
-            action_space.action_space_id,
         )
 
 def _context_identity(
@@ -428,8 +405,6 @@ def _tool_catalog_digest(
     world,
     grounding: GroundingProjectionResult,
     runtime_controls: tuple[str, ...],
-    *,
-    active_read_available: bool,
 ) -> str:
     """Bind identity to the exact current inputs that determine the public tool catalog."""
 
@@ -440,7 +415,6 @@ def _tool_catalog_digest(
             "world_targets": world.targets,
             "grounding_entities": grounding.index.entities,
             "runtime_controls": tuple(runtime_controls),
-            "active_read_available": active_read_available,
         }
     )
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

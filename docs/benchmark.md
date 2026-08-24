@@ -1,1493 +1,208 @@
 # Benchmark
 
-## Status
+## Current status
 
-Current status: **Gate 0 complete / Gate 1 World complete /
-Gate 2 admitted after joint fresh provider-free exit review /
-Gate 3 complete / re-admitted after fresh provider-free exit review /
-Gate 4 admitted after joint fresh provider-free exit review / Overall reopened / non-closed /
-held-out Task 21 falsified local-search follow-up conservation and multiple-call repair semantics /
-owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
-byte-bounded region-read repair provider-free verified / fresh-context review passed /
-held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
-standard call-correlated result repair provider-free acceptance falsified by fresh review /
-provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
-complete-key continuation repair provider-free verified; independent fresh-context review passed /
-authorized held-out rerun falsified multiple-call pending-exchange conservation /
-accepted-tool-exchange owner repair provider-free verified; independent fresh-context review passed /
-authorized held-out rerun falsified effect-continuation result typing /
-bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
-public-input projection pass their current-tree provider-free gates and independent review. Prior
-Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
-current end-to-end invariants or authorize another live run. The falsification attestation is
-[`task21-follow-up-falsification-20260823.json`](../evidence/acceptance/task21-follow-up-falsification-20260823.json).
-It reopens only `Local observation result -> Store -> Manifest -> ToolCatalog follow-up` and multiple-call
-canonicalization before representation repair. It does not reopen World, route, TurnPacker, Envelope,
-Binder/Executor, BrowserGym transition, finalization, or the information-increment Monitor.
+The thin tool-result/cursor cutover is implemented and provider-free verified. The focused suite passes `204` tests;
+the full suite passes `1653` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh diff review
+pass.
 
-The repair's provider-free attestation is
-[`search-follow-up-provider-free-20260823.json`](../evidence/acceptance/search-follow-up-provider-free-20260823.json),
-bound to implementation revision `d30432aa`: focused `90 passed`, full `1624 passed / 24 skipped` from `1648`
-collected, plus Ruff, compileall, and negative searches. Provider attempts are zero. The bounded cohort remains stopped,
-and even a passing fresh-context review may only lead to a request for explicit held-out-witness rerun authorization.
-The independent read-only review of `f9cd1c9e` passed with no falsification; see
-[`search-follow-up-fresh-review-20260823.json`](../evidence/acceptance/search-follow-up-fresh-review-20260823.json).
-It did not run a provider or live benchmark. Overall remains non-closed and the cohort remains stopped.
+Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-The authorized rerun is recorded in
-[`task21-read-region-capacity-falsification-20260824.json`](../evidence/acceptance/task21-read-region-capacity-falsification-20260824.json).
-It confirms that R9 follow-up conservation and multiple-call canonicalization were not re-falsified. It instead exposes
-one new local-read owner gap: cardinality-first `read_region` paging can exceed the 64 KiB physical result bound and
-return `CapacityExceeded` without a continuation cursor. The later two-attempt provider timeout is recorded separately
-as an environment failure. Overall remains non-closed; bounded cohort execution is not authorized.
+- the BrowserGym `dispatch -> causal stable fresh World -> StepResult` gate;
+- the Planner lexical-admission gap;
+- any live provider/benchmark gate.
 
-The byte-paging implementation acceptance is recorded in
-[`region-read-byte-paging-provider-free-20260824.json`](../evidence/acceptance/region-read-byte-paging-provider-free-20260824.json),
-bound to `b0324977`: focused `151 passed`, full `1628 passed / 24 skipped` from `1652` collected, plus Ruff,
-compileall, and negative searches. Provider attempts are zero. That acceptance did not itself authorize another live
-run, and the bounded cohort remains stopped.
+No live model or BrowserGym benchmark was run for this cutover. A live run still requires explicit user authorization.
+The untracked `output/` directory is unrelated user data and is not an acceptance artifact.
 
-The independent read-only review of `3a325418` passed with no falsification; see
-[`region-read-byte-paging-fresh-review-20260824.json`](../evidence/acceptance/region-read-byte-paging-fresh-review-20260824.json).
-It made no provider/live call. At that checkpoint Overall remained non-closed; the only next step was to request
-authorization for the single held-out Task 21 witness, while the bounded cohort remained stopped.
+Official success remains the benchmark-native evaluator's or `TaskEvaluator`'s post-capture result. A model final
+answer, local action receipt, GoalPlan item, or Monitor classification cannot declare a GUI task successful.
 
-The authorized post-byte-paging rerun is recorded in
-[`task21-workspace-structured-result-falsification-20260824.json`](../evidence/acceptance/task21-workspace-structured-result-falsification-20260824.json).
-The 63,090-byte first R9 page and its continuation were delivered successfully, and the first page contained the
-required review-body/reviewer relationships. The next physical request lost those relationships because the generic
-Workspace projection replaced nested `complete_item.targets` with `[TRUNCATED]`; the failure is therefore after region
-delivery and before model consumption, not another capacity rejection or missing R9 route. A single provider timeout
-was recovered and is secondary. This third reopening triggers the mandatory architecture-first convergence review.
-No production patch, held-out rerun, or bounded cohort is authorized until that review defines and falsifiably verifies
-the whole local-result-to-model retention algebra.
+## What this cutover fixes
 
-The architecture-first convergence review is now complete and freezes the provider-free acceptance algebra before
-implementation. Required properties are:
+The held-out R9 sequence exposed three related symptoms:
 
-1. A production `read_region` complete record preserves all canonical fields and intra-record relationships through
-   Store, packer, Delivery, physical Envelope, provider input, and Recording FunctionModel.
-2. Tightening request budget changes only the admitted complete-record prefix; every admitted record is byte-for-byte
-   canonical-public equal to its Store record.
-3. For the current offset, `remaining inventory = admitted prefix + continuation suffix`; the partition is ordered,
-   exact, duplicate-free, and cursor-private.
-4. Direct and paged read-only results append by stable digest; fresh World removes their current delivery authority.
-5. Store-only suffix records do not enter the model-visible novelty digest; `NEW_INFORMATION` grants one guaranteed
-   foreground delivery opportunity and does not claim that all suffix records were seen.
-6. The next policy turn can submit a final response using only physically delivered result records; no semantic judge,
-   VLM, second planner, or extra search is required.
-7. Generated deep mappings, long strings, Unicode, 1/2/16/32 records, exact fit, and one-unit-over capacity exercise the
-   real Store → plan → TurnPacker → Delivery → Envelope path.
-8. Negative searches find no Task21, R9, reviewer-name, review-text, site, `_MAX_DEPTH`, or threshold-pursuit production
-   specialization and no surviving exact-result Workspace/provider path.
+1. search returned a current region ref that the next `read_region` schema did not admit;
+2. a large region result was bounded by logical item count rather than final serialized bytes;
+3. the resulting data was copied through Store/Workspace/TurnPacker and changed shape before the model consumed it.
 
-The implementation must physically delete `SemanticEvent.exact_public_values`, Workspace exact-result fitting, and
-evidence-producing local-result bodies in recent trajectory. Provider-free implementation evidence, full/static
-checks, and an independent fresh-context review are required before asking for one held-out rerun. The bounded cohort
-remains stopped.
+Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
+currentness, producer, and Store-composition failures all arose on that shared path.
 
-The owner migration's provider-free acceptance is
-[`public-result-turn-packing-provider-free-20260824.json`](../evidence/acceptance/public-result-turn-packing-provider-free-20260824.json),
-bound to implementation revision `2456c900`: focused `174 passed`, full `1635 passed / 24 skipped` from `1659`
-collected tests, plus Ruff, compileall, diff checks, and negative searches. It proves the real Store → plan → TurnPacker
-→ Delivery → physical FunctionModel path over complete records, bounded prefixes, pagination, currentness, admitted-only
-novelty, generated nested/Unicode inventories, and direct final response. Provider attempts are zero. This acceptance
-does not authorize a live rerun; independent fresh-context review is still pending and the bounded cohort remains
-stopped.
-
-The independent fresh-context review falsified that acceptance at revision `b2079df1`; see
-[`public-result-fresh-review-falsification-20260824.json`](../evidence/acceptance/public-result-fresh-review-falsification-20260824.json).
-`list_regions` is a supported item-bearing read-only result producer, but the Store ingestion operation set omitted it.
-The result therefore re-entered provider-visible recent trajectory through the generic projection path. The review
-stopped after the finding; no production/live action followed. The next provider-free work is restricted to completing
-the Store's supported read-only producer algebra, migrating that consumer, and adding producer-completeness properties.
-The bounded cohort remains stopped and no held-out rerun is authorized.
-
-The post-falsification target is revised from an ordinary `latest_public_results` context segment to PydanticAI's
-standard deferred tool-result lifecycle. Provider-free acceptance must now prove, over every supported external result
-type rather than a list of tool names:
-
-1. the original schema-valid `tool_call_id`, tool name, and arguments appear in one prior assistant call and exactly one
-   following tool-result part;
-2. admitted `PublicEvidenceResult` records are canonical-equal to the Store prefix, with private cursor/lineage absent
-   from the physical model value;
-3. CanonicalProviderEnvelope and RequestAdmission count the prior call, deferred ToolReturn, current prompt, tools,
-   media, settings, and output reserve before provider dispatch;
-4. `read_region`, `search_page_content`, `list_regions`, generated future read-only producers, continuation, GUI
-   execution, action discovery, observation acquisition, remembered facts, waits, and typed failures each produce one
-   member of the closed result algebra without operation-name dispatch in Store;
-5. Workspace/recent trajectory contains receipts only, and the ordinary `latest_public_results` injection is absent;
-6. PydanticAI Recording FunctionModel observes the standard paired ToolReturn before the fresh prompt and can answer or
-   choose the next offered tool directly;
-7. pagination, fresh-World currentness, generated nested/Unicode records, exact-fit/one-unit-over, admitted-only novelty,
-   full/static checks, and independent fresh review all pass.
-
-Implementation completion will remain provider-free evidence only. No held-out witness or cohort run is authorized
-until the revised acceptance and an independent fresh-context review both pass.
-
-The standard deferred-result provider-free acceptance is recorded in
-[`call-correlated-tool-results-provider-free-20260824.json`](../evidence/acceptance/call-correlated-tool-results-provider-free-20260824.json),
-bound to implementation revision `a20fce29`: focused `146 passed`, full `1637 passed / 24 skipped` from `1661`
-collected, plus Ruff, compileall, diff checks, and negative searches. It verifies same-call-ID assistant call/tool
-result pairing at the real PydanticAI FunctionModel boundary, type-driven evidence ingestion including `list_regions`
-and a generated future reader, atomic Store/Packer prefixes and continuation suffixes, Envelope/RequestAdmission
-counting, private ToolReturn metadata exclusion, and direct next-turn final response. Provider attempts are zero.
-This acceptance does not authorize live; independent fresh-context review remains pending and the bounded cohort is
-stopped.
-
-The independent fresh-context review of `2a0ce38c` falsified that acceptance before running tests. A successful model
-call supplies a committed Store with `PendingToolCall`; CoreLoop attaches it to a GUI step; Store reduction then uses
-`committed_store or advance(step)`. The committed state consequently bypasses the sole dispatched-effect transition
-that creates `LatestEffect/PublicEffectInventory`. A paired external-call receipt is present, but the authoritative
-`PUBLIC_EFFECT` obligation is lost. Evidence:
-[`call-correlated-tool-results-fresh-review-falsification-20260824.json`](../evidence/acceptance/call-correlated-tool-results-fresh-review-falsification-20260824.json).
-The review stopped read-only with zero provider/live attempts. Work returns only to the Store merge owner; Overall is
-non-closed and the bounded cohort remains stopped.
-
-### Reopened C10 tool-result / Store-transition composition gate
-
-This replaces the falsified call-correlated-result acceptance; it is not a new numbered Gate. It proves that one
-committed step can conserve provider call identity, a GUI effect, a public result, continuation state, and typed
-failure simultaneously. Separate examples for each feature do not satisfy it.
-
-The production path under test is:
+The current repair removes the duplicated path:
 
 ```text
-Recording FunctionModel
-→ PydanticAI DeferredToolRequests(original call_id)
-→ production Catalog resolver / Binder / Executor or local-tool owner
-→ committed StepResult using the existing closed decision/result/receipt/failure algebra
-→ ObservationDeliveryStore.reduce(previous_store, committed_step)
-→ RunState.apply(next_store)
-→ private next ModelDecisionRequest reference to RunState.last_step
-→ production ContextBuilder / TurnPacker / Catalog / CanonicalProviderEnvelope
-→ PydanticAI DeferredToolResults.calls[the same call_id]
-→ Recording FunctionModel
+local ToolCall(call_id)
+-> current catalog resolver
+-> owner-bounded direct result
+-> StepResult
+-> same-call PydanticAI ToolReturn
+-> next Recording FunctionModel turn
 ```
 
-The gate requires all of the following.
+Read/search/list pagination is optional and local to the same tool. GUI effects and action discovery do not use it.
 
-1. **No whole-Store handoff.** Policy, grounded resolution, CoreLoop, and StepResult cannot return or prefer an
-   `ObservationDeliveryStore`. Production negative searches cover `next_delivery_store`, `last_delivery_store`, and
-   caller-side Store merge/fallback paths.
-2. **One official pending exchange.** The provider policy retains the exact admitted PydanticAI model messages and
-   `DeferredToolRequests`; Store has no pending-call/outcome fields and no manually reconstructed mapping history.
-3. **Total Store composition.** For one committed step, every applicable GUI-effect, public-result, continuation,
-   discovery, replay, and typed-failure transition is applied exactly once in the documented temporal order. Adding
-   one transition kind cannot clear, replace, or suppress an independent transition kind.
-4. **One execution truth.** The original call ID remains on the existing typed AgentDecision, and its local result,
-   execution receipt, discovery/observation result, or typed RuntimeFailure is committed in StepResult. One exhaustive
-   pure projector over that existing algebra supplies Store/provider projections; no new outcome wrapper or second
-   interpretation table is admitted. Operation names and display strings never classify the result. The next
-   ModelDecisionRequest may reference `RunState.last_step` privately for protocol pairing; it cannot recover the
-   outcome from Workspace or serialized prompt text.
-5. **Exact result retention.** Public evidence enters one atomic Store inventory with currentness and private
-   continuation. TurnPacker may select a complete-record prefix; Workspace/recent steps contain receipt/lineage only;
-   provider-visible result content never traverses `project_public_value` or an ordinary user-context result segment.
-6. **Exact provider protocol.** The physical request contains exactly one original assistant tool call and one
-   subsequent ToolReturn under the same call ID, followed by the fresh current prompt. It contains neither an orphan,
-   duplicate, completed-old exchange nor private cursor/lineage metadata. CanonicalProviderEnvelope and
-   RequestAdmission count the exact values recorded by FunctionModel.
-7. **Exactly-once completion.** A pending exchange remains unchanged when the next envelope is locally rejected; it is
-   cleared only after its admitted paired result is handed to PydanticAI. Retry/repair cannot create a second semantic
-   result or change the accepted call identity.
+## Provider-free acceptance gates
 
-The generated composition matrix must cover at least:
+### G1 — exhaustive local-tool producer algebra
 
-| Provider call | Runtime step | Public outcome | Expected conserved state |
-|---|---|---|---|
-| read-only tool | no GUI dispatch | one/many/nested/Unicode evidence atoms | result inventory + paired ToolReturn; no fabricated GUI effect |
-| GUI unary action | dispatched, changed World | execution receipt | pending pair + exact `LatestEffect/PublicEffectInventory` |
-| GUI binary action | dispatched, unchanged or changed World | receipt or typed execution failure | route identity + typed outcome; effect only when produced |
-| discovery/query | no GUI dispatch | typed discovery result with suffix | query inventory + continuation + paired result |
-| continuation | no GUI dispatch | zero/nonzero admitted prefix | exact offset/requested foreground conservation + paired result |
-| any supported call | capacity rejection before provider | already committed Runtime/Store facts | zero new provider attempts; pending official exchange unchanged |
+For every local tool registered by the current grounded catalog, a schema-valid generated call is resolved and the
+exact decision/result subtype is checked. The gate also asserts that `read_next_page` and
+`action_results_next_page` are not registered.
 
-Generated tests take the Cartesian product of independent dimensions where legal: pending exchange present/absent,
-GUI receipt present/absent, semantic effect empty/non-empty, public evidence empty/non-empty, continuation absent/
-zero-prefix/nonzero-prefix, and success/typed failure. They assert field conservation, deterministic output under
-private-ID/enumeration permutation, exactly-once novelty, and absence of duplicate results. A factorized set that tests
-the dimensions only in isolation is insufficient.
+This prevents the original class of defect in which a continuation or local producer returned a semantically unrelated
+result subtype.
 
-The vertical test must pass through the real `ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply`
-path. Direct builder/Store probes are supporting owner tests only. The Recording FunctionModel must compare ordered
-physical PydanticAI parts, tool definitions, call IDs, result values, media, settings, output contract, and token
-breakdown with the admitted CanonicalProviderEnvelope. It runs under the fixed BrowserGym interpreter and records
-PydanticAI Slim `2.33.0`, matching the declared `>=2.33,<2.34` project profile; default-shell `2.21.0` results are
-historical and cannot attest this gate.
+### G2 — owner-bounded read/search/list results
 
-The provider-protocol/delivery-state implementation and provider-free acceptance are recorded in
-[`provider-protocol-delivery-state-provider-free-20260824.json`](../evidence/acceptance/provider-protocol-delivery-state-provider-free-20260824.json),
-bound to implementation revision `c80236a2`. The generated legal composition matrix conserves an existing GUI effect
-across public evidence `0/2` × continuation `absent/zero/nonzero` × typed failure `absent/present`; the real two-turn
-`ModelBackedAgentPolicy → CoreAgentLoop → Store.reduce → RunState.apply → Recording FunctionModel` path observes one
-same-ID assistant call/ToolReturn pair followed by the fresh prompt and commits the GUI effect. A separate local
-capacity witness proves the official pending exchange remains unchanged with zero new provider attempts. Focused
-verification is `155 passed`; full verification is `1666 passed / 19 skipped`, plus Ruff, compileall, diff checks, and
-production negative searches. PydanticAI Slim is `2.33.0`; provider/live/Task21 attempts are zero. This is implementation
-completion, not closure: Overall remains reopened/non-closed, independent fresh-context review is pending, and the
-bounded cohort remains stopped.
+Properties cover:
 
-The subsequent continuation-currentness review falsified only the continuation lifecycle portion of that checkpoint.
-At revision `0ec7bae2`, Store retained both a lineaged cursor and a naked requested scope; `for_world` could return before
-normalizing the cursor, after which a same-name scope in a fresh World could become foreground. The complete-key repair
-at `8cec21db` removes the duplicate scope truth: cursor progress and foreground now share
-`(scope, kind, World, ActionSpace, result, order)` identity, World transition normalization is total, and Plan promotion
-requires exact key equality. Generated Store-field compositions, production ContextBuilder mutations of each lineage,
-and same-World/changed-World witnesses pass. Focused verification is `184 passed`; full verification is
-`1669 passed / 19 skipped`, plus Ruff, compileall, diff and negative searches. Evidence:
-[`continuation-lineage-provider-free-20260824.json`](../evidence/acceptance/continuation-lineage-provider-free-20260824.json).
-Provider/live/Task21 attempts are zero. This is provider-free implementation evidence, not closure. The independent
-read-only review of `f894ea8a` passed with no falsification after `148` continuation/Store/context tests, `22`
-Recording-provider/tool-result vertical tests, static checks, and exact revision/tree-hash reconciliation. Evidence:
-[`continuation-lineage-fresh-review-20260824.json`](../evidence/acceptance/continuation-lineage-fresh-review-20260824.json).
-At that fresh-review checkpoint Overall remained non-closed; the only eligible next action was to request explicit
-authorization for one held-out Task21 witness, while the bounded cohort remained stopped.
+- ordinary and Unicode result items;
+- final serialized ToolReturn byte fitting;
+- finite same-tool numeric page progress;
+- invalid cursor as a typed result;
+- oversized individual content bounded with `content_truncated=true`;
+- absence of `content_fragment`/digest/reassembly protocol;
+- no loss or duplication among the already bounded public item inventory.
 
-The authorized Task21 rerun at revision `43961f9a` stopped on a local pre-provider falsification after two successful
-provider calls. DeepSeek's second response offered `search_page_content("ear cup")` and one extra continuation call;
-the existing mechanical rule selected search, discarded the extra, and returned two R9 matches. On the next turn the
-decision adapter made zero provider attempts and failed with
-`pending PydanticAI response must contain one tool call`: pending official history still contained both original tool
-calls although the accepted decision/result algebra contained only search. Evidence:
-[`task21-pending-exchange-multicall-falsification-20260824.json`](../evidence/acceptance/task21-pending-exchange-multicall-falsification-20260824.json).
-This does not refute search→R9, byte paging, or complete-key continuation. It reopens only
-`multiple-call canonicalization → pending official exchange → same-call ToolReturn`. Bounded cohort and further live
-execution remain stopped.
+The byte bound belongs to the read/search/list owner, not Store or request packing.
 
-The provider-free owner repair is recorded in
-[`accepted-tool-exchange-provider-free-20260824.json`](../evidence/acceptance/accepted-tool-exchange-provider-free-20260824.json),
-bound to implementation revision `70dae8dd`. The canonicalizer now emits one typed accepted exchange, and a generated
-1..8-call two-turn production path proves that the accepted Decision, StepResult, sole pending-history call, and
-DeferredToolResult share one call identity while raw discarded calls remain transcript-only. Focused verification is
-`82 passed`; full verification is `1670 passed / 19 skipped`, plus Ruff, compileall, diff and negative searches, with
-zero provider/live attempts. This was provider-free implementation evidence, not closure or rerun authorization.
+### G3 — direct same-call physical result
 
-The independent read-only review of `faecb0e5` passed with no falsification; see
-[`accepted-tool-exchange-fresh-review-20260824.json`](../evidence/acceptance/accepted-tool-exchange-fresh-review-20260824.json).
-It independently verified `40` bridge FunctionModel tests, `1689` collected tests, the full
-`1670 passed / 19 skipped` suite, static/negative checks, and exact revision/tree-hash agreement. No provider/live or
-BrowserGym run occurred. Overall remains non-closed; only an explicit authorization may start one held-out Task21
-witness, and the bounded cohort remains stopped.
-
-The authorized Task21 run5 is recorded in
-[`task21-effect-continuation-result-falsification-20260824.json`](../evidence/acceptance/task21-effect-continuation-result-falsification-20260824.json).
-It completed reporting and cleanup after twelve valid provider tool calls with zero retries. Search→R9, R9 reading, and
-active-read paging remained functional. The failure was a zero-provider-attempt local projection error after the valid
-`read_next_page(scope="effect")` call: the Catalog producer returned `ReadRegionResult`, which automatically became a
-scalar `PublicEvidenceResult`, while the next ToolReturn attempted to project an empty admitted evidence prefix. This
-reopens only the effect/page-directory continuation result subtype producer. Further live execution and the bounded
-cohort are stopped.
-
-Implementation proceeds serially and each green cutover receives its own commit:
-
-1. make the existing call-correlated AgentDecision/StepResult algebra exhaustive for Store/provider projection and add
-   reducer composition properties without changing benchmark/site behavior;
-2. atomically cut policy, Catalog resolution, CoreLoop, StepResult, Store, RunState, Workspace/Monitor, TurnPacker, and
-   PydanticAI codec to that contract, then delete the whole-Store and duplicate pending-result paths;
-3. add the production-path generated composition matrix, focused/full/static/negative verification, and a
-   revision-bound provider-free evidence artifact;
-4. perform an independent fresh-context read-only review from the committed revision. Any falsification stops before
-   provider/live execution and returns to the named owner.
-
-Provider-free implementation completion is not closure. Only after all four stages agree may the user be asked to
-authorize one held-out Task 21 witness. The bounded cohort remains stopped until that witness passes; live execution is
-never implied by this gate.
-
-This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
-in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
-The target runtime, owner map, deletion plan, and bounded recovery protocol are in
-[`architecture.md`](architecture.md). [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is
-migration history, not a second current status or acceptance authority.
-
-No live run is authorized merely because implementation or unit tests pass.
-
-Implementation checkpoint (2026-08-23): substantial C8–C12 owner changes are present in the current tree and the active public case
-schema is `target-loop-case.v12`. v12 serializes one `FailureFacts` value instead of the v11 duplicate
-failure/cleanup/watchdog fields; the active codec rejects v11 rather than reconstructing it through current semantics.
-Historical v6–v11 evidence remains archive-only. The C10/C11 follow-up makes the four pre-provider construction stages
-total, emits exactly one disposition-complete local terminal case event before viewer shutdown, and moves bounded suite
-commit/export into the existing runner with one SQLite current-disposition row. The CLI duplicate suite commit/export
-is removed. The WebArena follow-up removes the `PUBLIC_FINAL_RESPONSE_CONTRACT_KEY` route completely. The official
-BrowserGym goal is retained verbatim as bounded task text; response schema is absent from `TaskGoal.inputs`, ordinary
-task projection, and Runtime schema validation. One environment-owned codec validates and canonicalizes through the
-pinned webarena-verified 1.2.3 `FinalAgentResponse` immediately before the existing BrowserGym STOP path. Invalid
-content returns typed `final_response_invalid` before STOP. Plain-text environments retain an identity codec, CoreLoop
-does not import WebArena, and the official native evaluator remains completion authority.
-
-The pre-Run21 C10 provider-free checkpoint repaired the run3 candidate-to-region expansion and route/Manifest defects,
-but its delivery-boundedness proof was incomplete. It placed exact/focus/delta/recovery recall into a global protected
-partition before packing. Run21 proved that a legal large transition can place 84 actions in that partition, leaving
-`TurnPacker` no removable record and causing a local `context_capacity` failure before any provider call. C10 therefore
-remains reopened. The replacement contract is bounded delivery obligations over complete cursor-backed recall
-inventories; only records admitted to the frozen current page are protected.
-
-The earlier fresh-review follow-up additionally made destination-route conflicts atomic: partially overlapping incompatible
-destination domains fail closed at `ActionSpaceBuilder`, while compatible adjacency is merged and Binder selects a
-binding that owns the chosen edge. Historical recent-step targets no longer expand a current region. The six-page
-transition diagnostic now uses `TurnPacker` for both the post-transition and local-follow-up request and records their
-frozen route/fragment/backoff and complete cost breakdowns. The Pager's copied byte allocation and schema-size veto
-are deleted. Its conclusion that explicit continuation/exact/focus/delta recovery could remain an unbounded mandatory
-set is superseded by Run21. Atomic conflicts remain model-visible, cursor-pageable non-executable why-not records rather
-than internal-only issues.
-
-The formerly reported **1,551 tests with 24 skips**, **136 focused tests with 2 skips**, and **240 expanded tests with
-5 skips** are revision-scoped historical checkpoints, not results for the current tree. Gate 1 replaces the formerly
-failing inventory-enumeration witness with owner-level generative/permutation properties and full provider-free
-verification. No model provider, live ActionPolicy, live benchmark, or Task-7 replay was run.
-
-`evidence/w1b-world-c8-c10-provider-free-20260823-run30/` is now classified as stale for current-tree verification. It
-was written before those later source changes and carries no source revision/digest binding. Its internal facts remain
-historically valid—six provider-free `ok` records, empty acceptance-error lists, and zero recorded provider attempts—
-but its 7,98x values are `estimated_total_tokens`, not the full request total including the output reserve. Run30 did
-not prove the final production Store transition, zero-prefix continuation recovery, ordered complete inventory union,
-or identity equality between the admitted envelope and the object consumed by the provider adapter. Runs 22, 24, 25,
-28, and 29 remain superseded diagnostic-migration artifacts.
-
-Migration and acceptance follow the approved single normative chain in `architecture.md` serially and
-non-circularly. World is complete at its provider-free gate; later-owner semantics remain frozen until their turn:
-
-0. **Recording boundary (implemented; not closure).** A test-only local Recording Provider observes the actual current
-   `ModelBackedAgentPolicy → CoreLoop → provider adapter` boundary. It records the physical request but owns no
-   production semantics and calls no model provider.
-1. **World (implemented and provider-free verified; not closure).** One `CanonicalPublicWorldProjection` allocates every public ref/order exactly once. Private-ID value,
-   private inventory enumeration, and identity-only remount cannot change canonical public records/page-membership
-   inputs; remount retains a lossless raw delta while producing no public effect atom or `new_document`. All former
-   public ref/order allocators must be physically removed before this stage is green.
-2. **Delivery.** Store-owned typed continuation capabilities traverse the real canonical-projection/Store/Plan/Packer/
-   Manifest/Catalog path for every bounded obligation kind. A zero-admitted suffix remains callable, is selected through
-   the Recording Provider, commits only through `CoreLoop → Store.reduce → RunState.apply`, becomes next-turn
-   foreground, and delivers without loss or cursor cycle. Plan, Packer, and Catalog may not reinterpret cursor state.
-3. **Envelope.** `ProviderEnvelopeBinder` creates one `CanonicalProviderEnvelope`; RequestAdmission admits and prices
-   that same value, and the PydanticAI adapter transports it unchanged. Public text remains lexically neutral while
-   typed private provenance fails before capacity or provider dispatch.
-4. **Vertical conservation.** Run the complete chain from fresh World through the Recording Provider and from a
-   recorded tool call through Resolver/Binder. Only here must Manifest, Catalog, physical envelope digest, and complete
-   cost remain invariant under private permutations, with visible/callable route equivalence preserved end to end.
-
-Gate 0 is implemented on baseline source commit `0717f8e58b75aab778612d7990929a39e73a792e` with an intentionally dirty,
-revision-scoped test/doc worktree and preserved untracked `output/`. The recorder support, Gate test, and migrated spike
-file have Git blob identities `b0fc1eac24d2a8cc6451f0422f01c545b98f8da9`,
-`349ac0dc2cc54f829781bcbe1c4cdce6ab799436`, and `989d878d91aa2a1a715a2048d1c20b90f45d5bfc` respectively. `git diff -- src/`
-is empty. Provider-free evidence on this worktree:
-
-- `PYTHONPATH=src:. python -m pytest -q tests/integration/model/test_recording_provider_gate.py` → `6 passed`;
-- the Gate test plus `test_pydantic_ai_spike.py`, `test_model_backed_agent_policy.py`, `test_request_admission.py`, and
-  `test_core_loop.py` → `78 passed, 3 skipped`;
-- touched-file Ruff, recorder `compileall`, and `git diff --check` → pass;
-- default `PYTHONPATH=src:. python -m pytest -q` → `1558 passed, 24 skipped, 2 failed`. The failures are the already-open
-  private-inventory permutation/World cutover witness and a pre-existing exact architecture-text assertion; neither is
-  repaired or reclassified by Gate 0.
-
-This Gate 0 evidence proves only that the test recorder observes the current physical PydanticAI boundary and can return a
-current single tool call, text/no-call output, or local exception through the existing typed Runtime behavior. It does
-not establish canonical request identity/digest, Envelope closure, C10 closure, benchmark closure, or live
-generalization.
-
-World Gate 1 provider-free evidence on the current tree proves the owner-local contract: public target/fact/region
-records, `E/N/F/R`, public document signature and page membership survive private observation/source/target/fact/
-action/binding ID value and length changes, input permutations and hash-seed changes; duplicate multiplicity is
-retained; identity-only remount preserves the public signature and produces zero model-visible semantic effects while
-raw private delta lineage remains; real semantic add/remove/modify and multiplicity changes reconcile exactly; and
-indistinguishable executable targets fail closed as typed `public_grounding_ambiguous` before policy/provider entry.
-The real `TargetRuntime → CoreLoop → ModelBackedAgentPolicy → PydanticAI FunctionModel` recorder observes only refs from
-the step's one before-projection. Production negative searches confine `PublicRefCodec.encode(E/N/F/R)` to
-`canonical_world_projection.py` and find none of `_assign_public_refs`, `_public_fact_refs`, or consumer ref fallbacks.
-Verification on this tree is `175 passed, 2 skipped` for the combined World/C8/C10/Gate-0 owner-focused set and
-`1568 passed, 24 skipped` for full pytest; Ruff, compileall, `git diff --check`, and production negative searches pass.
-Delivery and Envelope remain pending;
-overall status remains reopened/non-closed, and old Run30/live artifacts are not evidence for this tree.
-
-Historical Delivery Gate 2 provider-free evidence on the then-current tree proved the narrower owner-local contract: Store-owned immutable
-inventories and typed capabilities conserve independent effect/page-directory/base/query/interaction/destination/issue
-suffixes; zero-admitted suffixes remain callable; a committed continuation changes only the requested Store scope and
-makes it next-turn foreground; fresh lineage makes old capabilities typed stale. Generated fanout at
-`1/2/16/84/167/500` current changed action targets, with simultaneous added/removed/modified facts and varied packing
-capacity, retains a zero/one foreground minimum and bounded admitted request while conserving the exact suffix. Exact
-short, Unicode, punctuation, duplicate/path-distinguished, and 240-character label routes pass through delivery,
-Manifest, dynamic Catalog, and the unique resolver. Manifest executable refs equal the exact delivered route operand
-relation; backed-off and issue-only fragments add no ghost route/ref. The real
-`TargetRuntime → CoreLoop → ModelBackedAgentPolicy → PydanticAIGroundedDecisionPort → PydanticAI FunctionModel`
-two-request gate records a continuation tool in request one, commits the Store transition through CoreLoop, and records
-new suffix routes in request two without exposing observation/action IDs. The expanded Delivery/C8/C10 focused suite is
-`231 passed`; full pytest is `1594 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative
-searches pass. No real provider, live benchmark, or Task-7 replay ran. Gate 4 later falsified the untested annotated
-media route/operand-role part of this owner contract, so Gate 2, C10, and overall status are reopened/non-closed.
-
-Envelope Gate 3 provider-free evidence proves that one immutable `CanonicalProviderEnvelope` is bound for each
-semantic model request, admitted without replacement, and projected mechanically to PydanticAI's ordered
-`ModelMessages + ModelRequestParameters`. The Recording FunctionModel normalization equals the envelope projection
-field-for-field for text, multimodal bytes/MIME, dynamic ordered strict tools and schemas, settings, and text output
-contract. Stable identity properties vary every physical field while excluding private Catalog resolver identity and
-trace/delivery lineage. The original `7844b7f1` checkpoint was reopened because it compared input plus reserve against
-an input limit that had already deducted reserve, and because its type admitted multiple instructions/nonempty history
-that the codec did not transport. The correction makes `estimated_total_tokens` input-only, checks it against the
-configured/effective input ceiling, separately checks input plus the one Envelope reserve against the context window,
-and treats the 8k soft target as input-only. The supported ActionPolicy message algebra is exactly one instruction,
-one current user request, and no independent history messages; bounded history remains inside canonical `user_text`.
-Deterministic conservative capacity properties cover the default 62,904-input/4,096-reserve profile, 8k soft target,
-exact fit, one unit over, context-window overflow, large schemas, single/multiple media, settings, and output reserve;
-rejection remains local with zero provider attempts.
-Fault injection covers Delivery read, Catalog compile, Envelope/media/schema bind, counting, Admission, typed codec,
-and pre-provider trace input recording without secondary failures. Initial and representation-repair physical calls
-have directly recorded envelope lineage, and the real two-turn CoreLoop/FunctionModel continuation sequence records a
-different current envelope on each turn. The corrected C8-C12 owner-focused suite is `587 passed, 3 skipped`; full
-pytest is `1598 passed, 24 skipped`; Ruff, compileall, `git diff --check`, and production negative searches pass. No provider,
-live benchmark, Task-7 replay, external token counter, raw HTTP normalization, or billing-token equivalence is claimed.
-At this checkpoint Gate 4 had not started. Its later annotated-media and capacity-consumer audit stopped the gate and
-reopened Gate 2 plus Gate 3 breakdown diagnostics; C10/overall status remains reopened/non-closed.
-
-Gate 4 stopped on its first provider-free vertical audit. A real annotated production turn reached the Recording
-FunctionModel with correct PNG bytes/MIME/digest/dimensions and one actual in-frame `E1` mark, but the media record had
-no route delta and represented `operand_roles` as `("E1",)` while the Manifest route was `(activate,E1,"")`.
-Destination-only operand role cannot be represented by that contract. Gate 2 Delivery is therefore reopened; no
-CoreLoop/Catalog/bridge/recorder compensation and no Gate 4 completion commit was made. The capacity-consumer audit
-also reopened Gate 3 breakdown diagnostics: the old prefit/full/lens candidate fields have no distinct producers, are
-all complete-request totals, and the active WebArena probe compares one with input-only `estimated_total_tokens`.
-The core input/reserve admission equations and exact physical Envelope transport were not falsified.
-
-Gate 2 media repair is now implemented and provider-free verified. Final attached media carries annotation-owned
-actual marks plus exact admitted route deltas and typed source/destination roles; evidence-only and undrawn marks carry
-no route, and destination operands cannot fabricate unary verbs. Manifest routes are the ordered union of admitted
-text and attached-media route deltas only. The real Recording FunctionModel production gate preserves annotated PNG
-bytes/MIME/digest/dimensions, mark/role/route relation, provider input equality, resolver/Binder execution, and private
-binding exclusion. Focused verification is `150 passed`; full pytest is `1604 passed, 24 skipped`; Ruff, compileall,
-diff check, and negative searches pass. No provider/live/Task7 run occurred. Gate 2 still awaits joint fresh exit
-review with the Gate 3 diagnostic repair; Gate 4 remains aborted/not admitted.
-
-Gate 3 diagnostic-coordinate repair is implemented and provider-free verified. The one physical input total is now
-`estimated_input_tokens`; `output_reserve_tokens` stays separate; `complete_request_tokens` is their exact sum.
-Producerless prefit/full/lens fields and the WebArena cross-coordinate reduction comparison are deleted. Trace,
-observability, benchmark instrumentation, case metrics, WebArena diagnostics, and tests all consume the explicit
-coordinates. Focused verification is `167 passed, 2 skipped`; full pytest is `1605 passed, 24 skipped`; Ruff,
-compileall, diff check, and old-name/cross-coordinate negative searches pass. No provider/live/Task7 run occurred.
-Gate 3 still awaits joint fresh exit review with Gate 2; Gate 4 remains aborted/not admitted.
-
-Fresh Gate 3 review removed the last ambiguous producer-only subtotal, `fixed_request_tokens`. It had no consumer and
-did not participate in Admission; the explicit input total, reserve, and complete-request total remain authoritative.
-The zero-only `task_plan_tokens`, `working_set_tokens`, and `evidence_tokens` component-payload metrics and all their
-consumers are also removed; WebArena does not reconstruct them from the canonical user text.
-Breakdown and benchmark diagnostics now publish `effective_input_limit` for the derived reserve-aware ceiling; the
-budget's `admission_limit` continues to mean the configured input ceiling.
-
-Fresh Gate 2/3 exit review passes from `e5acb47c` after restarting at each falsification. Gate 2 conserves the
-annotation-owned media route/role relation through Manifest, Envelope, Recording FunctionModel, resolver, and Binder,
-without serializing private resolver lineage. Gate 3 has one input total, a separate reserve, their complete-request
-sum, and an explicitly named effective input ceiling; all old candidate/component ghost metrics and consumers are
-absent. Gate 2 and Gate 3 are re-admitted. Gate 4 remains aborted/not admitted, so C10, benchmark, and overall status
-remain reopened/non-closed; held-out Gate 4 evidence, fresh-context Gate 4 review, and live authorization remain.
-Final provider-free evidence is `176 passed, 2 skipped` focused and `1608 passed, 24 skipped` full, with Ruff,
-compileall, diff check, and production negative searches green. No provider, live benchmark, or Task7 replay ran.
-
-Gate 4 attempt 2 stopped on its first missing annotated production-path case. A real multimodal Runtime turn attached
-one JPEG and reached the Recording FunctionModel with physical input exactly equal to the admitted Envelope. Its fresh
-World also contained an in-frame screenshot grounding region for a visible read-only target, canonically projected as
-`N1`. The physical media contained `marks=()`, `operand_roles=()`, and `route_deltas=()`; only an unrelated executable
-`(activate,E1,"")` text route remained in the Manifest. The expected evidence-only actual mark was removed before
-annotation because `GroundingProjection` restricts `marked_targets` to ActionSpace operands and `AgentImageMark`
-accepts only `E*`. Thus the prior helper-only evidence-only test did not prove the production media algebra. Gate 2 is
-reopened at the media-fragment/GroundingProjection owner, Gate 3 remains admitted, and Gate 4 is stopped/not admitted.
-No later Gate 4 assertions, production repair, provider/live/Task7 run, or completion commit occurred.
-
-Gate 2 read-only visual-mark repair is implemented and focused provider-free verified (`154 passed`). A bounded
-`VisualMarkCandidateSet` now selects actual in-frame E/N screenshot evidence in canonical public order, independent of
-ActionSpace operands; route binding remains a later E-only relation. A real N-only Runtime/Recording turn preserves
-one PNG `N1` mark with empty roles/routes and no executable Manifest route. A mixed N1+E1 turn preserves both marks
-but authorizes only E1. Out-of-frame N disappears, and a 40-read-only-target generated case is deterministically
-bounded under private identity/enumeration permutation. The full provider-free suite is `1612 passed, 24 skipped`,
-and Ruff, compileall, diff check, and negative searches pass.
-At this historical checkpoint, fresh exit review remained pending, Gate 2 stayed reopened, and Gate 4 stayed
-stopped/not admitted. No provider, live benchmark, or Task7 replay ran.
-
-Fresh review tightened the candidate's own bbox validation and extended the real recorder assertions: N-only offers
-no interaction tool; mixed N+E offers only `activate`, whose schema excludes N1. This is correction evidence, not
-re-admission; Gate 2 review restarts and Gate 4 remains stopped/not admitted.
-
-The next review found the grounding entity's `marked` flag still reflected pre-annotation candidates. It now reflects
-only annotation-returned actual marks; an unavailable-annotation test proves no candidate-only mark is claimed. This
-correction again restarts Gate 2 exit review without starting Gate 4.
-
-Fresh Gate 2 exit review held out a destination-only actual mark for a binary route and found that the first repair
-required both operands to be marked in one image. The final-media owner now retains a route when at least one exact
-operand is actually marked and assigns only the role belonging to each actual mark. Source-only and destination-only
-cases preserve the binary relation without a unary destination verb. Corrected focused verification is `175 passed,
-2 skipped`; full pytest is `1607 passed, 24 skipped`; static and negative checks pass. Exit review restarts from this
-correction revision; Gate 4 remains aborted/not admitted.
-
-The restarted review then rejected that correction as still downstream-derived: `AgentImageInput` had no route delta,
-and delivery used mark refs to select rendered text routes. The media-fragment producer now emits typed actual marks,
-their source/destination roles, and exact current route deltas together; delivery merely preserves them. Thus a mark
-alone cannot authorize a route, a media-only delivered route is not contingent on a text fragment, and private action
-lineage remains Runtime-only. The post-owner-move focused suite is `175 passed, 2 skipped`; full provider-free pytest
-is `1607 passed, 24 skipped`; static and negative checks pass. This correction restarts, but does not itself complete,
-the fresh Gate 2/3 exit review. Gate 4 remains aborted/not admitted.
-
-Before re-admission, serialization review also found that the new media route's private action ID and resolver option
-needed explicit `serialize=False` metadata. That boundary is now fail-closed and a focused property proves only the
-public route triple survives JSON projection (`122 passed` across owner, Recording, Admission, and architecture
-tests). Exit review restarts from this correction; Gate 4 remains aborted/not admitted.
-
-Fresh Gate 2 read-only visual-mark exit review (2026-08-23) passes from `27e85efe`: canonical in-frame E/N candidate
-selection is bounded and action-independent; actual marks and entity state derive only from annotation output; exact
-Recording FunctionModel requests preserve PNG bytes and E/N media metadata; N has no role, route, executable Manifest
-ref, or interaction tool schema row; and E authorization still requires an exact Manifest route. Full provider-free
-pytest is `1613 passed, 24 skipped`; static and production negative checks pass. Gate 2 is re-admitted, Gate 3 remains
-admitted, Gate 4 remains stopped/not admitted, and overall remains reopened/non-closed.
-
-Gate 4 attempt 3 stopped on the first binary single-mark production cases. The unary request/response chain and a
-private observation/binding identity-length permutation passed through the actual Runtime, packed turn, Envelope,
-Recording FunctionModel, schema-selected call, resolver, ActionSpace, and Binder. The next generated World exposed one
-destination-required `drag_to` route with Unicode/punctuation labels and exactly one actual source or destination mark.
-Both orientations failed locally before recorder/provider/GUI dispatch with
-`delivery Manifest contains a ref absent from admitted text/media`: the media fragment carried the complete binary
-route, but final text omitted its complementary unmarked operand. The expected `source text ∪ destination mark` or
-`source mark ∪ destination text` relation was therefore incomplete. Gate 2 is reopened at the media-route/final-text
-composition owner; Gate 3 remains admitted; Gate 4 is stopped/not admitted. Sparse, continuation, capacity-rejection,
-full, and static closure checks were not continued, and no completion commit was made.
-
-Gate 2/4 route-authority convergence is now implemented and provider-free verified while the attempt-3 failure remains
-the historical falsification witness. Media is pure `VisualEvidenceFragment` data (bytes, actual E/N marks, bbox) and
-has no action route or operand-role metadata. DeliveryPlan `ActionRouteFragment` records are the sole complete unary or
-binary authorization units; Manifest consumes only admitted route fragments and Catalog consumes only Manifest plus
-Store continuation capabilities. Selected binary routes pass with source-only, destination-only, both, or no marks;
-an unselected marked route creates no tool and is recovered through a real `find_controls` turn. Sparse schemas accept
-iff exactly one resolver row accepts the complete selector/business arguments, without missing-edge Cartesian
-expansion. A real multi-page continuation reproduces the ordered owner inventory once, and exact-fit/one-token-under
-capacity produces one recorder call/zero recorder attempts respectively. Focused verification is `184 passed, 2
-skipped`; full pytest is `1620 passed, 24 skipped`; Ruff, compileall, diff check, and negative searches pass. Gate 2/4
-joint exit review remains pending; overall remains reopened/non-closed. No provider, live benchmark, or Task7 ran.
-
-The Gate 2/4 joint fresh exit review then passed from fixed HEAD
-`f667697f7ce0c9db4b9c09519a1d7c76e7e3354d`. An independent read-only reviewer found no falsification across the
-sole route producer, authority-free media, atomic selected binary delivery, unselected-route exclusion plus real
-continuation recovery, ordered Manifest → Catalog → physical Envelope → provider schema → Resolver → Binder
-conservation, private-state exclusion, and deleted fallback paths. The focused production-path/provider-free suite
-passed `57 passed in 9.39s`; no files changed during review and no live benchmark ran. Gate 2 and Gate 4 are admitted;
-overall remains reopened/non-closed. The next authorized work is execution step 7, not a new Gate or live run.
-
-Stage-B falsification (2026-08-23): the C8–C12 owner-focused suite passed `997 passed, 13 skipped`; fixed BrowserGym
-causal-transition/currentness gates passed `54 passed, 13 skipped`; benchmark finalization fault gates passed `123
-passed`; full pytest passed `1620 passed, 24 skipped`; and Ruff, compileall, diff check, and production negative searches
-passed. All six revision-bound provider-free W1b pages then completed the product chain with `status=ok` and
-`failure_origin=none`. Physical input ranged up to `7,999` tokens and the median was `7,982.5`, within the active 12k
-per-page and 8k-median gates. Tasks 27 and 44 were nevertheless rejected by the historical
-`tool_schema_tokens > 2_000` branch at `WebArena W1b _w1b_cost_errors`, with `2,062` and `2,103` diagnostic tokens.
-This is an obsolete benchmark acceptance sub-budget after successful complete-Envelope admission, not a product-chain
-capacity or route failure. The raw evidence is
-`evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-f3a42dfd-py312/`. Gate 2 and Gate 4 remain admitted;
-Stage B and Overall remain reopened/non-closed; no live benchmark ran.
-
-The W1b acceptance projection is now repaired without changing the product chain. Per-page readiness uses only
-`estimated_input_tokens <= 12,000`; the six-page aggregate continues to require median input `<= 8,000`.
-`history_tokens`, `tool_schema_tokens`, and other owner-produced component proportions remain in artifacts strictly as
-diagnostics. The former 1.5k history, 2k Tool Schema, and redundant/mislabeled Task-0 reduction vetoes are removed as
-one consumer migration. Catalog operation/scope bounds, schema↔unique-resolver equivalence, sparse adjacency, and
-continuation properties remain unchanged. Stage B remains non-admitted until the full rerun and new revision-bound
-artifacts pass.
-
-Stage-B current-tree acceptance then passed from clean revision
-`4a7e5d35be120853509640cf4fdeed2accfcfe88`. The revision-bound evidence directory is
-`evidence/w1b-world-c8-c12-current-tree-provider-free-20260823-4a7e5d35-py312/`: all six cases are `status=ok`, the
-summary is `ready=true`, every acceptance-error list is empty, and provider attempts are zero. Input tokens are
-`7,761/7,981/7,982/7,983/7,988/7,999`, median `7,982.5`, and maximum complete-request cost is `12,095`.
-Owner-focused C8–C12 properties pass `997 passed, 13 skipped`; fixed BrowserGym causal gates pass `54 passed, 13
-skipped`; finalization fault gates pass `123 passed`; full pytest passes `1620 passed, 24 skipped`; Ruff, compileall,
-diff check, and production negative searches pass. This admits Stage-B provider-free acceptance only. Overall remains
-reopened/non-closed, final fresh-context review is pending, and live remains unauthorized.
-
-The final provider-free fresh-context review then passed at
-`3c87ffdc96b6c89603dea31da5b7c2930640c38a` with no falsification. Independent checks showed that the artifact
-execution revision and current review revision have identical `src` and `tests` trees; all seven passing-artifact and
-seven falsification-artifact declared hashes recompute exactly; `1,644` collected tests reconcile with `1,620 passed,
-24 skipped`; and the two evidence sets remain distinctly typed, revision-bound, and correctly referenced by status.
-The reviewer also rechecked single World/route/Manifest/Envelope authority, Catalog-only Manifest consumption,
-physical-request privacy, W1b's two hard readiness cost coordinates, and the retained relational/continuation
-properties. Provider-free implementation and acceptance are verified. Overall remains reopened/non-closed and live
-remains unauthorized.
-
-Each stage must pass its own production-path gate before the next owner migration begins; an earlier stage does not
-depend on an owner scheduled later. Builder-only probes, mocked fitter cost loops, unordered set-subset checks, and
-source-unbound artifacts are supporting diagnostics only. After the vertical gate, rerun focused and relevant
-properties, full pytest, Ruff, compileall, `git diff --check`, negative searches, and a newly revision-bound six-page
-provider-free diagnostic, followed by a fresh-context read-only audit. None of these authorizes a live benchmark.
-
-The pre-Run21 provider-free rerun is
-`evidence/w1b-world-c10-joint-packing-provider-free-20260823-run17/`: all six pages are `ok`, `ready=true`, every
-acceptance-error list is empty, every recovery cursor is finite/non-cyclic, and provider attempts remain zero. Initial
-request tokens are 7,920 / 7,986 / 7,995 / 7,913 / 7,873 / 7,929 for tasks 0 / 7 / 21 / 27 / 44 / 266; the median is
-7,924.5 under the unchanged 8,000 gate. Packed post-transition requests are respectively 7,915 / 8,561 / 8,243 /
-7,988 / 7,895 / 7,971 tokens; packed local-follow-up requests are 8,083 / 8,730 / 8,412 / 7,987 / 7,959 / 8,020.
-Every one records one optional backoff and no acceptance error. The run3 failures remain preserved as the
-before-witness. Run21 then falsified cardinality independence, so the earlier fresh-context statement that no P0/P1
-packing gap remained is withdrawn. Run30 is historical provider-free evidence for the revision it exercised, not
-evidence for the current replacement implementation and not a live generalization witness. C8–C12 and overall status
-remain reopened/non-closed. Fresh verification must wait for Gate 0, the three serial authority cutovers, and the final
-vertical conservation gate; a live witness remains separately authorized.
-
-| Task | old C8 tokens / Manifest E | run3 tokens / Manifest E | pre-Run21 run17 tokens / Manifest E / exact routes |
-|---:|---:|---:|---:|
-| 0 | 7,767 / 16 | 15,312 / 24 | 7,920 / 7 / 13 |
-| 7 | 7,543 / 12 | 17,735 / 30 | 7,986 / 6 / 11 |
-| 21 | 7,996 / 6 | 20,251 / 25 | 7,995 / 4 / 5 |
-| 27 | 7,432 / 9 | 9,769 / 9 | 7,913 / 7 / 11 |
-| 44 | 8,019 / 11 | projection failed / 0 | 7,873 / 8 / 13 |
-| 266 | 8,591 / 16 | 11,874 / 14 | 7,929 / 7 / 12 |
-
-The legacy artifacts predate exact `action_routes`, so their Manifest column is executable-ref count; the new column
-reports both executable refs and exact route count rather than pretending the old artifacts recorded route lineage.
-
-### Run20: two failures, one projection-authority pattern
-
-Run20 is a required regression witness, not a production special case:
-
-| Layer | Durable evidence | Classification |
-|---|---|---|
-| GUI behavior | fresh World and complete ActionSpace contained executable `E22 Go`; the default page and automatic candidates omitted it; five valid natural-language `find_controls` calls returned only `E24 Reverse Directions`; Runtime stopped after 10 policy steps, 4 observations, and 3 GUI executions | action-discoverability defect followed by the intended bounded Monitor stop; not provider, Binder, executor, cleanup, or environment failure |
-| reporting/lifecycle | trace reached `run_finished(blocked)` and `CASE_BODY_RETURNED`; `BenchmarkCaseResult` rejected owner-produced `exact_replay`; SQLite remained `cleanup_status=not_run`, `report_status=not_generated`, with zero case/run reports | `HARNESS_PROJECTION`; cleanup was never attempted, so it is not a cleanup failure |
-
-The case trace is
-[`trace.jsonl`](../evidence/live/w1b-task-7-deepseek-v4-flash-run20/traces/webarena-verified-w1b-task-7/trace.jsonl),
-the exception is in
-[`benchmark.log`](../evidence/live/w1b-task-7-deepseek-v4-flash-run20/benchmark.log), and the durable lifecycle state is
-in that run's `run-results.sqlite3`.
-
-The shared causal pattern is a non-authoritative projection vetoing an owner fact:
+A Recording PydanticAI `FunctionModel` executes:
 
 ```text
-legal current action → lexical rank/filter veto → model cannot name a current ref
-typed Runtime diagnostic → string snapshot → copied benchmark vocabulary veto
+read_region(Rx)
+-> ReadRegionResult(page 1, next_cursor)
+-> read_region(Rx, cursor)
+-> ReadRegionResult(page 2)
+-> submit_final_response
 ```
 
-Run20 additionally exposed that `control_stalled` exists only in display feedback rather than as a typed terminal
-reason. Therefore merely adding `exact_replay` to a string set would still misclassify the case as `blocked_other`.
-The active gates prove conservation through every owner and consumer; neither exact text nor Task-7 appears in a
-production branch.
+The next physical provider input must contain the accepted assistant tool call and an immediately following tool result
+with the same call ID. Its content must equal the committed page-2 result. The Store must contain only bounded digest
+receipts and no result body/inventory.
 
-### Run21: high recall was incorrectly treated as simultaneous prompt delivery
+### G4 — R-ref follow-up
 
-Run21 is the required cardinality and privacy witness for C10. The action preceding the failure was dispatched and a
-fresh result page was acquired. The next policy request failed locally before DeepSeek was called:
+The `read_region` schema accepts the public `R` syntax for the current canonical World, and the resolver validates the
+actual current ref. This avoids building a schema enum from a previously admitted result prefix while preserving
+currentness at the correct owner.
 
-| Request | Actor World | History | Tool schema | delivered action fragments | protected pre-pack fragments | complete request | Outcome |
-|---|---:|---:|---:|---:|---:|---:|---|
-| preceding admitted turn | 2,638 | 4,025 | 1,601 | 6 | 6 | 16,228 | provider accepted |
-| post-transition turn | 53,280 | 4,415 | 3,833 | 84 | 84 | 69,504 | local `context_capacity`, provider attempts 0 |
+Search results continue to return a direct `read_region(region_ref)` follow-up for readable matches.
 
-The capacity limit was 62,904 input tokens with a separate 4,096 output reserve. Cleanup, case projection, report
-commit/export, FINAL commit, and viewer shutdown all completed; this witness is not a finalization regression. The
-large typed delta is legitimate Runtime evidence about a page transition/remount. The defect is its conversion:
+### G5 — action discovery remains bounded and separate
+
+`find_controls(query)` returns a bounded current result and never dispatches a browser action. It has no public generic
+continuation capability and no private full-result inventory. Partial coverage tells the model to refine the query.
+Only current `E` refs in the frozen catalog can reach Binder/Executor.
+
+### G6 — GUI route remains unchanged
+
+Existing provider-free integration tests continue to verify:
 
 ```text
-large current external effect
-→ many current actions receive delta/focus/container recall reasons
-→ every recalled action is marked protected before packing
-→ TurnPacker can remove only optional records, but optional count is zero
-→ Actor World + Manifest + ToolCatalog grow together
-→ RequestAdmission correctly rejects the request
+ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World -> StepResult
 ```
 
-Raw target/fact added/removed counts and identity churn are private diagnostic facts. They must stay in Trace and must
-not be rendered as model semantics. The model receives a deterministic typed effect header, a bounded exact evidence
-page, a bounded current-interaction action page, `continuation_available`, and bounded continuation scopes backed by
-private cursors. Full delta/effect/region-member/omission totals are not model-visible; large raw churn numbers are
-never inserted merely because the transition was large.
+This cutover does not claim the separately reopened live BrowserGym transition is closed; it only proves no local-result
+change bypassed or replaced that route.
 
-The post-transition failing turn had `provider_attempts=0`, so its `167/139/496/440`-class trace diagnostics were not
-sent to DeepSeek; they are evidence of the conversion defect, not a provider transcript. The preceding admitted
-Run21 request nevertheless proves the current privacy boundary is still wrong: its physical request contained a full
-`LatestEffect count=4`, `ChangedRegion members=74/omitted_count=54`, and RecoveryDirectory member totals as high as
-361. Its `CurrentFindings.source` also repeated generation-specific
-`browsergym-observation:<uuid>:4` strings. The target gate therefore inspects the final physical provider request, not
-only an intermediate renderer object.
+### G7 — deletion and non-specialization gates
 
-Run21 falsifies the contract “exact/focus/delta recall is one protected mandatory partition.” The replacement invariant
-is:
+Production negative searches must find no:
 
-```text
-complete authority and high-recall inventories remain inside Runtime
-→ each recall source becomes a bounded, cursor-backed DeliveryObligation
-→ the highest-precedence nonempty obligation is foreground with minimum_progress=1; all-empty means 0
-→ TurnPacker admits only budget-fit atomic current-page records
-→ admitted records become protected in ModelTurnDelivery/Manifest/Catalog
-→ omitted inventory remains finitely reachable
+- `PublicEvidenceResult`, `PublicResultInventory`, or `PublicResultRecord`;
+- `DeliveryContinuationCapability` or `ContinueDeliveryResult`;
+- `read_next_page` or `action_results_next_page`;
+- admitted-evidence prefix or copied `latest_public_results` transport;
+- Store-owned result body/cursor/pending provider exchange;
+- `content_fragment`/fragment offset/reassembly path;
+- Task21, R9, reviewer-name, site, selector, or benchmark-case production specialization.
+
+## Verification commands
+
+Focused owner/vertical suite:
+
+```bash
+pytest -q \
+  tests/unit/agent/test_action_candidate_delivery.py \
+  tests/unit/agent/test_action_delivery_plan_properties.py \
+  tests/unit/agent/test_semantic_delivery.py \
+  tests/unit/agent/test_operational_progress_monitor.py \
+  tests/benchmarks/model/test_grounded_tools_v2.py \
+  tests/integration/model/test_pydantic_ai_spike.py
 ```
 
-This is not a label-, task-, site-, count-, or threshold-specific repair. Focus neighborhoods, delta actions/values,
-exact-query results, changed regions, base inventory, destination fan-out, and route issues all obey the same bounded
-page contract.
+Result: `204 passed`.
 
-### Run3: World stable, final delivery inflated
+Full and static verification:
 
-Run3 is the required compression/packing regression witness. It distinguishes internal authority size from provider
-input and therefore forbids solving action recall by dumping more World:
-
-| task | invariant internal evidence | old → run3 rendered bytes | old → run3 `actor_world_tokens` | old → run3 delivered `E/N/F` |
-|---:|---|---:|---:|---:|
-| 0 | 825 facts, 365 targets, 61 bindings unchanged | 10,076 → 16,247 | 3,574 → 5,744 | `16/52/116 → 24/69/176` |
-| 7 | 438 facts; World/Actor serialization effectively unchanged | 9,566 → 20,335 | 3,371 → 7,194 | `12/6/54 → 30/86/251` |
-| 21 | 1,059 facts and 376 targets unchanged | 10,232 → 29,724 | 3,563 → 10,415 | `6/17/33 → 25/125/340` |
-| 27 | World/Actor unchanged | 8,955 → 8,857 | 3,180 → 3,154 | no material growth |
-| 266 | World/Actor unchanged | 11,820 → 11,712 | 4,200 → 4,164 | no material growth |
-
-The evidence classifies the defect as selection-scope inflation, not World/Fusion duplication, ActorWorld pruning
-regression, tokenizer variance, history growth, or VLM cost. Structural deduplication remains green; a leading
-candidate can instead pull one large region's distinct siblings/facts into `ActiveView`. Page-conditional growth and
-the absent joint request fitter then expand the manifest and dynamic schema. Task 44 remains a separate formal
-projection failure and is not used in this comparison.
-
-The corrective benchmark contract is not “restore the 10 KiB renderer guard” and not “relax the 8k diagnostic.” It is:
-
-```text
-lossless internal World/ActionSpace
-→ complete high-recall inventories with independent finite cursors
-→ bounded delivery obligations; only admitted current-page records become protected
-→ compact route/context fragments, no candidate-implied full region
-→ deterministic joint TurnPacker over World + routes + media + actual ToolCatalog + fixed request cost
-→ atomic ModelTurnDelivery/Manifest/Catalog or typed context_capacity before provider
+```bash
+pytest -q
+ruff check src tests
+python -m compileall -q src tests
+git diff --check
 ```
 
-The old and run3 artifact directories remain frozen comparison inputs. A future implementation must improve the
-delivery/cost gates without changing the complete internal action inventory, hiding recoverable routes, adding a task/
-site branch, or weakening the public route/schema invariants. The frozen 8,000-token median initial-page diagnostic
-remains the cost gate; failure must be fixed by selection/factorization/packing rather than by raising it.
+Result: `1653 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing Python 3.13
+`multiprocessing` fork deprecation warning remains in the observability test.
 
-### Reopened BrowserGym transition gate
+No live provider command belongs in this provider-free acceptance sequence.
 
-The new gate proves `dispatch → causal stable World → StepResult` without using Task-7 or OSM-specific branches:
-
-- a link whose click returns before a 300 ms JavaScript-delayed navigation must capture the destination as the click's
-  `after_world`;
-- next ActionPolicy invocation is impossible before navigation commit, DOMContentLoaded, quiet-window satisfaction,
-  and post capture;
-- destination error content is carried by the click transition trace rather than attributed to the following action;
-- navigation timeout and unstable acquisition are typed and admit no World;
-- a mechanically non-navigation button skips the navigation-start lease;
-- source inspection and timing tests reject a fixed long sleep as the synchronization owner.
-
-Until this gate, the full provider-free suite, static checks, durable evidence, and a fresh-context review agree, do not
-run Task-7 live again. The OSM broken route is environment/data failure and ActionPolicy route efficiency is a separate
-quality dimension; neither may be used to patch or waive the transition invariant.
-
-Historical implementation verification for the causal-navigation gate is archived with the prior revision. The
-generic delayed-navigation, instability, trace-order, and non-navigation witnesses remain useful regression evidence,
-but their revision-local test count and review are not current whole-runtime closure after Run20. The transition gate
-stays open until it is rerun with C8–C12 and the current tree.
-
-### Reopened Observation Delivery and AgentWorkspace gate
-
-Later live evidence falsified two assumptions that the earlier six-page initial-World diagnostic did not test:
-
-1. a global task/plan lexical Top-k over current public scalar facts does not guarantee that an exact result produced by
-   the preceding GUI action is placed in the next model request;
-2. append-oriented `recent_steps` with a fixed history cap is not a total bounded workspace and can fail before any
-   provider request after useful results have already appeared.
-
-The active provider-free gate therefore proves the full transition-to-request path:
-
-```text
-causal before/after World
-→ one typed PublicWorldDelta
-→ versioned existing regions and cached unchanged outline
-→ exact LatestEffect/CurrentFindings/ChangedRegions delivery
-→ total WorkspaceReducer
-→ RequestAdmission as sole capacity authority
-→ provider request or typed local context_capacity
-```
-
-This gate must use generic generated/property cases plus the six real-page diagnostics. Task-7 and the text `33km` are
-regression witnesses only; production tests and code may not branch on them. C8–C9 implementation, full checks, durable
-provider-free evidence, and a new independent fresh-context review must agree before any live witness is authorized.
-
-Implementation checkpoint on 2026-08-22 (not C8–C9 closure): stages 1–6 freeze `PublicWorldDelta`, `RegionVersion`,
-`CurrentFinding`, `SemanticEvent`, `ActivitySummary`, `AgentWorkspace`, and `AgentLoopProfile`; one
-`WorldTransitionProjector` now supplies exact target/fact additions, removals, modifications, stable region membership,
-and before/after lineage. Runtime action evaluation, observation evaluation, current delivery index, Monitor, compact
-continuity, and trace share that projection. The existing `WorldDeliveryIndex` now versions stable regions, reuses
-unchanged cached outlines, and keeps exact current membership. Default production delivery is change-first and carries
-the latest exact GUI effect across local reads/searches; it no longer produces global lexical `EvidenceCandidates`.
-`RunState` now stores a bounded `AgentWorkspace` rather than append-only recent history. A total reducer retains only
-four detailed steps, exact bounded semantic events and working facts, aggregates ordinary activity by family, and does
-not fail after 1,000 differing reads; Full Trace retains all 1,000 raw steps. The old history renderer, independent
-history byte cap, RunState pre-cap, `EpisodeHistoryCapacityError`, and `fact_change_count` projection are removed.
-`RequestAdmission` now owns complete request allocation, workspace fitting, estimation, and local
-`context_capacity`; irreducible requests reach no provider. The provider Binder only serializes admitted requests.
-`EpisodeMonitor` now owns exactly three information digests plus bounded observation/recovery and public-attempt
-diagnostic state. Different query/region observations with no World/Findings/Facts increment form one streak.
-Dispatched GUI actions use the existing ref-free `PublicAttemptSignature`: two identical no-information attempts
-produce one recovery and its prohibited signature, and CoreLoop rejects the third identical selection before physical
-dispatch. Monitor-owned attempt digest/streak/count fields are projected directly into `EpisodeSnapshot`, replacing
-the old constant placeholders without creating a benchmark-side counter. `AgentLoopProfile(30, 8, 1)` caps the old turn
-budget rather than increasing it. No live or Task-7 run was performed, no prompt or historical budget was increased,
-the fresh-audit gate passed, and the separately authorized live gate stays open.
-
-Provider-free transition evidence on 2026-08-22 is persisted at
-`evidence/w1b-world-c8-transition-provider-free-run3/`. All six frozen cases report no acceptance errors: typed delta
-and independent serialized snapshot diff agree, the exact changed value enters LatestEffect, and every unchanged
-region reuses its version/cache. Each provider-free mutation fixture is applied to a separately captured real-page
-shape, then committed through `StepResult → WorkspaceReducer → EpisodeMonitor → RequestAdmission`; an actual typed
-`search_page_content` local step follows and preserves LatestEffect before a second admitted request. These fixtures do
-not claim a real dispatched site mutation or replace the separately authorized live witnesses. Every transition
-diagnostic records `provider_attempts=0`, and all seven JSON artifacts explicitly record the unchanged
-`AgentLoopProfile(30, 8, 1)`. The complete initial-page request estimates are 7,432–8,591 tokens with a 7,881.5
-median, below the frozen 8,000 median gate. The global EvidenceCandidates compatibility path and secondary
-`admit_model_request` owner are physically deleted; unexpected local ValueError maps to `internal_error`.
-Revision-local test counts and reviews are archived rather than repeated here because they no longer prove the active
-gates.
-
-Run19 confirmed that external GUI change-first delivery works, then falsified the broader closure claim: repeated
-`search_page_content` calls returned the same non-empty local result, but no owner classified delivery novelty, the
-Workspace hard-coded `new_finding_count=0`, and Monitor observed only unchanged World findings. The active contract is
-therefore `StepResult → ObservationDeliveryStore.reduce → DeliveryTransition(next_store, information_delta)`, with the
-same delta consumed by Workspace and Monitor. First unseen result items are `new_information`; identical World,
-arguments, and result are `exact_replay`, recover immediately, omit the repeated full payload, and stall on recurrence
-after recovery. Varied observation methods retain the general `AgentLoopProfile` threshold.
-
-The same run also showed an earlier finalization boundary defect: STOP and post capture succeeded, while an
-exception in native snapshot/classification/projection/validation was broadly caught and rewritten as UNKNOWN; after
-`run_finished`, the case body did not return, so preliminary persistence and cleanup did not begin. The implementation
-added a scoped evaluator outcome algebra, immediate local diagnostics, a local-only `run_finished` handoff, and a
-case-return deadline. Run20 then proved that projection construction can still escape before persistence and cleanup,
-so those changes are regression evidence rather than a closed finalization contract. No further live run is
-authorized.
-
-## Purpose
-
-Benchmarks measure whether the single GUI runtime generalizes across real pages while preserving authority, recovery,
-cost, and long-horizon continuity. Tests and architecture review protect contracts; live benchmark results remain the
-final capability evidence.
-
-Primary questions:
-
-1. Does the agent complete supported tasks through the official native evaluator?
-2. Does World delivery remain compact, understandable, and recoverable on real pages?
-3. Does the exact public effect of the latest GUI action appear before the ordinary page outline without a model search
-   call?
-4. Does every currently legal control have a finite public discovery route, including short/Unicode labels, page-tail
-   controls, and same-functional-container neighbors?
-5. Can current public evidence be used directly, with an optional exact working note only when it must survive a view
-   change?
-6. Does arbitrary ordinary step growth remain bounded through one total AgentWorkspace reducer and one request-capacity
-   owner?
-7. Can one continuous ActionPolicy complete the task without mandatory Planner, milestone, Auditor, or MissionState
-   transitions?
-8. Is each delivered action ref present in the exact admitted text/tool/image payload, and is every actionable image
-   mark admitted by the same manifest?
-9. Do stalls, route regression, provider failure, uncertain dispatch, report projection, cleanup, and viewer failure
-   terminate or recover through typed bounded paths without erasing case truth?
-10. Are token, latency, model-call, and unnecessary-action costs competitive with a compact single-agent baseline?
-
-## Cohorts
+## Benchmark cohorts
 
 ### W0 — environment readiness
 
-W0 verifies official dependency registration, six site health checks, reset, STOP/native-evaluator invocation, pinned
-container images, and a durable readiness manifest. W0 is already complete; it is not rerun unless the environment or
-official dependency commit changes.
+Validate the project `.env`, fixed BrowserGym Python 3.12 interpreter, installed BrowserGym/MiniWoB versions, project
+MiniWoB URL, and static server health. Do not infer missing runtime configuration from an unconfigured shell.
 
-### W1a — provider-free contracts
+### W1 — provider-free contracts
 
-W1a exercises the architecture without a real model:
+Run owner, property, integration, Recording FunctionModel, static, privacy/currentness, and fresh-review gates. W1 can
+establish implementation correctness for a bounded contract; it cannot demonstrate GUI generalization.
 
-- one BrowserGym session across the continuous case loop and no second reset;
-- complete decision/receipt/state-transition algebra;
-- native-tool wire and representation-only normalization;
-- one before/after public World delta consumed consistently by outcome, delivery, Monitor, continuity, and trace;
-- one existing `WorldDeliveryIndex` carrying canonical public container/order/focus facets for regions, forms,
-  discovery, and rendering;
-- changed-region version/cache behavior, latest-effect salience, World/Action recovery, and ref currentness;
-- exact/structured high-recall action discovery with complete cursor-backed inventories, one additive
-  `ActionDeliveryPlan` of bounded delivery obligations, independent continuation, and non-authoritative ranking;
-- deterministic joint packing of compact World fragments, exact route-bearing text/media fragments, and the actual
-  factorized ToolCatalog; atomic manifest/catalog lineage is derived only from admitted fragment route deltas;
-- current evidence use without mandatory pin/audit and optional exact working-note retention;
-- total AgentWorkspace reduction under arbitrary ordinary step growth and whole-request admission by one capacity owner;
-- information-delta activity aggregation and a typed operational `CONTROL_STALLED` without task-semantic blocking;
-- closed capacity/tool/provider/internal exception classification;
-- lossless public TaskGoal→GoalCompiler request projection and direct GoalCompiler/CoreAgentLoop composition with no
-  lexical key filter or mission fallback;
-- route/effect/protocol stall recovery;
-- monotonic durable body/final result, total report projection, cleanup deadline, transport retry, and viewer fail-open
-  behavior.
+### W1b — explicitly authorized live compatibility smoke
 
-### W1b-World — six real-page diagnostics
+When authorized, run only the named witness/profile and persist the formal per-case artifact before any optional
+summary. A provider timeout, environment failure, GUI case failure, and post-run reporting failure are distinct
+outcomes.
 
-Read-only provider-free diagnostics use these frozen official cases as heterogeneous page witnesses:
+### W2 — frozen benchmark cohort
 
-| Task | Site family | Primary stress |
-|---:|---|---|
-| 0 | shopping_admin | navigation, report form, result table |
-| 7 | map | search, directions form, dynamic route result |
-| 21 | shopping | dense commerce content and actions |
-| 27 | reddit | searchbox and repeated feed structure |
-| 44 | gitlab | very large structured application page |
-| 266 | wikipedia + map | multi-site content and navigation |
+The benchmark cohort is the final empirical test of cross-task/cross-site generalization and robustness. Production
+code may not branch on cohort identity, task text, page wording, selector, fixed action ID, or expected output.
 
-These cases verify general contracts; production code may not branch on task id, site label, text witness, selector, or
-expected output.
+## Live-run authorization and execution
 
-For each page the diagnostic captures at least one generic typed transition in addition to the initial World. It must
-prove that added/modified public values enter `LatestEffect` and `CurrentFindings` where eligible, changed regions are
-exact or completely paged, unchanged regions reuse cached versions, local read/search does not erase the effect, and
-agent-browser-style serialized diff does not reveal a public addition absent from the typed delta/delivery manifest.
-It also probes controls beyond the initial byte/page budget, real AX-role/public-DOM-tag container mismatches,
-field-to-sibling-submit reachability, base and query continuation, and final text/image/manifest agreement. The map page
-is one heterogeneous snapshot; the properties use generated and held-out labels/structures and may not encode its
-task id, `Go`, OSM classes, fixed refs, or selectors.
+A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
 
-Each page also records internal World/Actor size separately from final delivery, recall/obligation/current-page counts,
-candidate-to-region expansion reasons, omitted-record cursors, actual factorized ToolCatalog bytes/tokens, packing
-backoff count, and the final complete-request estimate. A larger or differently partitioned internal World does not
-fail by itself; unexplained final-delivery growth, missing recoverable routes, post-hoc manifest routes, an
-unrecoverable omission, or exceeding the frozen median gate does.
+1. load `/home/yang/projects/affordance-runtime/.env` without printing secrets;
+2. use `/home/yang/.venvs/affordance-browsergym-py312/bin/python`;
+3. health-check `http://127.0.0.1:18888/miniwob/click-button.html`;
+4. reuse/start the project-specific static service only if needed;
+5. set the explicit provider/model profile for the run;
+6. persist formal per-case results before auxiliary reporting.
 
-Cost readiness has exactly two hard coordinates: every complete physical input is at most 12,000 tokens, and the
-six-page median is at most 8,000 tokens. Component breakdowns such as history, Tool Schema, media, wire, and World
-proportions remain diagnostic fields only. Their structure and boundedness are verified by the C8–C12 properties; no
-component token subtotal independently vetoes a request already accepted by RequestAdmission.
+Background execution must use one persistent session. Report its session ID immediately and poll only that session
+when the user asks to view progress.
 
-### W1b-Agent — live compatibility smokes
+## Fresh-review questions
 
-Live cases begin only after W1a and W1b-World close. Run one explicitly requested witness at a time, persist the case
-result before cleanup, and diagnose the first shared contract failure before continuing. A single successful witness
-does not close W1b.
+The final read-only review for this cutover must answer:
 
-### W2 — frozen hard cohort
+1. Is any local ToolReturn body still copied into Store, Workspace, recent user context, or TurnPacker?
+2. Can any generic continuation tool still be registered or resolved?
+3. Does every registered local producer return the subtype declared by its contract?
+4. Can a result exceed its owner byte bound or require fragment reassembly?
+5. Does the physical PydanticAI exchange preserve exactly one accepted call ID/result pair?
+6. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
+7. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
+   state?
 
-W2 is the predeclared 12-case WebArena-Verified Hard cohort. Each case has an isolated TaskGoal/GoalPlan, working set,
-session, and trace. No cross-case long-term memory or recall is allowed. W2 starts only after W1b closure.
+## Exit statement
 
-## Active C8–C12 provider-free gates
-
-### C8 — transition and incremental-delivery properties
-
-Generated typed Worlds and held-out real-page transitions must prove:
-
-- `PublicWorldDelta` is complete for every supported public addition, removal, and modification and binds one exact
-  before/after lineage;
-- ActionOutcome, Monitor, ObservationDelivery, SemanticEvent projection, and trace consume that same delta object or
-  exact serialized value, rather than independently rebuilding change;
-- one deterministic `PublicEffectProjector` converts the lossless identity-based delta plus before/after supported-
-  public snapshots and prior/current existing `WorldDeliveryIndex` public structural slots into the active
-  `PublicEffectInventory`. Exact public semantic
-  multiset intersection cancels remount-only churn; stable-slot value changes become `modified`; residual after/before
-  atoms become `added`/ref-free `removed`. Ambiguous pairs remain explicit add/remove rather than being guessed;
-- generated before/after source and private-ID permutations prove: a full identity remount of the same public semantic
-  multiset emits zero model effect atoms; duplicate multiplicity `+1|-1` emits exactly one residual add/remove; one
-  stable public-slot value change emits one modified record; and an ambiguous-slot change remains one add plus one
-  remove. In every case raw `PublicWorldDelta` and private Trace remain lossless;
-- every residual added, modified, and removed supported public value enters that active effect inventory. The next
-  model turn receives a bounded exact current/tombstone page; Runtime retains the private cursor bound to a public
-  continuation scope rather than serializing either the cursor or the whole inventory;
-- removed target/fact records preserve prior public label/role/path or predicate/value and provenance as
-  `change=removed,current=false` tombstones. They carry no current E/N/F ref and never enter ActionSpace, Manifest,
-  ToolCatalog, Binder, remember/evaluator evidence refs, or another executable/current authority;
-- raw target/fact added/removed counts and records, full LatestEffect cardinality, remount/identity-renewal counts,
-  changed-region and RecoveryDirectory member totals, whole-inventory omission totals, and private digests stay in private
-  Trace/diagnostics. Model delivery contains only a typed effect header derived from existing public facts, current
-  exact/tombstone page records, `continuation_available`, and bounded continuation scopes;
-- local `read_region`, `search_page_content`, and `find_controls` do not clear the latest external effect;
-- every current search result `region_ref`, including a later search page, is projected as a bounded next-turn
-  `read_region` capability; duplicates are collapsed, the 32-entry Store bound keeps the latest returned page, and a
-  fresh World invalidates all prior follow-ups;
-- a multi-call provider response adopts the first schema-valid offered call in wire order, records later calls as
-  discarded protocol extras, and never lets representation repair select another operation or target;
-- region-read pages are greedily packed in stable public order against the exact final serialized result bytes, never
-  by record count alone; ordinary pages remain at or below 64 KiB, private Store cursors advance monotonically, and
-  all pages reconstruct the complete inventory exactly once. An individually oversized record uses lossless typed
-  JSON-UTF-8 fragments with a stable digest and monotonic offsets. Fresh World invalidates the cursor, and every typed
-  active-read continuation contributes its actual new page to information-delta monitoring;
-- World effect rendering and effect-derived action recall read the same `ObservationDeliveryStore.latest_effect`
-  `PublicEffectInventory`. The projector produces target/fact atoms and current changed-target public structural-slot
-  keys, not action operations/routes. Action recall joins those keys to the complete current `ActionSpace`, never raw
-  `delta_membership`, and a removed tombstone is never executable. A route-contract-only change remains reachable by
-  base continuation and is not guessed by the effect projector. An intervening local same-World step cannot clear
-  action-effect recall while the prior `LatestEffect` remains
-  visible;
-- a later GUI effect supersedes the prior active-effect cursor after `WorkspaceReducer` has selected a deterministic
-  bounded exact subset for `SemanticEvent`; the current World/recovery surface remains authority for current facts and
-  private Trace retains the full raw delta/reconciled effect. The event does not copy the whole effect;
-- unchanged region digests reuse their cached outline; changed region versions increase; navigation/document-lineage
-  change invalidates stale refs and old cache membership;
-- rendering/fitting never authorizes a target absent from the current complete ActionSpace;
-- an independent serialized public-snapshot diff detects no addition/removal absent from the typed delta, except an
-  explicitly documented non-semantic serialization difference;
-- no second browser session, DOM walker, RegionIndex, selector/ref registry, action registry, or Agent loop is created.
-
-Required regression shape:
-
-```text
-form submit or Go-like action
-→ result/status/table text appears in after World
-→ next ordinary request begins with the exact public change
-→ zero content-search/read calls required for first visibility
-```
-
-The witness values and labels are generated or held out. An assertion tied only to `Distance: 33km` is insufficient.
-
-### C9 — bounded-workspace and capacity properties
-
-Property/state-machine tests must prove:
-
-- four or fewer latest steps retain detail; older significant GUI effects, public results, working-note changes, typed
-  failures, and recovery transitions retain exact bounded SemanticEvents;
-- 1,000 ordinary supported steps, including non-identical read/search arguments, always return a reduced workspace or
-  one typed irreducible capacity result; ordinary accumulation never raises a history exception;
-- repeated no-information reads/searches/waits update one bounded `ActivitySummary` family rather than append entries;
-- first non-empty local observation result records its unseen public items and exact count; the same World/arguments/
-  result is `exact_replay`, is not redelivered in full, recovers immediately, and stalls on post-recovery recurrence;
-- a precise public result remains available after leaving the latest-four window and after a local search-view change;
-- a whole address is retained exactly and is not mechanically split into inferred business fields;
-- `RequestAdmission` is the only component that allocates/adjudicates capacity for the complete request;
-- RunState, history, renderer, and provider Binder contain no independent model-history cap or pruning authority;
-- local irreducible overflow is `context_capacity`, `provider_attempts=0`; only grounded tool-resolution failure is
-  `invalid_tool_arguments`; transport failure is `provider_unavailable`; unexpected Runtime failure is
-  `internal_error`;
-- World/finding/working-fact digests unchanged across observation-only activity produce one generic stall family even
-  when query or region changes;
-- the configured recovery threshold produces RECOVERY once, recurrence produces operational `CONTROL_STALLED`, and
-  TaskEvaluation remains `INCOMPLETE|UNKNOWN`;
-- Full Trace retains every raw step and is not read back as model workspace.
-
-Profile values are recorded in each artifact. They may vary by declared experiment profile, but may not depend on task
-id, site, page label, expected answer, or known trajectory.
-
-### C10 — action discoverability, joint packing, and atomic-delivery properties
-
-Generated controls, held-out page structures, and frozen real-page snapshots must prove legal-action conservation from
-the fresh World to Binder:
-
-- the existing `WorldDeliveryIndex` is the only unnumbered public structural index; AX roles and supported public DOM
-  tags are normalized once into typed container membership, stable source/tree slots, focus neighborhood, viewport
-  status, and region membership. It allocates no model ref/order and owns no temporal delta/cursor state;
-- one immutable `CanonicalPublicWorldProjection` consumes the fresh World, that unnumbered index, and complete
-  ActionSpace and allocates every public target/fact/region record, `E/N/F/R` ref, and public total order exactly once.
-  Grounding, findings, effects, pager, renderer, Manifest, Catalog, Workspace, Monitor, and evaluator views consume the
-  same projection identity; repository-negative checks find no surviving alternative allocator or raw-inventory sort;
-- `PublicWorldDelta` remains the lossless before/after transition, while `PublicEffectInventory` reconciles prior/current
-  canonical semantic records. Effect rendering and effect-prioritized action recall consume that inventory, never raw
-  identity-delta membership;
-- when Fusion aligns equivalent targets from two or more structural sources, every canonical target belongs to exactly
-  one deterministic primary region while secondary source provenance remains observable. Permuting source order leaves
-  region membership, functional path, route recall, and public presentation unchanged;
-- when the SurfaceAdapter recognizes more action-bearing controls than its supported bound, it either preserves all
-  controls/bindings in the internal action inventory or returns typed acquisition capacity with no actionable World.
-  A first-N slice cannot produce `source_coverage=complete` or an authoritative exact miss; read-only partial coverage
-  and omitted counts survive every projection;
-- one shared option-domain bound is used by SurfaceAdapter, parameter-schema validation, ActionSpace, and ToolCatalog.
-  Generated select domains at 12, 13, 16, 17, the declared bound, and bound+1 either conserve every option and a
-  resolvable `select_option` route or emit typed non-complete capacity/eligibility; no executable control is silently
-  left without a binding/why-not reason;
-- generated destination-required actions at 16, 17, the declared route bound, and bound+1 preserve every legal
-  `(operation,source,destination)` record internally or fail typed before an actionable partial World. RequestAdmission
-  pages the same records seen by the final manifest/catalog; repository search finds no independent
-  `max_destinations_per_option` truncation or estimator that counts fewer routes than delivery;
-- generated aligned-source bindings with the same public route selector and identical contracts merge into one
-  ActionSpace route; incompatible parameter/effect/barrier/verifier contracts close there as typed
-  `action_route_conflict` with a visible why-not fact and no route. Neither case may first fail as `catalog_invalid`;
-- every legal `ActionOption` whose one atomic public route/schema representation fits the declared active provider/
-  RequestAdmission profile is recoverable in finitely many calls by its exact normalized public label, role,
-  operation, structural context, or public continuation route backed by a lossless private inventory cursor; generated labels include one- and two-character,
-  Unicode, punctuation, whitespace-normalization, empty-label, and duplicate-label cases;
-- a legal but atomically unrepresentable route remains in complete ActionSpace and, when foregrounded, fails
-  deterministic typed `context_capacity` with the offending component and zero provider attempts; it is never
-  classified as an exact miss, silently omitted, or used to weaken the recoverability claim for representable routes;
-- generated label/query lengths include 1, 2, 119, 120, 121, the declared public bound (at least the current
-  BrowserGym 240-character label bound), and bound+1. Every admitted label fits an exact query; over-bound input is
-  typed rather than sliced, and repository search finds no `query[:120]` or equivalent silent truncation;
-- a complete label span in a longer natural-language query enters the exact recall inventory. Extra query words can
-  rerank but cannot delete it when the full query is within its declared bound; duplicate exact labels remain
-  distinguishable by public path/role/operation and are never silently collapsed to an unrelated sibling;
-- the focused field's legal same-container submit/action siblings enter structural recall even when task words do not
-  match. Effect-prioritized routes are a deterministic join of active `PublicEffectInventory` changed-target slots to
-  the complete current ActionSpace, the sole legal-action authority;
-  no unproduced `newly_revealed` flag or local-step empty delta is accepted as a substitute;
-- authority inventory, recall inventory, current delivery page, and recovery surface are generated as four distinct
-  types/contracts. Exact/role/operation, continuation, focus/container, viewport, delta, base, destination, and route-
-  issue fan-out produce complete deterministic recall inventories and bounded cursor-backed `DeliveryObligation`
-  groups; none maps collection membership directly to an unbounded `protected` Boolean;
-- each delivery obligation records owner lineage, deterministic atomic records, foreground priority,
-  source/result coverage, and a private Runtime continuation exposed only as a bounded public scope. The plan stores
-  one derived `foreground_scope|None`, not a mutable minimum on every group. The highest-precedence eligible obligation
-  with an undelivered supported record is foreground and mechanically requires one record; when all eligible
-  inventories are empty it requires zero. No kind-specific exception or model choice sets this value. Other groups
-  expose a bounded directory entry and may contribute as capacity permits. There is no
-  simultaneous one-record requirement for every group;
-- obligation-group cardinality is bounded by the declared protocol kinds/current explicit lens, not target/fact/region
-  cardinality. Generating more changed targets, facts, regions, actions, destinations, or issues grows only Runtime
-  inventory/cursor remainder and private diagnostics, not fixed-shell or group-metadata count;
-- exact query or explicit continuation foregrounding delivers at least one exact/structural record when one remains and
-  one atomic record is representable. After a record is admitted to the frozen page, objective/semantic score and later
-  rendering cannot remove or reorder it. Before admission, recall reason is not prompt protection;
-- automatic candidates and explicit exact/inventory discovery do not share a vetoing ranker. A semantic false
-  positive cannot cut off exact matches or the base continuation;
-- base page, query page, automatic candidates, and search candidates are projections of one immutable per-turn
-  `ActionDeliveryPlan`, not four mutable stores. Generated query/delta/focus/container/issue inventories with more
-  records than one request retain their complete order behind independent cursors and contribute only budget-fit
-  current-page prefixes; there is no `top_k=None` or whole-delta/whole-neighborhood bypass;
-- private base, query, external-effect, focus/container, destination, and issue cursors each enumerate their declared ordered
-  result set. Every foreground continuation with `has_more=true`
-  delivers at least one previously undelivered public target/verb record into the model payload and manifest, with no
-  cycle, skip, or repetition-only page;
-- dynamic continuation tools are bounded by operation/scope, not record count. `read_next_page` exposes no argument
-  for one live scope or a maximum three-value `effect|page_directory|active_read` enum;
-  `action_results_next_page` exposes only the
-  bounded action-obligation kinds that currently have a continuation. Runtime bindings, not tool arguments, carry the
-  private cursor. Generated inventory growth does not increase tool count or add one schema enum member per record;
-- generated Worlds with more regions than one directory page are fully enumerated through
-  `read_next_page(scope=page_directory)`; a region first exposed on the final directory page can then be selected and
-  its complete contents enumerated through `active_read`. After that local read, both `effect` and `page_directory`
-  continuations remain resumable. A fresh World or foreign owner/kind/order/offset cursor fails typed stale before
-  provider/GUI dispatch; it is never normalized into a current scope;
-- action-page allocation comes from `RequestAdmission` and is measured over actual public route records. Varying
-  private-ID lengths, internal schema/description size, or observation identity cannot change page membership; one
-  unrepresentable public route closes as typed capacity;
-- repository negative search finds no independent ActionPager, ModelTurnDelivery, or grounded-catalog byte veto. A
-  generated large but legal relational catalog is either admitted by whole-request admission or returns
-  `context_capacity` with `provider_attempts=0`, never `invalid_tool_arguments`/catalog-invalid;
-- a compact action fragment contains the route, public label/role/operation, functional path/container, and declared
-  focus/viewport/delta reasons without expanding all members/facts of its region. Adding or changing only the leading
-  candidate cannot change `ActiveView` region membership; full region contents require an explicit region/change/focus
-  fragment and an independently visible cost/recovery handle. Repository negative search finds no
-  `leading candidate → selected_region_keys` path;
-- the deterministic `TurnPacker` starts from the declared fixed request cost plus a bounded current-page/effect/
-  recovery shell and attempts only the foreground group's declared zero/one minimum first. After every tentative record
-  it compiles the exact fragment-route deltas, media, Manifest, and factorized ToolCatalog and reprices the complete
-  provider-bound request. If the required foreground record cannot fit, it returns typed capacity. Otherwise it makes
-  deterministic depth rounds: each eligible obligation in priority order gets at most one next-record attempt per
-  round before any group receives another. Overflow leaves that optional head and suffix behind the same cursor and
-  does not block later groups;
-- typed `context_capacity` with `provider_attempts=0` is valid only when the bounded fixed shell or one required atomic
-  foreground record plus its route/catalog representation cannot fit—not because a collection has many
-  focus/delta/exact/issue members. The packer has no model call, mutable cross-turn state, generic knapsack/search
-  objective, or capacity constant independent of `RequestAdmission`;
-- packing is deterministic under private-ID/source enumeration permutation. For every admitted request, the sum of
-  recorded system/task/plan, World fragments, workspace/history, media, exact compiled tool schema, and wire overhead
-  equals the estimator input used for final RequestAdmission; the separately recorded output reserve is added exactly
-  once for the complete context-window check. Every omitted supported record remains
-  behind a typed cursor; no route/schema branch, scalar changed value, tool-call/result pair, or actual image mark is
-  split;
-- `ProviderEnvelopeBinder` creates the only `CanonicalProviderEnvelope` from ModelTurnDelivery, frozen Catalog,
-  task/plan/workspace/history, media, settings, and output contract. RequestAdmission validates/prices and returns that
-  exact value; the PydanticAI adapter transports it unchanged. The Recording Provider observes the same canonical
-  digest and fields. Sidecar components and post-admission message/tool/media reconstruction are absent;
-- generated fan-out uses `0, 1, page_bound-1, page_bound, page_bound+1, 2×page_bound, 4×page_bound` records for each
-  exact-query, external-effect action/value, focus-container, base, destination, and route-issue obligation. If one
-  atomic record fits, every nonempty foreground page is admitted, the union of cursor pages equals the internal ordered
-  inventory, and request size remains bounded independently of total inventory cardinality;
-- generated combination cases make two through all obligation kinds nonempty simultaneously and vary budgets at exact
-  fit and one unit below. They prove there is only one required foreground minimum, the complete request remains
-  bounded, every group's delivered pages plus cursor suffix equal its authority inventory, adding low-priority
-  inventory cannot evict that foreground minimum, and a too-large optional head blocks only its own consecutive cursor
-  while later small groups are still admitted. This is a cross-product/state property, not separate one-group examples;
-- a state-machine sequence `external GUI effect → packed model view → local read/find/search → packed model view → next
-  external GUI effect` proves that the first two model views consume the same active external-effect identity and
-  cursor suffix, while the later external effect supersedes it exactly once. No local empty same-World delta may clear
-  only the action side of that contract;
-- prompt-privacy properties preserve raw target/fact added/removed records/counts and identity-renewal counts in private Trace and
-  packing diagnostics, together with full LatestEffect/region-member/RecoveryDirectory/omission totals, while the
-  serialized `ModelTurnDelivery`, complete admitted physical provider request/transcript, and the exact would-be
-  provider serialization priced by a local pre-provider capacity decision contain no such diagnostic inventory/count
-  fields, raw remount records, private cursor, observation/source-record ID, UUID, capture epoch, or identity-derived
-  source string. They contain only the public typed effect header, exact
-  current/tombstone page records, `continuation_available`, and bounded continuation scopes. Trace
-  retention and model omission must both hold in the same test;
-- the effect header has a fixed field algebra and may name only public regions represented on the current admitted
-  effect/directory pages. Increasing total changed-region count cannot grow the header or inject a full region-label
-  inventory; the public directory continuation is the recovery path;
-- trace/report properties distinguish tentative and frozen ModelTurnDelivery/ToolCatalog costs. A pre-provider capacity
-  turn retains its current ActionSpace identity/count, obligation/cardinality breakdown, typed decision, offending
-  component, per-turn provider attempts=0, and tentative cost without claiming a frozen catalog; run-level provider
-  attempts remain the explicit sum of prior physical calls;
-- the public action-page decision contains only query or bounded current continuation scope plus tool-call identity.
-  Physical provider payload, tool arguments, decision, discovery result, history, InformationDelta, Workspace, and
-  public trace/report projections contain no private cursor. Repository
-  negative search finds no `target_id`, `relevance_role`, or `exact_target_ref` ghost filters in that decision's
-  payload/history/Monitor chain;
-- discovery emits one typed `ActionDiscoveryResult`; CoreLoop only commits it and contains no ad-hoc public result
-  dictionary or independent match/coverage vocabulary;
-- changing private target/action/binding IDs, fresh observation identity, hash seed, or input enumeration order does
-  not change public recall or public tie order. Ties use source/tree/viewport order and action-variant ordinal;
-- generated observation/source-record IDs vary in value and encoded length while public surface/modality/coverage and
-  structure stay fixed. ModelTurnDelivery, physical provider payload, Workspace/history/public results, page
-  membership, Manifest/Catalog, and complete request cost remain byte-identical; only private lineage/Trace changes;
-- discovery results, recent history, InformationDelta, Workspace, trace public fields, and reports contain public
-  ref/label/role/verb/match-kind/coverage/continuation-scope records and no Runtime inventory/result/action-variant
-  totals, private cursor, action, target, binding, selector, BID, or coordinate IDs. A public source-provided business
-  count may remain an ordinary fact; current route variants appear as verbs rather than a diagnostic count;
-- `DeliveryManifest.action_routes` equals the ordered union of exact route deltas carried by final admitted text
-  fragments plus actually attached actionable image marks. A byte-rejected fragment contributes no routes; model tool
-  operands only consume the manifest. Repository negative search finds no post-hoc ref scan such as
-  `_manifest_with_routes` that reconstructs source/destination relations from complete ActionSpace. Annotation
-  absence/failure, out-of-frame or wrong-coordinate boxes, and raw or
-  unattached screenshots contribute no marks/routes; each `E` mark has exact current route and source/destination
-  operand-role closure. Annotated media MIME, magic bytes, digest, and payload agree, including JPEG input converted to
-  PNG output;
-- `ModelTurnDelivery` contains the exact ordered attached-media records, and `delivery_id` changes when final text,
-  media MIME/digest/actual marks, or action routes change. Provider binding attaches exactly `delivery.media` with no
-  independent `request.image_inputs` bypass; a boolean image-presence flag cannot stand in for media lineage;
-- for every PerTurnToolCatalog entry and generated argument value, public schema admission is equivalent to exactly one
-  private resolution row. Operation target/destination pairs and per-target business enum/range domains never widen
-  into a Cartesian product;
-- generated catalog factorization groups rows only when operation, operand roles, legal destination relation, and
-  business parameter schema are identical. Sparse source/destination graphs preserve exact adjacency rather than
-  independent enums; factorized and unfactorized relations accept the same calls and resolve to the same unique rows.
-  TurnPacker prices the actual factorized schema bound to the provider;
-- generated schema ASTs prove that the one `actions.schema_validation` contract and its value interpreter support the
-  same bounded object/array/scalar/enum/const/range/discriminated-union subset. ToolSpec/catalog construction rejects
-  unknown keywords, malformed combinations, ill-typed bounds, and overlapping or undiscriminated `oneOf` branches as
-  typed pre-provider schema failures; repository search finds no JSON-tree-only schema admission path;
-- fault injection at delivery construction, catalog compilation, RequestAdmission, and provider binding returns the
-  declared typed local/schema/capacity outcome with `provider_attempts=0` before the bind boundary. Failure diagnostics
-  use only constructed optional artifacts; the handler never raises a secondary unbound-local exception;
-- repository negative search finds no active `set_form_fields`, `SetFormFields`, `ActionOption.batchable`,
-  `ActionBatch`, `execute_action_batch`, form-key generator, compound-form resolver/Binder/executor, `from_form_fields`,
-  or partial-form receipt path. `ExecutionReceiptBatch.from_atomic` remains for atomic attempt/uncertainty conservation.
-  Generated same-label forms remain distinct in
-  `WorldDeliveryIndex` for structural recall, while field edits use ordinary one-target routes and one fresh World per
-  dispatch;
-- one shared `PublicRefCodec` is used by every live producer/consumer. Generated refs around the declared cardinality
-  boundary, including the current E999/E1000 disagreement, have identical validity in grounding, candidates, manifest,
-  decisions, schemas, resolver, renderer, history, and trace; overflow is typed capacity before publication;
-- an optional semantic/model reranker may improve ordering from current public World facts but may not reduce exact or
-  structural recall and may return typed unavailable without changing reachability. A VLM may add typed evidence only
-  through SurfaceAdapter/Fusion; repository/runtime inspection finds no direct discovery-to-VLM authority path;
-- run3 comparison properties freeze internal target/fact/binding conservation and presentation-collapse counts, then
-  vary functional partition sizes and leading optional candidates. They prove no candidate-only whole-region
-  expansion, no loss of exact/structural routes, complete cursor recovery, and bounded total request cost. Tasks
-  0/7/21/27/266 are evidence fixtures, not task-specific assertions;
-- an end-to-end property traverses `fresh World → unnumbered WorldDeliveryIndex + complete ActionSpace →
-  CanonicalPublicWorldProjection → PublicEffectInventory → ObservationDeliveryStore → ActionRecallSet → cursor-backed
-  DeliveryObligations → TurnPacker → frozen ModelTurnDelivery/Manifest → PerTurnToolCatalog →
-  CanonicalProviderEnvelope → RequestAdmission → Recording Provider → Resolver → Binder` and proves the admitted
-  operation/ref/destination tuple resolves to the same current legal option. Executor actionability is tested
-  separately and never used to excuse a delivery miss.
-
-Required generic regression shape:
-
-```text
-field becomes current inside a source-provided form-like container
-→ short-label sibling submit lies beyond the default byte/page budget
-→ automatic structural recall or exact-label search delivers its current public ref
-→ an unrelated longer lexical match may rank later but cannot replace it
-→ Resolver/Binder accepts the delivered option
-```
-
-The held-out set includes non-map forms and randomized labels. A production assertion tied to `Go`, Directions,
-OpenStreetMap, a fixed DOM class, or an expected rank is invalid.
-
-### C11 — terminal algebra and finalization-totality properties
-
-Property, model-based sequence, subprocess-crash, and fault-injection tests must prove terminal-outcome conservation:
-
-- every currently reachable owner value is generated through every declared consumer with its enum or one exhaustive
-  map. `InformationDeltaKind` traverses ObservationDelivery→Workspace/Monitor/private trace; persisted `RunStatus`,
-  `DecisionKind`, action/receipt outcomes, `ControlTermination`, cleanup disposition, and report disposition traverse
-  snapshot→durable case facts→public codec→decode→aggregation; evaluated official outcomes traverse their immutable
-  checkpoint→id/digest join→codec/aggregation path. Consumers do not maintain copied string vocabularies;
-- Monitor repetition commits typed `CONTROL_STALLED`; policy/step budget exhaustion commits typed
-  `TURN_BUDGET_EXHAUSTED`; neither is inferred from display feedback or degraded to `blocked_other`;
-- obsolete `last_progress_event_type` values, the reader of removed `context.progress`, and metrics without a live
-  producer are deleted rather than expanded. Any retained metric names its typed producer and is nonzero under a
-  generated witness;
-- every body return, timeout, interruption, or exception constructs a bounded `CaseOutcomeRecord` with run/case
-  identity and attempts revision `BODY` before rich projection. A successful BODY commit is durable before projection;
-  a failed commit records `HARNESS_PERSISTENCE` in the remaining local/trace diagnosis, still reaches the outer cleanup
-  disposition (exactly once when a handle was acquired), and never falsely claims BODY durability. Projection
-  incompatibility is typed `HARNESS_PROJECTION` without changing Runtime/task outcome;
-- the case finalizer is installed before environment acquisition. Once an environment handle is acquired, cleanup is
-  attempted exactly once with a deadline under the outer `finally`; if acquisition never succeeds, no cleanup call is
-  fabricated and the typed disposition is `NOT_ACQUIRED|NOT_APPLICABLE`. This remains true when trace event/write/seal,
-  snapshot, projection construction, validation, encoding, body commit, lifecycle observation, cleanup, final
-  projection/commit, JSON export, aggregation, summary export, or observer callbacks fault;
-- the store owns one bounded write API. Revisions are monotonic (`BODY < CLEANUP < FINAL`); BODY is insert-only with
-  byte-identical idempotent retry, CLEANUP fields only fill/advance, and equal/stale BODY retries cannot clear them.
-  Generated interleavings include late same-revision and stale workers. A timed-out/cancelled worker cannot overwrite a
-  newer revision; compare-and-swap conflict returns typed persistence failure and `INSERT OR REPLACE` is not accepted;
-- `failure_reason` and other display text cannot affect status, `execution_completed`, terminal classification, or
-  acceptance. For every public case, `accept(x) == accept(decode(encode(x)))`;
-- Runtime and benchmark failure codes share one bounded codec or an exhaustive lossless mapping. Every supported
-  evaluator-outcome/Runtime-status pair, including post-STOP incomplete plus failed Runtime, maps exactly once and is
-  never silently discarded;
-- an immutable `OfficialOutcomeCheckpoint` is the only durable copy of an evaluated official outcome.
-  `CaseOutcomeRecord` stores only checkpoint id+digest (or a non-official evaluator-port disposition); generated
-  missing, mismatched, or deliberately divergent pairs fail typed before projection rather than choosing one copy;
-- behavior, evaluator, persistence, projection, cleanup, and export dispositions remain orthogonal. A harness failure
-  fails benchmark acceptance but cannot rewrite a blocked GUI behavior into a provider/environment/task failure;
-- local trace write/seal failure is typed `HARNESS_TRACE`, invalidates benchmark evidence, and remains unable to abort
-  Runtime handoff or bypass cleanup; viewer/export failure remains a weaker fail-open disposition;
-- executor fault injection covers before-dispatch and after-possible-dispatch boundaries. Every ordinary exception
-  becomes a typed outcome, diagnostic, Runtime failure/receipt as applicable; an uncertain crossed boundary is
-  `SENT_UNKNOWN` and cannot replay. No path terminates with only a display `execution_failed` string and missing receipt
-  truth;
-- zero-case, partial-case, between-case interruption, and per-case finalization failure produce a typed partial run
-  record from the durable completed prefix; aggregation never uses a strict zip or an unpersisted in-memory result as
-  authority;
-- `CASE_FINISHED` is committed only with the final durable revision after body, cleanup, and report dispositions are
-  known. SQLite keeps one current phase plus typed dispositions; local trace may observe chronology, but no second
-  lifecycle event ledger controls the runner;
-- before sealing trace, the runner records `FINAL_ATTEMPT` with expected prior revision/report disposition. Injected
-  FINAL-commit failure leaves durable BODY/CLEANUP and a non-finished SQLite phase (plus that trace event when sealing
-  succeeded); it need not make the failed sink persist its own failure and may never emit false `CASE_FINISHED`;
-- detached status reads SQLite first and distinguishes body-not-returned, durable-body/report-pending, projection
-  failure, cleanup not-started/running/completed, partial run, export failure, and complete report. Empty or stale JSON
-  files cannot prove completion;
-- unsupported future enum/schema values fail closed as typed projection facts while minimal persistence, exactly-once
-  cleanup, partial aggregation, and detached diagnosis still complete.
-
-The target schema deletes direct duplicate failure/cleanup/watchdog fields and fields with no production producer.
-Historical v6–v11 readers live in an archive adapter; the active constructor and SQLite/JSON codec share one current
-schema/privacy path.
-
-### C12 — TaskGoal public-input and GoalPlan conservation
-
-Provider-free generated requests, captured compiler calls, and recording policy contexts must prove that task intake,
-advisory planning, and policy delivery do not police business vocabulary across either branch:
-
-```text
-NaturalLanguageTaskRequest → ThinTaskIntake → TaskGoal
-                                            ├→ GoalCompiler request
-                                            └→ every AgentContext.task → ActionPolicy
-```
-
-- every bounded JSON-compatible value admitted in public `TaskGoal.inputs` and `success_criteria` appears exactly in
-  the initial GoalCompiler request and every ActionPolicy task context, including nested keys named `coordinates`,
-  `coordinate`, `selector`, `path`, `viewport`, `x`, `y`, `dom_id`, `target_id`, and generated spelling/case variants;
-- renaming a public key without changing its typed visibility changes only that key, never whether the field is
-  present. If private task material is added later, TaskIntake excludes it by an explicit typed visibility field
-  regardless of its name;
-- one declared intake bound precedes TaskGoal construction. Inputs within it survive both branches exactly; item/depth/
-  string/binary boundaries and bound+1 cases fail typed rather than silently slicing to 12 items, depth 3, 240
-  characters, or `[TRUNCATED]`. A later request-capacity failure is also typed and does not delete a subtree, fabricate
-  `NeedsInput`, or reinterpret partial input as the user's goal;
-- the compiler output remains exactly the bounded five-field advisory GoalPlan algebra and cannot carry an action,
-  tool, ref, selector, coordinate route, mutable progress, or permission. PerTurnToolCatalog/Binder remain the only
-  action route;
-- every Ready GoalPlan is projected unchanged into each `AgentContext`, while every complete ActionSpace route remains
-  available. Generated fresh-World sequences expose already-satisfied objectives, active toggles, ready dependencies,
-  and a final item to a recording ActionPolicy and admit exactly one typed decision per turn. GUI decisions carry
-  exactly one current route; local observation, `AskUser`, and final-response branches carry zero GUI routes, so every
-  turn has at most one. Repository search finds no Runtime item status, frontier, progress calculator, plan-based action
-  filter, or auto-advance state;
-- the ActionPolicy contract requires preserving visibly satisfied objectives, avoiding an already active toggle unless
-  TaskGoal asks for reversal, preferring an unsatisfied dependency-ready item, and attempting the final item only after
-  every dependency is clearly satisfied in fresh World. Provider-free tests prove the required context/route boundary;
-  actual model adherence is separately measured on held-out W1b-Agent trajectories and cannot be claimed from a fake;
-- generated envelopes prove 1–8 items, unique IDs, existing acyclic dependencies, bounded text, and at most one final;
-  malformed shape admits at most one schema repair and one boundary repair, and every initial/repair transcript is
-  recorded immediately;
-- `Ready|NotRequired|NeedsInput|Unsupported|Failed` retain their declared control semantics. Provider/schema failure
-  and `Unsupported|Failed` continue the ordinary GUI loop; only a genuinely absent user-owned fact can produce
-  `NeedsInput`; task start invokes exactly one compile, an explicit TaskGoal revision invokes exactly one new compile,
-  and World/layout/stall/action changes invoke none;
-- repository negative search finds no active `_PRIVATE_INPUT_KEYS`, `_private_input_path`, `_PRIVATE_TASK_KEYS`, or
-  `_model_private_key/_route_key` call in TaskGoal/TaskContext projection, and no `is_private_goal_semantic_name`,
-  `GoalSemanticContract`, or adapter/environment goal-semantic-contract port.
-  Historical readers, if retained, are archive-only and cannot enter current intake→TaskGoal→GoalCompiler→AgentContext
-  composition;
-- initial and permitted repair transcripts preserve the exact public request lineage. Tests use generated nested
-  mappings and a recording fake provider, not a list of benchmark phrases or a live model.
-
-## Superseded milestone-path evidence
-
-G0–G6, the 1,487-pass/19-skip checkpoint, and run8's six-page diagnostic are revision-local evidence for the removed
-Planner/Milestone/Auditor path. Their detailed criteria and results live in
-[`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md)
-and `evidence/w1b-world-planner-auditor-provider-free-20260822-run8/`. They are retained as regression inputs only:
-Run20 falsified their broad projection/finalization assumption, and none is a present-tense owner, acceptance gate, or
-permission to restore Manager, Auditor, compound actions, or mission state.
-
-The active gates are C8–C12 above. Reusable constraints from the old evidence—one CoreLoop/Binder/executor, typed
-receipts, bounded recovery, ref privacy, native evaluation, and viewer fail-open behavior—have been restated there or
-in [`architecture.md`](architecture.md) against the current single-ActionPolicy owners. No live model run accompanied
-the historical provider-free checkpoint.
-
-## Live W1b acceptance
-
-Live execution is separately authorized. For each run report:
-
-- official task id, site family, seed, model/profile, prompt/catalog/context versions;
-- official success and native-evaluator result;
-- GUI decisions and physical dispatch receipts;
-- ActionPolicy ordinary/recovery, representation-repair, and transport-retry calls; Planner/Auditor counts must be zero
-  after migration;
-- per-role prompt/completion/reasoning tokens and latency;
-- request component estimates for task/plan, latest effect, changed regions, cached outline, AgentWorkspace, actual
-  factorized tool schema, media/wire overhead, and output reserve; recall/obligation/admitted-page/omitted counts,
-  packing backoffs, and continuation cursors;
-- private diagnostic public-delta counts, changed/unchanged region reuse, latest-effect bytes/tokens, recoverability,
-  ActionCandidate recall/rank, repeated-read rate, navigation excess, and no-progress rate;
-- exact-label recall, structured-neighbor recall@k, semantic candidate recall@k, base/query continuation progress,
-  private-ID leakage count, and text/image/manifest disagreement count;
-- recent-detail, SemanticEvent, ActivitySummary, WorkingFact, workspace-fit, and whole-request-admission costs;
-- optional working-note events, typed recoveries, direct final-response lifecycle, and hard-cap exits;
-- typed control termination, case-body revision, report/projection disposition, cleanup disposition, late-write rejection,
-  export/viewer disposition, and detached durable-result status.
-
-For a short single-site report task, engineering targets are:
-
-- total provider tokens: target 50k–80k, ordinary upper bound 100k;
-- ordinary prompt p95 below 12k;
-- zero full-context semantic repair;
-- zero Planner and Auditor calls;
-- no repeated unchanged region read before a valid control/evidence alternative is offered.
-
-These are cost targets, not success substitutions.
-
-## Required artifacts
-
-Every case writes:
-
-```text
-run manifest
-traces/<case-id>/trace.jsonl          # private, complete, local authority
-artifacts/<content-addressed media>
-run-results.sqlite3                   # BODY/CLEANUP/FINAL monotonic case truth + report/run dispositions
-cases/<case-id>.json                  # optional materialized view
-summary.json                          # optional aggregate view
-```
-
-Public reports exclude prompts, model responses, selectors, coordinates, credentials, hidden state, oracle answers,
-reward payloads, and screenshots unless explicitly approved. Trace-write failure invalidates benchmark evidence but
-does not change Runtime control behavior. Each durable `BODY` row contains enough run/case/profile/manifest identity to
-remain self-describing if the process dies during cleanup; JSON and summary files are rebuildable views, not completion
-authorities.
-
-## Execution order
-
-This is the only active migration order. The detailed C8–C12 properties below constrain the relevant stage; they do not
-authorize parallel owner changes. Every production stage must follow the six-step per-stage cutover protocol in
-`architecture.md`: freeze producer/consumer/deletion scope, implement the positive typed owner, migrate all consumers,
-delete the displaced path, pass owner + CoreLoop gates, and stop before the next owner. A local regression or compile
-failure cannot authorize a caller-side fallback, threshold adjustment, compatibility alias, or case branch.
-
-1. Preserve all earlier artifacts as revision-scoped and do not call a model provider or live benchmark.
-2. Gate 0 is implemented as test-only Recording Provider instrumentation around the actual production
-   policy/CoreLoop/provider boundary. It is not a second request builder, evaluator, loop, or Runtime state; this
-   implementation status is not closure.
-3. **World cutover implemented and provider-free verified.** One `CanonicalPublicWorldProjection` value consumes fresh World + the existing
-   unnumbered `WorldDeliveryIndex` + complete ActionSpace; migrate every public ref/order consumer; physically remove
-   every alternative public allocator/orderer; pass the World owner-local gate.
-4. **Delivery admitted after joint fresh provider-free exit review:** media is pure E/N visual evidence;
-   DeliveryPlan-owned complete `ActionRouteFragment` records alone authorize Manifest/Catalog routes, with omitted
-   routes retained behind Store continuation/find-controls recovery.
-5. **Envelope complete/re-admitted after fresh provider-free review:** one `CanonicalProviderEnvelopeBinder`
-   closes the supported one-instruction/no-independent-history request; RequestAdmission accepts/returns that exact
-   envelope and deducts its reserve exactly once; the PydanticAI codec transports its typed projection. Re-run the
-   exact Recording Provider, default-capacity, totality, repair, two-turn, full, and static gates pass. Breakdown
-   diagnostics expose one input total and separate reserve/complete totals; producerless candidate metrics are absent.
-6. **Admitted after joint fresh provider-free exit review — vertical conservation:** the real Runtime/Recording
-   FunctionModel path passes request/response, annotated selected/unselected, sparse relation, ordered continuation,
-   private permutation, and capacity-coordinate properties. This does not yet authorize overall closure or a live run.
-7. **Completed:** all relevant C8–C12 properties, causal BrowserGym transition gates, benchmark finalization fault
-   gates, full pytest/static checks, repository negative searches, and a new revision-bound six-page provider-free
-   diagnostic pass.
-8. **Completed:** an independent fresh-context read-only review reconciles implementation, docs, schema version,
-   evidence, and status while keeping implementation-complete distinct from verified closure.
-9. Only after every active gate passes and the user explicitly authorizes it, run one non-Task-7 held-out live witness,
-   then a bounded W1b cohort. Task-7 replay alone cannot satisfy closure.
-
-The owner-local deletion details—short-token vetoes, duplicate role classifiers, `mandatory/protected` fan-out,
-candidate-implied region expansion, post-hoc route inference, compound form execution, lexical TaskGoal filtering,
-copied terminal vocabularies, and non-total benchmark finalization—remain in the architecture migration/deletion map.
-They must be removed in the stage that owns them; they are not separate implementation phases or permission to edit
-multiple owners at once.
+Passing this document's provider-free gates permits describing the thin result cutover as verified. It does not permit
+describing the whole GUI agent, BrowserGym causal transition, Planner admission, or benchmark campaign as closed. Those
+statuses change only when their own falsifiable gates and, where required, an explicitly authorized live benchmark
+pass without case-specific production branches.

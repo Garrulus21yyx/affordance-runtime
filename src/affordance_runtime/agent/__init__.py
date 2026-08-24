@@ -18,7 +18,6 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
-    ContinueDeliveryResult,
     DecisionKind,
     FinalResponse,
     LocalToolResult,
@@ -65,7 +64,6 @@ __all__ = [
     "CoreLoopStartError",
     "ControlTermination",
     "ControlTerminationKind",
-    "ContinueDeliveryResult",
     "CurrentFinding",
     "DefaultWorkspaceReducer",
     "DecisionCapability",

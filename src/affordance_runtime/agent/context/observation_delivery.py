@@ -9,19 +9,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
-from affordance_runtime.actions.paging import ActionDiscoveryMatch
 from affordance_runtime.agent.context.canonical_world_projection import (
     CanonicalPublicWorldProjection,
     PublicProvenance,
 )
-from affordance_runtime.agent.context.world_delivery_lens import WorldDeliveryLens
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
     PublicChangeKind,
     PublicWorldDelta,
 )
+from affordance_runtime.agent.decisions import LocalToolResult
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
-from affordance_runtime.agent.tool_result_projection import committed_public_evidence
 from affordance_runtime.agent.working_facts import is_public_scalar
 from affordance_runtime.agent.workspace import CurrentFinding
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
@@ -33,47 +31,11 @@ from affordance_runtime.world.public_semantic_digest import public_subject_seman
 
 _MAX_LOCAL_DELIVERY_RECORDS = 64
 _MAX_LOCAL_INFORMATION_ITEMS = 32
-_MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS = _MAX_LOCAL_INFORMATION_ITEMS
-_EFFECT_PAGE_SIZE = 8
-_DIRECTORY_PAGE_SIZE = 12
-
-
-class DeliveryContinuationOutcomeKind(StrEnum):
-    READY = "ready"
-    STALE = "stale"
-    EXHAUSTED = "exhausted"
-    UNSUPPORTED = "unsupported"
-
-
-@dataclass(frozen=True)
-class ContinuationKey:
-    """Complete private identity of one immutable delivery inventory."""
-
-    scope: str
-    kind: str
-    world_lineage: str = field(repr=False, metadata={"serialize": False})
-    action_lineage: str = field(repr=False, metadata={"serialize": False})
-    result_lineage: str = field(repr=False, metadata={"serialize": False})
-    order_digest: str = field(repr=False, metadata={"serialize": False})
-
-    def __post_init__(self) -> None:
-        if any(
-            not value.strip()
-            for value in (
-                self.scope,
-                self.kind,
-                self.world_lineage,
-                self.action_lineage,
-                self.result_lineage,
-                self.order_digest,
-            )
-        ):
-            raise ValueError("continuation key is incomplete")
 
 
 @dataclass(frozen=True)
 class DeliveryInventorySnapshot:
-    """One immutable current inventory owned by the delivery Store."""
+    """One immutable current-turn inventory used only by the request packer."""
 
     scope: str
     kind: str
@@ -82,7 +44,6 @@ class DeliveryInventorySnapshot:
     result_lineage: str = field(repr=False, compare=False)
     order_digest: str = field(repr=False, compare=False)
     records: tuple[object, ...] = field(repr=False, compare=False)
-    offset: int = field(default=0, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if (
@@ -97,76 +58,13 @@ class DeliveryInventorySnapshot:
                     self.order_digest,
                 )
             )
-            or type(self.offset) is not int
-            or not 0 <= self.offset <= len(self.records)
         ):
             raise ValueError("delivery inventory snapshot is invalid")
         object.__setattr__(self, "records", tuple(self.records))
 
     @property
     def remaining(self) -> tuple[object, ...]:
-        return self.records[self.offset :]
-
-    @property
-    def key(self) -> ContinuationKey:
-        return ContinuationKey(
-            self.scope,
-            self.kind,
-            self.world_lineage,
-            self.action_lineage,
-            self.result_lineage,
-            self.order_digest,
-        )
-
-
-@dataclass(frozen=True)
-class DeliveryContinuationCapability:
-    """Public bounded scope plus its Store-private exact transition binding."""
-
-    scope: str
-    continuation_available: bool
-    admitted_count: int
-    inventory_size: int
-    world_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
-    action_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
-    result_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
-    order_digest: str = field(repr=False, compare=False, metadata={"serialize": False})
-    offset: int = field(repr=False, compare=False, metadata={"serialize": False})
-    kind: str = field(repr=False, compare=False, metadata={"serialize": False})
-
-    def __post_init__(self) -> None:
-        if (
-            not self.scope.strip()
-            or not self.kind.strip()
-            or type(self.admitted_count) is not int
-            or type(self.inventory_size) is not int
-            or type(self.offset) is not int
-            or min(self.admitted_count, self.inventory_size, self.offset) < 0
-            or self.offset + self.admitted_count > self.inventory_size
-            or self.continuation_available
-            != (self.offset + self.admitted_count < self.inventory_size)
-        ):
-            raise ValueError("delivery continuation capability is invalid")
-
-    @property
-    def key(self) -> ContinuationKey:
-        return ContinuationKey(
-            self.scope,
-            self.kind,
-            self.world_lineage,
-            self.action_lineage,
-            self.result_lineage,
-            self.order_digest,
-        )
-
-
-@dataclass(frozen=True)
-class DeliveryContinuationOutcome:
-    kind: DeliveryContinuationOutcomeKind
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.kind, DeliveryContinuationOutcomeKind):
-            raise TypeError("delivery continuation outcome must be typed")
+        return self.records
 
 
 class InformationDeltaKind(StrEnum):
@@ -215,106 +113,28 @@ class InformationDelta:
 
 
 @dataclass(frozen=True)
-class PublicResultRecord:
-    """One canonical model-readable result atom owned by ObservationDelivery."""
-
-    operation: str
-    source_scope: str
-    public_value: Mapping[str, object]
-    digest: str = field(default="", repr=False, compare=False, metadata={"serialize": False})
-    rendered_cost_bytes: int = field(default=0, repr=False, compare=False, metadata={"serialize": False})
-
-    def __post_init__(self) -> None:
-        if not self.operation.strip() or not self.source_scope.strip():
-            raise ValueError("public result record requires operation and source scope")
-        value = freeze_json(dict(self.public_value))
-        public = {
-            "operation": self.operation,
-            "source": self.source_scope,
-            "value": to_json_compatible(value),
-        }
-        expected = _public_digest(public)
-        if self.digest and self.digest != expected:
-            raise ValueError("public result record digest does not bind its canonical value")
-        cost = len(
-            json.dumps(public, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        )
-        if self.rendered_cost_bytes not in {0, cost}:
-            raise ValueError("public result record cost does not bind its canonical value")
-        object.__setattr__(self, "public_value", value)
-        object.__setattr__(self, "digest", expected)
-        object.__setattr__(self, "rendered_cost_bytes", cost)
-
-    def to_public_value(self) -> Mapping[str, object]:
-        return {
-            "operation": self.operation,
-            "source": self.source_scope,
-            "value": to_json_compatible(self.public_value),
-        }
-
-
-@dataclass(frozen=True)
-class PublicResultInventory:
-    """Current ordered local-result inventory; records remain private until packed."""
-
-    world_observation_id: str = field(repr=False, compare=False, metadata={"serialize": False})
-    result_lineage: str = field(repr=False, compare=False, metadata={"serialize": False})
-    records: tuple[PublicResultRecord, ...] = field(default=(), repr=False, compare=False, metadata={"serialize": False})
-    offset: int = field(default=0, repr=False, compare=False, metadata={"serialize": False})
-    visible_record_digests: tuple[str, ...] = field(
-        default=(), repr=False, compare=False, metadata={"serialize": False}
-    )
-
-    def __post_init__(self) -> None:
-        records = tuple(self.records)
-        visible = tuple(self.visible_record_digests)
-        record_digests = tuple(item.digest for item in records)
-        if (
-            not self.world_observation_id.strip()
-            or not self.result_lineage.startswith("sha256:")
-            or any(not isinstance(item, PublicResultRecord) for item in records)
-            or len(set(record_digests)) != len(record_digests)
-            or not 0 <= self.offset <= len(records)
-            or any(item not in record_digests for item in visible)
-            or len(set(visible)) != len(visible)
-        ):
-            raise ValueError("public result inventory is invalid")
-        object.__setattr__(self, "records", records)
-        object.__setattr__(self, "visible_record_digests", visible)
-
-    @property
-    def remaining(self) -> tuple[PublicResultRecord, ...]:
-        return self.records[self.offset :]
-
-    @property
-    def order_digest(self) -> str:
-        return _public_digest(tuple(item.digest for item in self.records))
-
-    @property
-    def visible_digest(self) -> str:
-        return _public_digest(self.visible_record_digests)
-
-
-@dataclass(frozen=True)
 class LocalDeliveryRecord:
+    """Bounded Monitor receipt; never a model-visible result body."""
+
     operation: str
     world_digest: str
     arguments_digest: str
     result_digest: str
-    records: tuple[PublicResultRecord, ...]
+    item_digests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        records = tuple(self.records)
+        item_digests = tuple(self.item_digests)
         if (
             not self.operation.strip()
             or not all(
                 value.startswith("sha256:")
                 for value in (self.world_digest, self.arguments_digest, self.result_digest)
             )
-            or any(not isinstance(item, PublicResultRecord) for item in records)
+            or len(item_digests) > _MAX_LOCAL_INFORMATION_ITEMS
+            or any(not item.startswith("sha256:") for item in item_digests)
         ):
             raise ValueError("local delivery record is invalid")
-        object.__setattr__(self, "records", records)
+        object.__setattr__(self, "item_digests", item_digests)
 
 
 @dataclass(frozen=True)
@@ -586,7 +406,6 @@ class PublicEffectHeader:
     caused_by: str
     dispatch_status: DispatchStatus
     transition: str
-    continuation_available: bool
 
     def __post_init__(self) -> None:
         if (
@@ -603,7 +422,6 @@ class ChangedRegion:
     region_ref: str
     version: int
     cached_outline: tuple[str, ...]
-    continuation_available: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -636,7 +454,6 @@ class PageOutlineEntry:
 class RecoveryDirectoryEntry:
     region_ref: str
     version: int
-    continuation_available: bool = True
     operations: tuple[str, ...] = ("read_region", "search_page_content")
 
     def __post_init__(self) -> None:
@@ -653,24 +470,6 @@ class RecoveryDirectoryEntry:
 
 
 @dataclass(frozen=True)
-class LocalSearchHit:
-    """One current public search match and its directly consumable region."""
-
-    world_observation_id: str = field(repr=False, compare=False, metadata={"serialize": False})
-    match_ref: str
-    region_ref: str
-
-    def __post_init__(self) -> None:
-        if (
-            not self.world_observation_id.strip()
-            or not PublicRefCodec.accepts(self.match_ref)
-            or PublicRefCodec.decode(self.match_ref).kind is PublicRefKind.REGION
-            or not PublicRefCodec.accepts(self.region_ref, expected=PublicRefKind.REGION)
-        ):
-            raise ValueError("local search follow-up requires one current match and region")
-
-
-@dataclass(frozen=True)
 class ObservationDelivery:
     world_observation_id: str
     effect_header: PublicEffectHeader | None
@@ -679,7 +478,6 @@ class ObservationDelivery:
     changed_regions: tuple[ChangedRegion, ...]
     page_outline: tuple[PageOutlineEntry, ...]
     recovery_directory: tuple[RecoveryDirectoryEntry, ...]
-    search_follow_ups: tuple[LocalSearchHit, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.world_observation_id.strip():
@@ -690,7 +488,6 @@ class ObservationDelivery:
             ("changed_regions", ChangedRegion),
             ("page_outline", PageOutlineEntry),
             ("recovery_directory", RecoveryDirectoryEntry),
-            ("search_follow_ups", LocalSearchHit),
         ):
             values = tuple(getattr(self, name))
             if any(not isinstance(item, expected) for item in values):
@@ -699,45 +496,15 @@ class ObservationDelivery:
 
 
 @dataclass(frozen=True)
-class StoredActionQuery:
-    """Runtime-private complete ordered result of one current control query."""
-
-    query: str
-    world_lineage: str
-    action_space_lineage: str
-    matches: tuple[ActionDiscoveryMatch, ...]
-
-    def __post_init__(self) -> None:
-        if (
-            not self.query.strip()
-            or not self.world_lineage.strip()
-            or not self.action_space_lineage.strip()
-            or any(not isinstance(item, ActionDiscoveryMatch) for item in self.matches)
-        ):
-            raise ValueError("stored action query requires current typed authority")
-        object.__setattr__(self, "matches", tuple(self.matches))
-
-
-@dataclass(frozen=True)
 class ObservationDeliveryStore:
-    """Own the bounded lifecycle of public information delivered to the model."""
+    """Keep only GUI-effect recall and bounded Monitor digests.
+
+    Provider history owns completed tool call/result pairs. Local tool owners own
+    result bodies and any tool-local cursor; neither is persisted here.
+    """
 
     latest_effect: LatestEffect | None = None
     local_deliveries: tuple[LocalDeliveryRecord, ...] = ()
-    public_result_inventory: PublicResultInventory | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
-    active_read: WorldDeliveryLens | None = field(default=None, repr=False, compare=False)
-    cursor_progress: tuple[DeliveryContinuationCapability, ...] = field(
-        default=(), repr=False, compare=False, metadata={"serialize": False}
-    )
-    action_query: StoredActionQuery | None = field(default=None, repr=False, compare=False)
-    search_follow_ups: tuple[LocalSearchHit, ...] = field(
-        default=(), repr=False, compare=False, metadata={"serialize": False}
-    )
-    foreground_request: ContinuationKey | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
 
     def __post_init__(self) -> None:
         records = tuple(self.local_deliveries)
@@ -746,292 +513,40 @@ class ObservationDeliveryStore:
         ):
             raise ValueError("local delivery lifecycle exceeds its fixed bound")
         object.__setattr__(self, "local_deliveries", records)
-        if self.public_result_inventory is not None and not isinstance(
-            self.public_result_inventory, PublicResultInventory
-        ):
-            raise TypeError("observation delivery public results must be a typed inventory")
-        if self.active_read is not None and not isinstance(self.active_read, WorldDeliveryLens):
-            raise TypeError("observation delivery active read must be a private typed cursor")
-        cursor_progress = tuple(self.cursor_progress)
-        if (
-            any(not isinstance(item, DeliveryContinuationCapability) for item in cursor_progress)
-            or len({item.key for item in cursor_progress}) != len(cursor_progress)
-            or any(item.admitted_count != 0 for item in cursor_progress)
-        ):
-            raise ValueError("observation delivery cursor progress is invalid")
-        object.__setattr__(self, "cursor_progress", cursor_progress)
-        if self.action_query is not None and not isinstance(self.action_query, StoredActionQuery):
-            raise TypeError("observation delivery action query must be private typed inventory")
-        search_follow_ups = tuple(self.search_follow_ups)
-        if (
-            len(search_follow_ups) > _MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS
-            or any(not isinstance(item, LocalSearchHit) for item in search_follow_ups)
-            or len({item.region_ref for item in search_follow_ups}) != len(search_follow_ups)
-        ):
-            raise ValueError("local search follow-up inventory is invalid")
-        object.__setattr__(self, "search_follow_ups", search_follow_ups)
-        if self.foreground_request is not None and (
-            not isinstance(self.foreground_request, ContinuationKey)
-            or not any(item.key == self.foreground_request for item in cursor_progress)
-        ):
-            raise ValueError("foreground continuation must identify a surviving cursor")
-
-    def with_active_read(self, lens: WorldDeliveryLens | None) -> "ObservationDeliveryStore":
-        """Replace only the active local-read cursor; effects/directories survive."""
-
-        if lens is not None and not isinstance(lens, WorldDeliveryLens):
-            raise TypeError("active read replacement must be a typed private cursor")
-        return ObservationDeliveryStore(
-            latest_effect=self.latest_effect,
-            local_deliveries=self.local_deliveries,
-            public_result_inventory=self.public_result_inventory,
-            active_read=lens,
-            cursor_progress=self.cursor_progress,
-            action_query=self.action_query,
-            search_follow_ups=self.search_follow_ups,
-            foreground_request=self.foreground_request,
-        )
-
-    def with_visible_public_results(
-        self,
-        records: tuple[PublicResultRecord, ...],
-    ) -> "ObservationDeliveryStore":
-        """Record exactly the result prefix admitted into one physical model turn."""
-
-        selected = tuple(records)
-        inventory = self.public_result_inventory
-        if inventory is None:
-            if selected:
-                raise ValueError("visible public results require a current Store inventory")
-            return self
-        if any(not isinstance(item, PublicResultRecord) for item in selected):
-            raise TypeError("visible public results must be typed Store records")
-        current_prefix = inventory.remaining[: len(selected)]
-        preceding_prefix = inventory.records[
-            max(0, inventory.offset - len(selected)) : inventory.offset
-        ]
-        if selected != current_prefix and selected != preceding_prefix:
-            raise ValueError("visible public results must be the current inventory prefix")
-        return ObservationDeliveryStore(
-            latest_effect=self.latest_effect,
-            local_deliveries=self.local_deliveries,
-            public_result_inventory=replace(
-                inventory,
-                visible_record_digests=tuple(item.digest for item in selected),
-            ),
-            active_read=self.active_read,
-            cursor_progress=self.cursor_progress,
-            action_query=self.action_query,
-            search_follow_ups=self.search_follow_ups,
-            foreground_request=self.foreground_request,
-        )
-
-    @property
-    def visible_public_result_digest(self) -> str:
-        inventory = self.public_result_inventory
-        return inventory.visible_digest if inventory is not None else _public_digest(())
 
     def for_world(self, world_observation_id: str) -> "ObservationDeliveryStore":
-        """Normalize every World-lineaged Store field before retaining identity."""
-
         if not world_observation_id.strip():
             raise ValueError("current World identity is required")
-        active_read = self.active_read
-        if active_read is not None and active_read.world_observation_id != world_observation_id:
-            active_read = None
-        search_follow_ups = tuple(
-            item for item in self.search_follow_ups if item.world_observation_id == world_observation_id
-        )
-        public_results = self.public_result_inventory
-        if public_results is not None and public_results.world_observation_id != world_observation_id:
-            public_results = None
-        cursor_progress = tuple(
-            item for item in self.cursor_progress if item.world_lineage == world_observation_id
-        )
-        cursor_keys = {item.key for item in cursor_progress}
-        foreground_request = (
-            self.foreground_request if self.foreground_request in cursor_keys else None
-        )
-        action_query = self.action_query
-        if action_query is not None and action_query.world_lineage != world_observation_id:
-            action_query = None
-        if (
-            active_read is self.active_read
-            and search_follow_ups == self.search_follow_ups
-            and public_results is self.public_result_inventory
-            and cursor_progress == self.cursor_progress
-            and foreground_request is self.foreground_request
-            and action_query is self.action_query
-        ):
-            return self
-        return ObservationDeliveryStore(
-            latest_effect=self.latest_effect,
-            local_deliveries=self.local_deliveries,
-            public_result_inventory=public_results,
-            active_read=active_read,
-            cursor_progress=cursor_progress,
-            action_query=action_query,
-            search_follow_ups=search_follow_ups,
-            foreground_request=foreground_request,
-        )
-
-    def cursor(self, key: ContinuationKey) -> DeliveryContinuationCapability | None:
-        if not isinstance(key, ContinuationKey):
-            raise TypeError("continuation cursor lookup requires a complete key")
-        return next((item for item in self.cursor_progress if item.key == key), None)
-
-    def active_read_continuation_capabilities(
-        self,
-    ) -> tuple[DeliveryContinuationCapability, ...]:
-        capabilities = []
-        if self.active_read is not None and self.active_read.next_cursor:
-            lens_digest = _public_digest(
-                (
-                    self.active_read.world_observation_id,
-                    self.active_read.kind,
-                    self.active_read.selected_region_key,
-                    self.active_read.query,
-                    self.active_read.next_cursor,
-                )
-            )
-            capabilities.append(
-                DeliveryContinuationCapability(
-                    "active_read",
-                    True,
-                    0,
-                    1,
-                    self.active_read.world_observation_id,
-                    "local_read",
-                    lens_digest,
-                    lens_digest,
-                    0,
-                    "active_read",
-                )
-            )
-        return tuple(capabilities)
-
-    def continue_delivery(
-        self,
-        capability: DeliveryContinuationCapability,
-        *,
-        world_observation_id: str,
-    ) -> DeliveryContinuationOutcome:
-        if not world_observation_id.strip():
-            raise ValueError("continuation current World identity is required")
-        if capability.world_lineage != world_observation_id:
-            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
-        if capability.scope == "active_read":
-            if self.active_read is None or not self.active_read.next_cursor:
-                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
-            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.READY)
-        if capability.scope == "public_result":
-            inventory = self.public_result_inventory
-            if inventory is None:
-                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.UNSUPPORTED)
-            if (
-                inventory.world_observation_id,
-                inventory.result_lineage,
-                inventory.order_digest,
-                inventory.offset,
-            ) != (
-                capability.world_lineage,
-                capability.result_lineage,
-                capability.order_digest,
-                capability.offset,
-            ):
-                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
-        else:
-            progress = self.cursor(capability.key)
-            if progress is not None and (
-                progress.world_lineage,
-                progress.action_lineage,
-                progress.result_lineage,
-                progress.order_digest,
-            ) == (
-                capability.world_lineage,
-                capability.action_lineage,
-                capability.result_lineage,
-                capability.order_digest,
-            ) and progress.offset != capability.offset:
-                return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.STALE)
-        next_offset = capability.offset + capability.admitted_count
-        if next_offset >= capability.inventory_size:
-            return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.EXHAUSTED)
-        return DeliveryContinuationOutcome(DeliveryContinuationOutcomeKind.READY)
+        return self
 
     def reduce(self, step: object, *, step_index: int) -> DeliveryTransition:
         if type(step).__name__ != "StepResult":
             raise TypeError("delivery reducer requires one committed StepResult")
-        external = self
-        model_delivery = getattr(step, "model_delivery", None)
-        if model_delivery is not None:
-            external = external.with_visible_public_results(
-                tuple(getattr(model_delivery, "public_results", ()))
-            )
         after_world = getattr(step, "after_world", None)
         world_observation_id = str(getattr(after_world, "observation_id", ""))
-        external = external.for_world(world_observation_id)
+        external = self.for_world(world_observation_id)
         external = external._apply_effect(step, step_index=step_index)
         decision = getattr(step, "decision", None)
-        continuation = getattr(decision, "continuation", None)
-        if continuation is not None:
-            admitted_capabilities = tuple(
-                getattr(model_delivery, "continuation_capabilities", ())
-            )
-            if model_delivery is not None and continuation not in admitted_capabilities:
-                raise ValueError("committed continuation was not admitted by the exact model turn")
-            outcome = external.continue_delivery(
-                continuation,
-                world_observation_id=world_observation_id,
-            )
-            if outcome.kind is not DeliveryContinuationOutcomeKind.READY:
-                raise ValueError(f"committed continuation is {outcome.kind.value}")
-            external = external._apply_continuation(continuation)
-        delivery_lens = getattr(decision, "delivery_lens", None)
-        if delivery_lens is not None:
-            if delivery_lens.world_observation_id != world_observation_id:
-                raise ValueError("committed local read belongs to a stale World")
-            external = external.with_active_read(delivery_lens)
-        operation = str(getattr(decision, "tool_name", ""))
-        arguments = getattr(decision, "arguments", None)
-        evidence = committed_public_evidence(step)
         discovery = getattr(step, "action_page_result", None)
-        if not operation and discovery is not None:
+        if isinstance(decision, LocalToolResult):
+            operation = decision.tool_name
+            arguments = decision.arguments
+            result = decision.result
+        elif discovery is not None:
             operation = "find_controls"
             arguments = {
                 "query": getattr(decision, "query", ""),
-                "continuation_scope": getattr(decision, "continuation_scope", ""),
             }
-
-        if evidence is None:
-            if discovery is None:
-                return DeliveryTransition(external, None, getattr(step, "runtime_failure", None))
             result = discovery.to_public_value()
         else:
-            result = evidence.value
+            return DeliveryTransition(external, None, getattr(step, "runtime_failure", None))
 
         world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
         arguments_digest = _public_digest(arguments or {})
         result_digest = _public_digest(result)
-        items = (
-            evidence.records
-            if evidence is not None
-            else tuple(result.get("matches", ()))
-            if discovery is not None
-            else ()
-        )
-        effective_operation = operation
-        source_scope = evidence.source_scope if evidence is not None else "action_query"
-        current_inventory = external.public_result_inventory
-        if (
-            evidence is not None
-            and (evidence.append_to_inventory or evidence.reuse_inventory)
-            and current_inventory is not None
-            and current_inventory.records
-        ):
-            effective_operation = current_inventory.records[0].operation
-            source_scope = current_inventory.records[0].source_scope
-        result_records = tuple(PublicResultRecord(effective_operation, source_scope, item) for item in items)
+        item_digests = tuple(dict.fromkeys(_public_digest(item) for item in _monitor_items(result)))[
+            :_MAX_LOCAL_INFORMATION_ITEMS
+        ]
         exact = next(
             (
                 item for item in reversed(external.local_deliveries)
@@ -1054,132 +569,36 @@ class ObservationDeliveryStore:
             digest
             for record in external.local_deliveries
             if record.world_digest == world_digest
-            for item in record.records
-            for digest in (item.digest,)
+            for digest in record.item_digests
         }
-        if current_inventory is not None and current_inventory.world_observation_id == str(
-            getattr(getattr(step, "after_world", None), "observation_id", "")
-        ):
-            delivered.update(item.digest for item in current_inventory.records)
-        new_records = tuple(item for item in result_records if item.digest not in delivered)
-        if new_records:
+        new_digests = tuple(item for item in item_digests if item not in delivered)
+        if new_digests:
             kind = InformationDeltaKind.NEW_INFORMATION
-        elif not items:
+        elif not item_digests:
             kind = InformationDeltaKind.NO_MATCHES
         else:
             kind = InformationDeltaKind.NO_NEW_INFORMATION
-        append_page = (
-            evidence is not None
-            and evidence.append_to_inventory
-            and current_inventory is not None
-            and current_inventory.world_observation_id == str(getattr(getattr(step, "after_world", None), "observation_id", ""))
-            and current_inventory.records
-            and current_inventory.records[0].operation == effective_operation
-            and current_inventory.records[0].source_scope == source_scope
-        )
-        inventory_records = (
-            current_inventory.records
-            if evidence is not None and evidence.reuse_inventory and current_inventory is not None
-            else
-            _unique_public_result_records((*current_inventory.records, *result_records))
-            if append_page and current_inventory is not None
-            else result_records
-        )
-        public_inventory = (
-            PublicResultInventory(
-                str(getattr(getattr(step, "after_world", None), "observation_id", "")),
-                _public_digest(tuple(item.digest for item in inventory_records)),
-                inventory_records,
-                current_inventory.offset
-                if append_page and current_inventory is not None
-                else 0,
-                current_inventory.visible_record_digests
-                if append_page and current_inventory is not None
-                else (),
-            )
-            if inventory_records and not (evidence is not None and evidence.reuse_inventory)
-            else current_inventory
-            if evidence is not None and evidence.reuse_inventory
-            else None
-        )
-        if discovery is not None:
-            public_inventory = current_inventory
         delta = InformationDelta(
             kind,
             operation,
             world_digest,
             arguments_digest,
             result_digest,
-            public_inventory.order_digest if public_inventory is not None else result_digest,
-            tuple(item.digest for item in new_records) if kind is InformationDeltaKind.NEW_INFORMATION else (),
+            _public_digest(item_digests),
+            new_digests if kind is InformationDeltaKind.NEW_INFORMATION else (),
         )
-        record = LocalDeliveryRecord(operation, world_digest, arguments_digest, result_digest, result_records)
-        query_inventory = external.action_query
-        if discovery is not None and discovery.query:
-            query_inventory = StoredActionQuery(
-                discovery.query,
-                discovery.private_world_lineage,
-                discovery.private_action_lineage,
-                discovery.private_inventory,
-            )
-        search_follow_ups = external.search_follow_ups
-        if evidence is not None and result.get("kind") == "Matches":
-            world_observation_id = (
-                external.active_read.world_observation_id
-                if external.active_read is not None
-                else str(getattr(getattr(step, "after_world", None), "observation_id", ""))
-            )
-            incoming = _local_search_hits(items, world_observation_id)
-            by_region = {item.region_ref: item for item in search_follow_ups}
-            for item in incoming:
-                by_region.pop(item.region_ref, None)
-                by_region[item.region_ref] = item
-            search_follow_ups = tuple(by_region.values())[-_MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS:]
+        record = LocalDeliveryRecord(
+            operation,
+            world_digest,
+            arguments_digest,
+            result_digest,
+            item_digests,
+        )
         next_store = ObservationDeliveryStore(
             latest_effect=external.latest_effect,
             local_deliveries=(*external.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:],
-            public_result_inventory=public_inventory,
-            active_read=external.active_read,
-            cursor_progress=external.cursor_progress,
-            action_query=query_inventory,
-            search_follow_ups=search_follow_ups,
-            foreground_request=None if discovery is not None else external.foreground_request,
         )
         return DeliveryTransition(next_store, delta, getattr(step, "runtime_failure", None))
-
-    def _apply_continuation(
-        self,
-        capability: DeliveryContinuationCapability,
-    ) -> "ObservationDeliveryStore":
-        if capability.scope == "active_read":
-            return self
-        next_offset = capability.offset + capability.admitted_count
-        progress = DeliveryContinuationCapability(
-            capability.scope,
-            next_offset < capability.inventory_size,
-            0,
-            capability.inventory_size,
-            capability.world_lineage,
-            capability.action_lineage,
-            capability.result_lineage,
-            capability.order_digest,
-            next_offset,
-            capability.kind,
-        )
-        next_progress = tuple(
-            item for item in self.cursor_progress if item.scope != capability.scope
-        )
-        next_progress = (*next_progress, progress)
-        return replace(
-            self,
-            public_result_inventory=(
-                replace(self.public_result_inventory, offset=next_offset)
-                if self.public_result_inventory is not None and capability.scope == "public_result"
-                else self.public_result_inventory
-            ),
-            cursor_progress=next_progress,
-            foreground_request=progress.key,
-        )
 
     def _apply_effect(self, step: object, *, step_index: int) -> "ObservationDeliveryStore":
         batch = getattr(step, "execution_receipts", None)
@@ -1219,17 +638,14 @@ class ObservationDeliveryStore:
         )
 
 
-def _unique_public_result_records(
-    records: tuple[PublicResultRecord, ...],
-) -> tuple[PublicResultRecord, ...]:
-    unique = []
-    seen: set[str] = set()
-    for record in records:
-        if record.digest in seen:
-            continue
-        seen.add(record.digest)
-        unique.append(record)
-    return tuple(unique)
+def _monitor_items(result: Mapping[str, object]) -> tuple[object, ...]:
+    """Select bounded novelty atoms without retaining the result body."""
+
+    for field_name in ("items", "matches"):
+        values = result.get(field_name)
+        if isinstance(values, tuple | list):
+            return tuple(values)
+    return (result,)
 
 
 def _public_digest(value: object) -> str:
@@ -1329,7 +745,6 @@ def project_observation_delivery(
                 latest.caused_by,
                 latest.dispatch_status,
                 latest.inventory.transition,
-                len(latest.inventory.atoms) > _EFFECT_PAGE_SIZE,
             )
             if latest is not None
             else None
@@ -1339,38 +754,7 @@ def project_observation_delivery(
         changed_regions,
         page_outline,
         recovery,
-        tuple(
-            item for item in store.search_follow_ups
-            if (
-                item.world_observation_id == observation.observation_id
-                and item.region_ref in projection.region_refs.values()
-                and item.match_ref in projection.public_refs
-            )
-        ),
     )
-
-
-def _local_search_hits(
-    items: tuple[Mapping[str, object], ...],
-    world_observation_id: str,
-) -> tuple[LocalSearchHit, ...]:
-    if not world_observation_id.strip():
-        return ()
-    hits: list[LocalSearchHit] = []
-    seen_regions: set[str] = set()
-    for item in items:
-        region_ref = str(item.get("region_ref", ""))
-        match_ref = str(item.get("match_ref") or item.get("node_ref") or item.get("evidence_ref") or "")
-        if (
-            region_ref in seen_regions
-            or not PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION)
-            or not PublicRefCodec.accepts(match_ref)
-            or PublicRefCodec.decode(match_ref).kind is PublicRefKind.REGION
-        ):
-            continue
-        seen_regions.add(region_ref)
-        hits.append(LocalSearchHit(world_observation_id, match_ref, region_ref))
-    return tuple(hits[:_MAX_LOCAL_SEARCH_FOLLOW_UP_REGIONS])
 
 
 def _current_findings(
@@ -1473,7 +857,6 @@ def _changed_region(
         projection.region_refs[region.key],
         version.version,
         version.cached_outline,
-        bool(region.member_structure_ids or region.member_target_ids or region.member_fact_ids),
     )
 
 

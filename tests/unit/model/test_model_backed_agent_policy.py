@@ -6,15 +6,10 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.agent import (
     Abort,
-    ContinueDeliveryResult,
     RunStatus,
     SelectAction,
 )
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
-from affordance_runtime.agent.context.observation_delivery import (
-    DeliveryContinuationCapability,
-    ObservationDeliveryStore,
-)
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -61,22 +56,6 @@ def _decision_result(decision, metadata: ModelMetadata | None = None):
     )
 
 
-@dataclass
-class ContinuationPort:
-    capability: object
-
-    async def generate(self, request):
-        decision = ContinueDeliveryResult(
-            request.context_id,
-            "read_next_page",
-            {"scope": "effect"},
-            {"continuation_available": False},
-            tool_call_id="provider-free:continuation",
-            continuation=self.capability,
-        )
-        return ModelInvocationResult(output=ResolvedModelDecision(decision))
-
-
 def test_model_request_has_one_typed_context_authority() -> None:
     async def scenario() -> None:
         context = await _context()
@@ -87,47 +66,6 @@ def test_model_request_has_one_typed_context_authority() -> None:
         assert port.request.context_id == context.context_id
         assert not hasattr(port.request, "serialized_context")
         assert not hasattr(port.request, "decision_schema")
-
-    asyncio.run(scenario())
-
-
-def test_private_continuation_store_commits_only_after_policy_core_step() -> None:
-    async def scenario() -> None:
-        task = _task()
-        world = _world("continuation-commit", False)
-        owner = ObservationDeliveryStore()
-        capability = DeliveryContinuationCapability(
-            "effect",
-            True,
-            1,
-            2,
-            world.observation_id,
-            "action-lineage",
-            "effect-lineage",
-            "order-digest",
-            0,
-            "effect_actions",
-        )
-        policy = ModelBackedAgentPolicy(ContinuationPort(capability))
-        runtime = TargetRuntime(
-            AgentDecisionPorts(policy),
-            SharedActionOutcomeProjector(),
-            SharedTaskEvaluator(),
-            goal_compiler=NotRequiredGoalCompiler("continuation_commit_test"),
-        )
-        loop = runtime.build_loop()
-        environment = ScriptedEnvironment(initial_observation=world)
-        state = await loop.initialize(environment, task)
-        state.delivery_store = owner
-        prior_store = state.delivery_store
-
-        result = await loop.step(environment, task, state)
-
-        assert state.delivery_store is prior_store
-        loop._commit_step(state, result)
-        assert state.delivery_store.foreground_request == capability.key
-        assert state.delivery_store.cursor(capability.key).offset == 1
-        assert state.last_step is result
 
     asyncio.run(scenario())
 

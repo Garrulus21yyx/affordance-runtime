@@ -553,14 +553,11 @@ def test_gate_3_representation_repair_has_its_own_admitted_exact_envelope() -> N
     asyncio.run(scenario())
 
 
-def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_routes() -> None:
+def test_gate_2_gui_action_uses_current_catalog_without_delivery_continuation() -> None:
     async def scenario() -> None:
         before = _fanout_world("gate-2-fanout-before", False)
         after = _fanout_world("gate-2-fanout-after", True)
-        recorder = RecordingPydanticModel(
-            [("action_results_next_page", {}), "first_gui_action"],
-            scripted_phases=["continuation", "ordinary"],
-        )
+        recorder = RecordingPydanticModel(["first_gui_action"])
         environment = ScriptedEnvironment(
             initial_observation=before,
             post_observations=(after,),
@@ -573,33 +570,16 @@ def test_gate_2_two_turn_production_path_advances_store_and_records_new_suffix_r
         assert state.status is RunStatus.DONE
         assert state.execution_count == 1
         assert state.delivery_store.latest_effect is not None
-        assert recorder.calls == 2
-        assert "action_results_next_page" in recorder.offered_tools[0]
+        assert recorder.calls == 1
+        assert "action_results_next_page" not in recorder.offered_tools[0]
         first = json.loads(_actual_public_text(recorder.records[0]))["observation"]
-        second = json.loads(_actual_public_text(recorder.records[1]))["observation"]
-        first_routes = set(re.findall(r"rank=\d+ \[(E\d+)\]", first))
-        second_routes = set(re.findall(r"rank=\d+ \[(E\d+)\]", second))
-        assert first_routes
-        assert second_routes
-        assert second_routes - first_routes
-        assert "action_results_next_page" in recorder.offered_tools[0]
-        assert recorder.records[0].scripted_phase == "continuation"
-        assert recorder.records[1].scripted_phase == "ordinary"
-        paired = normalize_recorded_provider_input(recorder.records[1])["messages"]
-        prior_call = paired[-2]["parts"][0]
-        paired_result = paired[-1]["parts"][0]
-        assert prior_call["part_kind"] == "tool-call"
-        assert paired_result["part_kind"] == "tool-return"
-        assert prior_call["tool_call_id"] == paired_result["tool_call_id"] == "recording-call:1"
-        assert paired_result["tool_name"] == prior_call["tool_name"]
-        assert paired[-1]["parts"][1]["part_kind"] == "user-prompt"
+        assert set(re.findall(r"rank=\d+ \[(E\d+)\]", first))
         envelopes = policy.port.envelope_history
-        assert len(envelopes) == 2
-        assert envelopes[0].envelope_id != envelopes[1].envelope_id
+        assert len(envelopes) == 1
         assert tuple(normalize_recorded_provider_input(item) for item in recorder.records) == tuple(
             item.model_boundary_projection() for item in envelopes
         )
-        assert policy.port.last_generation_attempts[0].envelope_id == envelopes[-1].envelope_id
+        assert policy.port.last_generation_attempts[0].envelope_id == envelopes[0].envelope_id
         assert recorder.calls == len(envelopes)
         recorded_public = "\n".join(
             _actual_public_text(record)

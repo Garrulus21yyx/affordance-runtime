@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from types import SimpleNamespace
 
 import pytest
@@ -14,7 +13,6 @@ from affordance_runtime.agent.context.action_candidate_projection import (
 )
 from affordance_runtime.agent.context.budgets import ModelRequestBudget
 from affordance_runtime.agent.context.observation_delivery import DeliveryInventorySnapshot
-from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.request_admission import ModelRequestCapacityError
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 
@@ -91,22 +89,22 @@ def test_inventory_cardinality_never_creates_more_than_one_group_per_protocol_ki
         "actions:test",
         "world:test",
         obligations,
-        obligations[0].continuation_scope if obligations else None,
+        obligations[0].scope if obligations else None,
     )
 
     assert len(plan.obligations) == (len(DeliveryObligationKind) if count else 0)
     assert len({item.kind for item in plan.obligations}) == len(plan.obligations)
     assert all(len(item.records) == count for item in plan.obligations)
-    assert plan.foreground_scope == (DeliveryObligationKind.PUBLIC_RESULT.value if count else None)
+    assert plan.foreground_scope == (tuple(DeliveryObligationKind)[0].value if count else None)
 
 
 @pytest.mark.parametrize("group_count", range(2, len(DeliveryObligationKind) + 1))
-def test_multi_group_cursor_pages_and_suffix_reconstruct_each_authority_inventory(group_count: int) -> None:
+def test_multi_group_current_turn_prefixes_reconstruct_each_inventory(group_count: int) -> None:
     obligations = tuple(
         _obligation(kind, _BOUND + 3, priority)
         for priority, kind in enumerate(tuple(DeliveryObligationKind)[:group_count])
     )
-    plan = ActionDeliveryPlan("actions:test", "world:test", obligations, obligations[0].continuation_scope)
+    plan = ActionDeliveryPlan("actions:test", "world:test", obligations, obligations[0].scope)
 
     for obligation in plan.obligations:
         pages = tuple(
@@ -119,23 +117,28 @@ def test_multi_group_cursor_pages_and_suffix_reconstruct_each_authority_inventor
         assert obligation.remaining == obligation.records
 
 
-def test_explicit_private_continuation_scope_becomes_next_foreground() -> None:
+def test_foreground_is_derived_from_priority_without_private_request_state() -> None:
     first_kind, selected_kind = tuple(DeliveryObligationKind)[:2]
     obligations = (
         _obligation(first_kind, 3, 0),
         _obligation(selected_kind, 3, 1),
     )
 
+    with pytest.raises(ValueError, match="mechanically derived"):
+        ActionDeliveryPlan(
+            "actions:test",
+            "world:test",
+            obligations,
+            selected_kind.value,
+        )
     plan = ActionDeliveryPlan(
         "actions:test",
         "world:test",
         obligations,
-        selected_kind.value,
-        requested_key=obligations[1].inventory.key,
+        first_kind.value,
     )
-
-    assert plan.foreground_scope == selected_kind.value
-    assert "requested_key" not in json.dumps(to_json_compatible(plan))
+    assert plan.foreground_scope == first_kind.value
+    assert not hasattr(plan, "requested_key")
 
 
 @pytest.mark.parametrize("capacity, expected_total", ((3, 3), (2, 2)))

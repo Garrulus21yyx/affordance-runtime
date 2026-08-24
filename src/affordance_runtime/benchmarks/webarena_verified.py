@@ -9,7 +9,7 @@ import math
 import os
 import subprocess
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -19,7 +19,7 @@ from affordance_runtime.actions.paging import delivery_descriptor_matches
 from affordance_runtime.agent.context.budgets import serialized_size
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context_builder import ContextBuilder
-from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery, build_model_turn_delivery
+from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore, current_findings_digest
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -65,11 +65,9 @@ from affordance_runtime.model.policy.canonical_provider_envelope import (
 )
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_tool_catalog import (
-    compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
 from affordance_runtime.model.policy.grounded_tool_contracts import (
-    GroundedToolPhase,
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
@@ -152,7 +150,6 @@ _W1B_PRIVATE_MARKERS = (
     "observation_id",
     "private_cursor",
     "page_cursor",
-    "next_cursor",
     "omitted_count",
     "omitted_total",
     "member_count",
@@ -1442,110 +1439,51 @@ def _delivery_probe_diagnostic(
             action_page_result=discovery,
             feedback="action_page_ready",
         )
-        delivery_store = ObservationDeliveryStore().reduce(
-            discovery_step, step_index=1
-        ).next_store
-        seen_offsets: set[int] = set()
-        candidate_diagnostics: list[tuple[object, dict[str, bool]]] = []
-        discovery_matches = list(delivery_store.action_query.matches)
-        delivered_routes: set[tuple[str, str]] = set()
-        page_count = 0
-        cursor_cycle = False
-        continued_once = False
-        while True:
-            next_context = builder.build(
-                task,
-                observation,
-                action_space,
-                TaskEvaluation(
-                    task.task_id,
-                    observation.observation_id,
-                    TaskEvaluationStatus.INCOMPLETE,
-                    "w1b-world action discovery probe rerender",
-                ),
-                action_page=base_page,
-                region_index=context.region_index,
-                action_discovery=discovery,
-                delivery_store=delivery_store,
-            )
-            query_offset = next(
-                (
-                    obligation.inventory.offset
-                    for obligation in next_context.action_delivery_plan.obligations
-                    if obligation.continuation_scope == "query"
-                ),
-                0,
-            )
-            if query_offset in seen_offsets:
-                cursor_cycle = True
-                break
-            seen_offsets.add(query_offset)
-            page_count += 1
-            next_request = ModelDecisionRequest(
+        delivery_store = ObservationDeliveryStore().reduce(discovery_step, step_index=1).next_store
+        discovery_matches = list(discovery.matches)
+        next_context = builder.build(
+            task,
+            observation,
+            action_space,
+            TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "w1b-world action discovery probe rerender",
+            ),
+            action_page=base_page,
+            region_index=context.region_index,
+            action_discovery=discovery,
+            delivery_store=delivery_store,
+        )
+        packed = _diagnostic_pack(
+            ModelDecisionRequest(
                 request_id=f"diagnostic:retrieval:{next_context.context_id}",
                 agent_context=next_context,
             )
-            packed = _diagnostic_pack(next_request)
-            next_delivery = packed.delivery
-            discovery_routes = {(match.target_ref, match.operation) for match in discovery_matches}
-            for candidate in next_delivery.action_candidates.candidates:
-                route = (candidate.target_ref, candidate.operation)
-                if route not in discovery_routes or route in delivered_routes:
-                    continue
-                delivered_routes.add(route)
-                candidate_diagnostics.append(
-                    (
-                        candidate,
-                        _delivery_probe_item_diagnostic(
-                            candidate,
-                            retrieval,
-                            next_delivery.manifest.exact_refs,
-                            next_context.complete_actions,
-                        ),
-                    )
-                )
-            continuation_spec = next(
-                (item for item in packed.catalog.specs if item.name == "action_results_next_page"),
-                None,
-            )
-            scopes = (
-                tuple(continuation_spec.input_schema["properties"]["scope"]["enum"])
-                if continuation_spec is not None
-                and continuation_spec.input_schema.get("properties")
-                else ()
-            )
-            matched_now = any(
-                diagnostic["matched"] for _, diagnostic in candidate_diagnostics
-            )
-            if matched_now and (continued_once or "query" not in scopes):
-                break
-            if "query" not in scopes:
-                break
-            continuation = resolve_grounded_tool_call(
-                packed.catalog,
-                ToolCall("action_results_next_page", {"scope": "query"}),
-                expected_context_id=next_context.context_id,
-                expected_delivery_id=packed.delivery.delivery_id,
-                expected_catalog_id=packed.catalog.catalog_id,
-            )
-            continuation_step = StepResult(
-                continuation.decision,
-                observation,
-                observation,
-                TaskEvaluation(
-                    task.task_id,
-                    observation.observation_id,
-                    TaskEvaluationStatus.INCOMPLETE,
-                    "w1b-world action continuation probe",
+        )
+        discovery_routes = {(match.target_ref, match.operation) for match in discovery_matches}
+        candidates = tuple(
+            candidate
+            for candidate in packed.delivery.action_candidates.candidates
+            if (candidate.target_ref, candidate.operation) in discovery_routes
+        )
+        candidate_diagnostics = [
+            (
+                candidate,
+                _delivery_probe_item_diagnostic(
+                    candidate,
+                    retrieval,
+                    packed.delivery.manifest.exact_refs,
+                    next_context.complete_actions,
                 ),
-                feedback="local_tool_result",
             )
-            delivery_store = delivery_store.reduce(
-                continuation_step, step_index=page_count + 1
-            ).next_store
-            continued_once = True
+            for candidate in candidates
+        ]
+        page_count = 1
+        cursor_cycle = False
+        continued_once = False
 
-        candidates = tuple(item for item, _ in candidate_diagnostics)
         item_diagnostics = tuple(item for _, item in candidate_diagnostics)
         search_result_visible = bool(candidates and discovery_matches)
         label_found = any(item["label"] for item in item_diagnostics)
@@ -1582,7 +1520,7 @@ def _delivery_probe_diagnostic(
                 "ordering_identity": ordering_identity,
                 "page_count": page_count,
                 "cursor_cycle": cursor_cycle,
-                "owner_continuation_path": bool(page_count and delivery_store.action_query),
+                "owner_direct_result_path": bool(page_count and discovery_matches),
                 "production_continuation_exercised": continued_once,
                 "passed": passed,
             }
@@ -1940,53 +1878,12 @@ def _recoverability_diagnostic(
     working_catalog = catalog
     directory_pages = 1
     try:
-        while sample_region_ref not in working_catalog.manifest.region_refs:
-            continuation = next(item for item in working_catalog.specs if item.name == "read_next_page")
-            arguments = {"scope": "page_directory"} if continuation.input_schema["properties"] else {}
-            continuation_decision = resolve_grounded_tool_call(
-                working_catalog,
-                ToolCall("read_next_page", arguments, f"recoverability:directory:{directory_pages}"),
-                expected_context_id=working_context.context_id,
-                expected_delivery_id=working_catalog.delivery_id,
-                expected_catalog_id=working_catalog.catalog_id,
-            ).decision
-            continuation_transition = working_context.delivery_store.reduce(
-                StepResult(
-                    continuation_decision,
-                    observation,
-                    observation,
-                    TaskEvaluation(
-                        task.task_id,
-                        observation.observation_id,
-                        TaskEvaluationStatus.INCOMPLETE,
-                        "w1b-world directory continuation",
-                    ),
-                    feedback="local_tool_result",
-                ),
-                step_index=directory_pages,
-            )
-            working_context = ContextBuilder().build(
-                task,
-                observation,
-                action_space,
-                TaskEvaluation(
-                    task.task_id,
-                    observation.observation_id,
-                    TaskEvaluationStatus.INCOMPLETE,
-                    "w1b-world directory continuation",
-                ),
-                region_index=region_index,
-                delivery_store=continuation_transition.next_store,
-            )
-            working_delivery = build_model_turn_delivery(working_context, include_images=False)
-            working_catalog = compile_grounded_tool_catalog(
-                working_context,
-                GroundedToolPhase.ACTION_SELECTION,
-                working_delivery,
-            )
-            directory_pages += 1
-            if directory_pages > len(region_index.regions) + 1:
-                raise ValueError("page directory continuation did not reach target region")
+        read_spec = next(item for item in working_catalog.specs if item.name == "read_region")
+        region_schema = read_spec.input_schema["properties"]["region_ref"]
+        if "enum" in region_schema or not PublicRefCodec.accepts(
+            sample_region_ref, expected=PublicRefKind.REGION
+        ):
+            raise ValueError("read_region must accept current R-refs returned by direct tools")
         checks["directory_tail_ref"] = True
         checks["directory_pages"] = directory_pages
     except Exception as exc:
@@ -2026,10 +1923,10 @@ def _recoverability_diagnostic(
             ),
             step_index=directory_pages + 1,
         )
-        lens = opened_transition.next_store.active_read
-        checks["lens_effect"] = bool(lens and lens.selected_region_key == sample_region.key)
-        if not checks["lens_effect"]:
-            errors.append("recoverability:read_region_missing_lens_effect")
+        open_cursor = str(opened.result.get("next_cursor") or "")
+        checks["tool_local_cursor"] = bool(opened.result.get("has_more")) == bool(open_cursor)
+        if not checks["tool_local_cursor"]:
+            errors.append("recoverability:read_region_cursor_contract")
     except Exception as exc:
         return _recoverability_failure("read_region", exc)
     if query:
@@ -2061,7 +1958,7 @@ def _recoverability_diagnostic(
         )
         viewed = viewed_resolution.decision
         regions = tuple(viewed.result.get("items", ()))
-        viewed_transition = working_context.delivery_store.reduce(
+        working_context.delivery_store.reduce(
             StepResult(
                 viewed,
                 observation,
@@ -2076,56 +1973,19 @@ def _recoverability_diagnostic(
             ),
             step_index=directory_pages + 1,
         )
-        viewed_lens = viewed_transition.next_store.active_read
-        next_cursor = getattr(viewed_lens, "next_cursor", "")
+        next_cursor = str(viewed.result.get("next_cursor") or "")
         checks["view_all"] = any(
             isinstance(item, Mapping) and item.get("region_ref") == sample_region_ref for item in regions
         ) or bool(next_cursor)
         if not checks["view_all"]:
             errors.append("recoverability:view_all_missing_regions")
         if next_cursor:
-            if viewed_lens is None:
-                errors.append("recoverability:view_all_missing_lens")
-                checks["continuation"] = False
-                raise ValueError("view_all continuation requires a delivery lens")
-            continuation_context = ContextBuilder().build(
-                task,
-                observation,
-                action_space,
-                TaskEvaluation(
-                    task.task_id,
-                    observation.observation_id,
-                    TaskEvaluationStatus.INCOMPLETE,
-                    "w1b-world recoverability continuation",
-                ),
-                region_index=region_index,
-                delivery_store=viewed_transition.next_store,
-            )
-            continuation_delivery = build_model_turn_delivery(
-                continuation_context,
-                include_images=False,
-            )
-            continuation_catalog = compile_grounded_tool_catalog(
-                continuation_context,
-                GroundedToolPhase.ACTION_SELECTION,
-                continuation_delivery,
-            )
             continued = resolve_grounded_tool_call(
-                continuation_catalog,
-                ToolCall(
-                    "read_next_page",
-                    (
-                        {"scope": "active_read"}
-                        if next(item for item in continuation_catalog.specs if item.name == "read_next_page").input_schema[
-                            "properties"
-                        ]
-                        else {}
-                    ),
-                    "recoverability:view_all:2",
-                ),
-                expected_context_id=continuation_context.context_id,
-                expected_delivery_id=continuation_catalog.delivery_id,
-                expected_catalog_id=continuation_catalog.catalog_id,
+                working_catalog,
+                ToolCall("list_regions", {"cursor": next_cursor}, "recoverability:view_all:2"),
+                expected_context_id=working_context.context_id,
+                expected_delivery_id=working_catalog.delivery_id,
+                expected_catalog_id=working_catalog.catalog_id,
             ).decision
             checks["continuation"] = bool(continued.result.get("items", ()))
             if not checks["continuation"]:
@@ -2134,16 +1994,11 @@ def _recoverability_diagnostic(
             checks["continuation"] = True
     except Exception as exc:
         return _recoverability_failure("view_all", exc)
-    if lens is not None and sample_target_id:
-        try:
-            checks["active_read_private"] = bool(opened_transition.next_store.active_read)
-            checks["active_read_not_in_public_result"] = "cursor" not in json.dumps(
-                to_json_compatible(opened.result)
-            )
-            if not checks["active_read_private"] or not checks["active_read_not_in_public_result"]:
-                errors.append("recoverability:active_read_privacy_failed")
-        except Exception as exc:
-            return _recoverability_failure("active_read", exc)
+    checks["store_has_no_result_cursor"] = tuple(
+        item.name for item in fields(opened_transition.next_store)
+    ) == ("latest_effect", "local_deliveries")
+    if not checks["store_has_no_result_cursor"]:
+        errors.append("recoverability:store_result_cursor_present")
     try:
         resolve_grounded_tool_call(
             catalog,
@@ -2205,9 +2060,7 @@ def _catalog_has_action_tool(catalog) -> bool:
         "read_region",
         "search_page_content",
         "list_regions",
-        "read_next_page",
         "find_controls",
-        "action_results_next_page",
         "request_evidence",
         "count_" + "children",
         "remember_fact",
