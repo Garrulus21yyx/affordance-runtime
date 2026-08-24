@@ -14,7 +14,14 @@ from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
     current_findings_digest,
 )
-from affordance_runtime.agent.decisions import LocalToolResult, RequestActionPage, RequestObservation, SelectAction
+from affordance_runtime.agent.decisions import (
+    LocalToolResult,
+    ReadRegionResult,
+    RequestActionPage,
+    RequestObservation,
+    SearchPageContentResult,
+    SelectAction,
+)
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE, AgentLoopProfile
 from affordance_runtime.agent.recovery import (
@@ -272,11 +279,29 @@ def _control_stall_signal(
         },
         attempted_modes=(_attempted_mode(result),),
         prohibited_attempt_signature=prohibited_attempt_signature,
-        human_instruction=(
-            "Use a returned current control, read relevant page content, or use an offered browser navigation action; "
-            "do not continue discovering controls on the unchanged World."
-        ),
+        human_instruction=_control_stall_instruction(result),
         recovery_attempt=recovery_attempt,
+    )
+
+
+def _control_stall_instruction(result: StepResult) -> str:
+    """Describe the viable next route for the typed no-progress producer."""
+
+    if isinstance(result.decision, RequestActionPage):
+        return (
+            "Use a nonempty returned current control. If no returned control can advance the task, materially change "
+            "the query, read relevant page content, or use an offered browser navigation action; do not repeat control "
+            "discovery on the unchanged World."
+        )
+    if isinstance(result.decision, ReadRegionResult | SearchPageContentResult):
+        return (
+            "This read/search result is already present in completed tool history. Do not request the same result "
+            "again: use that tool's returned next_cursor when has_more is true, inspect a different relevant region, "
+            "find a current executable control, or use an offered browser navigation action."
+        )
+    return (
+        "Use a materially different current control, relevant page content, or offered browser navigation action; "
+        "do not repeat the unchanged attempt."
     )
 
 

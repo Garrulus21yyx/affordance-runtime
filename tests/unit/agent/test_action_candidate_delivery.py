@@ -958,6 +958,77 @@ def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_f
     assert reasons["Zulu control"] == "focus_container"
 
 
+def test_task_ranked_actions_precede_incidental_focus_when_only_one_route_fits() -> None:
+    task, world, _actions, evaluation, _context_value = _context()
+    focused_world = replace(
+        world,
+        targets=tuple(
+            replace(target, state={**dict(target.state), "focused": True})
+            if target.target_id == "target:alpha"
+            else target
+            for target in world.targets
+        ),
+    )
+    actions = ActionSpaceBuilder().build(task, focused_world)
+    context = ContextBuilder().build(task, focused_world, actions, evaluation)
+    plan = context.action_delivery_plan
+    assert plan is not None
+
+    foreground = next(item for item in plan.obligations if item.scope == plan.foreground_scope)
+    first = foreground.records[0]
+
+    assert foreground.kind is DeliveryObligationKind.BASE_ACTIONS
+    assert isinstance(first, ActionRouteFragment)
+    assert first.candidate.label == "Settings"
+    assert "Account Preferences" in first.candidate.functional_path
+    assert first.inclusion_reason in {"automatic_relevance", "viewport_relevance"}
+
+    counts = {item.kind.value: 0 for item in plan.obligations}
+    counts[DeliveryObligationKind.BASE_ACTIONS.value] = 1
+    one_route_delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records=counts,
+    )
+    one_route_catalog = compile_grounded_action_catalog(context, one_route_delivery)
+    request = ModelDecisionRequest("request:ranked-first", context)
+    wide = CanonicalProviderEnvelopeBinder()
+    one_route_envelope = wide.bind(
+        request,
+        one_route_delivery,
+        one_route_catalog,
+        identity=_IDENTITY,
+        call_profile=_PROFILE,
+        output_token_reserve=(
+            _PROFILE.max_output_tokens
+            + wide.request_budget.protocol_reserve_tokens
+            + wide.request_budget.safety_margin_tokens
+        ),
+    )
+    one_route_tokens = estimate_canonical_envelope(one_route_envelope).estimated_input_tokens
+    packed = _pack(
+        request,
+        binder=CanonicalProviderEnvelopeBinder(
+            request_budget=replace(
+                ModelRequestBudget(),
+                soft_target_tokens=one_route_tokens,
+            )
+        ),
+    )
+    resolved = resolve_grounded_tool_call(
+        packed.catalog,
+        ToolCall("activate", {"target": first.candidate.target_ref}, "call:ranked-first"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=packed.delivery.delivery_id,
+    )
+
+    assert sum(dict(packed.admitted_record_counts).values()) == 1
+    assert dict(packed.admitted_record_counts)[DeliveryObligationKind.BASE_ACTIONS.value] == 1
+    assert first.candidate.target_ref in packed.delivery.manifest.executable_refs
+    assert isinstance(resolved.decision, SelectAction)
+    assert resolved.decision.action_id == first.candidate.action_id
+
+
 @pytest.mark.parametrize(
     ("label", "query"),
     (("A", "A"), ("!", "please use ! now"), ("保存", "请立即 保存 then continue"), ("界" * 240, "界" * 240)),

@@ -11,14 +11,14 @@ single-current-World cutover, atomic PageMap/Manifest repair, bounded post-actio
 large-page liveness, viewport-grounded media, canonical public-identity, and linear fresh-World projection repairs is
 complete. The current convergence patch additionally makes control discovery a real filter, publishes BrowserGym's
 official global navigation actions only for WebArena-family profiles, counts same-World discovery loops in Monitor,
-applies proactive SDK-history processing, and byte-bounds the PageMap directory without shrinking current World.
+applies proactive SDK-history processing, byte-bounds the PageMap directory without shrinking current World, and
+keeps task-ranked current actions ahead of incidental browser focus when only a bounded action prefix fits.
 Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: `324` focused owner/vertical tests, `63` readable-result tests, and `275` focused
-tests for the current control/navigation/Monitor/history/PageMap convergence surface pass with `3` skipped; the full
-suite passes `1676` with `25` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
+Current provider-free verification: the focused action-delivery/Monitor/PydanticAI surface passes `156` tests with
+`3` skipped; the full suite passes `1677` with `25` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
 currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
 recovery-eligibility, or async-liveness defect in this bounded implementation.
 
@@ -301,6 +301,39 @@ projection, 1.9 context construction, and 0.1 final delivery. The equivalent pre
 seconds and failed at two capacity gates. No ref-width increase, page heuristic, evidence Store, retry, or alternate
 World was added. A fresh explicitly authorized Task266 live run is still required for acceptance.
 
+Task266 run5 then exposed an action-delivery ordering defect, not another large-World, cursor, or history failure. The
+fresh search-result World already contained the correct current `activate "Portland, Maine"` route, and the automatic
+ranker placed it first. However, the delivery plan made an incidental synthetic focused-context `press_key` group the
+foreground obligation. With the existing soft request target able to admit one route, the model-visible catalog
+therefore contained only that unrelated key action while the correct route stayed private in the complete current
+`ActionSpace`.
+
+The trace makes the consequence exact: after typing and submitting the search, the model called
+`read_region(R3) -> read_region(R6) -> read_region(R3) -> read_region(R6)`. The first `R3` result honestly returned
+`has_more=true` and `next_cursor="20"`; all completed results and model-authored progress notes remained in PydanticAI
+history, and no history compaction ran. The model nevertheless had no directly callable result link. On the first exact
+read replay, Monitor emitted the same recovery sentence used for `find_controls` loops—including advice not to
+continue discovering controls—then blocked the next replay. Runtime terminated normally as `blocked`; BrowserGym and
+the provider did not hang.
+
+The owner-level contract is now:
+
+```text
+explicit find_controls result, when present
+-> complete same-World query capability set
+otherwise
+-> task-ranked automatic current-action prefix
+-> incidental focus/container routes
+-> remaining current inventory recoverable through find_controls
+```
+
+Focus remains visible state and an executable route; it is no longer entitled to displace the task-ranked prefix.
+Monitor also renders recovery from the typed producer: action-discovery loops tell the model to use a returned control
+or materially change route, while an exact read/search replay points to the same tool's `next_cursor`, a different
+relevant region, `find_controls`, or browser navigation. No new action authority, retrieval index, cursor type,
+history store, recovery state, or model role was introduced. Run5 remains failed pre-repair evidence; a fresh live
+witness is required.
+
 ## Normative production chain
 
 ```text
@@ -533,6 +566,11 @@ Current primary sources converge on a thin loop rather than a result-conservatio
   alteration; AgentLab applies configurable token fitting at prompt-component/page scope rather than silently clipping
   every readable node at a control-label limit. This project reuses BrowserGym's installed `nav`/`tab` primitives
   instead of inventing navigation tools.
+- [AgentOccam (ICLR 2025)](https://proceedings.iclr.cc/paper_files/paper/2025/file/f2c6e459b95694a24ac69c469a4ee746-Paper-Conference.pdf)
+  reports that aligning the observation and action spaces—removing redundant structure while retaining informative,
+  usable page elements—substantially improves a plain single web agent without extra roles or online search. The run5
+  repair follows that boundary: it changes which already-legal current route is visible first; it does not add a
+  planner, retriever, or Runtime semantic rule.
 - [FocusAgent](https://arxiv.org/html/2510.03204) selects task-relevant AXTree line ranges from the preserved tree and
   inserts explicit placeholders for omitted ranges. Its recall-biased soft retrieval is evidence for visible,
   structure-aware reduction rather than unmarked per-node prefix loss.

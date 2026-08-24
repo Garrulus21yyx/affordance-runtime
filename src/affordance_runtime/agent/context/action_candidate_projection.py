@@ -537,8 +537,12 @@ def build_action_delivery_plan(
 
     priorities = {
         DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 6,
-        DeliveryObligationKind.INTERACTION: 2,
-        DeliveryObligationKind.BASE_ACTIONS: 3,
+        # The automatic prefix is the task-ranked view of the current legal
+        # ActionSpace.  An incidental browser focus may remain executable, but
+        # it must not displace that prefix when the request budget can admit
+        # only one route.
+        DeliveryObligationKind.BASE_ACTIONS: 2,
+        DeliveryObligationKind.INTERACTION: 3,
         DeliveryObligationKind.DESTINATION_ROUTES: 4,
         DeliveryObligationKind.ROUTE_ISSUES: 5,
     }

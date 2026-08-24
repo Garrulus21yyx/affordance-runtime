@@ -211,7 +211,7 @@ def test_control_discovery_is_not_task_information_and_second_query_recovers() -
     assert first_monitor.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
-    assert "do not continue discovering controls" in recovery.recovery_signal.human_instruction
+    assert "do not repeat control discovery" in recovery.recovery_signal.human_instruction
     assert third.information_delta is None
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
 
@@ -249,6 +249,10 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     assert replay.information_delta is not None
     assert replay.information_delta.kind is InformationDeltaKind.EXACT_REPLAY
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert "returned next_cursor" in recovery.recovery_signal.human_instruction
+    assert "find a current executable control" in recovery.recovery_signal.human_instruction
+    assert "do not repeat control discovery" not in recovery.recovery_signal.human_instruction
     assert stalled.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert stalled.reason == "control_stalled"
 

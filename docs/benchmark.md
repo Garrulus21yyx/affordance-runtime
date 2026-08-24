@@ -7,13 +7,14 @@ readable-AX completeness repair, single-current-World cutover, atomic PageMap/Ma
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear
 fresh-World projection repairs are implemented. The current convergence patch additionally filters control discovery,
 publishes only profile-supported BrowserGym navigation, detects same-World discovery loops, proactively processes SDK
-history, and bounds the PageMap directory while retaining the complete recoverable region index.
+history, bounds the PageMap directory while retaining the complete recoverable region index, orders the ordinary
+model-visible action prefix by the existing task-aware rank before incidental focus, and gives Monitor
+producer-specific recovery guidance for action discovery versus local-result replay.
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `324` focused owner/vertical tests, `63` readable-result tests, `275` focused
-tests for the current control/navigation/Monitor/history/PageMap convergence surface with `3` skipped, and the full suite at
-`1676 passed / 25 skipped`. Ruff, compileall, `git diff --check`, negative-path searches, and the bounded fresh review
+Current provider-free verification passes `156` focused action-delivery/Monitor/PydanticAI tests with `3` skipped, and
+the full suite at `1677 passed / 25 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
 pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
@@ -27,7 +28,9 @@ Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the n
 repair; Task44 run1 also accepted. Task266 run1 is a stopped, failed pre-repair diagnostic for the liveness defect
 described below; Task266 run2 live-validates liveness but is a failed pre-repair diagnostic for the subsequent media
 projection defect. Task266 run3 crossed that repaired media boundary and is a failed pre-repair diagnostic for the
-subsequent public-identity capacity defect.
+subsequent public-identity capacity defect. Task266 run5 crossed those large-page boundaries and failed normally at a
+later action-delivery ordering defect: the complete current ActionSpace contained the correct ranked result link, but
+the bounded model catalog exposed an incidental focus route instead. Run5 is pre-repair evidence, not acceptance.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -352,6 +355,13 @@ frozen catalog can reach Binder/Executor.
 Property and Monitor gates prove that focused/unrelated controls remain excluded, permutations do not change match
 membership, discovery creates no `InformationDelta`, and the second consecutive same-World discovery produces typed
 recovery rather than an unbounded query loop.
+
+For an ordinary turn without an explicit discovery result, a separate vertical gate gives the action delivery only
+one admitted route and proves that the first task-ranked automatic candidate—not an incidental focused-context route—
+enters the Manifest, compiled ToolCatalog, and real resolver. Explicit `find_controls` results remain the higher
+foreground obligation and retain their existing all-routes callable invariant. Monitor gates separately prove that
+control-discovery recovery and exact local-result replay publish producer-appropriate next routes; the latter points to
+same-tool `next_cursor`, a different relevant region, a current executable control, or browser navigation.
 
 ### G6 — GUI route remains unchanged
 
