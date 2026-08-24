@@ -160,7 +160,7 @@ Live and cohort execution remain stopped.
      Store, continuation, World, route, Catalog, TurnPacker capacity, CoreLoop, Monitor, or benchmark semantics.
    - No further live run or bounded cohort is authorized.
 
-22. **in_progress — Canonicalize one complete accepted provider exchange**
+22. **completed — Canonicalize one complete accepted provider exchange**
    - Introduce one typed `AcceptedToolExchange` produced by the existing single-call canonicalizer. It binds the
      accepted call, resolved decision, canonical one-call `ModelResponse`, canonical `DeferredToolRequests`, and
      discarded-call count; raw provider output remains transcript-only.
@@ -170,6 +170,10 @@ Live and cohort execution remain stopped.
      history call, StepResult call, and deferred result; every discarded call is absent from execution/history/results.
      Keep `parallel_tool_calls=false` only as a provider hint, never as correctness authority.
    - Run focused/full/static/negative verification and independent fresh review before requesting any further live run.
+
+23. **pending — Independent fresh-context accepted-exchange review**
+   - Read-only reconcile the committed owner/consumer graph, generated vertical property, full/static evidence, docs,
+     and revision/tree hashes. Any falsification stops before provider/live execution.
 
 ## Explicit non-goals
 

@@ -1,0 +1,56 @@
+{
+  "schema": "accepted-tool-exchange-provider-free.v1",
+  "date": "2026-08-24",
+  "falsified_revision": "43961f9a75a350fae050bb67df721759e306bcaf",
+  "implementation_revision": "70dae8dd838ae700a768ab7233b11baf23756a7e",
+  "source_tree": "da20e36b31defdc05c3f3ed444c7263a4c28e20b",
+  "test_tree": "61aaabceba2b1800b16560878a05cbf4ac0c97d0",
+  "status": "provider_free_passed_fresh_review_pending",
+  "overall_status": "reopened_non_closed",
+  "execution_profile": {
+    "python": "/home/yang/.venvs/affordance-browsergym-py312/bin/python",
+    "provider_attempts": 0,
+    "live_provider_run": false,
+    "live_benchmark_run": false,
+    "task21_replay": false,
+    "bounded_cohort": "stopped"
+  },
+  "falsification": {
+    "trigger": "one raw provider response offered two tool calls and Runtime accepted exactly one",
+    "mechanism": "Decision used the canonical accepted call while pending history retained the raw multi-call ModelResponse",
+    "shared_root": "single-call canonicalization produced only a Decision rather than one exchange consumed by every downstream boundary"
+  },
+  "owner_contract": {
+    "raw_provider_exchange": "transcript-only and lossless",
+    "accepted_tool_exchange": [
+      "accepted ToolCall identity",
+      "resolved AgentDecision",
+      "canonical one-call ModelResponse",
+      "canonical one-call DeferredToolRequests",
+      "discarded-call count"
+    ],
+    "pending_state": "AcceptedToolExchange | None",
+    "next_turn": "canonical call history and DeferredToolResult share the accepted call ID/name/arguments"
+  },
+  "properties": {
+    "generated_raw_call_cardinality": "1..8",
+    "decision_equals_pending_call": "passed",
+    "step_result_equals_pending_call": "passed",
+    "pending_history_has_exactly_one_call": "passed",
+    "deferred_result_matches_accepted_call": "passed",
+    "discarded_calls_absent_from_execution_history_and_results": "passed",
+    "raw_calls_remain_in_transcript": "passed",
+    "pending_exchange_survives_pre_provider_capacity_rejection": "passed",
+    "parallel_tool_calls_false_is_hint_not_correctness_authority": "passed",
+    "no_continuation_world_route_catalog_or_core_loop_change": "passed"
+  },
+  "verification": {
+    "focused": "82 passed",
+    "full_pytest": "1670 passed, 19 skipped",
+    "ruff": "passed",
+    "compileall": "passed",
+    "diff_check": "passed",
+    "production_negative_searches": "passed"
+  },
+  "next_step": "independent fresh-context read-only review; no provider/live/Task21 execution"
+}

@@ -14,6 +14,7 @@ standard call-correlated result repair provider-free acceptance falsified by fre
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
 authorized held-out rerun falsified multiple-call pending-exchange conservation /
+accepted-tool-exchange owner repair provider-free verified; independent fresh-context review pending /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -346,6 +347,18 @@ multiple-call canonicalization and pending official exchange projection; it is n
 R9 follow-up, byte paging, or continuation lineage. Evidence:
 [`task21-pending-exchange-multicall-falsification-20260824.json`](../evidence/acceptance/task21-pending-exchange-multicall-falsification-20260824.json).
 Live and cohort execution stop; work returns only to the PydanticAI canonicalization/pending-exchange owner.
+
+Provider-free accepted-exchange checkpoint (implementation revision `70dae8dd`, 2026-08-24): the existing
+single-call canonicalizer now produces one typed `AcceptedToolExchange` containing the accepted call, resolved
+Decision, canonical one-call `ModelResponse`, canonical one-call `DeferredToolRequests`, and discarded-call count.
+Decision return, pending state, next-turn physical history, and the paired deferred tool result consume that identity;
+the raw multi-call response remains losslessly transcript-only. A generated 1..8-call, two-turn Recording FunctionModel
+property proves Decision, StepResult, pending history, and ToolReturn conserve the same call while all discarded calls
+are absent from execution/history/results. Focused verification passes `82 passed`; the full suite passes
+`1670 passed / 19 skipped`, with Ruff, compileall, diff and negative searches also passing. No provider/live call ran.
+Evidence: [`accepted-tool-exchange-provider-free-20260824.json`](../evidence/acceptance/accepted-tool-exchange-provider-free-20260824.json).
+This is implementation acceptance only; independent fresh-context read-only review is still pending, Overall remains
+non-closed, and neither a Task21 rerun nor the bounded cohort is authorized.
 
 #### Reuse boundary and remaining custom surface
 

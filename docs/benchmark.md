@@ -14,6 +14,7 @@ standard call-correlated result repair provider-free acceptance falsified by fre
 provider-protocol and delivery-state convergence provider-free acceptance falsified by continuation-currentness review /
 complete-key continuation repair provider-free verified; independent fresh-context review passed /
 authorized held-out rerun falsified multiple-call pending-exchange conservation /
+accepted-tool-exchange owner repair provider-free verified; independent fresh-context review pending /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -252,6 +253,15 @@ calls although the accepted decision/result algebra contained only search. Evide
 This does not refute search→R9, byte paging, or complete-key continuation. It reopens only
 `multiple-call canonicalization → pending official exchange → same-call ToolReturn`. Bounded cohort and further live
 execution remain stopped.
+
+The provider-free owner repair is recorded in
+[`accepted-tool-exchange-provider-free-20260824.json`](../evidence/acceptance/accepted-tool-exchange-provider-free-20260824.json),
+bound to implementation revision `70dae8dd`. The canonicalizer now emits one typed accepted exchange, and a generated
+1..8-call two-turn production path proves that the accepted Decision, StepResult, sole pending-history call, and
+DeferredToolResult share one call identity while raw discarded calls remain transcript-only. Focused verification is
+`82 passed`; full verification is `1670 passed / 19 skipped`, plus Ruff, compileall, diff and negative searches, with
+zero provider/live attempts. This is provider-free implementation evidence, not closure or rerun authorization;
+independent fresh-context review is pending and the bounded cohort remains stopped.
 
 Implementation proceeds serially and each green cutover receives its own commit:
 
