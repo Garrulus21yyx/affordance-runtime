@@ -1,0 +1,20 @@
+{
+  "kind": "falsification",
+  "reviewed_revision": "2a0ce38c9e9cc20ba5146e7dafdf44b0a8125dd0",
+  "live": false,
+  "provider_attempts": 0,
+  "review": "independent_fresh_context_read_only",
+  "result": "failed",
+  "falsified_contract": "GUI external call receives a paired receipt without suppressing the authoritative dispatched-effect Store transition",
+  "mechanism": {
+    "pending_call_store": "PydanticAIGroundedDecisionPort returns a next_delivery_store containing PendingToolCall",
+    "core_attachment": "CoreLoop attaches that committed Store to the GUI SelectAction StepResult",
+    "merge_error": "ObservationDeliveryStore.reduce chooses committed_store or advance(step), so a committed Store skips advance",
+    "lost_transition": "advance is the sole dispatched GUI receipt to LatestEffect/PublicEffectInventory owner transition",
+    "consequence": "generic paired ToolReturn exists but the next PUBLIC_EFFECT obligation cannot be established"
+  },
+  "owner": "ObservationDeliveryStore.reduce committed-state/effect-transition merge boundary",
+  "tests_run_by_reviewer": false,
+  "files_modified_by_reviewer": false,
+  "status": "falsified_stop_return_to_owner"
+}

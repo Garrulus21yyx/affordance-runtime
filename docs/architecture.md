@@ -10,7 +10,7 @@ held-out Task 21 falsified local-search follow-up conservation and multiple-call
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
-standard call-correlated result repair provider-free verified / fresh-context review pending /
+standard call-correlated result repair provider-free acceptance falsified by fresh review /
 bounded cohort stopped**. Causal post-action transition, TaskGoal public-input projection, and benchmark
 finalization pass their bounded provider-free contracts and independent review; overall closure still requires the
 separately authorized live sequence. The mandatory
@@ -212,6 +212,17 @@ live case ran. Evidence:
 [`call-correlated-tool-results-provider-free-20260824.json`](../evidence/acceptance/call-correlated-tool-results-provider-free-20260824.json).
 This is implementation acceptance only. Overall remains non-closed, the cohort remains stopped, and an independent
 fresh-context review is required before requesting one held-out rerun.
+
+Independent fresh-context falsification (reviewed revision `2a0ce38c`, 2026-08-24): after a successful model call the
+bridge returns a committed Store containing `PendingToolCall`, and CoreLoop attaches it to the resulting GUI
+`SelectAction` step. `ObservationDeliveryStore.reduce` currently selects `committed_store or advance(step)`, so the
+committed pending-call state suppresses `advance`, the sole dispatched GUI receipt → `LatestEffect/PublicEffectInventory`
+transition. The standard paired receipt can therefore exist while the authoritative next-turn `PUBLIC_EFFECT`
+obligation disappears. This falsifies the checkpoint's GUI-receipt/non-reopening claim. Review stopped without tests,
+code changes, provider, BrowserGym, or live execution. Evidence:
+[`call-correlated-tool-results-fresh-review-falsification-20260824.json`](../evidence/acceptance/call-correlated-tool-results-fresh-review-falsification-20260824.json).
+Work returns only to the `ObservationDeliveryStore.reduce` committed-state/effect-transition merge owner; Overall
+remains non-closed and the bounded cohort remains stopped.
 
 This file and [`benchmark.md`](benchmark.md) are the only current design, status, and acceptance authorities.
 [`single-action-policy-convergence.md`](single-action-policy-convergence.md) is retained as migration rationale for the

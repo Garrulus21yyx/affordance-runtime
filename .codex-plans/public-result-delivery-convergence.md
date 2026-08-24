@@ -5,9 +5,9 @@ Goal: replace both lossy result paths with one standard call-correlated tool-res
 PydanticAI ToolReturn/DeferredToolResults under the original tool_call_id -> physical provider request`, while keeping
 one Store, one packer, one Envelope, and one CoreAgentLoop. Workspace retains receipts only.
 
-Status: implementation and provider-free acceptance passed at `a20fce29`; independent fresh-context review is pending.
-The prior ordinary-context `ModelTurnDelivery.public_results` transport is deleted. Live and cohort execution remain
-stopped.
+Status: implementation/provider-free acceptance at `a20fce29` was falsified by independent review of `2a0ce38c`.
+The pending-call committed Store suppresses the same-step GUI-effect `advance` transition. Work stops and returns only
+to the `ObservationDeliveryStore.reduce` merge owner. Live and cohort execution remain stopped.
 
 ## Steps
 
@@ -68,8 +68,9 @@ stopped.
    - Generated producer-completeness properties, call-ID conservation, typed failures, pagination/currentness,
      exact records/capacity, Recording FunctionModel, full/static/negative checks.
 
-13. **in_progress — Separate evidence/status and independent fresh review**
-   - No live before both pass; any falsification stops and returns to its owner.
+13. **done — Independent fresh review falsified the acceptance**
+   - A committed pending-call Store currently bypasses the sole GUI-effect `advance` transition. Stop and return only
+     to the Store merge owner; no live.
 
 ## Explicit non-goals
 
@@ -90,3 +91,4 @@ stopped.
 - `evidence/acceptance/public-result-turn-packing-provider-free-20260824.json` — revision-bound provider-free acceptance.
 - `evidence/acceptance/public-result-fresh-review-falsification-20260824.json` — independent `list_regions` ingestion falsification; returns work to the Store owner.
 - `evidence/acceptance/call-correlated-tool-results-provider-free-20260824.json` — revision-bound standard deferred-result acceptance.
+- `evidence/acceptance/call-correlated-tool-results-fresh-review-falsification-20260824.json` — committed-Store/effect-transition merge falsification.

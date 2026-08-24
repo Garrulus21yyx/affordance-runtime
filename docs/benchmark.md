@@ -10,7 +10,7 @@ held-out Task 21 falsified local-search follow-up conservation and multiple-call
 owner repair provider-free verified / fresh-context review passed / held-out rerun falsified read-region capacity /
 byte-bounded region-read repair provider-free verified / fresh-context review passed /
 held-out rerun falsified structured-result Workspace projection / convergence owner migration provider-free acceptance falsified by fresh review /
-standard call-correlated result repair provider-free verified / fresh-context review pending /
+standard call-correlated result repair provider-free acceptance falsified by fresh review /
 bounded cohort stopped**. C8 causal post-action transition, C11 benchmark finalization, and C12 TaskGoal
 public-input projection pass their current-tree provider-free gates and independent review. Prior
 Planner/Auditor G0–G6 artifacts remain historical evidence for the superseded mission path; they do not establish the
@@ -129,6 +129,15 @@ and a generated future reader, atomic Store/Packer prefixes and continuation suf
 counting, private ToolReturn metadata exclusion, and direct next-turn final response. Provider attempts are zero.
 This acceptance does not authorize live; independent fresh-context review remains pending and the bounded cohort is
 stopped.
+
+The independent fresh-context review of `2a0ce38c` falsified that acceptance before running tests. A successful model
+call supplies a committed Store with `PendingToolCall`; CoreLoop attaches it to a GUI step; Store reduction then uses
+`committed_store or advance(step)`. The committed state consequently bypasses the sole dispatched-effect transition
+that creates `LatestEffect/PublicEffectInventory`. A paired external-call receipt is present, but the authoritative
+`PUBLIC_EFFECT` obligation is lost. Evidence:
+[`call-correlated-tool-results-fresh-review-falsification-20260824.json`](../evidence/acceptance/call-correlated-tool-results-fresh-review-falsification-20260824.json).
+The review stopped read-only with zero provider/live attempts. Work returns only to the Store merge owner; Overall is
+non-closed and the bounded cohort remains stopped.
 
 This file contains only the current benchmark contract and next execution order. Chronological run evidence is archived
 in [`history/benchmark-pre-milestone-convergence-2026-08-22.md`](history/benchmark-pre-milestone-convergence-2026-08-22.md).
