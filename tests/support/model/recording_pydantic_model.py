@@ -187,6 +187,33 @@ class RecordingPydanticModel:
             scripted = self.decisions.pop(0)
             if isinstance(scripted, Exception):
                 raise scripted
+            if isinstance(scripted, list):
+                parts = []
+                for index, item in enumerate(scripted):
+                    if (
+                        not isinstance(item, tuple)
+                        or len(item) != 2
+                        or not isinstance(item[0], str)
+                        or not isinstance(item[1], dict)
+                    ):
+                        raise TypeError("recorded multi-call script must contain name/arguments pairs")
+                    parts.append(
+                        ToolCallPart(
+                            item[0],
+                            item[1],
+                            tool_call_id=(
+                                f"recording-call:{ordinal}"
+                                if index == 0
+                                else f"recording-call:{ordinal}:discarded:{index}"
+                            ),
+                        )
+                    )
+                if not parts:
+                    raise ValueError("recorded multi-call script cannot be empty")
+                return ModelResponse(
+                    parts=parts,
+                    provider_response_id=f"recording-response:{ordinal}",
+                )
             if isinstance(scripted, str) and scripted in {"final_response", "zero_calls"}:
                 content = "Shared state is enabled." if scripted == "final_response" else "no tool call"
                 return ModelResponse(

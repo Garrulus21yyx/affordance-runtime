@@ -6,6 +6,8 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 pytest.importorskip("pydantic_ai")
 
@@ -244,6 +246,109 @@ def test_semantically_distinct_extra_call_is_discarded_after_first_valid_call() 
         assert scripted.calls == 1
         assert [attempt.phase for attempt in result.attempts] == ["ordinary"]
         assert result.diagnostics["discarded_protocol_call_count"] == 1
+
+    asyncio.run(scenario())
+
+
+@given(call_count=st.integers(min_value=1, max_value=8))
+@settings(max_examples=8, deadline=None)
+def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
+    call_count: int,
+) -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world(f"accepted-exchange-{call_count}", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+        raw_calls = [
+            ("list_regions", {}),
+            *(
+                ("search_page_content", {"query": f"discarded-{index}"})
+                for index in range(1, call_count)
+            ),
+        ]
+        scripted = ScriptedModel(
+            [
+                raw_calls,
+                (
+                    "submit_final_response",
+                    {"content": "Canonical exchange received.", "evidence_refs": []},
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(
+            ModelDecisionRequest("request:accepted-exchange:first", first_context)
+        )
+
+        assert first.failure is None and first.output is not None
+        assert first.output.decision.tool_name == "list_regions"
+        assert first.output.decision.tool_call_id == "recording-call:1"
+        accepted = policy.port.pending_exchange
+        assert isinstance(accepted, pydantic_bridge.AcceptedToolExchange)
+        assert accepted.call == ToolCall("list_regions", {}, "recording-call:1")
+        assert accepted.decision is first.output.decision
+        assert accepted.discarded_call_count == call_count - 1
+        assert len(accepted.response.parts) == len(accepted.requests.calls) == 1
+        raw_response_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
+        assert len(
+            [part for part in raw_response_parts if part["part_kind"] == "tool-call"]
+        ) == call_count
+
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        assert step.decision is accepted.decision
+        assert step.decision.tool_call_id == accepted.call.call_id
+        transition = first_context.delivery_store.reduce(step, step_index=1)
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            delivery_store=transition.next_store,
+            last_step=step,
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:accepted-exchange:second",
+                second_context,
+                last_step=step,
+            )
+        )
+
+        assert second.failure is None and second.output is not None, json.dumps(
+            second.diagnostics, default=str
+        )
+        assert isinstance(second.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        prior_call = recorded["messages"][-2]["parts"][0]
+        paired_result = recorded["messages"][-1]["parts"][0]
+        assert prior_call == {
+            "part_kind": "tool-call",
+            "tool_name": "list_regions",
+            "arguments": {},
+            "tool_call_id": "recording-call:1",
+        }
+        assert paired_result["part_kind"] == "tool-return"
+        assert paired_result["tool_name"] == prior_call["tool_name"]
+        assert paired_result["tool_call_id"] == prior_call["tool_call_id"]
+        physical = json.dumps(recorded, sort_keys=True)
+        assert all(
+            f"recording-call:1:discarded:{index}" not in physical
+            for index in range(1, call_count)
+        )
+        assert all(
+            f"discarded-{index}" not in physical for index in range(1, call_count)
+        )
+        assert scripted.calls == 2
 
     asyncio.run(scenario())
 
@@ -1085,6 +1190,13 @@ def test_pydantic_ai_records_inflight_provider_cancellation() -> None:
 
 def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) -> None:
     normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
+    resolved_decision = SearchPageContentResult(
+        "context:test",
+        normalized.name,
+        normalized.arguments,
+        {"kind": "Matches", "items": []},
+        normalized.call_id,
+    )
     monkeypatch.setattr(
         pydantic_bridge.ProviderCallNormalizer,
         "normalize",
@@ -1097,11 +1209,13 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     monkeypatch.setattr(
         pydantic_bridge,
         "resolve_grounded_action_call",
-        lambda _catalog, call, **_kwargs: captured.setdefault("resolution", SimpleNamespace(decision=call)),
+        lambda _catalog, call, **_kwargs: captured.setdefault(
+            "resolution", SimpleNamespace(decision=resolved_decision)
+        ),
     )
     output = DeferredToolRequests(calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")])
 
-    decision, error, parsed = pydantic_bridge._resolve_deferred(
+    exchange, error, parsed = pydantic_bridge._resolve_deferred(
         output,
         SimpleNamespace(
             catalog_id="grounded-catalog:test",
@@ -1110,10 +1224,14 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
         "context:test",
     )
 
-    assert decision == normalized
+    assert exchange is not None
+    assert exchange.call == normalized
+    assert exchange.decision is resolved_decision
+    assert len(exchange.response.parts) == 1
+    assert len(exchange.requests.calls) == 1
     assert error is None
-    assert parsed == (normalized,)
-    assert captured["resolution"].decision == normalized
+    assert parsed == ()
+    assert captured["resolution"].decision is resolved_decision
 
 
 def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:

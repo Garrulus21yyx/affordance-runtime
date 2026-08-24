@@ -155,10 +155,21 @@ Live and cohort execution remain stopped.
      tool calls; canonical history projection rejected the mismatch. No rate limit or provider retry caused the failure.
    - Evidence: `evidence/acceptance/task21-pending-exchange-multicall-falsification-20260824.json`.
 
-21. **pending — Return only to multiple-call pending-exchange owner**
+21. **completed — Return only to multiple-call pending-exchange owner**
    - Reconcile mechanical first-call canonicalization with the official pending call/result history without changing
      Store, continuation, World, route, Catalog, TurnPacker capacity, CoreLoop, Monitor, or benchmark semantics.
    - No further live run or bounded cohort is authorized.
+
+22. **in_progress — Canonicalize one complete accepted provider exchange**
+   - Introduce one typed `AcceptedToolExchange` produced by the existing single-call canonicalizer. It binds the
+     accepted call, resolved decision, canonical one-call `ModelResponse`, canonical `DeferredToolRequests`, and
+     discarded-call count; raw provider output remains transcript-only.
+   - Migrate Decision return, `pending_exchange`, physical pending history, and `DeferredToolResults` to that one value;
+     delete tuple/object pending state and raw-response-to-pending-history projection.
+   - Verify a generated 1..N-call two-turn production path: accepted Decision call ID/name/args equals the sole pending
+     history call, StepResult call, and deferred result; every discarded call is absent from execution/history/results.
+     Keep `parallel_tool_calls=false` only as a provider hint, never as correctness authority.
+   - Run focused/full/static/negative verification and independent fresh review before requesting any further live run.
 
 ## Explicit non-goals
 
