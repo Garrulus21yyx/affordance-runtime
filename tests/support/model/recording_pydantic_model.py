@@ -21,6 +21,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -120,7 +121,9 @@ class RecordedProviderInvocation:
     model_request_parameters: FrozenBoundaryObject
 
 
-DecisionScript: TypeAlias = list[tuple[str, dict[str, object]] | str | Exception]
+DecisionScript: TypeAlias = list[
+    tuple[str, dict[str, object]] | str | Exception | ModelResponse
+]
 
 
 @dataclass
@@ -187,6 +190,8 @@ class RecordingPydanticModel:
             scripted = self.decisions.pop(0)
             if isinstance(scripted, Exception):
                 raise scripted
+            if isinstance(scripted, ModelResponse):
+                return copy.deepcopy(scripted)
             if isinstance(scripted, list):
                 parts = []
                 for index, item in enumerate(scripted):
@@ -329,18 +334,28 @@ def normalize_recorded_provider_input(record: RecordedProviderInvocation) -> Map
 
 def _normalize_message(message: ModelMessage) -> Mapping[str, object]:
     if isinstance(message, ModelResponse):
+        parts = []
+        for part in message.parts:
+            if isinstance(part, ToolCallPart):
+                parts.append(
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": part.tool_name,
+                        "arguments": _thaw(part.args_as_dict()),
+                        "tool_call_id": part.tool_call_id,
+                    }
+                )
+                continue
+            if isinstance(part, TextPart):
+                parts.append({"part_kind": "text", "content": part.content})
+                continue
+            if isinstance(part, ThinkingPart):
+                parts.append({"part_kind": "thinking", "content": part.content})
+                continue
+            raise TypeError(f"unsupported recorded model response part: {type(part).__name__}")
         return {
             "kind": "response",
-            "parts": tuple(
-                {
-                    "part_kind": "tool-call",
-                    "tool_name": part.tool_name,
-                    "arguments": _thaw(part.args_as_dict()),
-                    "tool_call_id": part.tool_call_id,
-                }
-                for part in message.parts
-                if isinstance(part, ToolCallPart)
-            ),
+            "parts": tuple(parts),
         }
     if not isinstance(message, ModelRequest):
         raise TypeError("recorder expected a PydanticAI model message")

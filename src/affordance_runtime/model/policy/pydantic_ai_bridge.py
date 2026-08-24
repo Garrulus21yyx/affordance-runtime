@@ -75,6 +75,8 @@ from affordance_runtime.model.policy.turn_packer import TurnPacker
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
+_MAX_PROGRESS_NOTE_CHARS = 800
+_PROGRESS_NOTE_TRUNCATION = "\n[progress note truncated by history boundary]\n"
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
@@ -107,7 +109,7 @@ class _ProviderCallExhausted(RuntimeError):
 
 @dataclass(frozen=True)
 class AcceptedToolExchange:
-    """One accepted call plus the exact typed response retained in SDK history."""
+    """One accepted call plus bounded model-authored progress retained in SDK history."""
 
     call: ToolCall
     decision: AgentDecision
@@ -115,7 +117,7 @@ class AcceptedToolExchange:
     discarded_call_count: int = 0
 
     def __post_init__(self) -> None:
-        from pydantic_ai.messages import ModelResponse, ToolCallPart
+        from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 
         decision_call_id = str(getattr(self.decision, "tool_call_id", ""))
         if (
@@ -129,9 +131,19 @@ class AcceptedToolExchange:
         response_calls = tuple(
             part for part in self.response.parts if isinstance(part, ToolCallPart)
         )
+        response_progress = tuple(
+            part for part in self.response.parts if isinstance(part, TextPart)
+        )
+        progress_chars = sum(len(part.content) for part in response_progress)
         expected = (self.call.name, dict(self.call.arguments), self.call.call_id)
         if (
-            len(response_calls) != 1
+            any(
+                not isinstance(part, (TextPart, ToolCallPart))
+                for part in self.response.parts
+            )
+            or len(response_progress) > 1
+            or progress_chars > _MAX_PROGRESS_NOTE_CHARS
+            or len(response_calls) != 1
             or (
                 response_calls[0].tool_name,
                 response_calls[0].args_as_dict(),
@@ -362,11 +374,13 @@ class PydanticAIGroundedDecisionPort:
                 envelope=envelope,
                 provider_error_type=ModelAPIError,
             )
+            accepted_result = result
             resolution_error = None
             accepted_exchange, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
                 catalog,
                 request.context_id,
+                source_response=_latest_model_response(result),
             )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
             if accepted_exchange is None and initial_calls:
@@ -431,6 +445,7 @@ class PydanticAIGroundedDecisionPort:
                     repair_result.output,
                     catalog,
                     request.context_id,
+                    source_response=_latest_model_response(repair_result),
                 )
                 if (
                     repair_exchange is not None
@@ -452,6 +467,7 @@ class PydanticAIGroundedDecisionPort:
                 self._set_tool_resolution(repair_error, accepted=repair_exchange is not None)
                 if repair_exchange is not None:
                     accepted_exchange = repair_exchange
+                    accepted_result = repair_result
             if accepted_exchange is None:
                 return self._invocation_failure(
                     _tool_resolution_failure(resolution_error),
@@ -587,7 +603,7 @@ class PydanticAIGroundedDecisionPort:
                 self,
                 "message_history",
                 _accepted_message_history(
-                    result,
+                    accepted_result,
                     history_messages,
                     accepted_exchange,
                     pending_call,
@@ -1123,9 +1139,8 @@ def _endpoint_host(base_url: str) -> str:
     return (parsed.netloc or parsed.path.split("/", 1)[0]).strip().casefold()
 
 
-def _resolve_deferred(output, catalog, context_id: str):
+def _resolve_deferred(output, catalog, context_id: str, *, source_response=None):
     from pydantic_ai import DeferredToolRequests
-    from pydantic_ai.messages import ModelResponse, ToolCallPart
 
     if not isinstance(output, DeferredToolRequests) or output.approvals:
         return None, None, ()
@@ -1165,20 +1180,74 @@ def _resolve_deferred(output, catalog, context_id: str):
                 (reconciliation.exact_call,),
             )
         accepted_call = reconciliation.exact_call
-        response_call = ToolCallPart(
-            accepted_call.name,
-            to_json_compatible(accepted_call.arguments),
-            accepted_call.call_id,
-        )
         return AcceptedToolExchange(
             accepted_call,
             resolution.decision,
-            ModelResponse(parts=[response_call]),
+            _accepted_model_response(source_response, accepted_call),
             max(0, len(output.calls) - 1),
         ), None, ()
     if repair_anchor is not None:
         return None, repair_anchor[1], (repair_anchor[0],)
     return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), ()
+
+
+def _latest_model_response(result):
+    """Return the current SDK response, excluding earlier supplied history."""
+
+    from pydantic_ai.messages import ModelResponse
+
+    responses = tuple(
+        message for message in result.all_messages() if isinstance(message, ModelResponse)
+    )
+    if not responses:
+        raise ValueError("PydanticAI produced no model response")
+    return responses[-1]
+
+
+def _accepted_model_response(source_response, accepted_call: ToolCall):
+    """Keep bounded visible progress and one normalized call; omit hidden reasoning."""
+
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+
+    if source_response is not None:
+        if not isinstance(source_response, ModelResponse):
+            raise TypeError("source response is not a PydanticAI ModelResponse")
+        source_call_ids = {
+            part.tool_call_id
+            for part in source_response.parts
+            if isinstance(part, ToolCallPart)
+        }
+        if accepted_call.call_id not in source_call_ids:
+            raise ValueError("accepted call is absent from the source model response")
+        progress = "\n".join(
+            part.content.strip()
+            for part in source_response.parts
+            if isinstance(part, TextPart) and part.content.strip()
+        )
+    else:
+        progress = ""
+
+    if len(progress) > _MAX_PROGRESS_NOTE_CHARS:
+        available = _MAX_PROGRESS_NOTE_CHARS - len(_PROGRESS_NOTE_TRUNCATION)
+        prefix_chars = available // 2
+        suffix_chars = available - prefix_chars
+        progress = (
+            progress[:prefix_chars].rstrip()
+            + _PROGRESS_NOTE_TRUNCATION
+            + progress[-suffix_chars:].lstrip()
+        )
+
+    parts = []
+    if progress:
+        parts.append(TextPart(progress))
+    parts.append(
+        ToolCallPart(
+            accepted_call.name,
+            to_json_compatible(accepted_call.arguments),
+            accepted_call.call_id,
+        )
+    )
+    return ModelResponse(parts=parts)
 
 
 def _pending_call_from_history(messages: tuple[object, ...]) -> ToolCall | None:

@@ -2,9 +2,9 @@
 
 ## Current status
 
-The thin tool-result/history cutover is implemented and provider-free verified. The affected focused suite passes
-`164` tests; the full suite passes `1645` tests with `24` skipped. Ruff, compileall, diff/negative searches, and fresh
-diff review pass.
+The thin tool-result/history cutover and the follow-up accepted-response repair are implemented and provider-free
+verified. The affected focused suite passes `166` tests; the full suite passes `1652` tests with `19` skipped. Ruff,
+compileall, diff/negative searches, and fresh diff review pass.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -30,6 +30,13 @@ The later live trace added a fourth, directly observed symptom: one turn receive
 continuation page, and the following turn repeated the search. `TaskGoal`, `GoalPlan`, and fresh World were present.
 The PydanticAI bridge had retained only the latest pending exchange, so the earlier completed ToolReturn was absent.
 
+After direct call/result history was restored, the same trace exposed the remaining owner defect: the provider response
+contained the model's conclusion that the answer was ready, but the bridge reconstructed the accepted response as a new
+`ModelResponse` containing only `ToolCallPart`. The raw conclusion therefore existed in Trace but not in the next model
+turn. Retaining the full hidden reasoning would make the already growing context worse, so the positive contract is one
+short, model-authored, visible progress note plus one accepted call. No second summarizer model or Runtime evidence
+memory is introduced.
+
 Those defects were generalized into a generic evidence inventory and continuation system. Subsequent subtype,
 currentness, producer, and Store-composition failures all arose on that shared path.
 
@@ -41,7 +48,7 @@ local ToolCall(call_id)
 -> owner-bounded direct result
 -> StepResult
 -> same-call PydanticAI ToolReturn
--> bounded typed call/result history for later policy turns
+-> bounded visible progress + typed call/result history for later policy turns
 -> next Recording FunctionModel turn
 ```
 
@@ -90,6 +97,12 @@ The second physical provider input contains page 1 under its original call ID. T
 completed accepted pairs in order: page 1 under call 1 and page 2 under call 2. Their contents equal the corresponding
 committed results, and no prior user/World prompt is retained. A terminal response clears the bridge history. The Store
 contains only bounded digest receipts and no result body/inventory.
+
+A second Recording PydanticAI gate emits `ThinkingPart + TextPart + two ToolCallPart` values. The accepted response in
+the following physical provider input contains only the bounded model-authored `TextPart` and the one accepted normalized
+call; its matching ToolReturn follows under the same call ID. Hidden reasoning and the discarded call remain observable
+in the raw transcript but are absent from future model context. An overlong visible note retains a bounded prefix and
+conclusion suffix with an explicit truncation marker.
 
 ### G4 — R-ref follow-up
 
@@ -146,7 +159,7 @@ pytest -q \
   tests/integration/model/test_pydantic_ai_spike.py
 ```
 
-Result: `164 passed`.
+Result: `166 passed`.
 
 Full and static verification:
 
@@ -157,7 +170,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1645 passed / 24 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing Python 3.13
+Result: `1652 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 No live provider command belongs in this provider-free acceptance sequence.
@@ -209,7 +222,9 @@ The final read-only review for this cutover must answer:
 4. Can a result exceed its owner byte bound or require fragment reassembly?
 5. Does physical PydanticAI history preserve bounded completed accepted call ID/result pairs, append the current
    same-call result, exclude old World prompts, and clear on terminal completion?
-6. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
+6. Does each retained response contain at most one bounded visible progress note and exactly one accepted call, while
+   hidden reasoning and discarded calls remain absent from later provider input?
+7. Did any change alter World, Binder, Executor, BrowserGym, GoalPlan, evaluator, or live benchmark semantics?
 7. Are the remaining action-page/observation cursors private implementation details rather than model-visible evidence
    state?
 

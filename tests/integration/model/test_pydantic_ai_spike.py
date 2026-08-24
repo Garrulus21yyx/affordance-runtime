@@ -13,7 +13,14 @@ pytest.importorskip("pydantic_ai")
 
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models import ModelRequestParameters
 
 import affordance_runtime.model.policy.canonical_provider_envelope as canonical_envelope_module
@@ -359,6 +366,100 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
             f"discarded-{index}" not in physical for index in range(1, call_count)
         )
         assert scripted.calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("progress-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+        progress = "Verified names: Dibbins and Anglebert Dinkherhump; answer is ready."
+        discarded_id = "recording-call:progress:discarded"
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("private deliberation " * 400),
+                        TextPart(progress),
+                        ToolCallPart("list_regions", {}, "recording-call:progress"),
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "unneeded recheck"},
+                            discarded_id,
+                        ),
+                    ],
+                    provider_response_id="recording-response:progress",
+                ),
+                (
+                    "submit_final_response",
+                    {"content": "Dibbins; Anglebert Dinkherhump", "evidence_refs": []},
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(
+            ModelDecisionRequest("request:progress:first", first_context)
+        )
+
+        assert first.failure is None and first.output is not None
+        assert first.output.decision.tool_call_id == "recording-call:progress"
+        retained = policy.port.message_history[0]
+        assert isinstance(retained, ModelResponse)
+        assert [type(part) for part in retained.parts] == [TextPart, ToolCallPart]
+        assert retained.parts[0].content == progress
+        raw_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
+        assert any(
+            part["part_kind"] == "thinking" and "private deliberation" in part["content"]
+            for part in raw_parts
+        )
+
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        transition = first_context.delivery_store.reduce(step, step_index=1)
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            delivery_store=transition.next_store,
+            last_step=step,
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:progress:second", second_context, last_step=step)
+        )
+
+        assert second.failure is None and second.output is not None, json.dumps(
+            second.diagnostics, default=str
+        )
+        assert isinstance(second.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        prior_response = next(
+            message for message in recorded["messages"] if message["kind"] == "response"
+        )
+        assert prior_response["parts"] == (
+            {"part_kind": "text", "content": progress},
+            {
+                "part_kind": "tool-call",
+                "tool_name": "list_regions",
+                "arguments": {},
+                "tool_call_id": "recording-call:progress",
+            },
+        )
+        physical = json.dumps(recorded, sort_keys=True)
+        assert "private deliberation" not in physical
+        assert discarded_id not in physical
+        assert "one concise progress note" in str(scripted.records[0].instructions)
 
     asyncio.run(scenario())
 
@@ -1399,6 +1500,64 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     assert error is None
     assert parsed == ()
     assert captured["resolution"].decision is resolved_decision
+
+
+def test_accepted_response_bounds_progress_and_excludes_hidden_reasoning(monkeypatch) -> None:
+    normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
+    resolved_decision = SearchPageContentResult(
+        "context:test",
+        normalized.name,
+        normalized.arguments,
+        {"kind": "Matches", "items": []},
+        normalized.call_id,
+    )
+    monkeypatch.setattr(
+        pydantic_bridge.ProviderCallNormalizer,
+        "normalize",
+        lambda *_args: ToolCallReconciliationResult(
+            ToolCallReconciliationStatus.EXACT,
+            exact_call=normalized,
+        ),
+    )
+    monkeypatch.setattr(
+        pydantic_bridge,
+        "resolve_grounded_action_call",
+        lambda *_args, **_kwargs: SimpleNamespace(decision=resolved_decision),
+    )
+    progress = "established-prefix " + "x" * 1_000 + " established-conclusion"
+    source = ModelResponse(
+        parts=[
+            ThinkingPart("hidden chain " * 1_000),
+            TextPart(progress),
+            ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1"),
+            ToolCallPart("discarded", {}, "call:discarded"),
+        ]
+    )
+    output = DeferredToolRequests(
+        calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")]
+    )
+
+    exchange, error, parsed = pydantic_bridge._resolve_deferred(
+        output,
+        SimpleNamespace(
+            catalog_id="grounded-catalog:test",
+            delivery_id="delivery:" + "d" * 64,
+        ),
+        "context:test",
+        source_response=source,
+    )
+
+    assert exchange is not None
+    assert error is None
+    assert parsed == ()
+    assert [type(part) for part in exchange.response.parts] == [TextPart, ToolCallPart]
+    retained_progress = exchange.response.parts[0].content
+    assert len(retained_progress) == pydantic_bridge._MAX_PROGRESS_NOTE_CHARS
+    assert retained_progress.startswith("established-prefix")
+    assert retained_progress.endswith("established-conclusion")
+    assert pydantic_bridge._PROGRESS_NOTE_TRUNCATION.strip() in retained_progress
+    assert exchange.response.parts[1].tool_name == normalized.name
+    assert exchange.response.parts[1].tool_call_id == normalized.call_id
 
 
 def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:

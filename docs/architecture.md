@@ -170,7 +170,7 @@ cannot leak into another episode.
 | private execution binding | Binder | model, read tools, Trace |
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
-| bounded typed call/result history and correlation | PydanticAI boundary | Store, Workspace, Monitor |
+| bounded typed call/result history, correlation, and model-authored progress note | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | next Store reduction | `ObservationDeliveryStore.reduce` | provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
@@ -189,12 +189,20 @@ The model context contains only:
 - the fresh compact canonical World;
 - the current bounded ToolCatalog;
 - bounded recent semantic receipts and control feedback;
+- at most one bounded, visible, non-authoritative progress note on each retained accepted model response;
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs and the current same-call ToolReturn.
 
 Old World/user prompts are excluded from transport history because the fresh World is the current-environment
-authority. `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or
-rebuild ToolReturn content. When capacity requires reduction, only an oldest complete call/result pair can be dropped;
-this is bounded SDK history retention, not semantic memory or evidence projection.
+authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its one tool call.
+The PydanticAI boundary retains that visible `TextPart` with the accepted normalized `ToolCallPart`, hard-bounds a
+misbehaving response at 800 characters with an explicit truncation marker, and excludes hidden `ThinkingPart` content
+and discarded extra calls from future model input. Raw provider output remains in Trace. This is same-actor trajectory
+context, not a Runtime fact authority, Workspace memory, or a separate summarizer model.
+
+`TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
+ToolReturn content. When capacity requires reduction, only an oldest complete response/call/result exchange can be
+dropped; this is bounded SDK history retention, not semantic memory or evidence projection. A newer cumulative progress
+note can carry forward model conclusions before an older exchange leaves the window.
 
 `ObservationDeliveryStore` now retains only:
 

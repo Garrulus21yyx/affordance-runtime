@@ -147,7 +147,11 @@ class CanonicalProviderEnvelope:
                 if tuple(self.history_messages) != _project_pydantic_history(self.pydantic_history):
                     raise ValueError("canonical history projection differs from exact PydanticAI messages")
                 response_message = self.history_messages[-1]
-                prior_call = tuple(response_message["parts"])[0]
+                prior_call = next(
+                    part
+                    for part in tuple(response_message["parts"])
+                    if part["part_kind"] == "tool-call"
+                )
                 current_result = self.tool_result
                 assert current_result is not None
                 valid_exchange = (
@@ -536,7 +540,13 @@ def _project_pydantic_history(
     if not messages:
         return ()
     try:
-        from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+        from pydantic_ai.messages import (
+            ModelRequest,
+            ModelResponse,
+            TextPart,
+            ToolCallPart,
+            ToolReturnPart,
+        )
     except ImportError as exc:  # pragma: no cover - guarded by the provider bridge
         raise ValueError("PydanticAI messages are unavailable") from exc
     if len(messages) % 2 != 1:
@@ -548,21 +558,32 @@ def _project_pydantic_history(
             if not isinstance(message, ModelResponse):
                 raise ValueError("compact PydanticAI history expected a tool-call response")
             calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
-            if len(calls) != 1 or len(message.parts) != 1:
-                raise ValueError("accepted PydanticAI response must contain exactly one tool call")
+            progress = tuple(part for part in message.parts if isinstance(part, TextPart))
+            if (
+                len(calls) != 1
+                or len(progress) > 1
+                or len(message.parts) != len(calls) + len(progress)
+            ):
+                raise ValueError(
+                    "accepted PydanticAI response must contain bounded progress and one tool call"
+                )
             call = calls[0]
             pending = (call.tool_name, call.tool_call_id)
+            response_parts: list[Mapping[str, object]] = [
+                {"part_kind": "text", "content": item.content} for item in progress
+            ]
+            response_parts.append(
+                {
+                    "part_kind": "tool-call",
+                    "tool_name": call.tool_name,
+                    "arguments": to_json_compatible(call.args_as_dict()),
+                    "tool_call_id": call.tool_call_id,
+                }
+            )
             projected.append(
                 {
                     "kind": "response",
-                    "parts": (
-                        {
-                            "part_kind": "tool-call",
-                            "tool_name": call.tool_name,
-                            "arguments": to_json_compatible(call.args_as_dict()),
-                            "tool_call_id": call.tool_call_id,
-                        },
-                    ),
+                    "parts": tuple(response_parts),
                 }
             )
             continue
