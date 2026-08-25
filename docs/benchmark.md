@@ -25,8 +25,9 @@ matches by target coverage, and leaves an executable-control miss empty instead 
 Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
 command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `168` focused action-subject/delivery/catalog/vertical tests, and the full
-suite at `1693 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
+Current provider-free verification passes `168` focused action-subject/delivery/catalog/vertical tests, the focused
+currentness/execution/CoreLoop surface at `81 passed / 3 skipped`, and the full suite at
+`1692 passed / 25 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
 pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
@@ -60,6 +61,20 @@ model input contained only the folded `Browser navigation` region heading. This 
 compact action-subject projection, not acceptance. The browser-only direct-observation patch has been removed: the
 sole renderer now keeps every current non-entity action subject already present in Actor World, including the browser
 tab state. It does not relax WebArena URL authorization or add tool/task/site-specific routing.
+
+Task266 run9 crossed that compact-observation boundary. Across ten valid policy calls it focused the correct tabs,
+read the official coordinates, returned to the map, discovered the real directions control, and selected it. The
+adapter returned `NOT_SENT/stale_binding` before Playwright because the project's currentness comparator equated the
+control's whole canonical `public_state` and availability snapshot. Dynamic presentation drift therefore overruled
+the still-matching BID/role/label/click contract, and CoreLoop terminated instead of using its existing fresh-binding
+capture. Run9 is failed pre-repair evidence, not acceptance.
+
+The repair makes the interaction profile's existing `currentness_fields` the sole state-drift declaration. Page and
+episode lineage, BID, role, accessible label, select option values, and drag topology remain strict; CSS, color,
+geometry, incidental active/focus state, and equal-executability availability changes do not become a second binding
+identity. BrowserGym/Playwright still owns locator resolution and physical actionability. If that boundary returns a
+typed pre-dispatch stale result, CoreLoop performs one `BINDING_REFRESH` capture and lets the same policy choose again
+from the fresh World. It records zero executions and never replays the action.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -412,6 +427,12 @@ that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no r
 Browser-global action gates verify profile isolation and the official BrowserGym action strings for all six navigation
 operations. They do not add a local navigation tool or bypass normal currentness and capture.
 
+Currentness gates enumerate every executable BrowserGym element offer and prove that only its declared semantic fields
+can invalidate the binding. A BrowserGym execution witness proves presentation-only drift reaches the official action
+path. The CoreLoop vertical witness then injects a physical `NOT_SENT/stale_binding` after the cheap World check and
+proves one fresh capture reaches the next policy turn, with the terminal non-dispatch fact retained, zero execution,
+and no hidden replay.
+
 ### G7 — deletion and non-specialization gates
 
 Production negative searches must find no:
@@ -485,7 +506,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1676 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1692 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -565,6 +586,8 @@ The final read-only review for this cutover must answer:
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
     observation—including authoritative active-tab and public index-to-route state—without a per-tool renderer branch
     or second browser-state channel?
+19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
+    actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
 
 ## Exit statement
 

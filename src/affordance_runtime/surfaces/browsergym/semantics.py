@@ -93,7 +93,6 @@ class CanonicalBrowserControl:
     public_options: tuple[str, ...]
     private_options: tuple[tuple[str, str], ...]
     public_fingerprint: str
-    currentness_fingerprint: str
     private_node_id: str
     private_parent_id: str
     private_child_ids: tuple[str, ...]
@@ -943,15 +942,6 @@ def _canonical_control(
     if spec.executable and not public_name:
         public_state.append(("semantic.name_status", "unknown"))
     public_payload = (record.role, public_name, tuple(public_state), public_options)
-    private_payload = (
-        public_payload,
-        availability.as_tuple(),
-        private_options,
-        _private_gesture_group(physical),
-        _private_gesture_kind(physical),
-        _private_navigation_potential(physical),
-        tuple((offer.semantic_action, offer.primitive_action) for offer in spec.offers),
-    )
     return CanonicalBrowserControl(
         record.bid,
         record.role,
@@ -961,7 +951,6 @@ def _canonical_control(
         public_options,
         private_options,
         _fingerprint(public_payload),
-        _fingerprint(private_payload),
         record.node_id,
         record.parent_id,
         record.child_ids,

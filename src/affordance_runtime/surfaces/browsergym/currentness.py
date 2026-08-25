@@ -32,7 +32,6 @@ class BrowserGymCurrentnessReason(str, Enum):
     LABEL_CHANGED = "label_changed"
     STATE_CHANGED = "state_changed"
     OPTION_DOMAIN_CHANGED = "option_domain_changed"
-    AVAILABILITY_CHANGED = "availability_changed"
     PRIMITIVE_CHANGED = "primitive_changed"
     NOT_EXECUTABLE = "not_executable"
 
@@ -131,15 +130,11 @@ def _destination_stale_reason(
         return BrowserGymCurrentnessReason.ROLE_CHANGED
     if captured.accessible_name != live.accessible_name:
         return BrowserGymCurrentnessReason.LABEL_CHANGED
-    if captured.public_state != live.public_state:
-        return BrowserGymCurrentnessReason.STATE_CHANGED
     if (
         captured.private_gesture_group != live.private_gesture_group
         or captured.private_gesture_kind != live.private_gesture_kind
     ):
         return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
-    if captured.availability != live.availability:
-        return BrowserGymCurrentnessReason.AVAILABILITY_CHANGED
     if not (
         live.availability.attached is True
         and live.availability.visible is True
@@ -165,24 +160,27 @@ def _stale_reason(
         return BrowserGymCurrentnessReason.ROLE_CHANGED
     if captured.accessible_name != live.accessible_name:
         return BrowserGymCurrentnessReason.LABEL_CHANGED
-    if captured.public_state != live.public_state:
-        return BrowserGymCurrentnessReason.STATE_CHANGED
-    if (
-        captured.public_options != live.public_options
-        or captured.private_options != live.private_options
-    ):
-        return BrowserGymCurrentnessReason.OPTION_DOMAIN_CHANGED
-    if (
-        captured.private_gesture_group != live.private_gesture_group
-        or captured.private_gesture_kind != live.private_gesture_kind
-    ):
-        return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
     captured_offers = tuple(
         offer for offer in captured.executable_offers
         if offer.primitive_action == context.requested_primitive
     )
     if len(captured_offers) != 1 or not primitive_is_compatible(
         live.role, context.requested_primitive,
+    ):
+        return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
+    offer = captured_offers[0]
+    if _declared_currentness_state(captured, offer.currentness_fields) != (
+        _declared_currentness_state(live, offer.currentness_fields)
+    ):
+        return BrowserGymCurrentnessReason.STATE_CHANGED
+    if context.requested_primitive == "select_option" and (
+        captured.public_options != live.public_options
+        or captured.private_options != live.private_options
+    ):
+        return BrowserGymCurrentnessReason.OPTION_DOMAIN_CHANGED
+    if context.requested_primitive == "drag_and_drop" and (
+        captured.private_gesture_group != live.private_gesture_group
+        or captured.private_gesture_kind != live.private_gesture_kind
     ):
         return BrowserGymCurrentnessReason.PRIMITIVE_CHANGED
     live_offers = tuple(
@@ -192,6 +190,16 @@ def _stale_reason(
     if len(live_offers) != 1:
         return BrowserGymCurrentnessReason.NOT_EXECUTABLE
     return None
+
+
+def _declared_currentness_state(
+    control: CanonicalBrowserControl,
+    fields: tuple[str, ...],
+) -> tuple[tuple[str, bool, object], ...]:
+    """Project only state declared by the selected interaction offer."""
+
+    state = dict(control.public_state)
+    return tuple((field, field in state, state.get(field)) for field in fields)
 
 
 def _context_stale_reason(

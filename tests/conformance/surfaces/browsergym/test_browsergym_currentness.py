@@ -13,6 +13,9 @@ from affordance_runtime.surfaces.browsergym.currentness import (
     BrowserGymCurrentnessStatus,
     compare_browsergym_currentness,
 )
+from affordance_runtime.surfaces.browsergym.interaction_profile import (
+    executable_browsergym_roles,
+)
 from affordance_runtime.surfaces.browsergym.semantics import (
     PRIVATE_CONTROL_PROPERTIES_KEY,
     canonical_control_for_bid,
@@ -71,6 +74,67 @@ def test_unchanged_canonical_control_is_current_and_unrelated_ax_fields_are_igno
     assert compare_browsergym_currentness(captured, live, _context()).status is (
         BrowserGymCurrentnessStatus.CURRENT
     )
+
+
+def test_click_currentness_ignores_presentation_state_outside_its_offer_contract() -> None:
+    raw = raw_observation(ax_node("control", "link", "Open result"))
+    captured = _control(raw)
+    live_raw = copy.deepcopy(raw)
+    live_raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"].update({
+        "active": True,
+        "color_family": "blue",
+    })
+
+    decision = compare_browsergym_currentness(
+        captured,
+        _control(live_raw),
+        replace(_context(), requested_primitive="click"),
+    )
+
+    assert decision.status is BrowserGymCurrentnessStatus.CURRENT
+
+
+def test_every_element_offer_uses_only_its_declared_currentness_fields() -> None:
+    seen: set[tuple[str, str]] = set()
+    for role in sorted(executable_browsergym_roles()):
+        nodes = [ax_node("control", role, "Control", value="A")]
+        if role in {"combobox", "listbox"}:
+            nodes.append(ax_node("option", "option", "A", properties=(("selected", True),)))
+        raw = raw_observation(*nodes)
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"].update({
+            "editable": True,
+            "focusable": True,
+        })
+        captured = _control(raw)
+        assert captured.executable_offers == captured.role_spec.offers
+
+        presentation_raw = copy.deepcopy(raw)
+        presentation_raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"].update({
+            "active": True,
+            "color_family": "blue",
+        })
+        presentation = _control(presentation_raw)
+
+        for offer in captured.executable_offers:
+            seen.add((role, offer.primitive_action))
+            context = replace(_context(), requested_primitive=offer.primitive_action)
+            assert compare_browsergym_currentness(
+                captured,
+                presentation,
+                context,
+            ).status is BrowserGymCurrentnessStatus.CURRENT
+            for field in offer.currentness_fields:
+                state = dict(captured.public_state)
+                prior = state.get(field)
+                state[field] = not prior if isinstance(prior, bool) else ("changed",)
+                changed = replace(captured, public_state=tuple(state.items()))
+                assert compare_browsergym_currentness(
+                    captured,
+                    changed,
+                    context,
+                ).reason is BrowserGymCurrentnessReason.STATE_CHANGED
+
+    assert seen
 
 
 @pytest.mark.parametrize(

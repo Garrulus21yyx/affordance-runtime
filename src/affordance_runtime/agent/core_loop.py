@@ -83,6 +83,7 @@ from affordance_runtime.evaluation.invocation import (
     Unavailable,
 )
 from affordance_runtime.execution.contracts import (
+    ActionError,
     DispatchStatus,
     ExecutionCancellationPhase,
     ExecutionCancelled,
@@ -1198,6 +1199,17 @@ class CoreAgentLoop:
                 ),
                 feedback="action_execution_cancelled",
             )
+        if (
+            execution.result.dispatch_status is DispatchStatus.NOT_SENT
+            and execution.result.error is ActionError.STALE_BINDING
+        ):
+            return await self._refresh_stale_binding(
+                environment,
+                task,
+                state,
+                decision,
+                execution=execution,
+            )
         if execution.result.dispatch_status is DispatchStatus.NOT_SENT:
             return StepResult(
                 decision,
@@ -1426,12 +1438,35 @@ class CoreAgentLoop:
             ),
         )
 
-    async def _refresh_stale_binding(self, environment, task, state, decision) -> StepResult:
+    async def _refresh_stale_binding(
+        self,
+        environment,
+        task,
+        state,
+        decision,
+        *,
+        execution: ExecutionOutcome | None = None,
+    ) -> StepResult:
         acquisition = await environment.capture(
             WorldObservationRequest(ObservationRequestKind.BINDING_REFRESH, "selected binding is stale")
         )
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
-            return _same_world_step(state, decision, RunStatus.BLOCKED, "binding_refresh_unavailable")
+            return StepResult(
+                decision,
+                state.current_world,
+                state.current_world,
+                state.current_task_evaluation,
+                RunStatus.BLOCKED,
+                execution_receipts=(
+                    ExecutionReceiptBatch.from_atomic(
+                        execution,
+                        state.current_world.observation_id,
+                    )
+                    if execution is not None
+                    else None
+                ),
+                feedback="binding_refresh_unavailable",
+            )
         after = acquisition.observation
         delta = WorldTransitionProjector().project(state.current_world, after)
         after_projection, _after_index = self._canonical_world_for(
@@ -1444,6 +1479,14 @@ class CoreAgentLoop:
             after,
             task_evaluation,
             self._status_for_task(task, task_evaluation),
+            execution_receipts=(
+                ExecutionReceiptBatch.from_atomic(
+                    execution,
+                    after.observation_id,
+                )
+                if execution is not None
+                else None
+            ),
             feedback="binding_refreshed",
             public_world_delta=delta,
             before_public_world=state.canonical_world,

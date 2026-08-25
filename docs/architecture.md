@@ -47,12 +47,27 @@ renderer now emits every current non-entity `InteractionSubjectKind` already pre
 the folded page directory. Adding another action for an existing subject kind requires no renderer branch. Browser
 schemas, ActionSpace resolution, Binder, BrowserGym authorization, and lifecycle handling remain unchanged; no tool
 name, task, site, or route inference was added.
+Task266 run9 crossed that compact-observation repair: the model saw the tab inventory, focused the intended pages,
+recovered Portland's official coordinates, returned to the map, and selected the real directions control. BrowserGym
+then rejected that click before dispatch as `stale_binding/state_changed`. The target BID, role, label, page, episode,
+and executable click offer were unchanged; only presentation fields in the canonical `public_state` had changed. The
+project comparator was treating CSS/appearance/active state and the complete availability record as a second physical
+identity authority instead of using the selected interaction offer's existing `currentness_fields` contract and
+Playwright actionability.
+
+The owner repair removes that duplicated authority. Element currentness now compares the fresh World lineage, BID,
+role, accessible label, the selected offer's declared semantic state, and select/drag binding domains only. Unrelated
+appearance/layout state is observational context, not binding identity; live executability is still derived from the
+same offer and the final physical action remains BrowserGym/Playwright-owned. A typed physical
+`NOT_SENT/stale_binding` reuses the one existing binding-refresh capture and returns the fresh World to the single
+ActionPolicy. It never replays the action and introduces no retry loop, alternate World, or second currentness store.
 Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused action-subject/delivery/catalog/vertical surface passes `168` tests;
-the full suite passes `1693` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
+Current provider-free verification: the focused action-subject/delivery/catalog/vertical surface passes `168` tests,
+and the focused currentness/execution/CoreLoop surface passes `81` with `3` skipped; the full suite passes `1692` with
+`25` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
 currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
 recovery-eligibility, or async-liveness defect in this bounded implementation.
 
@@ -633,6 +648,12 @@ Current primary sources converge on a thin loop rather than a result-conservatio
   alteration; AgentLab applies configurable token fitting at prompt-component/page scope rather than silently clipping
   every readable node at a control-label limit. This project reuses BrowserGym's installed `nav`/`tab` primitives
   instead of inventing navigation tools.
+- BrowserGym's official [BID action functions](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/action/functions.py)
+  resolve the current element through Playwright, whose
+  [Locator/actionability contract](https://playwright.dev/docs/actionability) re-resolves the DOM and checks whether
+  the requested action can actually run. The project therefore retains only semantic stale protection needed to
+  prevent acting on a changed subject; it does not make CSS, color, geometry, or a copied availability snapshot a
+  parallel physical-action authority.
 - [AgentOccam (ICLR 2025)](https://proceedings.iclr.cc/paper_files/paper/2025/file/f2c6e459b95694a24ac69c469a4ee746-Paper-Conference.pdf)
   reports that aligning the observation and action spaces—removing redundant structure while retaining informative,
   usable page elements—substantially improves a plain single web agent without extra roles or online search. The run5
@@ -693,6 +714,9 @@ This cutover is implementation-complete only when all of the following agree:
     partial PageMap remains aggregate-bounded and recoverable through the existing read tools.
 14. every current non-entity `InteractionSubjectKind` present in Actor World reaches the same compact observation;
     adding an action for an existing kind does not require a renderer or history-path change.
+15. BrowserGym element currentness consumes only the selected interaction offer's declared semantic fields and private
+    binding domain; unrelated presentation drift reaches Playwright, while a typed pre-dispatch stale result performs
+    one fresh capture, zero replay, and returns to the same ActionPolicy.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

@@ -92,7 +92,6 @@ def test_canonical_record_is_invariant_to_ax_permutation_and_unrelated_nodes(per
     assert actual == expected
     assert actual is not None
     assert actual.public_fingerprint == expected.public_fingerprint
-    assert actual.currentness_fingerprint == expected.currentness_fingerprint
 
 
 @given(st.permutations((0, 1, 2, 3, 4)))
@@ -313,7 +312,6 @@ def test_dom_class_change_is_public_effect_evidence_without_exposing_bid() -> No
 
     assert before is not None and after is not None
     assert before.public_fingerprint != after.public_fingerprint
-    assert before.currentness_fingerprint != after.currentness_fingerprint
     assert dict(after.public_state)["semantic.dom.attribute.class_tokens"] == ("like", "active")
     assert "private-control" not in repr(_projection(raw).world)
 
@@ -722,7 +720,7 @@ def test_named_physical_option_outside_public_domain_cannot_receive_select_bindi
     assert not any(binding.semantic_action == "select_option" for binding in _projection(raw).world.bindings)
 
 
-def test_public_projection_contains_no_private_route_value_or_fingerprint() -> None:
+def test_public_projection_contains_no_private_route_value() -> None:
     raw = raw_observation(
         ax_node("private-select", "combobox", "Choice", value="Public A"),
         ax_node("private-option", "option", "Public A"),
@@ -734,14 +732,9 @@ def test_public_projection_contains_no_private_route_value_or_fingerprint() -> N
     public = repr(projection.world)
     select_binding = _binding(projection.world, "select_option")
     serialized = repr(select_binding.parameter_schema)
-    select_private = next(
-        item for item in projection.private_bindings
-        if getattr(item, "binding_id", "") == select_binding.binding_id
-    )
 
     for forbidden in (
         "private-select", "private-option", "native-secret-value", "selector",
-        select_private.canonical_control.currentness_fingerprint,
     ):
         assert forbidden not in public
         assert forbidden not in serialized
@@ -768,4 +761,3 @@ def test_public_fingerprint_excludes_bid_and_native_option_value() -> None:
 
     assert first_control is not None and second_control is not None
     assert first_control.public_fingerprint == second_control.public_fingerprint
-    assert first_control.currentness_fingerprint != second_control.currentness_fingerprint

@@ -528,6 +528,68 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
     asyncio.run(scenario())
 
 
+def test_physical_stale_not_sent_refreshes_world_and_returns_to_policy_without_replay() -> None:
+    @dataclass
+    class RefreshAwarePolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    tool_call_id="provider-call:stale",
+                )
+            assert context.current_observation is not None
+            assert context.current_observation.observation_id == "refreshed"
+            assert context.last_step is not None
+            assert context.last_step.feedback == "binding_refreshed"
+            assert context.last_step.execution_receipts is not None
+            assert context.last_step.execution_receipts.execution_count == 0
+            terminal = context.last_step.execution_receipts.terminal_failure
+            assert terminal is not None and terminal.error is ActionError.STALE_BINDING
+            return Abort(context.context_id, "fresh world observed", AbortCategory.USER_REQUEST)
+
+    async def scenario() -> None:
+        policy = RefreshAwarePolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("physical_stale_refresh_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            independent_observations=(_world("refreshed", False),),
+            results=(
+                ActionResult(
+                    "*",
+                    DispatchStatus.NOT_SENT,
+                    "dom",
+                    False,
+                    ActionError.STALE_BINDING,
+                ),
+            ),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.current_world.observation_id == "refreshed"
+        assert state.execution_count == 0
+        assert policy.turns == 2
+        assert environment.execute_calls == 1
+        assert environment.capture_calls == 1
+        assert environment.dispatched_requests == []
+        assert [item.reason for item in state.workspace.recent_steps] == [
+            "binding_refreshed",
+            "agent_aborted:user_request",
+        ]
+
+    asyncio.run(scenario())
+
+
 def test_post_dispatch_evaluator_exception_is_typed_and_never_fabricates_unknown(tmp_path) -> None:
     class FailingPostDispatchEvaluator(CoreTaskEvaluator):
         async def evaluate(self, task, observation):

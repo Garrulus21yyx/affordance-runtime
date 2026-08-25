@@ -616,6 +616,33 @@ def test_changed_drag_destination_is_stale_and_never_dispatched() -> None:
     asyncio.run(environment.close())
 
 
+def test_drag_destination_presentation_drift_reaches_playwright() -> None:
+    fake, environment, task, world = _drag_fixture()
+    option = next(
+        item for item in ActionSpaceBuilder().build(task, world).options
+        if item.semantic_action == "drag_to"
+    )
+    request = request_for(
+        world,
+        task,
+        "drag_to",
+        destination_id=option.eligible_destination_ids[0],
+    )
+    live = copy.deepcopy(fake.post)
+    live[PRIVATE_CONTROL_PROPERTIES_KEY]["destination"].update({
+        "active": True,
+        "color_family": "blue",
+        "bbox": [90, 20, 80, 50],
+    })
+    fake.post = live
+
+    outcome = asyncio.run(environment.execute(request))
+
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ['drag_and_drop("source", "destination")']
+    asyncio.run(environment.close())
+
+
 def test_stale_or_unavailable_currentness_is_not_sent_and_zero_step() -> None:
     fake, environment, task, world = _fixture()
     request = request_for(world, task, "activate")
@@ -624,6 +651,23 @@ def test_stale_or_unavailable_currentness_is_not_sent_and_zero_step() -> None:
     assert (result.dispatch_status, result.error) == (DispatchStatus.NOT_SENT, ActionError.STALE_BINDING)
     assert fake.actions == [] and environment.step_calls == 0 and environment.probe_calls == 1
     assert fake.currentness_probe_count == 1
+    asyncio.run(environment.close())
+
+
+def test_presentation_drift_does_not_preempt_playwright_actionability() -> None:
+    fake, environment, task, world = _fixture()
+    live = copy.deepcopy(fake.post)
+    live[PRIVATE_CONTROL_PROPERTIES_KEY]["1"].update({
+        "active": True,
+        "color_family": "blue",
+    })
+    fake.post = live
+
+    result = asyncio.run(environment.execute(request_for(world, task, "activate"))).result
+
+    assert (result.dispatch_status, result.error) == (DispatchStatus.SENT, None)
+    assert fake.actions == ['click("1")']
+    assert environment.probe_calls == environment.step_calls == 1
     asyncio.run(environment.close())
 
 
