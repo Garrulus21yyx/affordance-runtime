@@ -187,7 +187,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
     asyncio.run(scenario())
 
 
-def test_multiple_provider_tool_calls_serialize_the_first_action_once() -> None:
+def test_multiple_provider_tool_calls_execute_first_and_preserve_every_proposal() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["multiple_gui_actions"])
         policy = _policy(scripted.build())
@@ -215,14 +215,10 @@ def test_multiple_provider_tool_calls_serialize_the_first_action_once() -> None:
         assert len(policy.port.last_admitted_envelopes) == 1
         retained = policy.port.message_history[0]
         assert isinstance(retained, ModelResponse)
-        assert "accepted only the first of 2 proposed tool calls" in retained.parts[0].content
-        assert "not executed or queued" in retained.parts[0].content
         assert [part.tool_call_id for part in retained.parts if isinstance(part, ToolCallPart)] == [
-            "recording-call:1"
+            "recording-call:1",
+            "recording-call:1:second",
         ]
-        assert "recording-call:1:second" not in json.dumps(
-            retained, default=str
-        )
 
     asyncio.run(scenario())
 
@@ -255,7 +251,7 @@ def test_zero_or_wholly_unparseable_output_fails_without_representation_repair(
     asyncio.run(scenario())
 
 
-def test_semantically_distinct_extra_call_is_not_a_fallback_or_pending_action() -> None:
+def test_semantically_distinct_extra_call_is_not_a_fallback_but_remains_visible() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["multiple_distinct_gui_actions"])
         policy = _policy(scripted.build())
@@ -280,7 +276,82 @@ def test_semantically_distinct_extra_call_is_not_a_fallback_or_pending_action() 
         assert result.diagnostics["multiple_tool_call_attempt_count"] == 1
         assert result.diagnostics["discarded_protocol_call_count"] == 1
         physical_history = json.dumps(policy.port.message_history, default=str)
-        assert "recording-call:1:discarded" not in physical_history
+        assert "recording-call:1:discarded" in physical_history
+
+    asyncio.run(scenario())
+
+
+def test_unexecuted_second_proposal_can_be_reissued_after_the_fresh_world() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("multiple-call-reissue", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        scripted = ScriptedModel(
+            [
+                [
+                    ("list_regions", {}),
+                    ("search_page_content", {"query": "scope"}),
+                ],
+                ("search_page_content", {"query": "scope"}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        context = builder.build(task, world, actions, evaluation)
+
+        first = await policy.port.generate(
+            ModelDecisionRequest("request:multiple-reissue:first", context)
+        )
+
+        assert first.failure is None and first.output is not None
+        assert first.output.decision.tool_name == "list_regions"
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        fresh_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=step,
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:multiple-reissue:second",
+                fresh_context,
+                last_step=step,
+            )
+        )
+
+        assert second.failure is None and second.output is not None
+        assert second.output.decision.tool_name == "search_page_content"
+        assert second.output.decision.arguments == {"query": "scope"}
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        proposal_ids = tuple(
+            part["tool_call_id"]
+            for message in recorded["messages"]
+            if message["kind"] == "response"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-call"
+        )
+        returns = tuple(
+            part
+            for message in recorded["messages"]
+            if message["kind"] == "request"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        )
+        assert proposal_ids == (
+            "recording-call:1",
+            "recording-call:1:discarded:1",
+        )
+        assert tuple(item["tool_call_id"] for item in returns) == proposal_ids
+        assert returns[1]["content"].startswith("Not executed:")
 
     asyncio.run(scenario())
 
@@ -392,10 +463,12 @@ def test_first_call_serialization_preserves_the_current_pending_tool_return_pair
         assert [(item["tool_name"], item["tool_call_id"]) for item in calls] == [
             ("list_regions", "recording-call:1"),
             ("search_page_content", "recording-call:2"),
+            ("list_regions", "recording-call:2:discarded:1"),
         ]
         assert [(item["tool_name"], item["tool_call_id"]) for item in returns] == [
             ("list_regions", "recording-call:1"),
             ("search_page_content", "recording-call:2"),
+            ("list_regions", "recording-call:2:discarded:1"),
         ]
 
     asyncio.run(scenario())
@@ -403,7 +476,7 @@ def test_first_call_serialization_preserves_the_current_pending_tool_return_pair
 
 @given(call_count=st.integers(min_value=1, max_value=8))
 @settings(max_examples=8, deadline=None)
-def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
+def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_turn(
     call_count: int,
 ) -> None:
     async def scenario() -> None:
@@ -477,30 +550,39 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
         )
         assert isinstance(second.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[1])
-        prior_call = next(
+        assert recorded == policy.port.last_admitted_envelopes[0].model_boundary_projection()
+        prior_calls = tuple(
             part
             for part in recorded["messages"][-2]["parts"]
             if part["part_kind"] == "tool-call"
         )
-        paired_result = recorded["messages"][-1]["parts"][0]
-        assert prior_call == {
+        paired_results = tuple(
+            part
+            for part in recorded["messages"][-1]["parts"]
+            if part["part_kind"] == "tool-return"
+        )
+        assert prior_calls[0] == {
             "part_kind": "tool-call",
             "tool_name": "list_regions",
             "arguments": {},
             "tool_call_id": accepted_call_id,
         }
-        assert paired_result["part_kind"] == "tool-return"
-        assert paired_result["tool_name"] == prior_call["tool_name"]
-        assert paired_result["tool_call_id"] == prior_call["tool_call_id"]
+        assert len(prior_calls) == call_count
+        assert len(paired_results) == call_count
+        assert tuple(
+            (item["tool_name"], item["tool_call_id"]) for item in paired_results
+        ) == tuple((item["tool_name"], item["tool_call_id"]) for item in prior_calls)
         physical = json.dumps(recorded, sort_keys=True)
         if call_count > 1:
-            assert "accepted only the first" in physical
             assert all(
-                f"discarded-{index}" not in physical for index in range(1, call_count)
+                f"discarded-{index}" in physical for index in range(1, call_count)
             )
             assert all(
-                f"recording-call:1:discarded:{index}" not in physical
+                f"recording-call:1:discarded:{index}" in physical
                 for index in range(1, call_count)
+            )
+            assert all(
+                "Not executed" in item["content"] for item in paired_results[1:]
             )
         assert scripted.calls == 2
 
@@ -548,10 +630,12 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
         assert first.output.decision.tool_call_id == "recording-call:progress"
         retained = policy.port.message_history[0]
         assert isinstance(retained, ModelResponse)
-        assert [type(part) for part in retained.parts] == [TextPart, ToolCallPart]
-        assert retained.parts[0].content.startswith(progress)
-        assert "accepted only the first of 2 proposed tool calls" in retained.parts[0].content
-        assert "not executed or queued" in retained.parts[0].content
+        assert [type(part) for part in retained.parts] == [
+            TextPart,
+            ToolCallPart,
+            ToolCallPart,
+        ]
+        assert retained.parts[0].content == progress
         raw_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
         assert any(
             part["part_kind"] == "thinking" and "private deliberation" in part["content"]
@@ -595,10 +679,17 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
                 "arguments": {},
                 "tool_call_id": "recording-call:progress",
             },
+            {
+                "part_kind": "tool-call",
+                "tool_name": "search_page_content",
+                "arguments": {"query": "unneeded recheck"},
+                "tool_call_id": discarded_id,
+            },
         )
         physical = json.dumps(recorded, sort_keys=True)
         assert "private deliberation" not in physical
-        assert discarded_id not in physical
+        assert discarded_id in physical
+        assert "Not executed" in physical
         assert "one concise progress note" in str(scripted.records[0].instructions)
 
     asyncio.run(scenario())
@@ -722,6 +813,36 @@ def test_compact_sdk_history_drops_only_the_oldest_complete_pair() -> None:
     compacted = pydantic_bridge._drop_oldest_completed_exchange(history)
 
     assert compacted == history[2:]
+    assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
+        "third", {}, "call:3"
+    )
+
+
+def test_compact_sdk_history_treats_multi_call_results_as_one_atomic_exchange() -> None:
+    history = (
+        ModelResponse(
+            parts=[
+                ToolCallPart("first", {}, "call:1"),
+                ToolCallPart("important_second", {"query": "scope"}, "call:2"),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart("first", {"page": 1}, "call:1"),
+                ToolReturnPart(
+                    "important_second",
+                    "Not executed: reassess after the fresh World.",
+                    "call:2",
+                    outcome="failed",
+                ),
+            ]
+        ),
+        ModelResponse(parts=[ToolCallPart("third", {}, "call:3")]),
+    )
+
+    compacted = pydantic_bridge._drop_oldest_completed_exchange(history)
+
+    assert compacted == (history[-1],)
     assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
         "third", {}, "call:3"
     )
@@ -1696,7 +1817,14 @@ def test_multiple_deferred_calls_resolve_only_the_first_and_record_discarded_cou
     assert exchange.call == normalized
     assert exchange.decision is resolved_decision
     assert exchange.discarded_call_count == 1
-    assert "accepted only the first of 2 proposed tool calls" in exchange.response.parts[0].content
+    assert [
+        (part.tool_name, part.tool_call_id)
+        for part in exchange.response.parts
+        if isinstance(part, ToolCallPart)
+    ] == [
+        ("read_region", "call:1"),
+        ("search_page_content", "call:2"),
+    ]
     assert error is None
     assert parsed == ()
     assert normalized_calls == [ToolCall("read_region", {"region_ref": "R1"}, "call:1")]

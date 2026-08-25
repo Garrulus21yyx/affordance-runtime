@@ -150,7 +150,7 @@ def estimate_canonical_envelope(
     history_tokens = _tokens_for(
         {
             "history_messages": envelope.history_messages,
-            "tool_result": envelope.tool_result,
+            "tool_results": envelope.deferred_tool_returns,
         }
     ) if envelope.history_messages else 0
     actor_world_tokens = _tokens_for(envelope.user_text)

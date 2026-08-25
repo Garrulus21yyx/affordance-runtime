@@ -24,10 +24,11 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the focused single-call/history/Monitor/CoreLoop surface at
-`76 passed`, and the full suite at `1705 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and
-the bounded fresh review pass. This is implementation evidence for the bounded changes, not a live witness for the
-Task266 repair.
+Current provider-free verification passes the focused single-call/history/Monitor/CoreLoop surface at `120 passed`.
+The full suite reports `1704 passed / 19 skipped / 3 failed`; all three failures are benchmark lifecycle wall-clock
+assertions requiring `<150ms`, and the same three fail at about `0.95s` in an isolated `91ef4d12` baseline worktree.
+Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded changes, not a live
+witness for the Task266 repair or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -88,13 +89,15 @@ provider attempts, and terminated typed `invalid_tool_arguments` before native e
 one tab-focus dispatch and cleanup normally; this is failed provider-compliance evidence, not an environment or report
 failure.
 
-The revised Catalog boundary serializes ordered proposals: it normalizes and resolves only the first call, discards
-later calls without executing or queuing them, and writes that fact beside the selected call in canonical PydanticAI
-history. The selected call then receives its normal same-ID ToolReturn after one Runtime step and fresh World. An
-invalid first call never falls through to a later one. Raw output remains in Trace, formal metrics count every
-multi-call envelope, and invocation diagnostics record discarded proposals. Monitor recovery still prohibits only one
-exact typed attempt. No pending call, second action queue, reflection model, evidence path, or cursor state was added.
-A fresh live Task266 witness is still required.
+The revised Catalog boundary serializes ordered proposals: it normalizes and resolves only the first call, while
+retaining every exact proposed `ToolCallPart` in canonical PydanticAI history. After one Runtime step, the next
+physical provider input pairs the first call with its real same-ID result and every later call with PydanticAI's native
+same-ID `ToolFailed(not executed)`, followed by the fresh World. The ActionPolicy can therefore reissue an important
+later proposal, but Runtime never queues or automatically executes it. An invalid first call never falls through to a
+later one. Raw output remains in Trace, formal metrics count every multi-call envelope, and invocation diagnostics
+record proposals discarded from execution. Monitor recovery still prohibits only one exact typed attempt. No second
+action queue, reflection model, evidence path, cursor state, or non-SDK history was added. A fresh live Task266 witness
+is still required.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -391,15 +394,17 @@ contains only bounded digest receipts and no result body/inventory.
 
 A second Recording PydanticAI gate emits `ThinkingPart + TextPart + N ToolCallPart` values. Exactly the first current
 call is resolved in one provider attempt; later calls are not executed, queued, or used as fallback. Canonical history
-contains the bounded model-authored progress, an explicit Runtime selection receipt, and only the normalized first
-`ToolCallPart`; its matching ToolReturn follows under the same call ID. Hidden reasoning and discarded calls remain
-observable in the raw transcript but are absent from future model context. A generated 1..8-call property verifies
-the same conservation, and an invalid first call cannot fall through to a valid later call. An overlong accepted
+contains the bounded model-authored progress and every exact proposed `ToolCallPart`. The next physical input pairs the
+first with its owner result and the rest with same-ID native failed returns explaining that they were not executed and
+must be reconsidered after the fresh World. Hidden reasoning remains only in the raw transcript. A generated 1..8-call
+property verifies complete call/result conservation, a longitudinal gate verifies that the second proposal can be
+reissued on the next turn, and an invalid first call cannot fall through to a valid later call. An overlong accepted
 visible note retains a bounded prefix and conclusion suffix with an explicit truncation marker.
 
 A history-pressure gate invokes the official PydanticAI `ProcessHistory` capability before hard overflow. It proves
-that oldest complete response/result exchanges leave atomically, exact call IDs remain paired, and the newest response
-with its cumulative progress note remains present. No summary model or reconstructed ToolReturn is involved.
+that oldest complete response/result exchanges—including a multi-call response and all of its results—leave
+atomically, exact call IDs remain paired, and the newest response with its cumulative progress note remains present.
+No summary model or reconstructed successful ToolReturn is involved.
 
 ### G4 — R-ref follow-up
 

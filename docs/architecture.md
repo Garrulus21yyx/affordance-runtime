@@ -75,11 +75,12 @@ This was a brittle provider-compliance gate, not an execution-currentness invari
 The converged owner contract restores one decision and one precise recovery identity:
 
 - provider calls are ordered proposals at the Catalog boundary; only the first call is normalized and resolved;
-- later calls are never executed, queued, retained as pending work, or used as fallback if the first call is invalid;
-- canonical PydanticAI history contains the selected call plus a bounded receipt stating that later calls were not
-  executed or queued; the selected call's normal ToolReturn remains paired to its original call ID;
+- later calls are never executed, queued as Runtime work, or used as fallback if the first call is invalid;
+- canonical PydanticAI history retains every exact proposed `ToolCallPart`. On the next provider turn PydanticAI pairs
+  the selected first call with its real result and every later call with a native same-ID `ToolFailed(not executed)`;
+  all proposals are therefore closed together before the fresh World is reconsidered;
 - raw provider output remains in the transcript; benchmark metrics count each multi-call envelope, and invocation
-  diagnostics record the discarded proposal count;
+  diagnostics record the proposals discarded from execution;
 - Monitor may use a consecutive no-information family to request one deliberate recovery, but hard-blocks only a
   repeat of that recovery signal's exact typed attempt. A different query, region, control discovery, or GUI action
   exits recovery and remains bounded by the ordinary episode step limit.
@@ -97,10 +98,11 @@ Live benchmark validation remains separately authorized. The repository-wide myp
 pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused single-call/history/Monitor/CoreLoop surface passes `76` tests; the
-full suite passes `1705` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review
-found no remaining silent multi-call selection, rejected-call history leak, pending ToolReturn pairing loss, or broad
-post-recovery hard block in this bounded implementation.
+Current provider-free verification: the focused single-call/history/Monitor/CoreLoop surface passes `120` tests.
+The full suite reports `1704 passed / 19 skipped / 3 failed`; the three failures are pre-existing benchmark lifecycle
+wall-clock assertions (`<150ms`) that take about `0.95s` in both this worktree and an isolated `91ef4d12` baseline
+worktree. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a fresh live
+Task266 witness.
 
 Overall project closure is still **open**:
 
@@ -570,25 +572,28 @@ resumption, and typed message history. `PydanticAIGroundedDecisionPort` retains 
 policy invocations. It does not retain old user/World prompts, invent a parallel history type, or keep a second pending
 exchange in `ObservationDeliveryStore`.
 
-The physical next request must contain:
+The physical next request must contain one or more completed proposal/result exchanges:
 
 ```text
 zero or more completed:
-  assistant ToolCallPart(call_id=A)
+  assistant ToolCallPart(call_id=A)[, ToolCallPart(call_id=B), ...]
   -> ToolReturnPart(call_id=A, content=owner_result)
+  -> ToolReturnPart(call_id=B, outcome=failed, content=not_executed)
 then current pending:
-  assistant ToolCallPart(call_id=X)
+  assistant ToolCallPart(call_id=X)[, exact unselected proposals, ...]
   -> ToolReturnPart(call_id=X, content=current_committed_result)
+  -> same-ID failed returns for unselected proposals
 -> fresh current context
 ```
 
-Each call ID occurs in exactly one accepted call/result pair. A rejected multi-call response is traced but none of its
-calls acquires a result, enters physical history, or becomes pending work. One bounded retry receives the same admitted
-current context and must return exactly one call. PydanticAI's `ProcessHistory` capability proactively removes oldest complete exchanges when
-estimated history exceeds the existing soft target; TurnPacker repeats the same pair-atomic reduction before a packed
-request can remain above that target, with hard-capacity failure as a final guard. The newest model response and current
-pending pair are pinned, so the latest cumulative progress note is not discarded independently of its call. A terminal
-decision consumes the last result and clears the transport history so it cannot leak into another episode.
+Each call ID occurs in exactly one call/result pair. The Runtime executes only the first proposal; the other exact
+proposals remain visible long enough for PydanticAI to close them as not executed, but they never become an execution
+queue. The next ActionPolicy call alone decides whether to reissue one after seeing the fresh World. PydanticAI's
+`ProcessHistory` capability proactively removes oldest complete multi-call exchanges when estimated history exceeds
+the existing soft target; TurnPacker repeats the same exchange-atomic reduction before a packed request can remain
+above that target, with hard-capacity failure as a final guard. The newest model response and every unresolved call in
+it are pinned, so the latest cumulative progress note is not discarded independently of its proposals. A terminal
+decision consumes the last results and clears the transport history so it cannot leak into another episode.
 
 ## Authority and owners
 
@@ -622,19 +627,21 @@ The model context contains only:
 - the current bounded ToolCatalog;
 - bounded recent semantic receipts and control feedback;
 - at most one bounded, visible, non-authoritative progress note on each retained accepted model response;
-- bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs and the current same-call ToolReturn.
+- bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs, including same-ID failed returns for proposals
+  not selected for execution.
 
 Old World/user prompts are excluded from transport history because the fresh World is the current-environment
-authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its one tool call,
+authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its proposed calls,
 including exact supported output values and inspected/total scope when known instead of a vague count.
-The PydanticAI boundary retains that visible `TextPart` with the accepted normalized `ToolCallPart`, hard-bounds a
-misbehaving response at 800 characters with an explicit truncation marker, and excludes hidden `ThinkingPart` content
-and every rejected multi-call response from future model input. Raw provider output remains in Trace. This is same-actor trajectory
-context, not a Runtime fact authority, Workspace memory, or a separate summarizer model.
+The PydanticAI boundary retains that visible `TextPart` with the selected normalized first `ToolCallPart` and every
+exact later proposal, hard-bounds a misbehaving progress note at 800 characters with an explicit truncation marker,
+and excludes hidden `ThinkingPart` content and schema-invalid responses from future model input. Raw provider output
+remains in Trace. This is same-actor trajectory context, not a Runtime fact authority, Workspace memory, or a separate
+summarizer model.
 
 `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
 ToolReturn content. The SDK history processor acts before admission rather than waiting for a hard overflow; only an
-oldest complete response/call/result exchange can be dropped. This is bounded SDK history retention, not semantic
+oldest complete response/calls/results exchange can be dropped. This is bounded SDK history retention, not semantic
 memory or evidence projection. The newest cumulative progress note is pinned and carries durable conclusions before an
 older exchange leaves the window. No separate summarizer model is used.
 

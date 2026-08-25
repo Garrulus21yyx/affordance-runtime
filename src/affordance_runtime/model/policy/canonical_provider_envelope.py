@@ -18,6 +18,10 @@ from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 CANONICAL_ENVELOPE_VERSION = "pydantic-ai-model-boundary.v1"
 DETERMINISTIC_COUNTING_METHOD = "deterministic-conservative-v1"
+UNEXECUTED_TOOL_CALL_MESSAGE = (
+    "Not executed: the Runtime executes one tool call per fresh World. "
+    "Reassess this exact proposal against the current World and call it again if it is still needed."
+)
 
 
 @dataclass(frozen=True)
@@ -190,6 +194,33 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope digest does not match physical content")
 
     @property
+    def deferred_tool_returns(self) -> tuple[Mapping[str, object], ...]:
+        """Project the executed result and native failures for unselected proposals."""
+
+        if self.tool_result is None:
+            return ()
+        response = self.history_messages[-1]
+        calls = tuple(
+            part
+            for part in tuple(response["parts"])
+            if part["part_kind"] == "tool-call"
+        )
+        return (
+            self.tool_result,
+            *(
+                {
+                    "part_kind": "tool-return",
+                    "tool_call_id": call["tool_call_id"],
+                    "tool_name": call["tool_name"],
+                    "return_value": UNEXECUTED_TOOL_CALL_MESSAGE,
+                    "failed": True,
+                    "outcome": "failed",
+                }
+                for call in calls[1:]
+            ),
+        )
+
+    @property
     def ordered_message_projection(self) -> tuple[Mapping[str, object], ...]:
         user_parts: tuple[Mapping[str, object], ...] = (
             {"part_kind": "text", "content": self.user_text},
@@ -204,18 +235,17 @@ class CanonicalProviderEnvelope:
             ),
         )
         history: list[Mapping[str, object]] = list(self.history_messages)
-        result_part = (
+        result_parts = tuple(
             {
                 "part_kind": "tool-return",
-                "tool_call_id": self.tool_result["tool_call_id"],
-                "tool_name": self.tool_result["tool_name"],
-                "content": thaw_json_at_external_boundary(self.tool_result["return_value"]),
+                "tool_call_id": item["tool_call_id"],
+                "tool_name": item["tool_name"],
+                "content": thaw_json_at_external_boundary(item["return_value"]),
             }
-            if self.tool_result is not None
-            else None
+            for item in self.deferred_tool_returns
         )
         current_parts: tuple[Mapping[str, object], ...] = (
-            *((result_part,) if result_part is not None else ()),
+            *result_parts,
             {"part_kind": "user-prompt", "content": user_parts},
         )
         return (*history, {"kind": "request", "parts": current_parts})
@@ -237,7 +267,7 @@ class CanonicalProviderEnvelope:
                 {
                     "kind": "request",
                     "parts": (
-                        *((self.tool_result,) if self.tool_result is not None else ()),
+                        *self.deferred_tool_returns,
                         {"part_kind": "user-prompt", "content": self.user_text},
                         *(
                             {
@@ -563,34 +593,38 @@ def _project_pydantic_history(
     if len(messages) % 2 != 1:
         raise ValueError("compact PydanticAI history must end with one unresolved call")
     projected: list[Mapping[str, object]] = []
-    pending: tuple[str, str] | None = None
+    pending: tuple[tuple[str, str], ...] | None = None
     for index, message in enumerate(messages):
         if index % 2 == 0:
             if not isinstance(message, ModelResponse):
                 raise ValueError("compact PydanticAI history expected a tool-call response")
             calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
             progress = tuple(part for part in message.parts if isinstance(part, TextPart))
+            call_ids = tuple(call.tool_call_id for call in calls)
             if (
-                len(calls) != 1
+                not calls
+                or len(set(call_ids)) != len(call_ids)
+                or any(not call_id for call_id in call_ids)
                 or len(progress) > 1
                 or len(message.parts) != len(calls) + len(progress)
             ):
                 raise ValueError(
-                    "accepted PydanticAI response must contain bounded progress and one tool call"
+                    "accepted PydanticAI response must contain bounded progress and unique tool calls"
                 )
-            call = calls[0]
-            pending = (call.tool_name, call.tool_call_id)
-            response_parts: list[Mapping[str, object]] = [
-                {"part_kind": "text", "content": item.content} for item in progress
-            ]
-            response_parts.append(
-                {
-                    "part_kind": "tool-call",
-                    "tool_name": call.tool_name,
-                    "arguments": to_json_compatible(call.args_as_dict()),
-                    "tool_call_id": call.tool_call_id,
-                }
-            )
+            pending = tuple((call.tool_name, call.tool_call_id) for call in calls)
+            response_parts: list[Mapping[str, object]] = []
+            for part in message.parts:
+                if isinstance(part, TextPart):
+                    response_parts.append({"part_kind": "text", "content": part.content})
+                    continue
+                response_parts.append(
+                    {
+                        "part_kind": "tool-call",
+                        "tool_name": part.tool_name,
+                        "arguments": to_json_compatible(part.args_as_dict()),
+                        "tool_call_id": part.tool_call_id,
+                    }
+                )
             projected.append(
                 {
                     "kind": "response",
@@ -601,15 +635,22 @@ def _project_pydantic_history(
         if not isinstance(message, ModelRequest):
             raise ValueError("compact PydanticAI history expected a tool-result request")
         returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
-        if len(returns) != 1 or len(message.parts) != 1 or pending is None:
-            raise ValueError("completed PydanticAI request must contain exactly one tool result")
-        returned = returns[0]
-        if (returned.tool_name, returned.tool_call_id) != pending:
-            raise ValueError("PydanticAI history tool result does not match its call")
+        returned_identities = tuple(
+            (returned.tool_name, returned.tool_call_id) for returned in returns
+        )
+        if (
+            pending is None
+            or not returns
+            or len(returns) != len(pending)
+            or len(message.parts) != len(returns)
+            or len({item[1] for item in returned_identities}) != len(returned_identities)
+            or set(returned_identities) != set(pending)
+        ):
+            raise ValueError("completed PydanticAI request must close every proposed tool call")
         projected.append(
             {
                 "kind": "request",
-                "parts": (
+                "parts": tuple(
                     {
                         "part_kind": "tool-return",
                         "tool_name": returned.tool_name,
@@ -617,7 +658,8 @@ def _project_pydantic_history(
                         "content": to_json_compatible(returned.content),
                         "metadata": to_json_compatible(returned.metadata),
                         "outcome": returned.outcome,
-                    },
+                    }
+                    for returned in returns
                 ),
             }
         )
@@ -670,4 +712,5 @@ __all__ = [
     "CanonicalProviderEnvelopeBinder",
     "CanonicalProviderIdentity",
     "DETERMINISTIC_COUNTING_METHOD",
+    "UNEXECUTED_TOOL_CALL_MESSAGE",
 ]

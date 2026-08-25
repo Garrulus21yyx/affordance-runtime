@@ -30,6 +30,7 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import AgentDecision, DecisionKind
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
+    UNEXECUTED_TOOL_CALL_MESSAGE,
     CanonicalProviderEnvelope,
     CanonicalProviderEnvelopeBinder,
     CanonicalProviderIdentity,
@@ -77,10 +78,6 @@ _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 _MAX_PROGRESS_NOTE_CHARS = 800
 _PROGRESS_NOTE_TRUNCATION = "\n[progress note truncated by history boundary]\n"
-_MULTI_CALL_SELECTION_NOTICE = (
-    "[runtime: accepted only the first of {total} proposed tool calls; "
-    "the remaining {discarded} were not executed or queued. Reassess them after the fresh World.]"
-)
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
@@ -113,7 +110,7 @@ class _ProviderCallExhausted(RuntimeError):
 
 @dataclass(frozen=True)
 class AcceptedToolExchange:
-    """One accepted call plus bounded progress/selection receipt in SDK history."""
+    """One selected call plus every exact proposal in bounded SDK history."""
 
     call: ToolCall
     decision: AgentDecision
@@ -140,6 +137,7 @@ class AcceptedToolExchange:
         )
         progress_chars = sum(len(part.content) for part in response_progress)
         expected = (self.call.name, dict(self.call.arguments), self.call.call_id)
+        response_call_ids = tuple(part.tool_call_id for part in response_calls)
         if (
             any(
                 not isinstance(part, (TextPart, ToolCallPart))
@@ -147,7 +145,9 @@ class AcceptedToolExchange:
             )
             or len(response_progress) > 1
             or progress_chars > _MAX_PROGRESS_NOTE_CHARS
-            or len(response_calls) != 1
+            or len(response_calls) != self.discarded_call_count + 1
+            or len(set(response_call_ids)) != len(response_call_ids)
+            or any(not call_id for call_id in response_call_ids)
             or (
                 response_calls[0].tool_name,
                 response_calls[0].args_as_dict(),
@@ -271,6 +271,7 @@ class PydanticAIGroundedDecisionPort:
             from pydantic_ai.capabilities import ProcessHistory
             from pydantic_ai.exceptions import (
                 ModelAPIError,
+                ToolFailed,
                 UnexpectedModelBehavior,
                 UsageLimitExceeded,
             )
@@ -301,6 +302,7 @@ class PydanticAIGroundedDecisionPort:
                 BinaryContent,
                 DeferredToolResults,
                 ExternalToolset,
+                ToolFailed,
                 ToolReturn,
                 ToolDefinition,
             )
@@ -356,9 +358,11 @@ class PydanticAIGroundedDecisionPort:
             "last_history_compaction_count",
             max(0, (len(self.message_history) - len(history_messages)) // 2),
         )
+        pending_call_parts: tuple[object, ...] = ()
         pending_call: ToolCall | None = None
         if history_messages:
             try:
+                pending_call_parts = _pending_tool_parts_from_history(history_messages)
                 pending_call = _pending_call_from_history(history_messages)
             except (TypeError, ValueError):
                 return self._invocation_failure(
@@ -629,7 +633,7 @@ class PydanticAIGroundedDecisionPort:
                     result,
                     history_messages,
                     accepted_exchange,
-                    pending_call,
+                    pending_call_parts,
                 ),
             )
         else:
@@ -1234,6 +1238,7 @@ def _resolve_deferred(output, catalog, context_id: str, *, source_response=None)
             _accepted_model_response(
                 source_response,
                 accepted_call,
+                proposed_calls=tuple(output.calls),
                 discarded_call_count=max(0, len(output.calls) - 1),
             ),
             max(0, len(output.calls) - 1),
@@ -1260,22 +1265,16 @@ def _accepted_model_response(
     source_response,
     accepted_call: ToolCall,
     *,
+    proposed_calls: tuple[object, ...] = (),
     discarded_call_count: int = 0,
 ):
-    """Keep bounded visible progress, selection receipt, and one normalized call."""
+    """Keep bounded progress and every exact proposal; normalize only the selected first call."""
 
     from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 
     if source_response is not None:
         if not isinstance(source_response, ModelResponse):
             raise TypeError("source response is not a PydanticAI ModelResponse")
-        source_call_ids = {
-            part.tool_call_id
-            for part in source_response.parts
-            if isinstance(part, ToolCallPart)
-        }
-        if accepted_call.call_id not in source_call_ids:
-            raise ValueError("accepted call is absent from the source model response")
         progress = "\n".join(
             part.content.strip()
             for part in source_response.parts
@@ -1284,16 +1283,20 @@ def _accepted_model_response(
     else:
         progress = ""
 
-    notice = ""
-    if discarded_call_count:
-        notice = _MULTI_CALL_SELECTION_NOTICE.format(
-            total=discarded_call_count + 1,
-            discarded=discarded_call_count,
+    calls = tuple(proposed_calls)
+    if not calls and source_response is not None:
+        calls = tuple(
+            part for part in source_response.parts if isinstance(part, ToolCallPart)
         )
-    separator = "\n\n" if progress and notice else ""
-    progress_limit = _MAX_PROGRESS_NOTE_CHARS - len(separator) - len(notice)
-    if len(progress) > progress_limit:
-        available = progress_limit - len(_PROGRESS_NOTE_TRUNCATION)
+    if (
+        len(calls) != discarded_call_count + 1
+        or any(not isinstance(part, ToolCallPart) for part in calls)
+        or calls[0].tool_call_id != accepted_call.call_id
+        or len({part.tool_call_id for part in calls}) != len(calls)
+    ):
+        raise ValueError("accepted call proposals are incomplete or ambiguous")
+    if len(progress) > _MAX_PROGRESS_NOTE_CHARS:
+        available = _MAX_PROGRESS_NOTE_CHARS - len(_PROGRESS_NOTE_TRUNCATION)
         prefix_chars = available // 2
         suffix_chars = available - prefix_chars
         progress = (
@@ -1301,11 +1304,10 @@ def _accepted_model_response(
             + _PROGRESS_NOTE_TRUNCATION
             + progress[-suffix_chars:].lstrip()
         )
-    retained_note = progress + separator + notice
 
     parts = []
-    if retained_note:
-        parts.append(TextPart(retained_note))
+    if progress:
+        parts.append(TextPart(progress))
     parts.append(
         ToolCallPart(
             accepted_call.name,
@@ -1313,22 +1315,33 @@ def _accepted_model_response(
             accepted_call.call_id,
         )
     )
+    parts.extend(calls[1:])
     return ModelResponse(parts=parts)
 
 
-def _pending_call_from_history(messages: tuple[object, ...]) -> ToolCall | None:
-    """Return the one unresolved call at the end of compact official history."""
+def _pending_tool_parts_from_history(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Return every unresolved proposal; the first is the sole executed call."""
 
     if not messages:
-        return None
+        return ()
     from pydantic_ai.messages import ModelResponse, ToolCallPart
 
     response = messages[-1]
     if not isinstance(response, ModelResponse):
         raise ValueError("model message history must end with an accepted tool call")
     calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
-    if len(calls) != 1:
-        raise ValueError("model message history must end with exactly one accepted tool call")
+    call_ids = tuple(call.tool_call_id for call in calls)
+    if not calls or len(set(call_ids)) != len(call_ids) or any(not item for item in call_ids):
+        raise ValueError("model message history must end with unique proposed tool calls")
+    return calls
+
+
+def _pending_call_from_history(messages: tuple[object, ...]) -> ToolCall | None:
+    """Return the selected first call from the unresolved proposal response."""
+
+    calls = _pending_tool_parts_from_history(messages)
+    if not calls:
+        return None
     call = calls[0]
     return ToolCall(call.tool_name, call.args_as_dict(raise_if_invalid=True), call.tool_call_id)
 
@@ -1337,28 +1350,38 @@ def _accepted_message_history(
     result,
     prior_history: tuple[object, ...],
     accepted: AcceptedToolExchange,
-    pending_call: ToolCall | None,
+    pending_calls: tuple[object, ...],
 ) -> tuple[object, ...]:
     """Keep SDK-produced ToolReturn parts and accepted calls, never old World prompts."""
 
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
 
-    if pending_call is None:
+    if not pending_calls:
         if prior_history:
             raise ValueError("history without a pending call cannot accept a new exchange")
         return (accepted.response,)
 
-    returned_parts = tuple(
+    pending_identities = tuple(
+        (part.tool_name, part.tool_call_id) for part in pending_calls
+    )
+    matching_parts = tuple(
         part
         for message in result.all_messages()
         if isinstance(message, ModelRequest)
         for part in message.parts
         if isinstance(part, ToolReturnPart)
-        and part.tool_call_id == pending_call.call_id
-        and part.tool_name == pending_call.name
+        and (part.tool_name, part.tool_call_id) in set(pending_identities)
     )
-    if len(returned_parts) != 1:
-        raise ValueError("PydanticAI did not produce one matching deferred ToolReturn")
+    returned_by_identity = {
+        (part.tool_name, part.tool_call_id): part for part in matching_parts
+    }
+    if (
+        len(matching_parts) != len(pending_identities)
+        or len(returned_by_identity) != len(pending_identities)
+        or set(returned_by_identity) != set(pending_identities)
+    ):
+        raise ValueError("PydanticAI did not close every deferred tool proposal")
+    returned_parts = tuple(returned_by_identity[item] for item in pending_identities)
     return (
         *prior_history,
         ModelRequest(parts=returned_parts),
@@ -1393,12 +1416,15 @@ def _drop_oldest_completed_exchange(messages: tuple[object, ...]) -> tuple[objec
         return messages
     calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
     returns = tuple(part for part in result.parts if isinstance(part, ToolReturnPart))
+    call_identities = tuple((item.tool_name, item.tool_call_id) for item in calls)
+    return_identities = tuple((item.tool_name, item.tool_call_id) for item in returns)
     if (
-        len(calls) != 1
-        or len(returns) != 1
-        or calls[0].tool_call_id != returns[0].tool_call_id
-        or calls[0].tool_name != returns[0].tool_name
-        or len(result.parts) != 1
+        not calls
+        or len({item[1] for item in call_identities}) != len(call_identities)
+        or len(returns) != len(calls)
+        or len(result.parts) != len(returns)
+        or len({item[1] for item in return_identities}) != len(return_identities)
+        or set(call_identities) != set(return_identities)
     ):
         return messages
     return (*messages[:response_index], *messages[result_index + 1 :])
@@ -1540,6 +1566,7 @@ def _pydantic_model_boundary_codec(
     binary_content_type,
     deferred_tool_results_type,
     external_toolset_type,
+    tool_failed_type,
     tool_return_type,
     tool_definition_type,
 ):
@@ -1572,15 +1599,24 @@ def _pydantic_model_boundary_codec(
     )
     message_history = list(envelope.pydantic_history)
     deferred_results = None
-    if envelope.tool_result is not None:
-        call_id = str(envelope.tool_result["tool_call_id"])
+    if envelope.deferred_tool_returns:
+        actual_call_id = str(envelope.tool_result["tool_call_id"])
+        calls = {}
+        for item in envelope.deferred_tool_returns:
+            call_id = str(item["tool_call_id"])
+            if item.get("outcome") == "failed":
+                calls[call_id] = tool_failed_type(UNEXECUTED_TOOL_CALL_MESSAGE)
+                continue
+            calls[call_id] = tool_return_type(
+                return_value=to_json_compatible(item["return_value"]),
+                metadata=(
+                    to_json_compatible(envelope.tool_result_metadata)
+                    if call_id == actual_call_id
+                    else None
+                ),
+            )
         deferred_results = deferred_tool_results_type(
-            calls={
-                call_id: tool_return_type(
-                    return_value=to_json_compatible(envelope.tool_result["return_value"]),
-                    metadata=to_json_compatible(envelope.tool_result_metadata),
-                )
-            }
+            calls=calls
         )
     return envelope.instructions[0], prompt, toolset, message_history, deferred_results
 
