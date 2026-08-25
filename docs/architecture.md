@@ -225,6 +225,26 @@ were still capped at 21.125 seconds and timed out at about 21.7 seconds. The bou
 deadline and recomputes the request timeout after actual compaction elapsed; the same run25 timing yields 30.75 seconds
 per remaining attempt while keeping the original 90-second total closed.
 
+Run27 crossed the dynamic-deadline repair and exposed a different history-fidelity mismatch. The exact `read_region`
+ToolReturns at steps 11 and 14 contained Portland's and Acadia's coordinate rows, and the ActionPolicy concluded both
+values correctly. Harness 0.25's internal prose formatter exposes only the first 500 characters of each summarized
+`ToolReturnPart`; both coordinate rows lay after that generic clip. Our verification-oriented summary prompt then
+downgraded the explicit conclusions to unverified claims, the expired exact results were replaced, and the policy
+spent later turns reading both wiki pages again. The 900-second watchdog was only the terminal mechanism: eleven
+successful compactions consumed about 266 seconds, and the final exact suffix had already retained the independently
+confirmed `287km` result while the policy was locating the still-unknown relation link.
+
+The existing PydanticAI boundary now supplies Harness a throwaway summary-only view in which completed, already
+owner-bounded public ToolReturns are rendered in full, alongside the accepted reasoning already exposed there.
+Harness still selects the pair-safe expired prefix and produces the sole non-authoritative summary; the bridge still
+restores its preserved suffix from the exact official messages. The summary contract preserves a later explicit
+ActionPolicy conclusion drawn from a completed result unless later trajectory content contradicts or retracts it,
+and treats coverage/pagination as scope metadata rather than evidence that a returned complete record is absent.
+Because Harness invokes the configured model directly rather than the canonical ActionPolicy envelope, that same
+model now has a default 2,048-token, temperature-zero, thinking-disabled compaction cap; normal action and repair
+requests continue to override it with their existing request-scoped role settings. No synthetic part enters canonical
+history, and no checkpoint, fact store, cursor, Monitor trigger, scheduler, or second model state is introduced.
+
 Run21 independently exposed that canonical target ordering had discarded a source fact it already possessed. Two
 identically named executable links on the Maine article occupied distinct structural paths but were each assigned the
 same region-local occurrence. `WorldDeliveryIndex` now preserves source structural occurrence in one document-scoped

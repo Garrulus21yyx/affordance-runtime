@@ -83,6 +83,7 @@ _POLICY_DEADLINE_SAFETY_S = 0.5
 _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
 _HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.25
+_HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 2048
 _HISTORY_COMPACTION_SUMMARY_PROMPT = """
 You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
 prefix, so preserve only information needed to continue the user's task correctly.
@@ -95,6 +96,11 @@ Completed task requirements and the current stage.
 ## Verified facts
 Task-relevant facts actually supported by the trajectory, including exact values and public
 document or tool-call identifiers when present. Never promote an ambiguity or hypothesis.
+Completed ToolReturns below are exact, bounded results that were visible to the ActionPolicy.
+When a later ActionPolicy response explicitly concludes a task fact from a completed result,
+preserve that latest conclusion unless a still-later result or response contradicts or retracts
+it. Coverage or pagination metadata limits the result's scope; it does not invalidate complete
+records or exact values already returned.
 
 ## Uncertainties
 Claims still requiring verification and conflicting observations.
@@ -1333,12 +1339,29 @@ def pydantic_ai_model_from_environment(
         timeout=max(compaction_timeout_s, transport_timeout_s),
         max_retries=0,
     )
+    model_settings = {
+        "max_tokens": _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS,
+        "temperature": 0.0,
+        "thinking": False,
+    }
     if profile == "deepseek":
-        model = OpenAIChatModel(model_id, provider=DeepSeekProvider(openai_client=client))
+        model = OpenAIChatModel(
+            model_id,
+            provider=DeepSeekProvider(openai_client=client),
+            settings=model_settings,
+        )
     elif profile in {"zhipu", "aliyun"}:
-        model = ZaiModel(model_id, provider=ZaiProvider(openai_client=client))
+        model = ZaiModel(
+            model_id,
+            provider=ZaiProvider(openai_client=client),
+            settings=model_settings,
+        )
     else:
-        model = OpenAIChatModel(model_id, provider=OpenAIProvider(openai_client=client))
+        model = OpenAIChatModel(
+            model_id,
+            provider=OpenAIProvider(openai_client=client),
+            settings=model_settings,
+        )
     return ConfiguredPydanticAIModel(
         model,
         profile,
@@ -1656,22 +1679,50 @@ def _completed_exchange_count(messages: tuple[object, ...]) -> int:
 
 
 def _summary_visible_history(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Expose accepted model reasoning to Harness without changing official history."""
+    """Expose exact completed results and reasoning only to Harness's summarizer.
 
-    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+    Harness's prose formatter intentionally clips every ``ToolReturnPart`` to 500
+    characters. Our local read/search tools already return owner-bounded public
+    pages, and task facts can legitimately occur after that generic clip. Replace
+    request-local tool returns in this throwaway view with ordinary prompt text so
+    the official summarizer sees the same bounded result that the ActionPolicy saw.
+    The compacted result still restores Harness's suffix from ``messages`` below,
+    so no synthetic part enters canonical PydanticAI history.
+    """
+
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        SystemPromptPart,
+        TextPart,
+        ThinkingPart,
+        ToolReturnPart,
+    )
 
     visible: list[object] = []
     for message in messages:
-        if not isinstance(message, ModelResponse):
-            visible.append(message)
+        if isinstance(message, ModelRequest):
+            parts = tuple(
+                SystemPromptPart(
+                    "Completed tool result "
+                    f"[{part.tool_name}] call_id={part.tool_call_id}:\n{part.content}"
+                )
+                if isinstance(part, ToolReturnPart)
+                else part
+                for part in message.parts
+            )
+            visible.append(replace(message, parts=parts))
             continue
-        parts = tuple(
-            TextPart(f"Model reasoning:\n{part.content}")
-            if isinstance(part, ThinkingPart)
-            else part
-            for part in message.parts
-        )
-        visible.append(replace(message, parts=parts))
+        if isinstance(message, ModelResponse):
+            parts = tuple(
+                TextPart(f"Model reasoning:\n{part.content}")
+                if isinstance(part, ThinkingPart)
+                else part
+                for part in message.parts
+            )
+            visible.append(replace(message, parts=parts))
+            continue
+        visible.append(message)
     return tuple(visible)
 
 

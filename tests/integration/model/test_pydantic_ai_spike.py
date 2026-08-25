@@ -1018,6 +1018,66 @@ def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None
     canonical_envelope_module._project_pydantic_history(run.messages)
 
 
+def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() -> None:
+    coordinate = "43°39′36″N 70°15′18″W"
+    long_result = {
+        "kind": "Opened",
+        "source_coverage": "partial",
+        "has_more": True,
+        "items": [
+            {"kind": "complete_item", "text": "prefix-" + "x" * 700},
+            {"kind": "complete_item", "text": f"Coordinates: {coordinate}"},
+        ],
+    }
+    history = (
+        ModelRequest(parts=[UserPromptPart("Find Portland's official coordinates")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart("read_region", {"region_ref": "R264"}, "call:read"),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart("read_region", long_result, "call:read"),
+                UserPromptPart("Fresh World after the completed local read"),
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                ThinkingPart(f"The completed coordinate row confirms {coordinate}."),
+                TextPart(f"Portland's official coordinates are {coordinate}."),
+                ToolCallPart("wait", {"reason": "fixture"}, "call:pending"),
+            ]
+        ),
+    )
+    scripted = ScriptedModel(
+        [ModelResponse(parts=[TextPart(f"Verified Portland coordinates: {coordinate}.")])]
+    )
+
+    run = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=scripted.build(),
+            max_estimated_tokens=1,
+            timeout_s=2.0,
+        )
+    )
+
+    assert run.error == ""
+    summary_input = json.dumps(
+        normalize_recorded_provider_input(scripted.records[0]),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert coordinate in summary_input
+    assert "Completed tool result [read_region] call_id=call:read" in summary_input
+    assert "Coverage or pagination metadata limits the result's scope" in summary_input
+    assert run.messages[1:] == history[-(len(run.messages) - 1) :]
+    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
+        "wait", {"reason": "fixture"}, "call:pending"
+    )
+
+
 def test_harness_does_not_call_a_model_below_real_history_pressure() -> None:
     history = _official_history_with_pending_actions(3)
     scripted = ScriptedModel([ModelResponse(parts=[TextPart("must not be used")])])
@@ -2436,6 +2496,11 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
     assert selected.port.reasoning_policy.repair_max_tokens == 512
     assert selected.port.history_compaction_timeout_s == 2.0
     assert selected.port.model._provider.client.timeout == 2.0
+    assert selected.port.model.settings == {
+        "max_tokens": 2048,
+        "temperature": 0.0,
+        "thinking": False,
+    }
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
         model_policy_from_environment(
             {

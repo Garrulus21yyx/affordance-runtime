@@ -280,6 +280,27 @@ remaining attempts receive 30.75 seconds while compaction, retry reserve, attemp
 same 90-second outer deadline. A vertical test proves the post-compaction envelope receives the recalculated value;
 the pure budget test covers the run25 numeric witness.
 
+The authorized
+[`run27`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run27/run.json) crossed the dynamic-deadline repair:
+all 57 completed policy calls were valid, there were zero capacity rejections, invalid arguments, stale bindings, or
+grounding gaps, and the agent reached the final Acadia OSM search results. It still failed at the 900-second case
+watchdog after 58 policy calls. This is not evidence that a longer watchdog closes the task. Eleven compactions used
+about 266 seconds, and their content exposed a causal fidelity defect: the original Portland and Acadia infobox
+ToolReturns contained their coordinate rows, but Harness 0.25's summary formatter clipped each old ToolReturn to 500
+characters before the summary model saw it. The resulting summary falsely called both coordinates unverified and
+caused the later wiki rereads. The later OSRM `287km` conclusion remained in the exact recent suffix and was not
+repeated; the relation ID had not yet been obtained when the watchdog cancelled the policy turn immediately after a
+correct `find_controls` result placed the Bar Harbor national-park link first.
+
+The post-run repair keeps Harness as the only compaction implementation but gives its throwaway summarizer view the
+full owner-bounded public ToolReturn instead of the dependency's generic 500-character prose preview. Exact canonical
+history and the preserved suffix remain byte-for-byte PydanticAI messages. The reused model also carries a default
+2,048-token, temperature-zero, thinking-disabled limit for Harness's direct summary call; request-scoped ActionPolicy
+settings continue to override that default. A focused regression places an exact coordinate after 700 irrelevant
+characters in a partial, paginated result and proves it reaches the compactor request, while the pending call and exact
+suffix remain unchanged. The full provider-free suite passes; run27 remains failed pre-repair evidence and a fresh live
+witness is required.
+
 Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
 legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
 `(102, 1)`, but the region index reduced each to the same region-local order `2`. The target-context owner now ranks
