@@ -42,6 +42,8 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
+_MAX_SHORT_GUI_CYCLE_PERIOD = 3
+_MAX_RECENT_GUI_ATTEMPTS = _MAX_SHORT_GUI_CYCLE_PERIOD * 2
 
 
 @dataclass
@@ -56,6 +58,8 @@ class EpisodeMonitor:
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
+    recent_gui_attempts: tuple[PublicAttemptSignature, ...] = ()
+    active_gui_cycle_digest: str = ""
 
     def start_episode(self, world, task_evaluation) -> None:
         del task_evaluation
@@ -66,6 +70,8 @@ class EpisodeMonitor:
         self.latest_attempt_signature = None
         self.same_attempt_streak = 0
         self.no_progress_count = 0
+        self.recent_gui_attempts = ()
+        self.active_gui_cycle_digest = ""
 
     def evaluate(
         self,
@@ -112,7 +118,34 @@ class EpisodeMonitor:
             self.observation_only_streak = 0
             self.recovery_count = 0
             self.same_attempt_streak = 0
+            self.recent_gui_attempts = ()
+            self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
+
+        gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
+        cycle_digest, cycle_period = self._record_gui_attempt(gui_signature)
+        if cycle_digest:
+            self.observation_only_streak = 0
+            self.no_progress_count += 1
+            self.same_attempt_streak = 1
+            self.latest_attempt_signature = gui_signature
+            repeated_cycle = cycle_digest == self.active_gui_cycle_digest
+            self.active_gui_cycle_digest = cycle_digest
+            signal = _gui_cycle_recovery_signal(
+                result,
+                self,
+                cycle_digest=cycle_digest,
+                cycle_period=cycle_period,
+                recovery_attempt=2 if repeated_cycle else 1,
+            )
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.OSCILLATION))),
+                EpisodeMonitorRecommendation.BLOCK if repeated_cycle else EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.STATE_OSCILLATION.value,
+                signal,
+            )
+        if gui_signature is not None:
+            self.active_gui_cycle_digest = ""
 
         if information_changed:
             self.observation_only_streak = 0
@@ -191,6 +224,17 @@ class EpisodeMonitor:
             signal,
         )
 
+    def _record_gui_attempt(
+        self,
+        signature: PublicAttemptSignature | None,
+    ) -> tuple[str, int]:
+        """Record bounded effectful attempts and identify a repeated short cycle."""
+
+        if signature is None:
+            return "", 0
+        self.recent_gui_attempts = (*self.recent_gui_attempts, signature)[-_MAX_RECENT_GUI_ATTEMPTS:]
+        return _short_gui_cycle(self.recent_gui_attempts)
+
 
 def _diagnostic_events(result: StepResult) -> list[EpisodeMonitorEvent]:
     events: list[EpisodeMonitorEvent] = []
@@ -245,6 +289,59 @@ def _control_stall_signal(
         human_instruction=_control_stall_instruction(result),
         recovery_attempt=recovery_attempt,
     )
+
+
+def _gui_cycle_recovery_signal(
+    result: StepResult,
+    monitor: EpisodeMonitor,
+    *,
+    cycle_digest: str,
+    cycle_period: int,
+    recovery_attempt: int,
+) -> RecoverySignal:
+    """Report a mechanical effectful-action cycle without judging task progress."""
+
+    return RecoverySignal(
+        RecoveryKind.STATE_OSCILLATION,
+        "state_oscillation:" + cycle_digest,
+        {
+            "attempt": _bounded_public_attempt(result),
+            "dispatch": "sent",
+            "cycle_period": cycle_period,
+            "world_digest": monitor.world_digest,
+            "current_findings_digest": monitor.current_findings_digest,
+        },
+        attempted_modes=(_attempted_mode(result),),
+        prohibited_attempt_signature=monitor.latest_attempt_signature,
+        human_instruction=(
+            "Recent effectful GUI attempts repeated a short cycle across fresh Worlds. Preserve completed results "
+            "already present in tool history and choose an offered action outside this cycle toward an unresolved "
+            "requirement; do not revisit the same sequence merely to re-verify it."
+        ),
+        recovery_attempt=recovery_attempt,
+    )
+
+
+def _short_gui_cycle(
+    attempts: tuple[PublicAttemptSignature, ...],
+) -> tuple[str, int]:
+    """Return one phase-independent digest for a repeated period-2/3 suffix."""
+
+    digests = tuple(item.digest for item in attempts)
+    for period in range(2, _MAX_SHORT_GUI_CYCLE_PERIOD + 1):
+        if len(digests) < period * 2:
+            continue
+        previous = digests[-period * 2 : -period]
+        current = digests[-period:]
+        if previous != current or len(set(current)) < 2:
+            continue
+        rotations = tuple(current[index:] + current[:index] for index in range(period))
+        canonical = min(rotations)
+        digest = "sha256:" + hashlib.sha256(
+            _canonical_json(("effectful_gui_cycle", canonical)).encode()
+        ).hexdigest()
+        return digest, period
+    return "", 0
 
 
 def _control_stall_instruction(result: StepResult) -> str:

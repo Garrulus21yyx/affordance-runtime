@@ -70,6 +70,8 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         "latest_attempt_signature",
         "same_attempt_streak",
         "no_progress_count",
+        "recent_gui_attempts",
+        "active_gui_cycle_digest",
     }
     for removed in (
         "EpisodeMonitorConfig",

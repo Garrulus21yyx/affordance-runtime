@@ -12,6 +12,8 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent import RequestActionPage, SearchPageContentResult, SelectAction
+from affordance_runtime.agent import monitor as monitor_module
+from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
     ObservationDeliveryStore,
@@ -100,7 +102,8 @@ def _local_step(before, after=None, *, query: str = "route", region: str = "") -
     )
 
 
-def _dispatched_step(world) -> StepResult:
+def _dispatched_step(world, after=None) -> StepResult:
+    after = after or world
     option = ActionSpaceBuilder().build(_task(), world).options[0]
     selection = ActionSpaceBuilder().admit(option, {})
     request = ActionBinder().bind(selection, world, "context:test", tool_call_id="call:test")
@@ -108,7 +111,7 @@ def _dispatched_step(world) -> StepResult:
         request,
         ActionResult(request.request_id, DispatchStatus.SENT, "fixture", True),
         acquired_acquisition(
-            world,
+            after,
             AcquisitionOrigin.POST_ACTION,
             acquisition_id="acquisition:after-dispatch",
         ),
@@ -116,9 +119,9 @@ def _dispatched_step(world) -> StepResult:
     return StepResult(
         SelectAction("context:test", option.action_id, tool_call_id="call:test"),
         world,
-        world,
-        _evaluation(world),
-        execution_receipts=ExecutionReceiptBatch.from_atomic(execution, world.observation_id),
+        after,
+        _evaluation(after),
+        execution_receipts=ExecutionReceiptBatch.from_atomic(execution, after.observation_id),
         feedback="action_outcome_unknown",
     )
 
@@ -504,6 +507,62 @@ def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature
     assert monitor.latest_attempt_signature.digest.startswith("sha256:")
 
 
+def test_effectful_gui_cycle_recovers_across_fresh_worlds_then_blocks_recurrence() -> None:
+    portland = _world("observation:portland", route="/wiki/Portland_Maine")
+    acadia = _world("observation:acadia", route="/wiki/Acadia_National_Park")
+    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor.start_episode(portland, _evaluation(portland))
+
+    first = _evaluate(monitor, _dispatched_step(portland, acadia))
+    second = _evaluate(monitor, _dispatched_step(acadia, portland))
+    third = _evaluate(monitor, _dispatched_step(portland, acadia))
+    recovery = _evaluate(monitor, _dispatched_step(acadia, portland))
+
+    assert all(
+        item.recommendation is EpisodeMonitorRecommendation.CONTINUE
+        for item in (first, second, third)
+    )
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert EpisodeMonitorEvent.STATE_CHANGED in recovery.events
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+    assert recovery.recovery_signal.observed_evidence["cycle_period"] == 2
+    assert "short cycle across fresh Worlds" in recovery.recovery_signal.human_instruction
+
+    # A local inspection does not make the effectful navigation cycle disappear.
+    local = _evaluate(monitor, _local_step(portland, query="coordinates"))
+    blocked = _evaluate(monitor, _dispatched_step(portland, acadia))
+
+    assert local.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert blocked.reason == "state_oscillation"
+    assert blocked.recovery_signal is not None
+    assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
+    assert len(monitor.recent_gui_attempts) <= 6
+
+
+@given(period=st.integers(min_value=2, max_value=3), rotation=st.integers(min_value=0, max_value=2))
+def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: int) -> None:
+    values = tuple(
+        PublicAttemptSignature(
+            f"operation-{index}",
+            f"{index + 1:064x}",
+            "",
+            "",
+            f"{index + 11:064x}",
+        )
+        for index in range(period)
+    )
+    shifted_by = rotation % period
+    shifted = values[shifted_by:] + values[:shifted_by]
+
+    original_digest, original_period = monitor_module._short_gui_cycle(values + values)
+    shifted_digest, shifted_period = monitor_module._short_gui_cycle(shifted + shifted)
+
+    assert original_period == shifted_period == period
+    assert original_digest == shifted_digest
+
+
 def test_different_gui_attempt_family_after_local_recovery_continues() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
@@ -541,4 +600,6 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "latest_attempt_signature",
         "same_attempt_streak",
         "no_progress_count",
+        "recent_gui_attempts",
+        "active_gui_cycle_digest",
     } == set(vars(monitor)) - {"profile"}

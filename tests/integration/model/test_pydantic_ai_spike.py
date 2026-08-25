@@ -695,6 +695,94 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
     asyncio.run(scenario())
 
 
+def test_tool_only_turn_carries_latest_progress_in_the_same_sdk_history() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("progress-carry-forward", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        progress = (
+            "Verified Portland coordinates 43.6600,-70.2550; "
+            "Acadia coordinates and OSRM distance remain unresolved."
+        )
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        TextPart(progress),
+                        ToolCallPart("list_regions", {}, "call:progress:first"),
+                    ]
+                ),
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("hidden tool-only deliberation"),
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "coordinates"},
+                            "call:progress:second",
+                        ),
+                    ]
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        first_context = builder.build(task, world, actions, evaluation)
+
+        first = await policy.port.generate(
+            ModelDecisionRequest("request:progress-carry:first", first_context)
+        )
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=first_step,
+        )
+
+        second = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:progress-carry:second",
+                second_context,
+                last_step=first_step,
+            )
+        )
+
+        assert second.failure is None and second.output is not None
+        history = policy.port.message_history
+        assert len(history) == 3
+        assert isinstance(history[0], ModelResponse)
+        assert all(not isinstance(part, TextPart) for part in history[0].parts)
+        assert isinstance(history[-1], ModelResponse)
+        assert [part.content for part in history[-1].parts if isinstance(part, TextPart)] == [
+            progress
+        ]
+        assert sum(
+            isinstance(part, TextPart)
+            for message in history
+            if isinstance(message, ModelResponse)
+            for part in message.parts
+        ) == 1
+        assert pydantic_bridge._latest_progress_note(history) == progress
+        compacted = pydantic_bridge._process_pydantic_history(
+            history,
+            max_estimated_tokens=1,
+        )
+        assert compacted == (history[-1],)
+        assert pydantic_bridge._latest_progress_note(compacted) == progress
+        assert "hidden tool-only deliberation" not in json.dumps(history, default=str)
+
+    asyncio.run(scenario())
+
+
 def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
     async def scenario() -> None:
         task = shared_task()

@@ -24,11 +24,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the focused single-call/history/Monitor/CoreLoop surface at `120 passed`.
-The full suite reports `1704 passed / 19 skipped / 3 failed`; all three failures are benchmark lifecycle wall-clock
-assertions requiring `<150ms`, and the same three fail at about `0.95s` in an isolated `91ef4d12` baseline worktree.
-Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded changes, not a live
-witness for the Task266 repair or overall closure.
+Current provider-free verification passes the focused progress/history/Monitor/authority surface at `73 passed`.
+The full suite reports `1704 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the
+observability test. Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded
+changes, not a live witness for the Task266 repair or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -98,6 +97,22 @@ later one. Raw output remains in Trace, formal metrics count every multi-call en
 record proposals discarded from execution. Monitor recovery still prohibits only one exact typed attempt. No second
 action queue, reflection model, evidence path, cursor state, or non-SDK history was added. A fresh live Task266 witness
 is still required.
+
+Task266 run12 crossed that revised boundary: all fourteen produced calls were valid, the first proposal executed, and
+every later proposal received a same-ID native not-executed result. The next physical input contained both exact
+official coordinate results and the unexecuted `tab_focus` proposal, so this was not renewed call/result loss. The
+ActionPolicy nevertheless revisited Portland and Acadia after reasoning that OSRM was next. Monitor caught exact
+repeated reads but not the intervening fresh-World `Portland -> Acadia -> Portland -> Acadia` action cycle; large Wiki
+World processing amplified each extra turn until the 957-second case watchdog timed out.
+
+The owner repair does not add milestones, a summary model, or a second control loop. PydanticAI history now retains one
+latest model-authored progress note across tool-only responses: a new visible note replaces the old one, while a
+tool-only response carries forward the exact previous text and removes only duplicate historical `TextPart` values.
+Completed call/result pairs remain untouched and the existing `ProcessHistory` path still drops only oldest complete
+exchanges. `EpisodeMonitor` now uses its existing `STATE_OSCILLATION` algebra over at most six dispatched public
+attempt signatures to recognize repeated period-2/3 cycles across fresh Worlds. It reads no task text, URL, site,
+GoalPlan status, or ToolReturn body. Run12 remains a failed pre-repair diagnostic; no post-repair live witness has been
+run.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -406,6 +421,12 @@ that oldest complete response/result exchanges—including a multi-call response
 atomically, exact call IDs remain paired, and the newest response with its cumulative progress note remains present.
 No summary model or reconstructed successful ToolReturn is involved.
 
+A longitudinal tool-only gate proves that the exact previous model-authored progress note moves to the newest accepted
+response, earlier accepted responses retain their calls without duplicate text, hidden thinking remains trace-only,
+and pressure compaction still leaves the note with the pending call. A generated period-2/3 Monitor property proves
+cycle identity is phase-independent; the Task266-shaped two-state sequence recovers once across changed Worlds and
+blocks recurrence even when a local read occurs between effectful actions.
+
 ### G4 — R-ref follow-up
 
 The `read_region` schema accepts the public `R` syntax for the current canonical World, and the resolver validates the
@@ -533,7 +554,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1692 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1704 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -588,8 +609,8 @@ The final read-only review for this cutover must answer:
 4. Can a result exceed its owner byte bound or require fragment reassembly?
 5. Does physical PydanticAI history preserve bounded completed accepted call ID/result pairs, append the current
    same-call result, exclude old World prompts, and clear on terminal completion?
-6. Does a multi-call response resolve and dispatch nothing, receive at most one same-context retry, enter no future
-   history, and remain honestly counted even when the retry returns one accepted call?
+6. Does a multi-call response retain every exact proposal in SDK history, resolve and dispatch only its first call,
+   pair later calls with same-ID native failed returns on the next turn, and create no Runtime queue or fallback?
 7. Does every route in a same-World `find_controls` ToolReturn appear in the next frozen catalog, including when the
    soft target cannot admit unrelated optional inventory?
 8. Does a discovery/current-ActionSpace route mismatch fail closed before provider invocation?
@@ -607,7 +628,8 @@ The final read-only review for this cutover must answer:
     unbounded same-World loop?
 15. Are browser-global actions offered only by the WebArena-family profile and executed through BrowserGym's existing
     ActionSpace/Binder/Executor path?
-16. Does SDK history compact before hard overflow while pinning the newest progress response and exact pending pair?
+16. Does SDK history compact before hard overflow while pinning exactly one latest progress note across tool-only
+    responses and preserving every exact pending pair?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
@@ -615,8 +637,9 @@ The final read-only review for this cutover must answer:
     or second browser-state channel?
 19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
     actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
-20. Does Monitor issue bounded recovery for no-information families but hard-block only the exact typed attempt named
-    by that recovery, while materially different attempts continue under the outer episode budget?
+20. Does Monitor issue bounded recovery for no-information families and period-2/3 dispatched GUI cycles, persist a
+    cycle across intervening local reads, and block only exact-attempt or same-cycle recurrence while a different
+    effectful GUI route continues under the outer episode budget?
 
 ## Exit statement
 

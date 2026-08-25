@@ -98,11 +98,10 @@ Live benchmark validation remains separately authorized. The repository-wide myp
 pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused single-call/history/Monitor/CoreLoop surface passes `120` tests.
-The full suite reports `1704 passed / 19 skipped / 3 failed`; the three failures are pre-existing benchmark lifecycle
-wall-clock assertions (`<150ms`) that take about `0.95s` in both this worktree and an isolated `91ef4d12` baseline
-worktree. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a fresh live
-Task266 witness.
+Current provider-free verification: the focused progress/history/Monitor/authority surface passes `73` tests. The
+full suite reports `1704 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the
+observability test. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a
+fresh live Task266 witness.
 
 Overall project closure is still **open**:
 
@@ -626,18 +625,23 @@ The model context contains only:
 - the fresh compact canonical World;
 - the current bounded ToolCatalog;
 - bounded recent semantic receipts and control feedback;
-- at most one bounded, visible, non-authoritative progress note on each retained accepted model response;
+- exactly one latest bounded, visible, non-authoritative model-authored progress note once the model has produced one;
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs, including same-ID failed returns for proposals
   not selected for execution.
 
 Old World/user prompts are excluded from transport history because the fresh World is the current-environment
 authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its proposed calls,
-including exact supported output values and inspected/total scope when known instead of a vague count.
-The PydanticAI boundary retains that visible `TextPart` with the selected normalized first `ToolCallPart` and every
-exact later proposal, hard-bounds a misbehaving progress note at 800 characters with an explicit truncation marker,
-and excludes hidden `ThinkingPart` content and schema-invalid responses from future model input. Raw provider output
-remains in Trace. This is same-actor trajectory context, not a Runtime fact authority, Workspace memory, or a separate
-summarizer model.
+including exact supported output values and inspected/total scope when known instead of a vague count. Task-domain
+output values such as geographic coordinates are durable; only GUI bindings such as `E/F/R` refs, selectors, and
+screen/pixel coordinates are excluded as staleable.
+
+The PydanticAI boundary retains the newest visible `TextPart` with the selected normalized first `ToolCallPart` and
+every exact later proposal. A tool-only response carries forward the exact prior model-authored note; a new note
+replaces it, and older accepted responses lose only their duplicate `TextPart` while their
+`ToolCallPart/ToolReturnPart` pairing remains intact. The boundary never writes, merges, or semantically validates
+progress. It hard-bounds a misbehaving note at 800 characters with an explicit truncation marker and excludes hidden
+`ThinkingPart` content from future model input. Raw provider output remains in Trace. This is same-actor trajectory
+context, not a Runtime fact authority, Workspace memory, or a separate summarizer model.
 
 `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
 ToolReturn content. The SDK history processor acts before admission rather than waiting for a hard overflow; only an
@@ -657,9 +661,12 @@ or projects GUI effects.
 receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot
 decide how a ToolReturn is serialized or make information persist in model context. Control discovery is capability
 lookup, not task evidence, so `ObservationDeliveryStore` emits no novelty delta for it. Monitor allows one same-World
-discovery step and recovers on the second consecutive discovery. It blocks only an immediate repeat of the recovery
-signal's exact typed attempt; a materially different current attempt clears recovery even without information gain,
-while the outer episode step limit remains the generic long-loop fallback.
+discovery step and recovers on the second consecutive discovery. In addition, the same Monitor keeps at most six
+ref-free public signatures for dispatched GUI attempts and recognizes repeated period-2/3 suffixes across fresh
+Worlds. Local read/search steps do not erase that effectful-action sequence. The first occurrence emits the existing
+typed `STATE_OSCILLATION` recovery; recurrence of the same phase-independent cycle blocks, while a different dispatched
+GUI attempt clears it. This bounded operational detection never reads TaskGoal, GoalPlan, ToolReturn bodies, URLs,
+task IDs, or site names. The outer episode step limit remains the generic long-loop fallback.
 
 ## World, perception, and action boundaries
 
@@ -678,7 +685,7 @@ logic.
 items. `TaskGoal` remains authoritative. Runtime stores no mutable per-item status, frontier, achievement record, or
 second planner loop. The single ActionPolicy reassesses the plan against the fresh World on every step.
 
-## SOTA alignment checked 2026-08-24
+## SOTA alignment checked 2026-08-25
 
 Current primary sources converge on a thin loop rather than a result-conservation subsystem:
 
@@ -699,6 +706,13 @@ Current primary sources converge on a thin loop rather than a result-conservatio
   usable page elements—substantially improves a plain single web agent without extra roles or online search. The run5
   repair follows that boundary: it changes which already-legal current route is visible first; it does not add a
   planner, retriever, or Runtime semantic rule.
+- [UI-TARS-2](https://arxiv.org/html/2509.02544) formalizes recent high-fidelity working memory plus semantically
+  compressed episodic intentions/outcomes. Its ordinary control remains one ReAct policy; the verifier described in
+  the report is primarily a training-reward mechanism, not a second online Runtime authority. This project uses the
+  thinner inference-time equivalent: recent exact SDK exchanges plus the latest same-policy progress note.
+- [Agent S2](https://arxiv.org/html/2504.00906) is the explicit heavier alternative: a Manager updates subgoals after a
+  Worker completes each one. That is a deliberate Manager/Worker architecture, not a Monitor feature. This project
+  retains its declared single ActionPolicy and static GoalPlan rather than partially importing that hierarchy.
 - [FocusAgent](https://arxiv.org/html/2510.03204) selects task-relevant AXTree line ranges from the preserved tree and
   inserts explicit placeholders for omitted ranges. Its recall-biased soft retrieval is evidence for visible,
   structure-aware reduction rather than unmarked per-node prefix loss.
@@ -750,11 +764,14 @@ This cutover is implementation-complete only when all of the following agree:
     information novelty that clears Monitor.
 12. WebArena-family browser navigation is published only through the existing ActionSpace/BrowserGym route, while
     MiniWoB remains unchanged.
-13. proactive SDK history processing preserves exact call/result pairs and the newest cumulative progress note, and a
-    partial PageMap remains aggregate-bounded and recoverable through the existing read tools.
-14. every current non-entity `InteractionSubjectKind` present in Actor World reaches the same compact observation;
+13. proactive SDK history processing preserves exact call/result pairs and exactly one latest cumulative progress
+    note across tool-only turns, and a partial PageMap remains aggregate-bounded and recoverable through the existing
+    read tools.
+14. dispatched GUI attempts have one bounded ref-free Monitor history; repeated period-2/3 cycles recover once and
+    block only on recurrence, without task-progress interpretation or a second policy.
+15. every current non-entity `InteractionSubjectKind` present in Actor World reaches the same compact observation;
     adding an action for an existing kind does not require a renderer or history-path change.
-15. BrowserGym element currentness consumes only the selected interaction offer's declared semantic fields and private
+16. BrowserGym element currentness consumes only the selected interaction offer's declared semantic fields and private
     binding domain; unrelated presentation drift reaches Playwright, while a typed pre-dispatch stale result performs
     one fresh capture, zero replay, and returns to the same ActionPolicy.
 

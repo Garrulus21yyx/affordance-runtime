@@ -353,6 +353,7 @@ class PydanticAIGroundedDecisionPort:
             self.message_history,
             max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
         )
+        retained_progress = _latest_progress_note(history_messages)
         object.__setattr__(
             self,
             "last_history_compaction_count",
@@ -443,6 +444,7 @@ class PydanticAIGroundedDecisionPort:
                 catalog,
                 request.context_id,
                 source_response=_latest_model_response(result),
+                fallback_progress=retained_progress,
             )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
             if accepted_exchange is None and initial_calls:
@@ -479,6 +481,10 @@ class PydanticAIGroundedDecisionPort:
                     catalog,
                     request.context_id,
                     source_response=_latest_model_response(repair_result),
+                    fallback_progress=(
+                        _progress_note_from_response(_latest_model_response(result))
+                        or retained_progress
+                    ),
                 )
                 if (
                     repair_exchange is not None
@@ -702,6 +708,7 @@ class PydanticAIGroundedDecisionPort:
             "tool_resolution_detail": self.last_tool_resolution_detail,
             "multiple_tool_call_attempt_count": self.last_multiple_tool_call_attempt_count,
             "discarded_protocol_call_count": self.last_discarded_protocol_call_count,
+            "history_compaction_count": self.last_history_compaction_count,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -1188,7 +1195,14 @@ def _endpoint_host(base_url: str) -> str:
     return (parsed.netloc or parsed.path.split("/", 1)[0]).strip().casefold()
 
 
-def _resolve_deferred(output, catalog, context_id: str, *, source_response=None):
+def _resolve_deferred(
+    output,
+    catalog,
+    context_id: str,
+    *,
+    source_response=None,
+    fallback_progress: str = "",
+):
     from pydantic_ai import DeferredToolRequests
 
     if not isinstance(output, DeferredToolRequests) or output.approvals:
@@ -1240,6 +1254,7 @@ def _resolve_deferred(output, catalog, context_id: str, *, source_response=None)
                 accepted_call,
                 proposed_calls=tuple(output.calls),
                 discarded_call_count=max(0, len(output.calls) - 1),
+                fallback_progress=fallback_progress,
             ),
             max(0, len(output.calls) - 1),
         ), None, ()
@@ -1267,21 +1282,15 @@ def _accepted_model_response(
     *,
     proposed_calls: tuple[object, ...] = (),
     discarded_call_count: int = 0,
+    fallback_progress: str = "",
 ):
-    """Keep bounded progress and every exact proposal; normalize only the selected first call."""
+    """Keep the newest model-authored progress and every exact proposal."""
 
     from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 
-    if source_response is not None:
-        if not isinstance(source_response, ModelResponse):
-            raise TypeError("source response is not a PydanticAI ModelResponse")
-        progress = "\n".join(
-            part.content.strip()
-            for part in source_response.parts
-            if isinstance(part, TextPart) and part.content.strip()
-        )
-    else:
-        progress = ""
+    if source_response is not None and not isinstance(source_response, ModelResponse):
+        raise TypeError("source response is not a PydanticAI ModelResponse")
+    progress = _progress_note_from_response(source_response) or fallback_progress.strip()
 
     calls = tuple(proposed_calls)
     if not calls and source_response is not None:
@@ -1382,11 +1391,57 @@ def _accepted_message_history(
     ):
         raise ValueError("PydanticAI did not close every deferred tool proposal")
     returned_parts = tuple(returned_by_identity[item] for item in pending_identities)
+    retained_history = (
+        _without_progress_notes(prior_history)
+        if _progress_note_from_response(accepted.response)
+        else prior_history
+    )
     return (
-        *prior_history,
+        *retained_history,
         ModelRequest(parts=returned_parts),
         accepted.response,
     )
+
+
+def _progress_note_from_response(response: object | None) -> str:
+    """Read visible model-authored progress without admitting hidden reasoning."""
+
+    if response is None:
+        return ""
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    if not isinstance(response, ModelResponse):
+        return ""
+    return "\n".join(
+        part.content.strip()
+        for part in response.parts
+        if isinstance(part, TextPart) and part.content.strip()
+    )
+
+
+def _latest_progress_note(messages: tuple[object, ...]) -> str:
+    """Return the latest visible note already owned by official SDK history."""
+
+    for message in reversed(messages):
+        progress = _progress_note_from_response(message)
+        if progress:
+            return progress
+    return ""
+
+
+def _without_progress_notes(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Keep call/result pairs intact while replacing the cumulative note."""
+
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    values: list[object] = []
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            values.append(message)
+            continue
+        parts = [part for part in message.parts if not isinstance(part, TextPart)]
+        values.append(message if len(parts) == len(message.parts) else replace(message, parts=parts))
+    return tuple(values)
 
 
 def _drop_oldest_completed_exchange(messages: tuple[object, ...]) -> tuple[object, ...]:

@@ -90,6 +90,6 @@ def _deliberate_trigger(kind: str) -> ActionPolicyInvocationTrigger | None:
         return ActionPolicyInvocationTrigger.EVIDENCE_GAP
     if kind == "control_stall":
         return ActionPolicyInvocationTrigger.CONTROL_STALL
-    if kind in {"effect_stall", "uncertain_effect", "strategy_stall"}:
+    if kind in {"effect_stall", "uncertain_effect", "state_oscillation", "strategy_stall"}:
         return ActionPolicyInvocationTrigger.OPERATIONAL_STALL
     return None
