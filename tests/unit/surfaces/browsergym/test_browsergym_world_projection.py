@@ -14,8 +14,6 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
 )
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolPhase,
-    GroundedToolResolutionCode,
-    GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.surfaces.browsergym import projection as projection_module
@@ -258,18 +256,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
         )
 
 
-@pytest.mark.parametrize(
-    "rejected_url",
-    (
-        "https://router.project-osrm.org/route/v1/driving/1,2;3,4",
-        "https://map.example.test.evil/",
-        "https://map.example.test@evil.test/",
-        "https://map.example.test:4444/",
-    ),
-)
-def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_catalog(
-    rejected_url: str,
-) -> None:
+def test_environment_navigation_scope_does_not_publish_its_private_location_allowlist() -> None:
     raw = raw_observation(url="https://wiki.example.test/wiki/Portland")
     raw["open_pages_urls"] = np.asarray((
         "https://map.example.test:3000/",
@@ -316,7 +303,10 @@ def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_
     assert '"title":"OpenStreetMap"' in delivery.view.text
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
     goto = next(item for item in catalog.specs if item.name == "goto")
-    assert "map.example.test:3000" in goto.input_schema["properties"]["url"]["description"]
+    serialized_schema = repr(goto.input_schema)
+    assert "map.example.test" not in serialized_schema
+    assert "wiki.example.test" not in serialized_schema
+    assert goto.input_schema["properties"]["url"]["pattern"] == r"^https?://.+"
     allowed = resolve_grounded_tool_call(
         catalog,
         ToolCall("goto", {"url": "https://map.example.test:3000/search?q=Acadia"}, "call:allowed"),
@@ -326,14 +316,19 @@ def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_
     assert allowed.decision.parameters == {
         "url": "https://map.example.test:3000/search?q=Acadia"
     }
-    with pytest.raises(GroundedToolResolutionError) as captured:
-        resolve_grounded_tool_call(
-            catalog,
-            ToolCall("goto", {"url": rejected_url}, "call:rejected"),
-            expected_context_id=context.context_id,
-            expected_delivery_id=delivery.delivery_id,
-        )
-    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    external = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "goto",
+            {"url": "https://external.example.test/resource"},
+            "call:external",
+        ),
+        expected_context_id=context.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+    assert external.decision.parameters == {
+        "url": "https://external.example.test/resource"
+    }
 
 
 def test_screenshot_grounding_is_viewport_bounded_and_prioritizes_actions() -> None:

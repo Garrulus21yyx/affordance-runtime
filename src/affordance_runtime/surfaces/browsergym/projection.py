@@ -539,8 +539,6 @@ def _browser_context_subject(
                 primitive,
                 current_value_schema={"type": "integer", "enum": available_indexes},
             )
-        elif primitive == "goto" and navigation_locations is not None:
-            schema = _restricted_goto_schema(navigation_locations)
         else:
             schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(primitive)
         binding_id = f"binding:{observation_id}:browser-context:{primitive}"
@@ -565,14 +563,15 @@ def _browser_context_subject(
             verification_family=VerificationFamily.NAVIGATION_CONTEXT.value,
         )
         private = BrowserGymNavigationBinding(
-            binding_id,
-            observation_id,
-            revision,
-            page_identity,
-            episode_identity,
-            target_id,
-            primitive,
-            raw_urls,
+            binding_id=binding_id,
+            source_observation_id=observation_id,
+            source_revision=revision,
+            page_identity=page_identity,
+            episode_identity=episode_identity,
+            semantic_target_id=target_id,
+            supported_primitive=primitive,
+            open_pages_urls=raw_urls,
+            navigation_locations=navigation_locations,
         )
         pairs.append((public, private))
     return target, structure, tuple(pairs)
@@ -596,24 +595,6 @@ def normalize_browser_navigation_locations(urls: tuple[str, ...]) -> tuple[str, 
     if not normalized:
         raise ValueError("restricted browser navigation requires at least one location")
     return normalized
-
-
-def _restricted_goto_schema(locations: tuple[str, ...]) -> dict[str, object]:
-    normalized = normalize_browser_navigation_locations(
-        tuple(f"http://{location}" for location in locations)
-    )
-    authority = "(?:" + "|".join(re.escape(location) for location in normalized) + ")"
-    pattern = rf"^https?://{authority}(?:[/?#].*)?$"
-    schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema("goto")
-    url_schema = schema["properties"]["url"]
-    assert isinstance(url_schema, dict)
-    url_schema["pattern"] = pattern
-    url_schema["description"] = (
-        "HTTP(S) URL on a host authorized by the current browser environment: "
-        + ", ".join(normalized)
-    )
-    INTERACTION_CAPABILITY_REGISTRY.validate_parameter_schema("goto", schema)
-    return schema
 
 
 def _string_sequence(value: object) -> tuple[str, ...]:

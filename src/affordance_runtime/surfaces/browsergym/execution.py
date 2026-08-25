@@ -25,8 +25,8 @@ def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBin
             raise ValueError("BrowserGym navigation primitive changed after binding")
         if primitive == "goto":
             url = request.intent.parameters.get("url")
-            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-                raise ValueError("goto requires one HTTP(S) URL")
+            if not isinstance(url, str) or not private.allows_url(url):
+                raise ValueError("goto URL is outside the current browser environment")
             return f"goto({json.dumps(url, ensure_ascii=False)})"
         if primitive == "tab_focus":
             index = request.intent.parameters.get("index")

@@ -84,8 +84,8 @@ _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
 _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
-_HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.25
-_HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 2048
+_HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.12
+_HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 1024
 _HISTORY_COMPACTION_SUMMARY_PROMPT = """
 You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
 prefix, so preserve only information needed to continue the user's task correctly.
@@ -93,33 +93,33 @@ prefix, so preserve only information needed to continue the user's task correctl
 Use these exact headings, omitting empty sections:
 
 ## Task progress
-Completed task requirements and the current stage.
+At most three completed user-requirement outcomes, followed by one sentence naming the current
+stage. Record outcomes, not actions taken.
 
 ## Verified facts
-Task-relevant facts actually supported by the trajectory, including exact values and public
-document or tool-call identifiers when present. Never promote an ambiguity or hypothesis.
+At most eight exact facts necessary for unfinished requirements or the final answer. Include a
+short public document or tool-call source when present. Never promote an ambiguity or hypothesis.
 Completed ToolReturns below are exact, bounded results that were visible to the ActionPolicy.
 When a later ActionPolicy response explicitly concludes a task fact from a completed result,
 preserve that latest conclusion unless a still-later result or response contradicts or retracts
 it. Coverage or pagination metadata limits the result's scope; it does not invalidate complete
-records or exact values already returned.
+records or exact values already returned. A later navigation, lookup, or execution failure does
+not retract an already supported fact unless it explicitly disproves that fact.
 
-## Uncertainties
-Claims still requiring verification and conflicting observations.
+## Remaining questions
+At most three unresolved user requirements or values that still need verification.
 
-## Action outcomes
-Decision-relevant completed actions and their observed outcomes. Do not preserve stale loading
-state, current-World claims, selectors, or call-local E/R/F/N grounding references.
+## Next intent
+Exactly one semantic next intent that advances the current stage.
 
-## Remaining work
-Unresolved requirements and the next semantic intent.
-
-## Failed approaches
-Strategies that produced no useful progress and should not be repeated.
+## Failed strategies
+At most two terse strategy-level failures worth avoiding. Never enumerate attempted URLs,
+individual clicks, reads, tab switches, or other action history.
 
 Fresh World supplied to the continuing agent is authoritative. Focus on conclusions and
-outcomes rather than narrating every step. Keep the summary concise and respond with only the
-summary.
+outcomes rather than narrating steps. Do not preserve current URLs, stale loading state,
+selectors, call-local E/R/F/N refs, old control IDs, or incidental page metadata. Keep the
+summary concise and respond with only the summary.
 
 <messages>
 {messages}

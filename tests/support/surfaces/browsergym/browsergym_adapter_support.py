@@ -274,12 +274,14 @@ def open_fake(
     task_id="browsergym/miniwob.click-button",
     *,
     browser_action_primitives: tuple[str, ...] = (),
+    browser_navigation_urls: tuple[str, ...] | None = None,
 ):
     return open_surface(
         task_id,
         7,
         gym_factory=lambda *_args, **_kwargs: fake,
         browser_action_primitives=browser_action_primitives,
+        browser_navigation_urls=browser_navigation_urls,
     )
 
 

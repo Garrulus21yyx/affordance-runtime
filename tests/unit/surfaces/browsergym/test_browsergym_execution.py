@@ -524,6 +524,65 @@ def test_explicit_browser_profile_globals_dispatch_official_actions(
     asyncio.run(environment.close())
 
 
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://external.example.test/resource",
+        "https://map.example.test.evil/",
+        "https://map.example.test@evil.test/",
+        "https://map.example.test:4444/",
+    ),
+)
+def test_restricted_goto_rejects_unauthorized_location_before_dispatch(url: str) -> None:
+    raw = raw_observation(ax_node("1", "button", "okay"), url="https://map.example.test/")
+    fake = FakeBrowserGym(raw, raw)
+    environment, task = open_fake(
+        fake,
+        "browsergym/arbitrary-real-page",
+        browser_action_primitives=("goto",),
+        browser_navigation_urls=("https://map.example.test",),
+    )
+    world = start_environment(environment, task)
+    request = request_for(world, task, "goto", {"url": url})
+    fake.probe_task = {}
+
+    result = asyncio.run(environment.execute(request)).result
+
+    assert (result.dispatch_status, result.error) == (
+        DispatchStatus.NOT_SENT,
+        ActionError.INVALID_PARAMETERS,
+    )
+    assert fake.actions == []
+    assert environment.step_calls == 0
+    asyncio.run(environment.close())
+
+
+def test_restricted_goto_dispatches_an_authorized_location() -> None:
+    raw = raw_observation(ax_node("1", "button", "okay"), url="https://map.example.test/")
+    fake = FakeBrowserGym(raw, raw)
+    environment, task = open_fake(
+        fake,
+        "browsergym/arbitrary-real-page",
+        browser_action_primitives=("goto",),
+        browser_navigation_urls=("https://map.example.test",),
+    )
+    world = start_environment(environment, task)
+    request = request_for(
+        world,
+        task,
+        "goto",
+        {"url": "https://map.example.test/search?q=Acadia"},
+    )
+    fake.probe_task = {}
+
+    result = asyncio.run(environment.execute(request)).result
+
+    assert result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ['goto("https://map.example.test/search?q=Acadia")']
+    assert environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
 def test_press_key_dispatches_entity_press_and_focused_keyboard_press() -> None:
     fake, environment, task, world = _fixture()
     entity_request = _request_for_role(world, task, "press_key", "button", {"key": "Enter"})

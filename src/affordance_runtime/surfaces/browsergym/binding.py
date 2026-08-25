@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from affordance_runtime.surfaces.browsergym.semantics import (
     CanonicalBrowserControl,
@@ -169,6 +170,7 @@ class BrowserGymNavigationBinding:
     semantic_target_id: str
     supported_primitive: str
     open_pages_urls: tuple[str, ...] = ()
+    navigation_locations: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not all(
@@ -197,6 +199,34 @@ class BrowserGymNavigationBinding:
         if any(not isinstance(item, str) or not item for item in urls):
             raise ValueError("BrowserGym navigation binding tab identities are invalid")
         object.__setattr__(self, "open_pages_urls", urls)
+        locations = self.navigation_locations
+        if locations is not None:
+            locations = tuple(locations)
+            if not locations or any(
+                not isinstance(item, str) or not item or item != item.casefold()
+                for item in locations
+            ):
+                raise ValueError("BrowserGym navigation locations are invalid")
+            object.__setattr__(self, "navigation_locations", locations)
+
+    def allows_url(self, url: str) -> bool:
+        """Validate one HTTP(S) destination against the private environment scope."""
+
+        try:
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+            ):
+                return False
+            location = parsed.hostname.casefold()
+            if parsed.port is not None:
+                location = f"{location}:{parsed.port}"
+        except ValueError:
+            return False
+        return self.navigation_locations is None or location in self.navigation_locations
 
 
 BrowserGymPrivateBinding = (

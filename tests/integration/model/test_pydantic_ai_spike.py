@@ -1119,6 +1119,24 @@ def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None
     canonical_envelope_module._project_pydantic_history(run.messages)
 
 
+def test_harness_summary_contract_keeps_conclusions_without_action_narration() -> None:
+    prompt = pydantic_bridge._HISTORY_COMPACTION_SUMMARY_PROMPT
+
+    assert "## Task progress" in prompt
+    assert "At most three completed user-requirement outcomes" in prompt
+    assert "## Verified facts" in prompt
+    assert "At most eight exact facts" in prompt
+    assert "## Remaining questions" in prompt
+    assert "## Next intent" in prompt
+    assert "Exactly one semantic next intent" in prompt
+    assert "## Failed strategies" in prompt
+    assert "At most two terse strategy-level failures" in prompt
+    assert "## Action outcomes" not in prompt
+    assert "Never enumerate attempted URLs" in prompt
+    assert pydantic_bridge._HISTORY_COMPACTION_KEEP_TOKENS_RATIO == 0.12
+    assert pydantic_bridge._HISTORY_COMPACTION_MAX_OUTPUT_TOKENS == 1024
+
+
 def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() -> None:
     coordinate = "43°39′36″N 70°15′18″W"
     long_result = {
@@ -2598,7 +2616,7 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
     assert selected.port.history_compaction_timeout_s == 2.0
     assert selected.port.model._provider.client.timeout == 2.0
     assert selected.port.model.settings == {
-        "max_tokens": 2048,
+        "max_tokens": 1024,
         "temperature": 0.0,
         "thinking": False,
     }

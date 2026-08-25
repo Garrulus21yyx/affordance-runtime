@@ -19,9 +19,11 @@ E-ref-shaped schemas, while the existing complete current `ActionSpace` resolver
 operation, destination, parameters, and private action identity.
 The latest repair keeps the generic BrowserGym browser profile unrestricted, while an environment may explicitly
 provide a navigation scope. WebArena is the only current selector of that restricted profile: its runner reads the
-official BrowserGym `ENV_VARS` URL set once, projects the resulting allowed netlocs into the current browser-context
-state and `goto` parameter schema, and sends that exact schema through the ordinary ActionSpace/Catalog resolver.
-There is no task-, URL-, or site-name detection and no alternate navigation executor.
+official BrowserGym `ENV_VARS` URL set once and gives the normalized locations to the existing private browser-context
+binding. World publishes only `navigation_scope=environment_restricted`, while the ordinary ActionSpace/Catalog keeps
+the registry's generic HTTP(S) `goto` shape. BrowserGym execution checks the selected destination against the private
+scope before `step` and returns the existing typed `NOT_SENT/invalid_parameters` outcome on rejection. There is no
+task-, URL-, or site-name detection, model-visible service directory, or alternate navigation executor.
 Task266 run6 crossed that repaired boundary, activated the intended article, and recovered Portland's official
 coordinates. It then exposed a narrower browser-profile mismatch: the generic tool compiler still required an `E-ref`
 for `goto/go_back/go_forward/new_tab/tab_focus/tab_close`, even though BrowserGym's official navigation primitives are
@@ -174,10 +176,11 @@ The converged owner is the official PydanticAI message history, using Harness
   trigger compaction. That same breakdown already counts SDK history, pending ToolReturn, fresh World, tools, and
   protocol overhead; read/search type, Monitor recovery, task revision, semantic novelty, and the provider usage
   anchor do not schedule another model call. The current-World delivery soft target is not a history capacity;
-- Harness summarizes only a pair-safe expired prefix and keeps the newest pair-safe suffix fitting 25% of that history
+- Harness summarizes only a pair-safe expired prefix and keeps the newest pair-safe suffix fitting 12% of that history
   capacity at full fidelity. This token-bound tail adapts to variable-size GUI Worlds instead of assuming that eight
-  messages are small. Its plain `SystemPromptPart` summary carries task progress,
-  verified facts, uncertainties, completed action outcomes, remaining work, and failed approaches;
+  messages are small. Its plain `SystemPromptPart` summary retains at most three completed user outcomes plus the
+  current stage, eight task-critical verified facts, three remaining questions, one next intent, and two failed
+  strategies. It does not retain an action-by-action log, old URLs, or stale current-state references;
 - Harness 0.25's formatter does not render `ThinkingPart`. The history owner therefore maps accepted thinking to
   ordinary text only in the throwaway summarizer input, then restores Harness's preserved suffix from the exact
   official messages. Provider reasoning metadata and signatures are never rewritten in persisted or replayed history;
@@ -246,7 +249,7 @@ restores its preserved suffix from the exact official messages. The summary cont
 ActionPolicy conclusion drawn from a completed result unless later trajectory content contradicts or retracts it,
 and treats coverage/pagination as scope metadata rather than evidence that a returned complete record is absent.
 Because Harness invokes the configured model directly rather than the canonical ActionPolicy envelope, that same
-model now has a default 2,048-token, temperature-zero, thinking-disabled compaction cap; normal action and repair
+model now has a default 1,024-token, temperature-zero, thinking-disabled compaction cap; normal action and repair
 requests continue to override it with their existing request-scoped role settings. No synthetic part enters canonical
 history, and no checkpoint, fact store, cursor, Monitor trigger, scheduler, or second model state is introduced.
 
@@ -257,11 +260,11 @@ terminal mistake into repeated control activity: the WebArena evaluator ignored 
 agent STOP, and the same-call result projection omitted `ExecutionReceiptBatch.terminal_failure`, rendering a typed
 `NOT_SENT/stale_binding(task_done)` as running success.
 
-The positive contract is now singular. An unrestricted browser still receives the registry's generic HTTP(S) `goto`
-schema. A restricted environment supplies configured URLs; Surface projection derives BrowserGym-compatible netlocs,
-publishes them in the current browser subject, and narrows that same current ActionBinding schema. The disposable
-Catalog preserves the exact browser-context parameter schema instead of broadening it back to the registry default,
-so an unauthorized URL fails `invalid_tool_arguments` before Binder/Executor. Independently, every WebArena native
+The positive contract is now singular. Every browser profile receives the registry's generic HTTP(S) `goto` schema.
+A restricted environment supplies configured URLs; Surface projection derives BrowserGym-compatible netlocs and
+keeps them only in the current private browser-context binding. World exposes only that the scope is restricted, not
+the allowed hosts. After normal Catalog resolution and binding, BrowserGym execution rejects an unauthorized URL as
+typed `NOT_SENT/invalid_parameters` before dispatch. Independently, every WebArena native
 `terminated|truncated|done` snapshot is classified immediately; only voluntary successful completion remains
 gated by agent STOP. The ordinary ToolReturn projection now marks any failed execution result as failed and exposes the typed
 non-dispatch terminal failure plus bounded currentness reason. No retry, navigation wrapper, evaluator oracle, or
@@ -280,8 +283,9 @@ The positive owner contract is now:
 - BrowserGym's `open_pages_urls[i]` and `open_pages_titles[i]` form one current tab record with public `index`,
   `active`, bounded `title`, and sanitized `route`. The title is the semantic hint, the route is stable location
   identity, and the index is the `tab_focus` argument. Credentials, query, and fragment never enter the route;
-- restricted navigation locations remain solely in the current ActionBinding/Catalog schema. They are not duplicated
-  as a service directory in World, and local benchmark routes are not rewritten into invented public domains;
+- restricted navigation locations remain solely in the Runtime-private BrowserGym binding. Neither World nor the
+  ActionBinding/Catalog schema exposes them as a service directory, and local benchmark routes are not rewritten into
+  invented public domains;
 - title changes do not change the browser-context binding identity; current URL/index still own currentness;
 - the DeepSeek model profile explicitly tells PydanticAI to send the existing generic output budget as
   `max_tokens`;
@@ -293,6 +297,15 @@ The positive owner contract is now:
 Rejected prose and its SDK retry prompt remain in the exact provider transcript but do not enter accepted canonical
 history. CoreLoop, Monitor, World authority, execution, compaction, and evaluator behavior are unchanged; there is no
 tab recognizer, URL remapper, provider parser, fallback action, or second control path.
+
+Task266 run31 accepted with native `verified_success`, closing the live correctness witness for this causal line. Its
+46 policy calls also made the remaining efficiency coupling measurable: the public restricted `goto` schema exposed
+six authorized localhost netlocs, which the model treated as candidate services, while the final Harness summary spent
+1,888 tokens on action narration, stale refs, incidental facts, and all guessed URLs. The current optimization restores
+the generic public URL shape and retains location authorization only in the existing private BrowserGym binding. It
+also tightens the same Harness summary to conclusion-oriented task progress, reduces its output cap to 1,024 tokens,
+and keeps a 12% exact pair-safe tail. Fresh World, exact ToolReturns, the compaction trigger, CoreLoop, Monitor, and
+execution remain unchanged; no new memory, retrieval, cursor, planner, or control-flow owner is introduced.
 
 Run21 independently exposed that canonical target ordering had discarded a source fact it already possessed. Two
 identically named executable links on the Maine article occupied distinct structural paths but were each assigned the

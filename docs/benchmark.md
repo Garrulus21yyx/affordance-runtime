@@ -24,10 +24,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current repair-focused owner/cross-boundary verification reports `116 passed`. The full suite reports
-`1743 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the observability test. Full
+Current repair-focused owner/cross-boundary verification is included in the full suite, which reports
+`1740 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the observability test. Full
 Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded changes, not a
-post-repair live Task266 witness or overall closure.
+post-optimization live Task266 witness or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -162,8 +162,9 @@ accepted `ThinkingPart`, ordinary text, provider metadata, ToolCalls, same-ID To
 prompt remain in official PydanticAI history. Only when the complete canonical request's existing admission breakdown
 reaches 80% of effective provider input does Harness 0.25 `SummarizingCompaction` call the configured model, replace a
 pair-safe expired prefix with one ordinary `SystemPromptPart` summary, and retain the newest pair-safe suffix fitting
-25% of the admission-derived history capacity at full fidelity. Summary failure leaves the exact raw history unchanged.
-A summary-only view exposes accepted `ThinkingPart`
+12% of the admission-derived history capacity at full fidelity. The summary keeps bounded task outcomes, exact
+task-critical facts, remaining questions, one next intent, and failed strategies rather than an action log. Summary
+failure leaves the exact raw history unchanged. A summary-only view exposes accepted `ThinkingPart`
 conclusions that Harness's formatter otherwise
 omits, after which the exact recent suffix is restored. There is no knowledge-specific trigger, source-coverage
 inventory, Monitor trigger, Workspace projection, or additional Runtime memory state. Runs20--24 are live failure
@@ -295,7 +296,7 @@ correct `find_controls` result placed the Bar Harbor national-park link first.
 The post-run repair keeps Harness as the only compaction implementation but gives its throwaway summarizer view the
 full owner-bounded public ToolReturn instead of the dependency's generic 500-character prose preview. Exact canonical
 history and the preserved suffix remain byte-for-byte PydanticAI messages. The reused model also carries a default
-2,048-token, temperature-zero, thinking-disabled limit for Harness's direct summary call; request-scoped ActionPolicy
+1,024-token, temperature-zero, thinking-disabled limit for Harness's direct summary call; request-scoped ActionPolicy
 settings continue to override that default. A focused regression places an exact coordinate after 700 irrelevant
 characters in a partial, paginated result and proves it reaches the compactor request, while the pending call and exact
 suffix remain unchanged. The full provider-free suite passes; run27 remains failed pre-repair evidence and a fresh live
@@ -313,9 +314,10 @@ cursor, or Monitor mechanism.
 
 The provider-free repair leaves the generic BrowserGym browser profile unrestricted. Only the WebArena runner reads
 BrowserGym's official configured URL set and supplies it as the explicit environment navigation scope. The current
-World browser subject and current `goto` ActionBinding expose the resulting allowed netlocs; the disposable Catalog
-retains that exact schema, and the existing resolver rejects external, lookalike, userinfo, and wrong-port URLs before
-dispatch. Provider terminal state is classified on the same post-action World without waiting for an agent STOP, and
+World browser subject exposes only that the scope is restricted, and the current `goto` ActionBinding keeps the
+registry's generic HTTP(S) shape. The existing private BrowserGym binding retains the normalized locations and rejects
+external, lookalike, userinfo, and wrong-port URLs as typed `NOT_SENT/invalid_parameters` before dispatch. Provider
+terminal state is classified on the same post-action World without waiting for an agent STOP, and
 the normal ToolReturn projection exposes typed non-dispatch terminal failures. A vertical fake-BrowserGym test proves
 that terminal failure ends the CoreLoop after the one dispatched action with no second policy turn. This adds no
 WebArena tool, task/site branch, fallback, or alternate browser state.
@@ -331,12 +333,30 @@ a URL recognizer, site rule, memory path, or larger case timeout.
 
 The current repair pairs BrowserGym `open_pages_urls` and `open_pages_titles` by index into the one browser-context
 subject. It retains bounded title plus sanitized route and removes the duplicated navigation allowlist from public
-World state; the current Catalog remains the sole model-visible legality contract. DeepSeek's existing output budget
+World state and Catalog; the private BrowserGym binding remains the environment-authorization owner. DeepSeek's existing output budget
 is sent through `max_tokens`, and PydanticAI's output validator performs at most one same-context retry when the model
 returns text instead of a tool call. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`; rejected prose
 does not enter canonical history. Representation repair is not nested with this retry. Focused tests cover title/URL
-pairing and sanitization, title-independent binding currentness, restricted Catalog preservation, accepted retry,
-typed exhaustion, exact retry history, and the DeepSeek model profile. A fresh live witness is still required.
+pairing and sanitization, title-independent binding currentness, private navigation authorization, accepted retry,
+typed exhaustion, exact retry history, and the DeepSeek model profile. Run31 below supplies the live witness.
+
+The authorized
+[`run31`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run31/run.json) crossed those repairs
+and accepted with native `verified_success`: 46 policy calls, 22 executions, 23 effectful dispatches, zero fallback,
+zero multi-call envelopes, and zero context-capacity failures. It is the first live Task266 success for this causal
+line, while also exposing a bounded efficiency defect. Nine pressure-triggered compactions consumed 213,703 tokens;
+the last 1,888-token summary retained an action log, incidental page facts, stale refs, and every guessed local URL.
+Separately, the restricted `goto` schema printed all six permitted localhost netlocs to the model, which treated the
+authorization list as a service directory and spent six turns probing four unrelated ports.
+
+The optimization keeps the successful control path unchanged. The existing Harness compactor now retains a 12%
+pair-safe exact tail and produces at most 1,024 tokens of conclusion-oriented history: bounded completed task outcomes,
+task-critical verified facts, remaining questions, one next intent, and failed strategies, without action narration or
+stale current-state data. The public `goto` contract returns to the registry's generic HTTP(S) shape; only the existing
+Runtime-private BrowserGym binding retains environment locations and rejects an unauthorized destination before
+dispatch. The actor prompt removes duplicated static rules but keeps the complete fresh World and current ToolReturn.
+No checkpoint, memory owner, URL recognizer, service directory, cursor, Monitor trigger, or second Runtime path is
+introduced. A fresh post-optimization live witness remains required.
 
 Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
 legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
@@ -705,9 +725,9 @@ that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no r
 
 Browser-global action gates verify profile isolation and the official BrowserGym action strings for all six navigation
 operations. The unrestricted profile accepts ordinary HTTP(S) URLs. The restricted WebArena-profile property admits
-configured locations while rejecting external, deceptive-suffix, userinfo, and wrong-port URLs in both current
-ActionBinding and compiled Catalog. These gates do not add a local navigation tool or bypass normal currentness and
-capture.
+configured locations while rejecting external, deceptive-suffix, userinfo, and wrong-port URLs at the private
+BrowserGym execution boundary before dispatch; World and Catalog do not reveal the allowlist. These gates do not add
+a local navigation tool or bypass normal currentness and capture.
 
 A real Playwright two-tab causal-acquisition gate changes the active page during `environment.step` and proves that
 the returned observation, private enrichment input, and trace `after_url` all belong to BrowserGym's post-action
