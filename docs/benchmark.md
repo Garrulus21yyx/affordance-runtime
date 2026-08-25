@@ -22,13 +22,12 @@ and received a stable fresh World. It then exposed a separate explicit-recall al
 label nor path. The autocomplete rows themselves were honestly projected as non-executable `StaticText`; no action was
 missing from the catalog. The recall owner now requires remaining target terms to match label/path, ranks all genuine
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
-Verification counts below are refreshed only after the current full provider-free run. The repository-wide mypy
-command still reports its pre-existing baseline errors in unchanged modules.
+The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes `168` focused action-subject/delivery/catalog/vertical tests, the focused
-currentness/execution/CoreLoop surface at `81 passed / 3 skipped`, and the full suite at
-`1692 passed / 25 skipped`. Ruff, compileall, `git diff --check`, and the bounded fresh review
-pass. This is implementation evidence for the bounded changes, not a live witness for the Task266 repair.
+Current provider-free verification passes the focused single-call/history/Monitor/CoreLoop surface at
+`88 passed / 3 skipped`, and the full suite at `1705 passed / 19 skipped`. Ruff, compileall, `git diff --check`, and
+the bounded fresh review pass. This is implementation evidence for the bounded changes, not a live witness for the
+Task266 repair.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -75,6 +74,19 @@ geometry, incidental active/focus state, and equal-executability availability ch
 identity. BrowserGym/Playwright still owns locator resolution and physical actionability. If that boundary returns a
 typed pre-dispatch stale result, CoreLoop performs one `BINDING_REFRESH` capture and lets the same policy choose again
 from the fresh World. It records zero executions and never replays the action.
+
+Task266 run10 crossed that currentness boundary without a stale-binding recurrence, but failed after exposing two
+control-contract defects. Four of eight raw ActionPolicy responses contained two ToolCalls despite
+`parallel_tool_calls=false`; the bridge silently selected the first and the formal `multiple_tool_call_count` remained
+zero. After an exact `read_region(R9)` replay activated recovery, a different empty `read_region(R10)` was then
+immediately classified as `control_stalled`. Run10 is failed pre-repair evidence, not acceptance.
+
+The repaired provider gate executes no member of a multi-call envelope. It records the violation and performs at most
+one `single_action_retry` over the identical admitted task/fresh World/tools/history/current ToolReturn/media. Only one
+valid retry call can enter PydanticAI history; a repeated violation is a typed policy failure. Monitor recovery now
+prohibits one exact typed attempt rather than every member of a broad no-information family. A different query,
+region, control, or GUI action continues under the unchanged outer step budget. No pending call, second action queue,
+reflection model, evidence path, or cursor state was added. A fresh live Task266 witness is still required.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -369,11 +381,13 @@ completed accepted pairs in order: page 1 under call 1 and page 2 under call 2. 
 committed results, and no prior user/World prompt is retained. A terminal response clears the bridge history. The Store
 contains only bounded digest receipts and no result body/inventory.
 
-A second Recording PydanticAI gate emits `ThinkingPart + TextPart + two ToolCallPart` values. The accepted response in
-the following physical provider input contains only the bounded model-authored `TextPart` and the one accepted normalized
-call; its matching ToolReturn follows under the same call ID. Hidden reasoning and the discarded call remain observable
-in the raw transcript but are absent from future model context. An overlong visible note retains a bounded prefix and
-conclusion suffix with an explicit truncation marker.
+A second Recording PydanticAI gate emits `ThinkingPart + TextPart + two ToolCallPart` values. No member is resolved or
+executed. A second physical `single_action_retry` request receives the same admitted current context and returns one
+call; only that accepted response's bounded model-authored `TextPart` and normalized `ToolCallPart` enter history, and
+its matching ToolReturn follows under the same call ID. Hidden reasoning and the entire rejected multi-call response
+remain observable in the raw transcript but are absent from future model context. A repeated multi-call retry fails
+typed with empty bridge history. An overlong accepted visible note retains a bounded prefix and conclusion suffix with
+an explicit truncation marker.
 
 A history-pressure gate invokes the official PydanticAI `ProcessHistory` capability before hard overflow. It proves
 that oldest complete response/result exchanges leave atomically, exact call IDs remain paired, and the newest response
@@ -561,8 +575,8 @@ The final read-only review for this cutover must answer:
 4. Can a result exceed its owner byte bound or require fragment reassembly?
 5. Does physical PydanticAI history preserve bounded completed accepted call ID/result pairs, append the current
    same-call result, exclude old World prompts, and clear on terminal completion?
-6. Does each retained response contain at most one bounded visible progress note and exactly one accepted call, while
-   hidden reasoning and discarded calls remain absent from later provider input?
+6. Does a multi-call response resolve and dispatch nothing, receive at most one same-context retry, enter no future
+   history, and remain honestly counted even when the retry returns one accepted call?
 7. Does every route in a same-World `find_controls` ToolReturn appear in the next frozen catalog, including when the
    soft target cannot admit unrelated optional inventory?
 8. Does a discovery/current-ActionSpace route mismatch fail closed before provider invocation?
@@ -588,6 +602,8 @@ The final read-only review for this cutover must answer:
     or second browser-state channel?
 19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
     actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
+20. Does Monitor issue bounded recovery for no-information families but hard-block only the exact typed attempt named
+    by that recovery, while materially different attempts continue under the outer episode budget?
 
 ## Exit statement
 

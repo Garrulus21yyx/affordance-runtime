@@ -61,15 +61,37 @@ appearance/layout state is observational context, not binding identity; live exe
 same offer and the final physical action remains BrowserGym/Playwright-owned. A typed physical
 `NOT_SENT/stale_binding` reuses the one existing binding-refresh capture and returns the fresh World to the single
 ActionPolicy. It never replays the action and introduces no retry loop, alternate World, or second currentness store.
-Verification counts below are refreshed by the current review; live benchmark validation remains separately authorized.
-The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules and is not counted
+
+Task266 run10 then exposed two previously contradictory control contracts. Four of eight provider responses contained
+multiple tool calls despite `parallel_tool_calls=false`; the PydanticAI bridge silently kept the first valid member,
+while the documented single-action contract said that no member was accepted. Later, after one exact local-result
+replay activated recovery, Monitor blocked a materially different `read_region` merely because it also produced no
+new information. Neither failure was missing World/task context, evidence, cursor state, or GUI grounding.
+
+The owner repair restores one decision and one precise recovery identity:
+
+- the PydanticAI boundary rejects a multi-call response before Catalog resolution, dispatch, `StepResult`, or history;
+- it permits one bounded redecision over the exact same admitted task, fresh World, tools, SDK history, current
+  ToolReturn, and media, with `parallel_tool_calls=false` still enforced;
+- only the retry's one schema-valid current call may enter call/result history; another multi-call response fails
+  typed as `multiple_tool_calls`;
+- raw rejected responses remain in the provider transcript, and benchmark metrics count every multi-call attempt even
+  when the bounded retry succeeds;
+- Monitor may use a consecutive no-information family to request one deliberate recovery, but hard-blocks only a
+  repeat of that recovery signal's exact typed attempt. A different query, region, control discovery, or GUI action
+  exits recovery and remains bounded by the ordinary episode step limit.
+
+This reuses the existing canonical envelope, PydanticAI Agent/ExternalToolset/history, Catalog resolver, typed attempt
+signature, and outer step budget. It adds no pending-call queue, multi-action scheduler, second Runtime loop, evidence
+path, cursor protocol, or Monitor model. Post-repair live benchmark validation remains separately authorized.
+Live benchmark validation remains separately authorized. The repository-wide mypy command still reports its
+pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused action-subject/delivery/catalog/vertical surface passes `168` tests,
-and the focused currentness/execution/CoreLoop surface passes `81` with `3` skipped; the full suite passes `1692` with
-`25` skipped. Ruff, compileall, and diff checks pass. The fresh review found no remaining blocking owner,
-currentness, result-pairing, Manifest-conservation, readable-search, public-identity, large-World projection,
-recovery-eligibility, or async-liveness defect in this bounded implementation.
+Current provider-free verification: the focused single-call/history/Monitor/CoreLoop surface passes `88` tests with
+`3` skipped; the full suite passes `1705` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review
+found no remaining silent multi-call selection, rejected-call history leak, pending ToolReturn pairing loss, or broad
+post-recovery hard block in this bounded implementation.
 
 Overall project closure is still **open**:
 
@@ -551,8 +573,9 @@ then current pending:
 -> fresh current context
 ```
 
-Each call ID occurs in exactly one accepted call/result pair. Discarded extra provider calls never acquire a result or
-enter physical history. PydanticAI's `ProcessHistory` capability proactively removes oldest complete exchanges when
+Each call ID occurs in exactly one accepted call/result pair. A rejected multi-call response is traced but none of its
+calls acquires a result, enters physical history, or becomes pending work. One bounded retry receives the same admitted
+current context and must return exactly one call. PydanticAI's `ProcessHistory` capability proactively removes oldest complete exchanges when
 estimated history exceeds the existing soft target; TurnPacker repeats the same pair-atomic reduction before a packed
 request can remain above that target, with hard-capacity failure as a final guard. The newest model response and current
 pending pair are pinned, so the latest cumulative progress note is not discarded independently of its call. A terminal
@@ -597,7 +620,7 @@ authority. The ActionPolicy writes at most 500 characters of cumulative durable 
 including exact supported output values and inspected/total scope when known instead of a vague count.
 The PydanticAI boundary retains that visible `TextPart` with the accepted normalized `ToolCallPart`, hard-bounds a
 misbehaving response at 800 characters with an explicit truncation marker, and excludes hidden `ThinkingPart` content
-and discarded extra calls from future model input. Raw provider output remains in Trace. This is same-actor trajectory
+and every rejected multi-call response from future model input. Raw provider output remains in Trace. This is same-actor trajectory
 context, not a Runtime fact authority, Workspace memory, or a separate summarizer model.
 
 `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
@@ -618,8 +641,9 @@ or projects GUI effects.
 receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot
 decide how a ToolReturn is serialized or make information persist in model context. Control discovery is capability
 lookup, not task evidence, so `ObservationDeliveryStore` emits no novelty delta for it. Monitor allows one same-World
-discovery step, recovers on the second consecutive discovery, and blocks another discovery after recovery unless a
-fresh World, real information result, or operational GUI result resets the loop.
+discovery step and recovers on the second consecutive discovery. It blocks only an immediate repeat of the recovery
+signal's exact typed attempt; a materially different current attempt clears recovery even without information gain,
+while the outer episode step limit remains the generic long-loop fallback.
 
 ## World, perception, and action boundaries
 

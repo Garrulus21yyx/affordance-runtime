@@ -554,10 +554,11 @@ class CountingDecisionPort:
 
 def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, object]) -> None:
     code = str(diagnostics.get("tool_resolution_code", ""))
+    multiple_attempts = int(diagnostics.get("multiple_tool_call_attempt_count", 0))
+    instrumentation.multiple_tool_call_count += multiple_attempts
     field = {
         "accepted": "valid_tool_call_count",
         "zero_tool_calls": "zero_tool_call_count",
-        "multiple_tool_calls": "multiple_tool_call_count",
         "unknown_tool": "unknown_tool_call_count",
         "invalid_tool_arguments": "invalid_tool_argument_count",
         "unknown_tool_destination": "invalid_tool_argument_count",
@@ -566,6 +567,8 @@ def _record_dynamic_tool_metrics(instrumentation, diagnostics: Mapping[str, obje
     }.get(code)
     if field is not None:
         setattr(instrumentation, field, getattr(instrumentation, field) + 1)
+    if code == "multiple_tool_calls" and multiple_attempts == 0:
+        instrumentation.multiple_tool_call_count += 1
     instrumentation.tool_catalog_count += int(diagnostics.get("tool_catalog_count", 0))
     instrumentation.tool_catalog_bytes += int(diagnostics.get("tool_catalog_bytes", 0))
     for name in (

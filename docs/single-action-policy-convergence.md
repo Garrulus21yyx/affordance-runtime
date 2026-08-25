@@ -265,21 +265,23 @@ RuntimeDecision
 The current `PerTurnToolCatalog` still owns which variants and refs are legal. Resolver/Admission/Binder remain the
 only execution path.
 
-If a provider emits multiple decisions or one parseable decision with an invalid representation:
+If a provider emits multiple decisions:
 
 ```text
 provider response
 -> PydanticAI/output boundary validation
--> at most one narrow representation-pruning repair in the same policy turn
-   input: rejected response + closed output schema + short violation
-   excludes: a second full World, full history replay, or BrowserGym action
+-> reject every call before Catalog resolution or dispatch
+-> at most one bounded single-action retry in the same policy turn
+   input: the identical admitted task + fresh World + tools + SDK history/current ToolReturn + media
+   plus a short multiple-call violation
 -> exactly one valid decision, or typed policy protocol failure
 ```
 
-For one rejected call, repair may only delete invalid representation fields; it cannot add fields or change the
-operation, target refs, text, values, keys, options, or any other leaf. For a multiple-call envelope, the repaired call
-must be exactly one unchanged parseable member of the rejected set. Zero-call and wholly unparseable envelopes fail
-typed without repair because there is no semantic decision identity to preserve.
+For one rejected call with an invalid representation, the existing narrow repair may only delete invalid
+representation fields; it cannot add fields or change the operation, target refs, text, values, keys, options, or any
+other leaf. A multi-call retry is instead a fresh choice over the unchanged current context because no prior member was
+accepted. Zero-call and wholly unparseable envelopes fail typed without repair because there is no semantic decision
+identity to preserve.
 
 The Runtime never silently chooses the first call, executes arbitrary multiple calls, or records each repair as a GUI
 step. Repeating the same protocol failure after the bounded repair terminates that policy attempt; the Monitor does
@@ -385,7 +387,8 @@ Recovery is a bounded mode of the same ActionPolicy, not a cross-role workflow.
 
 | Failure | Owner | Response |
 |---|---|---|
-| malformed output or multiple calls | PydanticAI/provider output boundary | one narrow repair; then typed protocol failure |
+| malformed output | PydanticAI/provider output boundary | one narrow representation repair when semantics are preserved; then typed protocol failure |
+| multiple calls | PydanticAI/provider output boundary | execute none; one same-context single-action retry; then typed protocol failure |
 | stale ref or operation mismatch | Resolver/Admission | current typed feedback; no dispatch |
 | local postcondition not satisfied | ActionOutcome owner | fresh result and supported alternatives to ActionPolicy |
 | `SENT_UNKNOWN` | environment/executor | no blind replay; bounded recapture or typed failure |
@@ -408,7 +411,8 @@ RECOVERY
   progress                              -> ORDINARY
   ask_user                              -> WAITING_USER
   explicit unsupported                 -> typed unsupported terminal outcome
-  same stall family recurs              -> CONTROL_STALLED
+  prohibited exact typed attempt recurs -> CONTROL_STALLED
+  materially different attempt          -> ORDINARY
 
 FINALIZING
   response not sent                     -> FAILED
@@ -546,13 +550,15 @@ Exit properties:
 - Define one Pydantic discriminated `RuntimeDecisionModel` compiled from the current ToolCatalog.
 - Use PydanticAI/provider-native structured output rather than a manual compact-JSON parser.
 - Enforce exactly one decision at the model boundary.
-- Add one narrow representation repair for zero/multiple/malformed output.
+- Add one same-context single-action retry for multiple output and retain narrow representation repair for one
+  parseable malformed call.
 - Remove multiple-tool feedback as a repeated GUI turn behavior.
 
 Exit properties:
 
-- a provider response with two valid calls executes neither and performs at most one narrow repair;
-- repair never receives a second full World or creates a StepResult;
+- a provider response with two valid calls executes neither and performs at most one same-context retry;
+- single-action retry receives the same admitted current context, while representation repair stays narrow; neither
+  creates a StepResult;
 - valid atomic and `set_form_fields` decisions traverse the same Resolver/Binder/Executor path;
 - repeated protocol violation terminates with a typed policy failure and bounded cost.
 
@@ -563,8 +569,9 @@ Exit properties:
 - Classify exact repeat, local no-effect, and route oscillation without interpreting task semantics; repeated provider
   representation failure terminates at the provider boundary and never enters recovery as a GUI step.
 - Add ordinary/recovery call profiles to the same ActionPolicy.
-- Freeze the bounded rule: first no-effect informs; second same stall or first route cycle activates recovery; recurrence
-  after recovery terminates the control loop as `CONTROL_STALLED` while TaskEvaluation remains unchanged.
+- Freeze the bounded rule: first no-effect informs; a bounded no-information family can activate recovery; only the
+  recovery signal's exact typed attempt may terminate as `CONTROL_STALLED`. A materially different attempt exits
+  recovery and remains bounded by the episode step limit while TaskEvaluation remains unchanged.
 
 Exit properties:
 
@@ -693,8 +700,8 @@ Exit properties:
 
 ### Recovery
 
-- first local no-effect is feedback, second same stall enters recovery, recurrence after recovery terminates as
-  operational `CONTROL_STALLED` without changing TaskEvaluation to blocked;
+- first local no-effect is feedback, a bounded no-information family can enter recovery, and only the prohibited
+  exact typed attempt terminates as operational `CONTROL_STALLED` without changing TaskEvaluation to blocked;
 - route cycles survive interleaved local reads and rejected calls;
 - Monitor does not choose strategy or interpret task completion;
 - no Manager/Planner/Auditor model call occurs on ordinary or recovery turns;

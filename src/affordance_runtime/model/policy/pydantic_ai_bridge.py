@@ -13,7 +13,7 @@ import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from affordance_runtime.agent.context.failures import (
@@ -114,7 +114,6 @@ class AcceptedToolExchange:
     call: ToolCall
     decision: AgentDecision
     response: ModelResponse
-    discarded_call_count: int = 0
 
     def __post_init__(self) -> None:
         from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
@@ -124,8 +123,6 @@ class AcceptedToolExchange:
             not isinstance(self.call, ToolCall)
             or not isinstance(self.decision, AgentDecision)
             or not isinstance(self.response, ModelResponse)
-            or type(self.discarded_call_count) is not int
-            or self.discarded_call_count < 0
         ):
             raise TypeError("accepted tool exchange is not typed")
         response_calls = tuple(
@@ -185,7 +182,7 @@ class PydanticAIGroundedDecisionPort:
     last_local_failure: Mapping[str, object] = field(default_factory=dict, init=False, compare=False)
     last_tool_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_tool_resolution_detail: str = field(default="", init=False, compare=False)
-    last_discarded_protocol_call_count: int = field(default=0, init=False, compare=False)
+    last_multiple_tool_call_attempt_count: int = field(default=0, init=False, compare=False)
     last_history_compaction_count: int = field(default=0, init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
@@ -278,17 +275,69 @@ class PydanticAIGroundedDecisionPort:
                 request,
             )
 
+        async def run_policy_envelope(
+            current_envelope: CanonicalProviderEnvelope,
+            *,
+            agent_name: str,
+            phase: str,
+        ):
+            (
+                current_instructions,
+                current_prompt,
+                current_toolset,
+                current_history,
+                current_deferred_results,
+            ) = _pydantic_model_boundary_codec(
+                current_envelope,
+                BinaryContent,
+                DeferredToolResults,
+                ExternalToolset,
+                ToolReturn,
+                ToolDefinition,
+            )
+            current_agent = Agent(
+                self.model,
+                name=agent_name,
+                instructions=current_instructions,
+                output_type=[str, DeferredToolRequests],
+                retries=0,
+                capabilities=[
+                    ProcessHistory(
+                        lambda messages: list(
+                            _process_pydantic_history(
+                                tuple(messages),
+                                max_estimated_tokens=(
+                                    self.envelope_binder.request_budget.soft_target_tokens
+                                ),
+                            )
+                        )
+                    )
+                ],
+            )
+            # One explicit semantic request may still use the bridge's bounded
+            # transport retry. SDK output/tool retries stay disabled.
+            return await self._run_provider_call(
+                lambda: current_agent.run(
+                    current_prompt,
+                    toolsets=[current_toolset],
+                    usage=RunUsage(),
+                    usage_limits=UsageLimits(request_limit=2),
+                    model_settings=dict(current_envelope.model_settings),
+                    message_history=current_history,
+                    deferred_tool_results=current_deferred_results,
+                ),
+                phase=phase,
+                envelope=current_envelope,
+                provider_error_type=ModelAPIError,
+            )
+
         delivery: ModelTurnDelivery | None = None
         catalog: GroundedToolCatalog | None = None
         admitted: AdmittedProviderEnvelope | None = None
         envelope: CanonicalProviderEnvelope | None = None
-        instructions: str | None = None
-        user_prompt: object | None = None
-        toolset: object | None = None
-        agent: Any | None = None
         object.__setattr__(self, "last_tool_resolution_code", None)
         object.__setattr__(self, "last_tool_resolution_detail", "")
-        object.__setattr__(self, "last_discarded_protocol_call_count", 0)
+        object.__setattr__(self, "last_multiple_tool_call_attempt_count", 0)
         history_messages = _process_pydantic_history(
             self.message_history,
             max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
@@ -369,53 +418,11 @@ class PydanticAIGroundedDecisionPort:
             object.__setattr__(self, "last_catalog_specs", tuple(catalog.specs))
             object.__setattr__(self, "last_image_input_count", len(envelope.media))
             self._append_admitted_envelope(admitted)
-            instructions, user_prompt, toolset, message_history, deferred_results = _pydantic_model_boundary_codec(
+            result = await run_policy_envelope(
                 envelope,
-                BinaryContent,
-                DeferredToolResults,
-                ExternalToolset,
-                ToolReturn,
-                ToolDefinition,
-            )
-            agent = Agent(
-                self.model,
-                name="action-policy",
-                instructions=instructions,
-                output_type=[str, DeferredToolRequests],
-                retries=0,
-                capabilities=[
-                    ProcessHistory(
-                        lambda messages: list(
-                            _process_pydantic_history(
-                                tuple(messages),
-                                max_estimated_tokens=(
-                                    self.envelope_binder.request_budget.soft_target_tokens
-                                ),
-                            )
-                        )
-                    )
-                ],
-            )
-            usage = RunUsage()
-            # One semantic decision may make one explicit transport retry.
-            # SDK-level output/tool retry stays disabled so it cannot become
-            # an implicit second policy call.
-            limits = UsageLimits(request_limit=2)
-            result = await self._run_provider_call(
-                lambda: agent.run(
-                    user_prompt,
-                    toolsets=[toolset],
-                    usage=usage,
-                    usage_limits=limits,
-                    model_settings=dict(envelope.model_settings),
-                    message_history=message_history,
-                    deferred_tool_results=deferred_results,
-                ),
+                agent_name="action-policy",
                 phase=call_profile.phase.value,
-                envelope=envelope,
-                provider_error_type=ModelAPIError,
             )
-            accepted_result = result
             resolution_error = None
             accepted_exchange, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
@@ -424,7 +431,46 @@ class PydanticAIGroundedDecisionPort:
                 source_response=_latest_model_response(result),
             )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
-            if accepted_exchange is None and initial_calls:
+            if (
+                accepted_exchange is None
+                and resolution_error is not None
+                and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
+            ):
+                retry_profile = self.reasoning_policy.single_action_retry(call_profile)
+                retry_envelope = self.envelope_binder.bind_single_action_retry(
+                    envelope,
+                    call_profile=retry_profile,
+                    output_token_reserve=(
+                        retry_profile.max_output_tokens
+                        + self.envelope_binder.request_budget.protocol_reserve_tokens
+                        + self.envelope_binder.request_budget.safety_margin_tokens
+                    ),
+                )
+                retry_budget = replace(
+                    self.envelope_binder.request_budget,
+                    max_output_tokens=retry_profile.max_output_tokens,
+                )
+                retry_admission = RequestAdmission().admit(retry_envelope, budget=retry_budget)
+                if isinstance(retry_admission, RejectedProviderEnvelope):
+                    raise ModelRequestCapacityError(retry_admission.token_breakdown)
+                if isinstance(retry_admission, InvalidProviderEnvelope):
+                    raise ValueError(f"{retry_admission.reason}: {retry_admission.detail}")
+                self._append_admitted_envelope(retry_admission)
+                retry_result = await run_policy_envelope(
+                    retry_envelope,
+                    agent_name="action-policy-single-action-retry",
+                    phase=retry_profile.phase.value,
+                )
+                retry_exchange, retry_error, _retry_calls = _resolve_deferred(
+                    retry_result.output,
+                    catalog,
+                    request.context_id,
+                    source_response=_latest_model_response(retry_result),
+                )
+                accepted_exchange = retry_exchange
+                resolution_error = retry_error
+                self._set_tool_resolution(retry_error, accepted=retry_exchange is not None)
+            elif accepted_exchange is None and initial_calls:
                 repair_profile = self.reasoning_policy.repair()
                 repair_prompt = _representation_repair_prompt(initial_calls, resolution_error, catalog.specs)
                 repair_envelope = self.envelope_binder.bind_representation_repair(
@@ -447,52 +493,10 @@ class PydanticAIGroundedDecisionPort:
                 if isinstance(repair_admission, InvalidProviderEnvelope):
                     raise ValueError(f"{repair_admission.reason}: {repair_admission.detail}")
                 self._append_admitted_envelope(repair_admission)
-                (
-                    repair_instructions,
-                    repair_user_prompt,
-                    repair_toolset,
-                    repair_history,
-                    repair_deferred,
-                ) = _pydantic_model_boundary_codec(
+                repair_result = await run_policy_envelope(
                     repair_envelope,
-                    BinaryContent,
-                    DeferredToolResults,
-                    ExternalToolset,
-                    ToolReturn,
-                    ToolDefinition,
-                )
-                repair_agent = Agent(
-                    self.model,
-                    name="action-policy-representation-repair",
-                    instructions=repair_instructions,
-                    output_type=[str, DeferredToolRequests],
-                    retries=0,
-                    capabilities=[
-                        ProcessHistory(
-                            lambda messages: list(
-                                _process_pydantic_history(
-                                    tuple(messages),
-                                    max_estimated_tokens=(
-                                        self.envelope_binder.request_budget.soft_target_tokens
-                                    ),
-                                )
-                            )
-                        )
-                    ],
-                )
-                repair_result = await self._run_provider_call(
-                    lambda: repair_agent.run(
-                        repair_user_prompt,
-                        toolsets=[repair_toolset],
-                        usage=RunUsage(),
-                        usage_limits=UsageLimits(request_limit=2),
-                        model_settings=dict(repair_envelope.model_settings),
-                        message_history=repair_history,
-                        deferred_tool_results=repair_deferred,
-                    ),
+                    agent_name="action-policy-representation-repair",
                     phase=repair_profile.phase.value,
-                    envelope=repair_envelope,
-                    provider_error_type=ModelAPIError,
                 )
                 repair_exchange, repair_error, _repaired_calls = _resolve_deferred(
                     repair_result.output,
@@ -520,7 +524,6 @@ class PydanticAIGroundedDecisionPort:
                 self._set_tool_resolution(repair_error, accepted=repair_exchange is not None)
                 if repair_exchange is not None:
                     accepted_exchange = repair_exchange
-                    accepted_result = repair_result
             if accepted_exchange is None:
                 return self._invocation_failure(
                     _tool_resolution_failure(resolution_error),
@@ -643,11 +646,6 @@ class PydanticAIGroundedDecisionPort:
                 delivery,
             )
         decision = accepted_exchange.decision
-        object.__setattr__(
-            self,
-            "last_discarded_protocol_call_count",
-            accepted_exchange.discarded_call_count,
-        )
         if (
             str(getattr(decision, "tool_call_id", ""))
             and decision.kind is not DecisionKind.ABORT
@@ -656,7 +654,7 @@ class PydanticAIGroundedDecisionPort:
                 self,
                 "message_history",
                 _accepted_message_history(
-                    accepted_result,
+                    result,
                     history_messages,
                     accepted_exchange,
                     pending_call,
@@ -726,7 +724,7 @@ class PydanticAIGroundedDecisionPort:
                 self.last_tool_resolution_code.value if self.last_tool_resolution_code is not None else ""
             ),
             "tool_resolution_detail": self.last_tool_resolution_detail,
-            "discarded_protocol_call_count": self.last_discarded_protocol_call_count,
+            "multiple_tool_call_attempt_count": self.last_multiple_tool_call_attempt_count,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -748,6 +746,12 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "envelope_history", (*self.envelope_history, admitted.envelope)[-64:])
 
     def _set_tool_resolution(self, error: GroundedToolResolutionError | None, *, accepted: bool) -> None:
+        if error is not None and error.code is GroundedToolResolutionCode.MULTIPLE_CALLS:
+            object.__setattr__(
+                self,
+                "last_multiple_tool_call_attempt_count",
+                self.last_multiple_tool_call_attempt_count + 1,
+            )
         if accepted:
             object.__setattr__(self, "last_tool_resolution_code", GroundedToolResolutionCode.ACCEPTED)
             object.__setattr__(self, "last_tool_resolution_detail", "")
@@ -1199,8 +1203,29 @@ def _resolve_deferred(output, catalog, context_id: str, *, source_response=None)
         return None, None, ()
     if not output.calls:
         return None, GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS), ()
+    if len(output.calls) != 1:
+        parsed_calls: list[ToolCall] = []
+        for call in tuple(output.calls)[:32]:
+            try:
+                parsed_calls.append(
+                    ToolCall(
+                        call.tool_name,
+                        call.args_as_dict(raise_if_invalid=True),
+                        call.tool_call_id,
+                    )
+                )
+            except (ValueError, TypeError):
+                continue
+        return (
+            None,
+            GroundedToolResolutionError(
+                GroundedToolResolutionCode.MULTIPLE_CALLS,
+                f"received {len(output.calls)} calls; expected exactly one",
+            ),
+            tuple(parsed_calls),
+        )
     repair_anchor: tuple[ToolCall, GroundedToolResolutionError] | None = None
-    for call in tuple(output.calls)[:32]:
+    for call in output.calls:
         try:
             arguments = call.args_as_dict(raise_if_invalid=True)
             parsed_call = ToolCall(call.tool_name, arguments, call.tool_call_id)
@@ -1237,7 +1262,6 @@ def _resolve_deferred(output, catalog, context_id: str, *, source_response=None)
             accepted_call,
             resolution.decision,
             _accepted_model_response(source_response, accepted_call),
-            max(0, len(output.calls) - 1),
         ), None, ()
     if repair_anchor is not None:
         return None, repair_anchor[1], (repair_anchor[0],)

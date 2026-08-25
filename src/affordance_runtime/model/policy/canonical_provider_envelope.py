@@ -376,6 +376,39 @@ class CanonicalProviderEnvelopeBinder:
             tool_result=None,
         )
 
+    def bind_single_action_retry(
+        self,
+        base: CanonicalProviderEnvelope,
+        *,
+        call_profile: ActionPolicyCallProfile,
+        output_token_reserve: int,
+    ) -> CanonicalProviderEnvelope:
+        """Re-ask for one decision with the exact same admitted current context."""
+
+        instructions = (
+            base.instructions[0]
+            + "\n\nThe previous response was rejected because it contained multiple tool calls. "
+            "No call was accepted or executed. Reassess the unchanged current context and return "
+            "exactly one offered tool call. Do not queue or refer to any other call.",
+        )
+        return self._create_from_parts(
+            context_id=base.context_id,
+            delivery_id=base.delivery_id,
+            catalog=base.catalog,
+            identity=base.identity,
+            instructions=instructions,
+            user_text=base.user_text,
+            media=base.media,
+            call_profile=call_profile,
+            output_token_reserve=output_token_reserve,
+            attempt_phase=call_profile.phase.value,
+            diagnostics=base,
+            history_messages=_project_pydantic_history(base.pydantic_history),
+            pydantic_history=base.pydantic_history,
+            tool_result=base.tool_result,
+            tool_result_metadata=base.tool_result_metadata,
+        )
+
     def _create(
         self,
         request: ModelDecisionRequest,
@@ -438,6 +471,7 @@ class CanonicalProviderEnvelopeBinder:
         history_messages: tuple[Mapping[str, object], ...],
         pydantic_history: tuple[object, ...] = (),
         tool_result: object | None,
+        tool_result_metadata: Mapping[str, object] | None = None,
     ) -> CanonicalProviderEnvelope:
         tools = tuple(
             CanonicalFunctionTool(
@@ -471,6 +505,26 @@ class CanonicalProviderEnvelopeBinder:
             )
         else:
             diagnostic_values = diagnostics
+        public_tool_result = (
+            dict(tool_result)
+            if isinstance(tool_result, Mapping)
+            else {
+                "part_kind": "tool-return",
+                "tool_call_id": tool_result.tool_call_id,
+                "tool_name": tool_result.tool_name,
+                "return_value": tool_result.return_value,
+                "failed": tool_result.failed,
+            }
+            if tool_result is not None
+            else None
+        )
+        private_tool_result_metadata = (
+            dict(tool_result_metadata)
+            if tool_result_metadata is not None
+            else tool_result.metadata
+            if tool_result is not None
+            else {}
+        )
         values = dict(
             context_id=context_id,
             delivery_id=delivery_id,
@@ -479,18 +533,8 @@ class CanonicalProviderEnvelopeBinder:
             user_text=user_text,
             history_messages=history_messages,
             pydantic_history=pydantic_history,
-            tool_result=(
-                {
-                    "part_kind": "tool-return",
-                    "tool_call_id": tool_result.tool_call_id,
-                    "tool_name": tool_result.tool_name,
-                    "return_value": tool_result.return_value,
-                    "failed": tool_result.failed,
-                }
-                if tool_result is not None
-                else None
-            ),
-            tool_result_metadata=(tool_result.metadata if tool_result is not None else {}),
+            tool_result=public_tool_result,
+            tool_result_metadata=private_tool_result_metadata,
             media=media,
             function_tools=tools,
             model_settings=settings,

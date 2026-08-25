@@ -24,10 +24,11 @@ def _context(kind: str = "", signature: str = ""):
     )
 
 
-def test_ordinary_deliberate_and_repair_profiles_are_disjoint_and_bounded() -> None:
+def test_ordinary_deliberate_retry_and_repair_profiles_are_disjoint_and_bounded() -> None:
     policy = ActionPolicyReasoningPolicy(768, 1536, 384)
     ordinary = policy.select(_context(), frozenset())
     deliberate = policy.select(_context("grounding_stall", "event:one"), frozenset())
+    retry = policy.single_action_retry(deliberate)
     repair = policy.repair()
     assert (ordinary.phase, ordinary.trigger, ordinary.max_output_tokens, ordinary.thinking_mode) == (
         ActionPolicyInvocationPhase.ORDINARY,
@@ -46,6 +47,12 @@ def test_ordinary_deliberate_and_repair_profiles_are_disjoint_and_bounded() -> N
         ActionPolicyInvocationTrigger.REPRESENTATION_ERROR,
         384,
         "disabled",
+    )
+    assert (retry.phase, retry.trigger, retry.max_output_tokens, retry.thinking_mode) == (
+        ActionPolicyInvocationPhase.SINGLE_ACTION_RETRY,
+        ActionPolicyInvocationTrigger.MULTIPLE_CALLS,
+        deliberate.max_output_tokens,
+        deliberate.thinking_mode,
     )
 
 
