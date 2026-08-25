@@ -25,7 +25,8 @@ matches by target coverage, and leaves an executable-control miss empty instead 
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
 Current provider-free verification passes the focused progress/history/Monitor/authority surface at `73 passed`.
-The full suite reports `1704 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the
+The BrowserGym owner/currentness surface passes `164 passed / 10 skipped`. The full suite reports
+`1711 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded
 changes, not a live witness for the Task266 repair or overall closure.
 
@@ -111,8 +112,21 @@ tool-only response carries forward the exact previous text and removes only dupl
 Completed call/result pairs remain untouched and the existing `ProcessHistory` path still drops only oldest complete
 exchanges. `EpisodeMonitor` now uses its existing `STATE_OSCILLATION` algebra over at most six dispatched public
 attempt signatures to recognize repeated period-2/3 cycles across fresh Worlds. It reads no task text, URL, site,
-GoalPlan status, or ToolReturn body. Run12 remains a failed pre-repair diagnostic; no post-repair live witness has been
-run.
+GoalPlan status, or ToolReturn body. Run12 remains a failed pre-repair diagnostic; run13 below crossed these two
+repairs before exposing the independent SurfaceAdapter defect.
+
+Task266 run13 crossed those repairs and terminated normally as `blocked` after ten policy calls and six dispatched
+actions. Its trace showed that a `tab_focus` changed BrowserGym's active page, but the custom causal-step wrapper kept
+the pre-dispatch page for post-action physical enrichment and transition URL while BrowserGym `_get_obs()` supplied
+the new page's DOM/AX facts. The mixed observation marked the Wikipedia search field unavailable, removed its text
+entry operation from the complete `ActionSpace`, and caused later tab/read oscillation. Monitor correctly recovered
+once and blocked recurrence; history and task information were present.
+
+The owner repair now reacquires BrowserGym's current page immediately after dispatch and uses it consistently for
+post-action quiet tracking, observation, physical enrichment, and `after_url`; the old page is retained only by the
+dispatch/navigation watcher. A real Playwright two-tab regression proves the new-page observation and enrichment
+identity. This adds no fallback, second World, browser-state side channel, tool branch, or Monitor behavior. Run13 is
+failed pre-repair evidence, and no post-repair live witness has been run.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -475,6 +489,11 @@ that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no r
 Browser-global action gates verify profile isolation and the official BrowserGym action strings for all six navigation
 operations. They do not add a local navigation tool or bypass normal currentness and capture.
 
+A real Playwright two-tab causal-acquisition gate changes the active page during `environment.step` and proves that
+the returned observation, private enrichment input, and trace `after_url` all belong to BrowserGym's post-action
+current page. It also proves that the pre-dispatch page remains only the navigation watcher and that tab focus does
+not create a second World or action path.
+
 Currentness gates enumerate every executable BrowserGym element offer and prove that only its declared semantic fields
 can invalidate the binding. A BrowserGym execution witness proves presentation-only drift reaches the official action
 path. The CoreLoop vertical witness then injects a physical `NOT_SENT/stale_binding` after the cheap World check and
@@ -640,6 +659,8 @@ The final read-only review for this cutover must answer:
 20. Does Monitor issue bounded recovery for no-information families and period-2/3 dispatched GUI cycles, persist a
     cycle across intervening local reads, and block only exact-attempt or same-cycle recurrence while a different
     effectful GUI route continues under the outer episode budget?
+21. When a BrowserGym action changes the active tab, do post-action stability, observation, physical enrichment, and
+    transition URL all come from BrowserGym's one current page rather than joining pre- and post-action tabs?
 
 ## Exit statement
 

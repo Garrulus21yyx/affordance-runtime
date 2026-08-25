@@ -98,8 +98,22 @@ Live benchmark validation remains separately authorized. The repository-wide myp
 pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
+Task266 run13 crossed the history and cycle-recovery repairs, then exposed a SurfaceAdapter current-page violation.
+After `tab_focus`, BrowserGym's observation getter correctly read the newly active tab, but `_causal_step` still used
+the pre-dispatch Playwright page for DOM-quiet waiting, private physical-property enrichment, and `after_url`. The
+result joined the new tab's DOM/AX facts to the old tab's physical state, removed a valid text-entry action from the
+next `ActionSpace`, and led to a tab/read cycle that Monitor eventually blocked. This was not missing task context,
+history, progress memory, or a Monitor gap.
+
+The SurfaceAdapter now gives the pre-dispatch page only navigation-watcher ownership. Immediately after BrowserGym
+returns, its current `unwrapped.page` becomes the sole post-action page for quiet tracking, stable acquisition,
+private enrichment, and transition `after_url`. A real Playwright two-tab owner test proves that observation,
+enrichment, and trace use that same current page. No alternate observation, retry, browser-state projection, action
+owner, or control loop was added. A fresh live Task266 witness remains separately authorized.
+
 Current provider-free verification: the focused progress/history/Monitor/authority surface passes `73` tests. The
-full suite reports `1704 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the
+BrowserGym owner/currentness surface passes `164 passed / 10 skipped`. The full suite reports
+`1711 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a
 fresh live Task266 witness.
 
@@ -545,6 +559,11 @@ The post-action World, not an evidence continuation, is the authority for the ne
 describes the local UI effect. `TaskEvaluator` or the benchmark-native verifier remains the only task-termination
 authority.
 
+Within the BrowserGym boundary, the action target page before dispatch owns only dispatch/navigation observation.
+After `environment.step`, BrowserGym's current active page owns every field of the causal post-state: stability wait,
+URL, DOM/AX/screenshot acquisition, and private physical-property enrichment. Tab focus/open/close therefore changes
+the observation owner atomically rather than joining facts from two pages.
+
 Browser-global navigation uses that same route. When the caller explicitly selects a BrowserGym web-navigation
 profile (the WebArena runner does so), the adapter projects one current `browser_context` subject and the official
 BrowserGym primitives
@@ -774,6 +793,8 @@ This cutover is implementation-complete only when all of the following agree:
 16. BrowserGym element currentness consumes only the selected interaction offer's declared semantic fields and private
     binding domain; unrelated presentation drift reaches Playwright, while a typed pre-dispatch stale result performs
     one fresh capture, zero replay, and returns to the same ActionPolicy.
+17. when a BrowserGym action changes the active page, post-action stability, observation, private enrichment, and
+    transition `after_url` all use that one current page; the pre-dispatch page remains only the navigation watcher.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

@@ -77,6 +77,23 @@ class _ClickEnvironment:
         return ({"url": self.page.url}, 0.0, False, False, {"task_info": {}})
 
 
+class _TabFocusEnvironment:
+    def __init__(self, unwrapped: _Unwrapped, target_page) -> None:
+        self.unwrapped = unwrapped
+        self.target_page = target_page
+
+    def step(self, _action: str):
+        self.unwrapped.page = self.target_page
+        self.target_page.bring_to_front()
+        return (
+            {"url": self.target_page.url},
+            0.0,
+            False,
+            False,
+            {"task_info": {}},
+        )
+
+
 def _identity_private_projection(_page, raw):
     return raw
 
@@ -187,6 +204,47 @@ def test_delayed_link_navigation_is_one_causal_step(monkeypatch, page_server) ->
         assert transition.trace.post_capture_started >= transition.trace.navigation_committed
         assert transition.trace.post_capture_completed >= transition.trace.post_capture_started
         assert (transition.trace.before_document_epoch, epoch) == (7, 8)
+        browser.close()
+
+
+def test_tab_focus_acquires_and_enriches_only_the_current_page(
+    monkeypatch,
+    page_server,
+) -> None:
+    projected_pages = []
+
+    def record_projection(page, raw):
+        projected_pages.append(page)
+        return raw
+
+    monkeypatch.setattr(backend, "_with_private_control_properties", record_projection)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context()
+        before_page = context.new_page()
+        before_page.goto(f"{page_server}/start")
+        after_page = context.new_page()
+        after_page.goto(f"{page_server}/not-found")
+        before_page.bring_to_front()
+        unwrapped = _Unwrapped(before_page)
+
+        transition, epoch = backend._causal_step(  # noqa: SLF001 - owner contract gate
+            _TabFocusEnvironment(unwrapped, after_page),
+            unwrapped,
+            "tab_focus(1)",
+            may_navigate=False,
+            document_epoch=7,
+        )
+
+        assert transition.trace.stability_status is BrowserGymStabilityStatus.STABLE_NO_NAVIGATION
+        assert transition.trace.before_url == f"{page_server}/start"
+        assert transition.trace.after_url == f"{page_server}/not-found"
+        assert transition.raw == {
+            "url": f"{page_server}/not-found",
+            "title": "Not Found",
+        }
+        assert projected_pages == [after_page]
+        assert epoch == 7
         browser.close()
 
 

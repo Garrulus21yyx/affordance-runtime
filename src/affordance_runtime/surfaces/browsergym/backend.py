@@ -569,15 +569,15 @@ def _causal_step(
 
     environment = cast(_StepEnvironmentPort, environment)
     unwrapped = cast(_UnwrappedPort, unwrapped)
-    page = unwrapped.page
+    before_page = unwrapped.page
     getter = getattr(unwrapped, "_get_obs", None)
     if not callable(getter):
         raise RuntimeError("pinned BrowserGym has no read-only observation API")
     started_at = time.perf_counter()
     watcher = _NavigationWatcher(
-        page,
+        before_page,
         started_at,
-        str(getattr(page, "url", "")),
+        str(getattr(before_page, "url", "")),
         document_epoch,
     )
     watcher.install()
@@ -587,13 +587,15 @@ def _causal_step(
             tuple[object, object, object, object, object], value,
         )
         dispatch_returned = watcher.elapsed_ms()
+        after_page = unwrapped.page
 
         if may_navigate and watcher.navigation_started is None:
             try:
-                page.wait_for_event(
+                before_page.wait_for_event(
                     "request",
                     predicate=lambda request: (
-                        request.is_navigation_request() and request.frame == page.main_frame
+                        request.is_navigation_request()
+                        and request.frame == before_page.main_frame
                     ),
                     timeout=_NAVIGATION_START_GRACE_MS,
                 )
@@ -602,9 +604,9 @@ def _causal_step(
 
         if watcher.navigation_started is not None and watcher.navigation_committed is None:
             try:
-                page.wait_for_event(
+                before_page.wait_for_event(
                     "framenavigated",
-                    predicate=lambda frame: frame == page.main_frame,
+                    predicate=lambda frame: frame == before_page.main_frame,
                     timeout=_NAVIGATION_COMPLETION_TIMEOUT_MS,
                 )
             except BaseException:
@@ -612,7 +614,7 @@ def _causal_step(
 
         if watcher.navigation_committed is not None and watcher.dom_content_loaded is None:
             try:
-                page.wait_for_load_state(
+                before_page.wait_for_load_state(
                     "domcontentloaded",
                     timeout=_NAVIGATION_COMPLETION_TIMEOUT_MS,
                 )
@@ -629,6 +631,7 @@ def _causal_step(
                 dispatch_returned,
                 BrowserGymStabilityStatus.NAVIGATION_PENDING,
                 epoch_after_navigation,
+                after_page=after_page,
             )
             return BrowserGymStepTransition(
                 None,
@@ -639,17 +642,19 @@ def _causal_step(
                 trace,
             ), epoch_after_navigation
 
-        # A navigation replaces the document and its MutationObserver. Install
-        # the quiet predicate on the causal post-document before acquisition.
-        if watcher.navigation_committed is not None:
+        # A navigation replaces the document and its MutationObserver, while a
+        # tab action changes the active page entirely. In both cases install the
+        # quiet predicate on BrowserGym's authoritative post-action page.
+        if watcher.navigation_committed is not None or after_page is not before_page:
             try:
-                page.evaluate(_INSTALL_DOM_QUIET_TRACKER)
+                after_page.evaluate(_INSTALL_DOM_QUIET_TRACKER)
             except BaseException:
                 trace = _transition_trace(
                     watcher,
                     dispatch_returned,
                     BrowserGymStabilityStatus.ACQUISITION_UNSTABLE,
                     epoch_after_navigation,
+                    after_page=after_page,
                 )
                 return BrowserGymStepTransition(
                     None,
@@ -660,7 +665,7 @@ def _causal_step(
                     trace,
                 ), epoch_after_navigation
         try:
-            page.wait_for_function(
+            after_page.wait_for_function(
                 _DOM_IS_QUIET,
                 arg=_DOM_QUIET_WINDOW_MS,
                 timeout=_DOM_QUIET_TIMEOUT_MS,
@@ -671,6 +676,7 @@ def _causal_step(
                 dispatch_returned,
                 BrowserGymStabilityStatus.ACQUISITION_UNSTABLE,
                 epoch_after_navigation,
+                after_page=after_page,
             )
             return BrowserGymStepTransition(
                 None,
@@ -682,7 +688,7 @@ def _causal_step(
             ), epoch_after_navigation
 
         post_capture_started = watcher.elapsed_ms()
-        raw = _with_private_control_properties(page, getter())
+        raw = _with_private_control_properties(after_page, getter())
         post_capture_completed = watcher.elapsed_ms()
         status = (
             BrowserGymStabilityStatus.STABLE_NAVIGATION
@@ -694,6 +700,7 @@ def _causal_step(
             dispatch_returned,
             status,
             epoch_after_navigation,
+            after_page=after_page,
             post_capture_started=post_capture_started,
             post_capture_completed=post_capture_completed,
         )
@@ -715,6 +722,7 @@ def _transition_trace(
     status: BrowserGymStabilityStatus,
     after_document_epoch: int,
     *,
+    after_page: _PagePort,
     post_capture_started: float | None = None,
     post_capture_completed: float | None = None,
 ) -> BrowserGymTransitionTrace:
@@ -726,7 +734,7 @@ def _transition_trace(
         post_capture_started,
         post_capture_completed,
         watcher.before_url,
-        str(getattr(watcher.page, "url", "")),
+        str(getattr(after_page, "url", "")),
         watcher.before_document_epoch,
         after_document_epoch,
         status,
