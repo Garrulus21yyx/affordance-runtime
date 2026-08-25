@@ -1187,7 +1187,7 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
         item.target_ref for item in search_step.action_page_result.matches
     }
 
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     local = SearchPageContentResult(
         context.context_id,
         "search_page_content",

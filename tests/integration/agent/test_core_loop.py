@@ -19,6 +19,7 @@ from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -481,6 +482,27 @@ def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
         goal_compiler=NotRequiredGoalCompiler("atomic_core_loop_test"),
         **({"wait_controller": wait_controller} if wait_controller is not None else {}),
     )
+
+
+@pytest.mark.parametrize("max_turns", (1, 30, 37, 100))
+def test_task_goal_is_the_only_total_turn_budget_owner(max_turns: int) -> None:
+    async def scenario() -> None:
+        task = replace(
+            _task(),
+            loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+        )
+        runtime = replace(
+            _runtime("first_action"),
+            episode_monitor=EpisodeMonitor(AgentLoopProfile(2, 1)),
+        )
+        environment = ScriptedEnvironment(initial_observation=_world("budget-owner", False))
+
+        state = await runtime.initialize_task(environment, task)
+
+        assert state.remaining_steps == max_turns
+        assert state.step_count == 0
+
+    asyncio.run(scenario())
 
 
 def test_core_runtime_reuses_production_boundaries_and_completes_one_action() -> None:

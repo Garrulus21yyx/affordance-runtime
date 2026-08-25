@@ -84,7 +84,8 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         assert removed not in monitor_source
     assert "current_findings_digest(result.after_world)" in core_source
     assert "delivery_transition.information_delta" in core_source
-    assert '"max_policy_decisions"' in core_source
+    assert '"max_policy_decisions"' not in core_source
+    assert "StandaloneRunBudget(task.loop_budget.max_turns)" in core_source
     assert '"control_stalled"' in monitor_source
 
 

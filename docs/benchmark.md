@@ -24,15 +24,16 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the modified execution/projector/checkpoint surface at `131 passed`.
-The full suite reports `1733 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the
+Current provider-free verification passes the modified budget/Monitor surface at `99 passed`.
+The full suite reports `1744 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Focused Ruff and `git diff --check` pass. This is implementation evidence for the bounded changes,
-not a live witness for the Task266 repair or overall closure.
+not a post-budget-repair live Task266 witness or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- post-repair live validation of the stable-navigation outcome and reducer scheduling repairs exposed by Task266
-  run17, plus the action-minimum and Monitor lifecycle repairs exposed by Task266 run18;
+- post-budget-repair live validation after run19 crossed the stable-navigation, action-minimum, and Monitor lifecycle
+  repairs;
+- checkpoint scheduling and trajectory compaction, reopened by run19;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
@@ -207,6 +208,27 @@ target) and run18 (rank alone displaced focus). Monitor derives `sent|sent_unkno
 does not clear an ineffectual same-World action, and starts a new same-World recovery episode when a causally dispatched
 action reaches a changed fresh public World even if its semantic postcondition remains unknown. No alternate action
 view, recovery state machine, model, or retry was added. A fresh live Task266 witness remains required.
+
+The authorized Task266
+[`run19`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run19/run.json) live-validates those action and
+Monitor repairs but remains a failed witness. It completed 30 valid policy/tool decisions, 12 effectful dispatches,
+13 observations, and one successful recovery, with zero invalid arguments, stale bindings, waits, fallbacks, STOPs,
+or native evaluator calls. The last control termination was `turn_budget_exhausted`, not a Monitor recommendation:
+the task declared 100 turns, while Core silently capped it at the Monitor profile's 30 policy decisions.
+
+The repaired acceptance contract is now: `TaskGoal.loop_budget.max_turns` alone determines `RunState.remaining_steps`;
+Monitor configuration cannot shorten the run and only bounds same-World stall detection and recovery retries. Focused
+tests include a behavioral 37-turn TaskGoal witness with a stricter Monitor profile and prove all 37 turns remain
+available. Run19 predates this repair, so it is not post-repair acceptance and another authorized live witness is
+required.
+
+Run19 separately reopens checkpoint scheduling. Fourteen reducer attempts occurred in 30 turns, seven timed out, and
+the surviving checkpoint turned an ambiguous relation-page episode into a durable invalid-ID conclusion. The raw
+trace shows the ActionPolicy itself had already observed that `/relation/2176999` supplied the relation ID, then
+vacillated; the read/search-only reducer omitted the action-observation context and amplified one side of that
+uncertainty. This open defect must not be hidden by a larger turn cap. Closure requires replacing result-count-driven
+reduction with pressure-driven compaction of an expired complete trajectory prefix plus a recent raw tail, using the
+installed PydanticAI Harness rather than a new Store, milestone state, or evidence path.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose

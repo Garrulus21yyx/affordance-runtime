@@ -207,7 +207,7 @@ class EpisodeMonitor:
                 self,
                 recovery_attempt=self.recovery_count,
             )
-            if self.recovery_count >= 3:
+            if self.recovery_count > self.profile.max_recovery_retries + 1:
                 return EpisodeMonitorTransition(
                     tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
                     EpisodeMonitorRecommendation.BLOCK,

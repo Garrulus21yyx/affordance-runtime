@@ -215,9 +215,8 @@ def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> 
 
     assert diagnostic["provider_attempts"] == 0
     assert diagnostic["agent_loop_profile"] == {
-        "max_policy_decisions": 30,
         "max_consecutive_observation_only": 8,
-        "max_recoveries_per_stall": 1,
+        "max_recovery_retries": 1,
     }
     assert diagnostic["serialized_snapshot_matches_delta"] is True
     assert diagnostic["fresh_world_is_current"] is True

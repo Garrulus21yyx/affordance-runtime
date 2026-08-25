@@ -327,12 +327,13 @@ def test_frozen_later_stage_contracts_close_types_and_lifecycle_bounds() -> None
         ("a",),
         ("fact:a",),
     )
-    profile = AgentLoopProfile(30, 8, 1)
+    profile = AgentLoopProfile(8, 1)
 
     assert len(workspace.recent_steps) == 4
     assert version.version == 1
-    assert profile.max_policy_decisions == 30
+    assert profile.max_consecutive_observation_only == 8
+    assert profile.max_recovery_retries == 1
     with pytest.raises(ValueError, match="at most four"):
         AgentWorkspace(tuple(AgentTurnView(str(index)) for index in range(5)))
     with pytest.raises(ValueError, match="positive"):
-        AgentLoopProfile(30, 8, 0)
+        AgentLoopProfile(8, 0)

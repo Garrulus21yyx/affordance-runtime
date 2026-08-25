@@ -1305,9 +1305,8 @@ def _transition_delivery_diagnostic(
 
 def _agent_loop_profile_diagnostics() -> dict[str, int]:
     return {
-        "max_policy_decisions": DEFAULT_AGENT_LOOP_PROFILE.max_policy_decisions,
         "max_consecutive_observation_only": DEFAULT_AGENT_LOOP_PROFILE.max_consecutive_observation_only,
-        "max_recoveries_per_stall": DEFAULT_AGENT_LOOP_PROFILE.max_recoveries_per_stall,
+        "max_recovery_retries": DEFAULT_AGENT_LOOP_PROFILE.max_recovery_retries,
     }
 
 

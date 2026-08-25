@@ -247,7 +247,7 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     world = _world("observation:stable")
     step = _search_with_items(world)
     store = ObservationDeliveryStore()
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(world, _evaluation(world))
 
     first = store.reduce(step, step_index=1)
@@ -289,7 +289,7 @@ def test_exact_replay_recovery_is_not_cleared_by_a_no_match_region_result() -> N
     replayed_step = _search_with_items(world)
     different_step = _local_step(world, query="different", region="R10")
     store = ObservationDeliveryStore()
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(world, _evaluation(world))
 
     first = store.reduce(replayed_step, step_index=1)
@@ -397,7 +397,7 @@ def test_local_delivery_closed_algebra_covers_empty_overlap_and_new_world() -> N
 
 def test_different_queries_and_regions_share_one_no_progress_family() -> None:
     world = _world("observation:stable")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 3, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(3, 1))
     monitor.start_episode(world, _evaluation(world))
 
     first = _evaluate(monitor, _local_step(world, query="route", region="R1"))
@@ -415,7 +415,7 @@ def test_different_queries_and_regions_share_one_no_progress_family() -> None:
 
 def test_different_no_progress_attempt_after_recovery_remains_in_episode() -> None:
     world = _world("observation:stable")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
 
     _evaluate(monitor, _local_step(world, query="one"))
@@ -430,9 +430,26 @@ def test_different_no_progress_attempt_after_recovery_remains_in_episode() -> No
     assert monitor.recovery_count == 2
 
 
+def test_monitor_profile_bounds_alternate_recovery_retries() -> None:
+    world = _world("observation:bounded-recovery-retries")
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    first_recovery = _evaluate(monitor, _local_step(world, query="one"))
+    retry = _evaluate(monitor, _local_step(world, query="two"))
+    blocked = _evaluate(monitor, _local_step(world, query="three"))
+
+    assert first_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert retry.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert retry.recovery_signal is not None
+    assert retry.recovery_signal.recovery_attempt == 2
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert blocked.reason == "control_stalled"
+
+
 def test_new_information_is_the_local_tool_event_that_clears_recovery() -> None:
     world = _world("observation:new-information-reset")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, _evaluation(world))
     recovery = _evaluate(monitor, _local_step(world))
     informative_step = _search_with_items(world)
@@ -453,7 +470,7 @@ def test_new_information_is_the_local_tool_event_that_clears_recovery() -> None:
 
 def test_same_attempt_after_recovery_is_control_stalled() -> None:
     world = _world("observation:stable-repeat")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
 
     _evaluate(monitor, _local_step(world, query="one"))
@@ -471,7 +488,7 @@ def test_same_attempt_after_recovery_is_control_stalled() -> None:
 def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
     first_world = _world("observation:first")
     changed_world = _world("observation:changed", route="/map/results", result_text="33 km")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(first_world, _evaluation(first_world))
     _evaluate(monitor, _local_step(first_world))
     _evaluate(monitor, _local_step(first_world))
@@ -486,7 +503,7 @@ def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
 
 def test_findings_increment_resets_streak() -> None:
     world = _world("observation:stable")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 3, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(3, 1))
     monitor.start_episode(world, _evaluation(world))
     step = _local_step(world)
     _evaluate(monitor, step)
@@ -499,7 +516,7 @@ def test_findings_increment_resets_streak() -> None:
 
 def test_first_gui_dispatch_without_information_increment_records_no_progress() -> None:
     world = _world("observation:stable")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
     _evaluate(monitor, _local_step(world))
 
@@ -515,7 +532,7 @@ def test_first_gui_dispatch_without_information_increment_records_no_progress() 
 
 def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature() -> None:
     world = _world("observation:stable")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(world, _evaluation(world))
 
     first = _evaluate(monitor, _dispatched_step(world))
@@ -536,7 +553,7 @@ def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature
 def test_effectful_gui_cycle_recovers_across_fresh_worlds_then_blocks_recurrence() -> None:
     portland = _world("observation:portland", route="/wiki/Portland_Maine")
     acadia = _world("observation:acadia", route="/wiki/Acadia_National_Park")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 8, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(portland, _evaluation(portland))
 
     first = _evaluate(monitor, _dispatched_step(portland, acadia))
@@ -591,7 +608,7 @@ def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: in
 
 def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> None:
     world = _world("observation:stable")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, _evaluation(world))
     recovery = _evaluate(monitor, _local_step(world))
 
@@ -608,7 +625,7 @@ def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> No
 def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery() -> None:
     world = _world("observation:control-recovery")
     changed = _world("observation:changed-by-gui", route="/map/next")
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, _evaluation(world))
     recovery = _evaluate(monitor, _local_step(world, query="first"))
     second_recovery = _evaluate(monitor, _local_step(world, query="second"))
@@ -632,7 +649,7 @@ def test_monitor_never_overrides_native_terminal_evaluation() -> None:
     world = _world("observation:stable")
     step = _local_step(world)
     step = StepResult(step.decision, world, world, _evaluation(world, TaskEvaluationStatus.BLOCKED), feedback=step.feedback)
-    monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, step.task_evaluation)
 
     transition = _evaluate(monitor, step)

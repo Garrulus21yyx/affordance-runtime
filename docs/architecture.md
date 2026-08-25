@@ -219,14 +219,15 @@ and task revision. A bounded-run memo suppresses an identical non-updating reduc
 asynchrony, or another loop. Raw knowledge remains when reduction fails, and Harness can still remove only complete
 covered call/result pairs.
 
-Provider-free verification passes the modified execution/projector/checkpoint surface at `131 passed`; the full suite
-reports `1733 passed / 25 skipped` with the one pre-existing multiprocessing fork warning. Focused Ruff and diff checks
-pass. This is implementation evidence, not overall closure or a fresh live Task266 witness.
+Current provider-free verification passes the modified budget/Monitor surface at `99 passed`; the full suite reports
+`1744 passed / 19 skipped` with the one pre-existing multiprocessing fork warning. Focused Ruff and diff checks pass.
+This is implementation evidence, not overall closure or a post-budget-repair live Task266 witness.
 
 Overall project closure is still **open**:
 
-- the stable-navigation outcome and reducer scheduling repairs require a post-repair Task266 live witness before this
-  reopened causal subsystem can close;
+- run19 live-validates stable navigation, action delivery, and the changed-World Monitor reset, but the single
+  TaskGoal-budget repair requires a post-repair live witness;
+- checkpoint scheduling and trajectory compaction remain reopened by run19;
 - Planner lexical admission still has a known gap.
 
 Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
@@ -245,6 +246,34 @@ anchors, packing fails typed instead of guessing one. Monitor now derives recove
 keeps ineffectual same-World actions in the episode, and starts a new same-World episode only when a causal GUI
 dispatch reaches a changed fresh public World. No second ranker, action authority, state machine, or projection was
 added. Task266 run18 remains failed pre-repair evidence; a fresh live witness is required.
+
+Task266
+[`run19`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run19/run.json) crossed the action-minimum,
+stable-navigation, and Monitor lifecycle repairs. All 30 policy decisions were valid; 12 GUI requests were dispatched,
+each acquired a fresh World, and the one control-stall recovery at step 20 was cleared by the causally changed World at
+step 21. There was no stale binding, invalid argument, false `not_sent`, or Monitor terminal decision. The run instead
+ended at `turn_budget_exhausted` while the public task still reported `loop_budget.max_turns=100`.
+
+The conflicting limit came from `CoreAgentLoop.initialize`: it took the minimum of the TaskGoal budget and
+`EpisodeMonitor.profile.max_policy_decisions=30`. This made a no-progress observer a second total-budget authority and
+counted zero-dispatch `read_region`, `search_page_content`, and `find_controls` decisions against that hidden cap. The
+owner repair removes total decisions from `AgentLoopProfile`; `TaskGoal.loop_budget.max_turns` is now the only total
+turn budget installed in `RunState`. The Monitor profile contains only its same-World observation-stall threshold and
+the number of alternate recovery retries, and that retry field now drives the existing bounded transition instead of
+being dead configuration. This removes duplicated authority; it does not special-case WebArena or raise an arbitrary
+case threshold.
+
+Run19 also falsifies closure of the current checkpoint scheduler independently of the terminal-budget defect. Across
+30 turns it invoked the reducer 14 times: seven calls timed out at ten seconds, while only four accepted replacements
+became visible checkpoints. Because scheduling treats every successful-shaped read/search result as uncovered
+knowledge even when the reducer intentionally cites no durable fact from it, irrelevant or empty results remain
+permanently uncovered and retrigger reduction. The reducer also receives read/search evidence but ordinarily omits
+the action-observation trajectory; it therefore promoted the ambiguous `relation/2176999 -> Not Found` episode into
+a durable claim that the relation ID was invalid even though the ActionPolicy had explicitly noticed that the result
+URL itself supplied the ID. This is context pollution and excess latency, not a World, cursor, Monitor, or dispatch
+failure. It remains reopened: the next memory change must be owned by PydanticAI history compaction, operate on an
+expired action-observation prefix while retaining a recent high-fidelity tail, and reuse Harness compaction rather
+than add another Runtime memory state.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
 `done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action

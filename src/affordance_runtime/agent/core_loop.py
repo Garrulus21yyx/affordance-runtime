@@ -185,16 +185,7 @@ class CoreAgentLoop:
             task,
             acquisition.observation,
             resolution,
-            budget=StandaloneRunBudget(
-                min(
-                    task.loop_budget.max_turns,
-                    getattr(
-                        getattr(self.episode_monitor, "profile", None),
-                        "max_policy_decisions",
-                        task.loop_budget.max_turns,
-                    ),
-                )
-            ),
+            budget=StandaloneRunBudget(task.loop_budget.max_turns),
         )
         self.trace_sink.run_started(task, state)
         self.trace_sink.goal_compiler_completed(
