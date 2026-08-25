@@ -13,7 +13,7 @@ from affordance_runtime.immutable import freeze_json, thaw_json_at_external_boun
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
-from affordance_runtime.model.policy.progress_checkpoint import normalize_progress_checkpoint
+from affordance_runtime.model.policy.progress_checkpoint import ProgressCheckpoint
 from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -585,42 +585,52 @@ def _project_pydantic_history(
         from pydantic_ai.messages import (
             ModelRequest,
             ModelResponse,
+            TextContent,
             TextPart,
+            ThinkingPart,
             ToolCallPart,
             ToolReturnPart,
+            UserPromptPart,
         )
+        from pydantic_ai_harness.compaction import is_pinned
     except ImportError as exc:  # pragma: no cover - guarded by the provider bridge
         raise ValueError("PydanticAI messages are unavailable") from exc
-    if len(messages) % 2 != 1:
-        raise ValueError("compact PydanticAI history must end with one unresolved call")
     projected: list[Mapping[str, object]] = []
     pending: tuple[tuple[str, str], ...] | None = None
-    for index, message in enumerate(messages):
-        if index % 2 == 0:
-            if not isinstance(message, ModelResponse):
-                raise ValueError("compact PydanticAI history expected a tool-call response")
+    checkpoint_seen = False
+    for message in messages:
+        if isinstance(message, ModelResponse):
+            if pending is not None:
+                raise ValueError("compact PydanticAI history has consecutive tool-call responses")
             calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
-            progress = tuple(part for part in message.parts if isinstance(part, TextPart))
             call_ids = tuple(call.tool_call_id for call in calls)
             if (
                 not calls
                 or len(set(call_ids)) != len(call_ids)
                 or any(not call_id for call_id in call_ids)
-                or len(progress) > 1
-                or len(message.parts) != len(calls) + len(progress)
                 or any(
-                    normalize_progress_checkpoint(part.content) != part.content
-                    for part in progress
+                    not isinstance(part, (TextPart, ThinkingPart, ToolCallPart))
+                    for part in message.parts
                 )
             ):
-                raise ValueError(
-                    "accepted PydanticAI response must contain a bounded checkpoint and unique tool calls"
-                )
+                raise ValueError("accepted PydanticAI response must retain unique tool calls")
             pending = tuple((call.tool_name, call.tool_call_id) for call in calls)
             response_parts: list[Mapping[str, object]] = []
             for part in message.parts:
                 if isinstance(part, TextPart):
                     response_parts.append({"part_kind": "text", "content": part.content})
+                    continue
+                if isinstance(part, ThinkingPart):
+                    response_parts.append(
+                        {
+                            "part_kind": "thinking",
+                            "content": part.content,
+                            "id": part.id,
+                            "signature": part.signature,
+                            "provider_name": part.provider_name,
+                            "provider_details": to_json_compatible(part.provider_details),
+                        }
+                    )
                     continue
                 response_parts.append(
                     {
@@ -639,6 +649,41 @@ def _project_pydantic_history(
             continue
         if not isinstance(message, ModelRequest):
             raise ValueError("compact PydanticAI history expected a tool-result request")
+        pinned = tuple(
+            part
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and is_pinned(part)
+        )
+        if pinned:
+            if (
+                pending is not None
+                or checkpoint_seen
+                or len(pinned) != 1
+                or len(message.parts) != 1
+            ):
+                raise ValueError("compact PydanticAI history has an invalid checkpoint position")
+            content = pinned[0].content
+            values = (
+                (content,)
+                if isinstance(content, str)
+                else tuple(item.content for item in content if isinstance(item, TextContent))
+            )
+            checkpoint = ProgressCheckpoint.parse(values[0] if len(values) == 1 else "")
+            if checkpoint is None:
+                raise ValueError("compact PydanticAI history has an invalid checkpoint")
+            checkpoint_seen = True
+            projected.append(
+                {
+                    "kind": "request",
+                    "parts": (
+                        {
+                            "part_kind": "progress-checkpoint",
+                            "content": checkpoint.render(),
+                        },
+                    ),
+                }
+            )
+            continue
         returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
         returned_identities = tuple(
             (returned.tool_name, returned.tool_call_id) for returned in returns

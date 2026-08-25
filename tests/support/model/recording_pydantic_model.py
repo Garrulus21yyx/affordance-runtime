@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextContent,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -380,6 +381,8 @@ def _normalize_message(message: ModelMessage) -> Mapping[str, object]:
         for item in items:
             if isinstance(item, str):
                 normalized.append({"part_kind": "text", "content": item})
+            elif isinstance(item, TextContent):
+                normalized.append({"part_kind": "text", "content": item.content})
             elif isinstance(item, BinaryContent):
                 normalized.append(
                     {

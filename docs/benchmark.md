@@ -24,11 +24,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the focused same-World/Monitor/trace/core surface at
-`64 passed / 3 skipped`. The BrowserGym owner/currentness surface remains at `164 passed / 10 skipped`. The full suite
-reports `1721 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
-observability test. Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded
-changes, not a live witness for the Task266 repair or overall closure.
+Current provider-free verification passes the focused checkpoint/history/Monitor/context surface at `179 passed`.
+The full suite reports `1730 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+observability test. Focused Ruff and `git diff --check` pass. This is implementation evidence for the bounded changes,
+not a live witness for the Task266 repair or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -147,20 +146,22 @@ one fact pass; it measures about `0.122s` with the identical digest. Identical-W
 about `0.452s`, and the bounded local-step trace projection measures about `0.0001s / 1.3KB` before ordinary receipt
 content. Run14 remains failed evidence; a post-repair live witness is required.
 
-Task266 run15 crossed the same-World performance repair and remained a failed behavioral witness. The ActionPolicy had
-already recovered Portland's coordinates and selected Acadia as its next semantic target, but subsequent immediate-action
-text replaced the earlier cumulative progress note. Inspection proved that the bridge's `_progress_note_from_response`
-accepted every visible `TextPart`, while `_accepted_message_history` removed all older text whenever the newest accepted
-response contained any text. The model therefore received a mechanically selected latest narration rather than a
-semantically explicit task checkpoint.
+Task266 run15 showed that arbitrary action narration could replace a prior progress note. The v1 response-side XML
+contract did not converge: the later authorized
+[`run16`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run16/run.json) made 30 valid policy/tool calls but
+zero STOP/native-evaluator calls and ended `blocked`. It accumulated 154,260 history tokens, emitted no checkpoint
+`TextPart`, spent its first 21 turns rediscovering Wikipedia controls, later recovered Portland and Acadia facts, and
+then lost the intended OSRM transition. Ten recovery calls all restarted from attempt 1 because different empty/no-match
+operations cleared Monitor's episode. Run16 is failed pre-repair evidence, not acceptance.
 
-The current owner repair makes checkpoint updates optional and typed at the same ActionPolicy/PydanticAI history
-boundary. A valid update is an exact, bounded `progress-checkpoint.v1` complete replacement. A call-only response or
-ordinary prose preserves the prior checkpoint; malformed and oversized checkpoint text stays in the raw provider
-transcript but not accepted history. The focused vertical regression uses the Task266-shaped sequence: an accepted
-checkpoint contains Portland coordinates and unresolved Acadia/OSRM requirements; the next raw response narrates a
-return to the Portland tab; accepted SDK history still contains the exact checkpoint and excludes the narration while
-retaining the new call. Short tool-only trajectories remain text-free. No live post-repair Task266 result exists yet.
+The current owner repair removes the v1 co-output requirement. Exact accepted `ThinkingPart`, ordinary text, provider
+metadata, and all ToolCalls remain in PydanticAI history. A separate stateless Pydantic `ToolOutput` reducer produces
+one bounded `progress-checkpoint.v2` complete replacement with successful source-call refs. PydanticAI Harness 0.25
+pins that checkpoint and trims only pair-safe history; the bridge restores raw history if a dropped read/search result
+is not covered. Workspace receipts are no longer duplicated into the model prompt. A different empty query/no-match
+result cannot clear Monitor; only typed new information or a proven GUI effect does. Focused gates cover the run16
+sequence without adding World, cursor, Store, GoalPlan, Binder, Executor, or evaluator paths. No live post-repair
+Task266 witness exists yet.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -184,12 +185,11 @@ The later live trace added a fourth, directly observed symptom: one turn receive
 continuation page, and the following turn repeated the search. `TaskGoal`, `GoalPlan`, and fresh World were present.
 The PydanticAI bridge had retained only the latest pending exchange, so the earlier completed ToolReturn was absent.
 
-After direct call/result history was restored, the same trace exposed the remaining owner defect: the provider response
-contained the model's conclusion that the answer was ready, but the bridge reconstructed the accepted response as a new
-`ModelResponse` containing only `ToolCallPart`. The raw conclusion therefore existed in Trace but not in the next model
-turn. Retaining the full hidden reasoning would make the already growing context worse, so the positive contract is one
-short, model-authored, visible progress note plus one accepted call. No second summarizer model or Runtime evidence
-memory is introduced.
+After direct call/result history was restored, the same trace exposed another owner defect: the bridge reconstructed
+the accepted response as a new `ModelResponse` containing only `ToolCallPart`, so the model's own conclusion existed in
+Trace but not in the next turn. The then-current response-side progress-note repair was later falsified by run16. The
+current contract instead keeps a bounded exact recent suffix—including thinking—and reduces durable conclusions
+separately through typed structured output. No Runtime evidence memory is introduced.
 
 The authorized run8 trace verified that repair: later `llm.input_messages` contained the earlier bounded progress notes,
 accepted calls, and matching ToolReturns. It then exposed a distinct capability-publication defect. The
@@ -255,7 +255,7 @@ normal public semantic values, and human-facing title/alt/placeholder/ARIA attri
 appearance, layout, and internal bookkeeping fields. This fixes the advertised boundary without adding search DSL,
 BM25, dense retrieval, a summarizer, or a benchmark-specific extractor.
 
-The authorized run16 trace passed the agent-side task. It made 16 valid policy/tool calls, issued no invalid arguments,
+The earlier Task21 run16 trace passed the agent-side task. It made 16 valid policy/tool calls, issued no invalid arguments,
 returned the four correct names in a schema-valid official final response, sent one STOP, captured one post-STOP World,
 and invoked the native evaluator once. The native snapshot classified success, but the Runtime ended with
 `task_evaluator_validation_failed: COMPLETE task evaluation is missing a requested output`.
@@ -455,25 +455,28 @@ completed accepted pairs in order: page 1 under call 1 and page 2 under call 2. 
 committed results, and no prior user/World prompt is retained. A terminal response clears the bridge history. The Store
 contains only bounded digest receipts and no result body/inventory.
 
-A second Recording PydanticAI gate emits `ThinkingPart + explicit checkpoint TextPart + N ToolCallPart` values. Exactly the first current
-call is resolved in one provider attempt; later calls are not executed, queued, or used as fallback. Canonical history
-contains the bounded model-authored checkpoint and every exact proposed `ToolCallPart`. The next physical input pairs the
-first with its owner result and the rest with same-ID native failed returns explaining that they were not executed and
-must be reconsidered after the fresh World. Hidden reasoning and non-checkpoint prose remain only in the raw transcript. A generated 1..8-call
-property verifies complete call/result conservation, a longitudinal gate verifies that the second proposal can be
-reissued on the next turn, and an invalid first call cannot fall through to a valid later call. A malformed or overlong
-visible checkpoint is rejected rather than truncated into a different claim.
+A second Recording PydanticAI gate emits `ThinkingPart + N ToolCallPart`. Exactly the first current call is resolved;
+later calls are not executed, queued, or used as fallback. Canonical history preserves the exact response, including
+thinking and every proposal. The next physical input pairs the first with its owner result and the rest with same-ID
+native failed returns. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
+verifies reissue, and an invalid first call cannot fall through to a valid later call.
 
-A history-pressure gate invokes the official PydanticAI `ProcessHistory` capability before hard overflow. It proves
-that oldest complete response/result exchanges—including a multi-call response and all of its results—leave
-atomically, exact call IDs remain paired, and the newest response with its cumulative checkpoint remains present.
-No summary model or reconstructed successful ToolReturn is involved.
+The typed-reducer gate executes `search_page_content -> SearchPageContentResult ->
+ToolOutput(CheckpointReduction) -> Harness pin -> next ActionPolicy`. It proves the checkpoint contains a successful
+source call, exact prior thinking and same-call ToolReturn are present, and the fresh current prompt has no duplicated
+Workspace `recent_steps`. Arbitrary action narration remains ordinary recent response content and cannot become the
+checkpoint.
 
-A longitudinal gate proves that the exact previous model-authored checkpoint moves to the newest accepted response
-when the provider emits either no text or ordinary action narration. Earlier accepted responses retain their calls
-without duplicate text, hidden thinking and narration remain trace-only, and pressure compaction still leaves the
-checkpoint with the pending call. A generated period-2/3 Monitor property proves
-cycle identity is phase-independent; the Task266-shaped two-state sequence recovers once across changed Worlds and
+History-pressure gates invoke PydanticAI Harness pair-safe compaction before hard overflow. A checkpoint-covered
+knowledge pair can leave atomically; the pin and unresolved suffix survive. The same attempted reduction without
+checkpoint coverage returns the original raw knowledge history. Exact duplicate search content does not invoke the
+reducer.
+Reducer instructions prohibit call-local bindings, while Runtime treats free semantic text opaquely so legitimate task
+identifiers such as `E25` or `R9` are not misclassified by a GUI-ref regex. Malformed, oversized, or
+unavailable/failed-source checkpoint output is rejected rather than truncated.
+
+Monitor gates prove a different empty discovery/read attempt remains in the same recovery episode, while typed
+`NEW_INFORMATION` clears it. A generated period-2/3 property proves GUI cycle identity is phase-independent and
 blocks recurrence even when a local read occurs between effectful actions.
 
 ### G4 — R-ref follow-up
@@ -682,8 +685,8 @@ The final read-only review for this cutover must answer:
     unbounded same-World loop?
 15. Are browser-global actions offered only by the WebArena-family profile and executed through BrowserGym's existing
     ActionSpace/Binder/Executor path?
-16. Does SDK history compact before hard overflow while pinning at most one latest explicit progress checkpoint across
-    call-only or narration-bearing responses and preserving every exact pending pair?
+16. Does SDK history preserve exact recent thinking/calls/results, reduce new knowledge through one typed sourced
+    checkpoint, use Harness pair-safe compaction, and refuse to drop uncovered raw knowledge?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
@@ -691,9 +694,9 @@ The final read-only review for this cutover must answer:
     or second browser-state channel?
 19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
     actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
-20. Does Monitor issue bounded recovery for no-information families and period-2/3 dispatched GUI cycles, persist a
-    cycle across intervening local reads, and block only exact-attempt or same-cycle recurrence while a different
-    effectful GUI route continues under the outer episode budget?
+20. Does Monitor issue bounded recovery for no-information families and period-2/3 dispatched GUI cycles, persist the
+    episode across different empty/no-match attempts, and clear it only on typed new information or a proven GUI
+    effect?
 21. When a BrowserGym action changes the active tab, do post-action stability, observation, physical enrichment, and
     transition URL all come from BrowserGym's one current page rather than joining pre- and post-action tabs?
 22. On a large unchanged World, does Monitor findings derivation scale with targets plus facts, avoid region-index

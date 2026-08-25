@@ -179,7 +179,7 @@ def _control_discovery_step(world, query: str, label: str) -> StepResult:
     )
 
 
-def test_control_discovery_recovers_but_a_different_query_continues() -> None:
+def test_control_discovery_recovery_is_not_cleared_by_a_different_query() -> None:
     world = _world("observation:control-discovery")
     monitor = EpisodeMonitor()
     monitor.start_episode(world, _evaluation(world))
@@ -216,8 +216,10 @@ def test_control_discovery_recovers_but_a_different_query_continues() -> None:
     assert recovery.recovery_signal is not None
     assert "do not repeat control discovery" in recovery.recovery_signal.human_instruction
     assert third.information_delta is None
-    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert monitor.recovery_count == 0
+    assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert continued.recovery_signal is not None
+    assert continued.recovery_signal.recovery_attempt == 2
+    assert monitor.recovery_count == 2
 
 
 def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
@@ -282,7 +284,7 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     assert stalled.reason == "control_stalled"
 
 
-def test_exact_replay_recovery_allows_a_different_region_result() -> None:
+def test_exact_replay_recovery_is_not_cleared_by_a_no_match_region_result() -> None:
     world = _world("observation:replay-then-different-region")
     replayed_step = _search_with_items(world)
     different_step = _local_step(world, query="different", region="R10")
@@ -312,8 +314,10 @@ def test_exact_replay_recovery_allows_a_different_region_result() -> None:
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert different.information_delta is not None
     assert different.information_delta.kind is InformationDeltaKind.NO_MATCHES
-    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert monitor.recovery_count == 0
+    assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert continued.recovery_signal is not None
+    assert continued.recovery_signal.recovery_attempt == 2
+    assert monitor.recovery_count == 2
 
 
 @given(
@@ -409,7 +413,7 @@ def test_different_queries_and_regions_share_one_no_progress_family() -> None:
     assert monitor.recovery_count == 1
 
 
-def test_materially_different_attempt_after_recovery_continues() -> None:
+def test_different_no_progress_attempt_after_recovery_remains_in_episode() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -419,10 +423,32 @@ def test_materially_different_attempt_after_recovery_continues() -> None:
     continued = _evaluate(monitor, _local_step(world, query="three"))
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
+    assert continued.recovery_signal is not None
+    assert continued.recovery_signal.recovery_attempt == 2
+    assert monitor.recovery_count == 2
+
+
+def test_new_information_is_the_local_tool_event_that_clears_recovery() -> None:
+    world = _world("observation:new-information-reset")
+    monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
+    monitor.start_episode(world, _evaluation(world))
+    recovery = _evaluate(monitor, _local_step(world))
+    informative_step = _search_with_items(world)
+    transition = ObservationDeliveryStore().reduce(informative_step, step_index=2)
+
+    continued = monitor.evaluate(
+        informative_step,
+        current_findings_digest(world),
+        transition.information_delta,
+    )
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert transition.information_delta is not None
+    assert transition.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert monitor.recovery_count == 0
-    assert monitor.observation_only_streak == 1
 
 
 def test_same_attempt_after_recovery_is_control_stalled() -> None:
@@ -442,7 +468,7 @@ def test_same_attempt_after_recovery_is_control_stalled() -> None:
     assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
 
 
-def test_world_increment_resets_streak_and_recovery_count() -> None:
+def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
     first_world = _world("observation:first")
     changed_world = _world("observation:changed", route="/map/results", result_text="33 km")
     monitor = EpisodeMonitor(AgentLoopProfile(30, 2, 1))
@@ -452,10 +478,10 @@ def test_world_increment_resets_streak_and_recovery_count() -> None:
 
     transition = _evaluate(monitor, _local_step(first_world, changed_world))
 
-    assert transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert transition.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert EpisodeMonitorEvent.STATE_CHANGED in transition.events
-    assert monitor.observation_only_streak == 0
-    assert monitor.recovery_count == 0
+    assert monitor.observation_only_streak == 1
+    assert monitor.recovery_count == 1
 
 
 def test_findings_increment_resets_streak() -> None:
@@ -563,7 +589,7 @@ def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: in
     assert original_digest == shifted_digest
 
 
-def test_different_gui_attempt_family_after_local_recovery_continues() -> None:
+def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -572,8 +598,10 @@ def test_different_gui_attempt_family_after_local_recovery_continues() -> None:
     continued = _evaluate(monitor, _dispatched_step(world))
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert monitor.recovery_count == 0
+    assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert continued.recovery_signal is not None
+    assert continued.recovery_signal.recovery_attempt == 2
+    assert monitor.recovery_count == 2
 
 
 def test_monitor_never_overrides_native_terminal_evaluation() -> None:

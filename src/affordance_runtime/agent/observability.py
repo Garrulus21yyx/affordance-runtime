@@ -707,7 +707,7 @@ class LangfuseOtelSink:
                 transcript = transcript if isinstance(transcript, Mapping) else {}
                 metadata = _langfuse_model_metadata(event)
                 with self.client.start_as_current_observation(
-                    name=_langfuse_generation_name(event),
+                    name=_langfuse_generation_name(event, attempt),
                     as_type="generation",
                     input=_bounded_remote_projection(
                         {
@@ -734,6 +734,8 @@ class LangfuseOtelSink:
                         {
                             "attempt": attempt.get("attempt"),
                             "phase": attempt.get("phase"),
+                            "role": attempt.get("role"),
+                            "mode": attempt.get("mode"),
                             "trigger": attempt.get("trigger"),
                             "status": attempt.get("status"),
                             "finish_reason": attempt.get("finish_reason"),
@@ -1101,8 +1103,16 @@ def _langfuse_observation_type(event: Mapping[str, object]) -> str:
     }.get(str(event.get("event", "")), "span")
 
 
-def _langfuse_generation_name(event: Mapping[str, object]) -> str:
-    return "action-policy-generation"
+def _langfuse_generation_name(
+    event: Mapping[str, object],
+    attempt: Mapping[str, object],
+) -> str:
+    del event
+    return (
+        "progress-checkpoint-reducer-generation"
+        if attempt.get("role") == "progress_checkpoint_reducer"
+        else "action-policy-generation"
+    )
 
 
 def _langfuse_generation_attempts(

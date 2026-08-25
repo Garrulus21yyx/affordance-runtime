@@ -89,7 +89,7 @@ class EpisodeMonitor:
             self.current_findings_digest = current_findings_digest(result.before_world)
 
         events = _diagnostic_events(result)
-        information_changed = any(
+        state_changed = any(
             (
                 next_world_digest != self.world_digest,
                 findings_digest != self.current_findings_digest,
@@ -99,11 +99,15 @@ class EpisodeMonitor:
         )
         gui_dispatched = _gui_dispatched(result)
         control_discovery = isinstance(result.decision, RequestActionPage)
+        durable_progress = bool(
+            information_delta is not None
+            and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+        ) or (gui_dispatched and _gui_has_operational_result(result))
 
         self.world_digest = next_world_digest
         self.current_findings_digest = findings_digest
 
-        if information_changed:
+        if state_changed:
             events.append(EpisodeMonitorEvent.STATE_CHANGED)
         else:
             events.append(EpisodeMonitorEvent.NO_OBSERVED_CHANGE)
@@ -147,14 +151,7 @@ class EpisodeMonitor:
         if gui_signature is not None:
             self.active_gui_cycle_digest = ""
 
-        if information_changed:
-            self.observation_only_streak = 0
-            self.recovery_count = 0
-            self.latest_attempt_signature = None
-            self.same_attempt_streak = 0
-            return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
-
-        if gui_dispatched and _gui_has_operational_result(result):
+        if durable_progress:
             self.observation_only_streak = 0
             self.recovery_count = 0
             self.latest_attempt_signature = None
@@ -193,10 +190,24 @@ class EpisodeMonitor:
                     "control_stalled",
                     signal,
                 )
-            self.recovery_count = 0
+            self.recovery_count += 1
+            signal = _control_stall_signal(
+                result,
+                self,
+                recovery_attempt=self.recovery_count,
+            )
+            if self.recovery_count >= 3:
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
             return EpisodeMonitorTransition(
-                tuple(dict.fromkeys(events)),
-                EpisodeMonitorRecommendation.CONTINUE,
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.CONTROL_STALL.value,
+                signal,
             )
 
         recovery_due = any(

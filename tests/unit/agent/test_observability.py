@@ -16,6 +16,7 @@ from affordance_runtime.agent.observability import (
     QueuedViewerRunTraceRecorder,
     RunTraceRecorder,
     _langfuse_event_projection,
+    _langfuse_generation_name,
     _langfuse_ipc_projection,
     _public_task_projection,
     trace_recorder_from_environment,
@@ -33,6 +34,14 @@ from tests.integration.agent.test_core_loop import (
     _task,
     _world,
 )
+
+
+def test_langfuse_names_checkpoint_reducer_attempt_as_its_own_role() -> None:
+    assert _langfuse_generation_name(
+        {},
+        {"role": "progress_checkpoint_reducer"},
+    ) == "progress-checkpoint-reducer-generation"
+    assert _langfuse_generation_name({}, {"role": "action_policy"}) == "action-policy-generation"
 
 
 def test_run_finished_is_local_only_and_never_offers_to_queued_viewer(tmp_path) -> None:

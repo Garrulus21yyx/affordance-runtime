@@ -49,6 +49,10 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.model.policy.checkpoint_reducer import (
+    CheckpointReducerRun,
+    PydanticAICheckpointReducer,
+)
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.grounded_tool_contracts import (
@@ -57,7 +61,13 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.progress_checkpoint import ProgressCheckpoint
+from affordance_runtime.model.policy.progress_checkpoint import (
+    FailedStrategy,
+    ProgressCheckpoint,
+    SourceRef,
+    VerifiedFact,
+    WorkingHypothesis,
+)
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationResult,
     ToolCallReconciliationStatus,
@@ -100,12 +110,22 @@ def _checkpoint(
     next_intent: str,
     avoid_repeating: tuple[str, ...] = (),
 ) -> str:
+    source = SourceRef(tool_call_id="call:test-source", tool_name="search_page_content")
     return ProgressCheckpoint(
-        verified_facts=verified_facts,
-        working_hypotheses=working_hypotheses,
-        remaining_requirements=remaining_requirements,
+        verified_facts=tuple(
+            VerifiedFact(claim=item, value=item, source_refs=(source,))
+            for item in verified_facts
+        ),
+        working_hypotheses=tuple(
+            WorkingHypothesis(claim=item, needs_verification=True)
+            for item in working_hypotheses
+        ),
+        remaining_questions=remaining_requirements,
         next_intent=next_intent,
-        avoid_repeating=avoid_repeating,
+        failed_strategies=tuple(
+            FailedStrategy(strategy=item, outcome="No new information")
+            for item in avoid_repeating
+        ),
     ).render()
 
 
@@ -607,7 +627,7 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
     asyncio.run(scenario())
 
 
-def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn() -> None:
+def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-history", False)
@@ -652,11 +672,12 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
         retained = policy.port.message_history[0]
         assert isinstance(retained, ModelResponse)
         assert [type(part) for part in retained.parts] == [
+            ThinkingPart,
             TextPart,
             ToolCallPart,
             ToolCallPart,
         ]
-        assert retained.parts[0].content == progress
+        assert retained.parts[1].content == progress
         raw_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
         assert any(
             part["part_kind"] == "thinking" and "private deliberation" in part["content"]
@@ -691,8 +712,12 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
         )
         assert prior_response["parts"] == (
             {
-                "part_kind": "text",
+                "part_kind": "thinking",
                 "content": retained.parts[0].content,
+            },
+            {
+                "part_kind": "text",
+                "content": retained.parts[1].content,
             },
             {
                 "part_kind": "tool-call",
@@ -708,16 +733,16 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
             },
         )
         physical = json.dumps(recorded, sort_keys=True)
-        assert "private deliberation" not in physical
+        assert "private deliberation" in physical
         assert discarded_id in physical
         assert "Not executed" in physical
-        assert "A progress checkpoint is optional" in str(scripted.records[0].instructions)
-        assert "Most short GUI steps should emit no" in str(scripted.records[0].instructions)
+        assert "Do not emit or rewrite a" in str(scripted.records[0].instructions)
+        assert "Return exactly one offered tool call" in str(scripted.records[0].instructions)
 
     asyncio.run(scenario())
 
 
-def test_action_narration_cannot_replace_latest_checkpoint_in_sdk_history() -> None:
+def test_action_narration_remains_recent_but_is_not_a_checkpoint() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-carry-forward", False)
@@ -784,30 +809,224 @@ def test_action_narration_cannot_replace_latest_checkpoint_in_sdk_history() -> N
         history = policy.port.message_history
         assert len(history) == 3
         assert isinstance(history[0], ModelResponse)
-        assert all(not isinstance(part, TextPart) for part in history[0].parts)
+        assert [part.content for part in history[0].parts if isinstance(part, TextPart)] == [
+            progress
+        ]
         assert isinstance(history[-1], ModelResponse)
         assert [part.content for part in history[-1].parts if isinstance(part, TextPart)] == [
-            progress
+            "I will switch back to the Portland tab now."
         ]
         assert sum(
             isinstance(part, TextPart)
             for message in history
             if isinstance(message, ModelResponse)
             for part in message.parts
-        ) == 1
-        assert pydantic_bridge._latest_progress_checkpoint(history) == progress
-        compacted = pydantic_bridge._process_pydantic_history(
-            history,
-            max_estimated_tokens=1,
-        )
-        assert compacted == (history[-1],)
-        assert pydantic_bridge._latest_progress_checkpoint(compacted) == progress
-        assert "hidden tool-only deliberation" not in json.dumps(history, default=str)
-        assert "switch back to the Portland tab" not in json.dumps(history, default=str)
+        ) == 2
+        assert pydantic_bridge._latest_progress_checkpoint(history) is None
+        assert "hidden tool-only deliberation" in json.dumps(history, default=str)
+        assert "switch back to the Portland tab" in json.dumps(history, default=str)
         assert "switch back to the Portland tab" in json.dumps(
             second.attempts[0].transcript["llm.output_messages"],
             default=str,
         )
+
+    asyncio.run(scenario())
+
+
+def test_new_search_result_is_reduced_into_one_pinned_checkpoint_before_next_action() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("typed-checkpoint", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("Search the current readable records, then use the result."),
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "false"},
+                            "recording-call:1",
+                        ),
+                    ]
+                ),
+                (
+                    "reduce_progress_checkpoint",
+                    {
+                        "outcome": "updated",
+                        "checkpoint": {
+                            "version": "progress-checkpoint.v2",
+                            "verified_facts": [
+                                {
+                                    "claim": "The shared toggle is currently disabled",
+                                    "value": "false",
+                                    "source_refs": [
+                                        {
+                                            "tool_call_id": "recording-call:1",
+                                            "tool_name": "search_page_content",
+                                        }
+                                    ],
+                                }
+                            ],
+                            "working_hypotheses": [],
+                            "remaining_questions": [],
+                            "next_intent": "Submit the supported task result",
+                            "failed_strategies": [],
+                        },
+                    },
+                ),
+                (
+                    "submit_final_response",
+                    {"content": "false", "evidence_refs": []},
+                ),
+            ]
+        )
+        model = scripted.build()
+        port = PydanticAIGroundedDecisionPort(
+            model=model,
+            provider_id="fixture",
+            model_id="scripted",
+            endpoint_host="fixture.invalid",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+            checkpoint_reducer=PydanticAICheckpointReducer(model, timeout_s=2.0),
+        )
+
+        first_context = builder.build(task, world, actions, evaluation)
+        first = await port.generate(
+            ModelDecisionRequest("request:typed-checkpoint:first", first_context)
+        )
+        assert first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=first_step,
+        )
+
+        second = await port.generate(
+            ModelDecisionRequest(
+                "request:typed-checkpoint:second",
+                second_context,
+                last_step=first_step,
+            )
+        )
+
+        assert second.output is not None
+        assert isinstance(second.output.decision, FinalResponse)
+        assert port.last_checkpoint_reducer_status == "updated"
+        assert [item.role for item in second.attempts] == [
+            "progress_checkpoint_reducer",
+            "action_policy",
+        ]
+        action_input = normalize_recorded_provider_input(scripted.records[2])
+        physical = json.dumps(action_input, ensure_ascii=False, sort_keys=True)
+        assert "Non-authoritative progress checkpoint" in physical
+        assert "The shared toggle is currently disabled" in physical
+        assert "Search the current readable records" in physical
+        current_prompt = json.loads(
+            action_input["messages"][-1]["parts"][-1]["content"][0]["content"]
+        )
+        assert "recent_steps" not in current_prompt
+        assert scripted.calls == 3
+
+    asyncio.run(scenario())
+
+
+def test_checkpoint_reducer_failure_keeps_raw_result_and_does_not_stop_action_policy() -> None:
+    class FailingReducer:
+        async def reduce(self, value) -> CheckpointReducerRun:
+            return CheckpointReducerRun(
+                None,
+                error="TimeoutError: reducer deadline",
+                prompt=json.dumps(value.model_dump(mode="json")),
+                latency_ms=10.0,
+            )
+
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("failed-checkpoint", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("Keep this exact reasoning with the raw result."),
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "false"},
+                            "call:raw-result",
+                        ),
+                    ]
+                ),
+                (
+                    "submit_final_response",
+                    {"content": "false", "evidence_refs": []},
+                ),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="fixture",
+            model_id="scripted",
+            endpoint_host="fixture.invalid",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+            checkpoint_reducer=FailingReducer(),
+        )
+        first_context = builder.build(task, world, actions, evaluation)
+        first = await port.generate(
+            ModelDecisionRequest("request:failed-checkpoint:first", first_context)
+        )
+        assert first.output is not None
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=step,
+        )
+
+        second = await port.generate(
+            ModelDecisionRequest(
+                "request:failed-checkpoint:second",
+                second_context,
+                last_step=step,
+            )
+        )
+
+        assert second.output is not None
+        assert isinstance(second.output.decision, FinalResponse)
+        assert port.last_checkpoint_reducer_status == "failed"
+        assert [item.status for item in second.attempts] == ["failed", "accepted"]
+        physical = json.dumps(
+            normalize_recorded_provider_input(scripted.records[1]),
+            sort_keys=True,
+        )
+        assert "Keep this exact reasoning" in physical
+        assert "call:raw-result" in physical
+        assert "Non-authoritative progress checkpoint" not in physical
 
     asyncio.run(scenario())
 
@@ -919,19 +1138,26 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
 
 
 def test_compact_sdk_history_drops_only_the_oldest_complete_pair() -> None:
-    history = (
-        ModelResponse(parts=[ToolCallPart("first", {}, "call:1")]),
-        ModelRequest(parts=[ToolReturnPart("first", {"page": 1}, "call:1")]),
-        ModelResponse(parts=[ToolCallPart("second", {}, "call:2")]),
-        ModelRequest(parts=[ToolReturnPart("second", {"page": 2}, "call:2")]),
-        ModelResponse(parts=[ToolCallPart("third", {}, "call:3")]),
-    )
+    history = tuple(
+        part
+        for index in range(5)
+        for part in (
+            ModelResponse(parts=[ToolCallPart("activate", {}, f"call:{index}")]),
+            ModelRequest(parts=[ToolReturnPart("activate", {"page": index}, f"call:{index}")]),
+        )
+    ) + (ModelResponse(parts=[ToolCallPart("third", {}, "call:pending")]),)
 
-    compacted = pydantic_bridge._drop_oldest_completed_exchange(history)
+    compacted = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=ScriptedModel(["third"]).build(),
+            max_estimated_tokens=100_000,
+        )
+    )
 
     assert compacted == history[2:]
     assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
-        "third", {}, "call:3"
+        "third", {}, "call:pending"
     )
 
 
@@ -957,7 +1183,13 @@ def test_compact_sdk_history_treats_multi_call_results_as_one_atomic_exchange() 
         ModelResponse(parts=[ToolCallPart("third", {}, "call:3")]),
     )
 
-    compacted = pydantic_bridge._drop_oldest_completed_exchange(history)
+    compacted = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=ScriptedModel(["third"]).build(),
+            max_estimated_tokens=1,
+        )
+    )
 
     assert compacted == (history[-1],)
     assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
@@ -965,37 +1197,290 @@ def test_compact_sdk_history_treats_multi_call_results_as_one_atomic_exchange() 
     )
 
 
-def test_proactive_sdk_history_compaction_preserves_latest_progress_and_pair_integrity() -> None:
-    old_checkpoint = _checkpoint(
-        verified_facts=("old conclusion",),
-        next_intent="Continue the old subgoal",
-    )
-    new_checkpoint = _checkpoint(
-        verified_facts=("new conclusion",),
-        next_intent="Continue the new subgoal",
-    )
-    latest_checkpoint = _checkpoint(
-        verified_facts=("latest cumulative progress",),
+def test_harness_compaction_preserves_pinned_checkpoint_and_covered_knowledge() -> None:
+    latest_checkpoint = ProgressCheckpoint(
+        verified_facts=(
+            VerifiedFact(
+                claim="latest cumulative progress",
+                value="old and new conclusions retained",
+                source_refs=(
+                    SourceRef(tool_call_id="call:1", tool_name="search_page_content"),
+                    SourceRef(tool_call_id="call:2", tool_name="search_page_content"),
+                ),
+            ),
+        ),
         next_intent="Use the latest cumulative result",
     )
     history = (
-        ModelResponse(parts=[TextPart(old_checkpoint), ToolCallPart("first", {}, "call:1")]),
-        ModelRequest(parts=[ToolReturnPart("first", {"body": "old" * 2_000}, "call:1")]),
-        ModelResponse(parts=[TextPart(new_checkpoint), ToolCallPart("second", {}, "call:2")]),
-        ModelRequest(parts=[ToolReturnPart("second", {"body": "new" * 2_000}, "call:2")]),
-        ModelResponse(parts=[TextPart(latest_checkpoint), ToolCallPart("third", {}, "call:3")]),
+        ModelResponse(parts=[ToolCallPart("search_page_content", {}, "call:1")]),
+        ModelRequest(parts=[ToolReturnPart("search_page_content", {"body": "old" * 2_000}, "call:1")]),
+        ModelResponse(parts=[ToolCallPart("search_page_content", {}, "call:2")]),
+        ModelRequest(parts=[ToolReturnPart("search_page_content", {"body": "new" * 2_000}, "call:2")]),
+        ModelResponse(parts=[ToolCallPart("third", {}, "call:3")]),
+    )
+    history = pydantic_bridge._with_progress_checkpoint(history, latest_checkpoint)
+
+    compacted = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=ScriptedModel(["third"]).build(),
+            max_estimated_tokens=50,
+        )
     )
 
-    compacted = pydantic_bridge._process_pydantic_history(
-        history,
-        max_estimated_tokens=50,
-    )
-
-    assert compacted == (history[-1],)
-    assert compacted[0].parts[0].content == latest_checkpoint
+    assert pydantic_bridge._latest_progress_checkpoint(compacted) == latest_checkpoint
+    assert compacted[-1] == history[-1]
     assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
         "third", {}, "call:3"
     )
+
+
+def test_harness_compaction_keeps_raw_knowledge_when_no_checkpoint_covers_it() -> None:
+    knowledge = (
+        ModelResponse(
+            parts=[ToolCallPart("search_page_content", {"query": "Acadia"}, "call:knowledge")]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "search_page_content",
+                    {"body": "Acadia result " * 2_000},
+                    "call:knowledge",
+                )
+            ]
+        ),
+    )
+    actions = tuple(
+        part
+        for index in range(4)
+        for part in (
+            ModelResponse(parts=[ToolCallPart("activate", {}, f"call:action:{index}")]),
+            ModelRequest(
+                parts=[ToolReturnPart("activate", {"changed": True}, f"call:action:{index}")]
+            ),
+        )
+    )
+    history = (*knowledge, *actions, ModelResponse(parts=[ToolCallPart("third", {}, "call:pending")]))
+
+    compacted = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=ScriptedModel(["third"]).build(),
+            max_estimated_tokens=50,
+        )
+    )
+
+    assert compacted == history
+
+
+@given(
+    actions_before=st.integers(min_value=0, max_value=5),
+    actions_after=st.integers(min_value=0, max_value=5),
+)
+@settings(max_examples=20)
+def test_harness_compaction_never_orphans_uncovered_knowledge(
+    actions_before: int,
+    actions_after: int,
+) -> None:
+    def action_pair(index: int):
+        return (
+            ModelResponse(parts=[ToolCallPart("activate", {}, f"call:action:{index}")]),
+            ModelRequest(
+                parts=[ToolReturnPart("activate", {"changed": True}, f"call:action:{index}")]
+            ),
+        )
+
+    prefix = tuple(
+        part
+        for index in range(actions_before)
+        for part in action_pair(index)
+    )
+    suffix = tuple(
+        part
+        for index in range(actions_before, actions_before + actions_after)
+        for part in action_pair(index)
+    )
+    history = (
+        *prefix,
+        ModelResponse(
+            parts=[ToolCallPart("search_page_content", {"query": "Acadia"}, "call:knowledge")]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "search_page_content",
+                    {"body": "Acadia result " * 2_000},
+                    "call:knowledge",
+                )
+            ]
+        ),
+        *suffix,
+        ModelResponse(parts=[ToolCallPart("third", {}, "call:pending")]),
+    )
+
+    compacted = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=ScriptedModel(["third"]).build(),
+            max_estimated_tokens=50,
+        )
+    )
+    retained = {
+        (part.tool_name, part.tool_call_id)
+        for _response, results in pydantic_bridge._completed_tool_exchanges(compacted)
+        for part in results
+    }
+
+    assert ("search_page_content", "call:knowledge") in retained
+    assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
+        "third", {}, "call:pending"
+    )
+
+
+def test_exact_duplicate_search_result_does_not_trigger_checkpoint_reduction() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("duplicate-checkpoint-trigger", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        result = {"kind": "Matches", "items": [{"text": "same result"}]}
+        decision = SearchPageContentResult(
+            "context:test",
+            "search_page_content",
+            {"query": "same"},
+            result,
+            "call:current",
+        )
+        step = StepResult(decision, world, world, evaluation, feedback="local_tool_result")
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+            last_step=step,
+        )
+        history = (
+            ModelResponse(
+                parts=[ToolCallPart("search_page_content", {"query": "same"}, "call:prior")]
+            ),
+            ModelRequest(
+                parts=[ToolReturnPart("search_page_content", result, "call:prior")]
+            ),
+            ModelResponse(
+                parts=[ToolCallPart("search_page_content", {"query": "same"}, "call:current")]
+            ),
+        )
+
+        trigger = pydantic_bridge._checkpoint_trigger(
+            ModelDecisionRequest("request:duplicate-trigger", context, last_step=step),
+            history,
+            recovery_event_signature="",
+            previous_task_identity=(task.task_id, 1),
+            current_task_identity=(task.task_id, 1),
+            history_soft_target=100_000,
+        )
+
+        assert trigger == ""
+
+        pressured_history = tuple(
+            part
+            for index in range(5)
+            for part in (
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": f"query-{index}"},
+                            f"call:prior:{index}",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            "search_page_content",
+                            (
+                                result
+                                if index == 0
+                                else {"kind": "Matches", "items": [{"text": f"result-{index}"}]}
+                            ),
+                            f"call:prior:{index}",
+                        )
+                    ]
+                ),
+            )
+        ) + (history[-1],)
+        pressure_trigger = pydantic_bridge._checkpoint_trigger(
+            ModelDecisionRequest("request:pressure-trigger", context, last_step=step),
+            pressured_history,
+            recovery_event_signature="",
+            previous_task_identity=(task.task_id, 1),
+            current_task_identity=(task.task_id, 1),
+            history_soft_target=100_000,
+        )
+        reducer_input = pydantic_bridge._checkpoint_reducer_input(
+            ModelDecisionRequest("request:pressure-input", context, last_step=step),
+            pressured_history,
+            trigger=pressure_trigger,
+            pending_call=ToolCall(
+                "search_page_content",
+                {"query": "same"},
+                "call:current",
+            ),
+            previous_checkpoint=None,
+        )
+
+        assert pressure_trigger == "history_pressure"
+        assert [item.tool_call_id for item in reducer_input.completed_results] == [
+            "call:prior:0",
+            "call:prior:1",
+            "call:prior:2",
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_checkpoint_sources_exclude_actions_and_typed_failed_knowledge_results() -> None:
+    history = (
+        ModelResponse(parts=[ToolCallPart("activate", {}, "call:action")]),
+        ModelRequest(
+            parts=[ToolReturnPart("activate", {"changed": True}, "call:action")]
+        ),
+        ModelResponse(
+            parts=[ToolCallPart("read_region", {"region_ref": "R1"}, "call:invalid")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("read_region", {"kind": "InvalidCursor"}, "call:invalid")]
+        ),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "search_page_content",
+                    {"query": "Acadia"},
+                    "call:knowledge",
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "search_page_content",
+                    {"kind": "Matches", "items": ({"text": "Acadia"},)},
+                    "call:knowledge",
+                )
+            ]
+        ),
+        ModelResponse(parts=[ToolCallPart("third", {}, "call:pending")]),
+    )
+
+    assert pydantic_bridge._successful_tool_sources(
+        history,
+        pending_call=None,
+        last_step=None,
+    ) == (("search_page_content", "call:knowledge"),)
+    assert [
+        item.tool_call_id
+        for item in pydantic_bridge._uncovered_completed_knowledge(history, None)
+    ] == ["call:knowledge"]
 
 
 def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_result() -> None:
@@ -1998,7 +2483,7 @@ def test_invalid_first_deferred_call_never_falls_through_to_a_later_call(monkeyp
     assert normalized_calls == [ToolCall("read_region", {"region_ref": "invalid"}, "call:1")]
 
 
-def test_accepted_response_rejects_unstructured_prose_and_excludes_hidden_reasoning(monkeypatch) -> None:
+def test_accepted_response_preserves_exact_reasoning_prose_and_calls(monkeypatch) -> None:
     normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
     resolved_decision = SearchPageContentResult(
         "context:test",
@@ -2030,7 +2515,10 @@ def test_accepted_response_rejects_unstructured_prose_and_excludes_hidden_reason
         ]
     )
     output = DeferredToolRequests(
-        calls=[ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1")]
+        calls=[
+            ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1"),
+            ToolCallPart("discarded", {}, "call:discarded"),
+        ]
     )
 
     exchange, error, parsed = pydantic_bridge._resolve_deferred(
@@ -2046,13 +2534,18 @@ def test_accepted_response_rejects_unstructured_prose_and_excludes_hidden_reason
     assert exchange is not None
     assert error is None
     assert parsed == ()
-    assert [type(part) for part in exchange.response.parts] == [ToolCallPart]
-    assert narration not in repr(exchange.response)
-    assert exchange.response.parts[0].tool_name == normalized.name
-    assert exchange.response.parts[0].tool_call_id == normalized.call_id
+    assert exchange.response is source
+    assert [type(part) for part in exchange.response.parts] == [
+        ThinkingPart,
+        TextPart,
+        ToolCallPart,
+        ToolCallPart,
+    ]
+    assert narration in repr(exchange.response)
+    assert exchange.response.parts[2].tool_call_id == normalized.call_id
 
 
-def test_explicit_checkpoint_update_completely_replaces_the_fallback() -> None:
+def test_action_response_text_never_replaces_the_pinned_checkpoint() -> None:
     old_checkpoint = _checkpoint(
         verified_facts=("Portland coordinates: 43.6600,-70.2550",),
         remaining_requirements=("Acadia coordinates", "OSRM distance"),
@@ -2076,12 +2569,17 @@ def test_explicit_checkpoint_update_completely_replaces_the_fallback() -> None:
     accepted = pydantic_bridge._accepted_model_response(
         source,
         ToolCall("search_page_content", {"query": "distance"}, "call:update"),
-        fallback_checkpoint=old_checkpoint,
     )
 
+    history = pydantic_bridge._with_progress_checkpoint(
+        (accepted,),
+        ProgressCheckpoint.parse(old_checkpoint),
+    )
     assert [type(part) for part in accepted.parts] == [TextPart, ToolCallPart]
     assert accepted.parts[0].content == new_checkpoint
-    assert old_checkpoint not in repr(accepted)
+    assert pydantic_bridge._latest_progress_checkpoint(history) == ProgressCheckpoint.parse(
+        old_checkpoint
+    )
 
 
 def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
@@ -2100,8 +2598,10 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
     assert policy.port.model_id == "glm-4.7-flash"
     assert policy.port.supports_multimodal is False
     assert type(policy.port.model).__name__ == "ZaiModel"
-    assert policy.port.transport_timeout_s == 2.0
+    assert policy.port.transport_timeout_s == 1.5
     assert policy.port.max_provider_retry_delay_s == 0.5
+    assert isinstance(policy.port.checkpoint_reducer, PydanticAICheckpointReducer)
+    assert policy.port.checkpoint_reducer.timeout_s == 1.0
     prepared, _ = policy.port.model.prepare_request(
         {
             "thinking": False,
@@ -2127,6 +2627,13 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
             {**base, "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command"},
             call_timeout_s=5.0,
         )
+
+
+def test_reducer_and_provider_recovery_fit_one_policy_deadline() -> None:
+    reducer, retry, transport = pydantic_bridge._provider_time_budgets(90.0)
+
+    assert (reducer, retry, transport) == (18.0, 5.0, 33.25)
+    assert reducer + retry + (2 * transport) + 0.5 == 90.0
 
 
 def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:
@@ -2213,7 +2720,7 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
     assert selected.port.provider_id == "deepseek"
     assert selected.port.model_id == "deepseek-v4-flash"
     assert selected.port.supports_multimodal is False
-    assert selected.port.transport_timeout_s == 2.0
+    assert selected.port.transport_timeout_s == 1.5
     assert selected.port.reasoning_policy.repair_max_tokens == 512
 
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):

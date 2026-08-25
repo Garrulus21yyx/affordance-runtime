@@ -1,134 +1,107 @@
-"""Bounded model-authored working context for the ActionPolicy history.
+"""Typed, bounded semantic checkpoint for compact PydanticAI history.
 
-This value is not Runtime task state, evidence, or a mutable plan.  It only
-distinguishes an explicit cumulative checkpoint update from ordinary provider
-text before the PydanticAI history boundary decides what to retain.
+The checkpoint is model-authored working context.  It is neither current World
+truth nor Runtime plan state.  Runtime validates only its closed schema, bounds,
+and source lineage before the history owner may replace covered raw exchanges.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from typing import Literal
 
-PROGRESS_CHECKPOINT_VERSION = "progress-checkpoint.v1"
-PROGRESS_CHECKPOINT_OPEN = "<progress_checkpoint>"
-PROGRESS_CHECKPOINT_CLOSE = "</progress_checkpoint>"
-MAX_PROGRESS_CHECKPOINT_CHARS = 800
-_MAX_LIST_ITEMS = 16
-_MAX_ITEM_CHARS = 240
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+PROGRESS_CHECKPOINT_VERSION: Literal["progress-checkpoint.v2"] = "progress-checkpoint.v2"
+PROGRESS_CHECKPOINT_PREFIX = "Non-authoritative progress checkpoint (fresh World wins):\n"
+MAX_PROGRESS_CHECKPOINT_BYTES = 6 * 1024
 
 
-@dataclass(frozen=True)
-class ProgressCheckpoint:
-    """One complete, revisable, non-authoritative task-working summary."""
+class _ClosedModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
-    verified_facts: tuple[str, ...] = ()
-    working_hypotheses: tuple[str, ...] = ()
-    remaining_requirements: tuple[str, ...] = ()
-    next_intent: str = ""
-    avoid_repeating: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:
-        for name in (
-            "verified_facts",
-            "working_hypotheses",
-            "remaining_requirements",
-            "avoid_repeating",
-        ):
-            values = getattr(self, name)
-            if not isinstance(values, tuple):
-                raise TypeError("progress checkpoint collections must be tuples")
-            if len(values) > _MAX_LIST_ITEMS:
-                raise ValueError("progress checkpoint collection is too large")
-            if any(
-                type(item) is not str
-                or not item.strip()
-                or item != item.strip()
-                or len(item) > _MAX_ITEM_CHARS
-                for item in values
-            ):
-                raise ValueError("progress checkpoint entries must be bounded text")
-            if len(set(values)) != len(values):
-                raise ValueError("progress checkpoint entries must be unique")
-        if (
-            type(self.next_intent) is not str
-            or not self.next_intent.strip()
-            or self.next_intent != self.next_intent.strip()
-            or len(self.next_intent) > _MAX_ITEM_CHARS
-        ):
-            raise ValueError("progress checkpoint next intent must be bounded text")
-        if len(self.render()) > MAX_PROGRESS_CHECKPOINT_CHARS:
+class SourceRef(_ClosedModel):
+    tool_call_id: str = Field(min_length=1, max_length=160)
+    tool_name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+
+
+class VerifiedFact(_ClosedModel):
+    claim: str = Field(min_length=1, max_length=240)
+    value: str = Field(min_length=1, max_length=800)
+    source_refs: tuple[SourceRef, ...] = Field(min_length=1, max_length=8)
+
+
+class WorkingHypothesis(_ClosedModel):
+    claim: str = Field(min_length=1, max_length=360)
+    needs_verification: bool = True
+    source_refs: tuple[SourceRef, ...] = Field(default=(), max_length=8)
+
+
+class FailedStrategy(_ClosedModel):
+    strategy: str = Field(min_length=1, max_length=320)
+    outcome: str = Field(min_length=1, max_length=320)
+
+
+class ProgressCheckpoint(_ClosedModel):
+    """One complete replacement of the model's durable working conclusions."""
+
+    version: Literal["progress-checkpoint.v2"] = PROGRESS_CHECKPOINT_VERSION
+    verified_facts: tuple[VerifiedFact, ...] = Field(default=(), max_length=16)
+    working_hypotheses: tuple[WorkingHypothesis, ...] = Field(default=(), max_length=12)
+    remaining_questions: tuple[str, ...] = Field(default=(), max_length=16)
+    next_intent: str = Field(min_length=1, max_length=360)
+    failed_strategies: tuple[FailedStrategy, ...] = Field(default=(), max_length=12)
+
+    @model_validator(mode="after")
+    def _validate_checkpoint(self) -> ProgressCheckpoint:
+        collections = (
+            tuple((item.claim, item.value) for item in self.verified_facts),
+            tuple(item.claim for item in self.working_hypotheses),
+            self.remaining_questions,
+            tuple((item.strategy, item.outcome) for item in self.failed_strategies),
+        )
+        if any(len(items) != len(set(items)) for items in collections):
+            raise ValueError("progress checkpoint entries must be unique")
+        rendered = self.render()
+        if len(rendered.encode("utf-8")) > MAX_PROGRESS_CHECKPOINT_BYTES:
             raise ValueError("progress checkpoint exceeds its history bound")
+        return self
 
     def render(self) -> str:
-        payload = {
-            "version": PROGRESS_CHECKPOINT_VERSION,
-            "verified_facts": self.verified_facts,
-            "working_hypotheses": self.working_hypotheses,
-            "remaining_requirements": self.remaining_requirements,
-            "next_intent": self.next_intent,
-            "avoid_repeating": self.avoid_repeating,
-        }
-        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        return f"{PROGRESS_CHECKPOINT_OPEN}{body}{PROGRESS_CHECKPOINT_CLOSE}"
+        body = self.model_dump_json(exclude_none=True)
+        return PROGRESS_CHECKPOINT_PREFIX + body
 
     @classmethod
     def parse(cls, text: object) -> ProgressCheckpoint | None:
-        """Parse only an exact checkpoint wrapper; arbitrary model prose is not progress."""
-
-        if type(text) is not str:
+        if not isinstance(text, str) or not text.startswith(PROGRESS_CHECKPOINT_PREFIX):
             return None
-        value = text.strip()
-        if (
-            not value.startswith(PROGRESS_CHECKPOINT_OPEN)
-            or not value.endswith(PROGRESS_CHECKPOINT_CLOSE)
-            or len(value) > MAX_PROGRESS_CHECKPOINT_CHARS
-        ):
+        if len(text.encode("utf-8")) > MAX_PROGRESS_CHECKPOINT_BYTES:
             return None
-        body = value[len(PROGRESS_CHECKPOINT_OPEN) : -len(PROGRESS_CHECKPOINT_CLOSE)]
         try:
-            payload = json.loads(body)
-        except (json.JSONDecodeError, TypeError):
+            return cls.model_validate_json(text.removeprefix(PROGRESS_CHECKPOINT_PREFIX))
+        except (ValueError, TypeError):
             return None
-        expected_keys = {
-            "version",
-            "verified_facts",
-            "working_hypotheses",
-            "remaining_requirements",
-            "next_intent",
-            "avoid_repeating",
+
+    def source_refs(self) -> frozenset[tuple[str, str]]:
+        refs = {
+            (source.tool_name, source.tool_call_id)
+            for fact in self.verified_facts
+            for source in fact.source_refs
         }
-        if type(payload) is not dict or set(payload) != expected_keys:
-            return None
-        if payload.get("version") != PROGRESS_CHECKPOINT_VERSION:
-            return None
-
-        collections: dict[str, tuple[str, ...]] = {}
-        for name in (
-            "verified_facts",
-            "working_hypotheses",
-            "remaining_requirements",
-            "avoid_repeating",
-        ):
-            items = payload.get(name)
-            if type(items) is not list:
-                return None
-            collections[name] = tuple(items)
-        try:
-            checkpoint = cls(
-                verified_facts=collections["verified_facts"],
-                working_hypotheses=collections["working_hypotheses"],
-                remaining_requirements=collections["remaining_requirements"],
-                next_intent=payload.get("next_intent"),
-                avoid_repeating=collections["avoid_repeating"],
-            )
-        except (TypeError, ValueError):
-            return None
-        return checkpoint
+        refs.update(
+            (source.tool_name, source.tool_call_id)
+            for hypothesis in self.working_hypotheses
+            for source in hypothesis.source_refs
+        )
+        return frozenset(refs)
 
 
-def normalize_progress_checkpoint(text: object) -> str:
-    """Return the canonical history representation or an empty rejection."""
+class CheckpointReduction(_ClosedModel):
+    outcome: Literal["updated", "unchanged"]
+    checkpoint: ProgressCheckpoint | None = None
 
-    checkpoint = ProgressCheckpoint.parse(text)
-    return checkpoint.render() if checkpoint is not None else ""
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> CheckpointReduction:
+        if (self.outcome == "updated") != (self.checkpoint is not None):
+            raise ValueError("checkpoint reduction outcome and payload disagree")
+        return self

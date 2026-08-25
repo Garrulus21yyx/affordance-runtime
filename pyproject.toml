@@ -27,6 +27,7 @@ observability = [
 ]
 pydantic-ai = [
   "pydantic-ai-slim[openai]>=2.33,<2.34",
+  "pydantic-ai-harness>=0.25,<0.26",
 ]
 visual = [
   "Pillow>=11,<13",

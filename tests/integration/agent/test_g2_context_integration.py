@@ -75,7 +75,7 @@ def test_ready_goal_plan_is_direct_static_context_without_progress_projection() 
     world = _world("world:before", False)
     plan = _plan()
     public = _public(_context(world, Ready(1, plan)))
-    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "tools")
     assert "progress" not in public
     goal_plan = public["goal_plan"]
     assert goal_plan["resolution"] == "ready"
@@ -127,7 +127,7 @@ def test_plan_identity_is_static_while_fresh_world_still_changes_context_identit
 
 def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_dependency_order() -> None:
     system = GroundedPolicyContextBinder().prompts.actor
-    assert "Reassess progress from task, fresh observation, and semantic recent_steps on every turn" in system
+    assert "The Runtime may provide one explicitly labelled" in system
     assert "Only refs in the current observation and current" in system
     assert "Preserve outcomes already supported by evidence" in system
     assert "Treat final=true only as an ordering hint" in system
@@ -136,13 +136,9 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "search_page_content is only an exact-substring locator" in system
     assert "read its region and follow UI pagination" in system
     assert "sole authority for current" in system
-    assert "a verified task fact or exact requested output" in system
-    assert "unresolved requirement or inspected/total scope" in system
-    assert "A page change, tab switch, immediate GUI target" in system
-    assert "When none of those values changed, emit no TextPart" in system
-    assert "complete replacement form" in system
-    assert "Do not replace exact results with phrases such as" in system
-    assert '"several candidates"' in system
+    assert "fresh current World and current ToolReturn always take precedence" in system
+    assert "Do not emit or rewrite a" in system
+    assert "do not narrate the next click" in system
     assert "clear paraphrase or" in system
     assert "incidental keyword overlap does not" in system
     assert "Partial source coverage" in system

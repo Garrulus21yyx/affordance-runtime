@@ -1,65 +1,113 @@
 from __future__ import annotations
 
-import json
-
 import pytest
+from pydantic import ValidationError
 
+from affordance_runtime.model.policy.checkpoint_reducer import validate_reduction_sources
 from affordance_runtime.model.policy.progress_checkpoint import (
-    MAX_PROGRESS_CHECKPOINT_CHARS,
+    MAX_PROGRESS_CHECKPOINT_BYTES,
+    CheckpointReduction,
+    FailedStrategy,
     ProgressCheckpoint,
-    normalize_progress_checkpoint,
+    SourceRef,
+    VerifiedFact,
+    WorkingHypothesis,
 )
 
 
-def test_checkpoint_round_trip_is_canonical_and_complete() -> None:
-    checkpoint = ProgressCheckpoint(
-        verified_facts=("Portland coordinates: 43.6600,-70.2550",),
-        working_hypotheses=("Acadia is the closest candidate; verification remains",),
-        remaining_requirements=("Acadia relation ID", "OSRM driving distance"),
+def _checkpoint() -> ProgressCheckpoint:
+    source = SourceRef(tool_call_id="call:portland", tool_name="search_page_content")
+    return ProgressCheckpoint(
+        verified_facts=(
+            VerifiedFact(
+                claim="Portland coordinates",
+                value="43.6600,-70.2550",
+                source_refs=(source,),
+            ),
+        ),
+        working_hypotheses=(
+            WorkingHypothesis(
+                claim="Acadia may be the closest candidate",
+                needs_verification=True,
+            ),
+        ),
+        remaining_questions=("Acadia relation ID", "OSRM driving distance"),
         next_intent="Resolve Acadia identifiers and route distance",
-        avoid_repeating=("Do not reopen Portland coordinate sources",),
+        failed_strategies=(
+            FailedStrategy(
+                strategy="Repeated Portland tab switching",
+                outcome="No new task information",
+            ),
+        ),
     )
 
+
+def test_checkpoint_round_trip_is_canonical_bounded_and_source_typed() -> None:
+    checkpoint = _checkpoint()
     rendered = checkpoint.render()
 
     assert ProgressCheckpoint.parse(rendered) == checkpoint
-    assert normalize_progress_checkpoint(f"  {rendered}\n") == rendered
-    assert len(rendered) <= MAX_PROGRESS_CHECKPOINT_CHARS
+    assert len(rendered.encode()) <= MAX_PROGRESS_CHECKPOINT_BYTES
+    assert checkpoint.source_refs() == {
+        ("search_page_content", "call:portland")
+    }
 
 
 @pytest.mark.parametrize(
     "value",
     [
         "I will switch back to the Portland tab now.",
-        '<progress_checkpoint>{"version":"progress-checkpoint.v1"}</progress_checkpoint>',
-        '<progress_checkpoint>{not-json}</progress_checkpoint>',
-        '<progress_checkpoint>{"version":"unknown","verified_facts":[],"working_hypotheses":[],"remaining_requirements":[],"next_intent":"continue","avoid_repeating":[]}</progress_checkpoint>',
-        '<progress_checkpoint>{"version":"progress-checkpoint.v1","verified_facts":[],"working_hypotheses":[],"remaining_requirements":[],"next_intent":"","avoid_repeating":[]}</progress_checkpoint>',
+        "Non-authoritative progress checkpoint (fresh World wins):\n{not-json}",
+        'Non-authoritative progress checkpoint (fresh World wins):\n{"version":"unknown"}',
     ],
 )
 def test_arbitrary_or_malformed_text_is_not_a_checkpoint(value: str) -> None:
     assert ProgressCheckpoint.parse(value) is None
-    assert normalize_progress_checkpoint(value) == ""
 
 
-def test_checkpoint_rejects_unknown_fields_and_oversized_content() -> None:
-    payload = {
-        "version": "progress-checkpoint.v1",
-        "verified_facts": [],
-        "working_hypotheses": [],
-        "remaining_requirements": [],
-        "next_intent": "continue",
-        "avoid_repeating": [],
-        "runtime_state": "must not become a second authority",
-    }
-    unknown = f"<progress_checkpoint>{json.dumps(payload)}</progress_checkpoint>"
+def test_checkpoint_keeps_literal_task_identifiers_and_rejects_oversized_content() -> None:
+    checkpoint = ProgressCheckpoint(
+        remaining_questions=("Compare European route E25 with document section R9",),
+        next_intent="Verify the literal identifiers from a successful source",
+    )
 
-    assert ProgressCheckpoint.parse(unknown) is None
-    with pytest.raises(ValueError, match="history bound"):
+    assert ProgressCheckpoint.parse(checkpoint.render()) == checkpoint
+    with pytest.raises(ValidationError, match="history bound"):
         ProgressCheckpoint(
-            verified_facts=tuple(f"fact-{index}-" + "x" * 32 for index in range(16)),
-            remaining_requirements=tuple(
-                f"requirement-{index}-" + "y" * 24 for index in range(8)
+            verified_facts=tuple(
+                VerifiedFact(
+                    claim=f"fact {index}",
+                    value="深" * 800,
+                    source_refs=(
+                        SourceRef(
+                            tool_call_id=f"call:{index}",
+                            tool_name="read_region",
+                        ),
+                    ),
+                )
+                for index in range(16)
             ),
-            next_intent="continue the bounded semantic subgoal",
+            next_intent="Continue",
         )
+
+
+def test_reducer_update_requires_only_available_successful_sources() -> None:
+    checkpoint = _checkpoint()
+    reduction = CheckpointReduction(outcome="updated", checkpoint=checkpoint)
+
+    assert validate_reduction_sources(
+        reduction,
+        successful_sources=(("search_page_content", "call:portland"),),
+        previous_checkpoint=None,
+    ) == checkpoint
+    with pytest.raises(ValueError, match="unavailable"):
+        validate_reduction_sources(
+            reduction,
+            successful_sources=(),
+            previous_checkpoint=None,
+        )
+
+
+def test_reducer_outcome_cannot_claim_update_without_payload() -> None:
+    with pytest.raises(ValidationError, match="outcome and payload"):
+        CheckpointReduction(outcome="updated")

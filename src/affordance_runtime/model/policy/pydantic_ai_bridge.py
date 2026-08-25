@@ -27,13 +27,28 @@ from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
 )
-from affordance_runtime.agent.decisions import AgentDecision, DecisionKind
+from affordance_runtime.agent.decisions import (
+    AgentDecision,
+    DecisionKind,
+    ReadRegionResult,
+    SearchPageContentResult,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
     UNEXECUTED_TOOL_CALL_MESSAGE,
     CanonicalProviderEnvelope,
     CanonicalProviderEnvelopeBinder,
     CanonicalProviderIdentity,
+)
+from affordance_runtime.model.policy.checkpoint_reducer import (
+    CHECKPOINT_REDUCER_MAX_TOKENS,
+    CHECKPOINT_REDUCER_SCHEMA,
+    CheckpointReducer,
+    CheckpointReducerInput,
+    CompletedToolResult,
+    PydanticAICheckpointReducer,
+    RecentActionContext,
+    validate_reduction_sources,
 )
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
@@ -54,8 +69,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.progress_checkpoint import (
-    MAX_PROGRESS_CHECKPOINT_CHARS,
-    normalize_progress_checkpoint,
+    ProgressCheckpoint,
 )
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
@@ -80,6 +94,10 @@ from affordance_runtime.model.policy.turn_packer import TurnPacker
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
+_KNOWLEDGE_TOOL_NAMES = frozenset({"read_region", "search_page_content"})
+_FAILED_KNOWLEDGE_RESULT_KINDS = frozenset(
+    {"CapacityExceeded", "InvalidCursor", "InvalidRegion", "StaleContext"}
+)
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
 
@@ -119,7 +137,7 @@ class AcceptedToolExchange:
     discarded_call_count: int = 0
 
     def __post_init__(self) -> None:
-        from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+        from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart, ToolCallPart
 
         decision_call_id = str(getattr(self.decision, "tool_call_id", ""))
         if (
@@ -133,32 +151,16 @@ class AcceptedToolExchange:
         response_calls = tuple(
             part for part in self.response.parts if isinstance(part, ToolCallPart)
         )
-        response_checkpoints = tuple(
-            part for part in self.response.parts if isinstance(part, TextPart)
-        )
-        checkpoint_chars = sum(len(part.content) for part in response_checkpoints)
-        expected = (self.call.name, dict(self.call.arguments), self.call.call_id)
         response_call_ids = tuple(part.tool_call_id for part in response_calls)
         if (
             any(
-                not isinstance(part, (TextPart, ToolCallPart))
+                not isinstance(part, (ThinkingPart, TextPart, ToolCallPart))
                 for part in self.response.parts
-            )
-            or len(response_checkpoints) > 1
-            or checkpoint_chars > MAX_PROGRESS_CHECKPOINT_CHARS
-            or any(
-                normalize_progress_checkpoint(part.content) != part.content
-                for part in response_checkpoints
             )
             or len(response_calls) != self.discarded_call_count + 1
             or len(set(response_call_ids)) != len(response_call_ids)
             or any(not call_id for call_id in response_call_ids)
-            or (
-                response_calls[0].tool_name,
-                response_calls[0].args_as_dict(),
-                response_calls[0].tool_call_id,
-            )
-            != expected
+            or response_calls[0].tool_call_id != self.call.call_id
             or (decision_call_id and decision_call_id != self.call.call_id)
         ):
             raise ValueError("accepted tool exchange identities disagree")
@@ -179,6 +181,7 @@ class PydanticAIGroundedDecisionPort:
     max_provider_retry_delay_s: float = _MAX_PROVIDER_BACKOFF_S
     envelope_binder: CanonicalProviderEnvelopeBinder = field(default_factory=CanonicalProviderEnvelopeBinder)
     reasoning_policy: ActionPolicyReasoningPolicy = field(default_factory=ActionPolicyReasoningPolicy)
+    checkpoint_reducer: CheckpointReducer | None = field(default=None, compare=False, repr=False)
     consumed_recovery_events: frozenset[str] = field(default_factory=frozenset, init=False, compare=False)
     last_call_profile: ActionPolicyCallProfile | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
@@ -201,6 +204,11 @@ class PydanticAIGroundedDecisionPort:
         default=None, init=False, compare=False
     )
     message_history: tuple[object, ...] = field(default=(), init=False, compare=False, repr=False)
+    active_task_identity: tuple[str, int] | None = field(
+        default=None, init=False, compare=False, repr=False
+    )
+    last_checkpoint_reducer_status: str = field(default="not_triggered", init=False, compare=False)
+    last_checkpoint_reducer_error: str = field(default="", init=False, compare=False)
     last_model_delivery: ModelTurnDelivery | None = field(
         default=None, init=False, compare=False, repr=False
     )
@@ -250,8 +258,21 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_local_failure", {})
         object.__setattr__(self, "last_discarded_protocol_call_count", 0)
         object.__setattr__(self, "last_history_compaction_count", 0)
+        object.__setattr__(self, "last_checkpoint_reducer_status", "not_triggered")
+        object.__setattr__(self, "last_checkpoint_reducer_error", "")
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_model_delivery", None)
+        task_identity = (
+            request.agent_context.task.task_id,
+            request.agent_context.goal_plan.task_revision,
+        )
+        previous_task_identity = self.active_task_identity
+        if (
+            previous_task_identity is not None
+            and previous_task_identity[0] != task_identity[0]
+        ):
+            object.__setattr__(self, "message_history", ())
+        object.__setattr__(self, "active_task_identity", task_identity)
         call_profile = self.reasoning_policy.select(
             request.agent_context,
             self.consumed_recovery_events,
@@ -273,7 +294,6 @@ class PydanticAIGroundedDecisionPort:
                 ToolDefinition,
                 ToolReturn,
             )
-            from pydantic_ai.capabilities import ProcessHistory
             from pydantic_ai.exceptions import (
                 ModelAPIError,
                 ToolFailed,
@@ -317,18 +337,6 @@ class PydanticAIGroundedDecisionPort:
                 instructions=current_instructions,
                 output_type=[str, DeferredToolRequests],
                 retries=0,
-                capabilities=[
-                    ProcessHistory(
-                        lambda messages: list(
-                            _process_pydantic_history(
-                                tuple(messages),
-                                max_estimated_tokens=(
-                                    self.envelope_binder.request_budget.soft_target_tokens
-                                ),
-                            )
-                        )
-                    )
-                ],
             )
             # One explicit semantic request may still use the bridge's bounded
             # transport retry. SDK output/tool retries stay disabled.
@@ -354,22 +362,15 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_tool_resolution_code", None)
         object.__setattr__(self, "last_tool_resolution_detail", "")
         object.__setattr__(self, "last_multiple_tool_call_attempt_count", 0)
-        history_messages = _process_pydantic_history(
-            self.message_history,
-            max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
-        )
-        retained_checkpoint = _latest_progress_checkpoint(history_messages)
-        object.__setattr__(
-            self,
-            "last_history_compaction_count",
-            max(0, (len(self.message_history) - len(history_messages)) // 2),
-        )
+        history_messages = self.message_history
         pending_call_parts: tuple[object, ...] = ()
         pending_call: ToolCall | None = None
         if history_messages:
             try:
                 pending_call_parts = _pending_tool_parts_from_history(history_messages)
                 pending_call = _pending_call_from_history(history_messages)
+                if pending_call is None:
+                    raise ValueError("model message history lost its pending call")
             except (TypeError, ValueError):
                 return self._invocation_failure(
                     _failure(ModelFailureKind.INTERNAL_ERROR, "model_message_history_unavailable"),
@@ -385,49 +386,84 @@ class PydanticAIGroundedDecisionPort:
                     _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
                     request,
                 )
-        try:
-            while True:
+        trigger = _checkpoint_trigger(
+            request,
+            history_messages,
+            recovery_event_signature=call_profile.recovery_event_signature,
+            previous_task_identity=previous_task_identity,
+            current_task_identity=task_identity,
+            history_soft_target=self.envelope_binder.request_budget.soft_target_tokens,
+        )
+        if trigger and self.checkpoint_reducer is not None:
+            previous_checkpoint = _latest_progress_checkpoint(history_messages)
+            reducer_input = _checkpoint_reducer_input(
+                request,
+                history_messages,
+                trigger=trigger,
+                pending_call=pending_call,
+                previous_checkpoint=previous_checkpoint,
+            )
+            reducer_run = await self.checkpoint_reducer.reduce(reducer_input)
+            self._record_checkpoint_reducer_run(reducer_run, trigger)
+            if reducer_run.reduction is None:
+                object.__setattr__(self, "last_checkpoint_reducer_status", "failed")
+                object.__setattr__(self, "last_checkpoint_reducer_error", reducer_run.error)
+            else:
                 try:
-                    packed = TurnPacker().pack(
-                        request,
-                        binder=self.envelope_binder,
-                        identity=CanonicalProviderIdentity(
-                            self.provider_id,
-                            self.model_id,
-                            self.endpoint_host,
-                            self.perception_profile.value,
+                    checkpoint = validate_reduction_sources(
+                        reducer_run.reduction,
+                        successful_sources=_successful_tool_sources(
+                            history_messages,
+                            pending_call=pending_call,
+                            last_step=request.last_step,
                         ),
-                        call_profile=call_profile,
-                        supports_multimodal=self.supports_multimodal,
-                        perception_profile=self.perception_profile,
-                        history_messages=history_messages,
-                        pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
-                        pending_tool_name=pending_call.name if pending_call is not None else "",
+                        previous_checkpoint=previous_checkpoint,
                     )
-                    if (
-                        packed.admitted_envelope.token_breakdown.history_tokens
-                        > self.envelope_binder.request_budget.soft_target_tokens
-                    ):
-                        compacted = _drop_oldest_completed_exchange(history_messages)
-                        if compacted != history_messages:
-                            history_messages = compacted
-                            object.__setattr__(
-                                self,
-                                "last_history_compaction_count",
-                                self.last_history_compaction_count + 1,
-                            )
-                            continue
-                    break
-                except ModelRequestCapacityError:
-                    compacted = _drop_oldest_completed_exchange(history_messages)
-                    if compacted == history_messages:
-                        raise
-                    history_messages = compacted
+                except ValueError as exc:
+                    object.__setattr__(self, "last_checkpoint_reducer_status", "rejected")
+                    object.__setattr__(self, "last_checkpoint_reducer_error", str(exc))
+                else:
                     object.__setattr__(
                         self,
-                        "last_history_compaction_count",
-                        self.last_history_compaction_count + 1,
+                        "last_checkpoint_reducer_status",
+                        reducer_run.reduction.outcome,
                     )
+                    if checkpoint is not None:
+                        history_messages = _with_progress_checkpoint(
+                            history_messages,
+                            checkpoint,
+                        )
+        elif trigger:
+            object.__setattr__(self, "last_checkpoint_reducer_status", "unavailable")
+
+        before_compaction = history_messages
+        history_messages = await _compact_pydantic_history(
+            history_messages,
+            model=self.model,
+            max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
+        )
+        object.__setattr__(
+            self,
+            "last_history_compaction_count",
+            max(0, _completed_exchange_count(before_compaction) - _completed_exchange_count(history_messages)),
+        )
+        try:
+            packed = TurnPacker().pack(
+                request,
+                binder=self.envelope_binder,
+                identity=CanonicalProviderIdentity(
+                    self.provider_id,
+                    self.model_id,
+                    self.endpoint_host,
+                    self.perception_profile.value,
+                ),
+                call_profile=call_profile,
+                supports_multimodal=self.supports_multimodal,
+                perception_profile=self.perception_profile,
+                history_messages=history_messages,
+                pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
+                pending_tool_name=pending_call.name if pending_call is not None else "",
+            )
             delivery = packed.delivery
             catalog = packed.catalog
             admitted = packed.admitted_envelope
@@ -449,7 +485,6 @@ class PydanticAIGroundedDecisionPort:
                 catalog,
                 request.context_id,
                 source_response=_latest_model_response(result),
-                fallback_checkpoint=retained_checkpoint,
             )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
             if accepted_exchange is None and initial_calls:
@@ -486,10 +521,6 @@ class PydanticAIGroundedDecisionPort:
                     catalog,
                     request.context_id,
                     source_response=_latest_model_response(repair_result),
-                    fallback_checkpoint=(
-                        _progress_checkpoint_from_response(_latest_model_response(result))
-                        or retained_checkpoint
-                    ),
                 )
                 if (
                     repair_exchange is not None
@@ -714,6 +745,8 @@ class PydanticAIGroundedDecisionPort:
             "multiple_tool_call_attempt_count": self.last_multiple_tool_call_attempt_count,
             "discarded_protocol_call_count": self.last_discarded_protocol_call_count,
             "history_compaction_count": self.last_history_compaction_count,
+            "checkpoint_reducer_status": self.last_checkpoint_reducer_status,
+            "checkpoint_reducer_error": self.last_checkpoint_reducer_error,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -764,6 +797,96 @@ class PydanticAIGroundedDecisionPort:
             "last_discarded_protocol_call_count",
             self.last_discarded_protocol_call_count + discarded,
         )
+
+    def _record_checkpoint_reducer_run(self, run: object, trigger: str) -> None:
+        """Record each reducer provider response at its own role boundary."""
+
+        from pydantic_ai.messages import ModelRequest, ModelResponse
+
+        messages = tuple(getattr(run, "messages", ()))
+        responses = tuple(
+            (index, message)
+            for index, message in enumerate(messages)
+            if isinstance(message, ModelResponse)
+        )
+        if not responses and not getattr(run, "error", ""):
+            return
+        if not responses:
+            attempt = ModelGenerationAttempt(
+                attempt=len(self.last_generation_attempts) + 1,
+                phase=f"checkpoint_reducer:{trigger}",
+                schema_name=CHECKPOINT_REDUCER_SCHEMA,
+                status="failed",
+                latency_ms=float(getattr(run, "latency_ms", 0.0)),
+                exception_class=str(getattr(run, "error", "")).split(":", 1)[0],
+                role="progress_checkpoint_reducer",
+                mode="semantic_compaction",
+                schema_version=CHECKPOINT_REDUCER_SCHEMA,
+                trigger=trigger,
+                transcript={
+                    "openinference.span.kind": "LLM",
+                    "llm.system": self.provider_id,
+                    "llm.model_name": self.model_id,
+                    "llm.input_messages": getattr(run, "prompt", ""),
+                    "status": "failed",
+                    "error": str(getattr(run, "error", "")),
+                },
+            )
+            object.__setattr__(
+                self,
+                "last_generation_attempts",
+                (*self.last_generation_attempts, attempt),
+            )
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
+            return
+        for response_index, response in responses:
+            request = next(
+                (
+                    message
+                    for message in reversed(messages[:response_index])
+                    if isinstance(message, ModelRequest)
+                ),
+                None,
+            )
+            usage = response.usage
+            prompt_tokens = int(getattr(usage, "input_tokens", 0))
+            completion_tokens = int(getattr(usage, "output_tokens", 0))
+            accepted = not getattr(run, "error", "") and response_index == responses[-1][0]
+            attempt = ModelGenerationAttempt(
+                attempt=len(self.last_generation_attempts) + 1,
+                phase=f"checkpoint_reducer:{trigger}",
+                schema_name=CHECKPOINT_REDUCER_SCHEMA,
+                status="accepted" if accepted else "schema_retry",
+                response_id=str(response.provider_response_id or ""),
+                latency_ms=(
+                    float(getattr(run, "latency_ms", 0.0)) if accepted else 0.0
+                ),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                finish_reason=str(response.finish_reason or "")[:80],
+                max_output_tokens=CHECKPOINT_REDUCER_MAX_TOKENS,
+                final_content_present=accepted,
+                role="progress_checkpoint_reducer",
+                mode="semantic_compaction",
+                schema_version=CHECKPOINT_REDUCER_SCHEMA,
+                trigger=trigger,
+                final_tool_call_present=accepted,
+                transcript={
+                    "openinference.span.kind": "LLM",
+                    "llm.system": self.provider_id,
+                    "llm.model_name": self.model_id,
+                    "llm.input_messages": to_json_compatible(request) if request else None,
+                    "llm.output_messages": to_json_compatible(response),
+                    "status": "accepted" if accepted else "schema_retry",
+                },
+            )
+            object.__setattr__(
+                self,
+                "last_generation_attempts",
+                (*self.last_generation_attempts, attempt),
+            )
+            object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
 
     async def _run_provider_call(
         self,
@@ -1053,10 +1176,9 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     selected_perception = DecisionPerceptionProfile(
         perception_profile or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
-    retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
-    transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
-    if transport_timeout_s <= 0:
-        raise ValueError("PydanticAI policy timeout cannot fit bounded provider recovery")
+    reducer_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
+        call_timeout_s
+    )
     port = PydanticAIGroundedDecisionPort(
         model=configured.model,
         provider_id=configured.provider_id,
@@ -1067,6 +1189,10 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         transport_timeout_s=transport_timeout_s,
         provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
         max_provider_retry_delay_s=retry_delay_budget_s,
+        checkpoint_reducer=PydanticAICheckpointReducer(
+            configured.model,
+            timeout_s=reducer_timeout_s,
+        ),
         reasoning_policy=ActionPolicyReasoningPolicy(
             ordinary_max_tokens=_bounded_reasoning_tokens(
                 env,
@@ -1139,10 +1265,9 @@ def pydantic_ai_model_from_environment(
         if profile == "local"
         else _required(env, f"{prefix}_MODEL")
     )
-    retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
-    transport_timeout_s = (call_timeout_s - retry_delay_budget_s - 0.5) / 2
-    if transport_timeout_s <= 0:
-        raise ValueError("PydanticAI policy timeout cannot fit bounded provider recovery")
+    _reducer_timeout_s, _retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
+        call_timeout_s
+    )
     client = AsyncOpenAI(
         api_key=(env.get("LLM_LOCAL_API_KEY", "local") or "local")
         if profile == "local"
@@ -1180,6 +1305,19 @@ def _bounded_reasoning_tokens(
     return value
 
 
+def _provider_time_budgets(call_timeout_s: float) -> tuple[float, float, float]:
+    """Fit reducer plus the existing bounded provider retry inside one policy deadline."""
+
+    reducer_timeout_s = min(20.0, max(0.25, call_timeout_s * 0.2))
+    retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
+    transport_timeout_s = (
+        call_timeout_s - reducer_timeout_s - retry_delay_budget_s - 0.5
+    ) / 2
+    if transport_timeout_s <= 0:
+        raise ValueError("PydanticAI policy timeout cannot fit reducer and provider recovery")
+    return reducer_timeout_s, retry_delay_budget_s, transport_timeout_s
+
+
 def zhipu_pydantic_ai_policy_from_environment(
     environment: Mapping[str, str] | None = None,
     *,
@@ -1206,7 +1344,6 @@ def _resolve_deferred(
     context_id: str,
     *,
     source_response=None,
-    fallback_checkpoint: str = "",
 ):
     from pydantic_ai import DeferredToolRequests
 
@@ -1259,7 +1396,6 @@ def _resolve_deferred(
                 accepted_call,
                 proposed_calls=tuple(output.calls),
                 discarded_call_count=max(0, len(output.calls) - 1),
-                fallback_checkpoint=fallback_checkpoint,
             ),
             max(0, len(output.calls) - 1),
         ), None, ()
@@ -1287,19 +1423,13 @@ def _accepted_model_response(
     *,
     proposed_calls: tuple[object, ...] = (),
     discarded_call_count: int = 0,
-    fallback_checkpoint: str = "",
 ):
-    """Keep one explicit checkpoint update or carry the prior exact checkpoint."""
+    """Keep the exact accepted response, including provider reasoning metadata."""
 
-    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
 
     if source_response is not None and not isinstance(source_response, ModelResponse):
         raise TypeError("source response is not a PydanticAI ModelResponse")
-    checkpoint = (
-        _progress_checkpoint_from_response(source_response)
-        or normalize_progress_checkpoint(fallback_checkpoint)
-    )
-
     calls = tuple(proposed_calls)
     if not calls and source_response is not None:
         calls = tuple(
@@ -1312,18 +1442,29 @@ def _accepted_model_response(
         or len({part.tool_call_id for part in calls}) != len(calls)
     ):
         raise ValueError("accepted call proposals are incomplete or ambiguous")
-    parts = []
-    if checkpoint:
-        parts.append(TextPart(checkpoint))
-    parts.append(
-        ToolCallPart(
-            accepted_call.name,
-            to_json_compatible(accepted_call.arguments),
-            accepted_call.call_id,
+    if source_response is None:
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    accepted_call.name,
+                    to_json_compatible(accepted_call.arguments),
+                    accepted_call.call_id,
+                ),
+                *calls[1:],
+            ]
         )
+    source_calls = tuple(
+        part for part in source_response.parts if isinstance(part, ToolCallPart)
     )
-    parts.extend(calls[1:])
-    return ModelResponse(parts=parts)
+    source_identities = tuple(
+        (part.tool_name, part.args_as_dict(), part.tool_call_id) for part in source_calls
+    )
+    proposed_identities = tuple(
+        (part.tool_name, part.args_as_dict(), part.tool_call_id) for part in calls
+    )
+    if source_identities != proposed_identities:
+        raise ValueError("source response and deferred calls disagree")
+    return source_response
 
 
 def _pending_tool_parts_from_history(messages: tuple[object, ...]) -> tuple[object, ...]:
@@ -1389,127 +1530,365 @@ def _accepted_message_history(
     ):
         raise ValueError("PydanticAI did not close every deferred tool proposal")
     returned_parts = tuple(returned_by_identity[item] for item in pending_identities)
-    retained_history = (
-        _without_progress_checkpoints(prior_history)
-        if _progress_checkpoint_from_response(accepted.response)
-        else prior_history
-    )
     return (
-        *retained_history,
+        *prior_history,
         ModelRequest(parts=returned_parts),
         accepted.response,
     )
 
 
-def _progress_checkpoint_from_response(response: object | None) -> str:
-    """Read only an explicit checkpoint update, never ordinary provider prose."""
+def _latest_progress_checkpoint(
+    messages: tuple[object, ...],
+) -> ProgressCheckpoint | None:
+    """Return the sole Harness-pinned checkpoint in official SDK history."""
 
-    if response is None:
-        return ""
-    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
+    from pydantic_ai_harness.compaction import is_pinned
 
-    if not isinstance(response, ModelResponse):
-        return ""
-    text_parts = tuple(part for part in response.parts if isinstance(part, TextPart))
-    if len(text_parts) != 1:
-        return ""
-    return normalize_progress_checkpoint(text_parts[0].content)
+    found: ProgressCheckpoint | None = None
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            if not isinstance(part, UserPromptPart) or not is_pinned(part):
+                continue
+            content = part.content
+            if isinstance(content, str):
+                text = content
+            else:
+                values = tuple(
+                    item.content for item in content if isinstance(item, TextContent)
+                )
+                text = values[0] if len(values) == 1 else ""
+            checkpoint = ProgressCheckpoint.parse(text)
+            if checkpoint is None or found is not None:
+                raise ValueError("official history contains an invalid checkpoint pin")
+            found = checkpoint
+    return found
 
 
-def _latest_progress_checkpoint(messages: tuple[object, ...]) -> str:
-    """Return the latest explicit checkpoint already owned by official SDK history."""
+def _with_progress_checkpoint(
+    messages: tuple[object, ...],
+    checkpoint: ProgressCheckpoint,
+) -> tuple[object, ...]:
+    """Atomically replace the one non-authoritative checkpoint pin."""
 
-    for message in reversed(messages):
-        checkpoint = _progress_checkpoint_from_response(message)
-        if checkpoint:
-            return checkpoint
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai_harness.compaction import is_pinned, pin
+
+    retained: list[object] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            retained.append(message)
+            continue
+        parts = tuple(
+            part
+            for part in message.parts
+            if not (isinstance(part, UserPromptPart) and is_pinned(part))
+        )
+        if parts:
+            retained.append(message if len(parts) == len(message.parts) else replace(message, parts=parts))
+    return (ModelRequest(parts=[pin(checkpoint.render())]), *retained)
+
+
+def _checkpoint_trigger(
+    request: ModelDecisionRequest,
+    history: tuple[object, ...],
+    *,
+    recovery_event_signature: str,
+    previous_task_identity: tuple[str, int] | None,
+    current_task_identity: tuple[str, int],
+    history_soft_target: int,
+) -> str:
+    if (
+        previous_task_identity is not None
+        and previous_task_identity[0] == current_task_identity[0]
+        and previous_task_identity[1] != current_task_identity[1]
+    ):
+        return "task_revision"
+    if recovery_event_signature:
+        return "first_monitor_recovery"
+    step = request.last_step
+    decision = getattr(step, "decision", None)
+    if _is_reducible_knowledge_decision(decision):
+        current_digest = _canonical_result_digest(decision.result)
+        prior_digests = {
+            _canonical_result_digest(part.content)
+            for _response, result in _completed_tool_exchanges(history)
+            for part in result
+            if _is_reducible_knowledge_return(part)
+            and part.tool_name == decision.tool_name
+        }
+        if current_digest not in prior_digests:
+            return "new_knowledge_result"
+    checkpoint = _latest_progress_checkpoint(history)
+    uncovered = _uncovered_completed_knowledge(history, checkpoint)
+    if uncovered:
+        from pydantic_ai_harness.compaction import estimate_context_tokens
+
+        if (
+            _completed_exchange_count(history) > 4
+            or estimate_context_tokens(history) > history_soft_target
+        ):
+            return "history_pressure"
     return ""
 
 
-def _without_progress_checkpoints(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Keep call/result pairs intact while replacing the cumulative checkpoint."""
+def _checkpoint_reducer_input(
+    request: ModelDecisionRequest,
+    history: tuple[object, ...],
+    *,
+    trigger: str,
+    pending_call: ToolCall | None,
+    previous_checkpoint: ProgressCheckpoint | None,
+) -> CheckpointReducerInput:
+    decision = getattr(request.last_step, "decision", None)
+    completed: list[CompletedToolResult] = []
+    if pending_call is not None and _is_reducible_knowledge_decision(decision) and (
+        trigger != "history_pressure"
+        or _canonical_result_digest(decision.result)
+        not in {
+            _canonical_result_digest(part.content)
+            for _response, returned in _completed_tool_exchanges(history)
+            for part in returned
+            if _is_reducible_knowledge_return(part)
+            and part.tool_name == decision.tool_name
+        }
+    ):
+        completed.append(
+            CompletedToolResult(
+                tool_call_id=pending_call.call_id,
+                tool_name=pending_call.name,
+                arguments=to_json_compatible(pending_call.arguments),
+                outcome="success",
+                result=to_json_compatible(decision.result),
+            )
+        )
+    completed.extend(
+        item
+        for item in _uncovered_completed_knowledge(history, previous_checkpoint)
+        if item.tool_call_id not in {value.tool_call_id for value in completed}
+    )
+    recent: list[RecentActionContext] = []
+    from pydantic_ai.messages import ThinkingPart, ToolCallPart
 
-    from pydantic_ai.messages import ModelResponse, TextPart
+    for response, results in _completed_tool_exchanges(history)[-2:]:
+        reasoning = "\n".join(
+            part.content
+            for part in response.parts
+            if isinstance(part, ThinkingPart) and part.content
+        )[-1200:]
+        by_id = {part.tool_call_id: part for part in results}
+        for call in response.parts:
+            if not isinstance(call, ToolCallPart):
+                continue
+            result = by_id.get(call.tool_call_id)
+            recent.append(
+                RecentActionContext(
+                    tool_call_id=call.tool_call_id,
+                    tool_name=call.tool_name,
+                    arguments=to_json_compatible(call.args_as_dict()),
+                    result=to_json_compatible(result.content) if result is not None else None,
+                    reasoning=reasoning,
+                )
+            )
+    task = request.agent_context.task
+    goal = request.agent_context.goal_plan
+    return CheckpointReducerInput(
+        trigger=trigger,
+        task={
+            "task_id": task.task_id,
+            "instruction": task.instruction,
+            "success_criteria": to_json_compatible(task.success_criteria),
+            "requested_outputs": to_json_compatible(task.requested_output_ids),
+            "public_inputs": to_json_compatible(task.public_inputs),
+        },
+        goal_plan={
+            "task_revision": goal.task_revision,
+            "resolution": goal.resolution,
+            "items": to_json_compatible(goal.items),
+        },
+        previous_checkpoint=previous_checkpoint,
+        completed_results=tuple(completed[:3]),
+        recent_actions=tuple(recent[-2:]),
+        monitor_feedback=(
+            to_json_compatible(request.agent_context.control_feedback)
+            if trigger == "first_monitor_recovery"
+            else {}
+        ),
+    )
 
-    values: list[object] = []
-    for message in messages:
-        if not isinstance(message, ModelResponse):
-            values.append(message)
-            continue
-        parts = [part for part in message.parts if not isinstance(part, TextPart)]
-        values.append(message if len(parts) == len(message.parts) else replace(message, parts=parts))
-    return tuple(values)
 
-
-def _drop_oldest_completed_exchange(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Drop one oldest completed call/result pair while preserving the pending suffix."""
-
-    if len(messages) <= 2:
-        return messages
+def _completed_tool_exchanges(
+    messages: tuple[object, ...],
+) -> tuple[tuple[object, tuple[object, ...]], ...]:
     from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 
-    response_indexes = tuple(
-        index
-        for index, message in enumerate(messages)
-        if isinstance(message, ModelResponse)
-        and any(isinstance(part, ToolCallPart) for part in message.parts)
-    )
-    # The newest response carrying the explicit checkpoint is always pinned. An older
-    # response can leave only with its exact ToolReturn request.
-    if len(response_indexes) < 2:
-        return messages
-    response_index = response_indexes[0]
-    result_index = response_index + 1
-    if result_index >= len(messages):
-        return messages
-    response = messages[response_index]
-    result = messages[result_index]
-    if not isinstance(response, ModelResponse) or not isinstance(result, ModelRequest):
-        return messages
-    calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
-    returns = tuple(part for part in result.parts if isinstance(part, ToolReturnPart))
-    call_identities = tuple((item.tool_name, item.tool_call_id) for item in calls)
-    return_identities = tuple((item.tool_name, item.tool_call_id) for item in returns)
-    if (
-        not calls
-        or len({item[1] for item in call_identities}) != len(call_identities)
-        or len(returns) != len(calls)
-        or len(result.parts) != len(returns)
-        or len({item[1] for item in return_identities}) != len(return_identities)
-        or set(call_identities) != set(return_identities)
-    ):
-        return messages
-    return (*messages[:response_index], *messages[result_index + 1 :])
+    completed: list[tuple[object, tuple[object, ...]]] = []
+    pending_response = None
+    for message in messages:
+        if isinstance(message, ModelResponse) and any(
+            isinstance(part, ToolCallPart) for part in message.parts
+        ):
+            pending_response = message
+            continue
+        if pending_response is None or not isinstance(message, ModelRequest):
+            continue
+        returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
+        if returns:
+            completed.append((pending_response, returns))
+            pending_response = None
+    return tuple(completed)
 
 
-def _process_pydantic_history(
-    messages: tuple[object, ...],
+def _successful_tool_sources(
+    history: tuple[object, ...],
     *,
-    max_estimated_tokens: int,
-) -> tuple[object, ...]:
-    """Bound official completed exchanges while retaining the latest progress suffix."""
-
-    if max_estimated_tokens < 1:
-        raise ValueError("history soft target must be positive")
-    values = tuple(messages)
-    while (
-        _estimated_history_tokens(values) > max_estimated_tokens
-        and _drop_oldest_completed_exchange(values) != values
+    pending_call: ToolCall | None,
+    last_step: object | None,
+) -> tuple[tuple[str, str], ...]:
+    sources = {
+        (part.tool_name, part.tool_call_id)
+        for _response, results in _completed_tool_exchanges(history)
+        for part in results
+        if _is_reducible_knowledge_return(part)
+    }
+    if pending_call is not None and _is_reducible_knowledge_decision(
+        getattr(last_step, "decision", None)
     ):
-        values = _drop_oldest_completed_exchange(values)
-    return values
+        sources.add((pending_call.name, pending_call.call_id))
+    return tuple(sorted(sources))
 
 
-def _estimated_history_tokens(messages: tuple[object, ...]) -> int:
-    if not messages:
-        return 0
+def _uncovered_completed_knowledge(
+    history: tuple[object, ...],
+    checkpoint: ProgressCheckpoint | None,
+) -> tuple[CompletedToolResult, ...]:
+    from pydantic_ai.messages import ToolCallPart
+
+    covered = checkpoint.source_refs() if checkpoint is not None else frozenset()
+    results: list[CompletedToolResult] = []
+    for response, returned_parts in _completed_tool_exchanges(history):
+        returned_by_id = {part.tool_call_id: part for part in returned_parts}
+        for call in response.parts:
+            if (
+                not isinstance(call, ToolCallPart)
+                or call.tool_name not in _KNOWLEDGE_TOOL_NAMES
+                or (call.tool_name, call.tool_call_id) in covered
+            ):
+                continue
+            returned = returned_by_id.get(call.tool_call_id)
+            if returned is None or not _is_reducible_knowledge_return(returned):
+                continue
+            results.append(
+                CompletedToolResult(
+                    tool_call_id=call.tool_call_id,
+                    tool_name=call.tool_name,
+                    arguments=to_json_compatible(call.args_as_dict()),
+                    outcome="success",
+                    result=to_json_compatible(returned.content),
+                )
+            )
+    return tuple(results)
+
+
+def _is_reducible_knowledge_decision(value: object) -> bool:
+    return bool(
+        isinstance(value, (ReadRegionResult, SearchPageContentResult))
+        and value.tool_name in _KNOWLEDGE_TOOL_NAMES
+        and _is_successful_knowledge_content(value.result)
+    )
+
+
+def _is_reducible_knowledge_return(value: object) -> bool:
+    return bool(
+        getattr(value, "tool_name", "") in _KNOWLEDGE_TOOL_NAMES
+        and str(getattr(value, "outcome", "success")) != "failed"
+        and _is_successful_knowledge_content(getattr(value, "content", None))
+    )
+
+
+def _is_successful_knowledge_content(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    kind = value.get("kind")
+    return not isinstance(kind, str) or kind not in _FAILED_KNOWLEDGE_RESULT_KINDS
+
+
+def _canonical_result_digest(value: object) -> str:
+    import hashlib
+
     encoded = json.dumps(
-        to_json_compatible(messages),
+        to_json_compatible(value),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode()
-    return max(1, (len(encoded) + 2) // 3)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _completed_exchange_count(messages: tuple[object, ...]) -> int:
+    return len(_completed_tool_exchanges(messages))
+
+
+async def _compact_pydantic_history(
+    messages: tuple[object, ...],
+    *,
+    model: object,
+    max_estimated_tokens: int,
+) -> tuple[object, ...]:
+    """Use Harness pair-safe trimming, but only after checkpoint coverage exists."""
+
+    if not messages:
+        return ()
+    if max_estimated_tokens < 1:
+        raise ValueError("history soft target must be positive")
+    from pydantic_ai_harness.compaction import (
+        SlidingWindowCompaction,
+        compact_now,
+        estimate_context_tokens,
+    )
+
+    original = list(messages)
+    compacted = await compact_now(
+        SlidingWindowCompaction(
+            max_messages=1,
+            keep_messages=9,
+            preserve_first_user_message=False,
+        ),
+        original,
+        model=model,
+    )
+    if estimate_context_tokens(compacted) > max_estimated_tokens:
+        compacted = await compact_now(
+            SlidingWindowCompaction(
+                max_tokens=1,
+                keep_tokens=max_estimated_tokens,
+                preserve_first_user_message=False,
+            ),
+            compacted,
+            model=model,
+        )
+    candidate = tuple(compacted)
+    checkpoint = _latest_progress_checkpoint(candidate)
+    covered = checkpoint.source_refs() if checkpoint is not None else frozenset()
+    retained_sources = {
+        (part.tool_name, part.tool_call_id)
+        for _response, results in _completed_tool_exchanges(candidate)
+        for part in results
+    }
+    dropped_knowledge = {
+        (part.tool_name, part.tool_call_id)
+        for response, results in _completed_tool_exchanges(messages)
+        for part in results
+        if any(
+            getattr(call, "tool_call_id", "") == part.tool_call_id
+            and getattr(call, "tool_name", "") in _KNOWLEDGE_TOOL_NAMES
+            for call in response.parts
+        )
+        and (part.tool_name, part.tool_call_id) not in retained_sources
+    }
+    return messages if not dropped_knowledge.issubset(covered) else candidate
 
 
 def _repair_preserves_rejected_semantics(

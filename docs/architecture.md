@@ -81,9 +81,9 @@ The converged owner contract restores one decision and one precise recovery iden
   all proposals are therefore closed together before the fresh World is reconsidered;
 - raw provider output remains in the transcript; benchmark metrics count each multi-call envelope, and invocation
   diagnostics record the proposals discarded from execution;
-- Monitor may use a consecutive no-information family to request one deliberate recovery, but hard-blocks only a
-  repeat of that recovery signal's exact typed attempt. A different query, region, control discovery, or GUI action
-  exits recovery and remains bounded by the ordinary episode step limit.
+- Monitor uses one consecutive no-progress episode. A different empty query, no-match region, observation-only step,
+  or ineffectual GUI dispatch cannot clear it. Typed `NEW_INFORMATION` or a GUI transition with a satisfied local
+  postcondition/observed change clears it; otherwise recovery advances once and then blocks bounded recurrence.
 
 This is the atomic-action variant used explicitly by [Agent S2](https://arxiv.org/abs/2504.00906), whose Worker chooses
 one atomic action from the latest observation. Systems that execute batches make that algebra explicit instead:
@@ -151,32 +151,47 @@ likewise compresses page observations and selectively replays relevant history; 
 Runtime-owned evidence or cursor system. The project keeps its typed World for grounding, but no longer recomputes or
 re-serializes that authority per local tool result.
 
-Task266 run15 crossed the same-World performance repair and exposed a distinct ActionPolicy-history defect. The model
-had recovered Portland's coordinates and selected Acadia as the next semantic target, but later returned ordinary text
-describing an immediate tab action. The PydanticAI bridge treated every visible `TextPart` as a new cumulative progress
-note, removed the previous note, and therefore promoted action narration over the earlier conclusion. This was not
-missing task text, stale World, lost ToolReturn transport, Monitor absence, or evidence-store loss. The response-history
-contract did not distinguish a semantic checkpoint update from arbitrary provider prose.
+Task266 run15 first exposed that arbitrary `TextPart` narration could replace a previous progress note. The v1 repair
+asked the ActionPolicy to emit an optional XML-wrapped checkpoint next to its tool call. Task266 run16 falsified that
+contract more deeply: across 30 valid policy/tool calls the model emitted no checkpoint `TextPart`; the bridge removed
+every `ThinkingPart` from accepted history; 21 early turns repeatedly rediscovered Wikipedia controls; later turns
+recovered Portland and Acadia facts but lost the intended transition to OSRM. Ten Monitor recoveries all restarted at
+attempt 1 because a different empty query or no-match region cleared the recovery episode. The run ended `blocked`
+with zero STOP and zero native evaluator calls. The durable witness is
+[`run16`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run16/run.json).
 
-The owner repair stays entirely at the existing ActionPolicy/PydanticAI boundary. The policy may emit an optional,
-bounded `progress-checkpoint.v1` value only when a verified fact, working hypothesis, unresolved requirement, semantic
-next subgoal, or failed strategy changes. Most short GUI steps emit only one tool call. A checkpoint is a complete
-replacement of the previous model-authored working summary; ordinary text, malformed wrappers, and oversized values
-are trace-only and cannot replace it. When no valid update is present, the bridge carries the exact previous checkpoint
-forward beside the newest accepted call. The bridge validates only shape and bounds, never task truth. Fresh World,
-TaskGoal, ToolReturn history, and the benchmark evaluator retain their existing authorities.
+The shared defect was model-visible process context, not World, cursor, Store, or ToolReturn transport. PydanticAI was
+already carrying exact results, but the bridge discarded the model's own short reasoning and expected that same action
+response to voluntarily produce a second semantic artifact. Mechanical history trimming could then keep bytes while
+losing the conclusions and next intent those bytes supported.
 
-`ProgressCheckpoint` is a typed value contract, not a Runtime state machine. It is retained only in PydanticAI message
-history and is absent from `ResolvedModelDecision`, `RunState`, Store, Workspace, World, GoalPlan, and Monitor. Monitor
-can still request ordinary recovery, but cannot author or merge checkpoint facts. No checkpoint tool, fork, background
-summarizer, retrieval index, evidence projection, or second policy call was added. A live post-repair Task266 witness is
-still required.
+The owner repair remains at the PydanticAI history boundary and uses the SDK's existing structured-output path plus
+the official [PydanticAI Harness compaction contract](https://pydantic.dev/docs/ai/harness/compaction/):
 
-Current provider-free verification: the focused same-World/Monitor/trace/core surface passes
-`64 passed / 3 skipped`. The BrowserGym owner/currentness surface remains at `164 passed / 10 skipped`. The full suite
-reports `1721 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
-observability test. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a
-fresh live Task266 witness.
+- the accepted `ModelResponse` is preserved exactly, including `ThinkingPart`, ordinary `TextPart`, provider metadata,
+  and every proposed `ToolCallPart`; Runtime still executes only the first resolved call;
+- a stateless reducer with no GUI tools consumes only task/GoalPlan guidance, the previous checkpoint, selected
+  completed knowledge results, at most two recent action contexts, and typed recovery feedback;
+- reducer output is `ToolOutput(CheckpointReduction)` with a bounded `progress-checkpoint.v2` schema containing typed
+  source refs, verified facts, hypotheses, remaining questions, next intent, and failed strategies;
+- the checkpoint is one Harness-pinned Pydantic message. Fresh World and current ToolReturn explicitly outrank it;
+  Workspace remains available to Monitor/Trace but is no longer duplicated into the model prompt;
+- only a validated complete replacement enters official history. Only then may Harness remove whole covered
+  call/result exchanges. A failed/rejected reduction retains the previous checkpoint and raw knowledge results;
+- the reducer runs on a new non-duplicate read/search result, before covered knowledge must leave, on the first typed
+  Monitor recovery, or on same-task revision. It does not run on ordinary clicks, tab changes, waits, discovery, or
+  exact result replay.
+
+This is one ActionPolicy history with a semantic compaction step, not Runtime task state. `ProgressCheckpoint` remains
+absent from `ResolvedModelDecision`, `RunState`, Store, Workspace, World, GoalPlan, Binder, Executor, and evaluator.
+The reducer cannot act, authorize, terminate, or determine task truth. It initially reuses the configured model and
+Pydantic structured output; no Manager/Worker, memory service, retrieval index, evidence projection, or cursor path is
+introduced.
+
+Current provider-free verification: the focused checkpoint/history/Monitor/context surface passes `179 passed`.
+The full suite reports `1730 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+observability test. Focused Ruff and diff checks pass. This is implementation evidence, not overall closure or a fresh
+live Task266 witness.
 
 Overall project closure is still **open**:
 
@@ -667,12 +682,12 @@ then current pending:
 
 Each call ID occurs in exactly one call/result pair. The Runtime executes only the first proposal; the other exact
 proposals remain visible long enough for PydanticAI to close them as not executed, but they never become an execution
-queue. The next ActionPolicy call alone decides whether to reissue one after seeing the fresh World. PydanticAI's
-`ProcessHistory` capability proactively removes oldest complete multi-call exchanges when estimated history exceeds
-the existing soft target; TurnPacker repeats the same exchange-atomic reduction before a packed request can remain
-above that target, with hard-capacity failure as a final guard. The newest model response and every unresolved call in
-it are pinned, so the latest cumulative progress checkpoint is not discarded independently of its proposals. A terminal
-decision consumes the last results and clears the transport history so it cannot leak into another episode.
+queue. The next ActionPolicy call alone decides whether to reissue one after seeing the fresh World. PydanticAI
+Harness performs pair-safe sliding-window compaction before request admission, and its pin contract preserves the sole
+typed checkpoint. A knowledge exchange may leave only when that validated checkpoint cites its successful source
+call; reducer failure preserves raw knowledge and lets the existing hard-capacity gate fail closed. The newest exact
+response and every unresolved call remain present. A terminal decision consumes the last results and clears transport
+history so it cannot leak into another episode.
 
 ## Authority and owners
 
@@ -686,7 +701,7 @@ decision consumes the last results and clears the transport history so it cannot
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
 | delivery text/Manifest atomicity | compact World renderer | TurnPacker, provider bridge, Trace |
-| bounded typed call/result history, correlation, and explicit model-authored progress checkpoint | PydanticAI boundary | Store, Workspace, Monitor |
+| bounded typed call/result history, correlation, and semantic checkpoint reduction | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
@@ -704,33 +719,30 @@ The model context contains only:
 - `TaskGoal` and optional static `GoalPlan`;
 - the fresh compact canonical World;
 - the current bounded ToolCatalog;
-- bounded recent semantic receipts and control feedback;
-- at most one latest bounded, visible, non-authoritative model-authored progress checkpoint once the model has
-  explicitly produced one;
+- current typed control feedback;
+- at most one Harness-pinned, bounded, visible, non-authoritative typed progress checkpoint;
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs, including same-ID failed returns for proposals
-  not selected for execution.
+  not selected for execution, plus the last four exact model responses including `ThinkingPart`.
 
 Old World/user prompts are excluded from transport history because the fresh World is the current-environment
-authority. The ActionPolicy normally emits only its proposed calls. When its semantic working state changes, it may
-write one complete checkpoint of at most 800 characters before those calls, separating verified facts, working
-hypotheses, remaining requirements, semantic next intent, and failed strategies to avoid. Task-domain output values
-such as geographic coordinates are durable; immediate GUI narration and bindings such as `E/F/R` refs, selectors,
-and screen/pixel coordinates are excluded.
+authority. The ActionPolicy emits its ordinary response and tool proposals; it does not also have to author a
+checkpoint. The reducer writes one complete replacement of at most 6 KiB through Pydantic structured output,
+separating sourced verified facts, hypotheses, remaining questions, semantic next intent, and failed strategies.
+Task-domain values such as geographic coordinates or literal identifiers are durable. The reducer is instructed not
+to retain call-local bindings such as GUI refs, selectors, or screen coordinates; Runtime does not reinterpret free
+semantic text with lexical heuristics.
 
-The PydanticAI boundary admits only an exact `progress-checkpoint.v1` wrapper as retained text with the selected
-normalized first `ToolCallPart` and every exact later proposal. A response without a valid update—including ordinary
-action narration—carries forward the exact prior checkpoint. A valid complete update replaces the previous one, and
-older accepted responses lose only their duplicate checkpoint `TextPart` while their `ToolCallPart/ToolReturnPart`
-pairing remains intact. Malformed or over-bound text is rejected rather than truncated into a dishonest checkpoint.
-The boundary never writes, merges, or semantically validates progress and excludes hidden `ThinkingPart` content from
-future model input. Raw provider output remains in Trace. This is same-actor trajectory context, not Runtime fact
-authority, Workspace memory, or a separate summarizer model.
+The boundary preserves each accepted model response exactly, including `ThinkingPart`, ordinary text, provider
+reasoning metadata, and all tool proposals. Checkpoint reduction is a separate structured Pydantic output, so action
+narration cannot masquerade as progress. The boundary validates schema, bounds, and source-call lineage; only
+successful knowledge results supplied to the reducer may source verified facts. It does not semantically
+certify those facts. Raw provider output and reducer exchanges remain in Trace. This is
+same-actor semantic compaction, not Runtime fact authority or Workspace memory.
 
-`TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
-ToolReturn content. The SDK history processor acts before admission rather than waiting for a hard overflow; only an
-oldest complete response/calls/results exchange can be dropped. This is bounded SDK history retention, not semantic
-memory or evidence projection. The newest explicit checkpoint is pinned and carries model-selected durable conclusions
-before an older exchange leaves the window. No separate summarizer model is used.
+`TurnPacker` budgets the already-compacted history but does not summarize, edit, or rebuild ToolReturn content.
+Harness removes only whole safe prefixes and reinjects the pinned checkpoint. The bridge then verifies that every
+dropped read/search result is covered by the checkpoint; otherwise it restores the raw history. No dedicated summary
+model is required initially—the reducer reuses the configured provider through one typed role boundary.
 
 `ObservationDeliveryStore` now retains only:
 
@@ -747,8 +759,8 @@ lookup, not task evidence, so `ObservationDeliveryStore` emits no novelty delta 
 discovery step and recovers on the second consecutive discovery. In addition, the same Monitor keeps at most six
 ref-free public signatures for dispatched GUI attempts and recognizes repeated period-2/3 suffixes across fresh
 Worlds. Local read/search steps do not erase that effectful-action sequence. The first occurrence emits the existing
-typed `STATE_OSCILLATION` recovery; recurrence of the same phase-independent cycle blocks, while a different dispatched
-GUI attempt clears it. This bounded operational detection never reads TaskGoal, GoalPlan, ToolReturn bodies, URLs,
+typed `STATE_OSCILLATION` recovery; recurrence of the same phase-independent cycle blocks. Only a proven effectful GUI
+transition clears a no-progress episode; an arbitrary different dispatch does not. This bounded operational detection never reads TaskGoal, GoalPlan, ToolReturn bodies, URLs,
 task IDs, or site names. The outer episode step limit remains the generic long-loop fallback.
 
 ## World, perception, and action boundaries

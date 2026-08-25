@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
@@ -472,7 +471,7 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "tools"}
     assert public["task"]["instruction"] == context.task.instruction
     assert "actions" not in public
     assert "formal_evaluation" not in public["task"]
@@ -770,7 +769,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     user_content = port.messages[1].content
     assert isinstance(user_content, str)
     public = json.loads(user_content)
-    assert set(public) == {"task", "observation", "goal_plan", "recent_steps", "tools"}
+    assert set(public) == {"task", "observation", "goal_plan", "tools"}
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
@@ -797,7 +796,7 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         if item["name"] in {"type_text", "activate"}
     )
     assert all('"memory"' not in json.dumps(item["input_schema"]) for item in public["tools"])
-    assert tuple(public) == ("task", "observation", "goal_plan", "recent_steps", "tools")
+    assert tuple(public) == ("task", "observation", "goal_plan", "tools")
 
 
 def test_unknown_tool_intent_is_rejected_after_one_provider_call() -> None:
@@ -1286,7 +1285,7 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
     assert "member_count" not in root.state
 
 
-def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
+def test_workspace_result_is_not_duplicated_into_model_context() -> None:
     context = replace(
         _nested_context(),
         workspace=AgentWorkspace(
@@ -1305,15 +1304,7 @@ def test_count_result_is_nested_under_the_matching_recent_step_result() -> None:
         current_step_index=1,
     )
 
-    recent = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
-
-    assert recent["action"]["details"]["containers"] == []
-    assert recent["result"]["details"] == {
-        "counts": {},
-        "total": 2,
-    }
-    assert "expired-ref" not in json.dumps(recent)
-    assert not re.search(r"\bE[1-9][0-9]{0,2}\b", json.dumps(recent))
+    assert "recent_steps" not in _bound_public_context(context)
 
     trace = _policy_trace_event(
         2,
@@ -1616,26 +1607,8 @@ def test_grounding_projection_carries_bounded_interaction_history_without_duplic
         current_step_index=3,
     )
 
-    history = _bound_public_context(context)["recent_steps"]
-
-    assert history["retained_count"] == 3
-    trajectory = history["recent_trajectory"]
-    assert [item["action"]["target"]["label"] for item in trajectory] == [
-        "User name",
-        "Code",
-        "Submit",
-    ]
-    assert all("task" not in item["result"] for item in trajectory)
-    assert [item["action"]["tool"] for item in trajectory] == [
-        "type_text",
-        "type_text",
-        "activate",
-    ]
-    assert trajectory[0]["result"]["transition"] == {
-        "observed_change": "changed",
-        "evidence_method": "native",
-    }
-    assert trajectory[-1]["action"]["details"] == {"feedback_code": "action_outcome_unknown"}
+    assert "recent_steps" not in _bound_public_context(context)
+    assert len(context.workspace.recent_steps) == 3
 
 
 def test_grounded_history_retains_observation_modality_and_tool_describes_current_source() -> None:
@@ -1668,14 +1641,13 @@ def test_grounded_history_retains_observation_modality_and_tool_describes_curren
 
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
 
-    previous = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
-    assert previous["action"]["details"]["purpose"] == "criterion_verification"
+    assert "recent_steps" not in _bound_public_context(context)
     descriptions = {item.name: item.description for item in catalog.specs}
     assert "request_evidence" in descriptions
     assert "Runtime chooses how" in descriptions["request_evidence"]
 
 
-def test_grounded_workspace_keeps_only_latest_four_steps_detailed() -> None:
+def test_grounded_workspace_is_not_a_second_model_visible_history() -> None:
     context = _context()
     target = AgentHistoricalTargetView("textbox", "Value", ("Form",))
     turns = tuple(
@@ -1694,14 +1666,8 @@ def test_grounded_workspace_keeps_only_latest_four_steps_detailed() -> None:
     )
     context = replace(context, workspace=AgentWorkspace(turns[-4:]), current_step_index=len(turns))
 
-    recent_steps = _bound_public_context(context)["recent_steps"]
-
-    assert recent_steps["retained_count"] == 10
-    assert recent_steps["semantic_events"] == []
-    assert recent_steps["activity_summaries"] == []
-    assert "expired-ref" not in json.dumps(recent_steps)
-    assert len(recent_steps["recent_trajectory"]) == 4
-    assert recent_steps["recent_trajectory"][-1]["action"]["arguments"] == {"text": "9"}
+    assert "recent_steps" not in _bound_public_context(context)
+    assert len(context.workspace.recent_steps) == 4
 
 
 def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
@@ -1717,17 +1683,9 @@ def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
     )
     context = replace(context, workspace=AgentWorkspace(turns[-4:]), current_step_index=len(turns))
 
-    history = _bound_public_context(context)["recent_steps"]
-
+    assert "recent_steps" not in _bound_public_context(context)
     assert {"observation", "target_ref", "destination_ref", "images"}.isdisjoint(AgentTurnView.__dataclass_fields__)
-    assert len(history["recent_trajectory"]) == 4
-    assert all("observation" not in item for item in history["recent_trajectory"])
-    assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", json.dumps(history))
-    assert history["recent_trajectory"][0]["action"]["target"] == {
-        "role": "button",
-        "label": "Like",
-        "context": ["Rosie", "@nibh", "Id sit."],
-    }
+    assert len(context.workspace.recent_steps) == 4
 
 
 def test_historical_target_neighborhood_stops_at_nearest_semantic_group() -> None:
@@ -1763,7 +1721,7 @@ def test_historical_target_neighborhood_stops_at_nearest_semantic_group() -> Non
     )
 
 
-def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> None:
+def test_workspace_effect_details_remain_non_authoritative_and_not_model_visible() -> None:
     context = _context()
     target_id = next(iter(context.grounding.target_refs))
     target = AgentHistoricalTargetView("button", "Like", ("Rosie", "@nibh"))
@@ -1807,17 +1765,8 @@ def test_grounded_recent_steps_keep_effect_details_for_nonlatest_actions() -> No
     )
     context = replace(context, workspace=AgentWorkspace(turns), current_step_index=len(turns))
 
-    first = _bound_public_context(context)["recent_steps"]["recent_trajectory"][0]
-
-    assert first["result"]["transition"] == {
-        "role": "button",
-        "label": "Like",
-        "before_state": {"active": False},
-        "after_state": {"active": True},
-        "observed_change": "changed",
-        "evidence_method": "structural",
-        "target_changed": True,
-    }
+    assert "recent_steps" not in _bound_public_context(context)
+    assert context.workspace.recent_steps[0].transition["target_changed"] is True
 
 
 def test_single_target_action_still_requires_the_current_public_reference() -> None:
