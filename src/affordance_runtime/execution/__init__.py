@@ -17,6 +17,7 @@ from affordance_runtime.execution.contracts import (
     ExecutionOutcome,
     ExecutionReceipt,
     ExecutionReceiptBatch,
+    ExecutionTransition,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "ExecutionObservationRecovery",
     "ExecutionReceipt",
     "ExecutionReceiptBatch",
+    "ExecutionTransition",
     "SessionHealth",
     "SessionHealthStatus",
     "execution_diagnostic_from_exception",

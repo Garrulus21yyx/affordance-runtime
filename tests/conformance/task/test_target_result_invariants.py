@@ -1,6 +1,11 @@
 import pytest
 
-from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
+from affordance_runtime.execution import (
+    ActionError,
+    ActionResult,
+    DispatchStatus,
+    ExecutionTransition,
+)
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
 
 
@@ -29,6 +34,28 @@ def test_action_result_allows_sent_business_failure() -> None:
         ActionError.EXECUTION_FAILED,
     )
     assert not result.transport_success
+
+
+def test_causal_transition_requires_a_successful_sent_action() -> None:
+    assert (
+        ActionResult(
+            "request",
+            DispatchStatus.SENT,
+            "fixture",
+            True,
+            causal_transition=ExecutionTransition.STABLE_NAVIGATION,
+        ).causal_transition
+        is ExecutionTransition.STABLE_NAVIGATION
+    )
+    with pytest.raises(ValueError, match="causal transition"):
+        ActionResult(
+            "request",
+            DispatchStatus.NOT_SENT,
+            "fixture",
+            False,
+            ActionError.EXECUTION_FAILED,
+            causal_transition=ExecutionTransition.STABLE_NAVIGATION,
+        )
 
 
 @pytest.mark.parametrize(

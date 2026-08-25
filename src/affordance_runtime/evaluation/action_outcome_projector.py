@@ -18,6 +18,7 @@ from affordance_runtime.evaluation.contracts import (
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
+from affordance_runtime.execution import ExecutionTransition
 from affordance_runtime.world import CoverageState
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 from affordance_runtime.world.source_profile import assurance_satisfies
@@ -35,12 +36,15 @@ class ProductionActionOutcomeProjector:
         after,
         public_world_delta: PublicWorldDelta | None = None,
     ) -> ActionOutcome:
-        del task, result
+        del task
         public_world_delta = public_world_delta or WorldTransitionProjector().project(before, after)
         definition = INTERACTION_CAPABILITY_REGISTRY.require(request.intent.semantic_action)
         family = request.selection.verification_contract.family
-        if family is VerificationFamily.NAVIGATION_CONTEXT:
-            return _evaluate_activate(before, request, after, public_world_delta)
+        if (
+            result.causal_transition is ExecutionTransition.STABLE_NAVIGATION
+            or family is VerificationFamily.NAVIGATION_CONTEXT
+        ):
+            return _evaluate_navigation_context(before, request, after, public_world_delta)
         if family is not VerificationFamily.VALUE_STATE:
             return _evaluation(request, before, after, public_world_delta=public_world_delta)
         if definition.parameter_contract not in {
@@ -168,7 +172,12 @@ def _reason(effect, postcondition, method) -> str:
     return f"local action outcome: effect={effect.value}, postcondition={postcondition.value}, method={method.value}"
 
 
-def _evaluate_activate(before, request, after, public_world_delta: PublicWorldDelta) -> ActionOutcome:
+def _evaluate_navigation_context(
+    before,
+    request,
+    after,
+    public_world_delta: PublicWorldDelta,
+) -> ActionOutcome:
     target_changed = any(
         item.target_id == request.intent.target_id
         for item in public_world_delta.target_changes
@@ -219,9 +228,9 @@ def _evaluate_activate(before, request, after, public_world_delta: PublicWorldDe
         LocalPostconditionStatus.UNKNOWN if request.intent.expected_outcome else LocalPostconditionStatus.NOT_APPLICABLE
     )
     reason = (
-        "public screenshot or target semantics changed after activation"
+        "public screenshot or target semantics changed after interaction"
         if observed_change is ObservedChange.CHANGED
-        else "public screenshot and target semantics did not change after activation"
+        else "public screenshot and target semantics did not change after interaction"
     )
     return ActionOutcome(
         request.request_id,

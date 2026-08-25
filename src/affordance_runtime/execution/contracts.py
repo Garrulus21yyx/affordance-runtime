@@ -24,6 +24,12 @@ class DispatchStatus(StrEnum):
     SENT_UNKNOWN = "sent_unknown"
 
 
+class ExecutionTransition(StrEnum):
+    """Typed causal transition established by an execution boundary."""
+
+    STABLE_NAVIGATION = "stable_navigation"
+
+
 class ExecutionCompletion(StrEnum):
     COMPLETE = "complete"
     PARTIAL = "partial"
@@ -219,12 +225,18 @@ class ActionResult:
     error: ActionError | None = None
     adapter_evidence: dict[str, Any] = field(default_factory=dict)
     diagnostics: tuple[ExecutionDiagnostic, ...] = ()
+    causal_transition: ExecutionTransition | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.dispatch_status, DispatchStatus):
             raise TypeError("action result dispatch status must be typed")
         if self.error is not None and not isinstance(self.error, ActionError):
             raise TypeError("action result error must be typed")
+        if self.causal_transition is not None and not isinstance(
+            self.causal_transition,
+            ExecutionTransition,
+        ):
+            raise TypeError("action result causal transition must be typed")
         if type(self.transport_success) is not bool:
             raise TypeError("action result transport success must be boolean")
         if not self.request_id.strip() or not self.backend.strip():
@@ -237,6 +249,12 @@ class ActionResult:
         )
         if inconsistent:
             raise ValueError("action result dispatch status, transport success, and error are inconsistent")
+        if self.causal_transition is not None and (
+            self.dispatch_status is not DispatchStatus.SENT
+            or not self.transport_success
+            or self.error is not None
+        ):
+            raise ValueError("a causal transition requires a successful sent action")
         object.__setattr__(self, "adapter_evidence", freeze_json(self.adapter_evidence))
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         if (

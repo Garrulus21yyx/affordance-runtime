@@ -18,7 +18,7 @@ from affordance_runtime.model.policy.progress_checkpoint import (
 )
 
 CHECKPOINT_REDUCER_SCHEMA = "progress-checkpoint.v2"
-CHECKPOINT_REDUCER_MAX_TOKENS = 3072
+CHECKPOINT_REDUCER_MAX_TOKENS = 2048
 _CHECKPOINT_REDUCER_INSTRUCTIONS = """
 You reduce completed task evidence into one bounded, complete working checkpoint.
 Return only the structured reduce_progress_checkpoint output. You have no tools.
@@ -79,7 +79,17 @@ class CheckpointReducer(Protocol):
 @dataclass(frozen=True)
 class PydanticAICheckpointReducer:
     model: object
-    timeout_s: float = 20.0
+    timeout_s: float = 10.0
+    openai_thinking_toggle: bool = False
+
+    def request_settings(self) -> dict[str, object]:
+        settings: dict[str, object] = {
+            "max_tokens": CHECKPOINT_REDUCER_MAX_TOKENS,
+            "thinking": False,
+        }
+        if self.openai_thinking_toggle:
+            settings["extra_body"] = {"thinking": {"type": "disabled"}}
+        return settings
 
     async def reduce(self, value: CheckpointReducerInput) -> CheckpointReducerRun:
         from pydantic_ai import Agent, ToolOutput
@@ -106,7 +116,7 @@ class PydanticAICheckpointReducer:
             async with asyncio.timeout(self.timeout_s):
                 result = await agent.run(
                     prompt,
-                    model_settings={"max_tokens": CHECKPOINT_REDUCER_MAX_TOKENS},
+                    model_settings=self.request_settings(),
                     usage_limits=UsageLimits(request_limit=2),
                 )
         except asyncio.CancelledError:

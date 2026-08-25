@@ -24,14 +24,15 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the focused checkpoint/history/Monitor/context surface at `179 passed`.
-The full suite reports `1730 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+Current provider-free verification passes the modified execution/projector/checkpoint surface at `131 passed`.
+The full suite reports `1737 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Focused Ruff and `git diff --check` pass. This is implementation evidence for the bounded changes,
 not a live witness for the Task266 repair or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- post-repair live validation of the same-World derivation and bounded-trace repairs exposed by Task266 run14;
+- post-repair live validation of the stable-navigation outcome and reducer scheduling repairs exposed by Task266
+  run17;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
@@ -162,6 +163,32 @@ is not covered. Workspace receipts are no longer duplicated into the model promp
 result cannot clear Monitor; only typed new information or a proven GUI effect does. Focused gates cover the run16
 sequence without adding World, cursor, Store, GoalPlan, Binder, Executor, or evaluator paths. No live post-repair
 Task266 witness exists yet.
+
+The authorized Task266
+[`run17`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run17/run.json) proved that the checkpoint now
+preserves Portland's coordinates and the next Acadia intent, then exposed two different owner failures. Reducer
+scheduling invoked 16 calls in 21 policy turns; 13 reached the 18-second reducer deadline. The final Enter action was
+sent once and BrowserGym established `stable_navigation` plus a completed fresh capture, but
+`ProductionActionOutcomeProjector` ignored it because the admitted `press_key` verification family was semantic. It
+returned `UNKNOWN`, and Monitor correctly blocked the resulting false no-effect episode. Run17 is failed pre-repair
+evidence, not acceptance.
+
+The provider-free repair gates now require:
+
+- BrowserGym maps only typed `STABLE_NAVIGATION` to the generic existing `ActionResult.causal_transition`; unstable and
+  no-navigation outcomes do not produce that fact;
+- the Projector accepts that typed causal fact for any admitted action family, but produces confirmed change only with
+  current public structural/screenshot evidence; a matching private adapter-evidence string alone remains `UNKNOWN`;
+- the vertical fake-BrowserGym route proves `dispatch -> stable navigation -> fresh World -> CHANGED` without Monitor,
+  CoreLoop, or Trace parsing;
+- reducer bootstrap occurs once, subsequent uncovered knowledge is processed in batches of three, exchange count alone
+  never triggers, and history pressure begins at 80% of the existing soft token target;
+- identical failed/rejected/unchanged reducer input is not dispatched again, raw ToolReturn history remains available,
+  and the next ActionPolicy call continues normally;
+- reducer output is capped at 2,048 tokens, its deadline share is capped at 10 seconds, and DeepSeek receives the
+  official `extra_body={"thinking":{"type":"disabled"}}` request through the existing PydanticAI model settings.
+
+No live post-repair Task266 witness exists yet.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -470,7 +497,10 @@ checkpoint.
 History-pressure gates invoke PydanticAI Harness pair-safe compaction before hard overflow. A checkpoint-covered
 knowledge pair can leave atomically; the pin and unresolved suffix survive. The same attempted reduction without
 checkpoint coverage returns the original raw knowledge history. Exact duplicate search content does not invoke the
-reducer.
+reducer. A bootstrap/batch property proves one first-result reduction and then one call per three uncovered knowledge
+results. Five small completed exchanges do not constitute pressure; the same history triggers only after crossing 80%
+of the configured soft token target. A failed-input memo gate proves the same semantic reducer request is not sent
+again while its raw source result remains in official history.
 Reducer instructions prohibit call-local bindings, while Runtime treats free semantic text opaquely so legitimate task
 identifiers such as `E25` or `R9` are not misclassified by a GUI-ref regex. Malformed, oversized, or
 unavailable/failed-source checkpoint output is rejected rather than truncated.
@@ -703,6 +733,10 @@ The final read-only review for this cutover must answer:
     construction for the empty transition, reuse the current index on the next turn, and preserve the exact digest?
 23. Does Trace store one deduplicated full observation and one exact provider transcript while excluding policy
     snapshots/canonical projections from step payloads and reporting honest counts/truncation for transition summaries?
+24. Does a typed BrowserGym stable navigation cross the generic execution contract into Projector verification while
+    private trace strings remain non-authoritative and confirmed change still resolves against the fresh World?
+25. Does checkpoint scheduling bootstrap once, batch uncovered knowledge, trigger pressure from tokens rather than
+    exchange count, suppress identical non-updating inputs, and use a bounded non-thinking provider call?
 
 ## Exit statement
 

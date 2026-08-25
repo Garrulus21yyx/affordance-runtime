@@ -50,6 +50,7 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.checkpoint_reducer import (
+    CHECKPOINT_REDUCER_MAX_TOKENS,
     CheckpointReducerRun,
     PydanticAICheckpointReducer,
 )
@@ -935,6 +936,13 @@ def test_new_search_result_is_reduced_into_one_pinned_checkpoint_before_next_act
         assert "Non-authoritative progress checkpoint" in physical
         assert "The shared toggle is currently disabled" in physical
         assert "Search the current readable records" in physical
+        assert port.checkpoint_reducer.request_settings() == {
+            "max_tokens": CHECKPOINT_REDUCER_MAX_TOKENS,
+            "thinking": False,
+        }
+        assert dict(scripted.records[1].model_settings or {}) == {
+            "max_tokens": CHECKPOINT_REDUCER_MAX_TOKENS,
+        }
         current_prompt = json.loads(
             action_input["messages"][-1]["parts"][-1]["content"][0]["content"]
         )
@@ -1019,6 +1027,7 @@ def test_checkpoint_reducer_failure_keeps_raw_result_and_does_not_stop_action_po
         assert second.output is not None
         assert isinstance(second.output.decision, FinalResponse)
         assert port.last_checkpoint_reducer_status == "failed"
+        assert len(port.checkpoint_reducer_dedup_digests) == 1
         assert [item.status for item in second.attempts] == ["failed", "accepted"]
         physical = json.dumps(
             normalize_recorded_provider_input(scripted.records[1]),
@@ -1027,6 +1036,102 @@ def test_checkpoint_reducer_failure_keeps_raw_result_and_does_not_stop_action_po
         assert "Keep this exact reasoning" in physical
         assert "call:raw-result" in physical
         assert "Non-authoritative progress checkpoint" not in physical
+
+    asyncio.run(scenario())
+
+
+def test_identical_failed_checkpoint_input_is_not_dispatched_again() -> None:
+    class NeverReducer:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def reduce(self, value) -> CheckpointReducerRun:
+            del value
+            self.calls += 1
+            raise AssertionError("deduplicated reducer input was dispatched")
+
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("deduplicated-checkpoint", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        scripted = ScriptedModel(
+            [
+                (
+                    "search_page_content",
+                    {"query": "false"},
+                ),
+                (
+                    "submit_final_response",
+                    {"content": "false", "evidence_refs": []},
+                ),
+            ]
+        )
+        reducer = NeverReducer()
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="fixture",
+            model_id="scripted",
+            endpoint_host="fixture.invalid",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+            checkpoint_reducer=reducer,
+        )
+        first_context = builder.build(task, world, actions, evaluation)
+        first = await port.generate(ModelDecisionRequest("request:dedup:first", first_context))
+        assert first.output is not None
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=step,
+        )
+        request = ModelDecisionRequest("request:dedup:second", context, last_step=step)
+        trigger = pydantic_bridge._checkpoint_trigger(
+            request,
+            port.message_history,
+            recovery_event_signature="",
+            previous_task_identity=port.active_task_identity,
+            current_task_identity=port.active_task_identity,
+            history_soft_target=port.envelope_binder.request_budget.soft_target_tokens,
+        )
+        pending = pydantic_bridge._pending_call_from_history(port.message_history)
+        reducer_input = pydantic_bridge._checkpoint_reducer_input(
+            request,
+            port.message_history,
+            trigger=trigger,
+            pending_call=pending,
+            previous_checkpoint=None,
+        )
+        object.__setattr__(
+            port,
+            "checkpoint_reducer_dedup_digests",
+            (pydantic_bridge._checkpoint_reducer_input_digest(reducer_input),),
+        )
+
+        second = await port.generate(request)
+
+        assert second.output is not None
+        assert isinstance(second.output.decision, FinalResponse)
+        assert reducer.calls == 0
+        assert port.last_checkpoint_reducer_status == "deduplicated"
+        assert [item.role for item in second.attempts] == ["action_policy"]
+        physical = json.dumps(
+            normalize_recorded_provider_input(scripted.records[1]),
+            sort_keys=True,
+        )
+        assert "call:" in physical
+        assert "false" in physical
 
     asyncio.run(scenario())
 
@@ -1409,13 +1514,21 @@ def test_exact_duplicate_search_result_does_not_trigger_checkpoint_reduction() -
                 ),
             )
         ) + (history[-1],)
-        pressure_trigger = pydantic_bridge._checkpoint_trigger(
+        count_only_trigger = pydantic_bridge._checkpoint_trigger(
             ModelDecisionRequest("request:pressure-trigger", context, last_step=step),
             pressured_history,
             recovery_event_signature="",
             previous_task_identity=(task.task_id, 1),
             current_task_identity=(task.task_id, 1),
             history_soft_target=100_000,
+        )
+        pressure_trigger = pydantic_bridge._checkpoint_trigger(
+            ModelDecisionRequest("request:pressure-trigger", context, last_step=step),
+            pressured_history,
+            recovery_event_signature="",
+            previous_task_identity=(task.task_id, 1),
+            current_task_identity=(task.task_id, 1),
+            history_soft_target=1,
         )
         reducer_input = pydantic_bridge._checkpoint_reducer_input(
             ModelDecisionRequest("request:pressure-input", context, last_step=step),
@@ -1429,6 +1542,7 @@ def test_exact_duplicate_search_result_does_not_trigger_checkpoint_reduction() -
             previous_checkpoint=None,
         )
 
+        assert count_only_trigger == ""
         assert pressure_trigger == "history_pressure"
         assert [item.tool_call_id for item in reducer_input.completed_results] == [
             "call:prior:0",
@@ -1437,6 +1551,111 @@ def test_exact_duplicate_search_result_does_not_trigger_checkpoint_reduction() -
         ]
 
     asyncio.run(scenario())
+
+
+def test_checkpoint_reduction_bootstraps_once_then_batches_new_knowledge() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("checkpoint-batch-trigger", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+
+        def request_for_result(index: int, history):
+            result = {
+                "kind": "Matches",
+                "items": [{"text": f"distinct result {index}"}],
+            }
+            decision = SearchPageContentResult(
+                "context:test",
+                "search_page_content",
+                {"query": f"query-{index}"},
+                result,
+                f"call:{index}",
+            )
+            step = StepResult(
+                decision,
+                world,
+                world,
+                evaluation,
+                feedback="local_tool_result",
+            )
+            context = ContextBuilder().build(
+                task,
+                world,
+                ActionSpaceBuilder().build(task, world),
+                evaluation,
+                last_step=step,
+            )
+            request = ModelDecisionRequest(f"request:{index}", context, last_step=step)
+            pending = ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "search_page_content",
+                        {"query": f"query-{index}"},
+                        f"call:{index}",
+                    )
+                ]
+            )
+            return request, (*history, pending)
+
+        first_request, first_history = request_for_result(1, ())
+        assert pydantic_bridge._checkpoint_trigger(
+            first_request,
+            first_history,
+            recovery_event_signature="",
+            previous_task_identity=(task.task_id, 1),
+            current_task_identity=(task.task_id, 1),
+            history_soft_target=100_000,
+        ) == "knowledge_bootstrap"
+
+        completed = tuple(
+            part
+            for index in (1, 2)
+            for part in (
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": f"query-{index}"},
+                            f"call:{index}",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            "search_page_content",
+                            {
+                                "kind": "Matches",
+                                "items": [{"text": f"distinct result {index}"}],
+                            },
+                            f"call:{index}",
+                        )
+                    ]
+                ),
+            )
+        )
+        third_request, third_history = request_for_result(3, completed)
+        assert pydantic_bridge._checkpoint_trigger(
+            third_request,
+            third_history,
+            recovery_event_signature="",
+            previous_task_identity=(task.task_id, 1),
+            current_task_identity=(task.task_id, 1),
+            history_soft_target=100_000,
+        ) == "knowledge_batch"
+
+    asyncio.run(scenario())
+
+
+def test_checkpoint_reducer_input_memo_is_bounded_to_recent_inputs() -> None:
+    remembered: tuple[str, ...] = ()
+    for index in range(20):
+        remembered = pydantic_bridge._remember_checkpoint_reducer_input(
+            remembered,
+            f"digest:{index}",
+        )
+
+    assert remembered == tuple(f"digest:{index}" for index in range(4, 20))
 
 
 def test_checkpoint_sources_exclude_actions_and_typed_failed_knowledge_results() -> None:
@@ -2632,7 +2851,7 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
 def test_reducer_and_provider_recovery_fit_one_policy_deadline() -> None:
     reducer, retry, transport = pydantic_bridge._provider_time_budgets(90.0)
 
-    assert (reducer, retry, transport) == (18.0, 5.0, 33.25)
+    assert (reducer, retry, transport) == (10.0, 5.0, 37.25)
     assert reducer + retry + (2 * transport) + 0.5 == 90.0
 
 
@@ -2722,6 +2941,14 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
     assert selected.port.supports_multimodal is False
     assert selected.port.transport_timeout_s == 1.5
     assert selected.port.reasoning_policy.repair_max_tokens == 512
+    assert isinstance(selected.port.checkpoint_reducer, PydanticAICheckpointReducer)
+    assert selected.port.checkpoint_reducer.openai_thinking_toggle is True
+    prepared, _ = selected.port.model.prepare_request(
+        selected.port.checkpoint_reducer.request_settings(),
+        ModelRequestParameters(),
+    )
+    assert prepared["extra_body"]["thinking"] == {"type": "disabled"}
+    assert prepared["max_tokens"] == CHECKPOINT_REDUCER_MAX_TOKENS
 
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
         model_policy_from_environment(

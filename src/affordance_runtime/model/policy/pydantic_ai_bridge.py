@@ -98,6 +98,9 @@ _KNOWLEDGE_TOOL_NAMES = frozenset({"read_region", "search_page_content"})
 _FAILED_KNOWLEDGE_RESULT_KINDS = frozenset(
     {"CapacityExceeded", "InvalidCursor", "InvalidRegion", "StaleContext"}
 )
+_CHECKPOINT_KNOWLEDGE_BATCH_SIZE = 3
+_CHECKPOINT_HISTORY_PRESSURE_RATIO = 0.8
+_CHECKPOINT_DEDUP_LIMIT = 16
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
 
@@ -209,6 +212,12 @@ class PydanticAIGroundedDecisionPort:
     )
     last_checkpoint_reducer_status: str = field(default="not_triggered", init=False, compare=False)
     last_checkpoint_reducer_error: str = field(default="", init=False, compare=False)
+    checkpoint_reducer_dedup_digests: tuple[str, ...] = field(
+        default=(),
+        init=False,
+        compare=False,
+        repr=False,
+    )
     last_model_delivery: ModelTurnDelivery | None = field(
         default=None, init=False, compare=False, repr=False
     )
@@ -267,6 +276,8 @@ class PydanticAIGroundedDecisionPort:
             request.agent_context.goal_plan.task_revision,
         )
         previous_task_identity = self.active_task_identity
+        if previous_task_identity != task_identity:
+            object.__setattr__(self, "checkpoint_reducer_dedup_digests", ())
         if (
             previous_task_identity is not None
             and previous_task_identity[0] != task_identity[0]
@@ -403,36 +414,70 @@ class PydanticAIGroundedDecisionPort:
                 pending_call=pending_call,
                 previous_checkpoint=previous_checkpoint,
             )
-            reducer_run = await self.checkpoint_reducer.reduce(reducer_input)
-            self._record_checkpoint_reducer_run(reducer_run, trigger)
-            if reducer_run.reduction is None:
-                object.__setattr__(self, "last_checkpoint_reducer_status", "failed")
-                object.__setattr__(self, "last_checkpoint_reducer_error", reducer_run.error)
+            reducer_input_digest = _checkpoint_reducer_input_digest(reducer_input)
+            if reducer_input_digest in self.checkpoint_reducer_dedup_digests:
+                object.__setattr__(self, "last_checkpoint_reducer_status", "deduplicated")
             else:
-                try:
-                    checkpoint = validate_reduction_sources(
-                        reducer_run.reduction,
-                        successful_sources=_successful_tool_sources(
-                            history_messages,
-                            pending_call=pending_call,
-                            last_step=request.last_step,
-                        ),
-                        previous_checkpoint=previous_checkpoint,
-                    )
-                except ValueError as exc:
-                    object.__setattr__(self, "last_checkpoint_reducer_status", "rejected")
-                    object.__setattr__(self, "last_checkpoint_reducer_error", str(exc))
-                else:
+                reducer_run = await self.checkpoint_reducer.reduce(reducer_input)
+                self._record_checkpoint_reducer_run(reducer_run, trigger)
+                if reducer_run.reduction is None:
+                    object.__setattr__(self, "last_checkpoint_reducer_status", "failed")
+                    object.__setattr__(self, "last_checkpoint_reducer_error", reducer_run.error)
                     object.__setattr__(
                         self,
-                        "last_checkpoint_reducer_status",
-                        reducer_run.reduction.outcome,
+                        "checkpoint_reducer_dedup_digests",
+                        _remember_checkpoint_reducer_input(
+                            self.checkpoint_reducer_dedup_digests,
+                            reducer_input_digest,
+                        ),
                     )
-                    if checkpoint is not None:
-                        history_messages = _with_progress_checkpoint(
-                            history_messages,
-                            checkpoint,
+                else:
+                    try:
+                        checkpoint = validate_reduction_sources(
+                            reducer_run.reduction,
+                            successful_sources=_successful_tool_sources(
+                                history_messages,
+                                pending_call=pending_call,
+                                last_step=request.last_step,
+                            ),
+                            previous_checkpoint=previous_checkpoint,
                         )
+                    except ValueError as exc:
+                        object.__setattr__(self, "last_checkpoint_reducer_status", "rejected")
+                        object.__setattr__(self, "last_checkpoint_reducer_error", str(exc))
+                        object.__setattr__(
+                            self,
+                            "checkpoint_reducer_dedup_digests",
+                            _remember_checkpoint_reducer_input(
+                                self.checkpoint_reducer_dedup_digests,
+                                reducer_input_digest,
+                            ),
+                        )
+                    else:
+                        object.__setattr__(
+                            self,
+                            "last_checkpoint_reducer_status",
+                            reducer_run.reduction.outcome,
+                        )
+                        if checkpoint is None:
+                            object.__setattr__(
+                                self,
+                                "checkpoint_reducer_dedup_digests",
+                                _remember_checkpoint_reducer_input(
+                                    self.checkpoint_reducer_dedup_digests,
+                                    reducer_input_digest,
+                                ),
+                            )
+                        else:
+                            object.__setattr__(
+                                self,
+                                "checkpoint_reducer_dedup_digests",
+                                (),
+                            )
+                            history_messages = _with_progress_checkpoint(
+                                history_messages,
+                                checkpoint,
+                            )
         elif trigger:
             object.__setattr__(self, "last_checkpoint_reducer_status", "unavailable")
 
@@ -747,6 +792,9 @@ class PydanticAIGroundedDecisionPort:
             "history_compaction_count": self.last_history_compaction_count,
             "checkpoint_reducer_status": self.last_checkpoint_reducer_status,
             "checkpoint_reducer_error": self.last_checkpoint_reducer_error,
+            "checkpoint_reducer_dedup_count": len(
+                self.checkpoint_reducer_dedup_digests
+            ),
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -1192,6 +1240,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         checkpoint_reducer=PydanticAICheckpointReducer(
             configured.model,
             timeout_s=reducer_timeout_s,
+            openai_thinking_toggle=configured.provider_id == "deepseek",
         ),
         reasoning_policy=ActionPolicyReasoningPolicy(
             ordinary_max_tokens=_bounded_reasoning_tokens(
@@ -1308,7 +1357,7 @@ def _bounded_reasoning_tokens(
 def _provider_time_budgets(call_timeout_s: float) -> tuple[float, float, float]:
     """Fit reducer plus the existing bounded provider retry inside one policy deadline."""
 
-    reducer_timeout_s = min(20.0, max(0.25, call_timeout_s * 0.2))
+    reducer_timeout_s = min(10.0, max(0.25, call_timeout_s * 0.2))
     retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
     transport_timeout_s = (
         call_timeout_s - reducer_timeout_s - retry_delay_budget_s - 0.5
@@ -1608,8 +1657,11 @@ def _checkpoint_trigger(
         return "task_revision"
     if recovery_event_signature:
         return "first_monitor_recovery"
+    checkpoint = _latest_progress_checkpoint(history)
+    uncovered = _uncovered_completed_knowledge(history, checkpoint)
     step = request.last_step
     decision = getattr(step, "decision", None)
+    pending_is_new = False
     if _is_reducible_knowledge_decision(decision):
         current_digest = _canonical_result_digest(decision.result)
         prior_digests = {
@@ -1619,17 +1671,20 @@ def _checkpoint_trigger(
             if _is_reducible_knowledge_return(part)
             and part.tool_name == decision.tool_name
         }
-        if current_digest not in prior_digests:
-            return "new_knowledge_result"
-    checkpoint = _latest_progress_checkpoint(history)
-    uncovered = _uncovered_completed_knowledge(history, checkpoint)
-    if uncovered:
+        pending_is_new = current_digest not in prior_digests
+    if pending_is_new:
+        if checkpoint is None and not uncovered:
+            return "knowledge_bootstrap"
+        if len(uncovered) + 1 >= _CHECKPOINT_KNOWLEDGE_BATCH_SIZE:
+            return "knowledge_batch"
+    if uncovered or pending_is_new:
         from pydantic_ai_harness.compaction import estimate_context_tokens
 
-        if (
-            _completed_exchange_count(history) > 4
-            or estimate_context_tokens(history) > history_soft_target
-        ):
+        pressure_threshold = max(
+            1,
+            int(history_soft_target * _CHECKPOINT_HISTORY_PRESSURE_RATIO),
+        )
+        if estimate_context_tokens(history) >= pressure_threshold:
             return "history_pressure"
     return ""
 
@@ -1672,7 +1727,11 @@ def _checkpoint_reducer_input(
     recent: list[RecentActionContext] = []
     from pydantic_ai.messages import ThinkingPart, ToolCallPart
 
-    for response, results in _completed_tool_exchanges(history)[-2:]:
+    for response, results in (
+        _completed_tool_exchanges(history)[-2:]
+        if trigger == "first_monitor_recovery"
+        else ()
+    ):
         reasoning = "\n".join(
             part.content
             for part in response.parts
@@ -1717,6 +1776,17 @@ def _checkpoint_reducer_input(
             else {}
         ),
     )
+
+
+def _checkpoint_reducer_input_digest(value: CheckpointReducerInput) -> str:
+    return _canonical_result_digest(value.model_dump(mode="json"))
+
+
+def _remember_checkpoint_reducer_input(
+    existing: tuple[str, ...],
+    digest: str,
+) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((*existing, digest)))[-_CHECKPOINT_DEDUP_LIMIT:]
 
 
 def _completed_tool_exchanges(

@@ -8,7 +8,12 @@ import pytest
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder
-from affordance_runtime.execution import ActionError, DispatchStatus, ExecutionDiagnosticPhase
+from affordance_runtime.execution import (
+    ActionError,
+    DispatchStatus,
+    ExecutionDiagnosticPhase,
+    ExecutionTransition,
+)
 from affordance_runtime.surfaces.browsergym import backend as browsergym_backend
 from affordance_runtime.surfaces.browsergym import environment as browsergym_environment
 from affordance_runtime.surfaces.browsergym.backend import _with_stable_private_control_properties
@@ -286,6 +291,22 @@ def test_unstable_causal_post_state_is_typed_and_not_admitted(status) -> None:
         source.reason_code == status.value
         for source in outcome.post_acquisition.source_results
     )
+    asyncio.run(environment.close())
+
+
+def test_stable_navigation_is_projected_once_as_typed_execution_transition() -> None:
+    fake, environment, task, world = _fixture()
+    fake.step_stability_status = BrowserGymStabilityStatus.STABLE_NAVIGATION
+
+    outcome = asyncio.run(environment.execute(request_for(world, task, "activate")))
+
+    assert outcome.result.causal_transition is ExecutionTransition.STABLE_NAVIGATION
+    assert (
+        outcome.result.adapter_evidence["browsergym_transition"]["stability_status"]
+        == BrowserGymStabilityStatus.STABLE_NAVIGATION.value
+    )
+    assert outcome.post_acquisition is not None
+    assert outcome.post_acquisition.status is AcquisitionStatus.ACQUIRED
     asyncio.run(environment.close())
 
 

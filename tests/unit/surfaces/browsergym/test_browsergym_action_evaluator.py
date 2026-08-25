@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from affordance_runtime.actions.capabilities import VerificationFamily
 from affordance_runtime.agent.evaluation_control import validated_action_outcome
 from affordance_runtime.evaluation import (
     EvidenceMethod,
@@ -11,10 +12,11 @@ from affordance_runtime.evaluation import (
     ProductionActionOutcomeProjector,
 )
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
-from affordance_runtime.execution import ActionResult, DispatchStatus
+from affordance_runtime.execution import ActionResult, DispatchStatus, ExecutionTransition
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
+from affordance_runtime.surfaces.browsergym.transition import BrowserGymStabilityStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
@@ -24,10 +26,14 @@ from affordance_runtime.world import (
     WorldFusion,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+    FakeBrowserGym,
     ax_node,
+    open_fake,
     raw_observation,
     request_for,
     reset_task_state,
+    start_environment,
+    task_info,
 )
 from tests.support.surfaces.browsergym.projection_support import (
     project_browsergym_observation,
@@ -208,6 +214,99 @@ def test_activate_remains_unknown_without_terminal_evidence() -> None:
     assert evaluation.observed_change is ObservedChange.UNKNOWN
     assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
     assert not evaluation.evidence_refs
+
+
+def test_typed_stable_navigation_selects_current_world_verification_for_semantic_keypress() -> None:
+    task = _task()
+    before = _activate_structural_world("obs:before", False)
+    after = _activate_structural_world("obs:after", True)
+    request = request_for(before, task, "press_key", {"key": "Enter"})
+    assert request.selection.verification_contract.family is VerificationFamily.SEMANTIC
+
+    private_trace_only = ActionResult(
+        request.request_id,
+        DispatchStatus.SENT,
+        "browsergym",
+        True,
+        adapter_evidence={"browsergym_transition": {"stability_status": "stable_navigation"}},
+    )
+    unknown = asyncio.run(
+        validated_action_outcome(
+            ProductionActionOutcomeProjector(),
+            task,
+            before,
+            request,
+            private_trace_only,
+            after,
+        )
+    )
+    assert unknown.observed_change is ObservedChange.UNKNOWN
+
+    stable_navigation = replace(
+        private_trace_only,
+        causal_transition=ExecutionTransition.STABLE_NAVIGATION,
+    )
+    evaluation = asyncio.run(
+        validated_action_outcome(
+            ProductionActionOutcomeProjector(),
+            task,
+            before,
+            request,
+            stable_navigation,
+            after,
+        )
+    )
+
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
+    assert evaluation.evidence_method is EvidenceMethod.STRUCTURAL
+    assert evaluation.evidence_refs
+    assert all(
+        WorldEvidenceIndex.from_observation(after).resolve(ref) is not None
+        for ref in evaluation.evidence_refs
+    )
+
+
+def test_browsergym_stable_navigation_reaches_projector_with_fresh_world_evidence() -> None:
+    before_raw = raw_observation(ax_node("button", "button", "Search"))
+    before_raw["screenshot"] = np.full((40, 80, 3), 255, dtype=np.uint8)
+    after_raw = raw_observation(
+        ax_node("button", "button", "Search"),
+        url="https://example.invalid/search?q=Acadia",
+    )
+    after_raw["screenshot"] = np.zeros((40, 80, 3), dtype=np.uint8)
+    fake = FakeBrowserGym(before_raw, after_raw)
+    fake.step_stability_status = BrowserGymStabilityStatus.STABLE_NAVIGATION
+    fake.probe_override = {
+        "raw": before_raw,
+        "task": {**task_info(), "url": before_raw["url"]},
+        "latency_ms": 0.1,
+    }
+    environment, task = open_fake(fake)
+    before = start_environment(environment, task)
+    request = request_for(before, task, "press_key", {"key": "Enter"})
+    assert request.selection.verification_contract.family is VerificationFamily.SEMANTIC
+
+    execution = asyncio.run(environment.execute(request))
+    assert execution.post_acquisition is not None
+    assert execution.post_acquisition.observation is not None
+    after = execution.post_acquisition.observation
+    evaluation = asyncio.run(
+        validated_action_outcome(
+            ProductionActionOutcomeProjector(),
+            task,
+            before,
+            request,
+            execution.result,
+            after,
+        )
+    )
+
+    assert execution.result.causal_transition is ExecutionTransition.STABLE_NAVIGATION
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.evidence_method is EvidenceMethod.VISUAL_DIFF
+    assert WorldEvidenceIndex.from_observation(after).resolve(evaluation.evidence_refs[0])
+    asyncio.run(environment.close())
 
 
 def _activate_world(observation_id: str, shade: int):

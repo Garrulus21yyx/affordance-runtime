@@ -17,6 +17,7 @@ from affordance_runtime.execution import (
     DispatchStatus,
     ExecutionDiagnostic,
     ExecutionDiagnosticPhase,
+    ExecutionTransition,
     SessionHealth,
     SessionHealthStatus,
     execution_diagnostic_from_exception,
@@ -70,7 +71,10 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     task_state_from_probe,
     task_state_from_transition,
 )
-from affordance_runtime.surfaces.browsergym.transition import BrowserGymStepTransition
+from affordance_runtime.surfaces.browsergym.transition import (
+    BrowserGymStabilityStatus,
+    BrowserGymStepTransition,
+)
 from affordance_runtime.surfaces.browsergym.visual_disambiguation import (
     BrowserGymVisualDisambiguationProjectionError,
     project_browsergym_visual_disambiguation_source,
@@ -622,6 +626,12 @@ class BrowserGymSurfaceAdapter:
                 **self._currentness_evidence(1, 1),
                 "browsergym_transition": transition_evidence,
             },
+            causal_transition=(
+                ExecutionTransition.STABLE_NAVIGATION
+                if transition.trace.stability_status
+                is BrowserGymStabilityStatus.STABLE_NAVIGATION
+                else None
+            ),
         )
         if not transition.stable:
             self._pending_error_code = transition.trace.stability_status.value

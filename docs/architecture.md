@@ -178,9 +178,15 @@ the official [PydanticAI Harness compaction contract](https://pydantic.dev/docs/
   Workspace remains available to Monitor/Trace but is no longer duplicated into the model prompt;
 - only a validated complete replacement enters official history. Only then may Harness remove whole covered
   call/result exchanges. A failed/rejected reduction retains the previous checkpoint and raw knowledge results;
-- the reducer runs on a new non-duplicate read/search result, before covered knowledge must leave, on the first typed
-  Monitor recovery, or on same-task revision. It does not run on ordinary clicks, tab changes, waits, discovery, or
-  exact result replay.
+- the reducer bootstraps on the first non-duplicate read/search result, then batches three uncovered knowledge results;
+  it also runs when physical SDK history reaches 80% of its soft target, on the first typed Monitor recovery, or on
+  same-task revision. Exchange count alone is not pressure. Failed/rejected/unchanged semantic inputs are memoized
+  inside this history owner and are not dispatched again; ordinary clicks are excluded from non-recovery input
+  identity;
+- reducer calls disable extended thinking, use at most 2,048 output tokens, and have a 10-second share of the existing
+  policy deadline. DeepSeek's OpenAI-compatible model uses its documented
+  [`extra_body.thinking`](https://api-docs.deepseek.com/guides/thinking_mode/) toggle; other configured models retain
+  their existing PydanticAI mapping.
 
 This is one ActionPolicy history with a semantic compaction step, not Runtime task state. `ProgressCheckpoint` remains
 absent from `ResolvedModelDecision`, `RunState`, Store, Workspace, World, GoalPlan, Binder, Executor, and evaluator.
@@ -188,15 +194,36 @@ The reducer cannot act, authorize, terminate, or determine task truth. It initia
 Pydantic structured output; no Manager/Worker, memory service, retrieval index, evidence projection, or cursor path is
 introduced.
 
-Current provider-free verification: the focused checkpoint/history/Monitor/context surface passes `179 passed`.
-The full suite reports `1730 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
-observability test. Focused Ruff and diff checks pass. This is implementation evidence, not overall closure or a fresh
-live Task266 witness.
+Task266 run17 crossed the checkpoint-content repair: the accepted checkpoint retained Portland's coordinates and the
+next Acadia intent, and ActionPolicy reached the Acadia search. It then exposed two independent owner defects. First,
+the reducer was invoked on 16 of 21 turns—five immediate knowledge calls, three recoveries, and eight calls caused by
+the arbitrary `completed_exchange_count > 4` condition; 13 calls consumed their full 18-second timeout. Second, the
+final Enter dispatch carried a valid BrowserGym `stable_navigation` trace and a fresh post-capture World, but the
+selected `press_key` binding had semantic verification, so `ProductionActionOutcomeProjector` ignored the transition
+and emitted `UNKNOWN`. Monitor then correctly blocked the false no-effect trajectory. The durable failed witness is
+[`run17`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run17/run.json).
+
+The execution repair adds one generic typed `ExecutionTransition.STABLE_NAVIGATION` to the existing `ActionResult`.
+BrowserGym produces it only from its already-validated typed transition trace. The Projector uses it to select the
+existing navigation-context verification independent of the pre-action binding family, but confirmed change still
+requires current structural or screenshot evidence resolvable in the fresh post-action World. Private adapter trace
+data remains Trace-only and cannot promote an outcome. Monitor, CoreLoop, World, and BrowserGym transition state are
+unchanged. This is one conversion at the execution contract, not a second currentness path.
+
+The scheduling repair remains entirely within `PydanticAIGroundedDecisionPort`, the existing SDK-history owner. It
+replaces per-result/per-exchange triggering with bootstrap, knowledge batching, true token pressure, typed recovery,
+and task revision. A bounded-run memo suppresses an identical non-updating reducer input without cooldown, queue,
+asynchrony, or another loop. Raw knowledge remains when reduction fails, and Harness can still remove only complete
+covered call/result pairs.
+
+Provider-free verification passes the modified execution/projector/checkpoint surface at `131 passed`; the full suite
+reports `1737 passed / 19 skipped` with the one pre-existing multiprocessing fork warning. Focused Ruff and diff checks
+pass. This is implementation evidence, not overall closure or a fresh live Task266 witness.
 
 Overall project closure is still **open**:
 
-- the same-World derivation and bounded-trace repairs still require a post-repair Task266 live witness before their
-  separately scoped gate can close;
+- the stable-navigation outcome and reducer scheduling repairs require a post-repair Task266 live witness before this
+  reopened causal subsystem can close;
 - Planner lexical admission still has a known gap.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
