@@ -151,9 +151,30 @@ likewise compresses page observations and selectively replays relevant history; 
 Runtime-owned evidence or cursor system. The project keeps its typed World for grounding, but no longer recomputes or
 re-serializes that authority per local tool result.
 
+Task266 run15 crossed the same-World performance repair and exposed a distinct ActionPolicy-history defect. The model
+had recovered Portland's coordinates and selected Acadia as the next semantic target, but later returned ordinary text
+describing an immediate tab action. The PydanticAI bridge treated every visible `TextPart` as a new cumulative progress
+note, removed the previous note, and therefore promoted action narration over the earlier conclusion. This was not
+missing task text, stale World, lost ToolReturn transport, Monitor absence, or evidence-store loss. The response-history
+contract did not distinguish a semantic checkpoint update from arbitrary provider prose.
+
+The owner repair stays entirely at the existing ActionPolicy/PydanticAI boundary. The policy may emit an optional,
+bounded `progress-checkpoint.v1` value only when a verified fact, working hypothesis, unresolved requirement, semantic
+next subgoal, or failed strategy changes. Most short GUI steps emit only one tool call. A checkpoint is a complete
+replacement of the previous model-authored working summary; ordinary text, malformed wrappers, and oversized values
+are trace-only and cannot replace it. When no valid update is present, the bridge carries the exact previous checkpoint
+forward beside the newest accepted call. The bridge validates only shape and bounds, never task truth. Fresh World,
+TaskGoal, ToolReturn history, and the benchmark evaluator retain their existing authorities.
+
+`ProgressCheckpoint` is a typed value contract, not a Runtime state machine. It is retained only in PydanticAI message
+history and is absent from `ResolvedModelDecision`, `RunState`, Store, Workspace, World, GoalPlan, and Monitor. Monitor
+can still request ordinary recovery, but cannot author or merge checkpoint facts. No checkpoint tool, fork, background
+summarizer, retrieval index, evidence projection, or second policy call was added. A live post-repair Task266 witness is
+still required.
+
 Current provider-free verification: the focused same-World/Monitor/trace/core surface passes
 `64 passed / 3 skipped`. The BrowserGym owner/currentness surface remains at `164 passed / 10 skipped`. The full suite
-reports `1713 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+reports `1721 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a
 fresh live Task266 witness.
 
@@ -650,7 +671,7 @@ queue. The next ActionPolicy call alone decides whether to reissue one after see
 `ProcessHistory` capability proactively removes oldest complete multi-call exchanges when estimated history exceeds
 the existing soft target; TurnPacker repeats the same exchange-atomic reduction before a packed request can remain
 above that target, with hard-capacity failure as a final guard. The newest model response and every unresolved call in
-it are pinned, so the latest cumulative progress note is not discarded independently of its proposals. A terminal
+it are pinned, so the latest cumulative progress checkpoint is not discarded independently of its proposals. A terminal
 decision consumes the last results and clears the transport history so it cannot leak into another episode.
 
 ## Authority and owners
@@ -665,7 +686,7 @@ decision consumes the last results and clears the transport history so it cannot
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
 | delivery text/Manifest atomicity | compact World renderer | TurnPacker, provider bridge, Trace |
-| bounded typed call/result history, correlation, and model-authored progress note | PydanticAI boundary | Store, Workspace, Monitor |
+| bounded typed call/result history, correlation, and explicit model-authored progress checkpoint | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
@@ -684,29 +705,32 @@ The model context contains only:
 - the fresh compact canonical World;
 - the current bounded ToolCatalog;
 - bounded recent semantic receipts and control feedback;
-- exactly one latest bounded, visible, non-authoritative model-authored progress note once the model has produced one;
+- at most one latest bounded, visible, non-authoritative model-authored progress checkpoint once the model has
+  explicitly produced one;
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs, including same-ID failed returns for proposals
   not selected for execution.
 
 Old World/user prompts are excluded from transport history because the fresh World is the current-environment
-authority. The ActionPolicy writes at most 500 characters of cumulative durable conclusions before its proposed calls,
-including exact supported output values and inspected/total scope when known instead of a vague count. Task-domain
-output values such as geographic coordinates are durable; only GUI bindings such as `E/F/R` refs, selectors, and
-screen/pixel coordinates are excluded as staleable.
+authority. The ActionPolicy normally emits only its proposed calls. When its semantic working state changes, it may
+write one complete checkpoint of at most 800 characters before those calls, separating verified facts, working
+hypotheses, remaining requirements, semantic next intent, and failed strategies to avoid. Task-domain output values
+such as geographic coordinates are durable; immediate GUI narration and bindings such as `E/F/R` refs, selectors,
+and screen/pixel coordinates are excluded.
 
-The PydanticAI boundary retains the newest visible `TextPart` with the selected normalized first `ToolCallPart` and
-every exact later proposal. A tool-only response carries forward the exact prior model-authored note; a new note
-replaces it, and older accepted responses lose only their duplicate `TextPart` while their
-`ToolCallPart/ToolReturnPart` pairing remains intact. The boundary never writes, merges, or semantically validates
-progress. It hard-bounds a misbehaving note at 800 characters with an explicit truncation marker and excludes hidden
-`ThinkingPart` content from future model input. Raw provider output remains in Trace. This is same-actor trajectory
-context, not a Runtime fact authority, Workspace memory, or a separate summarizer model.
+The PydanticAI boundary admits only an exact `progress-checkpoint.v1` wrapper as retained text with the selected
+normalized first `ToolCallPart` and every exact later proposal. A response without a valid update—including ordinary
+action narration—carries forward the exact prior checkpoint. A valid complete update replaces the previous one, and
+older accepted responses lose only their duplicate checkpoint `TextPart` while their `ToolCallPart/ToolReturnPart`
+pairing remains intact. Malformed or over-bound text is rejected rather than truncated into a dishonest checkpoint.
+The boundary never writes, merges, or semantically validates progress and excludes hidden `ThinkingPart` content from
+future model input. Raw provider output remains in Trace. This is same-actor trajectory context, not Runtime fact
+authority, Workspace memory, or a separate summarizer model.
 
 `TurnPacker` budgets the current World, tools, and typed result history but does not summarize, edit, or rebuild
 ToolReturn content. The SDK history processor acts before admission rather than waiting for a hard overflow; only an
 oldest complete response/calls/results exchange can be dropped. This is bounded SDK history retention, not semantic
-memory or evidence projection. The newest cumulative progress note is pinned and carries durable conclusions before an
-older exchange leaves the window. No separate summarizer model is used.
+memory or evidence projection. The newest explicit checkpoint is pinned and carries model-selected durable conclusions
+before an older exchange leaves the window. No separate summarizer model is used.
 
 `ObservationDeliveryStore` now retains only:
 
@@ -768,7 +792,8 @@ Current primary sources converge on a thin loop rather than a result-conservatio
 - [UI-TARS-2](https://arxiv.org/html/2509.02544) formalizes recent high-fidelity working memory plus semantically
   compressed episodic intentions/outcomes. Its ordinary control remains one ReAct policy; the verifier described in
   the report is primarily a training-reward mechanism, not a second online Runtime authority. This project uses the
-  thinner inference-time equivalent: recent exact SDK exchanges plus the latest same-policy progress note.
+  thinner inference-time equivalent: recent exact SDK exchanges plus the latest explicit same-policy progress
+  checkpoint.
 - [Agent S2](https://arxiv.org/html/2504.00906) is the explicit heavier alternative: a Manager updates subgoals after a
   Worker completes each one. That is a deliberate Manager/Worker architecture, not a Monitor feature. This project
   retains its declared single ActionPolicy and static GoalPlan rather than partially importing that hierarchy.

@@ -136,9 +136,13 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "search_page_content is only an exact-substring locator" in system
     assert "read its region and follow UI pagination" in system
     assert "sole authority for current" in system
-    assert "exact supported output values already found" in system
-    assert "inspected/total scope when known" in system
-    assert 'Do not replace exact results with phrases such as "several candidates"' in system
+    assert "a verified task fact or exact requested output" in system
+    assert "unresolved requirement or inspected/total scope" in system
+    assert "A page change, tab switch, immediate GUI target" in system
+    assert "When none of those values changed, emit no TextPart" in system
+    assert "complete replacement form" in system
+    assert "Do not replace exact results with phrases such as" in system
+    assert '"several candidates"' in system
     assert "clear paraphrase or" in system
     assert "incidental keyword overlap does not" in system
     assert "Partial source coverage" in system

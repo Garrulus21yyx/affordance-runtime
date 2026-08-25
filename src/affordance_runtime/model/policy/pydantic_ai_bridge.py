@@ -53,6 +53,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.progress_checkpoint import (
+    MAX_PROGRESS_CHECKPOINT_CHARS,
+    normalize_progress_checkpoint,
+)
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallReconciliationStatus,
@@ -76,9 +80,6 @@ from affordance_runtime.model.policy.turn_packer import TurnPacker
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
-_MAX_PROGRESS_NOTE_CHARS = 800
-_PROGRESS_NOTE_TRUNCATION = "\n[progress note truncated by history boundary]\n"
-
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
 
@@ -132,10 +133,10 @@ class AcceptedToolExchange:
         response_calls = tuple(
             part for part in self.response.parts if isinstance(part, ToolCallPart)
         )
-        response_progress = tuple(
+        response_checkpoints = tuple(
             part for part in self.response.parts if isinstance(part, TextPart)
         )
-        progress_chars = sum(len(part.content) for part in response_progress)
+        checkpoint_chars = sum(len(part.content) for part in response_checkpoints)
         expected = (self.call.name, dict(self.call.arguments), self.call.call_id)
         response_call_ids = tuple(part.tool_call_id for part in response_calls)
         if (
@@ -143,8 +144,12 @@ class AcceptedToolExchange:
                 not isinstance(part, (TextPart, ToolCallPart))
                 for part in self.response.parts
             )
-            or len(response_progress) > 1
-            or progress_chars > _MAX_PROGRESS_NOTE_CHARS
+            or len(response_checkpoints) > 1
+            or checkpoint_chars > MAX_PROGRESS_CHECKPOINT_CHARS
+            or any(
+                normalize_progress_checkpoint(part.content) != part.content
+                for part in response_checkpoints
+            )
             or len(response_calls) != self.discarded_call_count + 1
             or len(set(response_call_ids)) != len(response_call_ids)
             or any(not call_id for call_id in response_call_ids)
@@ -353,7 +358,7 @@ class PydanticAIGroundedDecisionPort:
             self.message_history,
             max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
         )
-        retained_progress = _latest_progress_note(history_messages)
+        retained_checkpoint = _latest_progress_checkpoint(history_messages)
         object.__setattr__(
             self,
             "last_history_compaction_count",
@@ -444,7 +449,7 @@ class PydanticAIGroundedDecisionPort:
                 catalog,
                 request.context_id,
                 source_response=_latest_model_response(result),
-                fallback_progress=retained_progress,
+                fallback_checkpoint=retained_checkpoint,
             )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
             if accepted_exchange is None and initial_calls:
@@ -481,9 +486,9 @@ class PydanticAIGroundedDecisionPort:
                     catalog,
                     request.context_id,
                     source_response=_latest_model_response(repair_result),
-                    fallback_progress=(
-                        _progress_note_from_response(_latest_model_response(result))
-                        or retained_progress
+                    fallback_checkpoint=(
+                        _progress_checkpoint_from_response(_latest_model_response(result))
+                        or retained_checkpoint
                     ),
                 )
                 if (
@@ -1201,7 +1206,7 @@ def _resolve_deferred(
     context_id: str,
     *,
     source_response=None,
-    fallback_progress: str = "",
+    fallback_checkpoint: str = "",
 ):
     from pydantic_ai import DeferredToolRequests
 
@@ -1254,7 +1259,7 @@ def _resolve_deferred(
                 accepted_call,
                 proposed_calls=tuple(output.calls),
                 discarded_call_count=max(0, len(output.calls) - 1),
-                fallback_progress=fallback_progress,
+                fallback_checkpoint=fallback_checkpoint,
             ),
             max(0, len(output.calls) - 1),
         ), None, ()
@@ -1282,15 +1287,18 @@ def _accepted_model_response(
     *,
     proposed_calls: tuple[object, ...] = (),
     discarded_call_count: int = 0,
-    fallback_progress: str = "",
+    fallback_checkpoint: str = "",
 ):
-    """Keep the newest model-authored progress and every exact proposal."""
+    """Keep one explicit checkpoint update or carry the prior exact checkpoint."""
 
     from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 
     if source_response is not None and not isinstance(source_response, ModelResponse):
         raise TypeError("source response is not a PydanticAI ModelResponse")
-    progress = _progress_note_from_response(source_response) or fallback_progress.strip()
+    checkpoint = (
+        _progress_checkpoint_from_response(source_response)
+        or normalize_progress_checkpoint(fallback_checkpoint)
+    )
 
     calls = tuple(proposed_calls)
     if not calls and source_response is not None:
@@ -1304,19 +1312,9 @@ def _accepted_model_response(
         or len({part.tool_call_id for part in calls}) != len(calls)
     ):
         raise ValueError("accepted call proposals are incomplete or ambiguous")
-    if len(progress) > _MAX_PROGRESS_NOTE_CHARS:
-        available = _MAX_PROGRESS_NOTE_CHARS - len(_PROGRESS_NOTE_TRUNCATION)
-        prefix_chars = available // 2
-        suffix_chars = available - prefix_chars
-        progress = (
-            progress[:prefix_chars].rstrip()
-            + _PROGRESS_NOTE_TRUNCATION
-            + progress[-suffix_chars:].lstrip()
-        )
-
     parts = []
-    if progress:
-        parts.append(TextPart(progress))
+    if checkpoint:
+        parts.append(TextPart(checkpoint))
     parts.append(
         ToolCallPart(
             accepted_call.name,
@@ -1392,8 +1390,8 @@ def _accepted_message_history(
         raise ValueError("PydanticAI did not close every deferred tool proposal")
     returned_parts = tuple(returned_by_identity[item] for item in pending_identities)
     retained_history = (
-        _without_progress_notes(prior_history)
-        if _progress_note_from_response(accepted.response)
+        _without_progress_checkpoints(prior_history)
+        if _progress_checkpoint_from_response(accepted.response)
         else prior_history
     )
     return (
@@ -1403,8 +1401,8 @@ def _accepted_message_history(
     )
 
 
-def _progress_note_from_response(response: object | None) -> str:
-    """Read visible model-authored progress without admitting hidden reasoning."""
+def _progress_checkpoint_from_response(response: object | None) -> str:
+    """Read only an explicit checkpoint update, never ordinary provider prose."""
 
     if response is None:
         return ""
@@ -1412,25 +1410,24 @@ def _progress_note_from_response(response: object | None) -> str:
 
     if not isinstance(response, ModelResponse):
         return ""
-    return "\n".join(
-        part.content.strip()
-        for part in response.parts
-        if isinstance(part, TextPart) and part.content.strip()
-    )
+    text_parts = tuple(part for part in response.parts if isinstance(part, TextPart))
+    if len(text_parts) != 1:
+        return ""
+    return normalize_progress_checkpoint(text_parts[0].content)
 
 
-def _latest_progress_note(messages: tuple[object, ...]) -> str:
-    """Return the latest visible note already owned by official SDK history."""
+def _latest_progress_checkpoint(messages: tuple[object, ...]) -> str:
+    """Return the latest explicit checkpoint already owned by official SDK history."""
 
     for message in reversed(messages):
-        progress = _progress_note_from_response(message)
-        if progress:
-            return progress
+        checkpoint = _progress_checkpoint_from_response(message)
+        if checkpoint:
+            return checkpoint
     return ""
 
 
-def _without_progress_notes(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Keep call/result pairs intact while replacing the cumulative note."""
+def _without_progress_checkpoints(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Keep call/result pairs intact while replacing the cumulative checkpoint."""
 
     from pydantic_ai.messages import ModelResponse, TextPart
 
@@ -1457,7 +1454,7 @@ def _drop_oldest_completed_exchange(messages: tuple[object, ...]) -> tuple[objec
         if isinstance(message, ModelResponse)
         and any(isinstance(part, ToolCallPart) for part in message.parts)
     )
-    # The newest model-authored progress response is always pinned.  An older
+    # The newest response carrying the explicit checkpoint is always pinned. An older
     # response can leave only with its exact ToolReturn request.
     if len(response_indexes) < 2:
         return messages

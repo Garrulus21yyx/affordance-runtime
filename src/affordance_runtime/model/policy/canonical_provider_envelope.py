@@ -13,6 +13,7 @@ from affordance_runtime.immutable import freeze_json, thaw_json_at_external_boun
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
+from affordance_runtime.model.policy.progress_checkpoint import normalize_progress_checkpoint
 from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -607,9 +608,13 @@ def _project_pydantic_history(
                 or any(not call_id for call_id in call_ids)
                 or len(progress) > 1
                 or len(message.parts) != len(calls) + len(progress)
+                or any(
+                    normalize_progress_checkpoint(part.content) != part.content
+                    for part in progress
+                )
             ):
                 raise ValueError(
-                    "accepted PydanticAI response must contain bounded progress and unique tool calls"
+                    "accepted PydanticAI response must contain a bounded checkpoint and unique tool calls"
                 )
             pending = tuple((call.tool_name, call.tool_call_id) for call in calls)
             response_parts: list[Mapping[str, object]] = []

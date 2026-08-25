@@ -57,6 +57,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.progress_checkpoint import ProgressCheckpoint
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationResult,
     ToolCallReconciliationStatus,
@@ -89,6 +90,23 @@ from tests.support.model.recording_pydantic_model import (
 )
 
 ScriptedModel = RecordingPydanticModel
+
+
+def _checkpoint(
+    *,
+    verified_facts: tuple[str, ...] = (),
+    working_hypotheses: tuple[str, ...] = (),
+    remaining_requirements: tuple[str, ...] = (),
+    next_intent: str,
+    avoid_repeating: tuple[str, ...] = (),
+) -> str:
+    return ProgressCheckpoint(
+        verified_facts=verified_facts,
+        working_hypotheses=working_hypotheses,
+        remaining_requirements=remaining_requirements,
+        next_intent=next_intent,
+        avoid_repeating=avoid_repeating,
+    ).render()
 
 
 def _policy(model) -> ModelBackedAgentPolicy:
@@ -597,7 +615,10 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
         evaluation = await SharedTaskEvaluator().evaluate(task, world)
         builder = ContextBuilder()
         first_context = builder.build(task, world, actions, evaluation)
-        progress = "Verified names: Dibbins and Anglebert Dinkherhump; answer is ready."
+        progress = _checkpoint(
+            verified_facts=("Verified names: Dibbins and Anglebert Dinkherhump",),
+            next_intent="Submit the supported final answer",
+        )
         discarded_id = "recording-call:progress:discarded"
         scripted = ScriptedModel(
             [
@@ -690,21 +711,23 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
         assert "private deliberation" not in physical
         assert discarded_id in physical
         assert "Not executed" in physical
-        assert "one concise progress note" in str(scripted.records[0].instructions)
+        assert "A progress checkpoint is optional" in str(scripted.records[0].instructions)
+        assert "Most short GUI steps should emit no" in str(scripted.records[0].instructions)
 
     asyncio.run(scenario())
 
 
-def test_tool_only_turn_carries_latest_progress_in_the_same_sdk_history() -> None:
+def test_action_narration_cannot_replace_latest_checkpoint_in_sdk_history() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-carry-forward", False)
         actions = ActionSpaceBuilder().build(task, world)
         evaluation = await SharedTaskEvaluator().evaluate(task, world)
         builder = ContextBuilder()
-        progress = (
-            "Verified Portland coordinates 43.6600,-70.2550; "
-            "Acadia coordinates and OSRM distance remain unresolved."
+        progress = _checkpoint(
+            verified_facts=("Portland coordinates: 43.6600,-70.2550",),
+            remaining_requirements=("Acadia coordinates", "OSRM distance"),
+            next_intent="Resolve the Acadia location and route distance",
         )
         scripted = ScriptedModel(
             [
@@ -717,6 +740,7 @@ def test_tool_only_turn_carries_latest_progress_in_the_same_sdk_history() -> Non
                 ModelResponse(
                     parts=[
                         ThinkingPart("hidden tool-only deliberation"),
+                        TextPart("I will switch back to the Portland tab now."),
                         ToolCallPart(
                             "search_page_content",
                             {"query": "coordinates"},
@@ -771,14 +795,19 @@ def test_tool_only_turn_carries_latest_progress_in_the_same_sdk_history() -> Non
             if isinstance(message, ModelResponse)
             for part in message.parts
         ) == 1
-        assert pydantic_bridge._latest_progress_note(history) == progress
+        assert pydantic_bridge._latest_progress_checkpoint(history) == progress
         compacted = pydantic_bridge._process_pydantic_history(
             history,
             max_estimated_tokens=1,
         )
         assert compacted == (history[-1],)
-        assert pydantic_bridge._latest_progress_note(compacted) == progress
+        assert pydantic_bridge._latest_progress_checkpoint(compacted) == progress
         assert "hidden tool-only deliberation" not in json.dumps(history, default=str)
+        assert "switch back to the Portland tab" not in json.dumps(history, default=str)
+        assert "switch back to the Portland tab" in json.dumps(
+            second.attempts[0].transcript["llm.output_messages"],
+            default=str,
+        )
 
     asyncio.run(scenario())
 
@@ -937,12 +966,24 @@ def test_compact_sdk_history_treats_multi_call_results_as_one_atomic_exchange() 
 
 
 def test_proactive_sdk_history_compaction_preserves_latest_progress_and_pair_integrity() -> None:
+    old_checkpoint = _checkpoint(
+        verified_facts=("old conclusion",),
+        next_intent="Continue the old subgoal",
+    )
+    new_checkpoint = _checkpoint(
+        verified_facts=("new conclusion",),
+        next_intent="Continue the new subgoal",
+    )
+    latest_checkpoint = _checkpoint(
+        verified_facts=("latest cumulative progress",),
+        next_intent="Use the latest cumulative result",
+    )
     history = (
-        ModelResponse(parts=[TextPart("old conclusion"), ToolCallPart("first", {}, "call:1")]),
+        ModelResponse(parts=[TextPart(old_checkpoint), ToolCallPart("first", {}, "call:1")]),
         ModelRequest(parts=[ToolReturnPart("first", {"body": "old" * 2_000}, "call:1")]),
-        ModelResponse(parts=[TextPart("new conclusion"), ToolCallPart("second", {}, "call:2")]),
+        ModelResponse(parts=[TextPart(new_checkpoint), ToolCallPart("second", {}, "call:2")]),
         ModelRequest(parts=[ToolReturnPart("second", {"body": "new" * 2_000}, "call:2")]),
-        ModelResponse(parts=[TextPart("latest cumulative progress"), ToolCallPart("third", {}, "call:3")]),
+        ModelResponse(parts=[TextPart(latest_checkpoint), ToolCallPart("third", {}, "call:3")]),
     )
 
     compacted = pydantic_bridge._process_pydantic_history(
@@ -951,7 +992,7 @@ def test_proactive_sdk_history_compaction_preserves_latest_progress_and_pair_int
     )
 
     assert compacted == (history[-1],)
-    assert compacted[0].parts[0].content == "latest cumulative progress"
+    assert compacted[0].parts[0].content == latest_checkpoint
     assert pydantic_bridge._pending_call_from_history(compacted) == ToolCall(
         "third", {}, "call:3"
     )
@@ -1957,7 +1998,7 @@ def test_invalid_first_deferred_call_never_falls_through_to_a_later_call(monkeyp
     assert normalized_calls == [ToolCall("read_region", {"region_ref": "invalid"}, "call:1")]
 
 
-def test_accepted_response_bounds_progress_and_excludes_hidden_reasoning(monkeypatch) -> None:
+def test_accepted_response_rejects_unstructured_prose_and_excludes_hidden_reasoning(monkeypatch) -> None:
     normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
     resolved_decision = SearchPageContentResult(
         "context:test",
@@ -1979,11 +2020,11 @@ def test_accepted_response_bounds_progress_and_excludes_hidden_reasoning(monkeyp
         "resolve_grounded_action_call",
         lambda *_args, **_kwargs: SimpleNamespace(decision=resolved_decision),
     )
-    progress = "established-prefix " + "x" * 1_000 + " established-conclusion"
+    narration = "I will click the next visible control now."
     source = ModelResponse(
         parts=[
             ThinkingPart("hidden chain " * 1_000),
-            TextPart(progress),
+            TextPart(narration),
             ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1"),
             ToolCallPart("discarded", {}, "call:discarded"),
         ]
@@ -2005,14 +2046,42 @@ def test_accepted_response_bounds_progress_and_excludes_hidden_reasoning(monkeyp
     assert exchange is not None
     assert error is None
     assert parsed == ()
-    assert [type(part) for part in exchange.response.parts] == [TextPart, ToolCallPart]
-    retained_progress = exchange.response.parts[0].content
-    assert len(retained_progress) == pydantic_bridge._MAX_PROGRESS_NOTE_CHARS
-    assert retained_progress.startswith("established-prefix")
-    assert retained_progress.endswith("established-conclusion")
-    assert pydantic_bridge._PROGRESS_NOTE_TRUNCATION.strip() in retained_progress
-    assert exchange.response.parts[1].tool_name == normalized.name
-    assert exchange.response.parts[1].tool_call_id == normalized.call_id
+    assert [type(part) for part in exchange.response.parts] == [ToolCallPart]
+    assert narration not in repr(exchange.response)
+    assert exchange.response.parts[0].tool_name == normalized.name
+    assert exchange.response.parts[0].tool_call_id == normalized.call_id
+
+
+def test_explicit_checkpoint_update_completely_replaces_the_fallback() -> None:
+    old_checkpoint = _checkpoint(
+        verified_facts=("Portland coordinates: 43.6600,-70.2550",),
+        remaining_requirements=("Acadia coordinates", "OSRM distance"),
+        next_intent="Resolve the Acadia location and route distance",
+    )
+    new_checkpoint = _checkpoint(
+        verified_facts=(
+            "Portland coordinates: 43.6600,-70.2550",
+            "Acadia coordinates: 44.3386,-68.2733",
+        ),
+        remaining_requirements=("OSRM distance",),
+        next_intent="Resolve the route distance",
+    )
+    source = ModelResponse(
+        parts=[
+            TextPart(new_checkpoint),
+            ToolCallPart("search_page_content", {"query": "distance"}, "call:update"),
+        ]
+    )
+
+    accepted = pydantic_bridge._accepted_model_response(
+        source,
+        ToolCall("search_page_content", {"query": "distance"}, "call:update"),
+        fallback_checkpoint=old_checkpoint,
+    )
+
+    assert [type(part) for part in accepted.parts] == [TextPart, ToolCallPart]
+    assert accepted.parts[0].content == new_checkpoint
+    assert old_checkpoint not in repr(accepted)
 
 
 def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
