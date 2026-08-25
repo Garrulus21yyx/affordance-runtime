@@ -640,7 +640,10 @@ def test_gate_4_final_physical_envelope_exact_fit_and_one_under_never_calls_reco
             ),
         ))
         assert fused.observation is not None
-        recorder = RecordingPydanticModel(["zero_calls"])
+        recorder = RecordingPydanticModel(
+            ["zero_calls", "zero_calls"],
+            scripted_phases=["ordinary", "ordinary_output_retry"],
+        )
         policy = _policy(recorder, request_budget=request_budget)
         state = await _runtime(policy, evaluator=_IncompleteTaskEvaluator()).run_task(
             ScriptedEnvironment(initial_observation=fused.observation),
@@ -650,7 +653,7 @@ def test_gate_4_final_physical_envelope_exact_fit_and_one_under_never_calls_reco
 
     async def scenario() -> None:
         _baseline_state, baseline_recorder, baseline_policy = await invoke()
-        assert baseline_recorder.calls == 1
+        assert baseline_recorder.calls == 2
         baseline = baseline_policy.port.last_request_breakdowns[0]
         exact_budget = replace(
             ModelRequestBudget(),
@@ -658,7 +661,7 @@ def test_gate_4_final_physical_envelope_exact_fit_and_one_under_never_calls_reco
             admission_limit=baseline.estimated_input_tokens,
         )
         _exact_state, exact_recorder, exact_policy = await invoke(exact_budget)
-        assert exact_recorder.calls == 1
+        assert exact_recorder.calls == 2
         assert exact_policy.port.last_request_breakdowns[0].estimated_input_tokens == (
             baseline.estimated_input_tokens
         )

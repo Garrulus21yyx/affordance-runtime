@@ -73,6 +73,7 @@ from affordance_runtime.model.policy.request_admission import (
     ModelRequestCapacityError,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
@@ -259,15 +260,12 @@ def test_multiple_provider_tool_calls_execute_first_and_preserve_every_proposal(
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("scripted_output", ["zero_calls", "malformed_tool_call"])
-def test_zero_or_wholly_unparseable_output_fails_without_representation_repair(
-    scripted_output: str,
-) -> None:
+def test_text_only_output_uses_one_pydantic_retry_and_retains_only_the_accepted_exchange() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel([scripted_output])
+        scripted = ScriptedModel(["zero_calls", "first_gui_action"])
         policy = _policy(scripted.build())
         task = shared_task()
-        world = shared_world(f"invalid-envelope:{scripted_output}", False)
+        world = shared_world("text-only-output-retry", False)
         context = ContextBuilder().build(
             task,
             world,
@@ -276,7 +274,110 @@ def test_zero_or_wholly_unparseable_output_fails_without_representation_repair(
         )
 
         result = await policy.port.generate(
-            ModelDecisionRequest(f"request:{scripted_output}", context)
+            ModelDecisionRequest("request:text-only-output-retry", context)
+        )
+
+        assert result.failure is None and result.output is not None
+        assert isinstance(result.output.decision, SelectAction)
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == [
+            "ordinary",
+            "ordinary_output_retry",
+        ]
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
+        assert result.attempts[0].output_failure_kind is StructuredOutputFailureKind.NO_TOOL_CALL
+        assert result.attempts[1].output_failure_kind is None
+        assert result.diagnostics["policy_model_call_count"] == 2
+        canonical_history = json.dumps(policy.port.message_history, default=str)
+        assert "no tool call" not in canonical_history
+        assert "Return one offered tool call" not in canonical_history
+        assert all(attempt.phase != "representation_repair" for attempt in result.attempts)
+
+    asyncio.run(scenario())
+
+
+def test_text_only_output_retry_exhaustion_is_typed_no_tool_call() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["zero_calls", "zero_calls"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("text-only-output-exhausted", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(
+            ModelDecisionRequest("request:text-only-output-exhausted", context)
+        )
+
+        assert result.failure is not None
+        assert result.failure.kind is ModelFailureKind.INVALID_RESPONSE
+        assert result.failure.reason == "no_tool_call"
+        assert scripted.calls == 2
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "failed"]
+        assert all(
+            attempt.output_failure_kind is StructuredOutputFailureKind.NO_TOOL_CALL
+            for attempt in result.attempts
+        )
+        assert result.diagnostics["policy_model_call_count"] == 2
+        assert all(attempt.phase != "representation_repair" for attempt in result.attempts)
+
+    asyncio.run(scenario())
+
+
+def test_text_only_length_exhaustion_is_typed_output_budget_failure() -> None:
+    async def scenario() -> None:
+        truncated = ModelResponse(
+            parts=[TextPart("unfinished policy reasoning")],
+            usage=RequestUsage(input_tokens=10, output_tokens=1024),
+            finish_reason="length",
+            provider_response_id="recording-truncated",
+        )
+        scripted = ScriptedModel([truncated, truncated])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("text-output-budget-exhausted", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(
+            ModelDecisionRequest("request:text-output-budget-exhausted", context)
+        )
+
+        assert result.failure is not None
+        assert result.failure.kind is ModelFailureKind.INVALID_RESPONSE
+        assert result.failure.reason == "output_budget_exhausted"
+        assert scripted.calls == 2
+        assert all(
+            attempt.output_failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+            for attempt in result.attempts
+        )
+
+    asyncio.run(scenario())
+
+
+def test_wholly_unparseable_tool_call_fails_without_representation_repair() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["malformed_tool_call"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("malformed-tool-call", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(
+            ModelDecisionRequest("request:malformed-tool-call", context)
         )
 
         assert result.failure is not None
@@ -2501,6 +2602,7 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
         "temperature": 0.0,
         "thinking": False,
     }
+    assert selected.port.model.profile["openai_chat_supports_max_completion_tokens"] is False
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
         model_policy_from_environment(
             {

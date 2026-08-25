@@ -24,11 +24,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current focused owner/cross-boundary verification reports `512 passed / 3 skipped`. The full suite reports
-`1734 passed / 25 skipped`;
-one pre-existing multiprocessing fork warning remains in the observability test. Focused Ruff and `git diff --check`
-pass. This is implementation evidence for the bounded changes, not a post-repair live Task266 witness or overall
-closure.
+Current repair-focused owner/cross-boundary verification reports `116 passed`. The full suite reports
+`1743 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the observability test. Full
+Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded changes, not a
+post-repair live Task266 witness or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -320,6 +319,24 @@ dispatch. Provider terminal state is classified on the same post-action World wi
 the normal ToolReturn projection exposes typed non-dispatch terminal failures. A vertical fake-BrowserGym test proves
 that terminal failure ends the CoreLoop after the one dispatched action with no second policy turn. This adds no
 WebArena tool, task/site branch, fallback, or alternate browser state.
+
+The authorized
+[`run29`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run29/run.json) crossed both repairs and failed at the
+final ActionPolicy generation after ten ordinary calls and three effectful dispatches. The provider returned almost
+30,000 characters of prose with `finish_reason=length` and no ToolCall even though the canonical request reserved
+1,024 output tokens and offered `tab_focus(index=0)`. Its input also showed the inactive map only as
+`route=http://localhost:3000/`; BrowserGym's available `open_pages_titles` value (`OpenStreetMap`) had been discarded.
+This is failed pre-repair evidence for provider budget transport and open-tab semantic projection, not a reason to add
+a URL recognizer, site rule, memory path, or larger case timeout.
+
+The current repair pairs BrowserGym `open_pages_urls` and `open_pages_titles` by index into the one browser-context
+subject. It retains bounded title plus sanitized route and removes the duplicated navigation allowlist from public
+World state; the current Catalog remains the sole model-visible legality contract. DeepSeek's existing output budget
+is sent through `max_tokens`, and PydanticAI's output validator performs at most one same-context retry when the model
+returns text instead of a tool call. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`; rejected prose
+does not enter canonical history. Representation repair is not nested with this retry. Focused tests cover title/URL
+pairing and sanitization, title-independent binding currentness, restricted Catalog preservation, accepted retry,
+typed exhaustion, exact retry history, and the DeepSeek model profile. A fresh live witness is still required.
 
 Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
 legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
@@ -778,7 +795,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-Result: `1704 passed / 25 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
+Result: `1743 passed / 19 skipped`; Ruff, compileall, and `git diff --check` pass. One pre-existing
 `multiprocessing` fork deprecation warning remains in the observability test.
 
 `mypy src` is not currently a green repository gate: it reports the existing baseline across unchanged modules. This
@@ -876,6 +893,11 @@ The final read-only review for this cutover must answer:
     private trace strings remain non-authoritative and confirmed change still resolves against the fresh World?
 25. Does a WebArena provider terminal snapshot stop the loop before another policy call regardless of agent STOP, and
     can any typed non-dispatch terminal failure still be projected as `failed=false` or omitted from its ToolReturn?
+26. Are BrowserGym tab titles and sanitized routes paired by their native index in the one current World, with route
+    identity retained, title-only drift excluded from binding identity, and navigation legality owned only by Catalog?
+27. Does DeepSeek receive the declared output limit as `max_tokens`, and does text-only ActionPolicy output cause one
+    PydanticAI same-context retry followed by a typed bounded failure without polluting accepted history or nesting a
+    representation-repair retry?
 
 ## Exit statement
 

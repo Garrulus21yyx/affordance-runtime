@@ -124,6 +124,7 @@ class StructuredOutputFailureKind(StrEnum):
 
     OUTPUT_TRUNCATED = "output_truncated"
     EMPTY_FINAL_CONTENT = "empty_final_content"
+    NO_TOOL_CALL = "no_tool_call"
     JSON_INVALID = "json_invalid"
 
 

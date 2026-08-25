@@ -267,6 +267,33 @@ gated by agent STOP. The ordinary ToolReturn projection now marks any failed exe
 non-dispatch terminal failure plus bounded currentness reason. No retry, navigation wrapper, evaluator oracle, or
 benchmark task branch is added.
 
+Run29 crossed those terminal and navigation-scope repairs and reached the final answer stage, but its last DeepSeek
+response exhausted the provider's real completion budget as a long text response with no ToolCall. Two existing
+provider/observation fields were not being carried through their owners. The installed PydanticAI DeepSeek profile
+left the generic `max_tokens` setting mapped to `max_completion_tokens`, which the endpoint did not enforce, and the
+BrowserGym projection consumed `open_pages_urls` while discarding the positionally paired `open_pages_titles`. The
+model therefore saw a bare local route for the inactive map tab and could legally return prose instead of the offered
+`tab_focus`/final tool contract.
+
+The positive owner contract is now:
+
+- BrowserGym's `open_pages_urls[i]` and `open_pages_titles[i]` form one current tab record with public `index`,
+  `active`, bounded `title`, and sanitized `route`. The title is the semantic hint, the route is stable location
+  identity, and the index is the `tab_focus` argument. Credentials, query, and fragment never enter the route;
+- restricted navigation locations remain solely in the current ActionBinding/Catalog schema. They are not duplicated
+  as a service directory in World, and local benchmark routes are not rewritten into invented public domains;
+- title changes do not change the browser-context binding identity; current URL/index still own currentness;
+- the DeepSeek model profile explicitly tells PydanticAI to send the existing generic output budget as
+  `max_tokens`;
+- the existing ActionPolicy Agent uses a PydanticAI output validator: a text-only response receives one same-context
+  SDK output retry, while an exhausted pair returns typed `no_tool_call` or `output_budget_exhausted`. A pre-existing
+  representation-repair request gets no nested output retry, so the output-validation sequence is bounded to two
+  model responses. The existing transport retry remains independently bounded by the same absolute policy deadline.
+
+Rejected prose and its SDK retry prompt remain in the exact provider transcript but do not enter accepted canonical
+history. CoreLoop, Monitor, World authority, execution, compaction, and evaluator behavior are unchanged; there is no
+tab recognizer, URL remapper, provider parser, fallback action, or second control path.
+
 Run21 independently exposed that canonical target ordering had discarded a source fact it already possessed. Two
 identically named executable links on the Maine article occupied distinct structural paths but were each assigned the
 same region-local occurrence. `WorldDeliveryIndex` now preserves source structural occurrence in one document-scoped
@@ -1023,6 +1050,10 @@ This cutover is implementation-complete only when all of the following agree:
     region index, reuse the current RunState index, and commit one already-produced delivery transition.
 19. Trace persists each full observation and exact provider attempt once, while step events contain bounded typed
     outcomes and transition lineage with honest truncation metadata rather than duplicate canonical Worlds.
+20. BrowserGym open-tab titles and routes are paired by position into one current browser subject; title-only changes
+    do not stale the binding, and navigation allowlists are not duplicated in the public World.
+21. DeepSeek receives the declared output budget through its supported wire parameter, and a text-only ActionPolicy
+    response is retried once by PydanticAI before a typed terminal failure, with no nested representation retry.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

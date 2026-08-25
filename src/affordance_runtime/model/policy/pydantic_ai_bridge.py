@@ -62,6 +62,7 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 )
 from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyCallProfile,
+    ActionPolicyInvocationPhase,
     ActionPolicyReasoningPolicy,
 )
 from affordance_runtime.model.policy.request_admission import (
@@ -75,6 +76,7 @@ from affordance_runtime.model.policy.request_admission import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
+from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
@@ -338,8 +340,10 @@ class PydanticAIGroundedDecisionPort:
                 DeferredToolRequests,
                 DeferredToolResults,
                 ExternalToolset,
+                ModelRetry,
                 ToolDefinition,
                 ToolReturn,
+                capture_run_messages,
             )
             from pydantic_ai.exceptions import (
                 ModelAPIError,
@@ -363,6 +367,11 @@ class PydanticAIGroundedDecisionPort:
             agent_name: str,
             phase: str,
         ):
+            output_retry_budget = (
+                0
+                if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
+                else 1
+            )
             (
                 current_instructions,
                 current_prompt,
@@ -383,24 +392,46 @@ class PydanticAIGroundedDecisionPort:
                 name=agent_name,
                 instructions=current_instructions,
                 output_type=[str, DeferredToolRequests],
-                retries=0,
+                retries={"tools": 0, "output": output_retry_budget},
             )
-            # One explicit semantic request may still use the bridge's bounded
-            # transport retry. SDK output/tool retries stay disabled.
-            return await self._run_provider_call(
-                lambda: current_agent.run(
-                    current_prompt,
-                    toolsets=[current_toolset],
-                    usage=RunUsage(),
-                    usage_limits=UsageLimits(request_limit=2),
-                    model_settings=dict(current_envelope.model_settings),
-                    message_history=current_history,
-                    deferred_tool_results=current_deferred_results,
-                ),
-                phase=phase,
-                envelope=current_envelope,
-                provider_error_type=ModelAPIError,
-            )
+
+            @current_agent.output_validator
+            def require_action_policy_tool_call(output: str | DeferredToolRequests):
+                if isinstance(output, str):
+                    raise ModelRetry(
+                        "Return one offered tool call for the current World; text-only output is invalid."
+                    )
+                return output
+
+            # PydanticAI owns the one bounded output-validation retry. Capture
+            # its exact messages so an exhausted retry remains a typed,
+            # observable provider-boundary failure rather than generic schema
+            # fallout in the Runtime.
+            started = time.perf_counter()
+            with capture_run_messages() as captured_messages:
+                try:
+                    return await self._run_provider_call(
+                        lambda: current_agent.run(
+                            current_prompt,
+                            toolsets=[current_toolset],
+                            usage=RunUsage(),
+                            usage_limits=UsageLimits(request_limit=output_retry_budget + 1),
+                            model_settings=dict(current_envelope.model_settings),
+                            message_history=current_history,
+                            deferred_tool_results=current_deferred_results,
+                        ),
+                        phase=phase,
+                        envelope=current_envelope,
+                        provider_error_type=ModelAPIError,
+                    )
+                except UnexpectedModelBehavior:
+                    self._record_captured_output_validation_failure(
+                        tuple(captured_messages),
+                        phase,
+                        current_envelope,
+                        latency_ms=(time.perf_counter() - started) * 1000,
+                    )
+                    raise
 
         delivery: ModelTurnDelivery | None = None
         catalog: GroundedToolCatalog | None = None
@@ -631,8 +662,21 @@ class PydanticAIGroundedDecisionPort:
                 "pydantic_ai_output_validation",
                 catalog.specs if catalog is not None else (),
             )
+            failure_kind = _latest_structured_output_failure(self.last_generation_attempts)
+            if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED:
+                failure = _failure(
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "output_budget_exhausted",
+                )
+            elif failure_kind is StructuredOutputFailureKind.NO_TOOL_CALL:
+                failure = _failure(
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "no_tool_call",
+                )
+            else:
+                failure = _failure(ModelFailureKind.SCHEMA_ERROR, "provider_envelope_invalid")
             return self._invocation_failure(
-                _failure(ModelFailureKind.SCHEMA_ERROR, "provider_envelope_invalid"),
+                failure,
                 request,
                 delivery,
             )
@@ -1041,6 +1085,15 @@ class PydanticAIGroundedDecisionPort:
         messages = json.loads(result.new_messages_json())
         requests = [message for message in messages if message.get("kind") == "request"]
         responses = [message for message in messages if message.get("kind") == "response"]
+        if len(responses) > 1:
+            self._record_output_validation_exchanges(
+                messages,
+                phase,
+                envelope,
+                accepted=True,
+                latency_ms=latency_ms,
+            )
+            return
         usage = result.usage
         response = responses[-1] if responses else {}
         attempt_prompt_tokens, raw_cumulative_prompt_tokens = _attempt_token_delta(
@@ -1112,6 +1165,143 @@ class PydanticAIGroundedDecisionPort:
             transcript=transcript,
         )
         self._replace_active_attempt(attempt)
+
+    def _record_captured_output_validation_failure(
+        self,
+        messages: tuple[object, ...],
+        phase: str,
+        envelope: CanonicalProviderEnvelope,
+        *,
+        latency_ms: float,
+    ) -> None:
+        """Close one failed PydanticAI output-retry run from SDK-captured messages."""
+
+        if not messages:
+            return
+        from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+        serialized = json.loads(ModelMessagesTypeAdapter.dump_json(list(messages)))
+        if not any(message.get("kind") == "response" for message in serialized):
+            return
+        self._record_output_validation_exchanges(
+            serialized,
+            phase,
+            envelope,
+            accepted=False,
+            latency_ms=latency_ms,
+        )
+
+    def _record_output_validation_exchanges(
+        self,
+        messages: list[dict[str, object]],
+        phase: str,
+        envelope: CanonicalProviderEnvelope,
+        *,
+        accepted: bool,
+        latency_ms: float,
+    ) -> None:
+        """Record each physical SDK output-validation exchange exactly once."""
+
+        if not self.last_generation_attempts or self.last_generation_attempts[-1].status != "started":
+            raise RuntimeError("PydanticAI output retry has no active provider attempt")
+        response_rows = tuple(
+            (index, message)
+            for index, message in enumerate(messages)
+            if message.get("kind") == "response"
+        )
+        if not response_rows:
+            return
+        prefix = self.last_generation_attempts[:-1]
+        cumulative_prompt_tokens = 0
+        cumulative_completion_tokens = 0
+        attempts: list[ModelGenerationAttempt] = []
+        tools = _tool_transcript(envelope.function_tools)
+        for ordinal, (response_index, response) in enumerate(response_rows):
+            is_final = ordinal == len(response_rows) - 1
+            prompt_tokens = max(0, _response_usage_int(response, "input_tokens"))
+            completion_tokens = max(0, _response_usage_int(response, "output_tokens"))
+            cumulative_prompt_tokens += prompt_tokens
+            cumulative_completion_tokens += completion_tokens
+            parts = response.get("parts")
+            parts = parts if isinstance(parts, list) else []
+            has_tool_call = any(
+                isinstance(part, Mapping) and part.get("part_kind") == "tool-call"
+                for part in parts
+            )
+            has_text = any(
+                isinstance(part, Mapping)
+                and part.get("part_kind") == "text"
+                and bool(part.get("content"))
+                for part in parts
+            )
+            output_failure_kind = (
+                None
+                if accepted and is_final and has_tool_call
+                else _structured_output_failure_for_response(response, has_tool_call=has_tool_call)
+            )
+            status = "accepted" if accepted and is_final else ("failed" if is_final else "invalid")
+            transcript = {
+                "openinference.span.kind": "LLM",
+                "llm.system": self.provider_id,
+                "llm.model_name": self.model_id,
+                "llm.configured_endpoint_host": self.endpoint_host,
+                "llm.input_messages": envelope.model_boundary_projection()["messages"],
+                "llm.actual_messages": messages[:response_index],
+                "llm.output_messages": [response],
+                "llm.tools": tools,
+                "llm.token_count.prompt": prompt_tokens,
+                "llm.token_count.completion": completion_tokens,
+                "llm.token_count.total": prompt_tokens + completion_tokens,
+                "attempt_input_tokens": prompt_tokens,
+                "attempt_cached_input_tokens": max(
+                    0, _response_usage_int(response, "cache_read_tokens")
+                ),
+                "provider_raw_cumulative_input_tokens": cumulative_prompt_tokens,
+                "provider_raw_cumulative_output_tokens": cumulative_completion_tokens,
+                "response.id": str(response.get("provider_response_id") or ""),
+                "status": status,
+                "error.code": output_failure_kind.value if output_failure_kind else "",
+            }
+            attempts.append(ModelGenerationAttempt(
+                attempt=len(prefix) + ordinal + 1,
+                phase=phase if ordinal == 0 else f"{phase}_output_retry",
+                schema_name=GROUNDED_TOOLS_PROTOCOL,
+                status=status,
+                response_id=str(response.get("provider_response_id") or ""),
+                latency_ms=latency_ms if is_final else 0.0,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                output_failure_kind=output_failure_kind,
+                finish_reason=str(response.get("finish_reason") or "")[:80],
+                max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
+                final_content_present=has_text or has_tool_call,
+                reasoning_content_present=False,
+                role="action_policy",
+                mode="single_action",
+                schema_version=GROUNDED_TOOLS_PROTOCOL,
+                thinking_requested=envelope.thinking_requested,
+                thinking_effective=(
+                    "enabled" if envelope.model_settings.get("thinking") is True else "disabled"
+                ),
+                trigger=envelope.attempt_trigger,
+                reasoning_tokens=0,
+                final_content_tokens=completion_tokens,
+                final_tool_call_present=has_tool_call,
+                envelope_id=envelope.envelope_id,
+                envelope_projection=envelope.model_boundary_projection(),
+                transcript=transcript,
+            ))
+        object.__setattr__(
+            self,
+            "last_generation_attempts",
+            (*prefix, *attempts),
+        )
+        object.__setattr__(
+            self,
+            "last_model_call_count",
+            self.last_model_call_count + max(0, len(response_rows) - 1),
+        )
 
     def _record_cancelled_attempt(
         self,
@@ -1348,6 +1538,10 @@ def pydantic_ai_model_from_environment(
         model = OpenAIChatModel(
             model_id,
             provider=DeepSeekProvider(openai_client=client),
+            # DeepSeek Chat Completions uses ``max_tokens``. PydanticAI's
+            # OpenAI-compatible default otherwise maps the generic setting to
+            # ``max_completion_tokens``, which this endpoint does not enforce.
+            profile={"openai_chat_supports_max_completion_tokens": False},
             settings=model_settings,
         )
     elif profile in {"zhipu", "aliyun"}:
@@ -1599,19 +1793,42 @@ def _accepted_message_history(
 ) -> tuple[object, ...]:
     """Keep the SDK's complete fresh-World turn and replace only its accepted response."""
 
-    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        RetryPromptPart,
+        ToolCallPart,
+        ToolReturnPart,
+        UserPromptPart,
+    )
 
     new_messages = tuple(result.new_messages())
-    if (
-        not new_messages
-        or not isinstance(new_messages[-1], ModelResponse)
-        or any(not isinstance(message, ModelRequest) for message in new_messages[:-1])
-    ):
+    if not new_messages or not isinstance(new_messages[-1], ModelResponse):
         raise ValueError("PydanticAI did not return one complete current turn")
-    requests = tuple(message for message in new_messages[:-1] if isinstance(message, ModelRequest))
+    requests: list[object] = []
+    rejected_response_count = 0
+    retry_prompt_count = 0
+    for message in new_messages[:-1]:
+        if isinstance(message, ModelResponse):
+            if any(isinstance(part, ToolCallPart) for part in message.parts):
+                raise ValueError("PydanticAI output retry cannot discard a tool-call response")
+            rejected_response_count += 1
+            continue
+        if not isinstance(message, ModelRequest):
+            raise ValueError("PydanticAI returned an unsupported current-turn message")
+        retry_parts = tuple(part for part in message.parts if isinstance(part, RetryPromptPart))
+        if retry_parts:
+            if len(retry_parts) != len(message.parts):
+                raise ValueError("PydanticAI output retry request mixed canonical context")
+            retry_prompt_count += 1
+            continue
+        requests.append(message)
+    if rejected_response_count != retry_prompt_count or rejected_response_count > 1:
+        raise ValueError("PydanticAI output retry history is incomplete or unbounded")
+    requests_tuple = tuple(requests)
     if not any(
         isinstance(part, UserPromptPart)
-        for message in requests
+        for message in requests_tuple
         for part in message.parts
     ):
         raise ValueError("PydanticAI current turn lost its fresh World prompt")
@@ -1620,18 +1837,18 @@ def _accepted_message_history(
             raise ValueError("history without a pending call cannot accept a new exchange")
         if any(
             isinstance(part, ToolReturnPart)
-            for message in requests
+            for message in requests_tuple
             for part in message.parts
         ):
             raise ValueError("initial PydanticAI turn cannot contain a deferred result")
-        return (*requests, accepted.response)
+        return (*requests_tuple, accepted.response)
 
     pending_identities = tuple(
         (part.tool_name, part.tool_call_id) for part in pending_calls
     )
     matching_parts = tuple(
         part
-        for message in requests
+        for message in requests_tuple
         for part in message.parts
         if isinstance(part, ToolReturnPart)
         and (part.tool_name, part.tool_call_id) in set(pending_identities)
@@ -1647,7 +1864,7 @@ def _accepted_message_history(
         raise ValueError("PydanticAI did not close every deferred tool proposal")
     return (
         *prior_history,
-        *requests,
+        *requests_tuple,
         accepted.response,
     )
 
@@ -2029,6 +2246,32 @@ def _response_usage_int(response: Mapping[str, object], field_name: str) -> int:
         return -1
     value = usage.get(field_name)
     return value if type(value) is int and value >= 0 else -1
+
+
+def _structured_output_failure_for_response(
+    response: Mapping[str, object],
+    *,
+    has_tool_call: bool,
+) -> StructuredOutputFailureKind:
+    finish_reason = str(response.get("finish_reason") or "").casefold()
+    if finish_reason in {"length", "max_tokens"}:
+        return StructuredOutputFailureKind.OUTPUT_TRUNCATED
+    if not has_tool_call:
+        return StructuredOutputFailureKind.NO_TOOL_CALL
+    return StructuredOutputFailureKind.JSON_INVALID
+
+
+def _latest_structured_output_failure(
+    attempts: tuple[ModelGenerationAttempt, ...],
+) -> StructuredOutputFailureKind | None:
+    return next(
+        (
+            attempt.output_failure_kind
+            for attempt in reversed(attempts)
+            if attempt.output_failure_kind is not None
+        ),
+        None,
+    )
 
 
 def _usage_int(usage: object, field_name: str) -> int:

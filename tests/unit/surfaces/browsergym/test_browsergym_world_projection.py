@@ -48,6 +48,13 @@ def test_public_page_route_excludes_credentials_query_and_fragment() -> None:
     assert projection_module._public_page_route("javascript:alert(1)") == ""
 
 
+def test_public_page_title_is_browser_owned_bounded_display_metadata() -> None:
+    assert projection_module._public_page_title("  OpenStreetMap\nDirections  ") == (
+        "OpenStreetMap Directions"
+    )
+    assert len(projection_module._public_page_title("x" * 500)) == 240
+
+
 def _walk(node):
     yield node
     for child in node.children:
@@ -133,6 +140,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
         "https://example.test/start?private=1",
         "https://docs.example.test/guide",
     ))
+    raw["open_pages_titles"] = np.asarray(("Example start", "Documentation guide"))
     raw["active_page_index"] = np.asarray([1])
     common = {
         "observation_id": "obs:navigation",
@@ -157,6 +165,8 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     assert browser.state["active_tab_index"] == 1
     assert browser.state["navigation_scope"] == "unrestricted"
     assert browser.state["open_tabs"][0]["route"] == "https://example.test/start"
+    assert browser.state["open_tabs"][0]["title"] == "Example start"
+    assert browser.state["open_tabs"][1]["title"] == "Documentation guide"
     task = TaskGoal(
         "task:navigation",
         "Navigate",
@@ -171,6 +181,32 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     }
     assert set(actions) == {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
     assert actions["tab_focus"].parameter_schema["properties"]["index"]["enum"] == (0,)
+    changed_title_raw = dict(raw)
+    changed_title_raw["open_pages_titles"] = np.asarray(("Changed title", "Another title"))
+    changed_title_raw["open_pages_urls"] = np.asarray((
+        "https://example.test/start?private=2",
+        "https://docs.example.test/guide",
+    ))
+    changed_title = project_browsergym_observation(
+        changed_title_raw,
+        observation_id="obs:navigation-title-change",
+        source_revision="revision:navigation-title-change",
+        page_identity="page:navigation",
+        episode_identity="0",
+        task_state=reset_task_state("obs:navigation-title-change"),
+        entity_identity=BrowserGymEntityIdentityMap(b"browser-navigation-profile"),
+        browser_global_primitives=(
+            "goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close",
+        ),
+        browser_navigation_locations=None,
+    )
+    original_tab_focus = next(
+        item for item in webarena.world.bindings if item.semantic_action == "tab_focus"
+    )
+    changed_tab_focus = next(
+        item for item in changed_title.world.bindings if item.semantic_action == "tab_focus"
+    )
+    assert changed_tab_focus.target_fingerprint == original_tab_focus.target_fingerprint
 
     evaluation = TaskEvaluation(
         task.task_id,
@@ -186,6 +222,8 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     assert model_observation == delivery.view.text
     assert "CurrentActionSubjects" in model_observation
     assert 'browser_context label="Browser navigation"' in model_observation
+    assert '"title":"Example start"' in model_observation
+    assert '"title":"Documentation guide"' in model_observation
     assert 'viewport label="Current page viewport"' in model_observation
     assert 'focused_context label="Current keyboard focus"' in model_observation
     assert '"active_tab_index":1' in model_observation
@@ -237,6 +275,7 @@ def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_
         "https://map.example.test:3000/",
         "https://wiki.example.test/wiki/Portland",
     ))
+    raw["open_pages_titles"] = np.asarray(("OpenStreetMap", "Portland, Maine"))
     raw["active_page_index"] = np.asarray([1])
     projected = project_browsergym_observation(
         raw,
@@ -251,10 +290,8 @@ def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_
     )
     browser = next(item for item in projected.world.targets if item.role == "browser_context")
     assert browser.state["navigation_scope"] == "environment_restricted"
-    assert tuple(browser.state["allowed_navigation_locations"]) == (
-        "map.example.test:3000",
-        "wiki.example.test",
-    )
+    assert "allowed_navigation_locations" not in browser.state
+    assert browser.state["open_tabs"][0]["title"] == "OpenStreetMap"
     task = TaskGoal(
         "task:restricted-navigation",
         "Use the configured browser environment",
@@ -275,9 +312,8 @@ def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_
     )
     delivery = build_model_turn_delivery(context, include_images=False)
     assert '"navigation_scope":"environment_restricted"' in delivery.view.text
-    assert '"allowed_navigation_locations":["map.example.test:3000","wiki.example.test"]' in (
-        delivery.view.text
-    )
+    assert "allowed_navigation_locations" not in delivery.view.text
+    assert '"title":"OpenStreetMap"' in delivery.view.text
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
     goto = next(item for item in catalog.specs if item.name == "goto")
     assert "map.example.test:3000" in goto.input_schema["properties"]["url"]["description"]

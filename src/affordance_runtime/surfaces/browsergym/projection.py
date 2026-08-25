@@ -453,6 +453,14 @@ def _public_page_route(value: object) -> str:
     return urlunsplit((parsed.scheme, host, parsed.path or "/", "", ""))[:1_000]
 
 
+def _public_page_title(value: object) -> str:
+    """Expose BrowserGym's browser-owned tab title as bounded display metadata."""
+
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip()[:240]
+
+
 def _browser_context_subject(
     raw: dict[str, object],
     observation_id: str,
@@ -477,10 +485,18 @@ def _browser_context_subject(
     if not raw_urls:
         current = raw.get("url")
         raw_urls = (current,) if isinstance(current, str) and current else ()
+    raw_titles = _indexed_string_sequence(raw.get("open_pages_titles"))
     active_index = _active_page_index(raw.get("active_page_index"), len(raw_urls))
     public_tabs = tuple(
         {
             "index": index,
+            **(
+                {"title": title}
+                if (title := _public_page_title(
+                    raw_titles[index] if index < len(raw_titles) else ""
+                ))
+                else {}
+            ),
             "route": _public_page_route(url) or "opaque",
             "active": index == active_index,
         }
@@ -495,8 +511,6 @@ def _browser_context_subject(
             "unrestricted" if navigation_locations is None else "environment_restricted"
         ),
     }
-    if navigation_locations is not None:
-        state["allowed_navigation_locations"] = navigation_locations
     target = SemanticTarget(target_id, "browser_context", "Browser navigation", state, {})
     structure = ObservationStructureNode(
         "structure:browser-context:current",
@@ -508,7 +522,13 @@ def _browser_context_subject(
         target_id,
         False,
     )
-    fingerprint = _public_fingerprint(("browser_context", tuple(public_tabs), active_index))
+    # Titles are semantic display metadata supplied by BrowserGym, not binding
+    # identity. A dynamic title change must not make a browser-global action stale.
+    tab_identity = tuple(
+        (tab["index"], tab["route"], tab["active"])
+        for tab in public_tabs
+    )
+    fingerprint = _public_fingerprint(("browser_context", tab_identity, active_index))
     pairs: list[tuple[ActionBinding, BrowserGymNavigationBinding]] = []
     for primitive in supported:
         if primitive == "tab_focus":
@@ -601,6 +621,16 @@ def _string_sequence(value: object) -> tuple[str, ...]:
         value = value.tolist()
     if isinstance(value, tuple | list):
         return tuple(item for item in value if isinstance(item, str) and item)
+    return ()
+
+
+def _indexed_string_sequence(value: object) -> tuple[str, ...]:
+    """Keep BrowserGym's positional tab metadata aligned with open_pages_urls."""
+
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, tuple | list):
+        return tuple(item if isinstance(item, str) else "" for item in value)
     return ()
 
 

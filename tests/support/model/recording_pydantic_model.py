@@ -597,15 +597,17 @@ def _schema_example(schema: Mapping[str, object], *, last: bool = False) -> obje
 
 
 def _latest_public_text(messages: list[ModelMessage]) -> str:
-    latest = messages[-1]
-    for part in latest.parts:
-        content = getattr(part, "content", None)
-        if isinstance(content, str):
-            return content
-        if isinstance(content, Sequence) and not isinstance(content, (str, bytes, bytearray)):
-            for item in content:
-                if isinstance(item, str):
-                    return item
+    for message in reversed(messages):
+        for part in message.parts:
+            if not isinstance(part, UserPromptPart):
+                continue
+            content = part.content
+            if isinstance(content, str):
+                return content
+            if isinstance(content, Sequence) and not isinstance(content, (str, bytes, bytearray)):
+                for item in content:
+                    if isinstance(item, str):
+                        return item
     raise AssertionError("actual PydanticAI request contained no public text part")
 
 

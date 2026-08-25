@@ -252,18 +252,29 @@ def test_gate_0_preserves_arbitrary_public_text_without_lexical_privacy_interpre
 
 
 @pytest.mark.parametrize("scripted", ["final_response", "zero_calls"])
-def test_gate_0_text_or_no_tool_response_keeps_current_runtime_failure_algebra(scripted: str) -> None:
+def test_gate_0_text_or_no_tool_response_uses_one_bounded_output_retry(scripted: str) -> None:
     async def scenario() -> None:
-        recorder = RecordingPydanticModel([scripted], scripted_phases=["ordinary"])
+        recorder = RecordingPydanticModel(
+            [scripted, scripted],
+            scripted_phases=["ordinary", "ordinary_output_retry"],
+        )
+        policy = _policy(recorder)
         environment = ScriptedEnvironment(initial_observation=shared_world(f"gate-0-{scripted}", False))
 
-        state = await _runtime(_policy(recorder)).run_task(environment, shared_task())
+        state = await _runtime(policy).run_task(environment, shared_task())
 
-        assert recorder.calls == 1
+        assert recorder.calls == 2
         assert state.status is RunStatus.FAILED
         assert state.execution_count == 0
         assert state.policy_failure is not None
-        assert state.policy_failure.kind is ModelFailureKind.SCHEMA_ERROR
+        assert state.policy_failure.kind is ModelFailureKind.INVALID_RESPONSE
+        assert policy.port.last_invocation_result is not None
+        assert policy.port.last_invocation_result.failure is not None
+        assert policy.port.last_invocation_result.failure.reason == "no_tool_call"
+        assert [attempt.status for attempt in policy.port.last_generation_attempts] == [
+            "invalid",
+            "failed",
+        ]
         assert environment.executed_requests == []
 
     asyncio.run(scenario())
@@ -457,7 +468,10 @@ def test_gate_2_readonly_only_actual_mark_reaches_recorder_without_action_author
             ),
         ))
         assert fused.observation is not None
-        recorder = RecordingPydanticModel(["zero_calls"], scripted_phases=["ordinary"])
+        recorder = RecordingPydanticModel(
+            ["zero_calls", "zero_calls"],
+            scripted_phases=["ordinary", "ordinary_output_retry"],
+        )
         policy = _policy(recorder, supports_multimodal=True)
 
         state = await _runtime(policy, evaluator=_IncompleteTaskEvaluator()).run_task(
@@ -470,7 +484,7 @@ def test_gate_2_readonly_only_actual_mark_reaches_recorder_without_action_author
         )
 
         assert state.status is RunStatus.FAILED
-        assert recorder.calls == 1
+        assert recorder.calls == 2
         envelope = policy.port.last_admitted_envelopes[0]
         assert normalize_recorded_provider_input(recorder.records[0]) == envelope.model_boundary_projection()
         assert envelope.media[0].mime_type == "image/png"
