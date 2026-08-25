@@ -91,12 +91,26 @@ class StepResult:
     waited_ms: int = 0
     failure_code: AgentFailureCode | None = None
     runtime_failure: RuntimeFailure | None = None
-    policy_observation: ActorWorldSnapshot | None = None
-    policy_target_refs: Mapping[str, str] = field(default_factory=dict)
+    policy_observation: ActorWorldSnapshot | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
+    policy_target_refs: Mapping[str, str] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
     action_page_result: ActionDiscoveryResult | None = None
     recovery_signal: RecoverySignal | None = None
     finalization: FinalizationProtocolResult | None = None
-    public_world_delta: PublicWorldDelta | None = field(default=None, repr=False)
+    public_world_delta: PublicWorldDelta | None = field(
+        default=None,
+        repr=False,
+        metadata={"serialize": False},
+    )
     before_public_world: CanonicalPublicWorldProjection | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )

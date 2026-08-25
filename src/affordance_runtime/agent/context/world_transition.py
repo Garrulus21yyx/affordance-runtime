@@ -117,6 +117,14 @@ class WorldTransitionProjector:
     def project(self, before: WorldObservation, after: WorldObservation) -> PublicWorldDelta:
         if not isinstance(before, WorldObservation) or not isinstance(after, WorldObservation):
             raise TypeError("World transition projection requires exact typed Worlds")
+        if before is after:
+            digest = public_world_semantic_digest(before)
+            return PublicWorldDelta(
+                before.observation_id,
+                after.observation_id,
+                digest,
+                digest,
+            )
         before_regions = WorldDeliveryIndex.from_observation(before)
         after_regions = WorldDeliveryIndex.from_observation(after)
         return PublicWorldDelta(

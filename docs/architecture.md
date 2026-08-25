@@ -109,18 +109,58 @@ The SurfaceAdapter now gives the pre-dispatch page only navigation-watcher owner
 returns, its current `unwrapped.page` becomes the sole post-action page for quiet tracking, stable acquisition,
 private enrichment, and transition `after_url`. A real Playwright two-tab owner test proves that observation,
 enrichment, and trace use that same current page. No alternate observation, retry, browser-state projection, action
-owner, or control loop was added. A fresh live Task266 witness remains separately authorized.
+owner, or control loop was added. Run13 remained failed pre-repair evidence; run14 below crossed this boundary.
 
-Current provider-free verification: the focused progress/history/Monitor/authority surface passes `73` tests. The
-BrowserGym owner/currentness surface passes `164 passed / 10 skipped`. The full suite reports
-`1711 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+Task266 run14 crossed that current-page repair: tab focus, fresh World identity, current controls, and browser-global
+actions remained correct; all 18 completed model calls were valid, with zero stale bindings, invalid arguments,
+`wait`, or fallback. The model also retained Portland's coordinates and the unresolved OSRM requirement. The case
+nevertheless reached its enclosing timeout after about 1,001 seconds. Provider latency accounted for about 164.5
+seconds. Exact PydanticAI message timestamps showed that each local read on the 6,002-target / 4,096-fact Wikipedia
+World consumed another 67--72 seconds before the next provider request, and the 19-step trace grew to about 505 MB.
+
+The shared cause was repeated derivation of one immutable fresh World, not another action, cursor, or evidence defect.
+`current_findings_digest` rebuilt the complete target-semantic map once per fact (`O(facts * targets)`); an unchanged
+local result rebuilt two `WorldDeliveryIndex` values for a no-change delta; the next turn rebuilt the same current
+index again; and trace serialization ignored the existing `serialize=False` declarations and copied both canonical
+World projections. On run14's persisted observation, the first two costs measured 44.78 and 10.35 seconds.
+
+The converged contract is now:
+
+```text
+fresh World
+-> one current ActionSpace / WorldDeliveryIndex / CanonicalPublicWorldProjection
+-> any number of same-World local reads reusing those values
+-> Monitor digest from one target map plus one fact pass
+-> one bounded step lineage and one exact provider transcript in Trace
+```
+
+`WorldTransitionProjector` returns a typed empty delta immediately for the identical World object; `RunState`'s
+existing current index is reused when its observation and exact action IDs still match; and the already computed
+delivery transition is committed once. Trace keeps the full observation in its deduplicated observation event and
+the exact provider request/response in `generation_attempts.transcript`; a step keeps only typed outcome/receipt and
+bounded transition counts plus lineage. It does not copy policy snapshots, canonical Worlds, or the same provider
+attempt under multiple keys. Honest truncation metadata accompanies bounded changed-region refs.
+
+This follows the mature separation in the
+[BrowserGym ecosystem](https://openreview.net/forum?id=5298fKGmv3): the environment supplies the current observation
+and receives the next action, while experiment tooling observes the trajectory. AgentLab's official
+[`StepInfo`](https://github.com/ServiceNow/AgentLab/blob/main/src/agentlab/experiments/loop.py) persists one step's
+observation/action/agent information with profiling timestamps, saves screenshots separately, and stores the fixed
+goal once. [AgentOccam](https://proceedings.iclr.cc/paper_files/paper/2025/hash/f2c6e459b95694a24ac69c469a4ee746-Abstract-Conference.html)
+likewise compresses page observations and selectively replays relevant history; it does not require a second
+Runtime-owned evidence or cursor system. The project keeps its typed World for grounding, but no longer recomputes or
+re-serializes that authority per local tool result.
+
+Current provider-free verification: the focused same-World/Monitor/trace/core surface passes
+`64 passed / 3 skipped`. The BrowserGym owner/currentness surface remains at `164 passed / 10 skipped`. The full suite
+reports `1713 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Ruff, compileall, and diff checks pass. This is implementation evidence, not overall closure or a
 fresh live Task266 witness.
 
 Overall project closure is still **open**:
 
-- the combined BrowserGym large-page capture/projection repairs still require a post-repair Task266 live witness
-  before their separately scoped gate can close;
+- the same-World derivation and bounded-trace repairs still require a post-repair Task266 live witness before their
+  separately scoped gate can close;
 - Planner lexical admission still has a known gap.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
@@ -795,6 +835,10 @@ This cutover is implementation-complete only when all of the following agree:
     one fresh capture, zero replay, and returns to the same ActionPolicy.
 17. when a BrowserGym action changes the active page, post-action stability, observation, private enrichment, and
     transition `after_url` all use that one current page; the pre-dispatch page remains only the navigation watcher.
+18. Monitor findings are derived in one target pass plus one fact pass; same-object local tools build no transition
+    region index, reuse the current RunState index, and commit one already-produced delivery transition.
+19. Trace persists each full observation and exact provider attempt once, while step events contain bounded typed
+    outcomes and transition lineage with honest truncation metadata rather than duplicate canonical Worlds.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

@@ -106,6 +106,10 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
             "reason": "atomic_core_loop_test",
         }
         assert model_turn["selected_grounding"]["source"]["target_id"] == "shared-toggle"
+        assert model_turn["agent_context"]["projection"] == "lineage_summary"
+        assert model_turn["agent_context"]["observation_id"] == "before"
+        assert "provider_attempts" not in model_turn
+        assert "model_invocation" not in model_turn
         step = next(item for item in persisted if item["event"] == "step_completed")
         assert step["lineage"]["tool_call_id"] == "provider-call:test"
         assert step["lineage"]["request_id"].startswith("request:")
@@ -113,6 +117,11 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert step["lineage"]["after_observation_id"] == "after"
         assert "before_world" not in step["result"]
         assert "after_world" not in step["result"]
+        assert "before_public_world" not in step["result"]
+        assert "after_public_world" not in step["result"]
+        assert "model_delivery" not in step["result"]
+        assert "policy_observation" not in step["result"]
+        assert "policy_target_refs" not in step["result"]
         assert step["result"]["execution_receipts"] is not None
         transition = step["result"]["execution_receipts"]["receipts"][0]["result"][
             "adapter_evidence"
@@ -122,6 +131,21 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert transition["after_url"].endswith("/result")
         assert transition["stability_status"] == "stable_navigation"
         assert step["result"]["action_outcome"] is not None
+        assert "public_world_delta" not in step["result"]["action_outcome"]
+        assert step["result"]["public_world_delta"] == {
+            "before_observation_id": "before",
+            "after_observation_id": "after",
+            "before_world_digest": step["lineage"]["before_world_digest"],
+            "after_world_digest": step["lineage"]["after_world_digest"],
+            "changed": True,
+            "changed_target_count": 1,
+            "changed_fact_count": 1,
+            "changed_region_keys": step["result"]["public_world_delta"]["changed_region_keys"],
+            "changed_region_total_count": len(
+                step["result"]["public_world_delta"]["changed_region_keys"]
+            ),
+            "changed_regions_truncated": False,
+        }
         assert step["result"]["task_evaluation"]["status"] == "complete"
 
     asyncio.run(scenario())
@@ -196,6 +220,7 @@ def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirror
             "initial",
             "grounded_tools.v2",
             "accepted",
+            envelope_projection={"messages": [{"content": "canonical-input"}]},
             transcript={"llm.output_messages": [{"content": "from-result"}]},
         ),
     )
@@ -211,6 +236,11 @@ def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirror
 
     assert payload["generation_attempts"][0]["phase"] == "initial"
     assert payload["generation_attempts"][0]["transcript"]["llm.output_messages"][0]["content"] == "from-result"
+    assert "provider_attempts" not in payload
+    assert "model_invocation" not in payload
+    assert "envelope_projection" not in payload["generation_attempts"][0]
+    assert json.dumps(payload).count("from-result") == 1
+    assert "canonical-input" not in json.dumps(payload)
 
 
 def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tmp_path) -> None:

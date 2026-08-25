@@ -273,7 +273,7 @@ class RunTraceRecorder:
         exception: str = "",
     ) -> None:
         payload = model_turn_payload(context, outcome, policy, exception=exception)
-        payload["agent_context"] = _json_value(context, self.directory)
+        payload["agent_context"] = _agent_context_trace_payload(context)
         self._emit("model_turn", **payload)
 
     def finalization_protocol(
@@ -1335,10 +1335,8 @@ def model_turn_payload(
     payload: dict[str, object] = {
         "context_id": getattr(context, "context_id", ""),
         "visible_action_count": len(getattr(getattr(context, "actions", None), "options", ())),
-        "provider_attempts": _json_value(attempts, None),
         "generation_attempts": _json_value(attempts, None),
         "model_metadata": _json_value(metadata, None),
-        "model_invocation": _json_value(invocation, None),
         "exception": exception,
         "decision": _json_value(outcome, None),
         "outcome": (getattr(getattr(outcome, "kind", None), "value", "") or type(outcome).__name__)
@@ -1371,6 +1369,32 @@ def model_turn_payload(
             "complete_request_tokens": int(diagnostics.get("complete_request_tokens", 0)),
         }
     return payload
+
+
+def _agent_context_trace_payload(context: object) -> dict[str, object]:
+    """Reference the exact traced observation/provider input without copying either."""
+
+    observation = getattr(context, "current_observation", None)
+    canonical = getattr(context, "canonical_world", None)
+    workspace = getattr(context, "workspace", None)
+    actor_world = getattr(context, "actor_world", None)
+    documents = tuple(getattr(actor_world, "documents", ()))
+    actions = tuple(getattr(getattr(context, "actions", None), "options", ()))
+    complete_actions = tuple(getattr(context, "complete_actions", ()))
+    return {
+        "projection": "lineage_summary",
+        "context_id": str(getattr(context, "context_id", "")),
+        "observation_id": str(getattr(observation, "observation_id", "")),
+        "action_space_id": str(getattr(context, "action_space_id", "")),
+        "visible_action_count": len(actions),
+        "complete_action_count": len(complete_actions),
+        "document_count": len(documents),
+        "retained_node_count": sum(int(getattr(item, "retained_node_count", 0)) for item in documents),
+        "recent_step_count": len(tuple(getattr(workspace, "recent_steps", ()))),
+        "semantic_event_count": len(tuple(getattr(workspace, "semantic_events", ()))),
+        "canonical_projection_lineage": str(getattr(canonical, "projection_lineage", "")),
+        "public_document_signature": str(getattr(canonical, "public_document_signature", "")),
+    }
 
 
 def _selected_grounding(context: object, decision: object) -> dict[str, object] | None:
@@ -1439,10 +1463,35 @@ def _step_lineage(result: object) -> dict[str, object]:
 def _step_payload(result: object, directory: Path | None) -> dict[str, object]:
     if not is_dataclass(result) or isinstance(result, type):
         return {"value": _json_value(result, directory)}
-    return {
+    payload = {
         item.name: _json_value(getattr(result, item.name), directory)
         for item in fields(result)
         if item.name not in {"before_world", "after_world"}
+        and item.metadata.get("serialize", True)
+    }
+    delta = getattr(result, "public_world_delta", None)
+    if delta is not None:
+        payload["public_world_delta"] = _public_world_delta_trace_payload(delta)
+    return payload
+
+
+def _public_world_delta_trace_payload(delta: object) -> dict[str, object]:
+    """Persist bounded transition facts; observation events own full World bodies."""
+
+    target_changes = tuple(getattr(delta, "target_changes", ()))
+    fact_changes = tuple(getattr(delta, "fact_changes", ()))
+    changed_region_keys = tuple(getattr(delta, "changed_region_keys", ()))
+    return {
+        "before_observation_id": str(getattr(delta, "before_observation_id", "")),
+        "after_observation_id": str(getattr(delta, "after_observation_id", "")),
+        "before_world_digest": str(getattr(delta, "before_world_digest", "")),
+        "after_world_digest": str(getattr(delta, "after_world_digest", "")),
+        "changed": bool(target_changes or fact_changes),
+        "changed_target_count": len(target_changes),
+        "changed_fact_count": len(fact_changes),
+        "changed_region_keys": changed_region_keys[:64],
+        "changed_region_total_count": len(changed_region_keys),
+        "changed_regions_truncated": len(changed_region_keys) > 64,
     }
 
 

@@ -46,7 +46,12 @@ class ModelGenerationAttempt:
     final_content_tokens: int = 0
     final_tool_call_present: bool = False
     envelope_id: str = ""
-    envelope_projection: object | None = field(default=None, repr=False, compare=False)
+    envelope_projection: object | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
     transcript: object | None = field(default=None, repr=False, compare=False)
 
 

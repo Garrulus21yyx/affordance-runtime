@@ -19,7 +19,7 @@ from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
-from affordance_runtime.world.public_semantic_digest import public_subject_semantics
+from affordance_runtime.world.public_semantic_digest import target_semantics
 
 _MAX_LOCAL_DELIVERY_RECORDS = 64
 _MAX_LOCAL_INFORMATION_ITEMS = 32
@@ -234,10 +234,22 @@ def current_findings_digest(observation: WorldObservation) -> str:
         for item in observation.sources
         for key in (item.observation_id, item.surface)
     }
+    target_bases = {
+        target.target_id: (
+            target.role,
+            target.label,
+            to_json_compatible(target.state),
+        )
+        for target in observation.targets
+    }
+    subjects = {
+        target.target_id: target_semantics(target, target_bases)
+        for target in observation.targets
+    }
     findings = sorted(
         (
             (
-                public_subject_semantics(observation, fact.subject_id),
+                subjects.get(fact.subject_id, ("unknown_public_subject",)),
                 fact.predicate,
                 fact.value,
                 source_coverage.get(fact.source_id, CoverageState.COMPLETE).value,

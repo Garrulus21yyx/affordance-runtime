@@ -87,7 +87,12 @@ class ActionOutcome:
     reason: str
     evidence_refs: tuple[str, ...] = ()
     evidence: Mapping[str, object] = field(default_factory=dict)
-    public_world_delta: PublicWorldDelta | None = field(default=None, repr=False, compare=False)
+    public_world_delta: PublicWorldDelta | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.observed_change, ObservedChange):

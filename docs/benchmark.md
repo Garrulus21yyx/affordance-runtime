@@ -24,15 +24,15 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the focused progress/history/Monitor/authority surface at `73 passed`.
-The BrowserGym owner/currentness surface passes `164 passed / 10 skipped`. The full suite reports
-`1711 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+Current provider-free verification passes the focused same-World/Monitor/trace/core surface at
+`64 passed / 3 skipped`. The BrowserGym owner/currentness surface remains at `164 passed / 10 skipped`. The full suite
+reports `1713 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded
 changes, not a live witness for the Task266 repair or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
-- post-repair live validation of the combined BrowserGym large-page capture/projection repairs;
+- post-repair live validation of the same-World derivation and bounded-trace repairs exposed by Task266 run14;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
@@ -126,7 +126,25 @@ The owner repair now reacquires BrowserGym's current page immediately after disp
 post-action quiet tracking, observation, physical enrichment, and `after_url`; the old page is retained only by the
 dispatch/navigation watcher. A real Playwright two-tab regression proves the new-page observation and enrichment
 identity. This adds no fallback, second World, browser-state side channel, tool branch, or Monitor behavior. Run13 is
-failed pre-repair evidence, and no post-repair live witness has been run.
+failed pre-repair evidence.
+
+Task266 run14 crossed that repair and is the failed pre-performance-repair witness. It ran for about 1,001 seconds,
+made 19 policy calls, completed 18 valid tool calls and eight effectful dispatches, and recorded zero invalid
+arguments, stale bindings, `sent_unknown`, `wait`, or fallback. No STOP/native evaluation occurred because the
+enclosing case deadline cancelled policy turn 19. Model-provider latency was about 164.5 seconds; the remaining time
+was predominantly synchronous same-World derivation. Exact request timestamps show 67--72 second gaps after local
+reads on the Portland article, while a local read on the small map World took about 0.5 seconds before the next
+request. The durable trace is
+[`run14`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run14/run.json); its JSONL is about 505 MB for 64
+events because step projection copied canonical Worlds despite their non-serialization metadata.
+
+Offline profiling against run14's exact persisted 6,002-target / 4,096-fact World closes the timing model:
+`current_findings_digest=44.78s`, unchanged `WorldTransitionProjector=10.35s`, next-turn
+`WorldDeliveryIndex=4.57s`, `ContextBuilder=2.05s`, and `TurnPacker=1.10s`. The Monitor digest was quadratic because
+it rebuilt every target's public semantics once for every fact. The repaired digest builds one target map and makes
+one fact pass; it measures about `0.122s` with the identical digest. Identical-World delta projection now measures
+about `0.452s`, and the bounded local-step trace projection measures about `0.0001s / 1.3KB` before ordinary receipt
+content. Run14 remains failed evidence; a post-repair live witness is required.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -661,6 +679,10 @@ The final read-only review for this cutover must answer:
     effectful GUI route continues under the outer episode budget?
 21. When a BrowserGym action changes the active tab, do post-action stability, observation, physical enrichment, and
     transition URL all come from BrowserGym's one current page rather than joining pre- and post-action tabs?
+22. On a large unchanged World, does Monitor findings derivation scale with targets plus facts, avoid region-index
+    construction for the empty transition, reuse the current index on the next turn, and preserve the exact digest?
+23. Does Trace store one deduplicated full observation and one exact provider transcript while excluding policy
+    snapshots/canonical projections from step payloads and reporting honest counts/truncation for transition summaries?
 
 ## Exit statement
 

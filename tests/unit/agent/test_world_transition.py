@@ -4,6 +4,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.agent.context import observation_delivery as observation_delivery_module
+from affordance_runtime.agent.context import world_transition as world_transition_module
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.observation_delivery import current_findings_digest
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -31,7 +33,6 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world import SemanticTarget, StateFact
 from tests.support.world import fused_world
 
@@ -95,6 +96,41 @@ def test_current_findings_digest_orders_nested_subject_semantics_canonically() -
     )
 
     assert current_findings_digest(world) == current_findings_digest(world)
+
+
+def test_current_findings_digest_builds_each_subject_semantics_once(monkeypatch) -> None:
+    world = _world("source:linear-findings", {f"target:{index}": index for index in range(24)})
+    original = observation_delivery_module.target_semantics
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(observation_delivery_module, "target_semantics", counted)
+
+    assert current_findings_digest(world)
+    assert calls == len(world.targets)
+
+
+def test_same_world_transition_does_not_rebuild_region_indexes(monkeypatch) -> None:
+    world = _world("source:same-object", {"target": 1})
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("an unchanged authoritative World has no region changes to resolve")
+
+    monkeypatch.setattr(
+        world_transition_module.WorldDeliveryIndex,
+        "from_observation",
+        forbidden,
+    )
+
+    delta = WorldTransitionProjector().project(world, world)
+
+    assert delta.before_observation_id == delta.after_observation_id == world.observation_id
+    assert delta.before_world_digest == delta.after_world_digest
+    assert not delta.changed
 
 
 @pytest.mark.parametrize(
@@ -251,7 +287,18 @@ def test_runtime_consumers_share_one_delta_instance_or_exact_serialization() -> 
     assert step.public_world_delta is delta
     assert delivery.public_world_delta is delta
     assert turn.transition == {}
-    assert trace.events[-1]["result"]["public_world_delta"] == to_json_compatible(delta)
+    assert trace.events[-1]["result"]["public_world_delta"] == {
+        "before_observation_id": delta.before_observation_id,
+        "after_observation_id": delta.after_observation_id,
+        "before_world_digest": delta.before_world_digest,
+        "after_world_digest": delta.after_world_digest,
+        "changed": delta.changed,
+        "changed_target_count": len(delta.target_changes),
+        "changed_fact_count": len(delta.fact_changes),
+        "changed_region_keys": delta.changed_region_keys,
+        "changed_region_total_count": len(delta.changed_region_keys),
+        "changed_regions_truncated": False,
+    }
     assert trace.events[-1]["lineage"]["before_world_digest"] == delta.before_world_digest
     assert trace.events[-1]["lineage"]["after_world_digest"] == delta.after_world_digest
 

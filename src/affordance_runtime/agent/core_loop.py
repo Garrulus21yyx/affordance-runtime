@@ -290,7 +290,7 @@ class CoreAgentLoop:
             result = self._attach_canonical_worlds(task, state, result)
             delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count + 1))
             result = self._apply_episode_monitor(result, state, delivery)
-            self._commit_step(state, result)
+            self._commit_step(state, result, delivery_transition=delivery)
         if state.terminal:
             self.trace_sink.run_finished(state)
         else:
@@ -572,16 +572,23 @@ class CoreAgentLoop:
         if state.status is not RunStatus.RUNNING:
             raise ValueError("core step requires a running state")
         action_space = self.action_space_builder.build(task, state.current_world)
-        region_index = WorldDeliveryIndex.from_observation(
-            state.current_world,
-            action_space.options,
-            public_world_delta=(
-                state.last_step.public_world_delta
-                if state.last_step is not None and state.last_step.after_world is state.current_world
-                else None
-            ),
-            previous_index=state.delivery_index or state.prior_delivery_index,
-        )
+        region_index = state.delivery_index
+        if (
+            region_index is None
+            or region_index.world_observation_id != state.current_world.observation_id
+            or set(region_index.action_region_keys)
+            != {item.action_id for item in action_space.options}
+        ):
+            region_index = WorldDeliveryIndex.from_observation(
+                state.current_world,
+                action_space.options,
+                public_world_delta=(
+                    state.last_step.public_world_delta
+                    if state.last_step is not None and state.last_step.after_world is state.current_world
+                    else None
+                ),
+                previous_index=state.delivery_index or state.prior_delivery_index,
+            )
         state.install_delivery_index(region_index)
         action_page = (
             state.action_page

@@ -1327,7 +1327,20 @@ def test_failed_recapture_with_live_session_blocks_without_replay() -> None:
     asyncio.run(scenario())
 
 
-def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
+def test_core_runtime_owns_count_result_and_reuses_same_world_derivations(monkeypatch) -> None:
+    from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+
+    original = WorldDeliveryIndex.from_observation
+    index_build_count = 0
+
+    def counted(cls, *args, **kwargs):
+        del cls
+        nonlocal index_build_count
+        index_build_count += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(WorldDeliveryIndex, "from_observation", classmethod(counted))
+
     async def scenario() -> None:
         runtime = _runtime("count_children")
         environment = ScriptedEnvironment(initial_observation=_count_world())
@@ -1339,6 +1352,7 @@ def test_core_runtime_owns_count_result_and_pairs_it_with_the_request() -> None:
         assert state.observation_count == 1
         assert state.workspace.recent_steps[0].semantic_summary["information_delta"] == "new_information"
         assert "result" not in state.workspace.recent_steps[0].semantic_summary
+        assert index_build_count == 1
 
     asyncio.run(scenario())
 
