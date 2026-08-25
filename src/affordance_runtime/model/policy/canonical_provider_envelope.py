@@ -376,39 +376,6 @@ class CanonicalProviderEnvelopeBinder:
             tool_result=None,
         )
 
-    def bind_single_action_retry(
-        self,
-        base: CanonicalProviderEnvelope,
-        *,
-        call_profile: ActionPolicyCallProfile,
-        output_token_reserve: int,
-    ) -> CanonicalProviderEnvelope:
-        """Re-ask for one decision with the exact same admitted current context."""
-
-        instructions = (
-            base.instructions[0]
-            + "\n\nThe previous response was rejected because it contained multiple tool calls. "
-            "No call was accepted or executed. Reassess the unchanged current context and return "
-            "exactly one offered tool call. Do not queue or refer to any other call.",
-        )
-        return self._create_from_parts(
-            context_id=base.context_id,
-            delivery_id=base.delivery_id,
-            catalog=base.catalog,
-            identity=base.identity,
-            instructions=instructions,
-            user_text=base.user_text,
-            media=base.media,
-            call_profile=call_profile,
-            output_token_reserve=output_token_reserve,
-            attempt_phase=call_profile.phase.value,
-            diagnostics=base,
-            history_messages=_project_pydantic_history(base.pydantic_history),
-            pydantic_history=base.pydantic_history,
-            tool_result=base.tool_result,
-            tool_result_metadata=base.tool_result_metadata,
-        )
-
     def _create(
         self,
         request: ModelDecisionRequest,

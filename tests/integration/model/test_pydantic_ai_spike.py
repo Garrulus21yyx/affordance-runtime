@@ -187,9 +187,9 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
     asyncio.run(scenario())
 
 
-def test_multiple_provider_tool_calls_execute_nothing_then_retry_one_action() -> None:
+def test_multiple_provider_tool_calls_serialize_the_first_action_once() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(["multiple_gui_actions", "repeat_last_gui_call"])
+        scripted = ScriptedModel(["multiple_gui_actions"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("multiple-calls", False)
@@ -208,21 +208,21 @@ def test_multiple_provider_tool_calls_execute_nothing_then_retry_one_action() ->
         decision = result.output.decision
         assert isinstance(decision, SelectAction)
         assert decision.tool_call_id == "recording-call:1"
-        assert scripted.calls == 2
-        assert [attempt.phase for attempt in result.attempts] == [
-            "ordinary",
-            "single_action_retry",
-        ]
+        assert scripted.calls == 1
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary"]
         assert result.diagnostics["multiple_tool_call_attempt_count"] == 1
-        ordinary, retry = policy.port.last_admitted_envelopes
-        assert retry.context_id == ordinary.context_id
-        assert retry.delivery_id == ordinary.delivery_id
-        assert retry.user_text == ordinary.user_text
-        assert retry.media == ordinary.media
-        assert retry.function_tools == ordinary.function_tools
-        assert retry.pydantic_history == ordinary.pydantic_history
-        assert retry.tool_result == ordinary.tool_result
-        assert "No call was accepted or executed" in retry.instructions[0]
+        assert result.diagnostics["discarded_protocol_call_count"] == 1
+        assert len(policy.port.last_admitted_envelopes) == 1
+        retained = policy.port.message_history[0]
+        assert isinstance(retained, ModelResponse)
+        assert "accepted only the first of 2 proposed tool calls" in retained.parts[0].content
+        assert "not executed or queued" in retained.parts[0].content
+        assert [part.tool_call_id for part in retained.parts if isinstance(part, ToolCallPart)] == [
+            "recording-call:1"
+        ]
+        assert "recording-call:1:second" not in json.dumps(
+            retained, default=str
+        )
 
     asyncio.run(scenario())
 
@@ -255,9 +255,9 @@ def test_zero_or_wholly_unparseable_output_fails_without_representation_repair(
     asyncio.run(scenario())
 
 
-def test_semantically_distinct_extra_call_requires_model_reselection() -> None:
+def test_semantically_distinct_extra_call_is_not_a_fallback_or_pending_action() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(["multiple_distinct_gui_actions", "repeat_last_gui_call"])
+        scripted = ScriptedModel(["multiple_distinct_gui_actions"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("multiple-call-reselection", False)
@@ -275,48 +275,17 @@ def test_semantically_distinct_extra_call_requires_model_reselection() -> None:
         assert result.output is not None
         assert isinstance(result.output.decision, SelectAction)
         assert result.output.decision.tool_call_id == "recording-call:1"
-        assert scripted.calls == 2
-        assert [attempt.phase for attempt in result.attempts] == [
-            "ordinary",
-            "single_action_retry",
-        ]
+        assert scripted.calls == 1
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary"]
         assert result.diagnostics["multiple_tool_call_attempt_count"] == 1
+        assert result.diagnostics["discarded_protocol_call_count"] == 1
+        physical_history = json.dumps(policy.port.message_history, default=str)
+        assert "recording-call:1:discarded" not in physical_history
 
     asyncio.run(scenario())
 
 
-def test_repeated_multiple_call_violation_fails_typed_without_history_or_execution() -> None:
-    async def scenario() -> None:
-        scripted = ScriptedModel(["multiple_gui_actions", "multiple_gui_actions"])
-        policy = _policy(scripted.build())
-        task = shared_task()
-        world = shared_world("multiple-call-retry-failure", False)
-        context = ContextBuilder().build(
-            task,
-            world,
-            ActionSpaceBuilder().build(task, world),
-            await SharedTaskEvaluator().evaluate(task, world),
-        )
-
-        result = await policy.port.generate(
-            ModelDecisionRequest("request:multiple-call-retry-failure", context)
-        )
-
-        assert result.output is None
-        assert result.failure is not None
-        assert result.failure.kind is ModelFailureKind.INVALID_TOOL_ARGUMENTS
-        assert result.diagnostics["tool_resolution_code"] == "multiple_tool_calls"
-        assert result.diagnostics["multiple_tool_call_attempt_count"] == 2
-        assert [attempt.phase for attempt in result.attempts] == [
-            "ordinary",
-            "single_action_retry",
-        ]
-        assert policy.port.message_history == ()
-
-    asyncio.run(scenario())
-
-
-def test_single_action_retry_preserves_the_current_pending_tool_return_pair() -> None:
+def test_first_call_serialization_preserves_the_current_pending_tool_return_pair() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("multiple-call-with-pending-result", False)
@@ -330,7 +299,6 @@ def test_single_action_retry_preserves_the_current_pending_tool_return_pair() ->
                     ("search_page_content", {"query": "scope"}),
                     ("list_regions", {}),
                 ],
-                ("search_page_content", {"query": "scope"}),
                 (
                     "submit_final_response",
                     {"content": "Canonical pairs preserved.", "evidence_refs": []},
@@ -370,19 +338,16 @@ def test_single_action_retry_preserves_the_current_pending_tool_return_pair() ->
         assert second.failure is None and second.output is not None, json.dumps(
             second.diagnostics, default=str
         )
-        assert second.output.decision.tool_call_id == "recording-call:3"
-        assert [attempt.phase for attempt in second.attempts] == [
-            "ordinary",
-            "single_action_retry",
-        ]
-        ordinary, retry = policy.port.last_admitted_envelopes
-        assert retry.pydantic_history == ordinary.pydantic_history
-        assert retry.tool_result == ordinary.tool_result
+        assert second.output.decision.tool_call_id == "recording-call:2"
+        assert [attempt.phase for attempt in second.attempts] == ["ordinary"]
+        assert second.diagnostics["multiple_tool_call_attempt_count"] == 1
+        assert second.diagnostics["discarded_protocol_call_count"] == 1
+        assert len(policy.port.last_admitted_envelopes) == 1
         assert len(policy.port.message_history) == 3
         assert pydantic_bridge._pending_call_from_history(policy.port.message_history) == ToolCall(
             "search_page_content",
             {"query": "scope"},
-            "recording-call:3",
+            "recording-call:2",
         )
 
         second_step = StepResult(
@@ -409,7 +374,7 @@ def test_single_action_retry_preserves_the_current_pending_tool_return_pair() ->
 
         assert final.failure is None and final.output is not None
         assert isinstance(final.output.decision, FinalResponse)
-        recorded = normalize_recorded_provider_input(scripted.records[3])
+        recorded = normalize_recorded_provider_input(scripted.records[2])
         calls = [
             part
             for message in recorded["messages"]
@@ -426,11 +391,11 @@ def test_single_action_retry_preserves_the_current_pending_tool_return_pair() ->
         ]
         assert [(item["tool_name"], item["tool_call_id"]) for item in calls] == [
             ("list_regions", "recording-call:1"),
-            ("search_page_content", "recording-call:3"),
+            ("search_page_content", "recording-call:2"),
         ]
         assert [(item["tool_name"], item["tool_call_id"]) for item in returns] == [
             ("list_regions", "recording-call:1"),
-            ("search_page_content", "recording-call:3"),
+            ("search_page_content", "recording-call:2"),
         ]
 
     asyncio.run(scenario())
@@ -456,8 +421,6 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
             ),
         ]
         scripts: list[object] = [raw_calls]
-        if call_count > 1:
-            scripts.append(("list_regions", {}))
         scripts.append(
             (
                 "submit_final_response",
@@ -473,7 +436,7 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
 
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_name == "list_regions"
-        accepted_call_id = "recording-call:1" if call_count == 1 else "recording-call:2"
+        accepted_call_id = "recording-call:1"
         assert first.output.decision.tool_call_id == accepted_call_id
         history = policy.port.message_history
         assert len(history) == 1
@@ -513,10 +476,12 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
             second.diagnostics, default=str
         )
         assert isinstance(second.output.decision, FinalResponse)
-        recorded = normalize_recorded_provider_input(
-            scripted.records[1 if call_count == 1 else 2]
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        prior_call = next(
+            part
+            for part in recorded["messages"][-2]["parts"]
+            if part["part_kind"] == "tool-call"
         )
-        prior_call = recorded["messages"][-2]["parts"][0]
         paired_result = recorded["messages"][-1]["parts"][0]
         assert prior_call == {
             "part_kind": "tool-call",
@@ -529,11 +494,15 @@ def test_accepted_exchange_conserves_one_call_across_the_next_provider_turn(
         assert paired_result["tool_call_id"] == prior_call["tool_call_id"]
         physical = json.dumps(recorded, sort_keys=True)
         if call_count > 1:
-            assert "recording-call:1" not in physical
+            assert "accepted only the first" in physical
             assert all(
                 f"discarded-{index}" not in physical for index in range(1, call_count)
             )
-        assert scripted.calls == (2 if call_count == 1 else 3)
+            assert all(
+                f"recording-call:1:discarded:{index}" not in physical
+                for index in range(1, call_count)
+            )
+        assert scripted.calls == 2
 
     asyncio.run(scenario())
 
@@ -563,17 +532,6 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
                     ],
                     provider_response_id="recording-response:progress",
                 ),
-                ModelResponse(
-                    parts=[
-                        TextPart(progress),
-                        ToolCallPart(
-                            "list_regions",
-                            {},
-                            "recording-call:progress:accepted",
-                        ),
-                    ],
-                    provider_response_id="recording-response:progress:accepted",
-                ),
                 (
                     "submit_final_response",
                     {"content": "Dibbins; Anglebert Dinkherhump", "evidence_refs": []},
@@ -587,11 +545,13 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
         )
 
         assert first.failure is None and first.output is not None
-        assert first.output.decision.tool_call_id == "recording-call:progress:accepted"
+        assert first.output.decision.tool_call_id == "recording-call:progress"
         retained = policy.port.message_history[0]
         assert isinstance(retained, ModelResponse)
         assert [type(part) for part in retained.parts] == [TextPart, ToolCallPart]
-        assert retained.parts[0].content == progress
+        assert retained.parts[0].content.startswith(progress)
+        assert "accepted only the first of 2 proposed tool calls" in retained.parts[0].content
+        assert "not executed or queued" in retained.parts[0].content
         raw_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
         assert any(
             part["part_kind"] == "thinking" and "private deliberation" in part["content"]
@@ -620,17 +580,20 @@ def test_model_authored_progress_survives_the_accepted_call_into_the_next_turn()
             second.diagnostics, default=str
         )
         assert isinstance(second.output.decision, FinalResponse)
-        recorded = normalize_recorded_provider_input(scripted.records[2])
+        recorded = normalize_recorded_provider_input(scripted.records[1])
         prior_response = next(
             message for message in recorded["messages"] if message["kind"] == "response"
         )
         assert prior_response["parts"] == (
-            {"part_kind": "text", "content": progress},
+            {
+                "part_kind": "text",
+                "content": retained.parts[0].content,
+            },
             {
                 "part_kind": "tool-call",
                 "tool_name": "list_regions",
                 "arguments": {},
-                "tool_call_id": "recording-call:progress:accepted",
+                "tool_call_id": "recording-call:progress",
             },
         )
         physical = json.dumps(recorded, sort_keys=True)
@@ -1688,12 +1651,31 @@ def test_pydantic_ai_resolves_the_normalizer_call_not_the_raw_call(monkeypatch) 
     assert captured["resolution"].decision is resolved_decision
 
 
-def test_multiple_deferred_calls_are_rejected_before_any_catalog_resolution(monkeypatch) -> None:
-    monkeypatch.setattr(
-        pydantic_bridge,
-        "resolve_grounded_action_call",
-        lambda *_args, **_kwargs: pytest.fail("multi-call envelope must not resolve a member"),
+def test_multiple_deferred_calls_resolve_only_the_first_and_record_discarded_count(monkeypatch) -> None:
+    normalized = ToolCall("read_region", {"region_ref": "R1"}, "call:1")
+    resolved_decision = SearchPageContentResult(
+        "context:test",
+        normalized.name,
+        normalized.arguments,
+        {"kind": "Matches", "items": []},
+        normalized.call_id,
     )
+    normalized_calls = []
+    resolved_calls = []
+
+    def normalize(_self, call, _catalog):
+        normalized_calls.append(call)
+        return ToolCallReconciliationResult(
+            ToolCallReconciliationStatus.EXACT,
+            exact_call=normalized,
+        )
+
+    def resolve(_catalog, call, **_kwargs):
+        resolved_calls.append(call)
+        return SimpleNamespace(decision=resolved_decision)
+
+    monkeypatch.setattr(pydantic_bridge.ProviderCallNormalizer, "normalize", normalize)
+    monkeypatch.setattr(pydantic_bridge, "resolve_grounded_action_call", resolve)
     output = DeferredToolRequests(
         calls=[
             ToolCallPart("read_region", {"region_ref": "R1"}, "call:1"),
@@ -1710,13 +1692,53 @@ def test_multiple_deferred_calls_are_rejected_before_any_catalog_resolution(monk
         "context:test",
     )
 
+    assert exchange is not None
+    assert exchange.call == normalized
+    assert exchange.decision is resolved_decision
+    assert exchange.discarded_call_count == 1
+    assert "accepted only the first of 2 proposed tool calls" in exchange.response.parts[0].content
+    assert error is None
+    assert parsed == ()
+    assert normalized_calls == [ToolCall("read_region", {"region_ref": "R1"}, "call:1")]
+    assert resolved_calls == [normalized]
+
+
+def test_invalid_first_deferred_call_never_falls_through_to_a_later_call(monkeypatch) -> None:
+    normalized_calls = []
+
+    def normalize(_self, call, _catalog):
+        normalized_calls.append(call)
+        return SimpleNamespace(
+            status=ToolCallReconciliationStatus.REPAIR_REQUIRED,
+            issue_code="invalid_argument",
+            field_paths=("parameters.region_ref",),
+            argument_code="invalid_value",
+        )
+
+    monkeypatch.setattr(pydantic_bridge.ProviderCallNormalizer, "normalize", normalize)
+    monkeypatch.setattr(
+        pydantic_bridge,
+        "resolve_grounded_action_call",
+        lambda *_args, **_kwargs: pytest.fail("an invalid first call must not resolve or fall through"),
+    )
+    output = DeferredToolRequests(
+        calls=[
+            ToolCallPart("read_region", {"region_ref": "invalid"}, "call:1"),
+            ToolCallPart("search_page_content", {"query": "scope"}, "call:2"),
+        ]
+    )
+
+    exchange, error, parsed = pydantic_bridge._resolve_deferred(
+        output,
+        SimpleNamespace(catalog_id="grounded-catalog:test", delivery_id="delivery:" + "d" * 64),
+        "context:test",
+    )
+
     assert exchange is None
     assert error is not None
-    assert error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
-    assert parsed == (
-        ToolCall("read_region", {"region_ref": "R1"}, "call:1"),
-        ToolCall("search_page_content", {"query": "scope"}, "call:2"),
-    )
+    assert error.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    assert parsed == (ToolCall("read_region", {"region_ref": "invalid"}, "call:1"),)
+    assert normalized_calls == [ToolCall("read_region", {"region_ref": "invalid"}, "call:1")]
 
 
 def test_accepted_response_bounds_progress_and_excludes_hidden_reasoning(monkeypatch) -> None:

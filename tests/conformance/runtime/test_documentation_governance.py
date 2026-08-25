@@ -36,7 +36,10 @@ def test_core_docs_state_the_simplified_contract() -> None:
     architecture = (DOCS / "architecture.md").read_text(encoding="utf-8")
     benchmark = (DOCS / "benchmark.md").read_text(encoding="utf-8")
     extending = (DOCS / "extending.md").read_text(encoding="utf-8")
+    convergence = (DOCS / "single-action-policy-convergence.md").read_text(encoding="utf-8")
 
     assert all(term in architecture for term in ("RunState", "StepResult", "WorldObservation"))
     assert "official success" in benchmark.casefold()
     assert all(term in extending for term in ("SurfaceAdapter", "ActionBinding", "PydanticAI"))
+    assert "does not define current architecture" in convergence
+    assert all(link in convergence for link in ("[Architecture](architecture.md)", "[Benchmark](benchmark.md)"))

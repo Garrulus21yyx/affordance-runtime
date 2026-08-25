@@ -11,7 +11,6 @@ from affordance_runtime.agent.context.context import AgentContext
 class ActionPolicyInvocationPhase(StrEnum):
     ORDINARY = "ordinary"
     DELIBERATE = "deliberate"
-    SINGLE_ACTION_RETRY = "single_action_retry"
     REPRESENTATION_REPAIR = "representation_repair"
 
 
@@ -21,7 +20,6 @@ class ActionPolicyInvocationTrigger(StrEnum):
     EVIDENCE_GAP = "evidence_gap"
     OPERATIONAL_STALL = "operational_stall"
     CONTROL_STALL = "control_stall"
-    MULTIPLE_CALLS = "multiple_calls"
     REPRESENTATION_ERROR = "representation_error"
 
 
@@ -84,20 +82,6 @@ class ActionPolicyReasoningPolicy:
             self.repair_max_tokens,
             "disabled",
         )
-
-    @staticmethod
-    def single_action_retry(
-        rejected_profile: ActionPolicyCallProfile,
-    ) -> ActionPolicyCallProfile:
-        """Retry one rejected multi-call choice against the unchanged current context."""
-
-        return ActionPolicyCallProfile(
-            ActionPolicyInvocationPhase.SINGLE_ACTION_RETRY,
-            ActionPolicyInvocationTrigger.MULTIPLE_CALLS,
-            rejected_profile.max_output_tokens,
-            rejected_profile.thinking_mode,
-        )
-
 
 def _deliberate_trigger(kind: str) -> ActionPolicyInvocationTrigger | None:
     if kind == "grounding_stall":

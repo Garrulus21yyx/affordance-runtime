@@ -90,25 +90,20 @@ def test_counting_decision_port_separates_recovery_and_representation_repair() -
     assert instrumentation.provider_attempts == 2
 
 
-def test_counting_decision_port_reports_recovered_multiple_call_attempt() -> None:
+def test_counting_decision_port_reports_serialized_multiple_call_attempt() -> None:
     class WrappedPort:
         async def generate(self, request):
             del request
             return ModelInvocationResult(
                 failure=ModelFailure(ModelFailureKind.SCHEMA_ERROR, "fixture", False),
                 attempts=(
-                    ModelGenerationAttempt(1, "ordinary", "grounded_tools.v2", "multiple"),
-                    ModelGenerationAttempt(
-                        2,
-                        "single_action_retry",
-                        "grounded_tools.v2",
-                        "accepted",
-                    ),
+                    ModelGenerationAttempt(1, "ordinary", "grounded_tools.v2", "accepted"),
                 ),
                 diagnostics={
-                    "policy_model_call_count": 2,
+                    "policy_model_call_count": 1,
                     "tool_resolution_code": "accepted",
                     "multiple_tool_call_attempt_count": 1,
+                    "discarded_protocol_call_count": 1,
                 },
             )
 
@@ -118,7 +113,7 @@ def test_counting_decision_port_reports_recovered_multiple_call_attempt() -> Non
 
     assert instrumentation.multiple_tool_call_count == 1
     assert instrumentation.valid_tool_call_count == 1
-    assert instrumentation.provider_attempts == 2
+    assert instrumentation.provider_attempts == 1
 
 
 def test_invocation_attempts_are_role_output_lineage_not_runtime_authority() -> None:

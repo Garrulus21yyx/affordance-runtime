@@ -77,6 +77,10 @@ _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 _MAX_PROGRESS_NOTE_CHARS = 800
 _PROGRESS_NOTE_TRUNCATION = "\n[progress note truncated by history boundary]\n"
+_MULTI_CALL_SELECTION_NOTICE = (
+    "[runtime: accepted only the first of {total} proposed tool calls; "
+    "the remaining {discarded} were not executed or queued. Reassess them after the fresh World.]"
+)
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
@@ -109,11 +113,12 @@ class _ProviderCallExhausted(RuntimeError):
 
 @dataclass(frozen=True)
 class AcceptedToolExchange:
-    """One accepted call plus bounded model-authored progress retained in SDK history."""
+    """One accepted call plus bounded progress/selection receipt in SDK history."""
 
     call: ToolCall
     decision: AgentDecision
     response: ModelResponse
+    discarded_call_count: int = 0
 
     def __post_init__(self) -> None:
         from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
@@ -123,6 +128,8 @@ class AcceptedToolExchange:
             not isinstance(self.call, ToolCall)
             or not isinstance(self.decision, AgentDecision)
             or not isinstance(self.response, ModelResponse)
+            or type(self.discarded_call_count) is not int
+            or self.discarded_call_count < 0
         ):
             raise TypeError("accepted tool exchange is not typed")
         response_calls = tuple(
@@ -183,6 +190,7 @@ class PydanticAIGroundedDecisionPort:
     last_tool_resolution_code: GroundedToolResolutionCode | None = field(default=None, init=False, compare=False)
     last_tool_resolution_detail: str = field(default="", init=False, compare=False)
     last_multiple_tool_call_attempt_count: int = field(default=0, init=False, compare=False)
+    last_discarded_protocol_call_count: int = field(default=0, init=False, compare=False)
     last_history_compaction_count: int = field(default=0, init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
@@ -235,6 +243,7 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_request_breakdowns", ())
         object.__setattr__(self, "last_admitted_envelopes", ())
         object.__setattr__(self, "last_local_failure", {})
+        object.__setattr__(self, "last_discarded_protocol_call_count", 0)
         object.__setattr__(self, "last_history_compaction_count", 0)
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_model_delivery", None)
@@ -423,6 +432,7 @@ class PydanticAIGroundedDecisionPort:
                 agent_name="action-policy",
                 phase=call_profile.phase.value,
             )
+            self._record_protocol_selection(result.output)
             resolution_error = None
             accepted_exchange, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
@@ -431,46 +441,7 @@ class PydanticAIGroundedDecisionPort:
                 source_response=_latest_model_response(result),
             )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
-            if (
-                accepted_exchange is None
-                and resolution_error is not None
-                and resolution_error.code is GroundedToolResolutionCode.MULTIPLE_CALLS
-            ):
-                retry_profile = self.reasoning_policy.single_action_retry(call_profile)
-                retry_envelope = self.envelope_binder.bind_single_action_retry(
-                    envelope,
-                    call_profile=retry_profile,
-                    output_token_reserve=(
-                        retry_profile.max_output_tokens
-                        + self.envelope_binder.request_budget.protocol_reserve_tokens
-                        + self.envelope_binder.request_budget.safety_margin_tokens
-                    ),
-                )
-                retry_budget = replace(
-                    self.envelope_binder.request_budget,
-                    max_output_tokens=retry_profile.max_output_tokens,
-                )
-                retry_admission = RequestAdmission().admit(retry_envelope, budget=retry_budget)
-                if isinstance(retry_admission, RejectedProviderEnvelope):
-                    raise ModelRequestCapacityError(retry_admission.token_breakdown)
-                if isinstance(retry_admission, InvalidProviderEnvelope):
-                    raise ValueError(f"{retry_admission.reason}: {retry_admission.detail}")
-                self._append_admitted_envelope(retry_admission)
-                retry_result = await run_policy_envelope(
-                    retry_envelope,
-                    agent_name="action-policy-single-action-retry",
-                    phase=retry_profile.phase.value,
-                )
-                retry_exchange, retry_error, _retry_calls = _resolve_deferred(
-                    retry_result.output,
-                    catalog,
-                    request.context_id,
-                    source_response=_latest_model_response(retry_result),
-                )
-                accepted_exchange = retry_exchange
-                resolution_error = retry_error
-                self._set_tool_resolution(retry_error, accepted=retry_exchange is not None)
-            elif accepted_exchange is None and initial_calls:
+            if accepted_exchange is None and initial_calls:
                 repair_profile = self.reasoning_policy.repair()
                 repair_prompt = _representation_repair_prompt(initial_calls, resolution_error, catalog.specs)
                 repair_envelope = self.envelope_binder.bind_representation_repair(
@@ -498,6 +469,7 @@ class PydanticAIGroundedDecisionPort:
                     agent_name="action-policy-representation-repair",
                     phase=repair_profile.phase.value,
                 )
+                self._record_protocol_selection(repair_result.output)
                 repair_exchange, repair_error, _repaired_calls = _resolve_deferred(
                     repair_result.output,
                     catalog,
@@ -725,6 +697,7 @@ class PydanticAIGroundedDecisionPort:
             ),
             "tool_resolution_detail": self.last_tool_resolution_detail,
             "multiple_tool_call_attempt_count": self.last_multiple_tool_call_attempt_count,
+            "discarded_protocol_call_count": self.last_discarded_protocol_call_count,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -746,12 +719,6 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "envelope_history", (*self.envelope_history, admitted.envelope)[-64:])
 
     def _set_tool_resolution(self, error: GroundedToolResolutionError | None, *, accepted: bool) -> None:
-        if error is not None and error.code is GroundedToolResolutionCode.MULTIPLE_CALLS:
-            object.__setattr__(
-                self,
-                "last_multiple_tool_call_attempt_count",
-                self.last_multiple_tool_call_attempt_count + 1,
-            )
         if accepted:
             object.__setattr__(self, "last_tool_resolution_code", GroundedToolResolutionCode.ACCEPTED)
             object.__setattr__(self, "last_tool_resolution_detail", "")
@@ -760,6 +727,27 @@ class PydanticAIGroundedDecisionPort:
             return
         object.__setattr__(self, "last_tool_resolution_code", error.code)
         object.__setattr__(self, "last_tool_resolution_detail", error.detail)
+
+    def _record_protocol_selection(self, output: object) -> None:
+        """Count provider batches that the one-step boundary serializes."""
+
+        from pydantic_ai import DeferredToolRequests
+
+        if not isinstance(output, DeferredToolRequests):
+            return
+        discarded = max(0, len(output.calls) - 1)
+        if discarded == 0:
+            return
+        object.__setattr__(
+            self,
+            "last_multiple_tool_call_attempt_count",
+            self.last_multiple_tool_call_attempt_count + 1,
+        )
+        object.__setattr__(
+            self,
+            "last_discarded_protocol_call_count",
+            self.last_discarded_protocol_call_count + discarded,
+        )
 
     async def _run_provider_call(
         self,
@@ -1203,29 +1191,11 @@ def _resolve_deferred(output, catalog, context_id: str, *, source_response=None)
         return None, None, ()
     if not output.calls:
         return None, GroundedToolResolutionError(GroundedToolResolutionCode.ZERO_CALLS), ()
-    if len(output.calls) != 1:
-        parsed_calls: list[ToolCall] = []
-        for call in tuple(output.calls)[:32]:
-            try:
-                parsed_calls.append(
-                    ToolCall(
-                        call.tool_name,
-                        call.args_as_dict(raise_if_invalid=True),
-                        call.tool_call_id,
-                    )
-                )
-            except (ValueError, TypeError):
-                continue
-        return (
-            None,
-            GroundedToolResolutionError(
-                GroundedToolResolutionCode.MULTIPLE_CALLS,
-                f"received {len(output.calls)} calls; expected exactly one",
-            ),
-            tuple(parsed_calls),
-        )
     repair_anchor: tuple[ToolCall, GroundedToolResolutionError] | None = None
-    for call in output.calls:
+    # Provider calls are ordered proposals. This boundary owns conversion to
+    # the Runtime's one-decision-per-fresh-World contract: only the first call
+    # is eligible; later calls are neither fallbacks nor pending work.
+    for call in tuple(output.calls)[:1]:
         try:
             arguments = call.args_as_dict(raise_if_invalid=True)
             parsed_call = ToolCall(call.tool_name, arguments, call.tool_call_id)
@@ -1261,7 +1231,12 @@ def _resolve_deferred(output, catalog, context_id: str, *, source_response=None)
         return AcceptedToolExchange(
             accepted_call,
             resolution.decision,
-            _accepted_model_response(source_response, accepted_call),
+            _accepted_model_response(
+                source_response,
+                accepted_call,
+                discarded_call_count=max(0, len(output.calls) - 1),
+            ),
+            max(0, len(output.calls) - 1),
         ), None, ()
     if repair_anchor is not None:
         return None, repair_anchor[1], (repair_anchor[0],)
@@ -1281,8 +1256,13 @@ def _latest_model_response(result):
     return responses[-1]
 
 
-def _accepted_model_response(source_response, accepted_call: ToolCall):
-    """Keep bounded visible progress and one normalized call; omit hidden reasoning."""
+def _accepted_model_response(
+    source_response,
+    accepted_call: ToolCall,
+    *,
+    discarded_call_count: int = 0,
+):
+    """Keep bounded visible progress, selection receipt, and one normalized call."""
 
     from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 
@@ -1304,8 +1284,16 @@ def _accepted_model_response(source_response, accepted_call: ToolCall):
     else:
         progress = ""
 
-    if len(progress) > _MAX_PROGRESS_NOTE_CHARS:
-        available = _MAX_PROGRESS_NOTE_CHARS - len(_PROGRESS_NOTE_TRUNCATION)
+    notice = ""
+    if discarded_call_count:
+        notice = _MULTI_CALL_SELECTION_NOTICE.format(
+            total=discarded_call_count + 1,
+            discarded=discarded_call_count,
+        )
+    separator = "\n\n" if progress and notice else ""
+    progress_limit = _MAX_PROGRESS_NOTE_CHARS - len(separator) - len(notice)
+    if len(progress) > progress_limit:
+        available = progress_limit - len(_PROGRESS_NOTE_TRUNCATION)
         prefix_chars = available // 2
         suffix_chars = available - prefix_chars
         progress = (
@@ -1313,10 +1301,11 @@ def _accepted_model_response(source_response, accepted_call: ToolCall):
             + _PROGRESS_NOTE_TRUNCATION
             + progress[-suffix_chars:].lstrip()
         )
+    retained_note = progress + separator + notice
 
     parts = []
-    if progress:
-        parts.append(TextPart(progress))
+    if retained_note:
+        parts.append(TextPart(retained_note))
     parts.append(
         ToolCallPart(
             accepted_call.name,

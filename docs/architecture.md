@@ -64,32 +64,41 @@ ActionPolicy. It never replays the action and introduces no retry loop, alternat
 
 Task266 run10 then exposed two previously contradictory control contracts. Four of eight provider responses contained
 multiple tool calls despite `parallel_tool_calls=false`; the PydanticAI bridge silently kept the first valid member,
-while the documented single-action contract said that no member was accepted. Later, after one exact local-result
+while neither canonical history nor benchmark metrics disclosed that selection. Later, after one exact local-result
 replay activated recovery, Monitor blocked a materially different `read_region` merely because it also produced no
 new information. Neither failure was missing World/task context, evidence, cursor state, or GUI grounding.
 
-The owner repair restores one decision and one precise recovery identity:
+The first repair rejected the complete multi-call envelope and re-asked the provider once. Task266 run11 falsified
+that design: DeepSeek returned two calls again despite the explicit correction and terminated before a second action.
+This was a brittle provider-compliance gate, not an execution-currentness invariant.
 
-- the PydanticAI boundary rejects a multi-call response before Catalog resolution, dispatch, `StepResult`, or history;
-- it permits one bounded redecision over the exact same admitted task, fresh World, tools, SDK history, current
-  ToolReturn, and media, with `parallel_tool_calls=false` still enforced;
-- only the retry's one schema-valid current call may enter call/result history; another multi-call response fails
-  typed as `multiple_tool_calls`;
-- raw rejected responses remain in the provider transcript, and benchmark metrics count every multi-call attempt even
-  when the bounded retry succeeds;
+The converged owner contract restores one decision and one precise recovery identity:
+
+- provider calls are ordered proposals at the Catalog boundary; only the first call is normalized and resolved;
+- later calls are never executed, queued, retained as pending work, or used as fallback if the first call is invalid;
+- canonical PydanticAI history contains the selected call plus a bounded receipt stating that later calls were not
+  executed or queued; the selected call's normal ToolReturn remains paired to its original call ID;
+- raw provider output remains in the transcript; benchmark metrics count each multi-call envelope, and invocation
+  diagnostics record the discarded proposal count;
 - Monitor may use a consecutive no-information family to request one deliberate recovery, but hard-blocks only a
   repeat of that recovery signal's exact typed attempt. A different query, region, control discovery, or GUI action
   exits recovery and remains bounded by the ordinary episode step limit.
 
-This reuses the existing canonical envelope, PydanticAI Agent/ExternalToolset/history, Catalog resolver, typed attempt
-signature, and outer step budget. It adds no pending-call queue, multi-action scheduler, second Runtime loop, evidence
-path, cursor protocol, or Monitor model. Post-repair live benchmark validation remains separately authorized.
+This is the atomic-action variant used explicitly by [Agent S2](https://arxiv.org/abs/2504.00906), whose Worker chooses
+one atomic action from the latest observation. Systems that execute batches make that algebra explicit instead:
+[UI-TARS](https://github.com/bytedance/UI-TARS) parses an action sequence, while the
+[OpenAI Computer Use loop](https://developers.openai.com/api/docs/guides/tools-computer-use) executes an ordered
+`actions[]` batch before the next screenshot. This Runtime has no batch transaction/currentness contract, so it does
+not reinterpret arbitrary heterogeneous function calls as such a batch. The repair reuses the canonical envelope,
+PydanticAI history, Catalog resolver, typed attempt signature, and outer step budget. It adds no pending-call queue,
+multi-action scheduler, second Runtime loop, evidence path, cursor protocol, or Monitor model. Post-repair live
+benchmark validation remains separately authorized.
 Live benchmark validation remains separately authorized. The repository-wide mypy command still reports its
 pre-existing baseline errors in unchanged modules and is not counted
 as a passing gate.
 
-Current provider-free verification: the focused single-call/history/Monitor/CoreLoop surface passes `88` tests with
-`3` skipped; the full suite passes `1705` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review
+Current provider-free verification: the focused single-call/history/Monitor/CoreLoop surface passes `76` tests; the
+full suite passes `1705` with `19` skipped. Ruff, compileall, and diff checks pass. The fresh review
 found no remaining silent multi-call selection, rejected-call history leak, pending ToolReturn pairing loss, or broad
 post-recovery hard block in this bounded implementation.
 

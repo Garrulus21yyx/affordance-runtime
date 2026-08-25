@@ -236,8 +236,9 @@ def test_normative_architecture_contains_the_single_authority_map() -> None:
     assert "generic evidence-delivery system" in architecture
     assert "no longer part of the architecture" in normalized
     convergence = (ROOT / "docs" / "single-action-policy-convergence.md").read_text(encoding="utf-8")
-    assert "| official completion | native evaluator after one STOP |" in convergence
-    assert "one `CoreAgentLoop`" in convergence
+    assert "does not define current architecture" in convergence
+    assert "[Architecture](architecture.md)" in convergence
+    assert "[Benchmark](benchmark.md)" in convergence
     assert not (ROOT / "docs" / "task-execution-authority-map.md").exists()
 
 
