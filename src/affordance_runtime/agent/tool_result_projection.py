@@ -87,6 +87,15 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
 
     if isinstance(decision, SelectAction):
         batch = step.execution_receipts
+        terminal_failure = batch.terminal_failure if batch is not None else None
+        receipt_failure = bool(
+            batch is not None
+            and any(
+                not item.result.transport_success or item.result.error is not None
+                for item in batch.receipts
+            )
+        )
+        common["failed"] = failure is not None or terminal_failure is not None or receipt_failure
         common.update(
             {
                 "kind": "execution_receipt",
@@ -105,6 +114,18 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
                 ),
             }
         )
+        if terminal_failure is not None:
+            currentness = {
+                key.removeprefix("currentness_"): terminal_failure.adapter_evidence[key]
+                for key in ("currentness_status", "currentness_reason")
+                if key in terminal_failure.adapter_evidence
+            }
+            common["terminal_failure"] = {
+                "dispatch_status": terminal_failure.dispatch_status.value,
+                "transport_success": terminal_failure.transport_success,
+                "error": terminal_failure.error.value if terminal_failure.error is not None else None,
+                **({"currentness": currentness} if currentness else {}),
+            }
         return freeze_json(common)
     if isinstance(decision, RequestObservation):
         common.update({"kind": "observation", "purpose": decision.purpose})

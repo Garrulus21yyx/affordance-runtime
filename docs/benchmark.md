@@ -24,7 +24,8 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current focused history/provider verification reports `105 passed`. The full suite reports `1731 passed / 19 skipped`;
+Current focused owner/cross-boundary verification reports `512 passed / 3 skipped`. The full suite reports
+`1734 passed / 25 skipped`;
 one pre-existing multiprocessing fork warning remains in the observability test. Focused Ruff and `git diff --check`
 pass. This is implementation evidence for the bounded changes, not a post-repair live Task266 witness or overall
 closure.
@@ -301,6 +302,25 @@ characters in a partial, paginated result and proves it reaches the compactor re
 suffix remain unchanged. The full provider-free suite passes; run27 remains failed pre-repair evidence and a fresh live
 witness is required.
 
+The authorized
+[`run28`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run28/run.json) crossed that compaction-content
+repair. The model retained Portland `43.66,-70.255`, Acadia `44.35,-68.2167`, and obtained the direct OSRM result
+`261523.9m`; history loss was not the failure. It used `goto` for `router.project-osrm.org` instead of the benchmark's
+already-open map tab. BrowserGym correctly returned terminal failure after that external page loaded. The Runtime then
+made eleven more policy calls because the native evaluator hid pre-STOP terminal state and the same-call ToolReturn
+omitted the `NOT_SENT/stale_binding(task_done)` terminal failure. Run28 ended `blocked` after 23 policy calls and is
+failed pre-repair evidence for navigation-scope publication and terminal propagation, not evidence for another memory,
+cursor, or Monitor mechanism.
+
+The provider-free repair leaves the generic BrowserGym browser profile unrestricted. Only the WebArena runner reads
+BrowserGym's official configured URL set and supplies it as the explicit environment navigation scope. The current
+World browser subject and current `goto` ActionBinding expose the resulting allowed netlocs; the disposable Catalog
+retains that exact schema, and the existing resolver rejects external, lookalike, userinfo, and wrong-port URLs before
+dispatch. Provider terminal state is classified on the same post-action World without waiting for an agent STOP, and
+the normal ToolReturn projection exposes typed non-dispatch terminal failures. A vertical fake-BrowserGym test proves
+that terminal failure ends the CoreLoop after the one dispatched action with no second policy turn. This adds no
+WebArena tool, task/site branch, fallback, or alternate browser state.
+
 Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
 legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
 `(102, 1)`, but the region index reduced each to the same region-local order `2`. The target-context owner now ranks
@@ -553,7 +573,9 @@ The WebArena runner now explicitly selects BrowserGym's installed `goto`, `go_ba
 `tab_focus`, and `tab_close` primitives as ordinary current `browser_context` actions. The adapter does not infer this
 from task text or benchmark/task ID. They traverse the existing
 Catalog/Binder/Executor/stable-capture route; MiniWoB receives none of these global actions. `tab_focus` is present only
-when another current tab exists and enumerates its current tab index.
+when another current tab exists and enumerates its current tab index. The generic browser profile keeps the registry's
+unrestricted `goto`; the WebArena runner separately supplies BrowserGym's own configured site URL set, so its current
+`goto` schema admits only those environment locations.
 
 ## Provider-free acceptance gates
 
@@ -665,7 +687,10 @@ The current vertical gate additionally forces a second Recording FunctionModel c
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
 
 Browser-global action gates verify profile isolation and the official BrowserGym action strings for all six navigation
-operations. They do not add a local navigation tool or bypass normal currentness and capture.
+operations. The unrestricted profile accepts ordinary HTTP(S) URLs. The restricted WebArena-profile property admits
+configured locations while rejecting external, deceptive-suffix, userinfo, and wrong-port URLs in both current
+ActionBinding and compiled Catalog. These gates do not add a local navigation tool or bypass normal currentness and
+capture.
 
 A real Playwright two-tab causal-acquisition gate changes the active page during `environment.step` and proves that
 the returned observation, private enrichment input, and trace `after_url` all belong to BrowserGym's post-action
@@ -676,7 +701,9 @@ Currentness gates enumerate every executable BrowserGym element offer and prove 
 can invalidate the binding. A BrowserGym execution witness proves presentation-only drift reaches the official action
 path. The CoreLoop vertical witness then injects a physical `NOT_SENT/stale_binding` after the cheap World check and
 proves one fresh capture reaches the next policy turn, with the terminal non-dispatch fact retained, zero execution,
-and no hidden replay.
+and no hidden replay. A second WebArena vertical witness proves an upstream terminal post-action snapshot is classified
+in that same step and prevents another policy turn. The ToolReturn projection gate proves a non-dispatched terminal
+failure cannot be rendered as successful/running or leak arbitrary adapter evidence.
 
 ### G7 — deletion and non-specialization gates
 
@@ -823,8 +850,9 @@ The final read-only review for this cutover must answer:
     preserve executable priority within the media owner's bound, and leave structural targets and bindings intact?
 14. Does `find_controls` exclude unrelated controls, and can repeated discovery avoid both false Store novelty and an
     unbounded same-World loop?
-15. Are browser-global actions offered only by the WebArena-family profile and executed through BrowserGym's existing
-    ActionSpace/Binder/Executor path?
+15. Are browser-global actions selected explicitly by the environment profile and executed through BrowserGym's
+    existing ActionSpace/Binder/Executor path, with unrestricted generic navigation and WebArena's configured netlocs
+    preserved identically through World, ActionBinding, Catalog, and resolver?
 16. Does SDK history preserve exact recent thinking/calls/results, use complete RequestAdmission pressure for
     Harness pair-safe compaction, retain an exact pair-safe suffix, and restore raw history on summary failure?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
@@ -846,8 +874,8 @@ The final read-only review for this cutover must answer:
     snapshots/canonical projections from step payloads and reporting honest counts/truncation for transition summaries?
 24. Does a typed BrowserGym stable navigation cross the generic execution contract into Projector verification while
     private trace strings remain non-authoritative and confirmed change still resolves against the fresh World?
-25. Does checkpoint scheduling bootstrap once, batch uncovered knowledge, trigger pressure from tokens rather than
-    exchange count, suppress identical non-updating inputs, and use a bounded non-thinking provider call?
+25. Does a WebArena provider terminal snapshot stop the loop before another policy call regardless of agent STOP, and
+    can any typed non-dispatch terminal failure still be projected as `failed=false` or omitted from its ToolReturn?
 
 ## Exit statement
 

@@ -81,6 +81,30 @@ def test_webarena_native_evaluator_uses_terminal_post_state_after_sent_unknown_s
     assert refs
 
 
+def test_webarena_native_result_honors_provider_terminal_failure_before_agent_stop() -> None:
+    snapshot = BrowserGymTaskStateSnapshot(
+        "run:unauthorized",
+        "world:unauthorized",
+        "source:unauthorized",
+        BrowserGymTaskStateSource.POST_ACTION,
+        {"terminated": True, "truncated": False, "reward": 0.0},
+        frozenset({"terminated", "truncated", "reward"}),
+    )
+    environment = WebArenaVerifiedCaseEnvironment(
+        SimpleNamespace(),
+        SimpleNamespace(current_task_state=lambda: snapshot),
+        SimpleNamespace(),
+        TaskGoal("task:unauthorized", "Finish"),
+        final_delivery_attempted=False,
+    )
+
+    outcome, code, refs = environment.current_native_result()
+
+    assert outcome is TaskOutcomeKind.TERMINAL_FAILURE
+    assert code == "verified_terminal_task_failure"
+    assert refs
+
+
 class ActionOutcomeProjector:
     async def evaluate(self, task, before, request, result, after, public_world_delta):
         return ActionOutcome(

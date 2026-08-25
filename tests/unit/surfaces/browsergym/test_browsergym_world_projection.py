@@ -12,7 +12,11 @@ from affordance_runtime.model.policy.grounded_tool_catalog import (
     compile_grounded_tool_catalog,
     resolve_grounded_tool_call,
 )
-from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolPhase
+from affordance_runtime.model.policy.grounded_tool_contracts import (
+    GroundedToolPhase,
+    GroundedToolResolutionCode,
+    GroundedToolResolutionError,
+)
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.surfaces.browsergym import projection as projection_module
 from affordance_runtime.surfaces.browsergym.entity_identity import (
@@ -151,6 +155,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     assert all(item.role != "browser_context" for item in miniwob.world.targets)
     browser = next(item for item in webarena.world.targets if item.role == "browser_context")
     assert browser.state["active_tab_index"] == 1
+    assert browser.state["navigation_scope"] == "unrestricted"
     assert browser.state["open_tabs"][0]["route"] == "https://example.test/start"
     task = TaskGoal(
         "task:navigation",
@@ -194,6 +199,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     }
     assert set(browser_specs) == set(actions)
     assert all("target" not in item.input_schema["properties"] for item in browser_specs.values())
+    assert tuple(browser_specs["tab_focus"].input_schema["properties"]["index"]["enum"]) == (0,)
     goto = next(item for item in catalog.specs if item.name == "goto")
     assert tuple(goto.input_schema["required"]) == ("url",)
     assert "target" not in goto.input_schema["properties"]
@@ -212,6 +218,86 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
             browser_global_primitives=("invented_navigation",),
             **common,
         )
+
+
+@pytest.mark.parametrize(
+    "rejected_url",
+    (
+        "https://router.project-osrm.org/route/v1/driving/1,2;3,4",
+        "https://map.example.test.evil/",
+        "https://map.example.test@evil.test/",
+        "https://map.example.test:4444/",
+    ),
+)
+def test_environment_restricted_browser_profile_closes_goto_domain_in_world_and_catalog(
+    rejected_url: str,
+) -> None:
+    raw = raw_observation(url="https://wiki.example.test/wiki/Portland")
+    raw["open_pages_urls"] = np.asarray((
+        "https://map.example.test:3000/",
+        "https://wiki.example.test/wiki/Portland",
+    ))
+    raw["active_page_index"] = np.asarray([1])
+    projected = project_browsergym_observation(
+        raw,
+        observation_id="obs:restricted-navigation",
+        source_revision="revision:restricted-navigation",
+        page_identity="page:restricted-navigation",
+        episode_identity="0",
+        task_state=reset_task_state("obs:restricted-navigation"),
+        entity_identity=BrowserGymEntityIdentityMap(b"restricted-browser-navigation"),
+        browser_global_primitives=("goto", "tab_focus"),
+        browser_navigation_locations=("map.example.test:3000", "wiki.example.test"),
+    )
+    browser = next(item for item in projected.world.targets if item.role == "browser_context")
+    assert browser.state["navigation_scope"] == "environment_restricted"
+    assert tuple(browser.state["allowed_navigation_locations"]) == (
+        "map.example.test:3000",
+        "wiki.example.test",
+    )
+    task = TaskGoal(
+        "task:restricted-navigation",
+        "Use the configured browser environment",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    action_space = ActionSpaceBuilder().build(task, projected.world)
+    context = ContextBuilder().build(
+        task,
+        projected.world,
+        action_space,
+        TaskEvaluation(
+            task.task_id,
+            projected.world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        ),
+    )
+    delivery = build_model_turn_delivery(context, include_images=False)
+    assert '"navigation_scope":"environment_restricted"' in delivery.view.text
+    assert '"allowed_navigation_locations":["map.example.test:3000","wiki.example.test"]' in (
+        delivery.view.text
+    )
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
+    goto = next(item for item in catalog.specs if item.name == "goto")
+    assert "map.example.test:3000" in goto.input_schema["properties"]["url"]["description"]
+    allowed = resolve_grounded_tool_call(
+        catalog,
+        ToolCall("goto", {"url": "https://map.example.test:3000/search?q=Acadia"}, "call:allowed"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+    assert allowed.decision.parameters == {
+        "url": "https://map.example.test:3000/search?q=Acadia"
+    }
+    with pytest.raises(GroundedToolResolutionError) as captured:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall("goto", {"url": rejected_url}, "call:rejected"),
+            expected_context_id=context.context_id,
+            expected_delivery_id=delivery.delivery_id,
+        )
+    assert captured.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_screenshot_grounding_is_viewport_bounded_and_prioritizes_actions() -> None:

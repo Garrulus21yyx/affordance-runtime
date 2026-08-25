@@ -8,7 +8,7 @@ import pytest
 
 from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context import ContextBuilder
-from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.decisions import FinalResponse, SelectAction
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app.runtime import TargetRuntime
@@ -31,6 +31,7 @@ from affordance_runtime.benchmarks.webarena_verified import (
     write_webarena_verified_subset,
     write_webarena_verified_w0_manifest,
 )
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
@@ -51,6 +52,18 @@ class _FinalResponsePolicy:
 
     async def decide(self, context):
         return FinalResponse(context.context_id, self.content)
+
+
+@dataclass
+class _OneActionPolicy:
+    calls: int = 0
+
+    async def decide(self, context):
+        self.calls += 1
+        if self.calls != 1:
+            raise AssertionError("provider-terminal task must not request another policy turn")
+        action = next(item for item in context.actions.options if item.semantic_action == "activate")
+        return SelectAction(context.context_id, action.action_id, tool_call_id="call:activate")
 
 
 def _dataset(path: Path, *, count: int = 36) -> Path:
@@ -177,12 +190,20 @@ def test_webarena_final_response_is_stop_payload_not_a_world_requested_output() 
     environment, task, evaluator = open_webarena_verified_case(
         WA_W1_SMOKE_CASES[0],
         gym_factory=lambda *_args, **_kwargs: browsergym,
+        browser_navigation_urls=(
+            "https://map.example.test:3000",
+            "https://wiki.example.test",
+        ),
     )
     runtime = TargetRuntime(
         AgentDecisionPorts(_FinalResponsePolicy(final_response)),
         SharedActionOutcomeProjector(),
         evaluator,
         goal_compiler=NotRequiredGoalCompiler("webarena_final_response_test"),
+    )
+    assert environment.surface.browser_navigation_locations == (
+        "map.example.test:3000",
+        "wiki.example.test",
     )
 
     try:
@@ -199,6 +220,46 @@ def test_webarena_final_response_is_stop_payload_not_a_world_requested_output() 
     assert state.finalization.stop_send_count == 1
     assert state.finalization.post_stop_capture_count == 1
     assert state.finalization.native_evaluator_count == 1
+
+
+def test_webarena_provider_terminal_failure_ends_loop_without_another_policy_turn() -> None:
+    raw = raw_observation(
+        ax_node("external", "button", "Open external page"),
+        goal="Use the configured site and finish.",
+        url="https://wiki.example.test/start",
+    )
+    browsergym = FakeBrowserGym(raw)
+    browsergym.step_reward = 0.0
+    browsergym.step_raw_reward = 0
+    browsergym.step_terminated = True
+    browsergym.step_done = True
+    policy = _OneActionPolicy()
+    environment, task, evaluator = open_webarena_verified_case(
+        WA_W1_SMOKE_CASES[0],
+        gym_factory=lambda *_args, **_kwargs: browsergym,
+        browser_navigation_urls=(
+            "https://map.example.test:3000",
+            "https://wiki.example.test",
+        ),
+    )
+    runtime = TargetRuntime(
+        AgentDecisionPorts(policy),
+        ProductionActionOutcomeProjector(),
+        evaluator,
+        goal_compiler=NotRequiredGoalCompiler("webarena_terminal_failure_test"),
+    )
+
+    try:
+        state = asyncio.run(runtime.run_task(environment, task))
+    finally:
+        asyncio.run(environment.close())
+
+    assert state.status is RunStatus.BLOCKED
+    assert policy.calls == 1
+    assert browsergym.actions
+    assert state.current_task_evaluation is not None
+    assert state.current_task_evaluation.outcome is not None
+    assert state.current_task_evaluation.outcome.code == "verified_terminal_task_failure"
 
 
 def test_w1b_world_transition_diagnostic_matches_independent_snapshot_diff() -> None:

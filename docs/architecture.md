@@ -17,6 +17,11 @@ packed; an explicit `find_controls` result remains one complete higher-priority 
 current action-boundary repair also makes that rank purely presentational: registry-owned action tools use stable
 E-ref-shaped schemas, while the existing complete current `ActionSpace` resolver alone validates the selected ref,
 operation, destination, parameters, and private action identity.
+The latest repair keeps the generic BrowserGym browser profile unrestricted, while an environment may explicitly
+provide a navigation scope. WebArena is the only current selector of that restricted profile: its runner reads the
+official BrowserGym `ENV_VARS` URL set once, projects the resulting allowed netlocs into the current browser-context
+state and `goto` parameter schema, and sends that exact schema through the ordinary ActionSpace/Catalog resolver.
+There is no task-, URL-, or site-name detection and no alternate navigation executor.
 Task266 run6 crossed that repaired boundary, activated the intended article, and recovered Portland's official
 coordinates. It then exposed a narrower browser-profile mismatch: the generic tool compiler still required an `E-ref`
 for `goto/go_back/go_forward/new_tab/tab_focus/tab_close`, even though BrowserGym's official navigation primitives are
@@ -244,6 +249,23 @@ Because Harness invokes the configured model directly rather than the canonical 
 model now has a default 2,048-token, temperature-zero, thinking-disabled compaction cap; normal action and repair
 requests continue to override it with their existing request-scoped role settings. No synthetic part enters canonical
 history, and no checkpoint, fact store, cursor, Monitor trigger, scheduler, or second model state is introduced.
+
+Run28 crossed that history-fidelity repair: the model retained both city coordinates and obtained the route distance,
+but chose a direct external OSRM URL rather than the already-open WebArena map. BrowserGym's official post-step
+validator loaded the URL and then returned `terminated=True, reward=0`. Two independent contract gaps turned that one
+terminal mistake into repeated control activity: the WebArena evaluator ignored provider terminal state until an
+agent STOP, and the same-call result projection omitted `ExecutionReceiptBatch.terminal_failure`, rendering a typed
+`NOT_SENT/stale_binding(task_done)` as running success.
+
+The positive contract is now singular. An unrestricted browser still receives the registry's generic HTTP(S) `goto`
+schema. A restricted environment supplies configured URLs; Surface projection derives BrowserGym-compatible netlocs,
+publishes them in the current browser subject, and narrows that same current ActionBinding schema. The disposable
+Catalog preserves the exact browser-context parameter schema instead of broadening it back to the registry default,
+so an unauthorized URL fails `invalid_tool_arguments` before Binder/Executor. Independently, every WebArena native
+`terminated|truncated|done` snapshot is classified immediately; only voluntary successful completion remains
+gated by agent STOP. The ordinary ToolReturn projection now marks any failed execution result as failed and exposes the typed
+non-dispatch terminal failure plus bounded currentness reason. No retry, navigation wrapper, evaluator oracle, or
+benchmark task branch is added.
 
 Run21 independently exposed that canonical target ordering had discarded a source fact it already possessed. Two
 identically named executable links on the Maine article occupied distinct structural paths but were each assigned the

@@ -59,6 +59,7 @@ from affordance_runtime.surfaces.browsergym.lifecycle_identity import (
 )
 from affordance_runtime.surfaces.browsergym.projection import (
     BrowserGymProjection,
+    normalize_browser_navigation_locations,
     project_browsergym_observation,
 )
 from affordance_runtime.surfaces.browsergym.semantics import (
@@ -224,6 +225,7 @@ class BrowserGymSurfaceAdapter:
     _page_identity: str
     _episode_identity: str
     browser_action_primitives: tuple[str, ...] = ()
+    browser_navigation_locations: tuple[str, ...] | None = None
     visual_region_proposer: VisualRegionProposerPort | None = field(default=None, repr=False)
     visual_point_grounder: VisualGrounderPort | None = field(default=None, repr=False)
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = field(
@@ -365,6 +367,7 @@ class BrowserGymSurfaceAdapter:
         marked_candidate_policy_available: bool = False,
         registration_modules: tuple[str, ...] = ("browsergym.miniwob",),
         browser_action_primitives: tuple[str, ...] = (),
+        browser_navigation_urls: tuple[str, ...] | None = None,
     ) -> BrowserGymSurfaceAdapter:
         if not task_id.strip():
             raise ValueError("BrowserGym task ID must be nonempty")
@@ -372,6 +375,11 @@ class BrowserGymSurfaceAdapter:
             from affordance_runtime.surfaces.browsergym.backend import ThreadBoundBrowserGym
 
             gym_factory = ThreadBoundBrowserGym
+        navigation_locations = (
+            None
+            if browser_navigation_urls is None
+            else normalize_browser_navigation_locations(browser_navigation_urls)
+        )
         gym_kwargs: dict[str, object] = {"headless": True}
         if _accepts_registration_modules(gym_factory):
             gym_kwargs["registration_modules"] = registration_modules
@@ -394,6 +402,7 @@ class BrowserGymSurfaceAdapter:
                 _page_identity=page_identity(raw),
                 _episode_identity=episode_identity(prepared_info, fallback=task_run_id),
                 browser_action_primitives=tuple(browser_action_primitives),
+                browser_navigation_locations=navigation_locations,
                 visual_region_proposer=visual_region_proposer,
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
@@ -841,6 +850,7 @@ class BrowserGymSurfaceAdapter:
                 task_state=self._pending_snapshot,
                 entity_identity=self.entity_identity,
                 browser_global_primitives=self.browser_action_primitives,
+                browser_navigation_locations=self.browser_navigation_locations,
             )
         except BrowserGymSemanticError as exc:
             raise RuntimeError(f"browsergym_semantic_{exc.code.value}") from exc

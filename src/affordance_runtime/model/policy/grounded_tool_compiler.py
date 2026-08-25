@@ -171,7 +171,12 @@ class GroundedToolCompiler:
         self._validate_current_refs(rows, context_id)
         self._validate_private_parameter_contracts(operation, rows)
         fields, selector_values, mode = _current_reference_selectors(rows)
-        schema = _public_operation_schema(operation, fields)
+        parameter_schemas = (
+            (rows[0].option.parameter_schema,)
+            if mode is SelectorMode.CURRENT_BROWSER_CONTEXT
+            else _public_business_schemas(operation)
+        )
+        schema = _public_operation_schema(parameter_schemas, fields)
         resolutions = tuple(
             PrivateResolutionEntry(
                 selector,
@@ -301,12 +306,12 @@ def _current_reference_selectors(
 
 
 def _public_operation_schema(
-    operation: str,
+    parameter_schemas: tuple[Mapping[str, object], ...],
     fields: tuple[CompiledSelectorField, ...],
 ) -> Mapping[str, object]:
     branches = tuple(
         _public_operation_branch(schema, fields)
-        for schema in _public_business_schemas(operation)
+        for schema in parameter_schemas
     )
     return branches[0] if len(branches) == 1 else {"anyOf": list(branches)}
 

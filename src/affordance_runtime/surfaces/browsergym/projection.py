@@ -90,6 +90,7 @@ def project_browsergym_observation(
     task_state: BrowserGymTaskStateSnapshot,
     entity_identity: BrowserGymEntityIdentityMap,
     browser_global_primitives: tuple[str, ...] = (),
+    browser_navigation_locations: tuple[str, ...] | None = None,
 ) -> BrowserGymProjection:
     analysis = analyze_browsergym_semantics(raw)
     candidates = list(analysis.controls)
@@ -194,6 +195,7 @@ def project_browsergym_observation(
         page_identity,
         episode_identity,
         browser_global_primitives,
+        browser_navigation_locations,
     )
     if browser_context is not None:
         browser_target, browser_structure, browser_pairs = browser_context
@@ -458,6 +460,7 @@ def _browser_context_subject(
     page_identity: str,
     episode_identity: str,
     primitives: tuple[str, ...],
+    navigation_locations: tuple[str, ...] | None,
 ) -> tuple[
     SemanticTarget,
     ObservationStructureNode,
@@ -488,7 +491,12 @@ def _browser_context_subject(
         "subject.kind": "browser_context",
         "open_tabs": public_tabs,
         "active_tab_index": active_index,
+        "navigation_scope": (
+            "unrestricted" if navigation_locations is None else "environment_restricted"
+        ),
     }
+    if navigation_locations is not None:
+        state["allowed_navigation_locations"] = navigation_locations
     target = SemanticTarget(target_id, "browser_context", "Browser navigation", state, {})
     structure = ObservationStructureNode(
         "structure:browser-context:current",
@@ -511,6 +519,8 @@ def _browser_context_subject(
                 primitive,
                 current_value_schema={"type": "integer", "enum": available_indexes},
             )
+        elif primitive == "goto" and navigation_locations is not None:
+            schema = _restricted_goto_schema(navigation_locations)
         else:
             schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(primitive)
         binding_id = f"binding:{observation_id}:browser-context:{primitive}"
@@ -546,6 +556,44 @@ def _browser_context_subject(
         )
         pairs.append((public, private))
     return target, structure, tuple(pairs)
+
+
+def normalize_browser_navigation_locations(urls: tuple[str, ...]) -> tuple[str, ...]:
+    """Project explicitly configured HTTP(S) URLs to BrowserGym's netloc contract."""
+
+    locations: list[str] = []
+    for value in urls:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("browser navigation URL must be nonempty")
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username is not None:
+            raise ValueError("browser navigation URL must be an HTTP(S) origin without credentials")
+        location = parsed.hostname.casefold()
+        if parsed.port is not None:
+            location = f"{location}:{parsed.port}"
+        locations.append(location)
+    normalized = tuple(dict.fromkeys(locations))
+    if not normalized:
+        raise ValueError("restricted browser navigation requires at least one location")
+    return normalized
+
+
+def _restricted_goto_schema(locations: tuple[str, ...]) -> dict[str, object]:
+    normalized = normalize_browser_navigation_locations(
+        tuple(f"http://{location}" for location in locations)
+    )
+    authority = "(?:" + "|".join(re.escape(location) for location in normalized) + ")"
+    pattern = rf"^https?://{authority}(?:[/?#].*)?$"
+    schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema("goto")
+    url_schema = schema["properties"]["url"]
+    assert isinstance(url_schema, dict)
+    url_schema["pattern"] = pattern
+    url_schema["description"] = (
+        "HTTP(S) URL on a host authorized by the current browser environment: "
+        + ", ".join(normalized)
+    )
+    INTERACTION_CAPABILITY_REGISTRY.validate_parameter_schema("goto", schema)
+    return schema
 
 
 def _string_sequence(value: object) -> tuple[str, ...]:

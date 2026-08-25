@@ -478,9 +478,10 @@ class WebArenaVerifiedCaseEnvironment:
 
     def current_native_result(self) -> tuple[TaskOutcomeKind, str, tuple[str, ...]]:
         self.native_evaluator_queries += 1
-        if not self.final_delivery_attempted:
-            return TaskOutcomeKind.RUNNING_INCOMPLETE, "stop_not_confirmed", ()
-        return classify_webarena_terminal_snapshot(self.surface.current_task_state())
+        return classify_webarena_runtime_snapshot(
+            self.surface.current_task_state(),
+            final_delivery_attempted=self.final_delivery_attempted,
+        )
 
 
 @dataclass(frozen=True)
@@ -491,28 +492,27 @@ class WebArenaVerifiedNativeEvaluator:
 
     async def evaluate(self, task, observation) -> TaskEvaluation:
         snapshot = None
-        if not self.environment.final_delivery_attempted:
-            self.environment.native_evaluator_queries += 1
-            outcome_kind, code, refs = TaskOutcomeKind.RUNNING_INCOMPLETE, "stop_not_confirmed", ()
-        else:
-            self.environment.native_evaluator_queries += 1
-            try:
-                snapshot = self.environment.surface.current_task_state()
-            except Exception as exc:
-                raise _native_evaluator_internal_error(
-                    exc,
-                    TaskEvaluationStage.NATIVE_SNAPSHOT,
-                    observation.observation_id,
-                ) from exc
-            try:
-                outcome_kind, code, refs = classify_webarena_terminal_snapshot(snapshot)
-            except Exception as exc:
-                raise _native_evaluator_internal_error(
-                    exc,
-                    TaskEvaluationStage.NATIVE_CLASSIFICATION,
-                    observation.observation_id,
-                    snapshot,
-                ) from exc
+        self.environment.native_evaluator_queries += 1
+        try:
+            snapshot = self.environment.surface.current_task_state()
+        except Exception as exc:
+            raise _native_evaluator_internal_error(
+                exc,
+                TaskEvaluationStage.NATIVE_SNAPSHOT,
+                observation.observation_id,
+            ) from exc
+        try:
+            outcome_kind, code, refs = classify_webarena_runtime_snapshot(
+                snapshot,
+                final_delivery_attempted=self.environment.final_delivery_attempted,
+            )
+        except Exception as exc:
+            raise _native_evaluator_internal_error(
+                exc,
+                TaskEvaluationStage.NATIVE_CLASSIFICATION,
+                observation.observation_id,
+                snapshot,
+            ) from exc
         try:
             evidence_index = WorldEvidenceIndex.from_observation(observation)
         except Exception as exc:
@@ -578,17 +578,24 @@ def open_webarena_verified_case(
     *,
     gym_factory: Any | None = None,
     max_turns: int = 100,
+    browser_navigation_urls: tuple[str, ...] | None = None,
 ) -> tuple[WebArenaVerifiedCaseEnvironment, TaskGoal, WebArenaVerifiedNativeEvaluator]:
     """Open one official case using only public BrowserGym task intake."""
 
     if case_ref not in WA_W0_REQUIRED_CASES:
         raise ValueError("WebArena-Verified case is outside the reviewed W1/W2 manifest")
+    navigation_urls = (
+        _configured_webarena_navigation_urls(os.environ)
+        if browser_navigation_urls is None
+        else browser_navigation_urls
+    )
     surface = BrowserGymSurfaceAdapter.open(
         case_ref.gym_id,
         seed,
         gym_factory=gym_factory,
         registration_modules=(WA_REGISTRATION_MODULE,),
         browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
+        browser_navigation_urls=navigation_urls,
     )
     try:
         intake = ThinTaskIntake().compile(
@@ -622,6 +629,29 @@ def open_webarena_verified_case(
 def _ensure_public_task(task: TaskGoal, adapter_task: TaskGoal) -> None:
     if task.task_id != adapter_task.task_id or task.revision != adapter_task.revision:
         raise ValueError("WebArena public task identity must match the adapter task")
+
+
+def _configured_webarena_navigation_urls(environment: Mapping[str, str]) -> tuple[str, ...]:
+    """Read the same explicit WebArena deployment URLs consumed by BrowserGym."""
+
+    instance_module = importlib.import_module("browsergym.webarena.instance")
+    names = tuple(str(item) for item in instance_module.ENV_VARS)
+    urls = tuple(environment.get(f"WA_{name}", "").strip() for name in names)
+    if any(not value for value in urls):
+        raise RuntimeError("WebArena browser navigation scope requires the configured WA site URLs")
+    return urls
+
+
+def classify_webarena_runtime_snapshot(
+    snapshot: BrowserGymTaskStateSnapshot,
+    *,
+    final_delivery_attempted: bool,
+) -> tuple[TaskOutcomeKind, str, tuple[str, ...]]:
+    """Honor provider terminal state immediately; gate only voluntary STOP completion."""
+
+    if not final_delivery_attempted and not snapshot.terminal_hint:
+        return TaskOutcomeKind.RUNNING_INCOMPLETE, "stop_not_confirmed", ()
+    return classify_webarena_terminal_snapshot(snapshot)
 
 
 def classify_webarena_terminal_snapshot(

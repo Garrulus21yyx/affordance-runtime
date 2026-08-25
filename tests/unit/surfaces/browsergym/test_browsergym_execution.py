@@ -511,6 +511,7 @@ def test_explicit_browser_profile_globals_dispatch_official_actions(
         "browsergym/arbitrary-real-page",
         browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
     )
+    assert environment.browser_navigation_locations is None
     world = start_environment(environment, task)
     request = request_for(world, task, semantic_action, parameters)
     fake.probe_task = {}

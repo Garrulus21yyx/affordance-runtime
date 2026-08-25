@@ -9,6 +9,7 @@ from affordance_runtime.agent.decisions import (
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
+    SelectAction,
     ToolRejectedResult,
     Wait,
 )
@@ -18,6 +19,13 @@ from affordance_runtime.agent.tool_result_projection import (
     project_committed_tool_return,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.execution import (
+    ActionError,
+    ActionResult,
+    DispatchStatus,
+    ExecutionCompletion,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.world.observation_needs import ObservationPurpose
 from tests.support.agent.core_loop_support import _world
 
@@ -102,3 +110,53 @@ def test_projection_has_no_prefix_selection_api() -> None:
         project_committed_tool_return(  # type: ignore[call-arg]
             _step(decision), admitted_evidence_records=()
         )
+
+
+def test_non_dispatched_terminal_failure_is_not_hidden_from_same_call_tool_return() -> None:
+    world = _world("tool-result-terminal-failure", False)
+    decision = SelectAction(
+        "context:fixture",
+        "action:fixture",
+        tool_call_id="call:action",
+    )
+    result = ActionResult(
+        "request:fixture",
+        DispatchStatus.NOT_SENT,
+        "browsergym",
+        False,
+        ActionError.STALE_BINDING,
+        adapter_evidence={
+            "currentness_status": "stale",
+            "currentness_reason": "task_done",
+            "private_backend_detail": "must-not-project",
+        },
+    )
+    step = StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world.observation_id),
+        execution_receipts=ExecutionReceiptBatch(
+            (),
+            ExecutionCompletion.PARTIAL,
+            terminal_failure=result,
+        ),
+        feedback="binding rejected before dispatch",
+    )
+
+    projected = project_committed_tool_return(step)
+
+    assert projected == {
+        "status": "running",
+        "failed": True,
+        "kind": "execution_receipt",
+        "completion": "partial",
+        "receipts": [],
+        "terminal_failure": {
+            "dispatch_status": "not_sent",
+            "transport_success": False,
+            "error": "stale_binding",
+            "currentness": {"status": "stale", "reason": "task_done"},
+        },
+    }
+    assert "private_backend_detail" not in repr(projected)
