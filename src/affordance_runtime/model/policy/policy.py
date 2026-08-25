@@ -54,6 +54,12 @@ class ModelBackedAgentPolicy:
         semantic_timeout_budget = getattr(self.port, "semantic_timeout_budget_s", None)
         if semantic_timeout_budget is not None and semantic_timeout_budget >= self.call_timeout_s:
             raise ValueError("model semantic timeout budget must be below the policy deadline")
+        configured_policy_timeout = getattr(self.port, "policy_timeout_s", None)
+        if (
+            configured_policy_timeout is not None
+            and configured_policy_timeout != self.call_timeout_s
+        ):
+            raise ValueError("model port and policy deadlines must agree")
 
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:

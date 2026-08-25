@@ -36,11 +36,11 @@ from tests.integration.agent.test_core_loop import (
 )
 
 
-def test_langfuse_names_checkpoint_reducer_attempt_as_its_own_role() -> None:
+def test_langfuse_names_history_compaction_attempt_as_its_own_role() -> None:
     assert _langfuse_generation_name(
         {},
-        {"role": "progress_checkpoint_reducer"},
-    ) == "progress-checkpoint-reducer-generation"
+        {"role": "history_compactor"},
+    ) == "history-compaction-generation"
     assert _langfuse_generation_name({}, {"role": "action_policy"}) == "action-policy-generation"
 
 

@@ -6,7 +6,7 @@ The thin tool-result/history cutover, accepted-response repair, owner-level acti
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear
 fresh-World projection repairs are implemented. The current convergence patch additionally filters control discovery,
-publishes only profile-supported BrowserGym navigation, detects same-World discovery loops, proactively processes SDK
+publishes only profile-supported BrowserGym navigation, detects same-World discovery loops, retains official SDK
 history, bounds the PageMap directory while retaining the complete recoverable region index, orders the ordinary
 model-visible action minimum with both one task-ranked target and one direct fresh focused target, and gives Monitor
 producer-specific recovery guidance for action discovery versus local-result replay. The current owner repair further
@@ -24,16 +24,17 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current provider-free verification passes the modified budget/Monitor surface at `99 passed`.
-The full suite reports `1744 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
-observability test. Focused Ruff and `git diff --check` pass. This is implementation evidence for the bounded changes,
-not a post-budget-repair live Task266 witness or overall closure.
+Current focused history/provider verification reports `105 passed`. The full suite reports `1731 passed / 19 skipped`;
+one pre-existing multiprocessing fork warning remains in the observability test. Focused Ruff and `git diff --check`
+pass. This is implementation evidence for the bounded changes, not a post-repair live Task266 witness or overall
+closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
 - post-budget-repair live validation after run19 crossed the stable-navigation, action-minimum, and Monitor lifecycle
   repairs;
-- checkpoint scheduling and trajectory compaction, reopened by run19;
+- provider-capacity-triggered Harness trajectory compaction and document-scoped structural grounding still need the
+  fresh post-repair Task266 witness;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
@@ -156,14 +157,17 @@ zero STOP/native-evaluator calls and ended `blocked`. It accumulated 154,260 his
 then lost the intended OSRM transition. Ten recovery calls all restarted from attempt 1 because different empty/no-match
 operations cleared Monitor's episode. Run16 is failed pre-repair evidence, not acceptance.
 
-The current owner repair removes the v1 co-output requirement. Exact accepted `ThinkingPart`, ordinary text, provider
-metadata, and all ToolCalls remain in PydanticAI history. A separate stateless Pydantic `ToolOutput` reducer produces
-one bounded `progress-checkpoint.v2` complete replacement with successful source-call refs. PydanticAI Harness 0.25
-pins that checkpoint and trims only pair-safe history; the bridge restores raw history if a dropped read/search result
-is not covered. Workspace receipts are no longer duplicated into the model prompt. A different empty query/no-match
-result cannot clear Monitor; only typed new information or a proven GUI effect does. Focused gates cover the run16
-sequence without adding World, cursor, Store, GoalPlan, Binder, Executor, or evaluator paths. No live post-repair
-Task266 witness exists yet.
+The current owner repair removes both the v1 co-output requirement and the later custom checkpoint/reducer. Exact
+accepted `ThinkingPart`, ordinary text, provider metadata, ToolCalls, same-ID ToolReturns, and each fresh-World user
+prompt remain in official PydanticAI history. Only when the complete canonical request's existing admission breakdown
+reaches 80% of effective provider input does Harness 0.25 `SummarizingCompaction` call the configured model, replace a
+pair-safe expired prefix with one ordinary `SystemPromptPart` summary, and retain the newest pair-safe suffix fitting
+25% of the admission-derived history capacity at full fidelity. Summary failure leaves the exact raw history unchanged.
+A summary-only view exposes accepted `ThinkingPart`
+conclusions that Harness's formatter otherwise
+omits, after which the exact recent suffix is restored. There is no knowledge-specific trigger, source-coverage
+inventory, Monitor trigger, Workspace projection, or additional Runtime memory state. Runs20--24 are live failure
+witnesses for successive pre-repair contracts; a fresh witness after the role-timeout repair is still required.
 
 The authorized Task266
 [`run17`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run17/run.json) proved that the checkpoint now
@@ -182,14 +186,15 @@ The provider-free repair gates now require:
   current public structural/screenshot evidence; a matching private adapter-evidence string alone remains `UNKNOWN`;
 - the vertical fake-BrowserGym route proves `dispatch -> stable navigation -> fresh World -> CHANGED` without Monitor,
   CoreLoop, or Trace parsing;
-- reducer bootstrap occurs once, subsequent uncovered knowledge is processed in batches of three, exchange count alone
-  never triggers, and history pressure begins at 80% of the existing soft token target;
-- identical failed/rejected/unchanged reducer input is not dispatched again, raw ToolReturn history remains available,
-  and the next ActionPolicy call continues normally;
-- reducer output is capped at 2,048 tokens, its deadline share is capped at 10 seconds, and DeepSeek receives the
-  official `extra_body={"thinking":{"type":"disabled"}}` request through the existing PydanticAI model settings.
+- Harness compaction is not called below 80% complete canonical-request pressure and has no
+  knowledge/result/Monitor trigger;
+- above pressure, only a pair-safe expired prefix is summarized, the token-bounded recent suffix and unresolved call
+  remain exact, accepted reasoning is visible to the summarizer, and a summary-provider failure restores the entire
+  raw history;
+- the exact compaction request/response is recorded as a `history_compactor` provider attempt while the summary itself
+  remains a standard non-authoritative PydanticAI `SystemPromptPart`.
 
-No live post-repair Task266 witness exists yet.
+No passing post-repair Task266 witness exists yet.
 
 The authorized Task266
 [`run18`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run18/run.json) crossed the reducer scheduling
@@ -230,6 +235,57 @@ uncertainty. This open defect must not be hidden by a larger turn cap. Closure r
 reduction with pressure-driven compaction of an expired complete trajectory prefix plus a recent raw tail, using the
 installed PydanticAI Harness rather than a new Store, milestone state, or evidence path.
 
+Task266
+[`run20`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run20/run.json) and
+[`run21`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run21/run.json) are failed pre-repair witnesses for
+the first direct-Harness integration. Run20 proved that a fixed eight-message suffix is not a token bound on variable
+GUI Worlds and that a 10-second summary timeout can restore raw history into a later capacity failure. Run21 crossed
+both repairs: every compaction completed and ActionPolicy inputs remained bounded. It then showed that Harness's
+`estimate_context_tokens()` uses the latest provider usage anchor, which includes current prompt/tools rather than
+history alone, so the bridge incorrectly summarized on every subsequent turn. The history owner now gates on
+Harness's message-only `estimate_token_count()`.
+
+The aborted diagnostic
+[`run22`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run22/run.json) falsified one remaining scheduling
+assumption before acceptance: a large Portland World alone exceeds the 8,000-token delivery soft target, so treating
+that target as history capacity still caused back-to-back summaries; the second took about 25.9 seconds. Follow-up
+run23 then showed that a separate history-only estimator still cannot see the pending ToolReturn and fresh current
+request: RequestAdmission counted 53,712 history tokens and 67,022 total input against a 62,904-token effective limit,
+while the pre-pack gate remained below its independent threshold. The current bridge therefore preflights the exact
+normal TurnPacker/RequestAdmission path and invokes Harness when that existing owner reports 80% complete-request
+pressure. This is a stateless capacity decision at the existing PydanticAI boundary, not a cooldown, reducer frequency
+counter, alternate estimator, or scheduler.
+
+The authorized
+[`run24`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run24/run.json) crossed that exact-request pressure
+repair: the ActionPolicy retained Portland and Acadia, entered both coordinates in OSRM, computed a route, and began
+reading the total distance. Its 29 accepted calls included 13 effectful dispatches and zero invalid arguments, stale
+bindings, waits, fallbacks, or grounding gaps. The final failure was provider-boundary timeout coupling, not task
+progress: three compactor calls ended at about 27.8 seconds because Harness's 30-second outer deadline reused the
+ActionPolicy client's 27.25-second default timeout. Raw history was honestly restored twice; on the third failure the
+complete canonical request reached 68,081 tokens against the 62,904-token effective limit and returned the typed
+`context_capacity` failure. The repair keeps one configured model/provider, gives its client the compactor deadline,
+and carries the shorter action deadline through official PydanticAI per-request model settings. The 90-second policy
+budget remains closed over one optional compaction, one bounded retry delay, and at most two action attempts.
+
+The authorized
+[`run25`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run25/run.json) crossed that client-timeout repair.
+All ten pressure-triggered summaries completed; there were zero context-capacity, invalid-argument, stale-binding,
+wait, fallback, or grounding-gap events. The agent retained `relation_id=2176999` and OSRM distance `287km`, then used
+the final turns to verify the relation by coordinate search. The terminal `provider_unavailable` came from the static
+replacement partition: after a successful 23.0-second compaction, both ActionPolicy attempts retained the fixed
+21.125-second timeout and ended at about 21.7 seconds. The current repair propagates one absolute policy deadline and
+recalculates the canonical per-request timeout after actual compaction elapsed. With run25's measured timing, both
+remaining attempts receive 30.75 seconds while compaction, retry reserve, attempts, and safety margin still fit the
+same 90-second outer deadline. A vertical test proves the post-compaction envelope receives the recalculated value;
+the pure budget test covers the run25 numeric witness.
+
+Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
+legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
+`(102, 1)`, but the region index reduced each to the same region-local order `2`. The target-context owner now ranks
+source structural occurrences document-wide. Structurally distinct identical controls receive distinct current
+E-refs; genuinely indistinguishable executable targets without a structural occurrence still fail closed.
+
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
 an `E25` route returned by `find_controls` but the next `activate` schema admitted only `E53`. Run10 revalidated that
@@ -255,8 +311,8 @@ The PydanticAI bridge had retained only the latest pending exchange, so the earl
 After direct call/result history was restored, the same trace exposed another owner defect: the bridge reconstructed
 the accepted response as a new `ModelResponse` containing only `ToolCallPart`, so the model's own conclusion existed in
 Trace but not in the next turn. The then-current response-side progress-note repair was later falsified by run16. The
-current contract instead keeps a bounded exact recent suffix—including thinking—and reduces durable conclusions
-separately through typed structured output. No Runtime evidence memory is introduced.
+current contract instead keeps a bounded exact recent suffix—including thinking—and lets Harness replace only an
+expired pair-safe prefix with one ordinary historical summary. No Runtime evidence memory is introduced.
 
 The authorized run8 trace verified that repair: later `llm.input_messages` contained the earlier bounded progress notes,
 accepted calls, and matching ToolReturns. It then exposed a distinct capability-publication defect. The
@@ -519,8 +575,9 @@ read_region(Rx)
 
 The second physical provider input contains page 1 under its original call ID. The final physical input contains both
 completed accepted pairs in order: page 1 under call 1 and page 2 under call 2. Their contents equal the corresponding
-committed results, and no prior user/World prompt is retained. A terminal response clears the bridge history. The Store
-contains only bounded digest receipts and no result body/inventory.
+committed results, and the SDK-produced fresh-World prompt for every retained turn remains adjacent to its outcome. A
+terminal response clears the bridge history. The Store contains only bounded digest receipts and no result
+body/inventory.
 
 A second Recording PydanticAI gate emits `ThinkingPart + N ToolCallPart`. Exactly the first current call is resolved;
 later calls are not executed, queued, or used as fallback. Canonical history preserves the exact response, including
@@ -528,22 +585,13 @@ thinking and every proposal. The next physical input pairs the first with its ow
 native failed returns. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
 verifies reissue, and an invalid first call cannot fall through to a valid later call.
 
-The typed-reducer gate executes `search_page_content -> SearchPageContentResult ->
-ToolOutput(CheckpointReduction) -> Harness pin -> next ActionPolicy`. It proves the checkpoint contains a successful
-source call, exact prior thinking and same-call ToolReturn are present, and the fresh current prompt has no duplicated
-Workspace `recent_steps`. Arbitrary action narration remains ordinary recent response content and cannot become the
-checkpoint.
-
-History-pressure gates invoke PydanticAI Harness pair-safe compaction before hard overflow. A checkpoint-covered
-knowledge pair can leave atomically; the pin and unresolved suffix survive. The same attempted reduction without
-checkpoint coverage returns the original raw knowledge history. Exact duplicate search content does not invoke the
-reducer. A bootstrap/batch property proves one first-result reduction and then one call per three uncovered knowledge
-results. Five small completed exchanges do not constitute pressure; the same history triggers only after crossing 80%
-of the configured soft token target. A failed-input memo gate proves the same semantic reducer request is not sent
-again while its raw source result remains in official history.
-Reducer instructions prohibit call-local bindings, while Runtime treats free semantic text opaquely so legitimate task
-identifiers such as `E25` or `R9` are not misclassified by a GUI-ref regex. Malformed, oversized, or
-unavailable/failed-source checkpoint output is rejected rather than truncated.
+History-pressure gates invoke PydanticAI Harness pair-safe compaction before hard overflow. The same final
+RequestAdmission breakdown counts history, pending ToolReturn, fresh World, tools, and overhead; below 80% of effective
+input no summary model call occurs. Above it, the summary input contains the expired fresh Worlds, model-authored conclusions,
+ToolCalls, and ToolReturns; the newest pair-safe token-bounded SDK suffix and unresolved call remain byte-for-byte
+unchanged. A generated 5..12-turn property validates pairing and canonical provider projection after compaction. A
+provider error or timeout returns the exact raw history. Source-coverage, knowledge bootstrap/batching, result-kind
+triggers, and failed-input memos are absent from production.
 
 Monitor gates prove a different empty discovery/read attempt remains in the same recovery episode, while typed
 `NEW_INFORMATION` clears it. A generated period-2/3 property proves GUI cycle identity is phase-independent and
@@ -756,8 +804,8 @@ The final read-only review for this cutover must answer:
     unbounded same-World loop?
 15. Are browser-global actions offered only by the WebArena-family profile and executed through BrowserGym's existing
     ActionSpace/Binder/Executor path?
-16. Does SDK history preserve exact recent thinking/calls/results, reduce new knowledge through one typed sourced
-    checkpoint, use Harness pair-safe compaction, and refuse to drop uncovered raw knowledge?
+16. Does SDK history preserve exact recent thinking/calls/results, use complete RequestAdmission pressure for
+    Harness pair-safe compaction, retain an exact pair-safe suffix, and restore raw history on summary failure?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact

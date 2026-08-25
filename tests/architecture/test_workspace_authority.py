@@ -33,6 +33,11 @@ def test_workspace_is_runtime_diagnostics_while_pydantic_history_is_model_visibl
     assert "render_agent_workspace(" not in binder
     assert "message_history: tuple[object, ...]" in bridge
     assert "_compact_pydantic_history(" in bridge
+    assert "SummarizingCompaction" in bridge
+    assert not (_SRC / "model" / "policy" / "checkpoint_reducer.py").exists()
+    assert not (_SRC / "model" / "policy" / "progress_checkpoint.py").exists()
+    assert "knowledge_bootstrap" not in bridge
+    assert "progress_checkpoint_reducer" not in bridge
     assert "working_facts" not in binder
 
 

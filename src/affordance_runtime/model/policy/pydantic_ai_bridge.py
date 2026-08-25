@@ -30,8 +30,6 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     AgentDecision,
     DecisionKind,
-    ReadRegionResult,
-    SearchPageContentResult,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
@@ -39,16 +37,6 @@ from affordance_runtime.model.policy.canonical_provider_envelope import (
     CanonicalProviderEnvelope,
     CanonicalProviderEnvelopeBinder,
     CanonicalProviderIdentity,
-)
-from affordance_runtime.model.policy.checkpoint_reducer import (
-    CHECKPOINT_REDUCER_MAX_TOKENS,
-    CHECKPOINT_REDUCER_SCHEMA,
-    CheckpointReducer,
-    CheckpointReducerInput,
-    CompletedToolResult,
-    PydanticAICheckpointReducer,
-    RecentActionContext,
-    validate_reduction_sources,
 )
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
@@ -68,9 +56,6 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
-from affordance_runtime.model.policy.progress_checkpoint import (
-    ProgressCheckpoint,
-)
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallReconciliationStatus,
@@ -94,13 +79,47 @@ from affordance_runtime.model.policy.turn_packer import TurnPacker
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
-_KNOWLEDGE_TOOL_NAMES = frozenset({"read_region", "search_page_content"})
-_FAILED_KNOWLEDGE_RESULT_KINDS = frozenset(
-    {"CapacityExceeded", "InvalidCursor", "InvalidRegion", "StaleContext"}
+_POLICY_DEADLINE_SAFETY_S = 0.5
+_HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
+_HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
+_HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.25
+_HISTORY_COMPACTION_SUMMARY_PROMPT = """
+You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
+prefix, so preserve only information needed to continue the user's task correctly.
+
+Use these exact headings, omitting empty sections:
+
+## Task progress
+Completed task requirements and the current stage.
+
+## Verified facts
+Task-relevant facts actually supported by the trajectory, including exact values and public
+document or tool-call identifiers when present. Never promote an ambiguity or hypothesis.
+
+## Uncertainties
+Claims still requiring verification and conflicting observations.
+
+## Action outcomes
+Decision-relevant completed actions and their observed outcomes. Do not preserve stale loading
+state, current-World claims, selectors, or call-local E/R/F/N grounding references.
+
+## Remaining work
+Unresolved requirements and the next semantic intent.
+
+## Failed approaches
+Strategies that produced no useful progress and should not be repeated.
+
+Fresh World supplied to the continuing agent is authoritative. Focus on conclusions and
+outcomes rather than narrating every step. Keep the summary concise and respond with only the
+summary.
+
+<messages>
+{messages}
+</messages>
+""".strip()
+_HISTORY_COMPACTION_INSTRUCTIONS = (
+    "Summarize an expired GUI-agent trajectory prefix without inventing facts or current state."
 )
-_CHECKPOINT_KNOWLEDGE_BATCH_SIZE = 3
-_CHECKPOINT_HISTORY_PRESSURE_RATIO = 0.8
-_CHECKPOINT_DEDUP_LIMIT = 16
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
 
@@ -122,6 +141,15 @@ class _ProviderFailureDetail:
     exception_class: str
     status_code: int | None = None
     retry_after_s: float | None = None
+
+
+@dataclass(frozen=True)
+class _HistoryCompactionRun:
+    messages: tuple[object, ...]
+    transcript: tuple[object, ...] = ()
+    error: str = ""
+    latency_ms: float = 0.0
+    attempted: bool = False
 
 
 class _ProviderCallExhausted(RuntimeError):
@@ -180,11 +208,12 @@ class PydanticAIGroundedDecisionPort:
     supports_multimodal: bool
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
     transport_timeout_s: float = 85.0
+    policy_timeout_s: float | None = None
     provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
     max_provider_retry_delay_s: float = _MAX_PROVIDER_BACKOFF_S
     envelope_binder: CanonicalProviderEnvelopeBinder = field(default_factory=CanonicalProviderEnvelopeBinder)
     reasoning_policy: ActionPolicyReasoningPolicy = field(default_factory=ActionPolicyReasoningPolicy)
-    checkpoint_reducer: CheckpointReducer | None = field(default=None, compare=False, repr=False)
+    history_compaction_timeout_s: float = 10.0
     consumed_recovery_events: frozenset[str] = field(default_factory=frozenset, init=False, compare=False)
     last_call_profile: ActionPolicyCallProfile | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
@@ -210,14 +239,8 @@ class PydanticAIGroundedDecisionPort:
     active_task_identity: tuple[str, int] | None = field(
         default=None, init=False, compare=False, repr=False
     )
-    last_checkpoint_reducer_status: str = field(default="not_triggered", init=False, compare=False)
-    last_checkpoint_reducer_error: str = field(default="", init=False, compare=False)
-    checkpoint_reducer_dedup_digests: tuple[str, ...] = field(
-        default=(),
-        init=False,
-        compare=False,
-        repr=False,
-    )
+    last_history_compaction_status: str = field(default="not_triggered", init=False, compare=False)
+    last_history_compaction_error: str = field(default="", init=False, compare=False)
     last_model_delivery: ModelTurnDelivery | None = field(
         default=None, init=False, compare=False, repr=False
     )
@@ -227,10 +250,14 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("PydanticAI model identity is required")
         if not 0 < self.transport_timeout_s <= 300:
             raise ValueError("PydanticAI transport timeout must be in (0, 300]")
+        if self.policy_timeout_s is not None and not 1 < self.policy_timeout_s <= 300:
+            raise ValueError("PydanticAI policy timeout must be in (1, 300]")
         if not 0 <= self.provider_retry_backoff_s <= self.max_provider_retry_delay_s:
             raise ValueError("provider retry backoff must fit its bounded delay")
         if not 0 < self.max_provider_retry_delay_s <= _MAX_PROVIDER_BACKOFF_S:
             raise ValueError("provider retry delay must be in (0, 5]")
+        if not 0 < self.history_compaction_timeout_s <= 60:
+            raise ValueError("history compaction timeout must be in (0, 60]")
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
 
     @property
@@ -255,6 +282,11 @@ class PydanticAIGroundedDecisionPort:
         request: ModelDecisionRequest,
     ) -> ModelInvocationResult[ResolvedModelDecision]:
         semantic_started = time.perf_counter()
+        provider_deadline_s = (
+            semantic_started + self.policy_timeout_s - _POLICY_DEADLINE_SAFETY_S
+            if self.policy_timeout_s is not None
+            else None
+        )
         object.__setattr__(self, "last_catalog_count", 0)
         object.__setattr__(self, "last_catalog_bytes", 0)
         object.__setattr__(self, "last_catalog_specs", ())
@@ -267,8 +299,8 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_local_failure", {})
         object.__setattr__(self, "last_discarded_protocol_call_count", 0)
         object.__setattr__(self, "last_history_compaction_count", 0)
-        object.__setattr__(self, "last_checkpoint_reducer_status", "not_triggered")
-        object.__setattr__(self, "last_checkpoint_reducer_error", "")
+        object.__setattr__(self, "last_history_compaction_status", "not_triggered")
+        object.__setattr__(self, "last_history_compaction_error", "")
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_model_delivery", None)
         task_identity = (
@@ -276,8 +308,6 @@ class PydanticAIGroundedDecisionPort:
             request.agent_context.goal_plan.task_revision,
         )
         previous_task_identity = self.active_task_identity
-        if previous_task_identity != task_identity:
-            object.__setattr__(self, "checkpoint_reducer_dedup_digests", ())
         if (
             previous_task_identity is not None
             and previous_task_identity[0] != task_identity[0]
@@ -397,118 +427,91 @@ class PydanticAIGroundedDecisionPort:
                     _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
                     request,
                 )
-        trigger = _checkpoint_trigger(
-            request,
-            history_messages,
-            recovery_event_signature=call_profile.recovery_event_signature,
-            previous_task_identity=previous_task_identity,
-            current_task_identity=task_identity,
-            history_soft_target=self.envelope_binder.request_budget.soft_target_tokens,
+        identity = CanonicalProviderIdentity(
+            self.provider_id,
+            self.model_id,
+            self.endpoint_host,
+            self.perception_profile.value,
         )
-        if trigger and self.checkpoint_reducer is not None:
-            previous_checkpoint = _latest_progress_checkpoint(history_messages)
-            reducer_input = _checkpoint_reducer_input(
-                request,
-                history_messages,
-                trigger=trigger,
-                pending_call=pending_call,
-                previous_checkpoint=previous_checkpoint,
-            )
-            reducer_input_digest = _checkpoint_reducer_input_digest(reducer_input)
-            if reducer_input_digest in self.checkpoint_reducer_dedup_digests:
-                object.__setattr__(self, "last_checkpoint_reducer_status", "deduplicated")
-            else:
-                reducer_run = await self.checkpoint_reducer.reduce(reducer_input)
-                self._record_checkpoint_reducer_run(reducer_run, trigger)
-                if reducer_run.reduction is None:
-                    object.__setattr__(self, "last_checkpoint_reducer_status", "failed")
-                    object.__setattr__(self, "last_checkpoint_reducer_error", reducer_run.error)
-                    object.__setattr__(
-                        self,
-                        "checkpoint_reducer_dedup_digests",
-                        _remember_checkpoint_reducer_input(
-                            self.checkpoint_reducer_dedup_digests,
-                            reducer_input_digest,
-                        ),
-                    )
-                else:
-                    try:
-                        checkpoint = validate_reduction_sources(
-                            reducer_run.reduction,
-                            successful_sources=_successful_tool_sources(
-                                history_messages,
-                                pending_call=pending_call,
-                                last_step=request.last_step,
-                            ),
-                            previous_checkpoint=previous_checkpoint,
-                        )
-                    except ValueError as exc:
-                        object.__setattr__(self, "last_checkpoint_reducer_status", "rejected")
-                        object.__setattr__(self, "last_checkpoint_reducer_error", str(exc))
-                        object.__setattr__(
-                            self,
-                            "checkpoint_reducer_dedup_digests",
-                            _remember_checkpoint_reducer_input(
-                                self.checkpoint_reducer_dedup_digests,
-                                reducer_input_digest,
-                            ),
-                        )
-                    else:
-                        object.__setattr__(
-                            self,
-                            "last_checkpoint_reducer_status",
-                            reducer_run.reduction.outcome,
-                        )
-                        if checkpoint is None:
-                            object.__setattr__(
-                                self,
-                                "checkpoint_reducer_dedup_digests",
-                                _remember_checkpoint_reducer_input(
-                                    self.checkpoint_reducer_dedup_digests,
-                                    reducer_input_digest,
-                                ),
-                            )
-                        else:
-                            object.__setattr__(
-                                self,
-                                "checkpoint_reducer_dedup_digests",
-                                (),
-                            )
-                            history_messages = _with_progress_checkpoint(
-                                history_messages,
-                                checkpoint,
-                            )
-        elif trigger:
-            object.__setattr__(self, "last_checkpoint_reducer_status", "unavailable")
 
-        before_compaction = history_messages
-        history_messages = await _compact_pydantic_history(
-            history_messages,
-            model=self.model,
-            max_estimated_tokens=self.envelope_binder.request_budget.soft_target_tokens,
-        )
-        object.__setattr__(
-            self,
-            "last_history_compaction_count",
-            max(0, _completed_exchange_count(before_compaction) - _completed_exchange_count(history_messages)),
-        )
-        try:
-            packed = TurnPacker().pack(
+        def pack_history(
+            messages: tuple[object, ...],
+            *,
+            request_timeout_s: float,
+        ):
+            return TurnPacker().pack(
                 request,
                 binder=self.envelope_binder,
-                identity=CanonicalProviderIdentity(
-                    self.provider_id,
-                    self.model_id,
-                    self.endpoint_host,
-                    self.perception_profile.value,
-                ),
+                identity=identity,
                 call_profile=call_profile,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
-                history_messages=history_messages,
+                request_timeout_s=request_timeout_s,
+                history_messages=messages,
                 pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
                 pending_tool_name=pending_call.name if pending_call is not None else "",
             )
+
+        try:
+            before_compaction = history_messages
+            initial_request_timeout_s = _remaining_action_attempt_timeout(
+                deadline_s=provider_deadline_s,
+                now_s=time.perf_counter(),
+                retry_delay_reserve_s=self.max_provider_retry_delay_s,
+                maximum_timeout_s=self.transport_timeout_s,
+            )
+            raw_packed = None
+            try:
+                raw_packed = pack_history(
+                    history_messages,
+                    request_timeout_s=initial_request_timeout_s,
+                )
+                raw_breakdown = raw_packed.admitted_envelope.token_breakdown
+            except ModelRequestCapacityError as raw_capacity:
+                raw_breakdown = raw_capacity.breakdown
+            compaction_required = _history_compaction_required(
+                raw_breakdown,
+                has_history=bool(history_messages),
+            )
+            if compaction_required:
+                compaction_run = await _compact_pydantic_history(
+                    history_messages,
+                    model=self.model,
+                    max_estimated_tokens=_available_history_tokens(raw_breakdown),
+                    observed_estimated_tokens=raw_breakdown.history_tokens,
+                    timeout_s=self.history_compaction_timeout_s,
+                )
+            else:
+                compaction_run = _HistoryCompactionRun(history_messages)
+            history_messages = compaction_run.messages
+            self._record_history_compaction_run(compaction_run)
+            object.__setattr__(
+                self,
+                "last_history_compaction_count",
+                max(
+                    0,
+                    _completed_exchange_count(before_compaction)
+                    - _completed_exchange_count(history_messages),
+                ),
+            )
+            if compaction_required:
+                request_timeout_s = _remaining_action_attempt_timeout(
+                    deadline_s=provider_deadline_s,
+                    now_s=time.perf_counter(),
+                    retry_delay_reserve_s=self.max_provider_retry_delay_s,
+                    maximum_timeout_s=self.transport_timeout_s,
+                )
+                packed = pack_history(
+                    history_messages,
+                    request_timeout_s=request_timeout_s,
+                )
+            elif raw_packed is not None:
+                packed = raw_packed
+            else:
+                packed = pack_history(
+                    history_messages,
+                    request_timeout_s=initial_request_timeout_s,
+                )
             delivery = packed.delivery
             catalog = packed.catalog
             admitted = packed.admitted_envelope
@@ -543,6 +546,12 @@ class PydanticAIGroundedDecisionPort:
                         repair_profile.max_output_tokens
                         + self.envelope_binder.request_budget.protocol_reserve_tokens
                         + self.envelope_binder.request_budget.safety_margin_tokens
+                    ),
+                    request_timeout_s=_remaining_action_attempt_timeout(
+                        deadline_s=provider_deadline_s,
+                        now_s=time.perf_counter(),
+                        retry_delay_reserve_s=self.max_provider_retry_delay_s,
+                        maximum_timeout_s=self.transport_timeout_s,
                     ),
                 )
                 repair_budget = replace(
@@ -790,11 +799,8 @@ class PydanticAIGroundedDecisionPort:
             "multiple_tool_call_attempt_count": self.last_multiple_tool_call_attempt_count,
             "discarded_protocol_call_count": self.last_discarded_protocol_call_count,
             "history_compaction_count": self.last_history_compaction_count,
-            "checkpoint_reducer_status": self.last_checkpoint_reducer_status,
-            "checkpoint_reducer_error": self.last_checkpoint_reducer_error,
-            "checkpoint_reducer_dedup_count": len(
-                self.checkpoint_reducer_dedup_digests
-            ),
+            "history_compaction_status": self.last_history_compaction_status,
+            "history_compaction_error": self.last_history_compaction_error,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
             **request_breakdown_diagnostics(
@@ -846,38 +852,44 @@ class PydanticAIGroundedDecisionPort:
             self.last_discarded_protocol_call_count + discarded,
         )
 
-    def _record_checkpoint_reducer_run(self, run: object, trigger: str) -> None:
-        """Record each reducer provider response at its own role boundary."""
+    def _record_history_compaction_run(self, run: _HistoryCompactionRun) -> None:
+        """Record the Harness-owned summary call without making it task state."""
 
         from pydantic_ai.messages import ModelRequest, ModelResponse
 
-        messages = tuple(getattr(run, "messages", ()))
+        if not run.attempted:
+            return
+        object.__setattr__(
+            self,
+            "last_history_compaction_status",
+            "failed" if run.error else "summarized",
+        )
+        object.__setattr__(self, "last_history_compaction_error", run.error)
         responses = tuple(
             (index, message)
-            for index, message in enumerate(messages)
+            for index, message in enumerate(run.transcript)
             if isinstance(message, ModelResponse)
         )
-        if not responses and not getattr(run, "error", ""):
-            return
         if not responses:
             attempt = ModelGenerationAttempt(
                 attempt=len(self.last_generation_attempts) + 1,
-                phase=f"checkpoint_reducer:{trigger}",
-                schema_name=CHECKPOINT_REDUCER_SCHEMA,
+                phase="history_compaction:token_pressure",
+                schema_name=_HISTORY_COMPACTION_SCHEMA,
                 status="failed",
-                latency_ms=float(getattr(run, "latency_ms", 0.0)),
-                exception_class=str(getattr(run, "error", "")).split(":", 1)[0],
-                role="progress_checkpoint_reducer",
+                latency_ms=run.latency_ms,
+                exception_class=run.error.split(":", 1)[0],
+                role="history_compactor",
                 mode="semantic_compaction",
-                schema_version=CHECKPOINT_REDUCER_SCHEMA,
-                trigger=trigger,
+                schema_version=_HISTORY_COMPACTION_SCHEMA,
+                trigger="token_pressure",
                 transcript={
                     "openinference.span.kind": "LLM",
                     "llm.system": self.provider_id,
                     "llm.model_name": self.model_id,
-                    "llm.input_messages": getattr(run, "prompt", ""),
+                    "llm.input_messages": to_json_compatible(run.transcript),
+                    "llm.output_messages": [],
                     "status": "failed",
-                    "error": str(getattr(run, "error", "")),
+                    "error": run.error,
                 },
             )
             object.__setattr__(
@@ -891,7 +903,7 @@ class PydanticAIGroundedDecisionPort:
             request = next(
                 (
                     message
-                    for message in reversed(messages[:response_index])
+                    for message in reversed(run.transcript[:response_index])
                     if isinstance(message, ModelRequest)
                 ),
                 None,
@@ -899,34 +911,31 @@ class PydanticAIGroundedDecisionPort:
             usage = response.usage
             prompt_tokens = int(getattr(usage, "input_tokens", 0))
             completion_tokens = int(getattr(usage, "output_tokens", 0))
-            accepted = not getattr(run, "error", "") and response_index == responses[-1][0]
+            accepted = not run.error and response_index == responses[-1][0]
             attempt = ModelGenerationAttempt(
                 attempt=len(self.last_generation_attempts) + 1,
-                phase=f"checkpoint_reducer:{trigger}",
-                schema_name=CHECKPOINT_REDUCER_SCHEMA,
-                status="accepted" if accepted else "schema_retry",
+                phase="history_compaction:token_pressure",
+                schema_name=_HISTORY_COMPACTION_SCHEMA,
+                status="accepted" if accepted else "failed",
                 response_id=str(response.provider_response_id or ""),
-                latency_ms=(
-                    float(getattr(run, "latency_ms", 0.0)) if accepted else 0.0
-                ),
+                latency_ms=run.latency_ms if accepted else 0.0,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
                 finish_reason=str(response.finish_reason or "")[:80],
-                max_output_tokens=CHECKPOINT_REDUCER_MAX_TOKENS,
                 final_content_present=accepted,
-                role="progress_checkpoint_reducer",
+                role="history_compactor",
                 mode="semantic_compaction",
-                schema_version=CHECKPOINT_REDUCER_SCHEMA,
-                trigger=trigger,
-                final_tool_call_present=accepted,
+                schema_version=_HISTORY_COMPACTION_SCHEMA,
+                trigger="token_pressure",
                 transcript={
                     "openinference.span.kind": "LLM",
                     "llm.system": self.provider_id,
                     "llm.model_name": self.model_id,
                     "llm.input_messages": to_json_compatible(request) if request else None,
                     "llm.output_messages": to_json_compatible(response),
-                    "status": "accepted" if accepted else "schema_retry",
+                    "status": "accepted" if accepted else "failed",
+                    "error": run.error,
                 },
             )
             object.__setattr__(
@@ -1224,7 +1233,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     selected_perception = DecisionPerceptionProfile(
         perception_profile or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
-    reducer_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
+    compaction_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
         call_timeout_s
     )
     port = PydanticAIGroundedDecisionPort(
@@ -1235,13 +1244,10 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         supports_multimodal=configured.supports_multimodal,
         perception_profile=selected_perception,
         transport_timeout_s=transport_timeout_s,
+        policy_timeout_s=call_timeout_s,
         provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
         max_provider_retry_delay_s=retry_delay_budget_s,
-        checkpoint_reducer=PydanticAICheckpointReducer(
-            configured.model,
-            timeout_s=reducer_timeout_s,
-            openai_thinking_toggle=configured.provider_id == "deepseek",
-        ),
+        history_compaction_timeout_s=compaction_timeout_s,
         reasoning_policy=ActionPolicyReasoningPolicy(
             ordinary_max_tokens=_bounded_reasoning_tokens(
                 env,
@@ -1314,7 +1320,7 @@ def pydantic_ai_model_from_environment(
         if profile == "local"
         else _required(env, f"{prefix}_MODEL")
     )
-    _reducer_timeout_s, _retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
+    compaction_timeout_s, _retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
         call_timeout_s
     )
     client = AsyncOpenAI(
@@ -1322,7 +1328,9 @@ def pydantic_ai_model_from_environment(
         if profile == "local"
         else _required(env, f"{prefix}_API_KEY"),
         base_url=base_url,
-        timeout=transport_timeout_s,
+        # Harness compaction reuses this model directly, while normal policy
+        # requests carry their shorter role deadline in ModelSettings.timeout.
+        timeout=max(compaction_timeout_s, transport_timeout_s),
         max_retries=0,
     )
     if profile == "deepseek":
@@ -1355,16 +1363,33 @@ def _bounded_reasoning_tokens(
 
 
 def _provider_time_budgets(call_timeout_s: float) -> tuple[float, float, float]:
-    """Fit reducer plus the existing bounded provider retry inside one policy deadline."""
+    """Set role caps whose actual use is bounded by one propagated deadline."""
 
-    reducer_timeout_s = min(10.0, max(0.25, call_timeout_s * 0.2))
     retry_delay_budget_s = min(_MAX_PROVIDER_BACKOFF_S, max(0.1, call_timeout_s * 0.1))
-    transport_timeout_s = (
-        call_timeout_s - reducer_timeout_s - retry_delay_budget_s - 0.5
-    ) / 2
+    callable_budget_s = call_timeout_s - retry_delay_budget_s - _POLICY_DEADLINE_SAFETY_S
+    transport_timeout_s = callable_budget_s / 2
+    compaction_timeout_s = min(60.0, max(0.25, transport_timeout_s))
     if transport_timeout_s <= 0:
-        raise ValueError("PydanticAI policy timeout cannot fit reducer and provider recovery")
-    return reducer_timeout_s, retry_delay_budget_s, transport_timeout_s
+        raise ValueError("PydanticAI policy timeout cannot fit compaction and provider recovery")
+    return compaction_timeout_s, retry_delay_budget_s, transport_timeout_s
+
+
+def _remaining_action_attempt_timeout(
+    *,
+    deadline_s: float | None,
+    now_s: float,
+    retry_delay_reserve_s: float,
+    maximum_timeout_s: float,
+) -> float:
+    """Share the real remaining deadline across the two bounded provider attempts."""
+
+    if deadline_s is None:
+        return maximum_timeout_s
+    remaining_callable_s = deadline_s - now_s - retry_delay_reserve_s
+    timeout_s = min(maximum_timeout_s, remaining_callable_s / 2)
+    if timeout_s <= 0:
+        raise TimeoutError("provider deadline exhausted before ActionPolicy dispatch")
+    return timeout_s
 
 
 def zhipu_pydantic_ai_policy_from_environment(
@@ -1549,22 +1574,41 @@ def _accepted_message_history(
     accepted: AcceptedToolExchange,
     pending_calls: tuple[object, ...],
 ) -> tuple[object, ...]:
-    """Keep SDK-produced ToolReturn parts and accepted calls, never old World prompts."""
+    """Keep the SDK's complete fresh-World turn and replace only its accepted response."""
 
-    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
 
+    new_messages = tuple(result.new_messages())
+    if (
+        not new_messages
+        or not isinstance(new_messages[-1], ModelResponse)
+        or any(not isinstance(message, ModelRequest) for message in new_messages[:-1])
+    ):
+        raise ValueError("PydanticAI did not return one complete current turn")
+    requests = tuple(message for message in new_messages[:-1] if isinstance(message, ModelRequest))
+    if not any(
+        isinstance(part, UserPromptPart)
+        for message in requests
+        for part in message.parts
+    ):
+        raise ValueError("PydanticAI current turn lost its fresh World prompt")
     if not pending_calls:
         if prior_history:
             raise ValueError("history without a pending call cannot accept a new exchange")
-        return (accepted.response,)
+        if any(
+            isinstance(part, ToolReturnPart)
+            for message in requests
+            for part in message.parts
+        ):
+            raise ValueError("initial PydanticAI turn cannot contain a deferred result")
+        return (*requests, accepted.response)
 
     pending_identities = tuple(
         (part.tool_name, part.tool_call_id) for part in pending_calls
     )
     matching_parts = tuple(
         part
-        for message in result.all_messages()
-        if isinstance(message, ModelRequest)
+        for message in requests
         for part in message.parts
         if isinstance(part, ToolReturnPart)
         and (part.tool_name, part.tool_call_id) in set(pending_identities)
@@ -1578,215 +1622,11 @@ def _accepted_message_history(
         or set(returned_by_identity) != set(pending_identities)
     ):
         raise ValueError("PydanticAI did not close every deferred tool proposal")
-    returned_parts = tuple(returned_by_identity[item] for item in pending_identities)
     return (
         *prior_history,
-        ModelRequest(parts=returned_parts),
+        *requests,
         accepted.response,
     )
-
-
-def _latest_progress_checkpoint(
-    messages: tuple[object, ...],
-) -> ProgressCheckpoint | None:
-    """Return the sole Harness-pinned checkpoint in official SDK history."""
-
-    from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
-    from pydantic_ai_harness.compaction import is_pinned
-
-    found: ProgressCheckpoint | None = None
-    for message in messages:
-        if not isinstance(message, ModelRequest):
-            continue
-        for part in message.parts:
-            if not isinstance(part, UserPromptPart) or not is_pinned(part):
-                continue
-            content = part.content
-            if isinstance(content, str):
-                text = content
-            else:
-                values = tuple(
-                    item.content for item in content if isinstance(item, TextContent)
-                )
-                text = values[0] if len(values) == 1 else ""
-            checkpoint = ProgressCheckpoint.parse(text)
-            if checkpoint is None or found is not None:
-                raise ValueError("official history contains an invalid checkpoint pin")
-            found = checkpoint
-    return found
-
-
-def _with_progress_checkpoint(
-    messages: tuple[object, ...],
-    checkpoint: ProgressCheckpoint,
-) -> tuple[object, ...]:
-    """Atomically replace the one non-authoritative checkpoint pin."""
-
-    from pydantic_ai.messages import ModelRequest, UserPromptPart
-    from pydantic_ai_harness.compaction import is_pinned, pin
-
-    retained: list[object] = []
-    for message in messages:
-        if not isinstance(message, ModelRequest):
-            retained.append(message)
-            continue
-        parts = tuple(
-            part
-            for part in message.parts
-            if not (isinstance(part, UserPromptPart) and is_pinned(part))
-        )
-        if parts:
-            retained.append(message if len(parts) == len(message.parts) else replace(message, parts=parts))
-    return (ModelRequest(parts=[pin(checkpoint.render())]), *retained)
-
-
-def _checkpoint_trigger(
-    request: ModelDecisionRequest,
-    history: tuple[object, ...],
-    *,
-    recovery_event_signature: str,
-    previous_task_identity: tuple[str, int] | None,
-    current_task_identity: tuple[str, int],
-    history_soft_target: int,
-) -> str:
-    if (
-        previous_task_identity is not None
-        and previous_task_identity[0] == current_task_identity[0]
-        and previous_task_identity[1] != current_task_identity[1]
-    ):
-        return "task_revision"
-    if recovery_event_signature:
-        return "first_monitor_recovery"
-    checkpoint = _latest_progress_checkpoint(history)
-    uncovered = _uncovered_completed_knowledge(history, checkpoint)
-    step = request.last_step
-    decision = getattr(step, "decision", None)
-    pending_is_new = False
-    if _is_reducible_knowledge_decision(decision):
-        current_digest = _canonical_result_digest(decision.result)
-        prior_digests = {
-            _canonical_result_digest(part.content)
-            for _response, result in _completed_tool_exchanges(history)
-            for part in result
-            if _is_reducible_knowledge_return(part)
-            and part.tool_name == decision.tool_name
-        }
-        pending_is_new = current_digest not in prior_digests
-    if pending_is_new:
-        if checkpoint is None and not uncovered:
-            return "knowledge_bootstrap"
-        if len(uncovered) + 1 >= _CHECKPOINT_KNOWLEDGE_BATCH_SIZE:
-            return "knowledge_batch"
-    if uncovered or pending_is_new:
-        from pydantic_ai_harness.compaction import estimate_context_tokens
-
-        pressure_threshold = max(
-            1,
-            int(history_soft_target * _CHECKPOINT_HISTORY_PRESSURE_RATIO),
-        )
-        if estimate_context_tokens(history) >= pressure_threshold:
-            return "history_pressure"
-    return ""
-
-
-def _checkpoint_reducer_input(
-    request: ModelDecisionRequest,
-    history: tuple[object, ...],
-    *,
-    trigger: str,
-    pending_call: ToolCall | None,
-    previous_checkpoint: ProgressCheckpoint | None,
-) -> CheckpointReducerInput:
-    decision = getattr(request.last_step, "decision", None)
-    completed: list[CompletedToolResult] = []
-    if pending_call is not None and _is_reducible_knowledge_decision(decision) and (
-        trigger != "history_pressure"
-        or _canonical_result_digest(decision.result)
-        not in {
-            _canonical_result_digest(part.content)
-            for _response, returned in _completed_tool_exchanges(history)
-            for part in returned
-            if _is_reducible_knowledge_return(part)
-            and part.tool_name == decision.tool_name
-        }
-    ):
-        completed.append(
-            CompletedToolResult(
-                tool_call_id=pending_call.call_id,
-                tool_name=pending_call.name,
-                arguments=to_json_compatible(pending_call.arguments),
-                outcome="success",
-                result=to_json_compatible(decision.result),
-            )
-        )
-    completed.extend(
-        item
-        for item in _uncovered_completed_knowledge(history, previous_checkpoint)
-        if item.tool_call_id not in {value.tool_call_id for value in completed}
-    )
-    recent: list[RecentActionContext] = []
-    from pydantic_ai.messages import ThinkingPart, ToolCallPart
-
-    for response, results in (
-        _completed_tool_exchanges(history)[-2:]
-        if trigger == "first_monitor_recovery"
-        else ()
-    ):
-        reasoning = "\n".join(
-            part.content
-            for part in response.parts
-            if isinstance(part, ThinkingPart) and part.content
-        )[-1200:]
-        by_id = {part.tool_call_id: part for part in results}
-        for call in response.parts:
-            if not isinstance(call, ToolCallPart):
-                continue
-            result = by_id.get(call.tool_call_id)
-            recent.append(
-                RecentActionContext(
-                    tool_call_id=call.tool_call_id,
-                    tool_name=call.tool_name,
-                    arguments=to_json_compatible(call.args_as_dict()),
-                    result=to_json_compatible(result.content) if result is not None else None,
-                    reasoning=reasoning,
-                )
-            )
-    task = request.agent_context.task
-    goal = request.agent_context.goal_plan
-    return CheckpointReducerInput(
-        trigger=trigger,
-        task={
-            "task_id": task.task_id,
-            "instruction": task.instruction,
-            "success_criteria": to_json_compatible(task.success_criteria),
-            "requested_outputs": to_json_compatible(task.requested_output_ids),
-            "public_inputs": to_json_compatible(task.public_inputs),
-        },
-        goal_plan={
-            "task_revision": goal.task_revision,
-            "resolution": goal.resolution,
-            "items": to_json_compatible(goal.items),
-        },
-        previous_checkpoint=previous_checkpoint,
-        completed_results=tuple(completed[:3]),
-        recent_actions=tuple(recent[-2:]),
-        monitor_feedback=(
-            to_json_compatible(request.agent_context.control_feedback)
-            if trigger == "first_monitor_recovery"
-            else {}
-        ),
-    )
-
-
-def _checkpoint_reducer_input_digest(value: CheckpointReducerInput) -> str:
-    return _canonical_result_digest(value.model_dump(mode="json"))
-
-
-def _remember_checkpoint_reducer_input(
-    existing: tuple[str, ...],
-    digest: str,
-) -> tuple[str, ...]:
-    return tuple(dict.fromkeys((*existing, digest)))[-_CHECKPOINT_DEDUP_LIMIT:]
 
 
 def _completed_tool_exchanges(
@@ -1811,94 +1651,51 @@ def _completed_tool_exchanges(
     return tuple(completed)
 
 
-def _successful_tool_sources(
-    history: tuple[object, ...],
-    *,
-    pending_call: ToolCall | None,
-    last_step: object | None,
-) -> tuple[tuple[str, str], ...]:
-    sources = {
-        (part.tool_name, part.tool_call_id)
-        for _response, results in _completed_tool_exchanges(history)
-        for part in results
-        if _is_reducible_knowledge_return(part)
-    }
-    if pending_call is not None and _is_reducible_knowledge_decision(
-        getattr(last_step, "decision", None)
-    ):
-        sources.add((pending_call.name, pending_call.call_id))
-    return tuple(sorted(sources))
-
-
-def _uncovered_completed_knowledge(
-    history: tuple[object, ...],
-    checkpoint: ProgressCheckpoint | None,
-) -> tuple[CompletedToolResult, ...]:
-    from pydantic_ai.messages import ToolCallPart
-
-    covered = checkpoint.source_refs() if checkpoint is not None else frozenset()
-    results: list[CompletedToolResult] = []
-    for response, returned_parts in _completed_tool_exchanges(history):
-        returned_by_id = {part.tool_call_id: part for part in returned_parts}
-        for call in response.parts:
-            if (
-                not isinstance(call, ToolCallPart)
-                or call.tool_name not in _KNOWLEDGE_TOOL_NAMES
-                or (call.tool_name, call.tool_call_id) in covered
-            ):
-                continue
-            returned = returned_by_id.get(call.tool_call_id)
-            if returned is None or not _is_reducible_knowledge_return(returned):
-                continue
-            results.append(
-                CompletedToolResult(
-                    tool_call_id=call.tool_call_id,
-                    tool_name=call.tool_name,
-                    arguments=to_json_compatible(call.args_as_dict()),
-                    outcome="success",
-                    result=to_json_compatible(returned.content),
-                )
-            )
-    return tuple(results)
-
-
-def _is_reducible_knowledge_decision(value: object) -> bool:
-    return bool(
-        isinstance(value, (ReadRegionResult, SearchPageContentResult))
-        and value.tool_name in _KNOWLEDGE_TOOL_NAMES
-        and _is_successful_knowledge_content(value.result)
-    )
-
-
-def _is_reducible_knowledge_return(value: object) -> bool:
-    return bool(
-        getattr(value, "tool_name", "") in _KNOWLEDGE_TOOL_NAMES
-        and str(getattr(value, "outcome", "success")) != "failed"
-        and _is_successful_knowledge_content(getattr(value, "content", None))
-    )
-
-
-def _is_successful_knowledge_content(value: object) -> bool:
-    if not isinstance(value, Mapping):
-        return False
-    kind = value.get("kind")
-    return not isinstance(kind, str) or kind not in _FAILED_KNOWLEDGE_RESULT_KINDS
-
-
-def _canonical_result_digest(value: object) -> str:
-    import hashlib
-
-    encoded = json.dumps(
-        to_json_compatible(value),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _completed_exchange_count(messages: tuple[object, ...]) -> int:
     return len(_completed_tool_exchanges(messages))
+
+
+def _summary_visible_history(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Expose accepted model reasoning to Harness without changing official history."""
+
+    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+
+    visible: list[object] = []
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            visible.append(message)
+            continue
+        parts = tuple(
+            TextPart(f"Model reasoning:\n{part.content}")
+            if isinstance(part, ThinkingPart)
+            else part
+            for part in message.parts
+        )
+        visible.append(replace(message, parts=parts))
+    return tuple(visible)
+
+
+def _history_compaction_required(
+    breakdown: ModelRequestBreakdown,
+    *,
+    has_history: bool,
+) -> bool:
+    """Use final request admission accounting as the sole pressure authority."""
+
+    return bool(
+        has_history
+        and breakdown.history_tokens > 0
+        and breakdown.estimated_input_tokens
+        >= int(breakdown.effective_input_limit * _HISTORY_COMPACTION_PRESSURE_RATIO)
+    )
+
+
+def _available_history_tokens(breakdown: ModelRequestBreakdown) -> int:
+    non_history_tokens = max(
+        0,
+        breakdown.estimated_input_tokens - breakdown.history_tokens,
+    )
+    return max(1, breakdown.effective_input_limit - non_history_tokens)
 
 
 async def _compact_pydantic_history(
@@ -1906,59 +1703,96 @@ async def _compact_pydantic_history(
     *,
     model: object,
     max_estimated_tokens: int,
-) -> tuple[object, ...]:
-    """Use Harness pair-safe trimming, but only after checkpoint coverage exists."""
+    observed_estimated_tokens: int | None = None,
+    timeout_s: float,
+) -> _HistoryCompactionRun:
+    """Use Harness to summarize only a pressured, pair-safe expired history prefix."""
 
     if not messages:
-        return ()
+        return _HistoryCompactionRun(())
     if max_estimated_tokens < 1:
         raise ValueError("history soft target must be positive")
+    if timeout_s <= 0:
+        raise ValueError("history compaction timeout must be positive")
+    from pydantic_ai import capture_run_messages
+    from pydantic_ai.usage import RunUsage
     from pydantic_ai_harness.compaction import (
-        SlidingWindowCompaction,
+        SummarizingCompaction,
         compact_now,
-        estimate_context_tokens,
+        estimate_token_count,
     )
 
-    original = list(messages)
-    compacted = await compact_now(
-        SlidingWindowCompaction(
-            max_messages=1,
-            keep_messages=9,
-            preserve_first_user_message=False,
-        ),
-        original,
-        model=model,
+    pressure_threshold = max(
+        1,
+        int(max_estimated_tokens * _HISTORY_COMPACTION_PRESSURE_RATIO),
     )
-    if estimate_context_tokens(compacted) > max_estimated_tokens:
-        compacted = await compact_now(
-            SlidingWindowCompaction(
-                max_tokens=1,
-                keep_tokens=max_estimated_tokens,
-                preserve_first_user_message=False,
-            ),
-            compacted,
-            model=model,
-        )
-    candidate = tuple(compacted)
-    checkpoint = _latest_progress_checkpoint(candidate)
-    covered = checkpoint.source_refs() if checkpoint is not None else frozenset()
-    retained_sources = {
-        (part.tool_name, part.tool_call_id)
-        for _response, results in _completed_tool_exchanges(candidate)
-        for part in results
-    }
-    dropped_knowledge = {
-        (part.tool_name, part.tool_call_id)
-        for response, results in _completed_tool_exchanges(messages)
-        for part in results
-        if any(
-            getattr(call, "tool_call_id", "") == part.tool_call_id
-            and getattr(call, "tool_name", "") in _KNOWLEDGE_TOOL_NAMES
-            for call in response.parts
-        )
-        and (part.tool_name, part.tool_call_id) not in retained_sources
-    }
-    return messages if not dropped_knowledge.issubset(covered) else candidate
+    estimated_tokens = (
+        estimate_token_count(messages)
+        if observed_estimated_tokens is None
+        else observed_estimated_tokens
+    )
+    if estimated_tokens < pressure_threshold:
+        return _HistoryCompactionRun(messages)
+    strategy = SummarizingCompaction(
+        model=model,
+        max_tokens=pressure_threshold,
+        keep_tokens=max(
+            1,
+            int(max_estimated_tokens * _HISTORY_COMPACTION_KEEP_TOKENS_RATIO),
+        ),
+        summary_prompt=_HISTORY_COMPACTION_SUMMARY_PROMPT,
+        instructions=_HISTORY_COMPACTION_INSTRUCTIONS,
+        preserve_first_user_message=False,
+        incremental=True,
+        receipts=False,
+    )
+    started = time.perf_counter()
+    summary_visible = _summary_visible_history(messages)
+    with capture_run_messages() as transcript:
+        try:
+            async with asyncio.timeout(timeout_s):
+                compacted = await compact_now(
+                    strategy,
+                    list(summary_visible),
+                    model=model,
+                    usage=RunUsage(),
+                )
+            if transcript:
+                preserved_count = len(compacted) - 1
+                if preserved_count < 0 or preserved_count > len(messages):
+                    raise ValueError("Harness compaction returned an invalid preserved suffix")
+                compacted = [
+                    compacted[0],
+                    *(messages[-preserved_count:] if preserved_count else ()),
+                ]
+            else:
+                compacted = list(messages)
+            before_pending = tuple(
+                (part.tool_name, part.tool_call_id)
+                for part in _pending_tool_parts_from_history(messages)
+            )
+            after_pending = tuple(
+                (part.tool_name, part.tool_call_id)
+                for part in _pending_tool_parts_from_history(tuple(compacted))
+            )
+            if before_pending != after_pending:
+                raise ValueError("Harness compaction changed the unresolved tool-call suffix")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return _HistoryCompactionRun(
+                messages,
+                tuple(transcript),
+                error=f"{type(exc).__name__}: {str(exc)[:360]}",
+                latency_ms=(time.perf_counter() - started) * 1000,
+                attempted=bool(transcript),
+            )
+    return _HistoryCompactionRun(
+        tuple(compacted),
+        tuple(transcript),
+        latency_ms=(time.perf_counter() - started) * 1000,
+        attempted=bool(transcript),
+    )
 
 
 def _repair_preserves_rejected_semantics(

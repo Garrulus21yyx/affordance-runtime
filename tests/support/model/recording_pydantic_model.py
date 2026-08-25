@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    SystemPromptPart,
     TextContent,
     TextPart,
     ThinkingPart,
@@ -363,6 +364,9 @@ def _normalize_message(message: ModelMessage) -> Mapping[str, object]:
         raise TypeError("recorder expected a PydanticAI model message")
     parts = []
     for part in message.parts:
+        if isinstance(part, SystemPromptPart):
+            parts.append({"part_kind": "system-prompt", "content": part.content})
+            continue
         if isinstance(part, ToolReturnPart):
             parts.append(
                 {

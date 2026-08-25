@@ -911,16 +911,19 @@ def _target_functional_contexts(
     targets = {item.target_id: item for item in observation.targets}
     regions_by_key = {item.key: item for item in regions}
     structural_orders = _public_structural_target_orders(observation)
-    order: dict[str, int] = {}
-    for region in regions:
-        keys = {
-            target_id: _public_target_order_key(
-                targets[target_id], structural_orders.get(target_id)
-            )
-            for target_id in region.member_target_ids
-        }
-        ranks = {key: rank for rank, key in enumerate(sorted(set(keys.values())))}
-        order.update({target_id: ranks[key] for target_id, key in keys.items()})
+    # Public grounding IDs are scoped to one fresh document, so their
+    # occurrence discriminator must be document-scoped too.  A region-local
+    # rank loses information when two semantically identical controls live in
+    # separate, identically-described regions (a common pattern in long AX
+    # trees).  The SurfaceAdapter already owns the source structural order;
+    # preserve that mature observation fact here instead of asking a downstream
+    # projector or the model to guess which control is which.
+    order_keys = {
+        target_id: _public_target_order_key(target, structural_orders.get(target_id))
+        for target_id, target in targets.items()
+    }
+    ranks = {key: rank for rank, key in enumerate(sorted(set(order_keys.values())))}
+    order = {target_id: ranks[key] for target_id, key in order_keys.items()}
     source_families: dict[str, set[str]] = defaultdict(set)
     for link in observation.entity_source_links:
         source_families[link.canonical_target_id].add(

@@ -127,7 +127,8 @@ def test_plan_identity_is_static_while_fresh_world_still_changes_context_identit
 
 def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_dependency_order() -> None:
     system = GroundedPolicyContextBinder().prompts.actor
-    assert "The Runtime may provide one explicitly labelled" in system
+    assert "PydanticAI history may contain one Harness-produced summary" in system
+    assert "Do not emit a separate memory or" in system
     assert "Only refs in the current observation and current" in system
     assert "Preserve outcomes already supported by evidence" in system
     assert "Treat final=true only as an ordering hint" in system
@@ -136,9 +137,7 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "search_page_content is only an exact-substring locator" in system
     assert "read its region and follow UI pagination" in system
     assert "sole authority for current" in system
-    assert "fresh current World and current ToolReturn always take precedence" in system
-    assert "Do not emit or rewrite a" in system
-    assert "do not narrate the next click" in system
+    assert "override stale or conflicting statements" in system
     assert "clear paraphrase or" in system
     assert "incidental keyword overlap does not" in system
     assert "Partial source coverage" in system

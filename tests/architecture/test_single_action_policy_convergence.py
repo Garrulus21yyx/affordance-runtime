@@ -64,6 +64,9 @@ def test_production_prompts_cannot_advertise_deleted_control_protocols() -> None
         assert displaced not in assets
     assert "required_evidence" not in prompt
     assert "remember_fact" not in prompt
+    assert "progress checkpoint" not in prompt
+    assert "progress_checkpoint" not in prompt
+    assert "Harness-produced summary" in prompt
     assert "submit_final_response" in prompt
 
 

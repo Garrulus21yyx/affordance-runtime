@@ -1109,8 +1109,8 @@ def _langfuse_generation_name(
 ) -> str:
     del event
     return (
-        "progress-checkpoint-reducer-generation"
-        if attempt.get("role") == "progress_checkpoint_reducer"
+        "history-compaction-generation"
+        if attempt.get("role") == "history_compactor"
         else "action-policy-generation"
     )
 

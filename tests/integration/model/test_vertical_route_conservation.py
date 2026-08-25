@@ -536,6 +536,16 @@ def test_gate_4_unselected_mark_does_not_authorize_route_and_find_controls_recov
         assert normalize_recorded_provider_input(recorder.records[1]) == (
             second_envelope.model_boundary_projection()
         )
+        historical_binary_parts = tuple(
+            item
+            for message in second_envelope.history_messages
+            for part in message["parts"]
+            if part["part_kind"] == "user-prompt"
+            for item in part["content"]
+            if item["part_kind"] == "binary"
+        )
+        assert historical_binary_parts
+        assert all("data" not in item and item["digest"] for item in historical_binary_parts)
         assert len(environment.executed_requests) == 1
         assert environment.executed_requests[0].selection.target_id == marked_target_id
 

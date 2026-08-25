@@ -13,7 +13,6 @@ from affordance_runtime.immutable import freeze_json, thaw_json_at_external_boun
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
-from affordance_runtime.model.policy.progress_checkpoint import ProgressCheckpoint
 from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -319,7 +318,7 @@ class CanonicalProviderEnvelope:
         return {
             "instructions": self.instructions,
             "messages": (
-                *_project_pydantic_history(self.pydantic_history),
+                *_project_pydantic_history(self.pydantic_history, include_binary_data=True),
                 self.ordered_message_projection[-1],
             ),
             "function_tools": tuple(
@@ -355,6 +354,7 @@ class CanonicalProviderEnvelopeBinder:
         identity: CanonicalProviderIdentity,
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
+        request_timeout_s: float | None = None,
         attempt_phase: str | None = None,
         history_messages: tuple[object, ...] = (),
     ) -> CanonicalProviderEnvelope:
@@ -375,6 +375,7 @@ class CanonicalProviderEnvelopeBinder:
             user_text=user_text,
             call_profile=call_profile,
             output_token_reserve=output_token_reserve,
+            request_timeout_s=request_timeout_s,
             attempt_phase=attempt_phase or call_profile.phase.value,
             history_messages=history_messages,
         )
@@ -386,6 +387,7 @@ class CanonicalProviderEnvelopeBinder:
         user_text: str,
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
+        request_timeout_s: float | None = None,
     ) -> CanonicalProviderEnvelope:
         instructions = (
             "Repair only the rejected tool-call representation. Emit exactly one offered tool call. "
@@ -401,6 +403,13 @@ class CanonicalProviderEnvelopeBinder:
             media=(),
             call_profile=call_profile,
             output_token_reserve=output_token_reserve,
+            request_timeout_s=(
+                request_timeout_s
+                if request_timeout_s is not None
+                else float(base.model_settings["timeout"])
+                if "timeout" in base.model_settings
+                else None
+            ),
             attempt_phase=call_profile.phase.value,
             diagnostics=base,
             history_messages=(),
@@ -418,6 +427,7 @@ class CanonicalProviderEnvelopeBinder:
         user_text: str,
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
+        request_timeout_s: float | None = None,
         attempt_phase: str,
         history_messages: tuple[object, ...],
     ) -> CanonicalProviderEnvelope:
@@ -434,6 +444,7 @@ class CanonicalProviderEnvelopeBinder:
             media=tuple(_media_record(item) for item in delivery.media),
             call_profile=call_profile,
             output_token_reserve=output_token_reserve,
+            request_timeout_s=request_timeout_s,
             attempt_phase=attempt_phase,
             diagnostics=(
                 delivery.view.projection,
@@ -464,6 +475,7 @@ class CanonicalProviderEnvelopeBinder:
         media: tuple[CanonicalMediaRecord, ...],
         call_profile: ActionPolicyCallProfile,
         output_token_reserve: int,
+        request_timeout_s: float | None = None,
         attempt_phase: str,
         diagnostics: object,
         history_messages: tuple[Mapping[str, object], ...],
@@ -485,6 +497,10 @@ class CanonicalProviderEnvelopeBinder:
             "temperature": 0.0,
             "parallel_tool_calls": False,
         }
+        if request_timeout_s is not None:
+            if request_timeout_s <= 0:
+                raise ValueError("provider request timeout must be positive")
+            settings["timeout"] = request_timeout_s
         if identity.provider_id in {"zhipu", "aliyun"}:
             settings["thinking"] = call_profile.thinking_mode == "enabled"
         output = CanonicalOutputContract()
@@ -576,15 +592,19 @@ def _media_record(item: DeliveredMedia) -> CanonicalMediaRecord:
 
 def _project_pydantic_history(
     messages: tuple[object, ...],
+    *,
+    include_binary_data: bool = False,
 ) -> tuple[Mapping[str, object], ...]:
-    """Project compact official call/result history and validate its pairing algebra."""
+    """Project official history; raw media is present only at the model boundary."""
 
     if not messages:
         return ()
     try:
+        from pydantic_ai import BinaryContent
         from pydantic_ai.messages import (
             ModelRequest,
             ModelResponse,
+            SystemPromptPart,
             TextContent,
             TextPart,
             ThinkingPart,
@@ -592,13 +612,12 @@ def _project_pydantic_history(
             ToolReturnPart,
             UserPromptPart,
         )
-        from pydantic_ai_harness.compaction import is_pinned
     except ImportError as exc:  # pragma: no cover - guarded by the provider bridge
         raise ValueError("PydanticAI messages are unavailable") from exc
     projected: list[Mapping[str, object]] = []
     pending: tuple[tuple[str, str], ...] | None = None
-    checkpoint_seen = False
-    for message in messages:
+    summary_seen = False
+    for index, message in enumerate(messages):
         if isinstance(message, ModelResponse):
             if pending is not None:
                 raise ValueError("compact PydanticAI history has consecutive tool-call responses")
@@ -649,71 +668,96 @@ def _project_pydantic_history(
             continue
         if not isinstance(message, ModelRequest):
             raise ValueError("compact PydanticAI history expected a tool-result request")
-        pinned = tuple(
-            part
-            for part in message.parts
-            if isinstance(part, UserPromptPart) and is_pinned(part)
-        )
-        if pinned:
+        summaries = tuple(part for part in message.parts if isinstance(part, SystemPromptPart))
+        if summaries:
             if (
-                pending is not None
-                or checkpoint_seen
-                or len(pinned) != 1
+                index != 0
+                or pending is not None
+                or summary_seen
+                or len(summaries) != 1
                 or len(message.parts) != 1
             ):
-                raise ValueError("compact PydanticAI history has an invalid checkpoint position")
-            content = pinned[0].content
-            values = (
-                (content,)
-                if isinstance(content, str)
-                else tuple(item.content for item in content if isinstance(item, TextContent))
-            )
-            checkpoint = ProgressCheckpoint.parse(values[0] if len(values) == 1 else "")
-            if checkpoint is None:
-                raise ValueError("compact PydanticAI history has an invalid checkpoint")
-            checkpoint_seen = True
+                raise ValueError("compact PydanticAI history has an invalid summary position")
+            summary_seen = True
             projected.append(
                 {
                     "kind": "request",
                     "parts": (
                         {
-                            "part_kind": "progress-checkpoint",
-                            "content": checkpoint.render(),
+                            "part_kind": "system-prompt",
+                            "content": summaries[0].content,
                         },
                     ),
                 }
             )
             continue
+        prompts = tuple(part for part in message.parts if isinstance(part, UserPromptPart))
         returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
         returned_identities = tuple(
             (returned.tool_name, returned.tool_call_id) for returned in returns
         )
-        if (
-            pending is None
-            or not returns
-            or len(returns) != len(pending)
-            or len(message.parts) != len(returns)
-            or len({item[1] for item in returned_identities}) != len(returned_identities)
-            or set(returned_identities) != set(pending)
-        ):
-            raise ValueError("completed PydanticAI request must close every proposed tool call")
+        if len(prompts) != 1 or len(message.parts) != len(prompts) + len(returns):
+            raise ValueError("PydanticAI history request must contain one fresh World prompt")
+        if returns:
+            if (
+                pending is None
+                or len(returns) != len(pending)
+                or len({item[1] for item in returned_identities}) != len(returned_identities)
+                or set(returned_identities) != set(pending)
+            ):
+                raise ValueError("completed PydanticAI request must close every proposed tool call")
+            pending = None
+        elif pending is not None:
+            raise ValueError("PydanticAI history request omitted a pending tool result")
+        request_parts: list[Mapping[str, object]] = []
+        for part in message.parts:
+            if isinstance(part, UserPromptPart):
+                content = part.content
+                content_items = (content,) if isinstance(content, str) else tuple(content)
+                projected_content: list[Mapping[str, object]] = []
+                for item in content_items:
+                    if isinstance(item, str):
+                        projected_content.append({"part_kind": "text", "content": item})
+                    elif isinstance(item, TextContent):
+                        projected_content.append(
+                            {"part_kind": "text", "content": item.content}
+                        )
+                    elif isinstance(item, BinaryContent):
+                        binary_projection: dict[str, object] = {
+                            "part_kind": "binary",
+                            "media_type": item.media_type,
+                            "digest": hashlib.sha256(item.data).hexdigest(),
+                        }
+                        if include_binary_data:
+                            binary_projection["data"] = item.data
+                        projected_content.append(binary_projection)
+                    else:
+                        raise ValueError(
+                            "PydanticAI history contains unsupported user content"
+                        )
+                request_parts.append(
+                    {
+                        "part_kind": "user-prompt",
+                        "content": tuple(projected_content),
+                    }
+                )
+                continue
+            request_parts.append(
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": part.tool_name,
+                    "tool_call_id": part.tool_call_id,
+                    "content": to_json_compatible(part.content),
+                    "metadata": to_json_compatible(part.metadata),
+                    "outcome": part.outcome,
+                }
+            )
         projected.append(
             {
                 "kind": "request",
-                "parts": tuple(
-                    {
-                        "part_kind": "tool-return",
-                        "tool_name": returned.tool_name,
-                        "tool_call_id": returned.tool_call_id,
-                        "content": to_json_compatible(returned.content),
-                        "metadata": to_json_compatible(returned.metadata),
-                        "outcome": returned.outcome,
-                    }
-                    for returned in returns
-                ),
+                "parts": tuple(request_parts),
             }
         )
-        pending = None
     if pending is None:
         raise ValueError("compact PydanticAI history lost its unresolved suffix")
     return tuple(projected)

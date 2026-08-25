@@ -68,6 +68,7 @@ class TurnPacker:
         call_profile: ActionPolicyCallProfile,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
+        request_timeout_s: float | None = None,
         history_messages: tuple[object, ...] = (),
         pending_tool_call_id: str = "",
         pending_tool_name: str = "",
@@ -92,6 +93,7 @@ class TurnPacker:
             include_images=include_images,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
+            request_timeout_s=request_timeout_s,
             admitted_records=admitted_counts,
             backoff_count=0,
             request_budget=request_budget,
@@ -148,6 +150,7 @@ class TurnPacker:
                 include_images=include_images,
                 supports_multimodal=supports_multimodal,
                 perception_profile=perception_profile,
+                request_timeout_s=request_timeout_s,
                 admitted_records=required,
                 backoff_count=0,
                 request_budget=request_budget,
@@ -180,6 +183,7 @@ class TurnPacker:
                         include_images=include_images,
                         supports_multimodal=supports_multimodal,
                         perception_profile=perception_profile,
+                        request_timeout_s=request_timeout_s,
                         admitted_records=tentative,
                         backoff_count=0,
                         request_budget=packing_budget,
@@ -213,6 +217,7 @@ class TurnPacker:
             include_images=include_images,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
+            request_timeout_s=request_timeout_s,
             admitted_records=admitted_counts,
             backoff_count=backoffs,
             request_budget=request_budget,
@@ -240,6 +245,7 @@ class TurnPacker:
         include_images: bool,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
+        request_timeout_s: float | None,
         admitted_records: dict[str, int],
         backoff_count: int,
         request_budget: ModelRequestBudget,
@@ -268,6 +274,7 @@ class TurnPacker:
                 + request_budget.protocol_reserve_tokens
                 + request_budget.safety_margin_tokens
             ),
+            request_timeout_s=request_timeout_s,
             history_messages=history_messages,
         )
         outcome = RequestAdmission().admit(envelope, budget=request_budget)

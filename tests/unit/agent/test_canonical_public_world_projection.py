@@ -64,7 +64,13 @@ def _binding(source_id: str, revision: str, target_id: str, token: str) -> Actio
     )
 
 
-def _world(token: str, *, reverse: bool = False, duplicate: bool = False):
+def _world(
+    token: str,
+    *,
+    reverse: bool = False,
+    duplicate: bool = False,
+    structured_duplicate: bool = False,
+):
     source_id = f"source:{token}"
     revision = f"revision:{token}"
     target_ids = (f"target:{token}:alpha", f"target:{token}:beta")
@@ -78,7 +84,7 @@ def _world(token: str, *, reverse: bool = False, duplicate: bool = False):
         for index, target_id in enumerate(target_ids)
     )
     bindings = tuple(_binding(source_id, revision, target_id, token) for target_id in target_ids)
-    if duplicate:
+    if duplicate and not structured_duplicate:
         structure = ()
     else:
         root_id = f"structure:{token}:root"
@@ -348,6 +354,17 @@ def test_indistinguishable_executable_targets_fail_closed_before_context_or_prov
 
     with pytest.raises(PublicGroundingAmbiguousError, match="public_grounding_ambiguous"):
         CanonicalPublicWorldProjection.build(world, index, actions)
+
+
+def test_identical_executable_targets_use_document_structural_occurrence() -> None:
+    world = _world("structured-duplicate", duplicate=True, structured_duplicate=True)
+    projection, _actions, index = _projection(world)
+
+    records = tuple(item for item in projection.ordered_target_records if item.ref.startswith("E"))
+    assert len(records) == 2
+    assert {item.label for item in records} == {"Same"}
+    assert len({item.ref for item in records}) == 2
+    assert len({index.target_contexts[item.target_id].public_order for item in records}) == 2
 
 
 def test_context_consumers_share_one_supplied_projection_and_create_no_unknown_refs() -> None:
